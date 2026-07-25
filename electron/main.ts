@@ -52,6 +52,24 @@ app.whenReady().then(async () => {
   await startMediaServer()
 
   const userData = app.getPath('userData')
+
+  /*
+   * O Remotion decide onde guardar o Chrome do render subindo a partir de
+   * process.cwd() ate achar um package.json, e nao expoe opcao nem variavel de
+   * ambiente para sobrescrever isso.
+   *
+   * Num app instalado nao existe package.json acima do executavel, entao o
+   * cache cairia na pasta de instalacao -- que some numa atualizacao e, numa
+   * instalacao para todos os usuarios, nem tem permissao de escrita. Sem
+   * permissao o download falha e o render cai no navegador do sistema, que e
+   * ~3x mais lento, sem nenhum aviso.
+   *
+   * Fixar o cwd no userData resolve: o Chrome fica ao lado do modelo do
+   * Whisper, sobrevive a atualizacao e sempre tem escrita. Nada no app usa
+   * caminho relativo, entao mudar o cwd nao afeta mais nada.
+   */
+  process.chdir(userData)
+
   configureSettings(userData)
   // Binario e modelo do Whisper ficam no userData: sobrevivem a atualizacao do
   // app e nao sujam a pasta do projeto.

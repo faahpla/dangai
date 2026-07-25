@@ -46,7 +46,10 @@
       "Bash(curl -s http://127.0.0.1:9333/json/list)",
       "PowerShell(Get-Process Dangai -ErrorAction SilentlyContinue)",
       "PowerShell(node -e \"console.log\\(Object.keys\\(require\\('./package.json'\\).dependencies\\).join\\(', '\\)\\)\")",
-      "PowerShell(npm run build 2>&1)"
+      "PowerShell(npm run build 2>&1)",
+      "Bash(cd \"D:/FAAH/Dangai Project\" && ls -d node_modules/.remotion 2>/dev/null && du -sh node_modules/.remotion 2>/dev/null; find node_modules -maxdepth 3 -iname \"*headless*\" -type d 2>/dev/null | head -5; echo \"--- temp ---\"; ls -d /c/Users/faahb/AppData/Local/Temp/*hrome* 2>/dev/null | head -3)",
+      "Bash(sort -u -t: -k3)",
+      "Bash(grep -rn \"readFileSync\\('\\\\.\\\\|join\\('\\\\.\\\\|require\\('\\\\./\\\\.\\\\.\\\\|'\\\\./\" electron/*.ts electron/services/*.ts)"
     ]
   }
 }
