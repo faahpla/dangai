@@ -20,5 +20,11 @@
     "baseUrl": ".",
     "paths": { "@shared/*": ["shared/*"] }
   },
-  "include": ["electron/**/*.ts", "shared/**/*.ts", "electron.vite.config.ts"]
+  "include": [
+    "electron/**/*.ts",
+    "shared/**/*.ts",
+    "electron.vite.config.ts",
+    "remotion.config.ts",
+    "remotion.webpack.ts"
+  ]
 }

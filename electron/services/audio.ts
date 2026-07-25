@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { basename } from 'node:path'
 import type { AudioAnalysis } from '@shared/contract'
 import { ffmpegPath } from './ffmpeg-path'
+import { publish } from './media-server'
 
 /** Buckets de pico. ~2000 da resolucao de sobra para uma timeline de 1920px. */
 const PEAK_BUCKETS = 2000
@@ -28,6 +29,7 @@ export async function analyzeAudio(path: string): Promise<AudioAnalysis> {
   return {
     path,
     fileName: basename(path),
+    url: publish(path),
     durationSec: sampleCount / ANALYSIS_SAMPLE_RATE,
     peaks: computePeaks(pcm, sampleCount),
   }

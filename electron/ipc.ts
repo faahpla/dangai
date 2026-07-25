@@ -1,13 +1,15 @@
-import { dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import {
   AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
   IPC,
   type IpcResult,
+  type StartRenderArgs,
 } from '@shared/channels'
-import type { AudioAnalysis, ImageAsset } from '@shared/contract'
+import type { AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
 import { analyzeAudio } from './services/audio'
 import { importImages } from './services/assets'
+import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 
 /**
  * Envolve um handler para que erro nunca atravesse a ponte como excecao. O
@@ -29,6 +31,12 @@ function handle<Args extends unknown[], T>(
   })
 }
 
+function broadcast(progress: RenderProgress): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(IPC.renderProgress, progress)
+  }
+}
+
 export function registerIpc(): void {
   handle<[string], AudioAnalysis>(IPC.analyzeAudio, (path) => analyzeAudio(path))
 
@@ -48,5 +56,33 @@ export function registerIpc(): void {
       ],
     })
     return result.canceled ? [] : result.filePaths
+  })
+
+  // Devolve null quando o usuario cancelou -- cancelar nao e falha, entao nao
+  // vira { ok: false }. Sem isso a interface mostra erro para uma acao pedida.
+  handle<[StartRenderArgs], string | null>(IPC.startRender, async (args) => {
+    try {
+      return await renderVideo(args, broadcast)
+    } catch (err) {
+      if (err instanceof RenderCancelled) {
+        broadcast({ progress: 0, stage: 'cancelled' })
+        return null
+      }
+      // O renderer precisa saber que o render morreu mesmo quando a chamada
+      // falha, senao a timeline fica presa preenchida pela metade.
+      const message = err instanceof Error ? err.message : String(err)
+      broadcast({ progress: 0, stage: 'failed', message })
+      throw err
+    }
+  })
+
+  handle<[], null>(IPC.cancelRender, async () => {
+    cancelRender()
+    return null
+  })
+
+  handle<[string], null>(IPC.revealFile, async (path) => {
+    shell.showItemInFolder(path)
+    return null
   })
 }

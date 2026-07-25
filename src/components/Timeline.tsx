@@ -1,5 +1,6 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useMemo, useRef } from 'react'
 import { useProject, formatTimecode } from '@/store/project'
+import { planEqualSplit } from '@shared/plan'
 import { Waveform } from './Waveform'
 
 /**
@@ -7,46 +8,55 @@ import { Waveform } from './Waveform'
  * fundo, tiras de cena com miniatura por cima, playhead rosa de 1px com um
  * ponto no topo.
  *
- * Nesta fase as tiras dividem a duracao igualmente entre as imagens. A divisao
- * real por conteudo entra na v0.3; o desenho e o mesmo.
+ * Durante o render a propria timeline se preenche de rosa da esquerda para a
+ * direita. Sem barra de progresso separada, sem modal -- o progresso acontece
+ * no lugar onde o trabalho esta.
  */
 export function Timeline() {
   const audio = useProject((s) => s.audio)
   const images = useProject((s) => s.images)
   const playhead = useProject((s) => s.playhead)
   const selectedImageId = useProject((s) => s.selectedImageId)
+  const render = useProject((s) => s.render)
   const setPlayhead = useProject((s) => s.setPlayhead)
   const selectImage = useProject((s) => s.selectImage)
   const trackRef = useRef<HTMLDivElement | null>(null)
 
   const duration = audio?.durationSec ?? 0
   const progress = duration > 0 ? playhead / duration : 0
+  const isRendering = render !== null
+
+  // As mesmas cenas que vao para o render, para as tiras baterem com o video.
+  const scenes = useMemo(() => {
+    if (!audio || images.length === 0) return []
+    return planEqualSplit(images.length, audio.durationSec).scenes
+  }, [audio, images.length])
 
   const seekFromEvent = useCallback(
     (clientX: number) => {
       const track = trackRef.current
       if (!track || duration === 0) return
       const rect = track.getBoundingClientRect()
-      const ratio = (clientX - rect.left) / rect.width
-      setPlayhead(ratio * duration)
+      setPlayhead(((clientX - rect.left) / rect.width) * duration)
     },
     [duration, setPlayhead],
   )
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      if (isRendering) return
       event.currentTarget.setPointerCapture(event.pointerId)
       seekFromEvent(event.clientX)
     },
-    [seekFromEvent],
+    [isRendering, seekFromEvent],
   )
 
   const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (event.buttons !== 1) return
+      if (isRendering || event.buttons !== 1) return
       seekFromEvent(event.clientX)
     },
-    [seekFromEvent],
+    [isRendering, seekFromEvent],
   )
 
   return (
@@ -69,9 +79,11 @@ export function Timeline() {
         ref={trackRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        className="group relative h-[104px] cursor-ew-resize overflow-hidden rounded-md border border-line bg-surface"
+        className={[
+          'group relative h-[104px] overflow-hidden rounded-md border border-line bg-surface',
+          isRendering ? 'cursor-default' : 'cursor-ew-resize',
+        ].join(' ')}
       >
-        {/* waveform ao fundo */}
         <div className="pointer-events-none absolute inset-0">
           {audio ? (
             <Waveform peaks={audio.peaks} className="block h-full w-full" />
@@ -82,43 +94,58 @@ export function Timeline() {
           )}
         </div>
 
-        {/* tiras de cena por cima */}
-        {duration > 0 && images.length > 0 && (
+        {duration > 0 && scenes.length > 0 && (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-[38px]">
-            {images.map((image, index) => (
-              <button
-                key={image.id}
-                type="button"
-                onPointerDown={(event) => {
-                  event.stopPropagation()
-                  selectImage(image.id)
-                }}
-                style={{ width: `${100 / images.length}%` }}
-                className={[
-                  'pointer-events-auto relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
-                  'transition-[box-shadow] duration-200',
-                  selectedImageId === image.id ? 'ring-1 ring-inset ring-accent' : '',
-                ].join(' ')}
-                aria-label={`Cena ${index + 1}: ${image.fileName}`}
-              >
-                <img
-                  src={image.thumbnail}
-                  alt=""
-                  className="h-full w-full object-cover opacity-70"
-                  draggable={false}
-                />
-                <span className="tnum absolute left-1 top-0.5 text-[10px] text-white/70 drop-shadow">
-                  {index + 1}
-                </span>
-              </button>
-            ))}
+            {scenes.map((scene, index) => {
+              const image = images[scene.imageIndex]
+              if (!image) return null
+              const widthPct = ((scene.end - scene.start) / duration) * 100
+
+              return (
+                <button
+                  key={image.id}
+                  type="button"
+                  disabled={isRendering}
+                  onPointerDown={(event) => {
+                    event.stopPropagation()
+                    selectImage(image.id)
+                  }}
+                  style={{ width: `${widthPct}%` }}
+                  className={[
+                    'pointer-events-auto relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
+                    selectedImageId === image.id ? 'ring-1 ring-inset ring-accent' : '',
+                  ].join(' ')}
+                  aria-label={`Cena ${index + 1}: ${image.fileName}`}
+                >
+                  <img
+                    src={image.thumbnail}
+                    alt=""
+                    className="h-full w-full object-cover opacity-70"
+                    draggable={false}
+                  />
+                  <span className="tnum absolute left-1 top-0.5 text-[10px] text-white/70 drop-shadow">
+                    {index + 1}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
 
-        {/* preenchimento do render entra aqui na v0.2 */}
+        {/*
+          O progresso do render acontece aqui: a faixa inteira se preenche de
+          rosa da esquerda para a direita. Nao existe outra barra no app.
+        */}
+        {isRendering && (
+          <div
+            className="pointer-events-none absolute inset-y-0 left-0 bg-accent-glow transition-[width] duration-300 ease-linear"
+            style={{ width: `${render.progress * 100}%` }}
+          >
+            <span className="absolute inset-y-0 right-0 w-px bg-accent" />
+          </div>
+        )}
 
-        {/* playhead */}
-        {duration > 0 && (
+        {duration > 0 && !isRendering && (
           <div
             className="pointer-events-none absolute inset-y-0 w-px bg-accent"
             style={{ left: `${progress * 100}%` }}

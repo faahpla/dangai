@@ -1,0 +1,131 @@
+import { useEffect, useMemo, useRef } from 'react'
+import { Player, type PlayerRef } from '@remotion/player'
+import { VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
+import { planEqualSplit, toRenderProps } from '@shared/plan'
+import { useProject } from '@/store/project'
+import { Video } from '@/remotion/Video'
+
+/**
+ * Preview 9:16 com o @remotion/player -- o MESMO componente Video que o render
+ * usa. E o motivo de ter escolhido Remotion: o que aparece aqui e o que sai no
+ * MP4, sem uma simulacao paralela para manter em dia.
+ *
+ * O plano vem de shared/plan, tambem o mesmo que o main usa no render.
+ */
+export function Preview() {
+  const audio = useProject((s) => s.audio)
+  const images = useProject((s) => s.images)
+  const playhead = useProject((s) => s.playhead)
+  const playing = useProject((s) => s.playing)
+  const setPlayhead = useProject((s) => s.setPlayhead)
+  const setPlaying = useProject((s) => s.setPlaying)
+  const playerRef = useRef<PlayerRef | null>(null)
+
+  const durationInFrames = Math.max(Math.ceil((audio?.durationSec ?? 1) * VIDEO_FPS), 1)
+
+  const inputProps = useMemo(() => {
+    if (images.length === 0 || !audio) return { scenes: [] }
+    return toRenderProps(planEqualSplit(images.length, audio.durationSec), images)
+  }, [images, audio])
+
+  // O store e a fonte da verdade do playhead; o player segue.
+  useEffect(() => {
+    const player = playerRef.current
+    if (!player) return
+    const target = Math.round(playhead * VIDEO_FPS)
+    if (Math.abs(player.getCurrentFrame() - target) > 1) {
+      player.seekTo(target)
+    }
+  }, [playhead])
+
+  useEffect(() => {
+    const player = playerRef.current
+    if (!player) return
+    if (playing) void player.play()
+    else player.pause()
+  }, [playing])
+
+  // E o player devolve a posicao enquanto toca.
+  useEffect(() => {
+    const player = playerRef.current
+    if (!player) return
+
+    const onFrame = (event: { detail: { frame: number } }): void => {
+      setPlayhead(event.detail.frame / VIDEO_FPS)
+    }
+    const onPause = (): void => setPlaying(false)
+    const onEnded = (): void => setPlaying(false)
+
+    player.addEventListener('frameupdate', onFrame)
+    player.addEventListener('pause', onPause)
+    player.addEventListener('ended', onEnded)
+    return () => {
+      player.removeEventListener('frameupdate', onFrame)
+      player.removeEventListener('pause', onPause)
+      player.removeEventListener('ended', onEnded)
+    }
+  }, [setPlayhead, setPlaying])
+
+  return (
+    <div className="relative aspect-[9/16] h-full shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+      {images.length > 0 && audio ? (
+        <>
+          <Player
+            ref={playerRef}
+            component={Video}
+            inputProps={inputProps}
+            durationInFrames={durationInFrames}
+            fps={VIDEO_FPS}
+            compositionWidth={VIDEO_WIDTH}
+            compositionHeight={VIDEO_HEIGHT}
+            style={{ width: '100%', height: '100%' }}
+            // Sem controles proprios: a timeline do app e o unico transporte.
+            controls={false}
+            clickToPlay={false}
+            doubleClickToFullscreen={false}
+            acknowledgeRemotionLicense
+          />
+          {/*
+            A narracao toca por fora da composicao porque o Remotion entrega
+            video puro e o audio so entra no mux -- ver Video.tsx.
+          */}
+          <NarrationAudio url={audio.url} />
+        </>
+      ) : (
+        <div className="grid h-full place-items-center px-6 text-center text-[11px] text-ink-3">
+          {images.length === 0 ? 'Solte imagens para ver o preview' : 'Solte a narracao'}
+        </div>
+      )}
+
+      <span className="tnum pointer-events-none absolute bottom-2 right-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
+        {VIDEO_WIDTH} x {VIDEO_HEIGHT}
+      </span>
+    </div>
+  )
+}
+
+/** Elemento de audio cru, sincronizado com o playhead do store. */
+function NarrationAudio({ url }: { url: string }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playing = useProject((s) => s.playing)
+  const playhead = useProject((s) => s.playhead)
+
+  useEffect(() => {
+    const element = audioRef.current
+    if (!element) return
+    if (playing) void element.play().catch(() => undefined)
+    else element.pause()
+  }, [playing])
+
+  useEffect(() => {
+    const element = audioRef.current
+    if (!element) return
+    // Só corrige quando saiu de sincronia de verdade, senao o proprio play
+    // dispara reposicionamento a cada frame.
+    if (Math.abs(element.currentTime - playhead) > 0.25) {
+      element.currentTime = playhead
+    }
+  }, [playhead])
+
+  return <audio ref={audioRef} src={url} preload="auto" className="hidden" />
+}

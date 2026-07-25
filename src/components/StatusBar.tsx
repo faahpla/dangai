@@ -17,7 +17,16 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const busy = useProject((s) => s.busy)
   const error = useProject((s) => s.error)
   const audio = useProject((s) => s.audio)
+  const lastOutput = useProject((s) => s.lastOutput)
   const dismissError = useProject((s) => s.dismissError)
+
+  // So o nome do arquivo: o caminho inteiro e ruido, e o botao "Abrir pasta"
+  // esta a um clique de distancia.
+  const idleMessage = isDragging
+    ? 'Solte para importar'
+    : lastOutput
+      ? `Renderizado · ${lastOutput.split(/[\\/]/).pop()}`
+      : (audio?.fileName ?? 'Solte a narracao e as prints')
 
   return (
     <footer className="flex h-[38px] shrink-0 items-center justify-between border-t border-line px-6">
@@ -36,9 +45,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
           {error}
         </button>
       ) : (
-        <span className="truncate text-[11px] text-ink-3">
-          {isDragging ? 'Solte para importar' : (audio?.fileName ?? 'Solte a narracao e as prints')}
-        </span>
+        <span className="truncate text-[11px] text-ink-3">{idleMessage}</span>
       )}
 
       <span className="text-[11px] text-ink-3">v0.1</span>

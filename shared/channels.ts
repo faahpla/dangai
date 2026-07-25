@@ -1,4 +1,4 @@
-import type { AudioAnalysis, ImageAsset } from './contract'
+import type { AudioAnalysis, ImageAsset, RenderProgress, RenderProps } from './contract'
 
 /**
  * Valores de runtime que o preload precisa, sem dependencias.
@@ -20,6 +20,11 @@ export const IPC = {
   analyzeAudio: 'audio:analyze',
   importImages: 'images:import',
   pickFiles: 'dialog:pick-files',
+  startRender: 'render:start',
+  cancelRender: 'render:cancel',
+  revealFile: 'shell:reveal',
+  /** main -> renderer, evento de progresso */
+  renderProgress: 'render:progress',
 } as const
 
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] as const
@@ -33,6 +38,12 @@ export function classifyFile(fileName: string): 'audio' | 'image' | 'subtitle' |
   return 'unknown'
 }
 
+export interface StartRenderArgs {
+  props: RenderProps
+  audioPath: string
+  durationInFrames: number
+}
+
 /**
  * A superficie que o preload expoe. O renderer nao conhece nada alem disto.
  * O import de contract aqui e `import type`, entao e apagado na compilacao.
@@ -43,4 +54,10 @@ export interface DangaiBridge {
   analyzeAudio(path: string): Promise<IpcResult<AudioAnalysis>>
   importImages(paths: readonly string[]): Promise<IpcResult<ImageAsset[]>>
   pickFiles(): Promise<IpcResult<string[]>>
+  /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
+  startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>
+  cancelRender(): Promise<IpcResult<null>>
+  revealFile(path: string): Promise<IpcResult<null>>
+  /** Assina o progresso do render. Devolve a funcao para cancelar a assinatura. */
+  onRenderProgress(listener: (progress: RenderProgress) => void): () => void
 }

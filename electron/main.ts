@@ -1,6 +1,8 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
 import { registerIpc } from './ipc'
+import { startMediaServer } from './services/media-server'
+import { configureRender } from './services/render'
 
 const isDev = !app.isPackaged
 
@@ -42,7 +44,17 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // Antes da janela: os servicos publicam URLs assim que um arquivo entra.
+  await startMediaServer()
+
+  configureRender({
+    appPath: app.getAppPath(),
+    prebuiltBundle: app.isPackaged
+      ? join(process.resourcesPath, 'remotion')
+      : join(app.getAppPath(), 'out', 'remotion'),
+  })
+
   registerIpc()
   createWindow()
 

@@ -6,12 +6,18 @@
   "main": "out/main/main.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
+    "remotion:bundle": "remotion bundle src/remotion/index.ts --out-dir=out/remotion",
+    "build": "npm run typecheck && electron-vite build && npm run remotion:bundle",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
+    "@remotion/bundler": "^4.0.499",
+    "@remotion/cli": "^4.0.499",
+    "@remotion/player": "^4.0.499",
+    "@remotion/renderer": "^4.0.499",
     "ffmpeg-static": "^5.3.0",
+    "remotion": "^4.0.499",
     "sharp": "^0.35.3"
   },
   "devDependencies": {

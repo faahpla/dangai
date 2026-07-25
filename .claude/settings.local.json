@@ -17,7 +17,9 @@
       "PowerShell($shots = \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\shots\")",
       "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\drive2.mjs\" $fx $shots 2>&1)",
       "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\drive3.mjs\" $fx $shots 2>&1)",
-      "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\probe.mjs\" 2>&1)"
+      "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\probe.mjs\" 2>&1)",
+      "PowerShell(npm install --no-fund --no-audit remotion @remotion/player @remotion/renderer @remotion/bundler @remotion/cli 2>&1)",
+      "PowerShell(npx remotion bundle src/remotion/index.ts --out-dir=out/remotion 2>&1)"
     ]
   }
 }
