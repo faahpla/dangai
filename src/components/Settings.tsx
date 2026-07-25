@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { FolderOpen, X } from 'lucide-react'
 import type { PublicSettings } from '@shared/channels'
 import { useProject } from '@/store/project'
 
@@ -13,6 +13,8 @@ export function Settings() {
   const open = useProject((s) => s.settingsOpen)
   const openSettings = useProject((s) => s.openSettings)
   const analyze = useProject((s) => s.analyze)
+  const sfxFiles = useProject((s) => s.sfxFiles)
+  const refreshSfx = useProject((s) => s.refreshSfx)
 
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [keyInput, setKeyInput] = useState('')
@@ -24,7 +26,8 @@ export function Settings() {
     void window.dangai.getSettings().then((result) => {
       if (result.ok) setSettings(result.value)
     })
-  }, [open])
+    void refreshSfx()
+  }, [open, refreshSfx])
 
   useEffect(() => {
     if (!open) return
@@ -131,6 +134,29 @@ export function Settings() {
         </div>
         <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
           Baixado uma vez na primeira transcricao. Maior transcreve melhor e mais devagar.
+        </p>
+
+        <div className="my-5 h-px bg-line" />
+
+        <label className="mb-1.5 block text-[11px] font-medium text-ink-2">Sons de transicao</label>
+        <button
+          type="button"
+          onClick={() => {
+            void window.dangai.openSfxDir()
+            // A pasta abre fora do app; quando ele voltar, a lista ja esta certa.
+            void refreshSfx()
+          }}
+          className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
+        >
+          <FolderOpen size={13} strokeWidth={1.5} />
+          Abrir a pasta de SFX
+          <span className="tnum ml-auto text-[11px] text-ink-3">
+            {sfxFiles.length} {sfxFiles.length === 1 ? 'som' : 'sons'}
+          </span>
+        </button>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+          Solte os seus .mp3 ou .wav ai dentro. Eles entram em rodizio, uma transicao sim e outra
+          nao — som em todo corte vira ruido de fundo.
         </p>
       </div>
     </div>

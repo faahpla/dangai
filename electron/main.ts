@@ -5,6 +5,7 @@ import { registerIpc } from './ipc'
 import { startMediaServer } from './services/media-server'
 import { configureRender } from './services/render'
 import { configureSettings } from './services/settings'
+import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureWhisper } from './services/whisper'
 
 const isDev = !app.isPackaged
@@ -75,14 +76,23 @@ app.whenReady().then(async () => {
   // app e nao sujam a pasta do projeto.
   configureWhisper(join(userData, 'whisper'))
 
+  // Os SFX moram no userData para o usuario poder trocar os arquivos: a pasta
+  // do app some numa atualizacao e pode nem ter permissao de escrita.
+  const sfxUserDir = join(userData, 'sfx')
+  configureSfx({
+    userDir: sfxUserDir,
+    bundledDir: app.isPackaged
+      ? join(process.resourcesPath, 'sfx')
+      : join(app.getAppPath(), 'assets', 'sfx'),
+  })
+  ensureSfxDir()
+
   configureRender({
     appPath: app.getAppPath(),
     prebuiltBundle: app.isPackaged
       ? join(process.resourcesPath, 'remotion')
       : join(app.getAppPath(), 'out', 'remotion'),
-    defaultSfxDir: app.isPackaged
-      ? join(process.resourcesPath, 'sfx')
-      : join(app.getAppPath(), 'assets', 'sfx'),
+    defaultSfxDir: sfxUserDir,
     binariesDirectory: app.isPackaged ? findCompositorDir() : null,
   })
 

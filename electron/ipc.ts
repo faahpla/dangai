@@ -17,6 +17,7 @@ import { importImages, reframeImage } from './services/assets'
 import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 import { analyze } from './services/transcribe'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
+import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
 
 /**
  * Envolve um handler para que erro nunca atravesse a ponte como excecao. O
@@ -69,6 +70,14 @@ export function registerIpc(): void {
     return raw.replace(/^\ufeff/, '')
   })
 
+  handle<[], string[]>(IPC.listSfx, async () => listSfx())
+
+  handle<[], null>(IPC.openSfxDir, async () => {
+    ensureSfxDir()
+    await shell.openPath(sfxDir())
+    return null
+  })
+
   handle<[], string[]>(IPC.pickFiles, async () => {
     const result = await dialog.showOpenDialog({
       title: 'Selecionar audio, imagens e roteiro',
@@ -91,7 +100,7 @@ export function registerIpc(): void {
   handle<[StartRenderArgs], string | null>(IPC.startRender, async (args) => {
     try {
       // A pasta de SFX e escolha das configuracoes, nao do renderer.
-      return await renderVideo({ ...args, sfxDir: getSettings().sfxDir }, broadcast)
+      return await renderVideo({ ...args, sfxDir: sfxDir() }, broadcast)
     } catch (err) {
       if (err instanceof RenderCancelled) {
         broadcast({ progress: 0, stage: 'cancelled' })

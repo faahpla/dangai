@@ -15,10 +15,11 @@ export function Timeline() {
   const audio = useProject((s) => s.audio)
   const images = useProject((s) => s.images)
   const playhead = useProject((s) => s.playhead)
-  const selectedImageId = useProject((s) => s.selectedImageId)
+  const selectedScene = useProject((s) => s.selectedScene)
   const render = useProject((s) => s.render)
   const setPlayhead = useProject((s) => s.setPlayhead)
-  const selectImage = useProject((s) => s.selectImage)
+  const selectScene = useProject((s) => s.selectScene)
+  const splitScene = useProject((s) => s.splitScene)
   const moveBoundary = useProject((s) => s.moveBoundary)
   const scenes = useProject((s) => s.plan)?.scenes ?? []
 
@@ -73,8 +74,8 @@ export function Timeline() {
           </span>
         </div>
         <span className="text-[11px] text-ink-3">
-          {images.length > 0
-            ? `${images.length} ${images.length === 1 ? 'cena' : 'cenas'}`
+          {scenes.length > 0
+            ? `${scenes.length} ${scenes.length === 1 ? 'bloco' : 'blocos'} · ${images.length} ${images.length === 1 ? 'imagem' : 'imagens'}`
             : 'sem imagens'}
         </span>
       </header>
@@ -108,19 +109,27 @@ export function Timeline() {
 
               return (
                 <button
-                  key={image.id}
+                  key={`${image.id}-${index}`}
                   type="button"
                   disabled={isRendering}
                   onPointerDown={(event) => {
                     event.stopPropagation()
-                    selectImage(image.id)
+                    selectScene(index)
+                  }}
+                  // Duplo clique corta o bloco no ponto clicado, como a lamina
+                  // de um editor. E o mesmo gesto de sempre, sem modo nem
+                  // ferramenta para escolher antes.
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    splitScene(index, timeAt(event.clientX))
                   }}
                   style={{ width: `${((scene.end - scene.start) / duration) * 100}%` }}
                   className={[
                     'pointer-events-auto relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
-                    selectedImageId === image.id ? 'ring-1 ring-inset ring-accent' : '',
+                    selectedScene === index ? 'ring-1 ring-inset ring-accent' : '',
                   ].join(' ')}
-                  aria-label={`Cena ${index + 1}: ${image.fileName}`}
+                  title={`${image.fileName} — clique duas vezes para cortar`}
+                  aria-label={`Bloco ${index + 1}: ${image.fileName}`}
                 >
                   <img
                     src={image.thumbnail}

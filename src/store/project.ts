@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
+import { KEN_BURNS_EFFECTS } from '@shared/contract'
 import type {
   AudioAnalysis,
   ImageAsset,
@@ -13,6 +14,8 @@ import {
   buildCaptions,
   MIN_SCENE_SEC,
   planEqualSplit,
+  sfxCuesFor,
+  subdivideLongScenes,
   toRenderProps,
   totalFrames,
 } from '@shared/plan'
@@ -63,7 +66,14 @@ interface ProjectState {
   error: string | null
   playhead: number
   playing: boolean
-  selectedImageId: string | null
+  /**
+   * Bloco selecionado, por posicao na linha do tempo.
+   *
+   * E o indice da CENA e nao o da imagem: desde que uma imagem pode ocupar
+   * varios blocos seguidos, os dois deixaram de ser a mesma coisa. Guardar o id
+   * da imagem selecionaria todos os blocos dela de uma vez.
+   */
+  selectedScene: number | null
   render: RenderProgress | null
   lastOutput: string | null
   settingsOpen: boolean
@@ -71,6 +81,8 @@ interface ProjectState {
   /** Ligado quando o usuario mexe no plano: a analise para de sobrescrever. */
   planEdited: boolean
   sfxEnabled: boolean
+  /** Arquivos de som disponiveis na pasta de SFX. */
+  sfxFiles: string[]
   captionsEnabled: boolean
   paletteOpen: boolean
 
@@ -81,6 +93,8 @@ interface ProjectState {
   /** Move a fronteira entre a cena index-1 e a cena index. */
   moveBoundary: (index: number, seconds: number) => void
   toggleSfx: () => void
+  /** Recarrega a lista de sons. Chamada na abertura e ao voltar das settings. */
+  refreshSfx: () => Promise<void>
   toggleCaptions: () => void
   setScript: (script: string | null) => Promise<void>
   openScript: (open: boolean) => void
@@ -96,10 +110,18 @@ interface ProjectState {
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
+  /** Corta um bloco em dois no instante dado. */
+  splitScene: (index: number, seconds: number) => void
+  /** Junta um bloco com o anterior. So faz sentido se mostram a mesma imagem. */
+  mergeSceneBack: (index: number) => void
+  /** Tira um bloco da linha do tempo, devolvendo o tempo ao vizinho. */
+  removeScene: (index: number) => void
   /** Move o enquadramento 9:16 sobre a imagem. Instantaneo, so no estado. */
   setImageFocus: (id: string, focusX: number, focusY: number) => void
   /** Confirma o enquadramento: pede o novo recorte ao main e troca a URL. */
   commitImageFocus: (id: string) => Promise<void>
+  selectScene: (index: number | null) => void
+  /** Seleciona o primeiro bloco que usa esta imagem. */
   selectImage: (id: string | null) => void
   setPlayhead: (seconds: number) => void
   togglePlay: () => void
@@ -123,7 +145,11 @@ type SetState = (partial: Partial<ProjectState>) => void
  * um seletor.
  */
 function setInterimPlan(set: SetState, imageCount: number, durationSec: number): void {
-  set({ plan: planEqualSplit(imageCount, durationSec), planOrigin: 'equal' })
+  set({
+    plan: subdivideLongScenes(planEqualSplit(imageCount, durationSec)),
+    planOrigin: 'equal',
+    selectedScene: null,
+  })
 }
 
 export const useProject = create<ProjectState>((set, get) => ({
@@ -144,12 +170,13 @@ export const useProject = create<ProjectState>((set, get) => ({
   error: null,
   playhead: 0,
   playing: false,
-  selectedImageId: null,
+  selectedScene: null,
   render: null,
   lastOutput: null,
   settingsOpen: false,
   planEdited: false,
   sfxEnabled: true,
+  sfxFiles: [],
   captionsEnabled: false,
   paletteOpen: false,
 
@@ -307,11 +334,105 @@ export const useProject = create<ProjectState>((set, get) => ({
   removeImage: (id) => {
     set((state) => ({
       images: state.images.filter((image) => image.id !== id),
-      selectedImageId: state.selectedImageId === id ? null : state.selectedImageId,
+      selectedScene: null,
     }))
     const { audio, images } = get()
     if (audio && images.length > 0) setInterimPlan(set, images.length, audio.durationSec)
     void get().analyze()
+  },
+
+  /**
+   * Corta um bloco em dois no instante dado.
+   *
+   * As duas metades continuam mostrando a mesma imagem -- e o mesmo movimento
+   * que a subdivisao automatica faz, so que no ponto que o usuario escolheu. A
+   * segunda metade entra com corte seco e movimento diferente, senao a divisao
+   * nao se ve.
+   */
+  splitScene: (index, seconds) => {
+    const { plan } = get()
+    const scene = plan?.scenes[index]
+    if (!plan || !scene) return
+
+    const min = scene.start + MIN_SCENE_SEC
+    const max = scene.end - MIN_SCENE_SEC
+    // Bloco curto demais para virar dois: dividir aqui produziria um pedaco que
+    // nem da tempo de ver.
+    if (max <= min) return
+
+    const at = Math.min(Math.max(seconds, min), max)
+    const alternative =
+      KEN_BURNS_EFFECTS.find(
+        (effect) => effect !== scene.effect && effect !== plan.scenes[index + 1]?.effect,
+      ) ?? scene.effect
+
+    const scenes = [
+      ...plan.scenes.slice(0, index),
+      { ...scene, end: at },
+      { ...scene, start: at, effect: alternative, transitionIn: 'cut' as const },
+      ...plan.scenes.slice(index + 1),
+    ]
+
+    set({ plan: { ...plan, scenes }, planEdited: true, selectedScene: index })
+  },
+
+  mergeSceneBack: (index) => {
+    const { plan } = get()
+    const previous = plan?.scenes[index - 1]
+    const scene = plan?.scenes[index]
+    if (!plan || !previous || !scene) return
+
+    const scenes = [
+      ...plan.scenes.slice(0, index - 1),
+      { ...previous, end: scene.end },
+      ...plan.scenes.slice(index + 1),
+    ]
+
+    set({ plan: { ...plan, scenes }, planEdited: true, selectedScene: index - 1 })
+  },
+
+  /**
+   * Tira um bloco da linha do tempo. O tempo dele vai para o vizinho, senao
+   * sobraria um buraco preto no meio do video.
+   *
+   * Sumindo o ultimo bloco de uma imagem, a imagem tambem sai: nao faz sentido
+   * ela continuar na fila sem aparecer em lugar nenhum.
+   */
+  removeScene: (index) => {
+    const { plan, images } = get()
+    const scene = plan?.scenes[index]
+    if (!plan || !scene || plan.scenes.length < 2) return
+
+    const scenes = plan.scenes.filter((_, i) => i !== index)
+    const previous = scenes[index - 1]
+    const next = scenes[index]
+
+    if (previous) previous.end = scene.end
+    else if (next) next.start = scene.start
+
+    const sobrou = scenes.some((other) => other.imageIndex === scene.imageIndex)
+    if (!sobrou) {
+      const image = images[scene.imageIndex]
+      if (image) {
+        // Reindexa: todo indice acima do removido desce um.
+        set({
+          images: images.filter((item) => item.id !== image.id),
+          plan: {
+            ...plan,
+            scenes: scenes.map((other) => ({
+              ...other,
+              imageIndex:
+                other.imageIndex > scene.imageIndex ? other.imageIndex - 1 : other.imageIndex,
+            })),
+          },
+          planEdited: true,
+          selectedScene: null,
+        })
+        return
+      }
+    }
+
+    set({ plan: { ...plan, scenes }, planEdited: true, selectedScene: null })
   },
 
   setImageFocus: (id, focusX, focusY) => {
@@ -488,11 +609,27 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   toggleSfx: () => set((state) => ({ sfxEnabled: !state.sfxEnabled })),
 
+  refreshSfx: async () => {
+    const result = await window.dangai.listSfx()
+    if (result.ok) set({ sfxFiles: result.value })
+  },
+
   toggleCaptions: () => set((state) => ({ captionsEnabled: !state.captionsEnabled })),
 
   openPalette: (open) => set({ paletteOpen: open }),
 
-  selectImage: (id) => set({ selectedImageId: id }),
+  selectScene: (index) => set({ selectedScene: index }),
+
+  selectImage: (id) => {
+    const { images, plan } = get()
+    const imageIndex = images.findIndex((image) => image.id === id)
+    if (imageIndex < 0 || !plan) {
+      set({ selectedScene: null })
+      return
+    }
+    const scene = plan.scenes.findIndex((item) => item.imageIndex === imageIndex)
+    set({ selectedScene: scene >= 0 ? scene : null })
+  },
 
   setPlayhead: (seconds) =>
     set((state) => ({
@@ -504,7 +641,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
 
   startRender: async () => {
-    const { audio, images, plan, sfxEnabled, captionsEnabled, captions } = get()
+    const { audio, images, plan, sfxEnabled, sfxFiles, captionsEnabled, captions } = get()
     if (!audio || images.length === 0 || !plan) return
 
     set({
@@ -517,7 +654,10 @@ export const useProject = create<ProjectState>((set, get) => ({
       props: toRenderProps(plan, images, captionsEnabled ? captions : []),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
-      sfxCues: sfxEnabled ? plan.sfxCues : [],
+      // Os cues sao montados aqui e nao guardados no plano: eles dependem dos
+      // arquivos que estao na pasta AGORA, e o usuario pode ter acabado de
+      // trocar os sons sem refazer a analise.
+      sfxCues: sfxEnabled ? sfxCuesFor(plan.scenes, sfxFiles) : [],
     })
 
     if (!result.ok) {
@@ -582,7 +722,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       error: null,
       playhead: 0,
       playing: false,
-      selectedImageId: null,
+      selectedScene: null,
       render: null,
       lastOutput: null,
       planEdited: false,

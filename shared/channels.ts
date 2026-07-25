@@ -27,6 +27,8 @@ export const IPC = {
   importImages: 'images:import',
   reframeImage: 'images:reframe',
   readScript: 'script:read',
+  listSfx: 'sfx:list',
+  openSfxDir: 'sfx:open',
   pickFiles: 'dialog:pick-files',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
@@ -106,6 +108,10 @@ export interface DangaiBridge {
   reframeImage(args: ReframeArgs): Promise<IpcResult<string>>
   /** Le um .txt de roteiro do disco. */
   readScript(path: string): Promise<IpcResult<string>>
+  /** Nomes dos arquivos de som na pasta de SFX em uso. */
+  listSfx(): Promise<IpcResult<string[]>>
+  /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */
+  openSfxDir(): Promise<IpcResult<null>>
   pickFiles(): Promise<IpcResult<string[]>>
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>

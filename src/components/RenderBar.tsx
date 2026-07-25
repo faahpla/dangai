@@ -23,7 +23,9 @@ export function RenderBar() {
   const render = useProject((s) => s.render)
   const lastOutput = useProject((s) => s.lastOutput)
   const sfxEnabled = useProject((s) => s.sfxEnabled)
-  const sfxCount = useProject((s) => s.plan?.sfxCues.length ?? 0)
+  const sfxCount = useProject((s) =>
+    s.plan && s.sfxFiles.length > 0 ? Math.ceil((s.plan.scenes.length - 1) / 2) : 0,
+  )
   const toggleSfx = useProject((s) => s.toggleSfx)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const captionCount = useProject((s) => s.captions.length)

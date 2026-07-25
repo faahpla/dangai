@@ -152,7 +152,9 @@ function useCommands(): Command[] {
   const lastOutput = useProject((s) => s.lastOutput)
   const audio = useProject((s) => s.audio)
   const imageCount = useProject((s) => s.images.length)
-  const sfxCount = useProject((s) => s.plan?.sfxCues.length ?? 0)
+  const sfxCount = useProject((s) =>
+    s.plan && s.sfxFiles.length > 0 ? Math.ceil((s.plan.scenes.length - 1) / 2) : 0,
+  )
   const rendering = useProject((s) => s.render !== null)
   const script = useProject((s) => s.script)
   const captionsOpen = useProject((s) => s.captionsOpen)

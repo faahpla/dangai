@@ -15,7 +15,8 @@ export function RemotionRoot() {
     <Composition
       id={COMPOSITION_ID}
       component={Video}
-      durationInFrames={VIDEO_FPS * 10}
+      // Arredondado: o Remotion exige duracao inteira, e 23.976 * 10 nao e.
+      durationInFrames={Math.round(VIDEO_FPS * 10)}
       fps={VIDEO_FPS}
       width={VIDEO_WIDTH}
       height={VIDEO_HEIGHT}

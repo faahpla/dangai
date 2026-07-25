@@ -1,4 +1,5 @@
 import {
+  CAPTION_BREAK_AFTER,
   CAPTION_MAX_CHARS,
   CAPTION_MAX_WORDS,
   CAPTION_MIN_SEC,
@@ -24,10 +25,26 @@ import {
  * onde caem os cortes, qual efeito e qual transicao.
  */
 
-/** Cena mais curta que isso nao da tempo de ler a imagem. */
-export const MIN_SCENE_SEC = 1.2
+/**
+ * Piso absoluto de um bloco.
+ *
+ * Baixo de proposito: quem monta sozinho persegue TARGET_BLOCK_SEC, bem acima
+ * disto. Este numero so aparece quando o usuario corta na mao, e com o alvo em
+ * dois segundos um piso de 1.2s tornaria a divisao impossivel -- nao cabem duas
+ * metades de 1.2s dentro de 2s. Meio segundo e um corte rapido, nao um defeito.
+ */
+export const MIN_SCENE_SEC = 0.6
 /** Mais longa que isso a atencao cai num short. */
 export const MAX_SCENE_SEC = 6
+
+/**
+ * Tamanho de bloco que o video persegue.
+ *
+ * Narracao de recap costuma ser corrida, sem pausa nenhuma para cortar em cima.
+ * Sem isso, poucas imagens num audio longo produzem blocos de seis segundos e o
+ * video fica parado justamente onde a fala esta acelerada.
+ */
+export const TARGET_BLOCK_SEC = 2
 /** Quanto um corte pode andar para cair numa pausa natural. */
 export const SNAP_TOLERANCE_SEC = 0.4
 
@@ -52,7 +69,7 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
     transitionIn: index === 0 ? ('cut' as const) : ('cut' as const),
   }))
 
-  return { scenes, sfxCues: [] }
+  return { scenes }
 }
 
 /**
@@ -110,14 +127,7 @@ export function planFromCandidates(
     transitionIn: 'cut' as const,
   }))
 
-  // Um whoosh no primeiro corte, mesmo sem IA. O impact "no gancho" depende de
-  // entender o conteudo, entao esse fica so para o caminho com IA.
-  const firstCut = chosen[0]
-  return sanitize(
-    { scenes, sfxCues: firstCut === undefined ? [] : [{ at: firstCut, sound: 'whoosh' }] },
-    imageCount,
-    durationSec,
-  )
+  return sanitize({ scenes }, imageCount, durationSec)
 }
 
 // -------------------------------------------------------------------- snap
@@ -135,6 +145,7 @@ export function snapToCandidates(
   plan: ScenePlan,
   candidates: readonly number[],
   durationSec: number,
+  imageCount: number,
 ): ScenePlan {
   if (candidates.length === 0 || plan.scenes.length < 2) return plan
 
@@ -155,7 +166,10 @@ export function snapToCandidates(
     scenes[i]!.start = snapped
   }
 
-  return sanitize({ ...plan, scenes }, scenes.length, durationSec)
+  // imageCount vem de fora e nao de scenes.length: os dois so coincidem
+  // enquanto ha exatamente uma cena por imagem, e a reparticao em blocos
+  // quebrou essa igualdade.
+  return sanitize({ ...plan, scenes }, imageCount, durationSec)
 }
 
 function nearest(sorted: readonly number[], target: number): number | null {
@@ -235,6 +249,51 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
       transitionIn: index === 0 ? 'cut' : scene.transitionIn,
     }
   })
+
+  return { ...plan, scenes: avoidRepeatedEffects(scenes) }
+}
+
+/**
+ * Reparte em blocos menores toda cena que ficou longa demais.
+ *
+ * Os pedacos continuam mostrando a MESMA imagem, no mesmo lugar da linha do
+ * tempo. Isso e de proposito: num recap as imagens seguem a narracao em ordem,
+ * entao trazer a imagem 1 de volta aos 30 segundos so para ter mais cortes
+ * mostraria a cena errada. Repartir mantem a cronologia e ainda assim corta --
+ * cada pedaco entra com outro movimento, que e o que faz o corte ler como um
+ * enquadramento novo em vez de um defeito.
+ *
+ * Quem tem imagens suficientes nunca chega aqui: com uma imagem a cada dois
+ * segundos, nenhuma cena passa do alvo.
+ */
+export function subdivideLongScenes(plan: ScenePlan, targetSec = TARGET_BLOCK_SEC): ScenePlan {
+  const scenes: Scene[] = []
+
+  for (const scene of plan.scenes) {
+    const length = scene.end - scene.start
+
+    // Arredonda em vez de arredondar para cima: uma cena de 2.9s vira um bloco
+    // de 2.9s, e nao dois de 1.45s, que ficariam abaixo do minimo utilizavel.
+    let parts = Math.max(Math.round(length / targetSec), 1)
+    while (parts > 1 && length / parts < MIN_SCENE_SEC) parts--
+
+    if (parts === 1) {
+      scenes.push(scene)
+      continue
+    }
+
+    const step = length / parts
+    for (let part = 0; part < parts; part++) {
+      scenes.push({
+        ...scene,
+        start: scene.start + part * step,
+        end: part === parts - 1 ? scene.end : scene.start + (part + 1) * step,
+        // So o primeiro pedaco herda a transicao da cena; os cortes internos
+        // sao secos, que e o que da o soco de troca de enquadramento.
+        transitionIn: part === 0 ? scene.transitionIn : 'cut',
+      })
+    }
+  }
 
   return { ...plan, scenes: avoidRepeatedEffects(scenes) }
 }
@@ -406,14 +465,29 @@ export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
     // a proxima volta, onde o problema se repetiria para sempre.
     const largo = current.length > 0 && chars > CAPTION_MAX_CHARS
     const pausou = current.length > 0 && gap > 0.45
+    // Pontuacao fecha a linha: a palavra seguinte comeca outra ideia e nao pode
+    // dividir legenda com o fim da anterior.
+    const pontuou = previous !== undefined && endsSentence(previous.text)
 
-    if (cheio || largo || pausou) flush()
+    if (cheio || largo || pausou || pontuou) flush()
     current.push(word)
   }
   flush()
 
   enforceMinimumDuration(blocks)
   return blocks
+}
+
+/**
+ * A palavra termina fechando uma ideia?
+ *
+ * Ignora aspas e parenteses no fim para enxergar a pontuacao de verdade: em
+ * `disse."` quem fecha a frase e o ponto, nao a aspa.
+ */
+function endsSentence(text: string): boolean {
+  const bare = text.replace(/["'”’)\]}»]+$/u, '')
+  const last = bare.at(-1)
+  return last !== undefined && CAPTION_BREAK_AFTER.includes(last)
 }
 
 /**
@@ -493,6 +567,34 @@ function clampWordsToBlock(block: CaptionBlock): void {
   })
 }
 
+/**
+ * Onde tocam os SFX e qual arquivo toca em cada ponto.
+ *
+ * Uma transicao sim, outra nao: som em todo corte vira ruido de fundo e o
+ * ouvido para de registrar. Alternando, cada whoosh volta a marcar alguma
+ * coisa.
+ *
+ * Os arquivos entram em rodizio pela pasta, na ordem em que ela lista. Repetir
+ * o mesmo som a cada troca soa mecanico depois do terceiro.
+ */
+export function sfxCuesFor(
+  scenes: readonly Scene[],
+  files: readonly string[],
+): { at: number; sound: string }[] {
+  if (files.length === 0 || scenes.length < 2) return []
+
+  const cues: { at: number; sound: string }[] = []
+
+  // Comeca no primeiro corte e pula de dois em dois.
+  for (let index = 1; index < scenes.length; index += 2) {
+    const sound = files[cues.length % files.length]
+    if (sound === undefined) break
+    cues.push({ at: scenes[index]!.start, sound })
+  }
+
+  return cues
+}
+
 /** Total de frames da composicao, a partir da duracao do audio. */
 export function totalFrames(durationSec: number): number {
   return Math.max(Math.ceil(durationSec * VIDEO_FPS), 1)
@@ -504,6 +606,9 @@ export function planWithoutAI(
   durationSec: number,
   transcript: Transcript | null,
 ): { plan: ScenePlan; origin: 'silence' | 'equal' } {
+  // Sem reparticao aqui de proposito: quem chama ainda vai alinhar os cortes
+  // as pausas, e o alinhamento passa pelo saneamento, que exige uma cena por
+  // imagem. Repartir antes seria desfeito no passo seguinte.
   if (transcript && transcript.cutCandidates.length >= imageCount - 1) {
     return {
       plan: planFromCandidates(imageCount, durationSec, transcript.cutCandidates),

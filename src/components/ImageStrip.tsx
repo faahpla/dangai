@@ -29,10 +29,13 @@ export function ImageStrip() {
 }
 
 function Card({ image, index }: { image: ImageAsset; index: number }) {
-  const selectedImageId = useProject((s) => s.selectedImageId)
+  const selectedScene = useProject((s) => s.selectedScene)
+  const selectedImageIndex = useProject((s) =>
+    s.selectedScene === null ? null : (s.plan?.scenes[s.selectedScene]?.imageIndex ?? null),
+  )
   const selectImage = useProject((s) => s.selectImage)
   const removeImage = useProject((s) => s.removeImage)
-  const isSelected = selectedImageId === image.id
+  const isSelected = selectedScene !== null && selectedImageIndex === index
 
   return (
     <Reorder.Item

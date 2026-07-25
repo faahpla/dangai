@@ -45,12 +45,6 @@ const aiPlanSchema = z.object({
       reason: z.string(),
     }),
   ),
-  sfxCues: z.array(
-    z.object({
-      at: z.number().min(0),
-      sound: z.enum(['whoosh', 'impact']),
-    }),
-  ),
 })
 
 export interface PlanRequest {
@@ -118,7 +112,6 @@ export function buildPrompt(request: PlanRequest): string {
     '- Corte onde a narracao muda de assunto, nunca no meio de uma frase.',
     '- Troque o movimento entre cenas seguidas; nao repita o mesmo duas vezes seguidas.',
     '- transitionIn da primeira cena e sempre "cut". Prefira "cut" na maioria; use os outros com parcimonia.',
-    '- Em sfxCues: um "whoosh" no primeiro corte e um "impact" no momento de maior tensao da narracao.',
     '- Em reason, escreva 3 a 6 palavras dizendo por que o corte cai ali.',
   ].join('\n')
 }

@@ -99,15 +99,19 @@ export type Transition = (typeof TRANSITIONS)[number]
 
 /**
  * Duracao de cada transicao em frames. A spec pede entre 120ms e 250ms; a
- * 30fps isso e 4 a 8 frames. Mais longo que isso arrasta e mata o ritmo do
+ * 23.976fps isso e 3 a 6 frames. Mais longo que isso arrasta e mata o ritmo do
  * short.
+ *
+ * Os valores foram recalculados quando o projeto passou de 30 para 23.976fps,
+ * para a duracao em MILISSEGUNDOS continuar a mesma -- manter o numero de
+ * frames teria deixado toda transicao 25% mais lenta.
  */
 export const TRANSITION_FRAMES: Readonly<Record<Transition, number>> = {
   cut: 0,
-  crossfade: 6,
-  'slide-left': 5,
-  'slide-right': 5,
-  'whip-pan': 4,
+  crossfade: 5, // 209ms
+  'slide-left': 4, // 167ms
+  'slide-right': 4,
+  'whip-pan': 3, // 125ms
 }
 
 export const SFX_SOUNDS = ['whoosh', 'impact'] as const
@@ -126,11 +130,16 @@ export const sceneSchema = z.object({
 })
 export type Scene = z.infer<typeof sceneSchema>
 
+/**
+ * O plano nao carrega SFX.
+ *
+ * Ate a v1 a IA escolhia "um whoosh aqui, um impact ali". Isso virou uma
+ * decisao posicional -- uma transicao sim, outra nao, rodando os arquivos que
+ * o usuario tem na pasta -- e ela depende do que existe na pasta NA HORA do
+ * render, nao de quando a analise rodou. Ver sfxCuesFor em shared/plan.
+ */
 export const scenePlanSchema = z.object({
   scenes: z.array(sceneSchema).min(1),
-  sfxCues: z
-    .array(z.object({ at: z.number().nonnegative(), sound: z.string() }))
-    .default([]),
 })
 export type ScenePlan = z.infer<typeof scenePlanSchema>
 
@@ -152,7 +161,16 @@ export interface AnalysisResult {
 
 export const VIDEO_WIDTH = 1080
 export const VIDEO_HEIGHT = 1920
-export const VIDEO_FPS = 30
+
+/**
+ * 23.976 fps, o valor exato de 24000/1001 -- e nao o arredondado 23.976.
+ *
+ * Escrito como divisao de proposito: a diferenca entre 24000/1001 e 23.976 e de
+ * um frame a cada ~40 minutos, o que nao importa num short, mas o valor exato e
+ * o que o container guarda e o que evita o video ser lido como "23.98" por
+ * alguns players.
+ */
+export const VIDEO_FPS = 24000 / 1001
 
 /**
  * O que a composicao Remotion recebe. Preview e render usam o mesmo objeto.
@@ -193,14 +211,23 @@ export const renderPropsSchema = z.object({
 export type RenderProps = z.infer<typeof renderPropsSchema>
 
 /**
- * Um bloco de legenda e uma linha so. No maximo duas palavras e doze
+ * Um bloco de legenda e uma linha so. No maximo tres palavras e doze
  * caracteres -- mais que isso nao da tempo de ler num short.
  *
  * A unica excecao e a palavra que sozinha ja passa do limite: ela fica sozinha
  * na linha, porque quebrar palavra no meio e pior que uma linha comprida.
  */
-export const CAPTION_MAX_WORDS = 2
+export const CAPTION_MAX_WORDS = 3
 export const CAPTION_MAX_CHARS = 12
+
+/**
+ * Pontuacao que fecha a linha.
+ *
+ * Depois de um ponto ou de uma virgula comeca outra ideia, e juntar as duas na
+ * mesma legenda ("insana. Essa") faz o olho ler como uma frase so. A palavra
+ * seguinte abre linha nova -- sozinha, ou acompanhada da que vem depois dela.
+ */
+export const CAPTION_BREAK_AFTER = '.,!?;:…'
 
 /**
  * Tempo minimo que uma legenda fica na tela.

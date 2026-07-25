@@ -280,12 +280,21 @@ interface ResolvedCue {
   at: number
 }
 
-/** Descarta cue sem arquivo correspondente em vez de derrubar o render. */
+/**
+ * Descarta cue sem arquivo correspondente em vez de derrubar o render.
+ *
+ * `sound` e o nome do arquivo como esta na pasta, com extensao -- o usuario
+ * larga os proprios sons la e eles entram pelo nome. Ainda aceita o formato
+ * antigo, sem extensao, para plano salvo antes desta mudanca nao virar silencio.
+ */
 function resolveSfx(request: RenderRequest): ResolvedCue[] {
   const dir = request.sfxDir || requirePaths().defaultSfxDir
   return request.sfxCues.flatMap((cue) => {
-    const path = join(dir, `${cue.sound}.mp3`)
-    return existsSync(path) ? [{ path, at: Math.max(cue.at, 0) }] : []
+    const direct = join(dir, cue.sound)
+    if (existsSync(direct)) return [{ path: direct, at: Math.max(cue.at, 0) }]
+
+    const legacy = join(dir, `${cue.sound}.mp3`)
+    return existsSync(legacy) ? [{ path: legacy, at: Math.max(cue.at, 0) }] : []
   })
 }
 

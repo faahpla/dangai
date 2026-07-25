@@ -1,5 +1,5 @@
 import type { AnalysisResult, ImageAsset, Transcript } from '@shared/contract'
-import { planWithoutAI, sanitize, snapToCandidates } from '@shared/plan'
+import { planWithoutAI, sanitize, snapToCandidates, subdivideLongScenes } from '@shared/plan'
 import { transcriptFromScript } from '@shared/align'
 import { parseSrt } from './srt'
 import { transcribe } from './whisper'
@@ -63,9 +63,19 @@ export async function analyze(
       // Mesmo vindo da IA, o plano passa pelo saneamento e pelo snap. As
       // garantias do produto nao dependem de o modelo ter obedecido.
       const clean = sanitize(raw, images.length, durationSec)
-      const snapped = snapToCandidates(clean, transcript.cutCandidates, durationSec)
+      const snapped = snapToCandidates(
+        clean,
+        transcript.cutCandidates,
+        durationSec,
+        images.length,
+      )
 
-      return { plan: snapped, origin: 'ai', transcript, aiNote: null, scriptNote }
+      // A IA decide onde cada IMAGEM entra; a reparticao em blocos de dois
+      // segundos vem depois e nao mexe nessa decisao -- so corta dentro do
+      // espaco que cada imagem ja tinha.
+      const blocks = subdivideLongScenes(snapped)
+
+      return { plan: blocks, origin: 'ai', transcript, aiNote: null, scriptNote }
     } catch (err) {
       // Falha da IA nunca sobe: vira uma nota e o fallback assume.
       const note = err instanceof Error ? err.message : String(err)
@@ -147,9 +157,11 @@ function withoutAI(
 ): AnalysisResult {
   const { plan, origin } = planWithoutAI(imageCount, durationSec, transcript)
   const snapped = transcript
-    ? snapToCandidates(plan, transcript.cutCandidates, durationSec)
+    ? snapToCandidates(plan, transcript.cutCandidates, durationSec, imageCount)
     : plan
-  return { plan: snapped, origin, transcript, aiNote, scriptNote }
+  // Repartir e o ultimo passo. Antes do saneamento nao adianta: ele reconstroi
+  // uma cena por imagem e desfaria tudo.
+  return { plan: subdivideLongScenes(snapped), origin, transcript, aiNote, scriptNote }
 }
 
 /**

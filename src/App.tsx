@@ -17,14 +17,18 @@ import { VIDEO_FPS } from '@shared/contract'
 export function App() {
   const isDragging = useFileDrop()
   const phase = useProject((s) => s.phase())
-  const removeImage = useProject((s) => s.removeImage)
-  const selectedImageId = useProject((s) => s.selectedImageId)
+  const removeScene = useProject((s) => s.removeScene)
+  const selectedScene = useProject((s) => s.selectedScene)
   const applyRenderProgress = useProject((s) => s.applyRenderProgress)
   const setBusy = useProject((s) => s.setBusy)
   const captionsOpen = useProject((s) => s.captionsOpen)
+  const refreshSfx = useProject((s) => s.refreshSfx)
 
   // Progresso do render vindo do main.
   useEffect(() => window.dangai.onRenderProgress(applyRenderProgress), [applyRenderProgress])
+
+  // Lista de SFX na abertura: ela define quantos sons entram no video.
+  useEffect(() => void refreshSfx(), [refreshSfx])
 
   // Andamento da analise: Whisper e a chamada da IA levam tempo e nenhum
   // carregamento pode ficar sem sinal visivel.
@@ -69,9 +73,17 @@ export function App() {
           break
         case 'Delete':
         case 'Backspace':
-          if (rendering || !selectedImageId) return
+          if (rendering || selectedScene === null) return
           event.preventDefault()
-          removeImage(selectedImageId)
+          removeScene(selectedScene)
+          break
+        // Dividir o bloco onde a agulha esta -- o corte que um editor faz sem
+        // tirar a mao do teclado.
+        case 's':
+        case 'S':
+          if (rendering || selectedScene === null || event.ctrlKey || event.metaKey) return
+          event.preventDefault()
+          store.splitScene(selectedScene, store.playhead)
           break
         case 'r':
           if (!event.ctrlKey && !event.metaKey) return
@@ -87,7 +99,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedImageId, removeImage])
+  }, [selectedScene, removeScene])
 
   return (
     <div className="flex h-full flex-col bg-bg">
