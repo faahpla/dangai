@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
@@ -19,7 +19,17 @@ export function Preview() {
   const playing = useProject((s) => s.playing)
   const setPlayhead = useProject((s) => s.setPlayhead)
   const setPlaying = useProject((s) => s.setPlaying)
-  const playerRef = useRef<PlayerRef | null>(null)
+
+  /*
+   * O player entra em estado, nao em ref: ele so e montado depois que ha audio
+   * E imagens, entao no primeiro efeito uma ref ainda esta em null. Como as
+   * acoes do store sao estaveis, o efeito que assina 'frameupdate' rodaria
+   * uma unica vez -- justamente antes do player existir -- e nunca mais. O
+   * resultado era o playhead preso em zero enquanto o video e o audio tocavam
+   * normalmente. Guardar a instancia em estado reexecuta os efeitos na hora em
+   * que ela aparece.
+   */
+  const [player, setPlayer] = useState<PlayerRef | null>(null)
 
   const durationInFrames = Math.max(Math.ceil((audio?.durationSec ?? 1) * VIDEO_FPS), 1)
 
@@ -38,24 +48,21 @@ export function Preview() {
 
   // O store e a fonte da verdade do playhead; o player segue.
   useEffect(() => {
-    const player = playerRef.current
     if (!player) return
     const target = Math.round(playhead * VIDEO_FPS)
     if (Math.abs(player.getCurrentFrame() - target) > 1) {
       player.seekTo(target)
     }
-  }, [playhead])
+  }, [player, playhead])
 
   useEffect(() => {
-    const player = playerRef.current
     if (!player) return
     if (playing) void player.play()
     else player.pause()
-  }, [playing])
+  }, [player, playing])
 
   // E o player devolve a posicao enquanto toca.
   useEffect(() => {
-    const player = playerRef.current
     if (!player) return
 
     const onFrame = (event: { detail: { frame: number } }): void => {
@@ -72,14 +79,14 @@ export function Preview() {
       player.removeEventListener('pause', onPause)
       player.removeEventListener('ended', onEnded)
     }
-  }, [setPlayhead, setPlaying])
+  }, [player, setPlayhead, setPlaying])
 
   return (
     <div className="relative aspect-[9/16] h-full shrink-0 overflow-hidden rounded-md border border-line bg-surface">
       {images.length > 0 && audio ? (
         <>
           <Player
-            ref={playerRef}
+            ref={setPlayer}
             component={Video}
             inputProps={inputProps}
             durationInFrames={durationInFrames}

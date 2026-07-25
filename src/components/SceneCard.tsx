@@ -1,5 +1,6 @@
 import { KEN_BURNS_EFFECTS, TRANSITIONS, type Transition } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
+import { Framing } from './Framing'
 
 /**
  * Painel fino da cena selecionada. So aparece quando ha cena selecionada -- e o
@@ -28,6 +29,10 @@ export function SceneCard() {
 
       <Field label="Entra em">
         <span className="tnum text-[13px] text-ink-2">{formatTimecode(scene.start)}</span>
+      </Field>
+
+      <Field label="Enquadramento">
+        <Framing image={image} />
       </Field>
 
       <Field label="Movimento">

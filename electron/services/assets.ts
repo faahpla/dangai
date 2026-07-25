@@ -30,23 +30,34 @@ export async function importImages(paths: readonly string[]): Promise<ImageAsset
   return Promise.all(paths.map(importOne))
 }
 
+/**
+ * Refaz o recorte 9:16 de uma imagem ja importada com outro enquadramento.
+ *
+ * O recorte acontece aqui e nao em CSS de proposito: o que o preview mostra tem
+ * que ser byte a byte o que o render consome. Deixar o corte para o objectFit
+ * significaria publicar a imagem inteira -- uma foto 16:9 que cobre 1242x2208
+ * tem 3925px de largura, e o Chrome rasterizaria isso em cada um dos 1800
+ * frames.
+ */
+export async function reframeImage(
+  id: string,
+  path: string,
+  focusX: number,
+  focusY: number,
+): Promise<string> {
+  mkdirSync(cacheDir, { recursive: true })
+  return publish(await makeRenderReady(path, id, focusX, focusY))
+}
+
 async function importOne(path: string): Promise<ImageAsset> {
   const fileName = basename(path)
 
   try {
-    const metadata = await sharp(path, { failOn: 'error' }).metadata()
-    const width = metadata.width
-    const height = metadata.height
-
-    if (!width || !height) {
-      throw new Error('dimensoes ilegiveis')
-    }
-
     const id = randomUUID()
-
+    const { width, height } = await orientedSize(path)
     const [thumbnail, renderPath] = await Promise.all([
       makeThumbnail(path),
-      makeRenderReady(path, id),
+      makeRenderReady(path, id, 0.5, 0.5),
     ])
 
     return {
@@ -59,6 +70,8 @@ async function importOne(path: string): Promise<ImageAsset> {
       width,
       height,
       thumbnail,
+      focusX: 0.5,
+      focusY: 0.5,
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
@@ -66,6 +79,23 @@ async function importOne(path: string): Promise<ImageAsset> {
       `Nao foi possivel ler "${fileName}" (${detail}). Salve a imagem como PNG ou JPG e solte de novo.`,
     )
   }
+}
+
+/**
+ * Dimensoes como a imagem aparece depois de aplicada a orientacao EXIF.
+ *
+ * `sharp().metadata()` devolve os pixels como estao gravados; uma foto de
+ * celular em retrato costuma chegar como paisagem com orientacao 6. Sem a troca
+ * o app trataria um retrato como paisagem e o recorte sairia do eixo errado.
+ */
+async function orientedSize(path: string): Promise<{ width: number; height: number }> {
+  const metadata = await sharp(path, { failOn: 'error' }).metadata()
+  const width = metadata.width
+  const height = metadata.height
+  if (!width || !height) throw new Error('dimensoes ilegiveis')
+
+  const rotated = (metadata.orientation ?? 1) >= 5
+  return rotated ? { width: height, height: width } : { width, height }
 }
 
 async function makeThumbnail(path: string): Promise<string> {
@@ -79,23 +109,43 @@ async function makeThumbnail(path: string): Promise<string> {
 }
 
 /**
- * Recorta para 9:16 cobrindo o quadro, no tamanho exato que o render precisa.
+ * Recorta para 9:16 cobrindo o quadro, no tamanho exato que o render precisa,
+ * ancorado no ponto escolhido pelo usuario.
  *
- * Isto e a diferenca entre bater e nao bater os 90 segundos de render: sem
- * isso o Chrome rasteriza a imagem inteira em resolucao original a cada um dos
- * 1800 frames. O recorte centralizado e o mesmo que o objectFit cover faria.
+ * O `position` do sharp so aceita nove ancoras discretas, entao o recorte e
+ * feito na mao: escala ate cobrir e extrai a janela na posicao proporcional.
  */
-async function makeRenderReady(path: string, id: string): Promise<string> {
-  const target = join(cacheDir, `${id}.jpg`)
+async function makeRenderReady(
+  path: string,
+  id: string,
+  focusX: number,
+  focusY: number,
+): Promise<string> {
+  const x = clamp01(focusX)
+  const y = clamp01(focusY)
+
+  // O enquadramento entra no nome: mudar o foco tem que gerar outro arquivo,
+  // senao o cache devolveria o recorte antigo. O id e sorteado na importacao,
+  // entao dois arquivos diferentes nunca disputam o mesmo nome.
+  const target = join(cacheDir, `${id}-${Math.round(x * 1000)}-${Math.round(y * 1000)}.jpg`)
   if (existsSync(target)) return target
+
+  const { width, height } = await orientedSize(path)
+
+  // Escala minima que ainda cobre o quadro inteiro -- o mesmo que objectFit
+  // cover faria, so que resolvido em pixels antes do render.
+  const scale = Math.max(RENDER_WIDTH / width, RENDER_HEIGHT / height)
+  const scaledWidth = Math.max(Math.ceil(width * scale), RENDER_WIDTH)
+  const scaledHeight = Math.max(Math.ceil(height * scale), RENDER_HEIGHT)
 
   await sharp(path)
     .rotate()
-    .resize({
+    .resize(scaledWidth, scaledHeight, { fit: 'fill' })
+    .extract({
+      left: Math.round((scaledWidth - RENDER_WIDTH) * x),
+      top: Math.round((scaledHeight - RENDER_HEIGHT) * y),
       width: RENDER_WIDTH,
       height: RENDER_HEIGHT,
-      fit: 'cover',
-      position: 'centre',
     })
     // JPEG de qualidade alta: o Remotion serializa cada frame como JPEG de
     // qualquer forma, entao PNG aqui so custaria tempo de decodificacao.
@@ -103,4 +153,8 @@ async function makeRenderReady(path: string, id: string): Promise<string> {
     .toFile(target)
 
   return target
+}
+
+function clamp01(value: number): number {
+  return Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0.5
 }

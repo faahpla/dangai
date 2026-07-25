@@ -75,6 +75,10 @@ interface ProjectState {
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
+  /** Move o enquadramento 9:16 sobre a imagem. Instantaneo, so no estado. */
+  setImageFocus: (id: string, focusX: number, focusY: number) => void
+  /** Confirma o enquadramento: pede o novo recorte ao main e troca a URL. */
+  commitImageFocus: (id: string) => Promise<void>
   selectImage: (id: string | null) => void
   setPlayhead: (seconds: number) => void
   togglePlay: () => void
@@ -250,6 +254,50 @@ export const useProject = create<ProjectState>((set, get) => ({
     void get().analyze()
   },
 
+  setImageFocus: (id, focusX, focusY) => {
+    set((state) => ({
+      images: state.images.map((image) =>
+        image.id === id
+          ? { ...image, focusX: clamp01(focusX), focusY: clamp01(focusY) }
+          : image,
+      ),
+    }))
+  },
+
+  /*
+   * O recorte real acontece no main, com sharp, e custa alguns centesimos --
+   * caro demais para rodar a cada pixel arrastado. Enquanto o usuario arrasta,
+   * so o retangulo do painel se move; a imagem do preview so e refeita quando
+   * ele solta.
+   */
+  commitImageFocus: async (id) => {
+    const image = get().images.find((item) => item.id === id)
+    if (!image) return
+
+    const result = await window.dangai.reframeImage({
+      id: image.id,
+      path: image.path,
+      focusX: image.focusX,
+      focusY: image.focusY,
+    })
+
+    if (!result.ok) {
+      set({ error: result.error })
+      return
+    }
+
+    // A imagem pode ter sido removida ou o foco ter mudado de novo enquanto o
+    // recorte rodava; so aplica se ainda for o mesmo enquadramento.
+    const current = get().images.find((item) => item.id === id)
+    if (!current || current.focusX !== image.focusX || current.focusY !== image.focusY) return
+
+    set((state) => ({
+      images: state.images.map((item) =>
+        item.id === id ? { ...item, url: result.value } : item,
+      ),
+    }))
+  },
+
   updateScene: (index, patch) => {
     const { plan } = get()
     if (!plan) return
@@ -383,6 +431,10 @@ export const useProject = create<ProjectState>((set, get) => ({
       planEdited: false,
     }),
 }))
+
+function clamp01(value: number): number {
+  return Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0.5
+}
 
 /** mm:ss.cc — o formato de timecode usado em toda a interface. */
 export function formatTimecode(seconds: number): string {

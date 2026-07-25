@@ -29,10 +29,20 @@ export const imageAssetSchema = z.object({
   fileName: z.string(),
   /** URL do servidor de midia local. */
   url: z.string(),
+  /** Dimensoes ja orientadas pelo EXIF -- o que o olho ve, nao o que o arquivo diz. */
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  /** WEBP pequeno em data URL, so para a timeline e o strip. */
+  /** WEBP pequeno em data URL, so para a timeline e o strip. Sem recorte. */
   thumbnail: z.string(),
+  /**
+   * Que parte da imagem sobra no quadro 9:16, de 0 (esquerda/topo) a 1
+   * (direita/base). 0.5 e o centro, que era o unico recorte possivel antes.
+   *
+   * Uma imagem 16:9 perde 68% da largura ao virar 9:16 -- escolher qual terco
+   * fica visivel e a diferenca entre o personagem no quadro e fora dele.
+   */
+  focusX: z.number().min(0).max(1),
+  focusY: z.number().min(0).max(1),
 })
 export type ImageAsset = z.infer<typeof imageAssetSchema>
 

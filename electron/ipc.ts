@@ -6,12 +6,13 @@ import {
   type AnalyzeArgs,
   type IpcResult,
   type PublicSettings,
+  type ReframeArgs,
   type SettingsPatch,
   type StartRenderArgs,
 } from '@shared/channels'
 import type { AnalysisResult, AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
 import { analyzeAudio } from './services/audio'
-import { importImages } from './services/assets'
+import { importImages, reframeImage } from './services/assets'
 import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 import { analyze } from './services/transcribe'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
@@ -52,6 +53,10 @@ export function registerIpc(): void {
   handle<[string], AudioAnalysis>(IPC.analyzeAudio, (path) => analyzeAudio(path))
 
   handle<[readonly string[]], ImageAsset[]>(IPC.importImages, (paths) => importImages(paths))
+
+  handle<[ReframeArgs], string>(IPC.reframeImage, ({ id, path, focusX, focusY }) =>
+    reframeImage(id, path, focusX, focusY),
+  )
 
   handle<[], string[]>(IPC.pickFiles, async () => {
     const result = await dialog.showOpenDialog({

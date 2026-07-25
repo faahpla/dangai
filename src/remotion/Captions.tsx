@@ -1,5 +1,6 @@
 import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion'
 import type { CaptionBlock } from '@shared/contract'
+import { CAPTION_FONT_STACK } from './fonts'
 
 /**
  * Legendas queimadas no estilo de short: 2 a 4 palavras por vez, centro-inferior,
@@ -52,11 +53,12 @@ function Block({ block }: { block: CaptionBlock }) {
           flexWrap: 'wrap',
           justifyContent: 'center',
           gap: '0 18px',
-          fontFamily: '"Inter Variable", Inter, system-ui, sans-serif',
-          fontWeight: 800,
-          fontSize: 76,
+          fontFamily: CAPTION_FONT_STACK,
+          // Komika Axis tem um peso so. Pedir 800 faria o Chrome engrossar a
+          // letra na marra, e o falso negrito briga com o contorno de 6px.
+          fontWeight: 400,
+          fontSize: 68,
           lineHeight: 1.15,
-          letterSpacing: '-0.02em',
           textAlign: 'center',
           textTransform: 'uppercase',
           WebkitTextStroke: '6px #000',

@@ -5,6 +5,7 @@ import {
   type DangaiBridge,
   type IpcResult,
   type PublicSettings,
+  type ReframeArgs,
   type SettingsPatch,
   type StartRenderArgs,
 } from '@shared/channels'
@@ -25,6 +26,9 @@ const bridge: DangaiBridge = {
 
   importImages: (paths) =>
     ipcRenderer.invoke(IPC.importImages, paths) as Promise<IpcResult<ImageAsset[]>>,
+
+  reframeImage: (args: ReframeArgs) =>
+    ipcRenderer.invoke(IPC.reframeImage, args) as Promise<IpcResult<string>>,
 
   pickFiles: () => ipcRenderer.invoke(IPC.pickFiles) as Promise<IpcResult<string[]>>,
 

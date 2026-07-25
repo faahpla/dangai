@@ -25,6 +25,7 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
 export const IPC = {
   analyzeAudio: 'audio:analyze',
   importImages: 'images:import',
+  reframeImage: 'images:reframe',
   pickFiles: 'dialog:pick-files',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
@@ -57,6 +58,14 @@ export interface StartRenderArgs {
   sfxCues: readonly { at: number; sound: string }[]
 }
 
+export interface ReframeArgs {
+  id: string
+  path: string
+  /** 0 = esquerda/topo, 1 = direita/base. */
+  focusX: number
+  focusY: number
+}
+
 export interface AnalyzeArgs {
   audioPath: string
   subtitlePath: string | null
@@ -87,6 +96,8 @@ export interface DangaiBridge {
   pathForFile(file: File): string
   analyzeAudio(path: string): Promise<IpcResult<AudioAnalysis>>
   importImages(paths: readonly string[]): Promise<IpcResult<ImageAsset[]>>
+  /** Recorta de novo com outro enquadramento. Resolve com a URL da nova versao. */
+  reframeImage(args: ReframeArgs): Promise<IpcResult<string>>
   pickFiles(): Promise<IpcResult<string[]>>
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>
