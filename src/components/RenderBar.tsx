@@ -1,4 +1,4 @@
-import { Play, Pause, FolderOpen } from 'lucide-react'
+import { Play, Pause, FolderOpen, Volume2, VolumeX } from 'lucide-react'
 import { useProject } from '@/store/project'
 
 /**
@@ -12,6 +12,9 @@ export function RenderBar() {
   const playing = useProject((s) => s.playing)
   const render = useProject((s) => s.render)
   const lastOutput = useProject((s) => s.lastOutput)
+  const sfxEnabled = useProject((s) => s.sfxEnabled)
+  const sfxCount = useProject((s) => s.plan?.sfxCues.length ?? 0)
+  const toggleSfx = useProject((s) => s.toggleSfx)
   const togglePlay = useProject((s) => s.togglePlay)
   const startRender = useProject((s) => s.startRender)
   const cancelRender = useProject((s) => s.cancelRender)
@@ -30,6 +33,25 @@ export function RenderBar() {
       >
         {playing ? <Pause size={14} strokeWidth={1.5} /> : <Play size={14} strokeWidth={1.5} />}
       </button>
+
+      {sfxCount > 0 && !isRendering && (
+        <button
+          type="button"
+          onClick={toggleSfx}
+          title={sfxEnabled ? `${sfxCount} SFX no video` : 'SFX mutados'}
+          className={[
+            'lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px]',
+            sfxEnabled ? 'text-ink-2 hover:text-ink' : 'text-ink-3',
+          ].join(' ')}
+        >
+          {sfxEnabled ? (
+            <Volume2 size={12} strokeWidth={1.5} />
+          ) : (
+            <VolumeX size={12} strokeWidth={1.5} />
+          )}
+          <span className="tnum">{sfxCount} SFX</span>
+        </button>
+      )}
 
       {lastOutput && !isRendering && (
         <button

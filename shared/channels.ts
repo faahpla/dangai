@@ -53,6 +53,8 @@ export interface StartRenderArgs {
   props: RenderProps
   audioPath: string
   durationInFrames: number
+  /** Vazio quando o usuario mutou os SFX. */
+  sfxCues: readonly { at: number; sound: string }[]
 }
 
 export interface AnalyzeArgs {

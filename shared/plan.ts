@@ -1,5 +1,6 @@
 import {
   KEN_BURNS_EFFECTS,
+  TRANSITION_FRAMES,
   VIDEO_FPS,
   type ImageAsset,
   type RenderProps,
@@ -104,7 +105,14 @@ export function planFromCandidates(
     transitionIn: 'cut' as const,
   }))
 
-  return sanitize({ scenes, sfxCues: [] }, imageCount, durationSec)
+  // Um whoosh no primeiro corte, mesmo sem IA. O impact "no gancho" depende de
+  // entender o conteudo, entao esse fica so para o caminho com IA.
+  const firstCut = chosen[0]
+  return sanitize(
+    { scenes, sfxCues: firstCut === undefined ? [] : [{ at: firstCut, sound: 'whoosh' }] },
+    imageCount,
+    durationSec,
+  )
 }
 
 // -------------------------------------------------------------------- snap
@@ -281,23 +289,56 @@ export function cutCandidatesFrom(words: readonly { start: number; end: number }
  * lugares e como o audio e a imagem saem de sincronia.
  */
 export function toRenderProps(plan: ScenePlan, images: readonly ImageAsset[]): RenderProps {
-  const scenes = plan.scenes.flatMap((scene) => {
-    const image = images[scene.imageIndex]
-    if (!image) return []
+  const usable = plan.scenes.filter((scene) => images[scene.imageIndex])
+  if (usable.length === 0) return { scenes: [] }
 
-    const from = Math.round(scene.start * VIDEO_FPS)
-    const durationInFrames = Math.max(Math.round((scene.end - scene.start) * VIDEO_FPS), 1)
+  const durationSec = usable.at(-1)!.end
 
-    return [
-      {
-        url: image.url,
-        from,
-        durationInFrames,
-        effect: scene.effect,
-        intensity: scene.intensity,
-        transitionIn: scene.transitionIn,
-      },
-    ]
+  /**
+   * Fronteiras em frames, calculadas a partir dos inicios absolutos em vez de
+   * somar duracoes uma a uma -- somar acumula erro de arredondamento e o video
+   * termina alguns frames fora do audio.
+   */
+  const bounds = [
+    ...usable.map((scene) => Math.round(scene.start * VIDEO_FPS)),
+    Math.round(durationSec * VIDEO_FPS),
+  ]
+
+  const transitionFrames = usable.map((scene, index) =>
+    index === 0 ? 0 : TRANSITION_FRAMES[scene.transitionIn],
+  )
+
+  /**
+   * Compensacao da sobreposicao.
+   *
+   * O TransitionSeries encurta o total: uma transicao de T frames faz as duas
+   * cenas se sobreporem por T, entao o video sairia T mais curto por transicao
+   * e perderia o sincronismo com a narracao.
+   *
+   * A correcao e devolver esses T frames distribuidos entre as duas cenas
+   * vizinhas -- metade para cada. Isso mantem o total exato E coloca o meio da
+   * transicao exatamente no instante planejado do corte, que e onde o olho
+   * espera que a troca aconteca.
+   */
+  const scenes = usable.map((scene, index) => {
+    const image = images[scene.imageIndex]!
+    const base = bounds[index + 1]! - bounds[index]!
+
+    const incoming = transitionFrames[index] ?? 0
+    const outgoing = transitionFrames[index + 1] ?? 0
+
+    // floor na entrada e ceil na saida: as duas metades somam T exato, sem
+    // sobrar nem faltar frame.
+    const padding = Math.floor(incoming / 2) + Math.ceil(outgoing / 2)
+
+    return {
+      url: image.url,
+      durationInFrames: Math.max(base + padding, 1),
+      effect: scene.effect,
+      intensity: scene.intensity,
+      transitionIn: scene.transitionIn,
+      transitionInFrames: incoming,
+    }
   })
 
   return { scenes }

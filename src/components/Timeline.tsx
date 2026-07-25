@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useProject, formatTimecode } from '@/store/project'
 import { Waveform } from './Waveform'
 
@@ -19,41 +19,49 @@ export function Timeline() {
   const render = useProject((s) => s.render)
   const setPlayhead = useProject((s) => s.setPlayhead)
   const selectImage = useProject((s) => s.selectImage)
+  const moveBoundary = useProject((s) => s.moveBoundary)
+  const scenes = useProject((s) => s.plan)?.scenes ?? []
+
   const trackRef = useRef<HTMLDivElement | null>(null)
+  /** Indice da fronteira sendo arrastada, ou null. */
+  const [dragging, setDragging] = useState<number | null>(null)
 
   const duration = audio?.durationSec ?? 0
   const progress = duration > 0 ? playhead / duration : 0
   const isRendering = render !== null
 
-  // As mesmas cenas que vao para o render, para as tiras baterem com o video.
-  const scenes = useProject((s) => s.plan)?.scenes ?? []
-
-  const seekFromEvent = useCallback(
-    (clientX: number) => {
+  const timeAt = useCallback(
+    (clientX: number): number => {
       const track = trackRef.current
-      if (!track || duration === 0) return
+      if (!track || duration === 0) return 0
       const rect = track.getBoundingClientRect()
-      setPlayhead(((clientX - rect.left) / rect.width) * duration)
+      return ((clientX - rect.left) / rect.width) * duration
     },
-    [duration, setPlayhead],
+    [duration],
   )
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (isRendering) return
       event.currentTarget.setPointerCapture(event.pointerId)
-      seekFromEvent(event.clientX)
+      setPlayhead(timeAt(event.clientX))
     },
-    [isRendering, seekFromEvent],
+    [isRendering, setPlayhead, timeAt],
   )
 
   const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (isRendering || event.buttons !== 1) return
-      seekFromEvent(event.clientX)
+      if (dragging !== null) {
+        moveBoundary(dragging, timeAt(event.clientX))
+        return
+      }
+      setPlayhead(timeAt(event.clientX))
     },
-    [isRendering, seekFromEvent],
+    [isRendering, dragging, moveBoundary, setPlayhead, timeAt],
   )
+
+  const stopDragging = useCallback(() => setDragging(null), [])
 
   return (
     <section className="flex flex-col gap-3">
@@ -75,6 +83,8 @@ export function Timeline() {
         ref={trackRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
         className={[
           'group relative h-[104px] overflow-hidden rounded-md border border-line bg-surface',
           isRendering ? 'cursor-default' : 'cursor-ew-resize',
@@ -95,7 +105,6 @@ export function Timeline() {
             {scenes.map((scene, index) => {
               const image = images[scene.imageIndex]
               if (!image) return null
-              const widthPct = ((scene.end - scene.start) / duration) * 100
 
               return (
                 <button
@@ -106,7 +115,7 @@ export function Timeline() {
                     event.stopPropagation()
                     selectImage(image.id)
                   }}
-                  style={{ width: `${widthPct}%` }}
+                  style={{ width: `${((scene.end - scene.start) / duration) * 100}%` }}
                   className={[
                     'pointer-events-auto relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
                     selectedImageId === image.id ? 'ring-1 ring-inset ring-accent' : '',
@@ -127,6 +136,42 @@ export function Timeline() {
             })}
           </div>
         )}
+
+        {/*
+          Alcas de arraste das fronteiras. Ficam por cima das tiras, com area de
+          clique maior que o tracinho visivel -- 2px e impossivel de pegar.
+        */}
+        {!isRendering &&
+          duration > 0 &&
+          scenes.slice(1).map((scene, i) => {
+            const index = i + 1
+            const image = images[scene.imageIndex]
+            return (
+              <div
+                key={`limite-${image?.id ?? index}`}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  setDragging(index)
+                }}
+                onPointerMove={(event) => {
+                  if (dragging === index) moveBoundary(index, timeAt(event.clientX))
+                }}
+                onPointerUp={stopDragging}
+                onPointerCancel={stopDragging}
+                style={{ left: `${(scene.start / duration) * 100}%` }}
+                className="absolute inset-y-0 -ml-[5px] w-[10px] cursor-col-resize"
+                aria-label={`Ajustar limite da cena ${index + 1}`}
+              >
+                <span
+                  className={[
+                    'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
+                    dragging === index ? 'bg-accent' : 'bg-transparent group-hover:bg-line-strong',
+                  ].join(' ')}
+                />
+              </div>
+            )
+          })}
 
         {/*
           O progresso do render acontece aqui: a faixa inteira se preenche de

@@ -21,6 +21,8 @@ export interface RenderPaths {
   appPath: string
   /** Pasta do bundle pre-gerado, se existir. */
   prebuiltBundle: string
+  /** SFX que vem com o app; o usuario pode apontar outra pasta em settings. */
+  defaultSfxDir: string
 }
 
 let paths: RenderPaths | null = null
@@ -38,6 +40,14 @@ export interface RenderRequest {
   props: RenderProps
   audioPath: string
   durationInFrames: number
+  sfxCues: readonly SfxCue[]
+  /** Pasta alternativa de SFX. Vazio usa a que vem com o app. */
+  sfxDir: string
+}
+
+export interface SfxCue {
+  at: number
+  sound: string
 }
 
 type ProgressSink = (progress: RenderProgress) => void
@@ -125,7 +135,7 @@ export async function renderVideo(
     })
 
     onProgress({ progress: 0.9, stage: 'muxing', message: 'Ajustando o audio...' })
-    await muxWithNormalizedAudio(silentVideo, request.audioPath, outputPath)
+    await muxWithNormalizedAudio(silentVideo, request.audioPath, outputPath, resolveSfx(request))
 
     onProgress({ progress: 1, stage: 'done', outputPath })
     return outputPath
@@ -238,25 +248,66 @@ function findInstalledBrowser(): string | null {
  *
  * O video e copiado sem reencodar -- o Remotion ja entregou H.264.
  */
+/** -12 dB abaixo da narracao, como a spec pede. 10^(-12/20). */
+const SFX_GAIN = 0.2512
+
+interface ResolvedCue {
+  path: string
+  at: number
+}
+
+/** Descarta cue sem arquivo correspondente em vez de derrubar o render. */
+function resolveSfx(request: RenderRequest): ResolvedCue[] {
+  const dir = request.sfxDir || requirePaths().defaultSfxDir
+  return request.sfxCues.flatMap((cue) => {
+    const path = join(dir, `${cue.sound}.mp3`)
+    return existsSync(path) ? [{ path, at: Math.max(cue.at, 0) }] : []
+  })
+}
+
 async function muxWithNormalizedAudio(
   videoPath: string,
   audioPath: string,
   outputPath: string,
+  sfx: readonly ResolvedCue[],
 ): Promise<void> {
   const measured = await measureLoudness(audioPath)
 
   const loudnormFilter = measured
-    ? `loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true:print_format=summary`
+    ? `loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true`
     : 'loudnorm=I=-14:TP=-1.5:LRA=11'
+
+  const inputs = ['-i', videoPath, '-i', audioPath]
+  for (const cue of sfx) inputs.push('-i', cue.path)
+
+  // A narracao e normalizada primeiro e os SFX entram por cima em -12dB. Assim
+  // o nivel de referencia do video continua sendo a voz, que e o que importa.
+  const chain = [`[1:a]${loudnormFilter},aformat=channel_layouts=stereo[narr]`]
+  const labels = ['[narr]']
+
+  sfx.forEach((cue, index) => {
+    const ms = Math.round(cue.at * 1000)
+    const label = `[s${index}]`
+    chain.push(
+      `[${index + 2}:a]aformat=channel_layouts=stereo,adelay=${ms}|${ms},volume=${SFX_GAIN}${label}`,
+    )
+    labels.push(label)
+  })
+
+  // normalize=0: sem isso o amix divide o volume pelo numero de entradas e a
+  // narracao afunda a cada SFX adicionado.
+  const mix =
+    labels.length > 1
+      ? `${labels.join('')}amix=inputs=${labels.length}:duration=first:normalize=0[out]`
+      : `[narr]anull[out]`
 
   await runFfmpeg([
     '-y',
-    '-i', videoPath,
-    '-i', audioPath,
+    ...inputs,
+    '-filter_complex', [...chain, mix].join(';'),
     '-map', '0:v:0',
-    '-map', '1:a:0',
+    '-map', '[out]',
     '-c:v', 'copy',
-    '-af', loudnormFilter,
     '-c:a', 'aac',
     '-b:a', '192k',
     '-ar', '48000',

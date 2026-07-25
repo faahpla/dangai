@@ -14,7 +14,7 @@ import { analyzeAudio } from './services/audio'
 import { importImages } from './services/assets'
 import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 import { analyze } from './services/transcribe'
-import { getSettingsForRenderer, saveSettings } from './services/settings'
+import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
 
 /**
  * Envolve um handler para que erro nunca atravesse a ponte como excecao. O
@@ -73,7 +73,8 @@ export function registerIpc(): void {
   // vira { ok: false }. Sem isso a interface mostra erro para uma acao pedida.
   handle<[StartRenderArgs], string | null>(IPC.startRender, async (args) => {
     try {
-      return await renderVideo(args, broadcast)
+      // A pasta de SFX e escolha das configuracoes, nao do renderer.
+      return await renderVideo({ ...args, sfxDir: getSettings().sfxDir }, broadcast)
     } catch (err) {
       if (err instanceof RenderCancelled) {
         broadcast({ progress: 0, stage: 'cancelled' })

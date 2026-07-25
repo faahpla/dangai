@@ -33,7 +33,10 @@
       "Bash(node -e \"const p=require\\('./node_modules/@anthropic-ai/sdk/package.json'\\); console.log\\(JSON.stringify\\(p.peerDependencies||{}\\), JSON.stringify\\(p.dependencies||{}\\)\\)\")",
       "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 20; Write-Output \"exit: $LASTEXITCODE\")",
       "Bash(curl -s http://127.0.0.1:9222/json/list)",
-      "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 12; Write-Output \"exit: $LASTEXITCODE\")"
+      "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 12; Write-Output \"exit: $LASTEXITCODE\")",
+      "PowerShell(npm install --no-fund --no-audit @remotion/transitions 2>&1)",
+      "Bash(node -e \"const p=require\\('./node_modules/@remotion/transitions/package.json'\\); console.log\\(Object.keys\\(p.exports||{}\\).join\\('\\\\n'\\)\\)\")",
+      "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 15; Write-Output \"exit: $LASTEXITCODE\")"
     ]
   }
 }

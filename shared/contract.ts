@@ -84,6 +84,23 @@ export const KEN_BURNS_EFFECTS = [
 ] as const
 
 export const TRANSITIONS = ['cut', 'crossfade', 'slide-left', 'slide-right', 'whip-pan'] as const
+export type Transition = (typeof TRANSITIONS)[number]
+
+/**
+ * Duracao de cada transicao em frames. A spec pede entre 120ms e 250ms; a
+ * 30fps isso e 4 a 8 frames. Mais longo que isso arrasta e mata o ritmo do
+ * short.
+ */
+export const TRANSITION_FRAMES: Readonly<Record<Transition, number>> = {
+  cut: 0,
+  crossfade: 6,
+  'slide-left': 5,
+  'slide-right': 5,
+  'whip-pan': 4,
+}
+
+export const SFX_SOUNDS = ['whoosh', 'impact'] as const
+export type SfxSound = (typeof SFX_SOUNDS)[number]
 
 export const sceneSchema = z.object({
   /** Indice na lista de imagens do usuario. */
@@ -124,17 +141,23 @@ export const VIDEO_WIDTH = 1080
 export const VIDEO_HEIGHT = 1920
 export const VIDEO_FPS = 30
 
-/** O que a composicao Remotion recebe. Preview e render usam o mesmo objeto. */
+/**
+ * O que a composicao Remotion recebe. Preview e render usam o mesmo objeto.
+ *
+ * Nao existe `from` aqui: com transicoes as cenas se sobrepoem, e quem cuida do
+ * encadeamento e o TransitionSeries. A duracao ja vem com a folga da
+ * sobreposicao embutida -- ver toRenderProps.
+ */
 export const renderPropsSchema = z.object({
   scenes: z.array(
     z.object({
       url: z.string(),
-      /** Frame inicial dentro da composicao. */
-      from: z.number().int().nonnegative(),
       durationInFrames: z.number().int().positive(),
       effect: z.enum(KEN_BURNS_EFFECTS),
       intensity: z.number(),
       transitionIn: z.enum(TRANSITIONS),
+      /** Frames da transicao de entrada. 0 = corte seco. */
+      transitionInFrames: z.number().int().nonnegative(),
     }),
   ),
 })

@@ -61,6 +61,9 @@ app.whenReady().then(async () => {
     prebuiltBundle: app.isPackaged
       ? join(process.resourcesPath, 'remotion')
       : join(app.getAppPath(), 'out', 'remotion'),
+    defaultSfxDir: app.isPackaged
+      ? join(process.resourcesPath, 'sfx')
+      : join(app.getAppPath(), 'assets', 'sfx'),
   })
 
   registerIpc()

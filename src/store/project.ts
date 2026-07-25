@@ -5,10 +5,11 @@ import type {
   ImageAsset,
   PlanOrigin,
   RenderProgress,
+  Scene,
   ScenePlan,
   Transcript,
 } from '@shared/contract'
-import { planEqualSplit, toRenderProps, totalFrames } from '@shared/plan'
+import { MIN_SCENE_SEC, planEqualSplit, toRenderProps, totalFrames } from '@shared/plan'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
 export type Phase = 'empty' | 'editing' | 'rendering'
@@ -41,8 +42,17 @@ interface ProjectState {
   lastOutput: string | null
   settingsOpen: boolean
 
+  /** Ligado quando o usuario mexe no plano: a analise para de sobrescrever. */
+  planEdited: boolean
+  sfxEnabled: boolean
+
   phase: () => Phase
   ingest: (paths: readonly string[]) => Promise<void>
+  /** Troca efeito, transicao ou intensidade de uma cena. */
+  updateScene: (index: number, patch: Partial<Pick<Scene, 'effect' | 'transitionIn' | 'intensity'>>) => void
+  /** Move a fronteira entre a cena index-1 e a cena index. */
+  moveBoundary: (index: number, seconds: number) => void
+  toggleSfx: () => void
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -88,6 +98,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   render: null,
   lastOutput: null,
   settingsOpen: false,
+  planEdited: false,
+  sfxEnabled: true,
 
   phase: () => {
     const state = get()
@@ -185,6 +197,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         planOrigin: result.value.origin,
         transcript: result.value.transcript,
         aiNote: result.value.aiNote,
+        planEdited: false,
         busy: null,
       })
     } else {
@@ -214,6 +227,44 @@ export const useProject = create<ProjectState>((set, get) => ({
     void get().analyze()
   },
 
+  updateScene: (index, patch) => {
+    const { plan } = get()
+    if (!plan) return
+    const scenes = plan.scenes.map((scene, i) => (i === index ? { ...scene, ...patch } : scene))
+    set({ plan: { ...plan, scenes }, planEdited: true })
+  },
+
+  /**
+   * Move a fronteira entre duas cenas, respeitando o minimo dos dois lados.
+   *
+   * So as duas cenas vizinhas mudam -- arrastar um limite nao pode empurrar o
+   * resto da timeline em cascata, senao um ajuste pequeno reorganiza o video
+   * inteiro.
+   */
+  moveBoundary: (index, seconds) => {
+    const { plan } = get()
+    if (!plan || index <= 0 || index >= plan.scenes.length) return
+
+    const previous = plan.scenes[index - 1]!
+    const next = plan.scenes[index]!
+
+    const min = previous.start + MIN_SCENE_SEC
+    const max = next.end - MIN_SCENE_SEC
+    if (max <= min) return
+
+    const clamped = Math.min(Math.max(seconds, min), max)
+
+    const scenes = plan.scenes.map((scene, i) => {
+      if (i === index - 1) return { ...scene, end: clamped }
+      if (i === index) return { ...scene, start: clamped }
+      return scene
+    })
+
+    set({ plan: { ...plan, scenes }, planEdited: true })
+  },
+
+  toggleSfx: () => set((state) => ({ sfxEnabled: !state.sfxEnabled })),
+
   selectImage: (id) => set({ selectedImageId: id }),
 
   setPlayhead: (seconds) =>
@@ -226,7 +277,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
 
   startRender: async () => {
-    const { audio, images, plan } = get()
+    const { audio, images, plan, sfxEnabled } = get()
     if (!audio || images.length === 0 || !plan) return
 
     set({
@@ -239,6 +290,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       props: toRenderProps(plan, images),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
+      sfxCues: sfxEnabled ? plan.sfxCues : [],
     })
 
     if (!result.ok) {
@@ -300,6 +352,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       selectedImageId: null,
       render: null,
       lastOutput: null,
+      planEdited: false,
     }),
 }))
 

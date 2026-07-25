@@ -4,6 +4,7 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
 import { ImageStrip } from '@/components/ImageStrip'
+import { SceneCard } from '@/components/SceneCard'
 import { Preview } from '@/components/Preview'
 import { RenderBar } from '@/components/RenderBar'
 import { StatusBar } from '@/components/StatusBar'
@@ -86,6 +87,7 @@ export function App() {
             <div className="flex min-w-0 flex-1 flex-col gap-4">
               <ImageStrip />
             </div>
+            <SceneCard />
           </div>
 
           <RenderBar />
