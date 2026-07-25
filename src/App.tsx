@@ -7,6 +7,7 @@ import { ImageStrip } from '@/components/ImageStrip'
 import { Preview } from '@/components/Preview'
 import { RenderBar } from '@/components/RenderBar'
 import { StatusBar } from '@/components/StatusBar'
+import { Settings } from '@/components/Settings'
 import { VIDEO_FPS } from '@shared/contract'
 
 export function App() {
@@ -15,9 +16,14 @@ export function App() {
   const removeImage = useProject((s) => s.removeImage)
   const selectedImageId = useProject((s) => s.selectedImageId)
   const applyRenderProgress = useProject((s) => s.applyRenderProgress)
+  const setBusy = useProject((s) => s.setBusy)
 
   // Progresso do render vindo do main.
   useEffect(() => window.dangai.onRenderProgress(applyRenderProgress), [applyRenderProgress])
+
+  // Andamento da analise: Whisper e a chamada da IA levam tempo e nenhum
+  // carregamento pode ficar sem sinal visivel.
+  useEffect(() => window.dangai.onAnalyzeProgress((message) => setBusy(message)), [setBusy])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -51,6 +57,11 @@ export function App() {
           event.preventDefault()
           if (!rendering) void store.startRender()
           break
+        case ',':
+          if (!event.ctrlKey && !event.metaKey) return
+          event.preventDefault()
+          store.openSettings(!store.settingsOpen)
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -83,6 +94,7 @@ export function App() {
       )}
 
       <StatusBar isDragging={isDragging} />
+      <Settings />
     </div>
   )
 }

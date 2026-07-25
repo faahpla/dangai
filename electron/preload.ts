@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import { IPC, type DangaiBridge, type IpcResult, type StartRenderArgs } from '@shared/channels'
-import type { AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
+import {
+  IPC,
+  type AnalyzeArgs,
+  type DangaiBridge,
+  type IpcResult,
+  type PublicSettings,
+  type SettingsPatch,
+  type StartRenderArgs,
+} from '@shared/channels'
+import type { AnalysisResult, AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
 
 /**
  * Unica superficie entre renderer e sistema. Tipada por DangaiBridge, entao um
@@ -27,11 +35,27 @@ const bridge: DangaiBridge = {
 
   revealFile: (path) => ipcRenderer.invoke(IPC.revealFile, path) as Promise<IpcResult<null>>,
 
+  analyze: (args: AnalyzeArgs) =>
+    ipcRenderer.invoke(IPC.analyze, args) as Promise<IpcResult<AnalysisResult>>,
+
+  getSettings: () => ipcRenderer.invoke(IPC.getSettings) as Promise<IpcResult<PublicSettings>>,
+
+  saveSettings: (patch: SettingsPatch) =>
+    ipcRenderer.invoke(IPC.saveSettings, patch) as Promise<IpcResult<PublicSettings>>,
+
   onRenderProgress: (listener) => {
     const handler = (_event: unknown, progress: RenderProgress): void => listener(progress)
     ipcRenderer.on(IPC.renderProgress, handler)
     return () => {
       ipcRenderer.off(IPC.renderProgress, handler)
+    }
+  },
+
+  onAnalyzeProgress: (listener) => {
+    const handler = (_event: unknown, message: string): void => listener(message)
+    ipcRenderer.on(IPC.analyzeProgress, handler)
+    return () => {
+      ipcRenderer.off(IPC.analyzeProgress, handler)
     }
   },
 }

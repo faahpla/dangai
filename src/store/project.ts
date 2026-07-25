@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
-import type { AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
+import type {
+  AudioAnalysis,
+  ImageAsset,
+  PlanOrigin,
+  RenderProgress,
+  ScenePlan,
+  Transcript,
+} from '@shared/contract'
 import { planEqualSplit, toRenderProps, totalFrames } from '@shared/plan'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
@@ -9,19 +16,34 @@ export type Phase = 'empty' | 'editing' | 'rendering'
 interface ProjectState {
   audio: AudioAnalysis | null
   images: ImageAsset[]
-  /** Mensagem de progresso. Nenhum carregamento acontece sem isto preenchido. */
+  subtitlePath: string | null
+  /**
+   * O plano vem do main e e a verdade unica. O renderer nao recalcula: se
+   * recalculasse, o preview mostraria uma coisa e o render produziria outra.
+   *
+   * Fica sempre preenchido enquanto ha material -- divisao igual como valor
+   * provisorio ate a analise voltar. Guardar o plano em vez de derivar num
+   * seletor e o que evita loop infinito de render: seletor que monta objeto
+   * novo a cada chamada nunca estabiliza no Zustand.
+   */
+  plan: ScenePlan | null
+  planOrigin: PlanOrigin | null
+  transcript: Transcript | null
+  /** Aviso de quando a IA nao deu -- informativo, nao erro. */
+  aiNote: string | null
+
   busy: string | null
   error: string | null
-  /** Posicao do playhead em segundos. */
   playhead: number
   playing: boolean
   selectedImageId: string | null
   render: RenderProgress | null
-  /** Caminho do ultimo MP4 gerado, para o atalho de abrir a pasta. */
   lastOutput: string | null
+  settingsOpen: boolean
 
   phase: () => Phase
   ingest: (paths: readonly string[]) => Promise<void>
+  analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
   selectImage: (id: string | null) => void
@@ -31,13 +53,33 @@ interface ProjectState {
   startRender: () => Promise<void>
   cancelRender: () => Promise<void>
   applyRenderProgress: (progress: RenderProgress) => void
+  setBusy: (message: string | null) => void
+  openSettings: (open: boolean) => void
   dismissError: () => void
   reset: () => void
+}
+
+type SetState = (partial: Partial<ProjectState>) => void
+
+/**
+ * Plano provisorio por divisao igual, aplicado no instante em que ha material.
+ *
+ * Serve para o preview e a timeline terem o que mostrar enquanto a analise
+ * roda -- e, principalmente, para `plan` nunca precisar ser derivado dentro de
+ * um seletor.
+ */
+function setInterimPlan(set: SetState, imageCount: number, durationSec: number): void {
+  set({ plan: planEqualSplit(imageCount, durationSec), planOrigin: 'equal' })
 }
 
 export const useProject = create<ProjectState>((set, get) => ({
   audio: null,
   images: [],
+  subtitlePath: null,
+  plan: null,
+  planOrigin: null,
+  transcript: null,
+  aiNote: null,
   busy: null,
   error: null,
   playhead: 0,
@@ -45,6 +87,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   selectedImageId: null,
   render: null,
   lastOutput: null,
+  settingsOpen: false,
 
   phase: () => {
     const state = get()
@@ -57,6 +100,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   ingest: async (paths) => {
     const audioPaths: string[] = []
     const imagePaths: string[] = []
+    const subtitlePaths: string[] = []
     const ignored: string[] = []
 
     for (const path of paths) {
@@ -68,14 +112,14 @@ export const useProject = create<ProjectState>((set, get) => ({
           imagePaths.push(path)
           break
         case 'subtitle':
-          // .srt e aceito no drop mas so passa a ser usado na v0.3.
+          subtitlePaths.push(path)
           break
         default:
           ignored.push(path)
       }
     }
 
-    if (audioPaths.length === 0 && imagePaths.length === 0) {
+    if (audioPaths.length === 0 && imagePaths.length === 0 && subtitlePaths.length === 0) {
       set({
         error:
           ignored.length > 0
@@ -98,6 +142,9 @@ export const useProject = create<ProjectState>((set, get) => ({
       }
     }
 
+    const subtitlePath = subtitlePaths[0]
+    if (subtitlePath) set({ subtitlePath })
+
     const audioPath = audioPaths[0]
     if (audioPath) {
       set({ busy: 'Analisando a narracao...' })
@@ -110,15 +157,62 @@ export const useProject = create<ProjectState>((set, get) => ({
     }
 
     set({ busy: null })
+
+    // Qualquer mudanca no material invalida o plano; refaz sozinho.
+    const { audio, images } = get()
+    if (audio && images.length > 0) {
+      setInterimPlan(set, images.length, audio.durationSec)
+      await get().analyze()
+    }
   },
 
-  reorderImages: (images) => set({ images }),
+  analyze: async () => {
+    const { audio, images, subtitlePath } = get()
+    if (!audio || images.length === 0) return
 
-  removeImage: (id) =>
+    set({ busy: 'Analisando...', error: null })
+
+    const result = await window.dangai.analyze({
+      audioPath: audio.path,
+      subtitlePath,
+      images,
+      durationSec: audio.durationSec,
+    })
+
+    if (result.ok) {
+      set({
+        plan: result.value.plan,
+        planOrigin: result.value.origin,
+        transcript: result.value.transcript,
+        aiNote: result.value.aiNote,
+        busy: null,
+      })
+    } else {
+      // Nem a analise pode travar o app: mantem o plano provisorio em vez de
+      // ficar sem nenhum.
+      const { audio, images } = get()
+      if (audio && images.length > 0) setInterimPlan(set, images.length, audio.durationSec)
+      set({ error: result.error, busy: null })
+    }
+  },
+
+  reorderImages: (images) => {
+    set({ images })
+    // A ordem mudou, entao o plano nao vale mais.
+    const { audio } = get()
+    if (audio && images.length > 0) setInterimPlan(set, images.length, audio.durationSec)
+    void get().analyze()
+  },
+
+  removeImage: (id) => {
     set((state) => ({
       images: state.images.filter((image) => image.id !== id),
       selectedImageId: state.selectedImageId === id ? null : state.selectedImageId,
-    })),
+    }))
+    const { audio, images } = get()
+    if (audio && images.length > 0) setInterimPlan(set, images.length, audio.durationSec)
+    void get().analyze()
+  },
 
   selectImage: (id) => set({ selectedImageId: id }),
 
@@ -132,8 +226,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
 
   startRender: async () => {
-    const { audio, images } = get()
-    if (!audio || images.length === 0) return
+    const { audio, images, plan } = get()
+    if (!audio || images.length === 0 || !plan) return
 
     set({
       playing: false,
@@ -141,7 +235,6 @@ export const useProject = create<ProjectState>((set, get) => ({
       render: { progress: 0, stage: 'bundling', message: 'Preparando...' },
     })
 
-    const plan = planEqualSplit(images.length, audio.durationSec)
     const result = await window.dangai.startRender({
       props: toRenderProps(plan, images),
       audioPath: audio.path,
@@ -185,12 +278,21 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ render: progress })
   },
 
+  setBusy: (message) => set((state) => (state.busy === null && message === null ? state : { busy: message })),
+
+  openSettings: (open) => set({ settingsOpen: open }),
+
   dismissError: () => set({ error: null }),
 
   reset: () =>
     set({
       audio: null,
       images: [],
+      subtitlePath: null,
+      plan: null,
+      planOrigin: null,
+      transcript: null,
+      aiNote: null,
       busy: null,
       error: null,
       playhead: 0,

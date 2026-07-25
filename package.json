@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@remotion/bundler": "^4.0.499",
     "@remotion/cli": "^4.0.499",
     "@remotion/player": "^4.0.499",

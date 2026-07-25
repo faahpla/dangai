@@ -36,6 +36,36 @@ export const imageAssetSchema = z.object({
 })
 export type ImageAsset = z.infer<typeof imageAssetSchema>
 
+// ------------------------------------------------------------- transcricao
+
+export const wordSchema = z.object({
+  text: z.string(),
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative(),
+})
+export type Word = z.infer<typeof wordSchema>
+
+export const segmentSchema = z.object({
+  text: z.string(),
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative(),
+})
+export type Segment = z.infer<typeof segmentSchema>
+
+export const transcriptSchema = z.object({
+  /**
+   * De onde vieram os tempos. 'silence' nao tem texto -- so as pausas
+   * detectadas no audio, que ainda servem para cortar em lugar natural.
+   */
+  source: z.enum(['srt', 'whisper', 'silence']),
+  words: z.array(wordSchema),
+  segments: z.array(segmentSchema),
+  text: z.string(),
+  /** Instantes bons para cortar, em segundos. Ja ordenados. */
+  cutCandidates: z.array(z.number().nonnegative()),
+})
+export type Transcript = z.infer<typeof transcriptSchema>
+
 // ------------------------------------------------------------ plano de cenas
 
 /**
@@ -75,6 +105,18 @@ export const scenePlanSchema = z.object({
     .default([]),
 })
 export type ScenePlan = z.infer<typeof scenePlanSchema>
+
+/** Como o plano foi obtido. Aparece na interface para o usuario saber. */
+export const PLAN_ORIGINS = ['ai', 'silence', 'equal'] as const
+export type PlanOrigin = (typeof PLAN_ORIGINS)[number]
+
+export interface AnalysisResult {
+  plan: ScenePlan
+  origin: PlanOrigin
+  transcript: Transcript | null
+  /** Preenchido quando a IA foi tentada e nao deu -- a interface avisa, sem travar. */
+  aiNote: string | null
+}
 
 // ---------------------------------------------------------------- render
 

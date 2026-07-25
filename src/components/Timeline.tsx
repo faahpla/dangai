@@ -1,6 +1,5 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { useProject, formatTimecode } from '@/store/project'
-import { planEqualSplit } from '@shared/plan'
 import { Waveform } from './Waveform'
 
 /**
@@ -27,10 +26,7 @@ export function Timeline() {
   const isRendering = render !== null
 
   // As mesmas cenas que vao para o render, para as tiras baterem com o video.
-  const scenes = useMemo(() => {
-    if (!audio || images.length === 0) return []
-    return planEqualSplit(images.length, audio.durationSec).scenes
-  }, [audio, images.length])
+  const scenes = useProject((s) => s.plan)?.scenes ?? []
 
   const seekFromEvent = useCallback(
     (clientX: number) => {

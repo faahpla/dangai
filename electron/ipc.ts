@@ -3,13 +3,18 @@ import {
   AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
   IPC,
+  type AnalyzeArgs,
   type IpcResult,
+  type PublicSettings,
+  type SettingsPatch,
   type StartRenderArgs,
 } from '@shared/channels'
-import type { AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
+import type { AnalysisResult, AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
 import { analyzeAudio } from './services/audio'
 import { importImages } from './services/assets'
 import { cancelRender, RenderCancelled, renderVideo } from './services/render'
+import { analyze } from './services/transcribe'
+import { getSettingsForRenderer, saveSettings } from './services/settings'
 
 /**
  * Envolve um handler para que erro nunca atravesse a ponte como excecao. O
@@ -34,6 +39,12 @@ function handle<Args extends unknown[], T>(
 function broadcast(progress: RenderProgress): void {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send(IPC.renderProgress, progress)
+  }
+}
+
+function broadcastAnalyze(message: string): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(IPC.analyzeProgress, message)
   }
 }
 
@@ -84,5 +95,14 @@ export function registerIpc(): void {
   handle<[string], null>(IPC.revealFile, async (path) => {
     shell.showItemInFolder(path)
     return null
+  })
+
+  handle<[AnalyzeArgs], AnalysisResult>(IPC.analyze, (args) => analyze(args, broadcastAnalyze))
+
+  handle<[], PublicSettings>(IPC.getSettings, async () => getSettingsForRenderer())
+
+  handle<[SettingsPatch], PublicSettings>(IPC.saveSettings, async (patch) => {
+    saveSettings(patch)
+    return getSettingsForRenderer()
   })
 }

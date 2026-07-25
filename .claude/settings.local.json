@@ -19,7 +19,21 @@
       "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\drive3.mjs\" $fx $shots 2>&1)",
       "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\probe.mjs\" 2>&1)",
       "PowerShell(npm install --no-fund --no-audit remotion @remotion/player @remotion/renderer @remotion/bundler @remotion/cli 2>&1)",
-      "PowerShell(npx remotion bundle src/remotion/index.ts --out-dir=out/remotion 2>&1)"
+      "PowerShell(npx remotion bundle src/remotion/index.ts --out-dir=out/remotion 2>&1)",
+      "PowerShell(npm install --no-fund --no-audit @anthropic-ai/sdk electron-store 2>&1)",
+      "Bash(curl -s --max-time 25 \"https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest\")",
+      "Bash(mkdir -p whisper)",
+      "Bash(curl -sL --max-time 300 -o whisper/whisper-bin-x64.zip \"https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.1/whisper-bin-x64.zip\")",
+      "Bash(unzip -l whisper/whisper-bin-x64.zip)",
+      "Bash(unzip -oq whisper-bin-x64.zip)",
+      "Bash(curl -sL --max-time 900 -o ggml-small.bin \"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin\")",
+      "Bash(node -e \"const p=require\\('./node_modules/electron-store/package.json'\\); console.log\\('type:', p.type, '| main:', p.main, '| exports:', JSON.stringify\\(p.exports\\), '| engines:', JSON.stringify\\(p.engines\\)\\)\")",
+      "Bash(./node_modules/ffmpeg-static/ffmpeg.exe -hide_banner -i \"C:/Users/faahb/AppData/Local/Temp/claude/D--FAAH-Dangai-Project/84a9e5a5-5b5e-410e-bd59-9b1bd474692f/scratchpad/fixtures/narracao-fala.mp3\")",
+      "PowerShell(npm uninstall electron-store --no-fund --no-audit 2>&1)",
+      "Bash(node -e \"const p=require\\('./node_modules/@anthropic-ai/sdk/package.json'\\); console.log\\(JSON.stringify\\(p.peerDependencies||{}\\), JSON.stringify\\(p.dependencies||{}\\)\\)\")",
+      "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 20; Write-Output \"exit: $LASTEXITCODE\")",
+      "Bash(curl -s http://127.0.0.1:9222/json/list)",
+      "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 12; Write-Output \"exit: $LASTEXITCODE\")"
     ]
   }
 }

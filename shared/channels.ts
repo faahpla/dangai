@@ -1,4 +1,10 @@
-import type { AudioAnalysis, ImageAsset, RenderProgress, RenderProps } from './contract'
+import type {
+  AnalysisResult,
+  AudioAnalysis,
+  ImageAsset,
+  RenderProgress,
+  RenderProps,
+} from './contract'
 
 /**
  * Valores de runtime que o preload precisa, sem dependencias.
@@ -23,8 +29,13 @@ export const IPC = {
   startRender: 'render:start',
   cancelRender: 'render:cancel',
   revealFile: 'shell:reveal',
+  analyze: 'plan:analyze',
+  getSettings: 'settings:get',
+  saveSettings: 'settings:save',
   /** main -> renderer, evento de progresso */
   renderProgress: 'render:progress',
+  /** main -> renderer, texto de andamento da analise */
+  analyzeProgress: 'plan:progress',
 } as const
 
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] as const
@@ -44,6 +55,27 @@ export interface StartRenderArgs {
   durationInFrames: number
 }
 
+export interface AnalyzeArgs {
+  audioPath: string
+  subtitlePath: string | null
+  images: readonly ImageAsset[]
+  durationSec: number
+}
+
+/** O que a interface pode ver das configuracoes. A chave nunca volta inteira. */
+export interface PublicSettings {
+  whisperModel: 'base' | 'small' | 'medium'
+  sfxDir: string
+  hasApiKey: boolean
+  apiKeyHint: string
+}
+
+export interface SettingsPatch {
+  anthropicApiKey?: string
+  whisperModel?: 'base' | 'small' | 'medium'
+  sfxDir?: string
+}
+
 /**
  * A superficie que o preload expoe. O renderer nao conhece nada alem disto.
  * O import de contract aqui e `import type`, entao e apagado na compilacao.
@@ -58,6 +90,10 @@ export interface DangaiBridge {
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>
   cancelRender(): Promise<IpcResult<null>>
   revealFile(path: string): Promise<IpcResult<null>>
+  analyze(args: AnalyzeArgs): Promise<IpcResult<AnalysisResult>>
+  getSettings(): Promise<IpcResult<PublicSettings>>
+  saveSettings(patch: SettingsPatch): Promise<IpcResult<PublicSettings>>
   /** Assina o progresso do render. Devolve a funcao para cancelar a assinatura. */
   onRenderProgress(listener: (progress: RenderProgress) => void): () => void
+  onAnalyzeProgress(listener: (message: string) => void): () => void
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
-import { planEqualSplit, toRenderProps } from '@shared/plan'
+import { toRenderProps } from '@shared/plan'
 import { useProject } from '@/store/project'
 import { Video } from '@/remotion/Video'
 
@@ -23,10 +23,12 @@ export function Preview() {
 
   const durationInFrames = Math.max(Math.ceil((audio?.durationSec ?? 1) * VIDEO_FPS), 1)
 
-  const inputProps = useMemo(() => {
-    if (images.length === 0 || !audio) return { scenes: [] }
-    return toRenderProps(planEqualSplit(images.length, audio.durationSec), images)
-  }, [images, audio])
+  // Exatamente o plano que vai para o render -- nao uma aproximacao.
+  const plan = useProject((s) => s.plan)
+  const inputProps = useMemo(
+    () => (plan && images.length > 0 ? toRenderProps(plan, images) : { scenes: [] }),
+    [plan, images],
+  )
 
   // O store e a fonte da verdade do playhead; o player segue.
   useEffect(() => {

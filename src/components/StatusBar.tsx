@@ -1,14 +1,15 @@
-import { Loader2 } from 'lucide-react'
+import { Loader2, Settings2, Sparkles, AudioWaveform, Rows3 } from 'lucide-react'
 import { useProject } from '@/store/project'
+import type { PlanOrigin } from '@shared/contract'
 
 interface StatusBarProps {
   isDragging: boolean
 }
 
 /**
- * Barra inferior discreta. Carrega o feedback de progresso e o erro -- nenhum
- * estado de carregamento fica sem sinal visivel. Erro e texto vermelho
- * discreto, e nada mais.
+ * Barra inferior discreta. Carrega o feedback de progresso, o erro e a origem
+ * do plano -- nenhum estado de carregamento fica sem sinal visivel. Erro e
+ * texto vermelho discreto, e nada mais.
  *
  * Sem animacao de opacidade aqui: a barra e o unico canal de feedback do app, e
  * ela nao pode ficar invisivel se um frame engasgar.
@@ -18,7 +19,10 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const error = useProject((s) => s.error)
   const audio = useProject((s) => s.audio)
   const lastOutput = useProject((s) => s.lastOutput)
+  const planOrigin = useProject((s) => s.planOrigin)
+  const aiNote = useProject((s) => s.aiNote)
   const dismissError = useProject((s) => s.dismissError)
+  const openSettings = useProject((s) => s.openSettings)
 
   // So o nome do arquivo: o caminho inteiro e ruido, e o botao "Abrir pasta"
   // esta a um clique de distancia.
@@ -29,26 +33,62 @@ export function StatusBar({ isDragging }: StatusBarProps) {
       : (audio?.fileName ?? 'Solte a narracao e as prints')
 
   return (
-    <footer className="flex h-[38px] shrink-0 items-center justify-between border-t border-line px-6">
-      {busy ? (
-        <span className="flex items-center gap-2 text-[11px] text-ink-2">
-          <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" />
-          {busy}
-        </span>
-      ) : error ? (
-        <button
-          type="button"
-          onClick={dismissError}
-          className="truncate text-left text-[11px] text-danger"
-          title={error}
-        >
-          {error}
-        </button>
-      ) : (
-        <span className="truncate text-[11px] text-ink-3">{idleMessage}</span>
-      )}
+    <footer className="flex h-[38px] shrink-0 items-center justify-between gap-4 border-t border-line px-6">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {busy ? (
+          <span className="flex items-center gap-2 text-[11px] text-ink-2">
+            <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" />
+            {busy}
+          </span>
+        ) : error ? (
+          <button
+            type="button"
+            onClick={dismissError}
+            className="truncate text-left text-[11px] text-danger"
+            title={error}
+          >
+            {error}
+          </button>
+        ) : (
+          <span className="truncate text-[11px] text-ink-3">{idleMessage}</span>
+        )}
+      </div>
 
-      <span className="text-[11px] text-ink-3">v0.1</span>
+      {!busy && planOrigin && <PlanBadge origin={planOrigin} note={aiNote} />}
+
+      <button
+        type="button"
+        onClick={() => openSettings(true)}
+        aria-label="Configuracoes"
+        title="Configuracoes (Ctrl+,)"
+        className="grid size-6 shrink-0 place-items-center rounded-sm text-ink-3 transition-colors duration-150 hover:text-ink"
+      >
+        <Settings2 size={13} strokeWidth={1.5} />
+      </button>
     </footer>
+  )
+}
+
+/**
+ * De onde veio a distribuicao das cenas. O usuario precisa saber se a IA
+ * participou ou se o app caiu no determinístico -- sem isso, um plano pior
+ * chega sem explicacao.
+ */
+function PlanBadge({ origin, note }: { origin: PlanOrigin; note: string | null }) {
+  const config: Record<PlanOrigin, { icon: typeof Sparkles; label: string }> = {
+    ai: { icon: Sparkles, label: 'Cenas pela IA' },
+    silence: { icon: AudioWaveform, label: 'Cenas pelas pausas' },
+    equal: { icon: Rows3, label: 'Cenas divididas igualmente' },
+  }
+  const { icon: Icon, label } = config[origin]
+
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3"
+      title={note ?? label}
+    >
+      <Icon size={12} strokeWidth={1.5} className={origin === 'ai' ? 'text-accent' : undefined} />
+      {label}
+    </span>
   )
 }
