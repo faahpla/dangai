@@ -1,6 +1,6 @@
 {
   "name": "dangai",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Maquina de fazer shorts de recap de anime",
   "main": "out/main/main.js",
@@ -10,42 +10,46 @@
     "build": "npm run typecheck && electron-vite build && npm run remotion:bundle",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "sfx": "node --experimental-strip-types scripts/make-sfx.ts"
+    "sfx": "node --experimental-strip-types scripts/make-sfx.ts",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
-    "@remotion/bundler": "^4.0.499",
-    "@remotion/cli": "^4.0.499",
-    "@remotion/player": "^4.0.499",
     "@remotion/renderer": "^4.0.499",
-    "@remotion/transitions": "^4.0.499",
     "ffmpeg-static": "^5.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "remotion": "^4.0.499",
-    "sharp": "^0.35.3"
+    "sharp": "^0.35.3",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@fontsource-variable/inter": "^5.2.8",
+    "@remotion/bundler": "^4.0.499",
+    "@remotion/cli": "^4.0.499",
+    "@remotion/player": "^4.0.499",
+    "@remotion/transitions": "^4.0.499",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.10.1",
     "@types/react": "^18.3.27",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^5.1.0",
     "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "lucide-react": "^0.552.0",
     "motion": "^12.42.2",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.2.2",
-    "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,
     "esbuild@0.28.1": true,
     "ffmpeg-static@5.3.0": true,
-    "electron@43.2.0": true
+    "electron@43.2.0": true,
+    "electron-winstaller@5.4.0": true
   }
 }

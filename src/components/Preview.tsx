@@ -25,9 +25,15 @@ export function Preview() {
 
   // Exatamente o plano que vai para o render -- nao uma aproximacao.
   const plan = useProject((s) => s.plan)
+  const captions = useProject((s) => s.captions)
+  const captionsEnabled = useProject((s) => s.captionsEnabled)
+
   const inputProps = useMemo(
-    () => (plan && images.length > 0 ? toRenderProps(plan, images) : { scenes: [] }),
-    [plan, images],
+    () =>
+      plan && images.length > 0
+        ? toRenderProps(plan, images, captionsEnabled ? captions : [])
+        : { scenes: [], captions: [] },
+    [plan, images, captions, captionsEnabled],
   )
 
   // O store e a fonte da verdade do playhead; o player segue.

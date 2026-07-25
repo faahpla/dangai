@@ -36,7 +36,17 @@
       "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 12; Write-Output \"exit: $LASTEXITCODE\")",
       "PowerShell(npm install --no-fund --no-audit @remotion/transitions 2>&1)",
       "Bash(node -e \"const p=require\\('./node_modules/@remotion/transitions/package.json'\\); console.log\\(Object.keys\\(p.exports||{}\\).join\\('\\\\n'\\)\\)\")",
-      "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 15; Write-Output \"exit: $LASTEXITCODE\")"
+      "PowerShell(npm run typecheck 2>&1 | Select-Object -Last 15; Write-Output \"exit: $LASTEXITCODE\")",
+      "PowerShell(npm install --save-dev --no-fund --no-audit electron-builder 2>&1)",
+      "PowerShell(node -e \"const fs=require\\('fs'\\);const p=JSON.parse\\(fs.readFileSync\\('package.json','utf8'\\)\\);p.scripts['pack']='npm run build && electron-builder --dir';p.scripts['dist']='npm run build && electron-builder';p.version='1.0.0';fs.writeFileSync\\('package.json',JSON.stringify\\(p,null,2\\)+'\\\\n'\\)\")",
+      "PowerShell(npm approve-scripts electron-winstaller 2>&1)",
+      "PowerShell(Get-Process Dangai,electron -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell(& \"release\\\\win-unpacked\\\\Dangai.exe\" --remote-debugging-port=9333 2>&1)",
+      "Bash(curl -s http://127.0.0.1:9333/json/list)",
+      "PowerShell(Get-Process Dangai -ErrorAction SilentlyContinue)",
+      "PowerShell(node -e \"console.log\\(Object.keys\\(require\\('./package.json'\\).dependencies\\).join\\(', '\\)\\)\")",
+      "PowerShell(npm run build 2>&1)"
     ]
   }
 }

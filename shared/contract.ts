@@ -148,6 +148,20 @@ export const VIDEO_FPS = 30
  * encadeamento e o TransitionSeries. A duracao ja vem com a folga da
  * sobreposicao embutida -- ver toRenderProps.
  */
+/** Um bloco de legenda: 2 a 4 palavras que aparecem juntas na tela. */
+export const captionBlockSchema = z.object({
+  from: z.number().int().nonnegative(),
+  durationInFrames: z.number().int().positive(),
+  words: z.array(
+    z.object({
+      text: z.string(),
+      from: z.number().int().nonnegative(),
+      durationInFrames: z.number().int().positive(),
+    }),
+  ),
+})
+export type CaptionBlock = z.infer<typeof captionBlockSchema>
+
 export const renderPropsSchema = z.object({
   scenes: z.array(
     z.object({
@@ -160,8 +174,16 @@ export const renderPropsSchema = z.object({
       transitionInFrames: z.number().int().nonnegative(),
     }),
   ),
+  /** Vazio quando as legendas estao desligadas ou nao ha transcricao. */
+  captions: z.array(captionBlockSchema).default([]),
 })
 export type RenderProps = z.infer<typeof renderPropsSchema>
+
+/** Palavras por bloco de legenda. Mais que isso nao da tempo de ler num short. */
+export const CAPTION_MIN_WORDS = 2
+export const CAPTION_MAX_WORDS = 4
+/** Acima disso o bloco fica largo demais para a tela vertical. */
+export const CAPTION_MAX_CHARS = 20
 
 export const renderProgressSchema = z.object({
   /** 0..1 */

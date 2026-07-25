@@ -202,6 +202,51 @@ interface WhisperJsonSegment {
   tokens?: WhisperJsonToken[]
 }
 
+/**
+ * Junta os tokens do Whisper em palavras.
+ *
+ * O modelo trabalha com BPE, nao com palavras: "Bem-vindos" sai como
+ * " Bem", "-", "v", "ind", "os". Tratar token como palavra quebra tudo que
+ * depende de palavra -- a legenda fica em pedacos e o alinhamento dos cortes
+ * passa a mirar fronteiras que nao existem na fala.
+ *
+ * O sinal de inicio de palavra e o espaco a esquerda do token, entao NAO da
+ * para dar trim antes de decidir. A palavra comeca no primeiro token e termina
+ * no ultimo.
+ */
+function mergeTokensIntoWords(tokens: readonly WhisperJsonToken[]): Word[] {
+  const words: Word[] = []
+  let buffer = ''
+  let start = 0
+  let end = 0
+
+  const flush = (): void => {
+    const text = buffer.trim()
+    if (text.length > 0) words.push({ text, start, end })
+    buffer = ''
+  }
+
+  for (const token of tokens) {
+    const raw = token.text ?? ''
+    const from = token.offsets?.from
+    const to = token.offsets?.to
+
+    // Tokens especiais do modelo vem entre colchetes; nao sao fala.
+    if (raw.trim().length === 0 || raw.trimStart().startsWith('[')) continue
+    if (typeof from !== 'number' || typeof to !== 'number') continue
+
+    if (raw.startsWith(' ') || buffer.length === 0) {
+      flush()
+      start = from / 1000
+    }
+    buffer += raw
+    end = to / 1000
+  }
+  flush()
+
+  return words
+}
+
 export function parseWhisperJson(raw: string): Transcript {
   const parsed: unknown = JSON.parse(raw)
   const root = parsed as { transcription?: WhisperJsonSegment[] }
@@ -217,22 +262,7 @@ export function parseWhisperJson(raw: string): Transcript {
     if (typeof from !== 'number' || typeof to !== 'number' || text.length === 0) continue
 
     segments.push({ start: from / 1000, end: to / 1000, text })
-
-    for (const token of row.tokens ?? []) {
-      const tokenText = token.text?.trim() ?? ''
-      const tokenFrom = token.offsets?.from
-      const tokenTo = token.offsets?.to
-      // Tokens especiais do modelo vem entre colchetes; nao sao palavras.
-      if (
-        tokenText.length === 0 ||
-        tokenText.startsWith('[') ||
-        typeof tokenFrom !== 'number' ||
-        typeof tokenTo !== 'number'
-      ) {
-        continue
-      }
-      words.push({ text: tokenText, start: tokenFrom / 1000, end: tokenTo / 1000 })
-    }
+    words.push(...mergeTokensIntoWords(row.tokens ?? []))
   }
 
   if (segments.length === 0) {

@@ -1,4 +1,4 @@
-import { Play, Pause, FolderOpen, Volume2, VolumeX } from 'lucide-react'
+import { Play, Pause, FolderOpen, Volume2, VolumeX, Captions, CaptionsOff } from 'lucide-react'
 import { useProject } from '@/store/project'
 
 /**
@@ -15,6 +15,9 @@ export function RenderBar() {
   const sfxEnabled = useProject((s) => s.sfxEnabled)
   const sfxCount = useProject((s) => s.plan?.sfxCues.length ?? 0)
   const toggleSfx = useProject((s) => s.toggleSfx)
+  const captionsEnabled = useProject((s) => s.captionsEnabled)
+  const captionCount = useProject((s) => s.captions.length)
+  const toggleCaptions = useProject((s) => s.toggleCaptions)
   const togglePlay = useProject((s) => s.togglePlay)
   const startRender = useProject((s) => s.startRender)
   const cancelRender = useProject((s) => s.cancelRender)
@@ -33,6 +36,27 @@ export function RenderBar() {
       >
         {playing ? <Pause size={14} strokeWidth={1.5} /> : <Play size={14} strokeWidth={1.5} />}
       </button>
+
+      {captionCount > 0 && !isRendering && (
+        <button
+          type="button"
+          onClick={toggleCaptions}
+          title={captionsEnabled ? 'Legendas queimadas no video' : 'Sem legendas'}
+          className={[
+            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
+            captionsEnabled
+              ? 'border-accent bg-accent-dim text-ink'
+              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+          ].join(' ')}
+        >
+          {captionsEnabled ? (
+            <Captions size={12} strokeWidth={1.5} />
+          ) : (
+            <CaptionsOff size={12} strokeWidth={1.5} />
+          )}
+          Legendas
+        </button>
+      )}
 
       {sfxCount > 0 && !isRendering && (
         <button

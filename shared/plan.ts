@@ -1,12 +1,17 @@
 import {
+  CAPTION_MAX_CHARS,
+  CAPTION_MAX_WORDS,
+  CAPTION_MIN_WORDS,
   KEN_BURNS_EFFECTS,
   TRANSITION_FRAMES,
   VIDEO_FPS,
+  type CaptionBlock,
   type ImageAsset,
   type RenderProps,
   type Scene,
   type ScenePlan,
   type Transcript,
+  type Word,
 } from './contract'
 
 /**
@@ -288,9 +293,13 @@ export function cutCandidatesFrom(words: readonly { start: number; end: number }
  * frames). Esta e a unica traducao segundo->frame do app; fazer isso em dois
  * lugares e como o audio e a imagem saem de sincronia.
  */
-export function toRenderProps(plan: ScenePlan, images: readonly ImageAsset[]): RenderProps {
+export function toRenderProps(
+  plan: ScenePlan,
+  images: readonly ImageAsset[],
+  captions: readonly CaptionBlock[] = [],
+): RenderProps {
   const usable = plan.scenes.filter((scene) => images[scene.imageIndex])
-  if (usable.length === 0) return { scenes: [] }
+  if (usable.length === 0) return { scenes: [], captions: [] }
 
   const durationSec = usable.at(-1)!.end
 
@@ -341,7 +350,62 @@ export function toRenderProps(plan: ScenePlan, images: readonly ImageAsset[]): R
     }
   })
 
-  return { scenes }
+  return { scenes, captions: [...captions] }
+}
+
+/**
+ * Agrupa as palavras da transcricao em blocos de legenda.
+ *
+ * Regras de short: 2 a 4 palavras por vez, quebrando antes se a linha ficar
+ * larga demais para a tela vertical. Um bloco tambem quebra quando ha uma pausa
+ * grande entre palavras -- ler uma legenda que atravessa um silencio longo
+ * desconecta o texto da fala.
+ */
+export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
+  if (!transcript || transcript.words.length === 0) return []
+
+  const blocks: CaptionBlock[] = []
+  let current: Word[] = []
+
+  const flush = (): void => {
+    if (current.length === 0) return
+
+    const first = current[0]!
+    const last = current.at(-1)!
+    const from = Math.round(first.start * VIDEO_FPS)
+    const to = Math.round(last.end * VIDEO_FPS)
+
+    blocks.push({
+      from,
+      durationInFrames: Math.max(to - from, 1),
+      words: current.map((word) => {
+        const wordFrom = Math.round(word.start * VIDEO_FPS)
+        const wordTo = Math.round(word.end * VIDEO_FPS)
+        return {
+          text: word.text,
+          from: wordFrom,
+          durationInFrames: Math.max(wordTo - wordFrom, 1),
+        }
+      }),
+    })
+    current = []
+  }
+
+  for (const word of transcript.words) {
+    const previous = current.at(-1)
+    const gap = previous ? word.start - previous.end : 0
+    const chars = current.reduce((sum, w) => sum + w.text.length + 1, 0) + word.text.length
+
+    const cheio = current.length >= CAPTION_MAX_WORDS
+    const largo = current.length >= CAPTION_MIN_WORDS && chars > CAPTION_MAX_CHARS
+    const pausou = current.length >= CAPTION_MIN_WORDS && gap > 0.45
+
+    if (cheio || largo || pausou) flush()
+    current.push(word)
+  }
+  flush()
+
+  return blocks
 }
 
 /** Total de frames da composicao, a partir da duracao do audio. */

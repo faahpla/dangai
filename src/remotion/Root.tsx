@@ -8,7 +8,7 @@ export const COMPOSITION_ID = 'dangai'
  * Duracao e cenas chegam por inputProps no momento do render; os valores aqui
  * sao so o que o Remotion Studio precisa para abrir sem props.
  */
-const FALLBACK_PROPS: RenderProps = { scenes: [] }
+const FALLBACK_PROPS: RenderProps = { scenes: [], captions: [] }
 
 export function RemotionRoot() {
   return (

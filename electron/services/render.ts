@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { bundle } from '@remotion/bundler'
 import { ensureBrowser, makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer'
 import type { RenderProgress, RenderProps } from '@shared/contract'
 import { VIDEO_FPS } from '@shared/contract'
@@ -23,6 +22,15 @@ export interface RenderPaths {
   prebuiltBundle: string
   /** SFX que vem com o app; o usuario pode apontar outra pasta em settings. */
   defaultSfxDir: string
+  /**
+   * Onde estao os binarios do compositor do Remotion (remotion.exe, ffmpeg).
+   *
+   * null em dev, onde o node_modules resolve sozinho. No app empacotado tem que
+   * ser explicito: o Remotion monta o caminho a partir do proprio __dirname, que
+   * cai dentro do app.asar, e binario dentro de asar nao pode ser executado --
+   * o spawn falha com ENOENT mesmo com o arquivo desempacotado ao lado.
+   */
+  binariesDirectory: string | null
 }
 
 let paths: RenderPaths | null = null
@@ -98,11 +106,14 @@ export async function renderVideo(
     const browserExecutable = await resolveBrowser(onProgress)
     const serveUrl = await getServeUrl()
 
+    const { binariesDirectory } = requirePaths()
+
     const composition = await selectComposition({
       serveUrl,
       id: COMPOSITION_ID,
       inputProps: request.props,
       browserExecutable,
+      binariesDirectory,
     })
 
     onProgress({ progress: 0, stage: 'rendering', message: 'Renderizando...' })
@@ -118,6 +129,7 @@ export async function renderVideo(
       outputLocation: silentVideo,
       inputProps: request.props,
       browserExecutable,
+      binariesDirectory,
       // JPEG em vez de PNG: para imagem fotografica a diferenca visual e nula e
       // a serializacao de cada frame fica bem mais rapida.
       imageFormat: 'jpeg',
@@ -158,6 +170,11 @@ let cachedServeUrl: string | null = null
  * Prefere o bundle gerado no build (`npm run remotion:bundle`). Se nao existir
  * -- caso tipico em dev logo depois de um clone -- monta na hora e guarda em
  * cache para os proximos renders da sessao.
+ *
+ * O import do @remotion/bundler e dinamico DE PROPOSITO, e ele e uma
+ * devDependency. Ele arrasta webpack, babel e o @remotion/studio, que nunca
+ * rodam no app empacotado -- ali o bundle pre-gerado sempre existe. Importado
+ * no topo, so o peso ja seriam centenas de MB no instalador.
  */
 async function getServeUrl(): Promise<string> {
   if (cachedServeUrl) return cachedServeUrl
@@ -169,12 +186,19 @@ async function getServeUrl(): Promise<string> {
     return prebuiltBundle
   }
 
-  cachedServeUrl = await bundle({
-    entryPoint: join(appPath, 'src', 'remotion', 'index.ts'),
-    webpackOverride: makeWebpackOverride(join(appPath, 'shared')),
-    onProgress: () => undefined,
-  })
-  return cachedServeUrl
+  try {
+    const { bundle } = await import('@remotion/bundler')
+    cachedServeUrl = await bundle({
+      entryPoint: join(appPath, 'src', 'remotion', 'index.ts'),
+      webpackOverride: makeWebpackOverride(join(appPath, 'shared')),
+      onProgress: () => undefined,
+    })
+    return cachedServeUrl
+  } catch {
+    throw new Error(
+      'A composicao de video nao esta montada. Rode "npm run remotion:bundle" e tente de novo.',
+    )
+  }
 }
 
 /**

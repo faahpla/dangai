@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'node:path'
+import { readdirSync } from 'node:fs'
 import { registerIpc } from './ipc'
 import { startMediaServer } from './services/media-server'
 import { configureRender } from './services/render'
@@ -64,6 +65,7 @@ app.whenReady().then(async () => {
     defaultSfxDir: app.isPackaged
       ? join(process.resourcesPath, 'sfx')
       : join(app.getAppPath(), 'assets', 'sfx'),
+    binariesDirectory: app.isPackaged ? findCompositorDir() : null,
   })
 
   registerIpc()
@@ -77,3 +79,20 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+/**
+ * Acha a pasta do compositor do Remotion desempacotada ao lado do asar.
+ *
+ * O nome do pacote muda por plataforma e ABI (compositor-win32-x64-msvc,
+ * compositor-darwin-arm64, compositor-linux-x64-gnu...). Procurar pelo prefixo
+ * e mais confiavel que montar o nome na mao -- so existe um por build.
+ */
+function findCompositorDir(): string | null {
+  const base = join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@remotion')
+  try {
+    const match = readdirSync(base).find((name) => name.startsWith('compositor-'))
+    return match ? join(base, match) : null
+  } catch {
+    return null
+  }
+}

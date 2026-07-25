@@ -11,6 +11,18 @@ export default defineConfig({
     resolve: { alias: { '@shared': shared } },
     build: {
       lib: { entry: resolve(__dirname, 'electron/main.ts') },
+      rollupOptions: {
+        /*
+         * O externalizeDepsPlugin so externaliza o que esta em `dependencies`, e
+         * o @remotion/bundler e devDependency de proposito: ele arrasta webpack,
+         * babel e o @remotion/studio, que nunca rodam no app empacotado.
+         *
+         * Sem esta linha o Vite tenta empacotar o webpack e o build quebra. O
+         * import dele em render.ts e dinamico e so acontece em dev, quando o
+         * bundle pre-gerado ainda nao existe.
+         */
+        external: ['@remotion/bundler'],
+      },
     },
   },
   preload: {

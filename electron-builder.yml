@@ -1,0 +1,55 @@
+appId: com.kintay.dangai
+productName: Dangai
+copyright: Kintay
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - package.json
+
+# O bundle do Remotion e os SFX ficam FORA do asar, como recursos soltos.
+# O Chrome do render carrega o bundle por caminho de arquivo e nao enxerga
+# nada dentro de um asar; o main aponta para process.resourcesPath.
+extraResources:
+  - from: out/remotion
+    to: remotion
+  - from: assets/sfx
+    to: sfx
+
+# Binario dentro de asar nao pode ser executado, e o sharp carrega .node
+# nativo. Os dois precisam ficar desempacotados.
+asarUnpack:
+  - '**/node_modules/ffmpeg-static/**'
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+  # O compositor do Remotion e um executavel nativo; o main aponta para ele
+  # explicitamente via binariesDirectory (ver findCompositorDir em main.ts).
+  - '**/node_modules/@remotion/compositor-*/**'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-${version}-win-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  category: public.app-category.video
+  artifactName: ${productName}-${version}-mac-${arch}.${ext}
+
+# Sem assinatura: nao ha certificado neste projeto. O instalador funciona, mas
+# o SmartScreen do Windows avisa na primeira execucao.
+forceCodeSigning: false

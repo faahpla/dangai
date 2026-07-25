@@ -9,6 +9,7 @@ import { Preview } from '@/components/Preview'
 import { RenderBar } from '@/components/RenderBar'
 import { StatusBar } from '@/components/StatusBar'
 import { Settings } from '@/components/Settings'
+import { CommandPalette } from '@/components/CommandPalette'
 import { VIDEO_FPS } from '@shared/contract'
 
 export function App() {
@@ -31,7 +32,23 @@ export function App() {
       const store = useProject.getState()
       const rendering = store.phase() === 'rendering'
 
+      // A paleta e os modais tratam o proprio teclado; enquanto abertos, os
+      // atalhos globais ficam quietos para nao disparar por baixo.
+      if (store.paletteOpen || store.settingsOpen) {
+        if ((event.key === 'k' || event.key === 'K') && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault()
+          store.openPalette(false)
+        }
+        return
+      }
+
       switch (event.key) {
+        case 'k':
+        case 'K':
+          if (!event.ctrlKey && !event.metaKey) return
+          event.preventDefault()
+          store.openPalette(true)
+          break
         case ' ':
           if (rendering) return
           event.preventDefault()
@@ -97,6 +114,7 @@ export function App() {
 
       <StatusBar isDragging={isDragging} />
       <Settings />
+      <CommandPalette />
     </div>
   )
 }

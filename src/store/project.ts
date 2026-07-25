@@ -9,7 +9,14 @@ import type {
   ScenePlan,
   Transcript,
 } from '@shared/contract'
-import { MIN_SCENE_SEC, planEqualSplit, toRenderProps, totalFrames } from '@shared/plan'
+import {
+  buildCaptions,
+  MIN_SCENE_SEC,
+  planEqualSplit,
+  toRenderProps,
+  totalFrames,
+} from '@shared/plan'
+import type { CaptionBlock } from '@shared/contract'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
 export type Phase = 'empty' | 'editing' | 'rendering'
@@ -30,6 +37,14 @@ interface ProjectState {
   plan: ScenePlan | null
   planOrigin: PlanOrigin | null
   transcript: Transcript | null
+  /**
+   * Blocos de legenda derivados da transcricao, guardados prontos.
+   *
+   * Guardados e nao derivados num seletor pelo mesmo motivo do plano: seletor
+   * que monta array novo a cada chamada nao estabiliza no Zustand e leva a
+   * render infinito.
+   */
+  captions: CaptionBlock[]
   /** Aviso de quando a IA nao deu -- informativo, nao erro. */
   aiNote: string | null
 
@@ -45,6 +60,8 @@ interface ProjectState {
   /** Ligado quando o usuario mexe no plano: a analise para de sobrescrever. */
   planEdited: boolean
   sfxEnabled: boolean
+  captionsEnabled: boolean
+  paletteOpen: boolean
 
   phase: () => Phase
   ingest: (paths: readonly string[]) => Promise<void>
@@ -53,6 +70,8 @@ interface ProjectState {
   /** Move a fronteira entre a cena index-1 e a cena index. */
   moveBoundary: (index: number, seconds: number) => void
   toggleSfx: () => void
+  toggleCaptions: () => void
+  openPalette: (open: boolean) => void
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -89,6 +108,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   plan: null,
   planOrigin: null,
   transcript: null,
+  captions: [],
   aiNote: null,
   busy: null,
   error: null,
@@ -100,6 +120,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   settingsOpen: false,
   planEdited: false,
   sfxEnabled: true,
+  captionsEnabled: false,
+  paletteOpen: false,
 
   phase: () => {
     const state = get()
@@ -196,6 +218,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         plan: result.value.plan,
         planOrigin: result.value.origin,
         transcript: result.value.transcript,
+        captions: buildCaptions(result.value.transcript),
         aiNote: result.value.aiNote,
         planEdited: false,
         busy: null,
@@ -265,6 +288,10 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   toggleSfx: () => set((state) => ({ sfxEnabled: !state.sfxEnabled })),
 
+  toggleCaptions: () => set((state) => ({ captionsEnabled: !state.captionsEnabled })),
+
+  openPalette: (open) => set({ paletteOpen: open }),
+
   selectImage: (id) => set({ selectedImageId: id }),
 
   setPlayhead: (seconds) =>
@@ -277,7 +304,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
 
   startRender: async () => {
-    const { audio, images, plan, sfxEnabled } = get()
+    const { audio, images, plan, sfxEnabled, captionsEnabled, captions } = get()
     if (!audio || images.length === 0 || !plan) return
 
     set({
@@ -287,7 +314,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
 
     const result = await window.dangai.startRender({
-      props: toRenderProps(plan, images),
+      props: toRenderProps(plan, images, captionsEnabled ? captions : []),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
       sfxCues: sfxEnabled ? plan.sfxCues : [],
@@ -344,6 +371,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       plan: null,
       planOrigin: null,
       transcript: null,
+      captions: [],
       aiNote: null,
       busy: null,
       error: null,
