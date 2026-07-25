@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(git --version)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "PowerShell(npm install --no-fund --no-audit 2>&1)",
+      "PowerShell(npm approve-scripts --allow-scripts-pending 2>&1)",
+      "PowerShell(npm approve-scripts electron 2>&1)",
+      "PowerShell(node node_modules\\\\electron\\\\install.js 2>&1)",
+      "PowerShell(npm run typecheck 2>&1)",
+      "PowerShell(Write-Output \"=== node project files ===\"; npx tsc --noEmit -p tsconfig.node.json --listFiles 2>&1 | Where-Object { $_ -match \"Dangai Project\" -and $_ -notmatch \"node_modules\" }; Write-Output \"=== web project files ===\"; npx tsc --noEmit -p tsconfig.web.json --listFiles 2>&1 | Where-Object { $_ -match \"Dangai Project\" -and $_ -notmatch \"node_modules\" })",
+      "PowerShell(npx electron-vite build 2>&1)",
+      "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\drive.mjs\" $fx $shots 2>&1)",
+      "PowerShell($fx = \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\fixtures\")",
+      "PowerShell($shots = \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\shots\")",
+      "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\drive2.mjs\" $fx $shots 2>&1)",
+      "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\drive3.mjs\" $fx $shots 2>&1)",
+      "PowerShell(node \"C:\\\\Users\\\\faahb\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--FAAH-Dangai-Project\\\\84a9e5a5-5b5e-410e-bd59-9b1bd474692f\\\\scratchpad\\\\probe.mjs\" 2>&1)"
+    ]
+  }
+}

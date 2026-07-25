@@ -1,0 +1,18 @@
+node_modules/
+out/
+dist/
+release/
+
+*.tsbuildinfo
+
+# Nunca versionar chave de API. A chave do Anthropic vive no electron-store,
+# fora do repositorio.
+.env
+.env.*
+
+# Saidas de render e material de teste local
+*.mp4
+/fixtures/
+
+.DS_Store
+Thumbs.db

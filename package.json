@@ -1,0 +1,42 @@
+{
+  "name": "dangai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Maquina de fazer shorts de recap de anime",
+  "main": "out/main/main.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.2.8",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "^43.2.0",
+    "electron-vite": "^5.0.0",
+    "lucide-react": "^0.552.0",
+    "motion": "^12.42.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.1": true,
+    "ffmpeg-static@5.3.0": true,
+    "electron@43.2.0": true
+  }
+}
