@@ -1,4 +1,14 @@
-import { Play, Pause, FolderOpen, Volume2, VolumeX, Captions, CaptionsOff } from 'lucide-react'
+import {
+  Play,
+  Pause,
+  FolderOpen,
+  Volume2,
+  VolumeX,
+  Captions,
+  CaptionsOff,
+  FileText,
+  Pencil,
+} from 'lucide-react'
 import { useProject } from '@/store/project'
 
 /**
@@ -18,6 +28,10 @@ export function RenderBar() {
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const captionCount = useProject((s) => s.captions.length)
   const toggleCaptions = useProject((s) => s.toggleCaptions)
+  const script = useProject((s) => s.script)
+  const openScript = useProject((s) => s.openScript)
+  const captionsOpen = useProject((s) => s.captionsOpen)
+  const openCaptions = useProject((s) => s.openCaptions)
   const togglePlay = useProject((s) => s.togglePlay)
   const startRender = useProject((s) => s.startRender)
   const cancelRender = useProject((s) => s.cancelRender)
@@ -36,6 +50,44 @@ export function RenderBar() {
       >
         {playing ? <Pause size={14} strokeWidth={1.5} /> : <Play size={14} strokeWidth={1.5} />}
       </button>
+
+      {!isRendering && (
+        <button
+          type="button"
+          onClick={() => openScript(true)}
+          title={
+            script
+              ? 'Roteiro carregado — o texto das legendas vem dele'
+              : 'Cole o roteiro para as legendas sairem sem erro de escrita'
+          }
+          className={[
+            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
+            script
+              ? 'border-accent bg-accent-dim text-ink'
+              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+          ].join(' ')}
+        >
+          <FileText size={12} strokeWidth={1.5} />
+          Roteiro
+        </button>
+      )}
+
+      {captionCount > 0 && !isRendering && (
+        <button
+          type="button"
+          onClick={() => openCaptions(!captionsOpen)}
+          title="Mesclar e dividir legendas"
+          className={[
+            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
+            captionsOpen
+              ? 'border-line-strong bg-elevated text-ink'
+              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+          ].join(' ')}
+        >
+          <Pencil size={12} strokeWidth={1.5} />
+          Editar
+        </button>
+      )}
 
       {captionCount > 0 && !isRendering && (
         <button

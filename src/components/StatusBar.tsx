@@ -21,8 +21,10 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const lastOutput = useProject((s) => s.lastOutput)
   const planOrigin = useProject((s) => s.planOrigin)
   const aiNote = useProject((s) => s.aiNote)
+  const scriptNote = useProject((s) => s.scriptNote)
   const dismissError = useProject((s) => s.dismissError)
   const openSettings = useProject((s) => s.openSettings)
+  const openScript = useProject((s) => s.openScript)
 
   // So o nome do arquivo: o caminho inteiro e ruido, e o botao "Abrir pasta"
   // esta a um clique de distancia.
@@ -53,6 +55,17 @@ export function StatusBar({ isDragging }: StatusBarProps) {
           <span className="truncate text-[11px] text-ink-3">{idleMessage}</span>
         )}
       </div>
+
+      {!busy && scriptNote && (
+        <button
+          type="button"
+          onClick={() => openScript(true)}
+          className="max-w-[340px] shrink-0 truncate text-[11px] text-ink-3 hover:text-ink-2"
+          title={scriptNote}
+        >
+          {scriptNote}
+        </button>
+      )}
 
       {!busy && planOrigin && <PlanBadge origin={planOrigin} note={aiNote} />}
 

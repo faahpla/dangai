@@ -64,10 +64,11 @@ export type Segment = z.infer<typeof segmentSchema>
 
 export const transcriptSchema = z.object({
   /**
-   * De onde vieram os tempos. 'silence' nao tem texto -- so as pausas
-   * detectadas no audio, que ainda servem para cortar em lugar natural.
+   * De onde veio o TEXTO. 'silence' nao tem texto -- so as pausas detectadas no
+   * audio, que ainda servem para cortar em lugar natural. 'script' e o roteiro
+   * do usuario com os tempos medidos por cima: texto sem erro nenhum.
    */
-  source: z.enum(['srt', 'whisper', 'silence']),
+  source: z.enum(['srt', 'whisper', 'silence', 'script']),
   words: z.array(wordSchema),
   segments: z.array(segmentSchema),
   text: z.string(),
@@ -143,6 +144,8 @@ export interface AnalysisResult {
   transcript: Transcript | null
   /** Preenchido quando a IA foi tentada e nao deu -- a interface avisa, sem travar. */
   aiNote: string | null
+  /** Como o roteiro se saiu, quando houve roteiro. */
+  scriptNote: string | null
 }
 
 // ---------------------------------------------------------------- render

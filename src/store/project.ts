@@ -47,6 +47,17 @@ interface ProjectState {
   captions: CaptionBlock[]
   /** Aviso de quando a IA nao deu -- informativo, nao erro. */
   aiNote: string | null
+  /**
+   * O roteiro escrito. Quando existe, o texto das legendas vem dele e os tempos
+   * continuam vindo da narracao -- ver shared/align.ts.
+   */
+  script: string | null
+  /** Como o roteiro se saiu no casamento com o audio. */
+  scriptNote: string | null
+  scriptOpen: boolean
+  /** Ligado quando o usuario mexe nas legendas: a analise para de sobrescrever. */
+  captionsEdited: boolean
+  captionsOpen: boolean
 
   busy: string | null
   error: string | null
@@ -71,6 +82,16 @@ interface ProjectState {
   moveBoundary: (index: number, seconds: number) => void
   toggleSfx: () => void
   toggleCaptions: () => void
+  setScript: (script: string | null) => Promise<void>
+  openScript: (open: boolean) => void
+  openCaptions: (open: boolean) => void
+  /** Junta blocos vizinhos num so. Os indices precisam ser consecutivos. */
+  mergeCaptions: (indices: readonly number[]) => void
+  /** Quebra um bloco antes da palavra indicada. */
+  splitCaption: (index: number, wordIndex: number) => void
+  /** Reescreve o texto de uma palavra sem mexer no tempo. */
+  editCaptionWord: (index: number, wordIndex: number, text: string) => void
+  resetCaptions: () => void
   openPalette: (open: boolean) => void
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
@@ -114,6 +135,11 @@ export const useProject = create<ProjectState>((set, get) => ({
   transcript: null,
   captions: [],
   aiNote: null,
+  script: null,
+  scriptNote: null,
+  scriptOpen: false,
+  captionsEdited: false,
+  captionsOpen: false,
   busy: null,
   error: null,
   playhead: 0,
@@ -139,6 +165,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const audioPaths: string[] = []
     const imagePaths: string[] = []
     const subtitlePaths: string[] = []
+    const scriptPaths: string[] = []
     const ignored: string[] = []
 
     for (const path of paths) {
@@ -152,22 +179,39 @@ export const useProject = create<ProjectState>((set, get) => ({
         case 'subtitle':
           subtitlePaths.push(path)
           break
+        case 'script':
+          scriptPaths.push(path)
+          break
         default:
           ignored.push(path)
       }
     }
 
-    if (audioPaths.length === 0 && imagePaths.length === 0 && subtitlePaths.length === 0) {
+    if (
+      audioPaths.length === 0 &&
+      imagePaths.length === 0 &&
+      subtitlePaths.length === 0 &&
+      scriptPaths.length === 0
+    ) {
       set({
         error:
           ignored.length > 0
-            ? 'Esses arquivos nao servem. Solte um audio (.mp3, .wav, .m4a) e imagens (.png, .jpg, .webp).'
+            ? 'Esses arquivos nao servem. Solte um audio (.mp3, .wav, .m4a), imagens (.png, .jpg, .webp) e o roteiro (.txt).'
             : 'Nada para importar.',
       })
       return
     }
 
     set({ error: null })
+
+    // O roteiro entra antes da analise: ele muda o texto das legendas, entao
+    // precisa estar no estado quando a analise rodar la embaixo.
+    const scriptPath = scriptPaths[0]
+    if (scriptPath) {
+      const result = await window.dangai.readScript(scriptPath)
+      if (result.ok) set({ script: result.value, captionsEdited: false })
+      else set({ error: result.error })
+    }
 
     if (imagePaths.length > 0) {
       set({ busy: `Lendo ${imagePaths.length} ${imagePaths.length === 1 ? 'imagem' : 'imagens'}...` })
@@ -196,16 +240,19 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     set({ busy: null })
 
-    // Qualquer mudanca no material invalida o plano; refaz sozinho.
     const { audio, images } = get()
-    if (audio && images.length > 0) {
+    if (!audio || images.length === 0) return
+
+    // Material novo invalida o plano; roteiro sozinho nao mexe nos cortes,
+    // entao nao pode jogar fora o que ja esta montado.
+    if (imagePaths.length > 0 || audioPath) {
       setInterimPlan(set, images.length, audio.durationSec)
-      await get().analyze()
     }
+    await get().analyze()
   },
 
   analyze: async () => {
-    const { audio, images, subtitlePath } = get()
+    const { audio, images, subtitlePath, script } = get()
     if (!audio || images.length === 0) return
 
     set({ busy: 'Analisando...', error: null })
@@ -215,16 +262,29 @@ export const useProject = create<ProjectState>((set, get) => ({
       subtitlePath,
       images,
       durationSec: audio.durationSec,
+      script,
     })
 
     if (result.ok) {
+      const state = get()
+
+      /*
+       * Trabalho manual sobrevive a uma reanalise. O plano so e preservado se
+       * ainda servir: se o numero de imagens mudou, as cenas editadas nao
+       * correspondem mais a nada e o plano novo e o unico correto.
+       */
+      const keepPlan = state.planEdited && state.plan?.scenes.length === images.length
+
       set({
-        plan: result.value.plan,
-        planOrigin: result.value.origin,
+        plan: keepPlan ? state.plan : result.value.plan,
+        planOrigin: keepPlan ? state.planOrigin : result.value.origin,
         transcript: result.value.transcript,
-        captions: buildCaptions(result.value.transcript),
+        captions: state.captionsEdited
+          ? state.captions
+          : buildCaptions(result.value.transcript),
         aiNote: result.value.aiNote,
-        planEdited: false,
+        scriptNote: result.value.scriptNote,
+        planEdited: keepPlan,
         busy: null,
       })
     } else {
@@ -334,6 +394,98 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ plan: { ...plan, scenes }, planEdited: true })
   },
 
+  setScript: async (script) => {
+    const clean = script?.trim() ? script : null
+    // Roteiro novo refaz as legendas do zero: manter as antigas seria misturar
+    // texto de duas fontes.
+    set({ script: clean, captionsEdited: false, scriptNote: null })
+    await get().analyze()
+  },
+
+  openScript: (open) => set({ scriptOpen: open }),
+
+  openCaptions: (open) => set({ captionsOpen: open }),
+
+  /**
+   * Junta blocos vizinhos. O bloco resultante vai do inicio do primeiro ao fim
+   * do ultimo e carrega todas as palavras, cada uma com o proprio tempo -- o
+   * realce palavra a palavra continua funcionando depois da mesclagem.
+   */
+  mergeCaptions: (indices) => {
+    const ordered = [...new Set(indices)].sort((a, b) => a - b)
+    if (ordered.length < 2) return
+
+    const { captions } = get()
+    const first = ordered[0]!
+    const last = ordered.at(-1)!
+    if (first < 0 || last >= captions.length) return
+    // Mesclar blocos separados deixaria um buraco de tempo dentro do bloco.
+    if (last - first + 1 !== ordered.length) return
+
+    const group = captions.slice(first, last + 1)
+    const merged: CaptionBlock = {
+      from: group[0]!.from,
+      durationInFrames: Math.max(
+        group.at(-1)!.from + group.at(-1)!.durationInFrames - group[0]!.from,
+        1,
+      ),
+      words: group.flatMap((block) => block.words),
+    }
+
+    set({
+      captions: [...captions.slice(0, first), merged, ...captions.slice(last + 1)],
+      captionsEdited: true,
+    })
+  },
+
+  /**
+   * Quebra um bloco em dois, com a palavra indicada abrindo o segundo. Os
+   * tempos vem das proprias palavras, entao nenhuma legenda passa a aparecer
+   * fora do momento em que e dita.
+   */
+  splitCaption: (index, wordIndex) => {
+    const { captions } = get()
+    const block = captions[index]
+    if (!block) return
+    if (wordIndex <= 0 || wordIndex >= block.words.length) return
+
+    const head = block.words.slice(0, wordIndex)
+    const tail = block.words.slice(wordIndex)
+    const cut = tail[0]!.from
+
+    const first: CaptionBlock = {
+      from: block.from,
+      durationInFrames: Math.max(cut - block.from, 1),
+      words: head,
+    }
+    const second: CaptionBlock = {
+      from: cut,
+      durationInFrames: Math.max(block.from + block.durationInFrames - cut, 1),
+      words: tail,
+    }
+
+    set({
+      captions: [...captions.slice(0, index), first, second, ...captions.slice(index + 1)],
+      captionsEdited: true,
+    })
+  },
+
+  editCaptionWord: (index, wordIndex, text) => {
+    const { captions } = get()
+    const block = captions[index]
+    if (!block || !block.words[wordIndex]) return
+
+    const words = block.words.map((word, i) => (i === wordIndex ? { ...word, text } : word))
+    set({
+      captions: captions.map((item, i) => (i === index ? { ...item, words } : item)),
+      captionsEdited: true,
+    })
+  },
+
+  resetCaptions: () => {
+    set({ captions: buildCaptions(get().transcript), captionsEdited: false })
+  },
+
   toggleSfx: () => set((state) => ({ sfxEnabled: !state.sfxEnabled })),
 
   toggleCaptions: () => set((state) => ({ captionsEnabled: !state.captionsEnabled })),
@@ -421,6 +573,11 @@ export const useProject = create<ProjectState>((set, get) => ({
       transcript: null,
       captions: [],
       aiNote: null,
+      script: null,
+      scriptNote: null,
+      scriptOpen: false,
+      captionsEdited: false,
+      captionsOpen: false,
       busy: null,
       error: null,
       playhead: 0,

@@ -9,6 +9,8 @@ import { Preview } from '@/components/Preview'
 import { RenderBar } from '@/components/RenderBar'
 import { StatusBar } from '@/components/StatusBar'
 import { Settings } from '@/components/Settings'
+import { Script } from '@/components/Script'
+import { CaptionEditor } from '@/components/CaptionEditor'
 import { CommandPalette } from '@/components/CommandPalette'
 import { VIDEO_FPS } from '@shared/contract'
 
@@ -19,6 +21,7 @@ export function App() {
   const selectedImageId = useProject((s) => s.selectedImageId)
   const applyRenderProgress = useProject((s) => s.applyRenderProgress)
   const setBusy = useProject((s) => s.setBusy)
+  const captionsOpen = useProject((s) => s.captionsOpen)
 
   // Progresso do render vindo do main.
   useEffect(() => window.dangai.onRenderProgress(applyRenderProgress), [applyRenderProgress])
@@ -34,7 +37,7 @@ export function App() {
 
       // A paleta e os modais tratam o proprio teclado; enquanto abertos, os
       // atalhos globais ficam quietos para nao disparar por baixo.
-      if (store.paletteOpen || store.settingsOpen) {
+      if (store.paletteOpen || store.settingsOpen || store.scriptOpen) {
         if ((event.key === 'k' || event.key === 'K') && (event.ctrlKey || event.metaKey)) {
           event.preventDefault()
           store.openPalette(false)
@@ -103,6 +106,12 @@ export function App() {
             <Preview />
             <div className="flex min-w-0 flex-1 flex-col gap-4">
               <ImageStrip />
+              {/*
+                O editor de legendas divide a coluna com a fila de imagens em
+                vez de virar uma tela: com o preview do lado, da para ver o
+                efeito de cada mesclagem sem trocar de contexto.
+              */}
+              {captionsOpen && <CaptionEditor />}
             </div>
             <SceneCard />
           </div>
@@ -114,6 +123,7 @@ export function App() {
 
       <StatusBar isDragging={isDragging} />
       <Settings />
+      <Script />
       <CommandPalette />
     </div>
   )

@@ -30,6 +30,8 @@ const bridge: DangaiBridge = {
   reframeImage: (args: ReframeArgs) =>
     ipcRenderer.invoke(IPC.reframeImage, args) as Promise<IpcResult<string>>,
 
+  readScript: (path) => ipcRenderer.invoke(IPC.readScript, path) as Promise<IpcResult<string>>,
+
   pickFiles: () => ipcRenderer.invoke(IPC.pickFiles) as Promise<IpcResult<string[]>>,
 
   startRender: (args: StartRenderArgs) =>

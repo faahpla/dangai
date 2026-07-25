@@ -45,6 +45,9 @@ export function Dropzone({ isDragging }: DropzoneProps) {
         <span className="text-[13px] text-ink-3">
           A ordem em que voce solta as imagens e a ordem no video
         </span>
+        <span className="text-[11px] text-ink-3">
+          Solte o roteiro em .txt junto e as legendas saem com o texto exato
+        </span>
       </motion.div>
     </button>
   )

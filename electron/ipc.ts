@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { readFile } from 'node:fs/promises'
 import {
   AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
@@ -58,15 +59,26 @@ export function registerIpc(): void {
     reframeImage(id, path, focusX, focusY),
   )
 
+  /*
+   * O roteiro nao passa por nenhum parser: e texto puro. Le em utf-8 e derruba
+   * o BOM, que o Bloco de Notas grava e viraria um caractere invisivel na
+   * primeira palavra -- justo a que o alinhamento usa como ancora inicial.
+   */
+  handle<[string], string>(IPC.readScript, async (path) => {
+    const raw = await readFile(path, 'utf8')
+    return raw.replace(/^\ufeff/, '')
+  })
+
   handle<[], string[]>(IPC.pickFiles, async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Selecionar audio e imagens',
+      title: 'Selecionar audio, imagens e roteiro',
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
-          name: 'Audio e imagens',
-          extensions: [...AUDIO_EXTENSIONS, ...IMAGE_EXTENSIONS, 'srt'],
+          name: 'Audio, imagens e roteiro',
+          extensions: [...AUDIO_EXTENSIONS, ...IMAGE_EXTENSIONS, 'srt', 'txt', 'md'],
         },
+        { name: 'Roteiro', extensions: ['txt', 'md'] },
         { name: 'Audio', extensions: [...AUDIO_EXTENSIONS] },
         { name: 'Imagens', extensions: [...IMAGE_EXTENSIONS] },
       ],

@@ -26,6 +26,7 @@ export const IPC = {
   analyzeAudio: 'audio:analyze',
   importImages: 'images:import',
   reframeImage: 'images:reframe',
+  readScript: 'script:read',
   pickFiles: 'dialog:pick-files',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
@@ -42,11 +43,14 @@ export const IPC = {
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] as const
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'] as const
 
-export function classifyFile(fileName: string): 'audio' | 'image' | 'subtitle' | 'unknown' {
+export function classifyFile(
+  fileName: string,
+): 'audio' | 'image' | 'subtitle' | 'script' | 'unknown' {
   const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
   if ((AUDIO_EXTENSIONS as readonly string[]).includes(ext)) return 'audio'
   if ((IMAGE_EXTENSIONS as readonly string[]).includes(ext)) return 'image'
   if (ext === 'srt') return 'subtitle'
+  if (ext === 'txt' || ext === 'md') return 'script'
   return 'unknown'
 }
 
@@ -71,6 +75,8 @@ export interface AnalyzeArgs {
   subtitlePath: string | null
   images: readonly ImageAsset[]
   durationSec: number
+  /** Roteiro escrito, quando o usuario forneceu. */
+  script: string | null
 }
 
 /** O que a interface pode ver das configuracoes. A chave nunca volta inteira. */
@@ -98,6 +104,8 @@ export interface DangaiBridge {
   importImages(paths: readonly string[]): Promise<IpcResult<ImageAsset[]>>
   /** Recorta de novo com outro enquadramento. Resolve com a URL da nova versao. */
   reframeImage(args: ReframeArgs): Promise<IpcResult<string>>
+  /** Le um .txt de roteiro do disco. */
+  readScript(path: string): Promise<IpcResult<string>>
   pickFiles(): Promise<IpcResult<string[]>>
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>

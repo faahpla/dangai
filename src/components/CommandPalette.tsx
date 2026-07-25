@@ -8,6 +8,8 @@ import {
   Settings2,
   Volume2,
   Film,
+  FileText,
+  Pencil,
   type LucideIcon,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
@@ -152,6 +154,8 @@ function useCommands(): Command[] {
   const imageCount = useProject((s) => s.images.length)
   const sfxCount = useProject((s) => s.plan?.sfxCues.length ?? 0)
   const rendering = useProject((s) => s.render !== null)
+  const script = useProject((s) => s.script)
+  const captionsOpen = useProject((s) => s.captionsOpen)
 
   const pronto = Boolean(audio) && imageCount > 0
 
@@ -173,6 +177,21 @@ function useCommands(): Command[] {
         icon: playing ? Pause : Play,
         disabled: !pronto || rendering,
         run: () => store().togglePlay(),
+      },
+      {
+        id: 'script',
+        label: script ? 'Trocar o roteiro' : 'Colar o roteiro',
+        hint: script ? 'carregado' : 'legendas sem erro de escrita',
+        icon: FileText,
+        run: () => store().openScript(true),
+      },
+      {
+        id: 'edit-captions',
+        label: captionsOpen ? 'Fechar o editor de legendas' : 'Mesclar e dividir legendas',
+        hint: captionCount > 0 ? `${captionCount} blocos` : 'sem transcricao',
+        icon: Pencil,
+        disabled: captionCount === 0,
+        run: () => store().openCaptions(!captionsOpen),
       },
       {
         id: 'captions',
@@ -214,5 +233,16 @@ function useCommands(): Command[] {
         run: () => store().reset(),
       },
     ]
-  }, [playing, sfxEnabled, captionsEnabled, captionCount, lastOutput, pronto, sfxCount, rendering])
+  }, [
+    playing,
+    sfxEnabled,
+    captionsEnabled,
+    captionCount,
+    lastOutput,
+    pronto,
+    sfxCount,
+    rendering,
+    script,
+    captionsOpen,
+  ])
 }
