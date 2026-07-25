@@ -13,6 +13,22 @@ import { CAPTION_FONT_STACK } from './fonts'
 
 const ACCENT = '#FF3D81'
 
+/** Corpo padrao da legenda. */
+const FONT_SIZE = 68
+
+/**
+ * Quantos caracteres cabem numa linha nesse corpo.
+ *
+ * Medido no render de verdade: a Komika Axis a 68px gasta ate ~46px por letra
+ * em palavra portuguesa, e sobram 920px entre as margens. Acima disso a linha
+ * passa da borda e as pontas somem da tela.
+ *
+ * Pela regra de montagem, uma linha so passa daqui quando e uma palavra unica
+ * comprida demais para o limite -- a excecao que existe justamente porque
+ * quebrar palavra no meio seria pior.
+ */
+const CHARS_PER_LINE = 18
+
 export function Captions({ blocks }: { blocks: readonly CaptionBlock[] }) {
   return (
     <>
@@ -34,6 +50,11 @@ function Block({ block }: { block: CaptionBlock }) {
   // useCurrentFrame dentro da Sequence e relativo a ela; as palavras carregam
   // frames absolutos, entao a comparacao volta para a base absoluta.
   const frame = useCurrentFrame() + block.from
+
+  // Palavra comprida demais encolhe o suficiente para caber inteira, em vez de
+  // sair pelos dois lados da tela.
+  const chars = block.words.map((word) => word.text).join(' ').length
+  const fontSize = FONT_SIZE * Math.min(1, CHARS_PER_LINE / chars)
 
   return (
     <AbsoluteFill
@@ -57,7 +78,7 @@ function Block({ block }: { block: CaptionBlock }) {
           // Komika Axis tem um peso so. Pedir 800 faria o Chrome engrossar a
           // letra na marra, e o falso negrito briga com o contorno de 6px.
           fontWeight: 400,
-          fontSize: 68,
+          fontSize,
           lineHeight: 1.15,
           textAlign: 'center',
           textTransform: 'uppercase',

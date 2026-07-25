@@ -1,7 +1,7 @@
 import {
   CAPTION_MAX_CHARS,
   CAPTION_MAX_WORDS,
-  CAPTION_MIN_WORDS,
+  CAPTION_MIN_SEC,
   KEN_BURNS_EFFECTS,
   TRANSITION_FRAMES,
   VIDEO_FPS,
@@ -356,10 +356,12 @@ export function toRenderProps(
 /**
  * Agrupa as palavras da transcricao em blocos de legenda.
  *
- * Regras de short: 2 a 4 palavras por vez, quebrando antes se a linha ficar
- * larga demais para a tela vertical. Um bloco tambem quebra quando ha uma pausa
- * grande entre palavras -- ler uma legenda que atravessa um silencio longo
- * desconecta o texto da fala.
+ * Cada bloco e uma linha: no maximo duas palavras e doze caracteres. Uma
+ * palavra que sozinha ja estoura os doze caracteres fica sozinha -- quebrar
+ * palavra no meio seria pior que a linha comprida.
+ *
+ * Um bloco tambem quebra quando ha uma pausa grande entre palavras: ler uma
+ * legenda que atravessa um silencio longo desconecta o texto da fala.
  */
 export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
   if (!transcript || transcript.words.length === 0) return []
@@ -394,18 +396,101 @@ export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
   for (const word of transcript.words) {
     const previous = current.at(-1)
     const gap = previous ? word.start - previous.end : 0
+
+    // Comprimento da linha se esta palavra entrar, contando o espaco.
     const chars = current.reduce((sum, w) => sum + w.text.length + 1, 0) + word.text.length
 
     const cheio = current.length >= CAPTION_MAX_WORDS
-    const largo = current.length >= CAPTION_MIN_WORDS && chars > CAPTION_MAX_CHARS
-    const pausou = current.length >= CAPTION_MIN_WORDS && gap > 0.45
+    // As duas checagens exigem a linha ja ocupada: com a linha vazia, quebrar
+    // aqui deixaria um bloco sem palavra nenhuma e jogaria a palavra longa para
+    // a proxima volta, onde o problema se repetiria para sempre.
+    const largo = current.length > 0 && chars > CAPTION_MAX_CHARS
+    const pausou = current.length > 0 && gap > 0.45
 
     if (cheio || largo || pausou) flush()
     current.push(word)
   }
   flush()
 
+  enforceMinimumDuration(blocks)
   return blocks
+}
+
+/**
+ * Estica os blocos curtos demais para o piso de leitura.
+ *
+ * Primeiro ocupa o silencio vizinho, que nao custa nada a ninguem: entre um
+ * bloco e outro quase sempre sobra tempo de tela vazia. So se ainda faltar e
+ * que toma emprestado de um vizinho que tenha folga acima do proprio piso.
+ *
+ * Os tempos das PALAVRAS nao mudam -- o realce continua caindo exatamente na
+ * hora em que cada uma e dita. O que estica e so a janela de exibicao do bloco.
+ */
+function enforceMinimumDuration(blocks: CaptionBlock[]): void {
+  const minimum = Math.round(CAPTION_MIN_SEC * VIDEO_FPS)
+
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i]!
+    let deficit = minimum - block.durationInFrames
+    if (deficit <= 0) continue
+
+    // Silencio depois: o limite e o inicio do proximo bloco.
+    const next = blocks[i + 1]
+    const roomAfter = next ? next.from - (block.from + block.durationInFrames) : deficit
+    const takeAfter = Math.min(deficit, Math.max(roomAfter, 0))
+    block.durationInFrames += takeAfter
+    deficit -= takeAfter
+    if (deficit <= 0) continue
+
+    // Silencio antes: o limite e o fim do bloco anterior, ou o comeco do video.
+    const previous = blocks[i - 1]
+    const floor = previous ? previous.from + previous.durationInFrames : 0
+    const takeBefore = Math.min(deficit, Math.max(block.from - floor, 0))
+    block.from -= takeBefore
+    block.durationInFrames += takeBefore
+    deficit -= takeBefore
+    if (deficit <= 0) continue
+
+    // Sem silencio sobrando: pede emprestado ao vizinho que tiver folga acima
+    // do proprio piso. Encurtar um bloco confortavel e melhor que deixar outro
+    // piscando.
+    if (next) {
+      const borrowed = Math.min(deficit, Math.max(next.durationInFrames - minimum, 0))
+      next.from += borrowed
+      next.durationInFrames -= borrowed
+      block.durationInFrames += borrowed
+      deficit -= borrowed
+    }
+    if (deficit > 0 && previous) {
+      const borrowed = Math.min(deficit, Math.max(previous.durationInFrames - minimum, 0))
+      previous.durationInFrames -= borrowed
+      block.from -= borrowed
+      block.durationInFrames += borrowed
+    }
+  }
+
+  for (const block of blocks) clampWordsToBlock(block)
+}
+
+/**
+ * Prende as palavras a janela do proprio bloco.
+ *
+ * Emprestar tempo mexe nas bordas do bloco, e uma palavra pode acabar do lado
+ * de fora: dita antes de a legenda aparecer, ou depois de ela sair. O realce
+ * rosa compara frames absolutos, entao essa palavra simplesmente nunca ficaria
+ * rosa -- a legenda apareceria inteira em branco enquanto e falada.
+ *
+ * Grampeando, a palavra que comecou cedo demais ja entra realcada e a que
+ * terminaria tarde demais fica realcada ate o bloco sair.
+ */
+function clampWordsToBlock(block: CaptionBlock): void {
+  const end = block.from + block.durationInFrames
+
+  block.words = block.words.map((word) => {
+    const from = Math.min(Math.max(word.from, block.from), end - 1)
+    const to = Math.min(Math.max(word.from + word.durationInFrames, from + 1), end)
+    return { ...word, from, durationInFrames: to - from }
+  })
 }
 
 /** Total de frames da composicao, a partir da duracao do audio. */

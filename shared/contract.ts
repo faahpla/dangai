@@ -192,11 +192,24 @@ export const renderPropsSchema = z.object({
 })
 export type RenderProps = z.infer<typeof renderPropsSchema>
 
-/** Palavras por bloco de legenda. Mais que isso nao da tempo de ler num short. */
-export const CAPTION_MIN_WORDS = 2
-export const CAPTION_MAX_WORDS = 4
-/** Acima disso o bloco fica largo demais para a tela vertical. */
-export const CAPTION_MAX_CHARS = 20
+/**
+ * Um bloco de legenda e uma linha so. No maximo duas palavras e doze
+ * caracteres -- mais que isso nao da tempo de ler num short.
+ *
+ * A unica excecao e a palavra que sozinha ja passa do limite: ela fica sozinha
+ * na linha, porque quebrar palavra no meio e pior que uma linha comprida.
+ */
+export const CAPTION_MAX_WORDS = 2
+export const CAPTION_MAX_CHARS = 12
+
+/**
+ * Tempo minimo que uma legenda fica na tela.
+ *
+ * Com duas palavras por linha as legendas ficam curtas, e as palavrinhas de
+ * ligacao produzem blocos de 4 frames -- que na pratica piscam em vez de serem
+ * lidas. Este piso e a diferenca entre uma legenda rapida e um flash.
+ */
+export const CAPTION_MIN_SEC = 0.45
 
 export const renderProgressSchema = z.object({
   /** 0..1 */
