@@ -1,4 +1,4 @@
-import { Loader2, Settings2, Sparkles, AudioWaveform, Rows3 } from 'lucide-react'
+import { Loader2, Settings2, Sparkles, AudioWaveform, Rows3, Pilcrow } from 'lucide-react'
 import { useProject } from '@/store/project'
 import type { PlanOrigin } from '@shared/contract'
 
@@ -90,6 +90,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
 function PlanBadge({ origin, note }: { origin: PlanOrigin; note: string | null }) {
   const config: Record<PlanOrigin, { icon: typeof Sparkles; label: string }> = {
     ai: { icon: Sparkles, label: 'Cenas pela IA' },
+    rhythm: { icon: Pilcrow, label: 'Cenas pela pontuacao' },
     silence: { icon: AudioWaveform, label: 'Cenas pelas pausas' },
     equal: { icon: Rows3, label: 'Cenas divididas igualmente' },
   }

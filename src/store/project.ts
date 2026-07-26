@@ -110,12 +110,13 @@ interface ProjectState {
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
   /**
-   * Importa imagens e as encaixa numa posicao da fila, e nao no fim.
+   * Importa imagens e as encaixa num INSTANTE da linha do tempo.
    *
-   * E o que substitui a antiga divisao de bloco: mais ritmo se resolve com mais
-   * imagem no ponto onde falta, nao repetindo a que ja estava la.
+   * Cair no comeco de um bloco entra antes dele; cair no meio parte o bloco. E
+   * o que substitui a antiga divisao: mais ritmo se resolve com mais imagem no
+   * ponto onde falta, nao repetindo a que ja estava la.
    */
-  insertImages: (paths: readonly string[], atIndex: number) => Promise<void>
+  insertImages: (paths: readonly string[], seconds: number) => Promise<void>
   /** Tira um bloco da linha do tempo, junto com a imagem dele. */
   removeScene: (index: number) => void
   /** Move o enquadramento 9:16 sobre a imagem. Instantaneo, so no estado. */
@@ -350,7 +351,7 @@ export const useProject = create<ProjectState>((set, get) => ({
    * tempo: inserir uma imagem no minuto tres nao pode empurrar tudo que ja
    * estava ajustado antes dela.
    */
-  insertImages: async (paths, atIndex) => {
+  insertImages: async (paths, seconds) => {
     if (paths.length === 0) return
 
     set({ busy: `Lendo ${paths.length} ${paths.length === 1 ? 'imagem' : 'imagens'}...`, error: null })
@@ -360,14 +361,12 @@ export const useProject = create<ProjectState>((set, get) => ({
       return
     }
 
-    const { images, plan, audio } = get()
-    const at = Math.min(Math.max(atIndex, 0), images.length)
     const novas = result.value
+    const { images, plan, audio } = get()
 
-    const proximas = [...images.slice(0, at), ...novas, ...images.slice(at)]
-
-    // Sem plano ainda: a analise monta tudo do zero.
-    if (!plan || !audio) {
+    // Sem plano ainda: entra no fim e a analise monta tudo do zero.
+    if (!plan || !audio || plan.scenes.length === 0) {
+      const proximas = [...images, ...novas]
       set({ images: proximas, busy: null })
       if (audio && proximas.length > 0) {
         setInterimPlan(set, proximas.length, audio.durationSec)
@@ -376,37 +375,81 @@ export const useProject = create<ProjectState>((set, get) => ({
       return
     }
 
-    // O bloco que estava naquela posicao cede o proprio tempo, repartido entre
-    // ele e as novas imagens.
-    const anfitriao = plan.scenes[Math.min(at, plan.scenes.length - 1)]!
-    const inicio = at >= plan.scenes.length ? anfitriao.end : anfitriao.start
-    const fim = anfitriao.end
-    const fatias = at >= plan.scenes.length ? novas.length : novas.length + 1
-    const passo = (fim - inicio) / fatias
+    /*
+     * A insercao e por TEMPO e nao por indice: assim o mesmo caminho serve para
+     * "antes deste bloco" (o instante em que ele comeca), "no meio dele" e para
+     * o arraste na linha do tempo, que cai onde o ponteiro estiver.
+     *
+     * Cair exatamente no comeco de um bloco significa entrar ANTES dele; cair
+     * no meio significa parti-lo, com a imagem nova ficando com a metade da
+     * direita. Nos dois casos o tempo sai so deste bloco -- nada antes ou
+     * depois dele se mexe.
+     */
+    const ultimo = plan.scenes[plan.scenes.length - 1]!
+    const t = Math.min(Math.max(seconds, 0), ultimo.end - 1e-6)
+    const h = Math.max(
+      plan.scenes.findIndex((scene) => t >= scene.start && t < scene.end),
+      0,
+    )
+    const anfitriao = plan.scenes[h]!
+    const n = novas.length
+    const total = anfitriao.end - anfitriao.start
+    const antesDele = t <= anfitriao.start + 1e-6
+
+    let corte: number
+    let at: number
+
+    if (antesDele) {
+      // Entra na frente: o anfitriao recua e cede a cabeca do proprio intervalo.
+      corte = anfitriao.start + (total * n) / (n + 1)
+      at = h
+    } else {
+      at = h + 1
+      // Aperta o corte para os dois lados continuarem visiveis. Se o bloco e
+      // curto demais para isso, reparte por igual e o minimo nao se aplica.
+      corte =
+        total >= (n + 1) * MIN_SCENE_SEC
+          ? Math.min(Math.max(t, anfitriao.start + MIN_SCENE_SEC), anfitriao.end - n * MIN_SCENE_SEC)
+          : anfitriao.start + total / (n + 1)
+    }
+
+    const inicio = antesDele ? anfitriao.start : corte
+    const fim = antesDele ? corte : anfitriao.end
+    const passo = (fim - inicio) / n
 
     const inseridas: Scene[] = novas.map((_, i) => ({
       imageIndex: at + i,
       start: inicio + i * passo,
-      end: inicio + (i + 1) * passo,
+      end: i === n - 1 ? fim : inicio + (i + 1) * passo,
       effect: KEN_BURNS_EFFECTS[(at + i) % KEN_BURNS_EFFECTS.length] ?? 'zoom-in',
       intensity: 0.12,
       transitionIn: 'cut' as const,
     }))
 
-    const antes = plan.scenes.slice(0, at)
-    const depois = plan.scenes.slice(at).map((scene) => ({
+    const reindexar = (scene: Scene): Scene => ({
       ...scene,
-      imageIndex: scene.imageIndex + novas.length,
-    }))
+      imageIndex: scene.imageIndex >= at ? scene.imageIndex + n : scene.imageIndex,
+    })
 
-    // O anfitriao fica com a sobra do proprio intervalo.
-    if (depois[0]) depois[0] = { ...depois[0], start: inicio + novas.length * passo }
+    const scenes = antesDele
+      ? [
+          ...plan.scenes.slice(0, h).map(reindexar),
+          ...inseridas,
+          { ...reindexar(anfitriao), start: corte },
+          ...plan.scenes.slice(h + 1).map(reindexar),
+        ]
+      : [
+          ...plan.scenes.slice(0, h).map(reindexar),
+          { ...reindexar(anfitriao), end: corte },
+          ...inseridas,
+          ...plan.scenes.slice(h + 1).map(reindexar),
+        ]
 
     set({
-      images: proximas,
-      plan: { ...plan, scenes: [...antes, ...inseridas, ...depois] },
+      images: [...images.slice(0, at), ...novas, ...images.slice(at)],
+      plan: { ...plan, scenes },
       planEdited: true,
-      selectedScene: at,
+      selectedScene: antesDele ? h : h + 1,
       busy: null,
     })
   },

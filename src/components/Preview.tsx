@@ -46,6 +46,52 @@ export function Preview() {
     [plan, images, captions, captionsEnabled],
   )
 
+  /*
+   * Decodifica as proximas imagens antes de elas entrarem em cena.
+   *
+   * Medido: TODA <img> nasce dentro do player com complete=false. O player, ao
+   * contrario do render, nao espera imagem nenhuma -- entao no primeiro frame
+   * do bloco novo a imagem ainda nao pintou e o preto do fundo aparece. E o
+   * piscar que so existe no preview.
+   *
+   * A janela e curta de proposito. Uma imagem de 1242x2208 decodificada ocupa
+   * ~11MB; segurar as 46 de um projeto seriam 500MB de bitmap so para evitar um
+   * frame preto. Cinco a frente cobrem qualquer corte com folga.
+   */
+  const decodificadas = useRef(new Map<string, HTMLImageElement>())
+  const blocoAtual = plan
+    ? Math.max(
+        plan.scenes.findIndex((scene) => playhead >= scene.start && playhead < scene.end),
+        0,
+      )
+    : 0
+
+  useEffect(() => {
+    if (!plan) return
+
+    const janela = plan.scenes
+      .slice(blocoAtual, blocoAtual + 6)
+      .map((scene) => images[scene.imageIndex]?.url)
+      .filter((url): url is string => Boolean(url))
+
+    const cache = decodificadas.current
+    for (const url of janela) {
+      if (cache.has(url)) continue
+      const img = new Image()
+      img.src = url
+      cache.set(url, img)
+      // decode() rejeita se a imagem for trocada no meio; nao ha o que fazer
+      // alem de deixar o player carregar sozinho, como fazia antes.
+      void img.decode().catch(() => undefined)
+    }
+
+    // Solta o que ficou para tras: manter tudo decodificado estoura a memoria.
+    const vivas = new Set(janela)
+    for (const url of cache.keys()) {
+      if (!vivas.has(url)) cache.delete(url)
+    }
+  }, [plan, images, blocoAtual])
+
   // O store e a fonte da verdade do playhead; o player segue.
   useEffect(() => {
     if (!player) return

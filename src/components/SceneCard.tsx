@@ -1,4 +1,4 @@
-import { ImagePlus } from 'lucide-react'
+import { ImagePlus, Scissors } from 'lucide-react'
 import { classifyFile } from '@shared/channels'
 import { KEN_BURNS_EFFECTS, TRANSITIONS, type Transition } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
@@ -22,11 +22,11 @@ export function SceneCard() {
 
   const total = plan?.scenes.length ?? 0
 
-  const inserir = async (at: number): Promise<void> => {
+  const inserir = async (seconds: number): Promise<void> => {
     const picked = await window.dangai.pickFiles()
     if (!picked.ok) return
     const imagens = picked.value.filter((path) => classifyFile(path) === 'image')
-    if (imagens.length > 0) await insertImages(imagens, at)
+    if (imagens.length > 0) await insertImages(imagens, seconds)
   }
 
   return (
@@ -46,11 +46,15 @@ export function SceneCard() {
 
       <Field label="Inserir imagem">
         <div className="flex flex-col gap-1.5">
-          <Chip active={false} onClick={() => void inserir(index)}>
+          <Chip active={false} onClick={() => void inserir(scene.start)}>
             <ImagePlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
             Antes deste bloco
           </Chip>
-          <Chip active={false} onClick={() => void inserir(index + 1)}>
+          <Chip active={false} onClick={() => void inserir((scene.start + scene.end) / 2)}>
+            <Scissors size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+            No meio, cortando ao meio
+          </Chip>
+          <Chip active={false} onClick={() => void inserir(scene.end)}>
             <ImagePlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
             Depois deste bloco
           </Chip>

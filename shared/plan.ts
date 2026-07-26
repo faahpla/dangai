@@ -1,3 +1,4 @@
+import { boundariesFrom, pickCuts } from './rhythm'
 import {
   CAPTION_BREAK_AFTER,
   CAPTION_MAX_CHARS,
@@ -555,15 +556,48 @@ export function totalFrames(durationSec: number): number {
   return Math.max(Math.ceil(durationSec * VIDEO_FPS), 1)
 }
 
+/**
+ * Monta o plano a partir dos cortes escolhidos pela pontuacao da narracao.
+ *
+ * Ver shared/rhythm.ts: um ponto final e o fim de uma ideia, e e ali que o olho
+ * aceita ver outra imagem.
+ */
+export function planByRhythm(
+  imageCount: number,
+  durationSec: number,
+  words: readonly Word[],
+): ScenePlan | null {
+  if (imageCount < 2 || words.length < 2) return null
+
+  const cortes = pickCuts(boundariesFrom(words), imageCount - 1, durationSec)
+  if (!cortes) return null
+
+  const bounds = [0, ...cortes, durationSec]
+  const scenes: Scene[] = Array.from({ length: imageCount }, (_, index) => ({
+    imageIndex: index,
+    start: bounds[index]!,
+    end: bounds[index + 1]!,
+    effect: pickEffect(index),
+    intensity: 0.12,
+    transitionIn: 'cut' as const,
+  }))
+
+  return sanitize({ scenes }, imageCount, durationSec)
+}
+
 /** Plano de melhor esforco sem IA. Usado pelo fallback e pelo preview inicial. */
 export function planWithoutAI(
   imageCount: number,
   durationSec: number,
   transcript: Transcript | null,
-): { plan: ScenePlan; origin: 'silence' | 'equal' } {
-  // Sem reparticao aqui de proposito: quem chama ainda vai alinhar os cortes
-  // as pausas, e o alinhamento passa pelo saneamento, que exige uma cena por
-  // imagem. Repartir antes seria desfeito no passo seguinte.
+): { plan: ScenePlan; origin: 'rhythm' | 'silence' | 'equal' } {
+  // Com texto cronometrado, a pontuacao manda: ela sabe onde uma ideia acaba,
+  // coisa que o silencio de uma narracao corrida nunca vai dizer.
+  if (transcript && transcript.words.length >= 2) {
+    const porRitmo = planByRhythm(imageCount, durationSec, transcript.words)
+    if (porRitmo) return { plan: porRitmo, origin: 'rhythm' }
+  }
+
   if (transcript && transcript.cutCandidates.length >= imageCount - 1) {
     return {
       plan: planFromCandidates(imageCount, durationSec, transcript.cutCandidates),

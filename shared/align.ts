@@ -37,12 +37,44 @@ export interface Alignment {
  * narrou "[PAUSA]".
  */
 export function tokenizeScript(script: string): string[] {
-  return script
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\([^)]*\)/g, ' ')
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0 && normalize(token).length > 0)
+  return tokenizeWithBreaks(script).tokens
+}
+
+/**
+ * Igual, mas dizendo quais tokens fecham um paragrafo.
+ *
+ * A quebra de paragrafo e o sinal mais forte de troca de assunto no roteiro, e
+ * ela se perde no instante em que o texto vira uma lista de palavras. Aqui ela
+ * e capturada antes disso.
+ */
+export function tokenizeWithBreaks(script: string): {
+  tokens: string[]
+  fechaParagrafo: boolean[]
+} {
+  const limpo = script.replace(/\[[^\]]*\]/g, ' ').replace(/\([^)]*\)/g, ' ')
+
+  const tokens: string[] = []
+  const fechaParagrafo: boolean[] = []
+
+  for (const paragrafo of limpo.split(/\n\s*\n+/)) {
+    const palavras = paragrafo
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0 && normalize(token).length > 0)
+
+    if (palavras.length === 0) continue
+
+    for (const palavra of palavras) {
+      tokens.push(palavra)
+      fechaParagrafo.push(false)
+    }
+    fechaParagrafo[fechaParagrafo.length - 1] = true
+  }
+
+  // O ultimo token do roteiro nao fecha paragrafo nenhum: nao ha nada depois.
+  if (fechaParagrafo.length > 0) fechaParagrafo[fechaParagrafo.length - 1] = false
+
+  return { tokens, fechaParagrafo }
 }
 
 /** Chave de comparacao: sem acento, sem pontuacao, minuscula. */
@@ -92,7 +124,7 @@ function score(a: string, b: string): number {
  * em segundos. Nenhum token e descartado e nenhum texto e alterado.
  */
 export function alignScript(script: string, timed: readonly Word[]): Alignment | null {
-  const tokens = tokenizeScript(script)
+  const { tokens, fechaParagrafo } = tokenizeWithBreaks(script)
   if (tokens.length === 0 || timed.length === 0) return null
 
   const a = tokens.map(normalize)
@@ -138,12 +170,13 @@ export function alignScript(script: string, timed: readonly Word[]): Alignment |
   if (anchored / tokens.length < MIN_COVERAGE) return null
 
   const words: Word[] = tokens.map((text, index) => {
+    const paragraph = fechaParagrafo[index] === true
     const match = pairedWith[index]
     if (match === null || match === undefined) {
-      return { text, start: Number.NaN, end: Number.NaN }
+      return { text, start: Number.NaN, end: Number.NaN, paragraph }
     }
     const timedWord = timed[match]!
-    return { text, start: timedWord.start, end: timedWord.end }
+    return { text, start: timedWord.start, end: timedWord.end, paragraph }
   })
 
   fillGaps(words, timed)

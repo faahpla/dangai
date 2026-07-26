@@ -52,6 +52,14 @@ export const wordSchema = z.object({
   text: z.string(),
   start: z.number().nonnegative(),
   end: z.number().nonnegative(),
+  /**
+   * Fecha um paragrafo do roteiro.
+   *
+   * Linha em branco e o sinal mais forte de troca de assunto que existe num
+   * texto -- mais forte que qualquer pontuacao -- e some se so o texto corrido
+   * atravessar. So o roteiro tem isso; transcricao nunca traz.
+   */
+  paragraph: z.boolean().optional(),
 })
 export type Word = z.infer<typeof wordSchema>
 
@@ -144,7 +152,7 @@ export const scenePlanSchema = z.object({
 export type ScenePlan = z.infer<typeof scenePlanSchema>
 
 /** Como o plano foi obtido. Aparece na interface para o usuario saber. */
-export const PLAN_ORIGINS = ['ai', 'silence', 'equal'] as const
+export const PLAN_ORIGINS = ['ai', 'rhythm', 'silence', 'equal'] as const
 export type PlanOrigin = (typeof PLAN_ORIGINS)[number]
 
 export interface AnalysisResult {

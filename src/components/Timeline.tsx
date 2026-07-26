@@ -207,7 +207,7 @@ export function Timeline() {
             // da fila em vez de entrarem aqui.
             event.preventDefault()
             event.stopPropagation()
-            void insertImages(paths, sceneAt(event.clientX))
+            void insertImages(paths, timeAt(event.clientX))
           }}
           style={{ width: `${zoom * 100}%` }}
           className={[
