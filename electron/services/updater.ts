@@ -19,6 +19,23 @@ import { IPC } from '@shared/channels'
 
 type Enviar = (status: UpdateStatus) => void
 
+/**
+ * Carrega o electron-updater lidando com o embrulho de CJS.
+ *
+ * A biblioteca e CommonJS e o processo main sai bundlado como CJS, entao o
+ * `await import()` devolve `{ default: { autoUpdater } }` em vez de
+ * `{ autoUpdater }`. Sem desembrulhar, autoUpdater vem undefined e a primeira
+ * atribuicao explode.
+ *
+ * Isso NUNCA aparece em desenvolvimento, onde o updater nem chega a rodar --
+ * so no app empacotado, e so quando ele tenta se atualizar.
+ */
+async function carregar(): Promise<typeof import('electron-updater')> {
+  const modulo = await import('electron-updater')
+  const embrulhado = (modulo as { default?: typeof import('electron-updater') }).default
+  return embrulhado?.autoUpdater ? embrulhado : modulo
+}
+
 /** Uma vez por dia basta: o app fica aberto por sessoes de edicao, nao dias. */
 const INTERVALO_MS = 6 * 60 * 60 * 1000
 
@@ -36,7 +53,7 @@ export async function startUpdater(
   // de app-update.yml a cada abertura.
   if (!isPackaged) return
 
-  const { autoUpdater } = await import('electron-updater')
+  const { autoUpdater } = await carregar()
 
   autoUpdater.autoDownload = true
   // Instalar sozinho ao fechar surpreenderia: a troca acontece quando o usuario
@@ -74,6 +91,6 @@ export async function startUpdater(
 
 /** Fecha e instala. So chamado por acao explicita do usuario. */
 export async function installUpdate(): Promise<void> {
-  const { autoUpdater } = await import('electron-updater')
+  const { autoUpdater } = await carregar()
   autoUpdater.quitAndInstall()
 }

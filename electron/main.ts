@@ -103,7 +103,12 @@ app.whenReady().then(async () => {
   registerIpc()
   createWindow()
 
-  void startUpdater(() => BrowserWindow.getAllWindows(), app.isPackaged)
+  // Com catch: sem ele, uma falha aqui vira UnhandledPromiseRejection no
+  // stdout do processo main -- que ninguem le -- e a atualizacao simplesmente
+  // nunca acontece, em silencio.
+  startUpdater(() => BrowserWindow.getAllWindows(), app.isPackaged).catch((err: unknown) => {
+    console.error('[updater] nao pode iniciar:', err)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
