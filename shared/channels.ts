@@ -40,6 +40,10 @@ export const IPC = {
   renderProgress: 'render:progress',
   /** main -> renderer, texto de andamento da analise */
   analyzeProgress: 'plan:progress',
+  /** main -> renderer, andamento da atualizacao do app */
+  updateStatus: 'update:status',
+  installUpdate: 'update:install',
+  appVersion: 'app:version',
 } as const
 
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] as const
@@ -81,6 +85,18 @@ export interface AnalyzeArgs {
   script: string | null
 }
 
+/**
+ * Andamento da atualizacao automatica.
+ *
+ * 'baixando' cobre desde "achei uma versao nova" ate o download terminar, com
+ * percent indo de 0 a 1. A interface nao precisa distinguir os dois momentos.
+ */
+export type UpdateStatus =
+  | { state: 'atual' }
+  | { state: 'baixando'; version?: string; percent: number }
+  | { state: 'pronta'; version: string }
+  | { state: 'erro'; message: string }
+
 /** O que a interface pode ver das configuracoes. A chave nunca volta inteira. */
 export interface PublicSettings {
   whisperModel: 'base' | 'small' | 'medium'
@@ -112,6 +128,11 @@ export interface DangaiBridge {
   listSfx(): Promise<IpcResult<string[]>>
   /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */
   openSfxDir(): Promise<IpcResult<null>>
+  /** Versao instalada, para a interface mostrar. */
+  appVersion(): Promise<IpcResult<string>>
+  /** Fecha e instala a atualizacao ja baixada. */
+  installUpdate(): Promise<IpcResult<null>>
+  onUpdateStatus(listener: (status: UpdateStatus) => void): () => void
   pickFiles(): Promise<IpcResult<string[]>>
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>

@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import {
   AUDIO_EXTENSIONS,
@@ -18,6 +18,7 @@ import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 import { analyze } from './services/transcribe'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
 import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
+import { installUpdate } from './services/updater'
 
 /**
  * Envolve um handler para que erro nunca atravesse a ponte como excecao. O
@@ -75,6 +76,13 @@ export function registerIpc(): void {
   handle<[], null>(IPC.openSfxDir, async () => {
     ensureSfxDir()
     await shell.openPath(sfxDir())
+    return null
+  })
+
+  handle<[], string>(IPC.appVersion, async () => app.getVersion())
+
+  handle<[], null>(IPC.installUpdate, async () => {
+    await installUpdate()
     return null
   })
 

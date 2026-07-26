@@ -1,4 +1,12 @@
-import { Loader2, Settings2, Sparkles, AudioWaveform, Rows3, Pilcrow } from 'lucide-react'
+import {
+  Loader2,
+  Settings2,
+  Sparkles,
+  AudioWaveform,
+  Rows3,
+  Pilcrow,
+  Download,
+} from 'lucide-react'
 import { useProject } from '@/store/project'
 import type { PlanOrigin } from '@shared/contract'
 
@@ -25,6 +33,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const dismissError = useProject((s) => s.dismissError)
   const openSettings = useProject((s) => s.openSettings)
   const openScript = useProject((s) => s.openScript)
+  const appVersion = useProject((s) => s.appVersion)
 
   // So o nome do arquivo: o caminho inteiro e ruido, e o botao "Abrir pasta"
   // esta a um clique de distancia.
@@ -69,6 +78,14 @@ export function StatusBar({ isDragging }: StatusBarProps) {
 
       {!busy && planOrigin && <PlanBadge origin={planOrigin} note={aiNote} />}
 
+      <UpdateBadge />
+
+      {appVersion && (
+        <span className="tnum shrink-0 text-[11px] text-ink-3" title="Versao instalada">
+          v{appVersion}
+        </span>
+      )}
+
       <button
         type="button"
         onClick={() => openSettings(true)}
@@ -79,6 +96,44 @@ export function StatusBar({ isDragging }: StatusBarProps) {
         <Settings2 size={13} strokeWidth={1.5} />
       </button>
     </footer>
+  )
+}
+
+/**
+ * Atualizacao do app, discreta.
+ *
+ * Enquanto baixa, e so uma nota; quando esta pronta, vira um botao. Reiniciar e
+ * decisao do usuario -- trocar de versao no meio de um render de um minuto
+ * seria pior que ficar uma versao atras.
+ *
+ * "Tudo em dia" nao aparece: informacao que nunca muda nada vira ruido.
+ */
+function UpdateBadge() {
+  const update = useProject((s) => s.update)
+  const rendering = useProject((s) => s.render !== null)
+
+  if (!update || update.state === 'atual' || update.state === 'erro') return null
+
+  if (update.state === 'baixando') {
+    return (
+      <span className="tnum flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
+        <Download size={12} strokeWidth={1.5} />
+        Baixando atualizacao {Math.round(update.percent * 100)}%
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={rendering}
+      onClick={() => void window.dangai.installUpdate()}
+      title={rendering ? 'Termine o render primeiro' : `Instala a ${update.version} e reabre o app`}
+      className="flex shrink-0 items-center gap-1.5 rounded-sm border border-accent bg-accent-dim px-2 py-0.5 text-[11px] text-ink disabled:opacity-40"
+    >
+      <Download size={12} strokeWidth={1.5} className="text-accent" />
+      Atualizar para {update.version}
+    </button>
   )
 }
 

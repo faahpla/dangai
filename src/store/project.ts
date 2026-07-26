@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
+import type { UpdateStatus } from '@shared/channels'
 import { KEN_BURNS_EFFECTS } from '@shared/contract'
 import type {
   AudioAnalysis,
@@ -82,6 +83,9 @@ interface ProjectState {
   sfxEnabled: boolean
   /** Arquivos de som disponiveis na pasta de SFX. */
   sfxFiles: string[]
+  /** Andamento da atualizacao do app. null enquanto nada foi dito. */
+  update: UpdateStatus | null
+  appVersion: string
   captionsEnabled: boolean
   paletteOpen: boolean
 
@@ -94,6 +98,8 @@ interface ProjectState {
   toggleSfx: () => void
   /** Recarrega a lista de sons. Chamada na abertura e ao voltar das settings. */
   refreshSfx: () => Promise<void>
+  setUpdate: (status: UpdateStatus) => void
+  setAppVersion: (version: string) => void
   toggleCaptions: () => void
   setScript: (script: string | null) => Promise<void>
   openScript: (open: boolean) => void
@@ -180,6 +186,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   planEdited: false,
   sfxEnabled: true,
   sfxFiles: [],
+  update: null,
+  appVersion: '',
   captionsEnabled: false,
   paletteOpen: false,
 
@@ -662,6 +670,10 @@ export const useProject = create<ProjectState>((set, get) => ({
     const result = await window.dangai.listSfx()
     if (result.ok) set({ sfxFiles: result.value })
   },
+
+  setUpdate: (status) => set({ update: status }),
+
+  setAppVersion: (version) => set({ appVersion: version }),
 
   toggleCaptions: () => set((state) => ({ captionsEnabled: !state.captionsEnabled })),
 

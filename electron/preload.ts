@@ -8,6 +8,7 @@ import {
   type ReframeArgs,
   type SettingsPatch,
   type StartRenderArgs,
+  type UpdateStatus,
 } from '@shared/channels'
 import type { AnalysisResult, AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
 
@@ -35,6 +36,18 @@ const bridge: DangaiBridge = {
   listSfx: () => ipcRenderer.invoke(IPC.listSfx) as Promise<IpcResult<string[]>>,
 
   openSfxDir: () => ipcRenderer.invoke(IPC.openSfxDir) as Promise<IpcResult<null>>,
+
+  appVersion: () => ipcRenderer.invoke(IPC.appVersion) as Promise<IpcResult<string>>,
+
+  installUpdate: () => ipcRenderer.invoke(IPC.installUpdate) as Promise<IpcResult<null>>,
+
+  onUpdateStatus: (listener) => {
+    const handler = (_event: unknown, status: UpdateStatus): void => listener(status)
+    ipcRenderer.on(IPC.updateStatus, handler)
+    return () => {
+      ipcRenderer.off(IPC.updateStatus, handler)
+    }
+  },
 
   pickFiles: () => ipcRenderer.invoke(IPC.pickFiles) as Promise<IpcResult<string[]>>,
 

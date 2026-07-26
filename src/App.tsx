@@ -23,12 +23,22 @@ export function App() {
   const setBusy = useProject((s) => s.setBusy)
   const captionsOpen = useProject((s) => s.captionsOpen)
   const refreshSfx = useProject((s) => s.refreshSfx)
+  const setUpdate = useProject((s) => s.setUpdate)
+  const setAppVersion = useProject((s) => s.setAppVersion)
 
   // Progresso do render vindo do main.
   useEffect(() => window.dangai.onRenderProgress(applyRenderProgress), [applyRenderProgress])
 
   // Lista de SFX na abertura: ela define quantos sons entram no video.
   useEffect(() => void refreshSfx(), [refreshSfx])
+
+  // Atualizacao do app: o main avisa, a barra de status mostra.
+  useEffect(() => window.dangai.onUpdateStatus(setUpdate), [setUpdate])
+  useEffect(() => {
+    void window.dangai.appVersion().then((r) => {
+      if (r.ok) setAppVersion(r.value)
+    })
+  }, [setAppVersion])
 
   // Andamento da analise: Whisper e a chamada da IA levam tempo e nenhum
   // carregamento pode ficar sem sinal visivel.

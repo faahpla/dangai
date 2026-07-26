@@ -16,3 +16,6 @@ release/
 
 .DS_Store
 Thumbs.db
+
+# Permissoes locais do Claude Code: so valem nesta maquina.
+.claude/settings.local.json

@@ -6,6 +6,7 @@ import { startMediaServer } from './services/media-server'
 import { configureRender } from './services/render'
 import { configureSettings } from './services/settings'
 import { configureSfx, ensureSfxDir } from './services/sfx'
+import { startUpdater } from './services/updater'
 import { configureWhisper } from './services/whisper'
 
 const isDev = !app.isPackaged
@@ -21,6 +22,9 @@ function createWindow(): void {
     minHeight: 720,
     show: false,
     backgroundColor: '#0A0A0B',
+    // No app empacotado o icone ja vem no executavel; isto e para a janela e a
+    // barra de tarefas em desenvolvimento nao ficarem com o icone do Electron.
+    icon: join(__dirname, '../../build/icon.png'),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     autoHideMenuBar: true,
     webPreferences: {
@@ -98,6 +102,8 @@ app.whenReady().then(async () => {
 
   registerIpc()
   createWindow()
+
+  void startUpdater(() => BrowserWindow.getAllWindows(), app.isPackaged)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
