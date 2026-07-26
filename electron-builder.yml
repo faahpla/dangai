@@ -14,6 +14,9 @@ publish:
   provider: github
   owner: faahpla
   repo: dangai
+  # Publicada, e nao rascunho: o updater so enxerga release publicada, e um
+  # rascunho esquecido significaria ninguem recebendo atualizacao nenhuma.
+  releaseType: release
 
 files:
   - out/main/**

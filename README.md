@@ -58,10 +58,19 @@ git push --follow-tags
 ```
 
 `npm run release` monta o instalador e publica direto na release do GitHub.
-Os apps instalados percebem sozinhos em algumas horas, ou na próxima abertura.
+Precisa de `GH_TOKEN` no ambiente — `gh auth token` serve.
 
-Precisa de `GH_TOKEN` no ambiente com permissão de escrita no repositório —
-`gh auth token` serve.
+Confira a release antes de considerar publicada: o electron-builder às vezes
+sobe só o `.blockmap` e deixa a release como rascunho. Sem o `.exe` e o
+`latest.yml`, nenhum app se atualiza.
+
+```bash
+gh release view vX.Y.Z --json isDraft,assets
+gh release upload vX.Y.Z release/Dangai-X.Y.Z-win-x64.exe release/latest.yml
+gh release edit vX.Y.Z --draft=false
+```
+
+Os apps instalados percebem sozinhos em algumas horas, ou na próxima abertura.
 
 ## Onde as coisas ficam
 
