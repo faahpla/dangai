@@ -28,25 +28,25 @@ import {
 /**
  * Piso absoluto de um bloco.
  *
- * Baixo de proposito: quem monta sozinho persegue TARGET_BLOCK_SEC, bem acima
- * disto. Este numero so aparece quando o usuario corta na mao, e com o alvo em
- * dois segundos um piso de 1.2s tornaria a divisao impossivel -- nao cabem duas
- * metades de 1.2s dentro de 2s. Meio segundo e um corte rapido, nao um defeito.
+ * Baixo de proposito: o tamanho do bloco e livre, decidido pela conta
+ * "duracao do audio / numero de imagens" e depois pelo arraste do usuario.
+ * Este numero so existe para nenhum bloco virar um piscar.
  */
 export const MIN_SCENE_SEC = 0.6
-/** Mais longa que isso a atencao cai num short. */
+/** Mais longa que isso a atencao cai num short. Vale como dica para a IA. */
 export const MAX_SCENE_SEC = 6
-
-/**
- * Tamanho de bloco que o video persegue.
- *
- * Narracao de recap costuma ser corrida, sem pausa nenhuma para cortar em cima.
- * Sem isso, poucas imagens num audio longo produzem blocos de seis segundos e o
- * video fica parado justamente onde a fala esta acelerada.
- */
-export const TARGET_BLOCK_SEC = 2
 /** Quanto um corte pode andar para cair numa pausa natural. */
 export const SNAP_TOLERANCE_SEC = 0.4
+
+/*
+ * UMA IMAGEM, UM BLOCO. Sem excecao.
+ *
+ * Houve uma versao que repartia sozinha as cenas longas em blocos de ~2s para
+ * dar mais ritmo. Estava errado: quem importa 46 imagens espera 46 blocos, e
+ * receber 63 significa nao reconhecer mais o proprio material na linha do
+ * tempo. Ritmo se resolve importando mais imagens, nao multiplicando as que
+ * existem -- e agora da para inserir imagem exatamente onde falta.
+ */
 
 // ------------------------------------------------------------------ fallback
 
@@ -249,51 +249,6 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
       transitionIn: index === 0 ? 'cut' : scene.transitionIn,
     }
   })
-
-  return { ...plan, scenes: avoidRepeatedEffects(scenes) }
-}
-
-/**
- * Reparte em blocos menores toda cena que ficou longa demais.
- *
- * Os pedacos continuam mostrando a MESMA imagem, no mesmo lugar da linha do
- * tempo. Isso e de proposito: num recap as imagens seguem a narracao em ordem,
- * entao trazer a imagem 1 de volta aos 30 segundos so para ter mais cortes
- * mostraria a cena errada. Repartir mantem a cronologia e ainda assim corta --
- * cada pedaco entra com outro movimento, que e o que faz o corte ler como um
- * enquadramento novo em vez de um defeito.
- *
- * Quem tem imagens suficientes nunca chega aqui: com uma imagem a cada dois
- * segundos, nenhuma cena passa do alvo.
- */
-export function subdivideLongScenes(plan: ScenePlan, targetSec = TARGET_BLOCK_SEC): ScenePlan {
-  const scenes: Scene[] = []
-
-  for (const scene of plan.scenes) {
-    const length = scene.end - scene.start
-
-    // Arredonda em vez de arredondar para cima: uma cena de 2.9s vira um bloco
-    // de 2.9s, e nao dois de 1.45s, que ficariam abaixo do minimo utilizavel.
-    let parts = Math.max(Math.round(length / targetSec), 1)
-    while (parts > 1 && length / parts < MIN_SCENE_SEC) parts--
-
-    if (parts === 1) {
-      scenes.push(scene)
-      continue
-    }
-
-    const step = length / parts
-    for (let part = 0; part < parts; part++) {
-      scenes.push({
-        ...scene,
-        start: scene.start + part * step,
-        end: part === parts - 1 ? scene.end : scene.start + (part + 1) * step,
-        // So o primeiro pedaco herda a transicao da cena; os cortes internos
-        // sao secos, que e o que da o soco de troca de enquadramento.
-        transitionIn: part === 0 ? scene.transitionIn : 'cut',
-      })
-    }
-  }
 
   return { ...plan, scenes: avoidRepeatedEffects(scenes) }
 }

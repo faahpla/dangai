@@ -1,5 +1,5 @@
 import type { AnalysisResult, ImageAsset, Transcript } from '@shared/contract'
-import { planWithoutAI, sanitize, snapToCandidates, subdivideLongScenes } from '@shared/plan'
+import { planWithoutAI, sanitize, snapToCandidates } from '@shared/plan'
 import { transcriptFromScript } from '@shared/align'
 import { parseSrt } from './srt'
 import { transcribe } from './whisper'
@@ -70,12 +70,7 @@ export async function analyze(
         images.length,
       )
 
-      // A IA decide onde cada IMAGEM entra; a reparticao em blocos de dois
-      // segundos vem depois e nao mexe nessa decisao -- so corta dentro do
-      // espaco que cada imagem ja tinha.
-      const blocks = subdivideLongScenes(snapped)
-
-      return { plan: blocks, origin: 'ai', transcript, aiNote: null, scriptNote }
+      return { plan: snapped, origin: 'ai', transcript, aiNote: null, scriptNote }
     } catch (err) {
       // Falha da IA nunca sobe: vira uma nota e o fallback assume.
       const note = err instanceof Error ? err.message : String(err)
@@ -159,9 +154,7 @@ function withoutAI(
   const snapped = transcript
     ? snapToCandidates(plan, transcript.cutCandidates, durationSec, imageCount)
     : plan
-  // Repartir e o ultimo passo. Antes do saneamento nao adianta: ele reconstroi
-  // uma cena por imagem e desfaria tudo.
-  return { plan: subdivideLongScenes(snapped), origin, transcript, aiNote, scriptNote }
+  return { plan: snapped, origin, transcript, aiNote, scriptNote }
 }
 
 /**

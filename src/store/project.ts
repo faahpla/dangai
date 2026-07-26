@@ -15,7 +15,6 @@ import {
   MIN_SCENE_SEC,
   planEqualSplit,
   sfxCuesFor,
-  subdivideLongScenes,
   toRenderProps,
   totalFrames,
 } from '@shared/plan'
@@ -110,11 +109,14 @@ interface ProjectState {
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
-  /** Corta um bloco em dois no instante dado. */
-  splitScene: (index: number, seconds: number) => void
-  /** Junta um bloco com o anterior. So faz sentido se mostram a mesma imagem. */
-  mergeSceneBack: (index: number) => void
-  /** Tira um bloco da linha do tempo, devolvendo o tempo ao vizinho. */
+  /**
+   * Importa imagens e as encaixa numa posicao da fila, e nao no fim.
+   *
+   * E o que substitui a antiga divisao de bloco: mais ritmo se resolve com mais
+   * imagem no ponto onde falta, nao repetindo a que ja estava la.
+   */
+  insertImages: (paths: readonly string[], atIndex: number) => Promise<void>
+  /** Tira um bloco da linha do tempo, junto com a imagem dele. */
   removeScene: (index: number) => void
   /** Move o enquadramento 9:16 sobre a imagem. Instantaneo, so no estado. */
   setImageFocus: (id: string, focusX: number, focusY: number) => void
@@ -146,7 +148,7 @@ type SetState = (partial: Partial<ProjectState>) => void
  */
 function setInterimPlan(set: SetState, imageCount: number, durationSec: number): void {
   set({
-    plan: subdivideLongScenes(planEqualSplit(imageCount, durationSec)),
+    plan: planEqualSplit(imageCount, durationSec),
     planOrigin: 'equal',
     selectedScene: null,
   })
@@ -342,97 +344,101 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   /**
-   * Corta um bloco em dois no instante dado.
+   * Importa imagens e as encaixa no meio da fila.
    *
-   * As duas metades continuam mostrando a mesma imagem -- e o mesmo movimento
-   * que a subdivisao automatica faz, so que no ponto que o usuario escolheu. A
-   * segunda metade entra com corte seco e movimento diferente, senao a divisao
-   * nao se ve.
+   * O tempo das novas sai do bloco onde elas entraram, e nao de toda a linha do
+   * tempo: inserir uma imagem no minuto tres nao pode empurrar tudo que ja
+   * estava ajustado antes dela.
    */
-  splitScene: (index, seconds) => {
-    const { plan } = get()
-    const scene = plan?.scenes[index]
-    if (!plan || !scene) return
+  insertImages: async (paths, atIndex) => {
+    if (paths.length === 0) return
 
-    const min = scene.start + MIN_SCENE_SEC
-    const max = scene.end - MIN_SCENE_SEC
-    // Bloco curto demais para virar dois: dividir aqui produziria um pedaco que
-    // nem da tempo de ver.
-    if (max <= min) return
+    set({ busy: `Lendo ${paths.length} ${paths.length === 1 ? 'imagem' : 'imagens'}...`, error: null })
+    const result = await window.dangai.importImages(paths)
+    if (!result.ok) {
+      set({ error: result.error, busy: null })
+      return
+    }
 
-    const at = Math.min(Math.max(seconds, min), max)
-    const alternative =
-      KEN_BURNS_EFFECTS.find(
-        (effect) => effect !== scene.effect && effect !== plan.scenes[index + 1]?.effect,
-      ) ?? scene.effect
+    const { images, plan, audio } = get()
+    const at = Math.min(Math.max(atIndex, 0), images.length)
+    const novas = result.value
 
-    const scenes = [
-      ...plan.scenes.slice(0, index),
-      { ...scene, end: at },
-      { ...scene, start: at, effect: alternative, transitionIn: 'cut' as const },
-      ...plan.scenes.slice(index + 1),
-    ]
+    const proximas = [...images.slice(0, at), ...novas, ...images.slice(at)]
 
-    set({ plan: { ...plan, scenes }, planEdited: true, selectedScene: index })
-  },
+    // Sem plano ainda: a analise monta tudo do zero.
+    if (!plan || !audio) {
+      set({ images: proximas, busy: null })
+      if (audio && proximas.length > 0) {
+        setInterimPlan(set, proximas.length, audio.durationSec)
+        await get().analyze()
+      }
+      return
+    }
 
-  mergeSceneBack: (index) => {
-    const { plan } = get()
-    const previous = plan?.scenes[index - 1]
-    const scene = plan?.scenes[index]
-    if (!plan || !previous || !scene) return
+    // O bloco que estava naquela posicao cede o proprio tempo, repartido entre
+    // ele e as novas imagens.
+    const anfitriao = plan.scenes[Math.min(at, plan.scenes.length - 1)]!
+    const inicio = at >= plan.scenes.length ? anfitriao.end : anfitriao.start
+    const fim = anfitriao.end
+    const fatias = at >= plan.scenes.length ? novas.length : novas.length + 1
+    const passo = (fim - inicio) / fatias
 
-    const scenes = [
-      ...plan.scenes.slice(0, index - 1),
-      { ...previous, end: scene.end },
-      ...plan.scenes.slice(index + 1),
-    ]
+    const inseridas: Scene[] = novas.map((_, i) => ({
+      imageIndex: at + i,
+      start: inicio + i * passo,
+      end: inicio + (i + 1) * passo,
+      effect: KEN_BURNS_EFFECTS[(at + i) % KEN_BURNS_EFFECTS.length] ?? 'zoom-in',
+      intensity: 0.12,
+      transitionIn: 'cut' as const,
+    }))
 
-    set({ plan: { ...plan, scenes }, planEdited: true, selectedScene: index - 1 })
+    const antes = plan.scenes.slice(0, at)
+    const depois = plan.scenes.slice(at).map((scene) => ({
+      ...scene,
+      imageIndex: scene.imageIndex + novas.length,
+    }))
+
+    // O anfitriao fica com a sobra do proprio intervalo.
+    if (depois[0]) depois[0] = { ...depois[0], start: inicio + novas.length * passo }
+
+    set({
+      images: proximas,
+      plan: { ...plan, scenes: [...antes, ...inseridas, ...depois] },
+      planEdited: true,
+      selectedScene: at,
+      busy: null,
+    })
   },
 
   /**
-   * Tira um bloco da linha do tempo. O tempo dele vai para o vizinho, senao
-   * sobraria um buraco preto no meio do video.
-   *
-   * Sumindo o ultimo bloco de uma imagem, a imagem tambem sai: nao faz sentido
-   * ela continuar na fila sem aparecer em lugar nenhum.
+   * Tira um bloco da linha do tempo, junto com a imagem dele. O tempo vai para
+   * o vizinho, senao sobraria um buraco preto no meio do video.
    */
   removeScene: (index) => {
     const { plan, images } = get()
     const scene = plan?.scenes[index]
     if (!plan || !scene || plan.scenes.length < 2) return
 
-    const scenes = plan.scenes.filter((_, i) => i !== index)
+    const scenes = plan.scenes
+      .filter((_, i) => i !== index)
+      .map((other) => ({
+        ...other,
+        // Reindexa: todo indice acima do removido desce um.
+        imageIndex: other.imageIndex > scene.imageIndex ? other.imageIndex - 1 : other.imageIndex,
+      }))
+
     const previous = scenes[index - 1]
     const next = scenes[index]
-
     if (previous) previous.end = scene.end
     else if (next) next.start = scene.start
 
-    const sobrou = scenes.some((other) => other.imageIndex === scene.imageIndex)
-    if (!sobrou) {
-      const image = images[scene.imageIndex]
-      if (image) {
-        // Reindexa: todo indice acima do removido desce um.
-        set({
-          images: images.filter((item) => item.id !== image.id),
-          plan: {
-            ...plan,
-            scenes: scenes.map((other) => ({
-              ...other,
-              imageIndex:
-                other.imageIndex > scene.imageIndex ? other.imageIndex - 1 : other.imageIndex,
-            })),
-          },
-          planEdited: true,
-          selectedScene: null,
-        })
-        return
-      }
-    }
-
-    set({ plan: { ...plan, scenes }, planEdited: true, selectedScene: null })
+    set({
+      images: images.filter((_, i) => i !== scene.imageIndex),
+      plan: { ...plan, scenes },
+      planEdited: true,
+      selectedScene: null,
+    })
   },
 
   setImageFocus: (id, focusX, focusY) => {

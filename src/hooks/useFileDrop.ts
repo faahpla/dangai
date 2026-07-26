@@ -32,10 +32,20 @@ export function useFileDrop(): boolean {
       if (depth === 0) setIsOver(false)
     }
 
-    const onDrop = (event: DragEvent) => {
-      event.preventDefault()
+    /*
+     * A timeline trata o proprio drop e interrompe a propagacao para as imagens
+     * entrarem na posicao certa em vez de irem para o fim da fila. Isso faria o
+     * handler de baixo nunca rodar e o destaque de arraste ficar aceso para
+     * sempre -- por isso apagar o destaque acontece na fase de captura, que
+     * roda antes de qualquer alvo e nao pode ser interrompida por eles.
+     */
+    const onDropCapture = () => {
       depth = 0
       setIsOver(false)
+    }
+
+    const onDrop = (event: DragEvent) => {
+      event.preventDefault()
 
       const files = Array.from(event.dataTransfer?.files ?? [])
       if (files.length === 0) return
@@ -50,12 +60,14 @@ export function useFileDrop(): boolean {
     window.addEventListener('dragenter', onDragEnter)
     window.addEventListener('dragover', onDragOver)
     window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDropCapture, true)
     window.addEventListener('drop', onDrop)
 
     return () => {
       window.removeEventListener('dragenter', onDragEnter)
       window.removeEventListener('dragover', onDragOver)
       window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDropCapture, true)
       window.removeEventListener('drop', onDrop)
     }
   }, [ingest])

@@ -1,6 +1,6 @@
-import { Scissors } from 'lucide-react'
+import { ImagePlus } from 'lucide-react'
+import { classifyFile } from '@shared/channels'
 import { KEN_BURNS_EFFECTS, TRANSITIONS, type Transition } from '@shared/contract'
-import { MIN_SCENE_SEC } from '@shared/plan'
 import { useProject, formatTimecode } from '@/store/project'
 import { Framing } from './Framing'
 
@@ -12,30 +12,29 @@ export function SceneCard() {
   const images = useProject((s) => s.images)
   const plan = useProject((s) => s.plan)
   const index = useProject((s) => s.selectedScene)
-  const playhead = useProject((s) => s.playhead)
   const updateScene = useProject((s) => s.updateScene)
-  const splitScene = useProject((s) => s.splitScene)
-  const mergeSceneBack = useProject((s) => s.mergeSceneBack)
+  const insertImages = useProject((s) => s.insertImages)
 
   const scene = index === null ? undefined : plan?.scenes[index]
   const image = scene ? images[scene.imageIndex] : undefined
 
   if (index === null || !scene || !image) return null
 
-  // Quantos blocos esta imagem ocupa, e qual deles e este. So aparece quando ha
-  // mais de um: com um so, a informacao seria ruido.
-  const doImage = plan?.scenes.filter((item) => item.imageIndex === scene.imageIndex) ?? []
-  const ordem = doImage.indexOf(scene) + 1
+  const total = plan?.scenes.length ?? 0
 
-  const podeJuntar = plan?.scenes[index - 1]?.imageIndex === scene.imageIndex
-  const podeDividir = scene.end - scene.start >= MIN_SCENE_SEC * 2
-  const cortarEm = Math.min(Math.max(playhead, scene.start), scene.end)
-  const agulhaDentro = playhead > scene.start && playhead < scene.end
+  const inserir = async (at: number): Promise<void> => {
+    const picked = await window.dangai.pickFiles()
+    if (!picked.ok) return
+    const imagens = picked.value.filter((path) => classifyFile(path) === 'image')
+    if (imagens.length > 0) await insertImages(imagens, at)
+  }
 
   return (
     <aside className="enter flex w-[228px] shrink-0 flex-col gap-5 overflow-y-auto">
       <header className="flex items-baseline justify-between">
-        <span className="text-[13px] font-medium text-ink">Bloco {index + 1}</span>
+        <span className="text-[13px] font-medium text-ink">
+          Bloco {index + 1} <span className="text-ink-3">de {total}</span>
+        </span>
         <span className="tnum text-[11px] text-ink-3">
           {(scene.end - scene.start).toFixed(1)}s
         </span>
@@ -45,33 +44,25 @@ export function SceneCard() {
         <span className="tnum text-[13px] text-ink-2">{formatTimecode(scene.start)}</span>
       </Field>
 
-      <Field label="Cortar">
+      <Field label="Inserir imagem">
         <div className="flex flex-col gap-1.5">
-          <Chip
-            active={false}
-            disabled={!podeDividir}
-            onClick={() =>
-              splitScene(index, agulhaDentro ? cortarEm : (scene.start + scene.end) / 2)
-            }
-          >
-            <Scissors size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-            {agulhaDentro ? 'Dividir na agulha' : 'Dividir ao meio'}
+          <Chip active={false} onClick={() => void inserir(index)}>
+            <ImagePlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+            Antes deste bloco
           </Chip>
-          {podeJuntar && (
-            <Chip active={false} onClick={() => mergeSceneBack(index)}>
-              Juntar com o anterior
-            </Chip>
-          )}
+          <Chip active={false} onClick={() => void inserir(index + 1)}>
+            <ImagePlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+            Depois deste bloco
+          </Chip>
         </div>
+        <p className="text-[11px] leading-relaxed text-ink-3">
+          O tempo sai deste bloco, entao o resto da linha do tempo nao se mexe. Arrastar imagens
+          direto na timeline faz o mesmo.
+        </p>
       </Field>
 
       <Field label="Enquadramento">
         <Framing image={image} />
-        {doImage.length > 1 && (
-          <p className="text-[11px] leading-relaxed text-ink-3">
-            Vale para os {doImage.length} blocos desta imagem — este e o {ordem}o.
-          </p>
-        )}
       </Field>
 
       <Field label="Movimento">

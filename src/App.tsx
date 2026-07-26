@@ -77,14 +77,6 @@ export function App() {
           event.preventDefault()
           removeScene(selectedScene)
           break
-        // Dividir o bloco onde a agulha esta -- o corte que um editor faz sem
-        // tirar a mao do teclado.
-        case 's':
-        case 'S':
-          if (rendering || selectedScene === null || event.ctrlKey || event.metaKey) return
-          event.preventDefault()
-          store.splitScene(selectedScene, store.playhead)
-          break
         case 'r':
           if (!event.ctrlKey && !event.metaKey) return
           event.preventDefault()
