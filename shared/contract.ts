@@ -125,6 +125,29 @@ export const TRANSITION_FRAMES: Readonly<Record<Transition, number>> = {
 export const SFX_SOUNDS = ['whoosh', 'impact'] as const
 export type SfxSound = (typeof SFX_SOUNDS)[number]
 
+/**
+ * Como o movimento se distribui ao longo da cena.
+ *
+ * O efeito diz PARA ONDE a camera vai e a intensidade diz QUANTO; a curva diz em
+ * que ritmo. Sao as tres perguntas independentes de um Ken Burns, e ate agora a
+ * terceira estava fixa no codigo: toda cena usava ease-in-out.
+ *
+ * Os nomes sao os padroes de easing porque a matematica e a mesma do CSS. O que
+ * cada um faz, que e o que aparece na interface:
+ *
+ *   ease-in-out  comeca devagar, acelera, termina devagar -- assenta
+ *   linear       velocidade constante -- num movimento lento fica melhor que o
+ *                ease-in-out, que faz as pontas parecerem travadas
+ *   ease-out     parte rapido e desacelera -- o movimento "pousa"
+ *   ease-in      parte devagar e acelera -- cria tensao entrando no corte
+ */
+export const MOTION_CURVES = ['ease-in-out', 'linear', 'ease-out', 'ease-in'] as const
+export const motionCurveSchema = z.enum(MOTION_CURVES)
+export type MotionCurve = z.infer<typeof motionCurveSchema>
+
+/** O que o app sempre fez. Manter como padrao nao muda nenhum video existente. */
+export const MOTION_CURVE_DEFAULT: MotionCurve = 'ease-in-out'
+
 export const sceneSchema = z.object({
   /** Indice na lista de imagens do usuario. */
   imageIndex: z.number().int().nonnegative(),
@@ -133,6 +156,13 @@ export const sceneSchema = z.object({
   effect: z.enum(KEN_BURNS_EFFECTS),
   /** Quanto o Ken Burns se move. 0.10 a 0.15; acima disso fica tosco. */
   intensity: z.number().min(0.02).max(0.2),
+  /**
+   * Com default de proposito: projeto salvo antes da curva existir abre igual, e
+   * a IA nao precisa escolher. O planner valida a saida dela contra este schema,
+   * entao o campo ausente vira ease-in-out sozinho -- ritmo de camera e decisao
+   * de gosto do Kintay, nao de modelo.
+   */
+  curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
   transitionIn: z.enum(TRANSITIONS),
   reason: z.string().optional(),
 })
@@ -214,6 +244,39 @@ export const captionBlockSchema = z.object({
 export type CaptionBlock = z.infer<typeof captionBlockSchema>
 
 /**
+ * Qual palavra do bloco esta marcada neste frame.
+ *
+ * A regra e "a ultima palavra que ja comecou", e nao "a palavra cuja janela
+ * contem este frame". A diferenca decide se o marcador pisca ou nao.
+ *
+ * Com a janela estrita, o marcador APAGAVA sempre que o frame caia fora de toda
+ * palavra -- e isso acontecia o tempo todo: no respiro entre duas palavras,
+ * antes da primeira (o bloco entra na tela um pouco antes da fala, porque
+ * enforceMinimumDuration estica a janela para dentro do silencio vizinho) e
+ * depois da ultima. Medido no projeto real: 188 de 2045 frames de legenda
+ * ficavam sem nenhuma palavra marcada, metade dos blocos piscava, e 16 blocos
+ * de uma palavra so ficavam brancos parte do tempo em que estavam na tela.
+ *
+ * Segurando, o marcador nunca apaga: entra na primeira palavra, anda quando a
+ * proxima comeca, e fica na ultima ate o bloco sair. De quebra, deixa de
+ * depender da DURACAO de cada palavra -- o numero menos confiavel que temos,
+ * porque as palavras que o Whisper nao ouviu recebem duracao interpolada por
+ * tamanho de texto, e um quarto delas ficava com dois frames ou menos.
+ *
+ * Mora em contract.ts, e nao em plan.ts, porque a composicao Remotion consome
+ * esta funcao e o detector de bundle vencido so vigia src/remotion e este
+ * arquivo -- ver bundleVencido em electron/services/render.ts.
+ */
+export function activeWordIndex(block: CaptionBlock, frame: number): number {
+  let index = 0
+  for (let i = 0; i < block.words.length; i++) {
+    if (block.words[i]!.from > frame) break
+    index = i
+  }
+  return index
+}
+
+/**
  * Um card de texto por cima do video.
  *
  * Gancho e final entram como SOBREPOSICAO, nunca como trecho extra: a narracao
@@ -234,6 +297,57 @@ export type OverlayCard = z.infer<typeof overlayCardSchema>
 export const HOOK_SEC_DEFAULT = 2.5
 export const END_CARD_SEC_DEFAULT = 3
 
+/**
+ * Cor do marcador de palavra.
+ *
+ * O corpo da legenda e sempre branco: sobre print de anime, que vai do preto ao
+ * estourado, branco com contorno preto e a unica combinacao que se le em
+ * qualquer fundo. Quem muda de cor e so a palavra sendo dita -- e ali a cor e
+ * decisao de estilo do video, nao de legibilidade.
+ *
+ * Os cinco tons sao claros e saturados de proposito. Cor escura (azul-marinho,
+ * vinho) se dissolve dentro do contorno preto de 6px, e o marcador sumiria
+ * justamente no frame em que deveria chamar atencao.
+ */
+export const CAPTION_COLORS = ['rosa', 'amarelo', 'verde', 'vermelho', 'azul'] as const
+export const captionColorSchema = z.enum(CAPTION_COLORS)
+export type CaptionColor = z.infer<typeof captionColorSchema>
+
+export const CAPTION_COLOR_HEX: Record<CaptionColor, string> = {
+  rosa: '#FF3D81',
+  amarelo: '#FFD60A',
+  verde: '#34E06A',
+  vermelho: '#FF3B30',
+  azul: '#3DB8FF',
+}
+
+/** Rosa e o padrao: e a cor do app, e o video sai parecido com ele. */
+export const CAPTION_COLOR_DEFAULT: CaptionColor = 'rosa'
+
+/**
+ * Altura da legenda, como fracao da altura do video medida a partir do rodape.
+ *
+ * Fracao e nao pixel de proposito: o valor fica preso ao enquadramento, nao a
+ * resolucao, e continua valendo se um dia a composicao mudar de tamanho.
+ *
+ * O padrao e exatamente os 420px que o app sempre usou -- e ele nao e um numero
+ * bonito escolhido a esmo. No TikTok e no Reels a faixa de baixo da tela fica
+ * coberta pela interface do proprio aplicativo (usuario, legenda, botoes), e
+ * legenda queimada ali simplesmente nao e lida. Descer daqui e uma escolha
+ * consciente de quem sabe onde o video vai ser publicado.
+ *
+ * O teto para antes do meio da tela: acima disso a legenda briga com o card de
+ * fechamento, que e centralizado.
+ */
+export const CAPTION_Y_DEFAULT = 420 / VIDEO_HEIGHT
+export const CAPTION_Y_MIN = 0.08
+export const CAPTION_Y_MAX = 0.55
+export const captionYSchema = z
+  .number()
+  .min(CAPTION_Y_MIN)
+  .max(CAPTION_Y_MAX)
+  .default(CAPTION_Y_DEFAULT)
+
 export const renderPropsSchema = z.object({
   scenes: z.array(
     z.object({
@@ -241,6 +355,7 @@ export const renderPropsSchema = z.object({
       durationInFrames: z.number().int().positive(),
       effect: z.enum(KEN_BURNS_EFFECTS),
       intensity: z.number(),
+      curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
       transitionIn: z.enum(TRANSITIONS),
       /** Frames da transicao de entrada. 0 = corte seco. */
       transitionInFrames: z.number().int().nonnegative(),
@@ -248,6 +363,10 @@ export const renderPropsSchema = z.object({
   ),
   /** Vazio quando as legendas estao desligadas ou nao ha transcricao. */
   captions: z.array(captionBlockSchema).default([]),
+  /** Cor do marcador de palavra. Com default para props antigas continuarem validas. */
+  captionColor: captionColorSchema.default(CAPTION_COLOR_DEFAULT),
+  /** Altura da legenda, fracao da tela a partir do rodape. */
+  captionY: captionYSchema,
   /** Texto de abertura e de fechamento. Vazio quando o usuario nao pediu. */
   cards: z.array(overlayCardSchema).default([]),
 })

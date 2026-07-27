@@ -2,6 +2,10 @@ import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
 import type { MusicPick, UpdateStatus } from '@shared/channels'
 import {
+  CAPTION_COLOR_DEFAULT,
+  CAPTION_Y_DEFAULT,
+  CAPTION_Y_MAX,
+  CAPTION_Y_MIN,
   END_CARD_SEC_DEFAULT,
   HOOK_SEC_DEFAULT,
   KEN_BURNS_EFFECTS,
@@ -11,7 +15,9 @@ import {
 } from '@shared/contract'
 import type {
   AudioAnalysis,
+  CaptionColor,
   ImageAsset,
+  MotionCurve,
   Metadata,
   PlanOrigin,
   RenderProgress,
@@ -124,6 +130,10 @@ interface ProjectState {
   update: UpdateStatus | null
   appVersion: string
   captionsEnabled: boolean
+  /** Cor do marcador de palavra na legenda queimada. */
+  captionColor: CaptionColor
+  /** Altura da legenda na tela, fracao a partir do rodape. */
+  captionY: number
   paletteOpen: boolean
 
   /**
@@ -145,8 +155,13 @@ interface ProjectState {
 
   phase: () => Phase
   ingest: (paths: readonly string[]) => Promise<void>
-  /** Troca efeito, transicao ou intensidade de uma cena. */
-  updateScene: (index: number, patch: Partial<Pick<Scene, 'effect' | 'transitionIn' | 'intensity'>>) => void
+  /** Troca efeito, transicao, intensidade ou curva de uma cena. */
+  updateScene: (
+    index: number,
+    patch: Partial<Pick<Scene, 'effect' | 'transitionIn' | 'intensity' | 'curve'>>,
+  ) => void
+  /** Joga a curva de uma cena em todas as outras. */
+  applyCurveToAll: (curve: MotionCurve) => void
   /** Move a fronteira entre a cena index-1 e a cena index. */
   moveBoundary: (index: number, seconds: number) => void
   toggleSfx: () => void
@@ -163,6 +178,8 @@ interface ProjectState {
   setUpdate: (status: UpdateStatus) => void
   setAppVersion: (version: string) => void
   toggleCaptions: () => void
+  setCaptionColor: (color: CaptionColor) => void
+  setCaptionY: (y: number) => void
   setScript: (script: string | null) => Promise<void>
   openScript: (open: boolean) => void
   openCaptions: (open: boolean) => void
@@ -280,6 +297,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   update: null,
   appVersion: '',
   captionsEnabled: false,
+  captionColor: CAPTION_COLOR_DEFAULT,
+  captionY: CAPTION_Y_DEFAULT,
   paletteOpen: false,
   queue: [],
   queueRunning: false,
@@ -548,6 +567,9 @@ export const useProject = create<ProjectState>((set, get) => ({
       end: i === n - 1 ? fim : inicio + (i + 1) * passo,
       effect: KEN_BURNS_EFFECTS[(at + i) % KEN_BURNS_EFFECTS.length] ?? 'zoom-in',
       intensity: 0.12,
+      // Herda a curva do bloco que cedeu o tempo, e nao o padrao: quem ja
+      // ajustou o ritmo do video inteiro nao quer o bloco novo destoando.
+      curve: anfitriao.curve,
       transitionIn: 'cut' as const,
     }))
 
@@ -658,6 +680,22 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (!plan) return
     const scenes = plan.scenes.map((scene, i) => (i === index ? { ...scene, ...patch } : scene))
     set({ plan: { ...plan, scenes }, planEdited: true })
+  },
+
+  /**
+   * A mesma curva em todas as cenas.
+   *
+   * Existe porque o projeto real dele tem 46 blocos: escolher o ritmo de camera
+   * um a um seria 46 idas ao painel para uma decisao que quase sempre e do video
+   * inteiro, nao de um bloco.
+   */
+  applyCurveToAll: (curve) => {
+    const { plan } = get()
+    if (!plan) return
+    set({
+      plan: { ...plan, scenes: plan.scenes.map((scene) => ({ ...scene, curve })) },
+      planEdited: true,
+    })
   },
 
   /**
@@ -853,6 +891,13 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   toggleCaptions: () => set((state) => ({ captionsEnabled: !state.captionsEnabled })),
 
+  setCaptionColor: (color) => set({ captionColor: color }),
+
+  // Grampeia aqui e nao so na interface: a store tambem e chamada pelo Ctrl+K e
+  // pela restauracao de projeto, e um valor fora da faixa jogaria a legenda para
+  // fora da tela ou para cima do card de fechamento.
+  setCaptionY: (y) => set({ captionY: Math.min(Math.max(y, CAPTION_Y_MIN), CAPTION_Y_MAX) }),
+
   openPalette: (open) => set({ paletteOpen: open }),
 
   selectScene: (index) => set({ selectedScene: index }),
@@ -879,7 +924,8 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   startRender: async () => {
     const {
-      audio, images, plan, sfxEnabled, sfxFiles, captionsEnabled, captions, music, musicGainDb,
+      audio, images, plan, sfxEnabled, sfxFiles, captionsEnabled, captions, captionColor,
+      captionY, music, musicGainDb,
     } = get()
     if (!audio || images.length === 0 || !plan) return null
 
@@ -892,12 +938,14 @@ export const useProject = create<ProjectState>((set, get) => ({
     const { hookText, hookSec, endText, endSec } = get()
 
     const result = await window.dangai.startRender({
-      props: toRenderProps(plan, images, captionsEnabled ? captions : [], {
-        hook: hookText,
-        hookSec,
-        end: endText,
-        endSec,
-      }),
+      props: toRenderProps(
+        plan,
+        images,
+        captionsEnabled ? captions : [],
+        { hook: hookText, hookSec, end: endText, endSec },
+        captionColor,
+        captionY,
+      ),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
       // Os cues sao montados aqui e nao guardados no plano: eles dependem dos
@@ -1021,6 +1069,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       captions: state.captions,
       captionsEdited: state.captionsEdited,
       captionsEnabled: state.captionsEnabled,
+      captionColor: state.captionColor,
+      captionY: state.captionY,
       sfxEnabled: state.sfxEnabled,
       music: state.music
         ? { path: state.music.path, rel: null, fileName: state.music.fileName }
@@ -1247,6 +1297,8 @@ async function applyProjectFile(
       captions: file.captions,
       captionsEdited: file.captionsEdited,
       captionsEnabled: file.captionsEnabled,
+      captionColor: file.captionColor,
+      captionY: file.captionY,
       sfxEnabled: file.sfxEnabled,
 
       // Nada de estado de sessao atravessa a abertura: o render anterior nao e

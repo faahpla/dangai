@@ -1,6 +1,12 @@
 import { ImagePlus, Scissors } from 'lucide-react'
 import { classifyFile } from '@shared/channels'
-import { KEN_BURNS_EFFECTS, TRANSITIONS, type Transition } from '@shared/contract'
+import {
+  KEN_BURNS_EFFECTS,
+  MOTION_CURVES,
+  TRANSITIONS,
+  type MotionCurve,
+  type Transition,
+} from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 import { Framing } from './Framing'
 
@@ -13,6 +19,7 @@ export function SceneCard() {
   const plan = useProject((s) => s.plan)
   const index = useProject((s) => s.selectedScene)
   const updateScene = useProject((s) => s.updateScene)
+  const applyCurveToAll = useProject((s) => s.applyCurveToAll)
   const insertImages = useProject((s) => s.insertImages)
 
   const scene = index === null ? undefined : plan?.scenes[index]
@@ -21,6 +28,10 @@ export function SceneCard() {
   if (index === null || !scene || !image) return null
 
   const total = plan?.scenes.length ?? 0
+
+  // O botao de aplicar em todos so aparece quando ha o que aplicar -- se o
+  // video inteiro ja usa esta curva, ele nao faria nada.
+  const mesmaCurvaEmTodas = plan?.scenes.every((s) => s.curve === scene.curve) ?? true
 
   const inserir = async (seconds: number): Promise<void> => {
     const picked = await window.dangai.pickFiles()
@@ -102,6 +113,26 @@ export function SceneCard() {
         </div>
       </Field>
 
+      <Field label="Ritmo do movimento">
+        <div className="grid grid-cols-2 gap-1.5">
+          {MOTION_CURVES.map((curve) => (
+            <Chip
+              key={curve}
+              active={scene.curve === curve}
+              onClick={() => updateScene(index, { curve })}
+            >
+              {CURVE_LABEL[curve]}
+            </Chip>
+          ))}
+        </div>
+        <p className="text-[11px] leading-relaxed text-ink-3">{CURVE_HINT[scene.curve]}</p>
+        {total > 1 && !mesmaCurvaEmTodas && (
+          <Chip active={false} onClick={() => applyCurveToAll(scene.curve)}>
+            Usar em todos os {total} blocos
+          </Chip>
+        )}
+      </Field>
+
       <Field label="Transicao de entrada">
         {index === 0 ? (
           <p className="text-[11px] leading-relaxed text-ink-3">
@@ -169,6 +200,26 @@ const EFFECT_LABEL: Readonly<Record<(typeof KEN_BURNS_EFFECTS)[number], string>>
   'pan-right': 'Pan dir.',
   'pan-up': 'Pan cima',
   'pan-down': 'Pan baixo',
+}
+
+/**
+ * Nomeadas pelo que se ve, nao pelo nome tecnico.
+ *
+ * "ease-out" nao diz nada para quem esta montando um short -- e pior, o nome
+ * sugere o contrario do que faz.
+ */
+const CURVE_LABEL: Readonly<Record<MotionCurve, string>> = {
+  'ease-in-out': 'Suave',
+  linear: 'Constante',
+  'ease-out': 'Desacelera',
+  'ease-in': 'Acelera',
+}
+
+const CURVE_HINT: Readonly<Record<MotionCurve, string>> = {
+  'ease-in-out': 'Parte devagar e para devagar. E o que o app sempre fez.',
+  linear: 'Mesma velocidade do inicio ao fim. Num movimento lento, fica menos travado que o suave.',
+  'ease-out': 'Parte rapido e pousa. Bom para revelacao.',
+  'ease-in': 'Parte devagar e acelera. Cria tensao entrando no corte.',
 }
 
 const TRANSITION_LABEL: Readonly<Record<Transition, string>> = {

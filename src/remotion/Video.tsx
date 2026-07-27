@@ -44,7 +44,7 @@ function useFontsReady(enabled: boolean): boolean {
   return ready
 }
 
-export function Video({ scenes, captions, cards }: RenderProps) {
+export function Video({ scenes, captions, cards, captionColor, captionY }: RenderProps) {
   // Gancho e legenda usam a mesma fonte, entao qualquer um dos dois obriga a
   // esperar por ela -- senao o card sai no fallback e so aparece no MP4.
   const fontsReady = useFontsReady(captions.length > 0 || cards.length > 0)
@@ -67,7 +67,9 @@ export function Video({ scenes, captions, cards }: RenderProps) {
         ))}
       </TransitionSeries>
 
-      {fontsReady && captions.length > 0 && <Captions blocks={captions} />}
+      {fontsReady && captions.length > 0 && (
+        <Captions blocks={captions} color={captionColor} y={captionY} />
+      )}
       {fontsReady && cards.length > 0 && <Cards cards={cards} />}
     </AbsoluteFill>
   )

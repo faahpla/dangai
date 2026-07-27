@@ -1,5 +1,12 @@
 import { Composition } from 'remotion'
-import { VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH, type RenderProps } from '@shared/contract'
+import {
+  CAPTION_COLOR_DEFAULT,
+  CAPTION_Y_DEFAULT,
+  VIDEO_FPS,
+  VIDEO_HEIGHT,
+  VIDEO_WIDTH,
+  type RenderProps,
+} from '@shared/contract'
 import { Video } from './Video'
 
 export const COMPOSITION_ID = 'dangai'
@@ -8,7 +15,13 @@ export const COMPOSITION_ID = 'dangai'
  * Duracao e cenas chegam por inputProps no momento do render; os valores aqui
  * sao so o que o Remotion Studio precisa para abrir sem props.
  */
-const FALLBACK_PROPS: RenderProps = { scenes: [], captions: [], cards: [] }
+const FALLBACK_PROPS: RenderProps = {
+  scenes: [],
+  captions: [],
+  cards: [],
+  captionColor: CAPTION_COLOR_DEFAULT,
+  captionY: CAPTION_Y_DEFAULT,
+}
 
 export function RemotionRoot() {
   return (

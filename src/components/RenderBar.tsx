@@ -16,7 +16,15 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useProject } from '@/store/project'
-import { MUSIC_GAIN_DB_MAX, MUSIC_GAIN_DB_MIN } from '@shared/contract'
+import {
+  CAPTION_COLOR_HEX,
+  CAPTION_COLORS,
+  CAPTION_Y_DEFAULT,
+  CAPTION_Y_MAX,
+  CAPTION_Y_MIN,
+  MUSIC_GAIN_DB_MAX,
+  MUSIC_GAIN_DB_MIN,
+} from '@shared/contract'
 import { dedupe, preflight } from '@shared/preflight'
 
 /**
@@ -119,6 +127,8 @@ export function RenderBar() {
           Legendas
         </button>
       )}
+
+      {captionCount > 0 && captionsEnabled && !isRendering && <EstiloControl />}
 
       {sfxCount > 0 && !isRendering && (
         <button
@@ -325,6 +335,112 @@ function Copiavel({
       >
         {texto}
       </button>
+    </div>
+  )
+}
+
+/**
+ * A aparencia da legenda: cor do marcador e altura na tela.
+ *
+ * So aparece com as legendas ligadas -- controle que nao faz nada e pior que
+ * controle nenhum.
+ *
+ * As amostras sao os tons de verdade, nao aproximacoes: vem do mesmo
+ * CAPTION_COLOR_HEX que a composicao usa. O corpo da legenda continua branco em
+ * todas: sobre print de anime, branco com contorno preto e o unico par que se le
+ * em qualquer fundo, e trocar isso seria trocar legibilidade por gosto.
+ *
+ * A altura fecha o popover so no soltar do mouse, e nao a cada passo: arrastar
+ * o controle com o preview aberto e justamente como se escolhe a altura.
+ */
+function EstiloControl() {
+  const captionColor = useProject((s) => s.captionColor)
+  const setCaptionColor = useProject((s) => s.setCaptionColor)
+  const captionY = useProject((s) => s.captionY)
+  const setCaptionY = useProject((s) => s.setCaptionY)
+  const [aberto, setAberto] = useState(false)
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        aria-label="Estilo da legenda"
+        title="Cor da palavra marcada e altura da legenda"
+        className={[
+          'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
+          aberto
+            ? 'border-line-strong bg-elevated text-ink'
+            : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+        ].join(' ')}
+      >
+        <span
+          className="size-3 rounded-full"
+          style={{ backgroundColor: CAPTION_COLOR_HEX[captionColor] }}
+        />
+        Estilo
+      </button>
+
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-40" onPointerDown={() => setAberto(false)} />
+          <div className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 w-[248px] rounded-md p-3">
+            <span className="text-[10px] uppercase tracking-wide text-ink-3">Cor da palavra</span>
+            <div className="mt-1.5 flex gap-1">
+              {CAPTION_COLORS.map((cor) => (
+                <button
+                  key={cor}
+                  type="button"
+                  onClick={() => setCaptionColor(cor)}
+                  title={cor}
+                  aria-label={cor}
+                  aria-pressed={cor === captionColor}
+                  className={[
+                    'grid size-7 place-items-center rounded-sm border',
+                    cor === captionColor ? 'border-ink-2' : 'border-transparent hover:border-line',
+                  ].join(' ')}
+                >
+                  <span
+                    className="size-4 rounded-full"
+                    style={{ backgroundColor: CAPTION_COLOR_HEX[cor] }}
+                  />
+                </button>
+              ))}
+            </div>
+
+            <div className="my-3 h-px bg-line" />
+
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] uppercase tracking-wide text-ink-3">Altura</span>
+              <button
+                type="button"
+                onClick={() => setCaptionY(CAPTION_Y_DEFAULT)}
+                disabled={captionY === CAPTION_Y_DEFAULT}
+                className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
+              >
+                voltar ao padrao
+              </button>
+            </div>
+            <input
+              type="range"
+              aria-label="Altura da legenda"
+              min={CAPTION_Y_MIN}
+              max={CAPTION_Y_MAX}
+              step={0.005}
+              value={captionY}
+              onChange={(event) => setCaptionY(Number(event.target.value))}
+              className="dangai-range mt-1.5 w-full"
+            />
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+              {captionY < CAPTION_Y_DEFAULT - 0.02
+                ? 'Abaixo do padrao: no TikTok e no Reels a faixa de baixo fica coberta pela interface do app.'
+                : captionY > 0.45
+                  ? 'Perto do meio da tela, onde o card de fechamento aparece.'
+                  : 'Fora da area que a interface do TikTok e do Reels cobre.'}
+            </p>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import {
   captionBlockSchema,
+  CAPTION_COLOR_DEFAULT,
+  captionColorSchema,
+  captionYSchema,
   END_CARD_SEC_DEFAULT,
   HOOK_SEC_DEFAULT,
   metadataSchema,
@@ -68,6 +71,10 @@ export const projectFileSchema = z.object({
   captions: z.array(captionBlockSchema),
   captionsEdited: z.boolean(),
   captionsEnabled: z.boolean(),
+  /** Cor do marcador de palavra. Default para projeto salvo antes dela existir. */
+  captionColor: captionColorSchema.default(CAPTION_COLOR_DEFAULT),
+  /** Altura da legenda na tela. Idem: projeto antigo abre nos 420px de sempre. */
+  captionY: captionYSchema,
   sfxEnabled: z.boolean(),
   /** Cama de musica. Com default para projeto salvo antes dela existir abrir igual. */
   music: referenceSchema.nullable().default(null),

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Merge, RotateCcw, Split } from 'lucide-react'
-import { VIDEO_FPS } from '@shared/contract'
+import { activeWordIndex, VIDEO_FPS } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 
 /**
@@ -201,8 +201,10 @@ export function CaptionEditor() {
                         title="Clique duas vezes para corrigir"
                         className={[
                           'rounded-[3px] px-0.5 text-[13px]',
-                          isActive && currentFrame >= word.from &&
-                          currentFrame < word.from + word.durationInFrames
+                          // Mesma regra do video: a ultima palavra que ja
+                          // comecou. O editor existe para mostrar o que vai
+                          // sair, entao ele nao pode marcar outra palavra.
+                          isActive && activeWordIndex(block, currentFrame) === wordIndex
                             ? 'text-accent'
                             : 'text-ink-2',
                         ].join(' ')}

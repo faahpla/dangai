@@ -30,6 +30,8 @@ const CAMPOS = [
   'captions',
   'captionsEdited',
   'captionsEnabled',
+  'captionColor',
+  'captionY',
   'sfxEnabled',
   'music',
   'musicGainDb',

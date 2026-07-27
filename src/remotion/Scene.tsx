@@ -11,11 +11,11 @@ type SceneProps = RenderProps['scenes'][number]
  * preta -- por isso o pan parte de uma escala ja ampliada, senao a borda entra
  * no quadro quando a imagem desliza.
  */
-export function Scene({ url, durationInFrames, effect, intensity }: SceneProps) {
+export function Scene({ url, durationInFrames, effect, intensity, curve }: SceneProps) {
   const frame = useCurrentFrame()
 
   const eased = interpolate(frame, [0, Math.max(durationInFrames - 1, 1)], [0, 1], {
-    easing: Easing.inOut(Easing.cubic),
+    easing: easingFor(curve),
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   })
@@ -37,6 +37,28 @@ export function Scene({ url, durationInFrames, effect, intensity }: SceneProps) 
       />
     </AbsoluteFill>
   )
+}
+
+/**
+ * A curva escolhida, na forma que o interpolate espera.
+ *
+ * Cubica em todas para as quatro serem comparaveis entre si: trocar a curva tem
+ * que mudar so o ritmo, nao a "quantidade" de movimento. Nenhuma delas passa de
+ * 0..1 -- curva com overshoot empurraria o pan alem da folga de borda que o
+ * motionFor reserva, e a tarja preta entraria no quadro.
+ */
+function easingFor(curve: SceneProps['curve']): ((t: number) => number) | undefined {
+  switch (curve) {
+    case 'ease-in-out':
+      return Easing.inOut(Easing.cubic)
+    case 'ease-out':
+      return Easing.out(Easing.cubic)
+    case 'ease-in':
+      return Easing.in(Easing.cubic)
+    case 'linear':
+      // Sem easing: o interpolate ja e linear por natureza.
+      return undefined
+  }
 }
 
 interface Motion {

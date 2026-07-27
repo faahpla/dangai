@@ -49,6 +49,8 @@ export function Preview() {
   const plan = useProject((s) => s.plan)
   const captions = useProject((s) => s.captions)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
+  const captionColor = useProject((s) => s.captionColor)
+  const captionY = useProject((s) => s.captionY)
 
   const hookText = useProject((s) => s.hookText)
   const hookSec = useProject((s) => s.hookSec)
@@ -58,14 +60,27 @@ export function Preview() {
   const inputProps = useMemo(
     () =>
       plan && images.length > 0
-        ? toRenderProps(plan, images, captionsEnabled ? captions : [], {
-            hook: hookText,
-            hookSec,
-            end: endText,
-            endSec,
-          })
-        : { scenes: [], captions: [], cards: [] },
-    [plan, images, captions, captionsEnabled, hookText, hookSec, endText, endSec],
+        ? toRenderProps(
+            plan,
+            images,
+            captionsEnabled ? captions : [],
+            { hook: hookText, hookSec, end: endText, endSec },
+            captionColor,
+            captionY,
+          )
+        : { scenes: [], captions: [], cards: [], captionColor, captionY },
+    [
+      plan,
+      images,
+      captions,
+      captionsEnabled,
+      captionColor,
+      captionY,
+      hookText,
+      hookSec,
+      endText,
+      endSec,
+    ],
   )
 
   /*

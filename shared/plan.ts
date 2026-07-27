@@ -1,13 +1,17 @@
 import { boundariesFrom, pickCuts } from './rhythm'
 import {
   CAPTION_BREAK_AFTER,
+  CAPTION_COLOR_DEFAULT,
+  CAPTION_Y_DEFAULT,
   CAPTION_MAX_CHARS,
   CAPTION_MAX_WORDS,
   CAPTION_MIN_SEC,
   KEN_BURNS_EFFECTS,
+  MOTION_CURVE_DEFAULT,
   TRANSITION_FRAMES,
   VIDEO_FPS,
   type CaptionBlock,
+  type CaptionColor,
   type ImageAsset,
   type OverlayCard,
   type RenderProps,
@@ -68,6 +72,7 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
     end: index === imageCount - 1 ? durationSec : (index + 1) * per,
     effect: pickEffect(index),
     intensity: 0.12,
+    curve: MOTION_CURVE_DEFAULT,
     transitionIn: index === 0 ? ('cut' as const) : ('cut' as const),
   }))
 
@@ -126,6 +131,7 @@ export function planFromCandidates(
     end: bounds[index + 1]!,
     effect: pickEffect(index),
     intensity: 0.12,
+    curve: MOTION_CURVE_DEFAULT,
     transitionIn: 'cut' as const,
   }))
 
@@ -220,6 +226,7 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
           end: ((index + 1) * durationSec) / imageCount,
           effect: pickEffect(index),
           intensity: 0.12,
+          curve: MOTION_CURVE_DEFAULT,
           transitionIn: 'cut' as const,
         }
   })
@@ -323,9 +330,13 @@ export function toRenderProps(
   images: readonly ImageAsset[],
   captions: readonly CaptionBlock[] = [],
   cardText: CardText | null = null,
+  captionColor: CaptionColor = CAPTION_COLOR_DEFAULT,
+  captionY: number = CAPTION_Y_DEFAULT,
 ): RenderProps {
   const usable = plan.scenes.filter((scene) => images[scene.imageIndex])
-  if (usable.length === 0) return { scenes: [], captions: [], cards: [] }
+  if (usable.length === 0) {
+    return { scenes: [], captions: [], cards: [], captionColor, captionY }
+  }
 
   const durationSec = usable.at(-1)!.end
 
@@ -371,12 +382,60 @@ export function toRenderProps(
       durationInFrames: Math.max(base + padding, 1),
       effect: scene.effect,
       intensity: scene.intensity,
+      curve: scene.curve,
       transitionIn: scene.transitionIn,
       transitionInFrames: incoming,
     }
   })
 
-  return { scenes, captions: [...captions], cards: buildCards(cardText, bounds.at(-1)!) }
+  return {
+    scenes,
+    captions: untieWordStarts(captions),
+    cards: buildCards(cardText, bounds.at(-1)!),
+    captionColor,
+    captionY,
+  }
+}
+
+/**
+ * Garante que, dentro de um bloco, duas palavras nunca comecem no mesmo frame.
+ *
+ * Isso acontece de verdade: no projeto real do Kintay, quatro blocos tinham
+ * palavrinhas de ligacao ("e", "a", "o") empatadas -- as que o Whisper nao ouviu
+ * e receberam tempo interpolado por tamanho de texto, que num frame de 42ms
+ * arredonda para o mesmo lugar. O marcador so pode estar em uma palavra por
+ * frame, entao a empatada nunca chegava a ser marcada.
+ *
+ * A correcao mora AQUI, e nao no buildCaptions, de proposito. Os projetos ja
+ * salvos guardam os tempos como o Whisper mediu e nao sao reconstruidos ao
+ * abrir; consertando na traducao para frames, eles se beneficiam sem que nada
+ * no disco precise ser reescrito. O arquivo continua guardando a medida
+ * honesta, e quem resolve o que a taxa de frames consegue mostrar e a exibicao.
+ *
+ * O empurrao respeita o fim do bloco: cada palavra deixa pelo menos um frame
+ * para cada uma que vem depois dela.
+ */
+function untieWordStarts(blocks: readonly CaptionBlock[]): CaptionBlock[] {
+  return blocks.map((block) => {
+    const end = block.from + block.durationInFrames
+    const total = block.words.length
+
+    let anterior = -1
+    let mudou = false
+
+    const words = block.words.map((word, index) => {
+      // Teto: as (total - 1 - index) palavras seguintes precisam de um frame
+      // cada. Nunca abaixo do inicio do bloco -- com bloco curto demais para o
+      // numero de palavras, e melhor empatar do que sair da janela.
+      const teto = Math.max(end - (total - index), block.from)
+      const from = Math.min(Math.max(word.from, anterior + 1), teto)
+      anterior = from
+      if (from !== word.from) mudou = true
+      return from === word.from ? word : { ...word, from }
+    })
+
+    return mudou ? { ...block, words } : block
+  })
 }
 
 /**
@@ -631,6 +690,7 @@ export function planByRhythm(
     end: bounds[index + 1]!,
     effect: pickEffect(index),
     intensity: 0.12,
+    curve: MOTION_CURVE_DEFAULT,
     transitionIn: 'cut' as const,
   }))
 
