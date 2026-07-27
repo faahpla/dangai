@@ -4,6 +4,7 @@ import { TransitionSeries } from '@remotion/transitions'
 import type { RenderProps } from '@shared/contract'
 import { Scene } from './Scene'
 import { Captions } from './Captions'
+import { Cards } from './Card'
 import { presentationFor, timingFor } from './Transition'
 
 /**
@@ -43,8 +44,10 @@ function useFontsReady(enabled: boolean): boolean {
   return ready
 }
 
-export function Video({ scenes, captions }: RenderProps) {
-  const fontsReady = useFontsReady(captions.length > 0)
+export function Video({ scenes, captions, cards }: RenderProps) {
+  // Gancho e legenda usam a mesma fonte, entao qualquer um dos dois obriga a
+  // esperar por ela -- senao o card sai no fallback e so aparece no MP4.
+  const fontsReady = useFontsReady(captions.length > 0 || cards.length > 0)
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
@@ -65,6 +68,7 @@ export function Video({ scenes, captions }: RenderProps) {
       </TransitionSeries>
 
       {fontsReady && captions.length > 0 && <Captions blocks={captions} />}
+      {fontsReady && cards.length > 0 && <Cards cards={cards} />}
     </AbsoluteFill>
   )
 }

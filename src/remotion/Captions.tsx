@@ -1,5 +1,5 @@
 import { AbsoluteFill, Sequence, useCurrentFrame } from 'remotion'
-import type { CaptionBlock } from '@shared/contract'
+import { CAPTION_CHARS_PER_LINE, type CaptionBlock } from '@shared/contract'
 import { CAPTION_FONT_STACK } from './fonts'
 
 /**
@@ -15,19 +15,6 @@ const ACCENT = '#FF3D81'
 
 /** Corpo padrao da legenda. */
 const FONT_SIZE = 68
-
-/**
- * Quantos caracteres cabem numa linha nesse corpo.
- *
- * Medido no render de verdade: a Komika Axis a 68px gasta ate ~46px por letra
- * em palavra portuguesa, e sobram 920px entre as margens. Acima disso a linha
- * passa da borda e as pontas somem da tela.
- *
- * Pela regra de montagem, uma linha so passa daqui quando e uma palavra unica
- * comprida demais para o limite -- a excecao que existe justamente porque
- * quebrar palavra no meio seria pior.
- */
-const CHARS_PER_LINE = 18
 
 export function Captions({ blocks }: { blocks: readonly CaptionBlock[] }) {
   return (
@@ -54,7 +41,7 @@ function Block({ block }: { block: CaptionBlock }) {
   // Palavra comprida demais encolhe o suficiente para caber inteira, em vez de
   // sair pelos dois lados da tela.
   const chars = block.words.map((word) => word.text).join(' ').length
-  const fontSize = FONT_SIZE * Math.min(1, CHARS_PER_LINE / chars)
+  const fontSize = FONT_SIZE * Math.min(1, CAPTION_CHARS_PER_LINE / chars)
 
   return (
     <AbsoluteFill

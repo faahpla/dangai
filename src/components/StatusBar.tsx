@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   Loader2,
   Settings2,
@@ -78,13 +79,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
 
       {!busy && planOrigin && <PlanBadge origin={planOrigin} note={aiNote} />}
 
-      <UpdateBadge />
-
-      {appVersion && (
-        <span className="tnum shrink-0 text-[11px] text-ink-3" title="Versao instalada">
-          v{appVersion}
-        </span>
-      )}
+      <UpdateChip appVersion={appVersion} />
 
       <button
         type="button"
@@ -100,21 +95,54 @@ export function StatusBar({ isDragging }: StatusBarProps) {
 }
 
 /**
- * Atualizacao do app, discreta.
+ * Versao instalada e estado da atualizacao, no mesmo lugar.
  *
- * Enquanto baixa, e so uma nota; quando esta pronta, vira um botao. Reiniciar e
- * decisao do usuario -- trocar de versao no meio de um render de um minuto
- * seria pior que ficar uma versao atras.
+ * A versao virou BOTAO por um motivo concreto: antes, "tudo em dia" e "o
+ * updater esta morto" nao mostravam absolutamente nada, e nao havia como
+ * distinguir os dois sem esperar sair uma versao nova e torcer. O Kintay
+ * perguntou exatamente isso.
  *
- * "Tudo em dia" nao aparece: informacao que nunca muda nada vira ruido.
+ * O silencio continua sendo o normal -- um "tudo em dia" permanente vira ruido
+ * e ensina o olho a ignorar este canto. A diferenca e que agora da para
+ * PERGUNTAR, e a resposta aparece por alguns segundos.
+ *
+ * Baixar segue automatico; reiniciar segue sendo decisao do usuario.
  */
-function UpdateBadge() {
+function UpdateChip({ appVersion }: { appVersion: string }) {
   const update = useProject((s) => s.update)
   const rendering = useProject((s) => s.render !== null)
+  const [perguntou, setPerguntou] = useState(false)
 
-  if (!update || update.state === 'atual' || update.state === 'erro') return null
+  // A resposta de uma busca manual some sozinha: ela responde a uma pergunta,
+  // nao e um estado permanente do app.
+  useEffect(() => {
+    if (!perguntou) return
+    if (update?.state !== 'atual' && update?.state !== 'erro') return
+    const id = window.setTimeout(() => setPerguntou(false), 5000)
+    return () => window.clearTimeout(id)
+  }, [perguntou, update])
 
-  if (update.state === 'baixando') {
+  const perguntar = (): void => {
+    setPerguntou(true)
+    void window.dangai.checkUpdate()
+  }
+
+  if (update?.state === 'pronta') {
+    return (
+      <button
+        type="button"
+        disabled={rendering}
+        onClick={() => void window.dangai.installUpdate()}
+        title={rendering ? 'Termine o render primeiro' : `Instala a ${update.version} e reabre o app`}
+        className="flex shrink-0 items-center gap-1.5 rounded-sm border border-accent bg-accent-dim px-2 py-0.5 text-[11px] text-ink disabled:opacity-40"
+      >
+        <Download size={12} strokeWidth={1.5} className="text-accent" />
+        Atualizar para {update.version}
+      </button>
+    )
+  }
+
+  if (update?.state === 'baixando') {
     return (
       <span className="tnum flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
         <Download size={12} strokeWidth={1.5} />
@@ -123,16 +151,40 @@ function UpdateBadge() {
     )
   }
 
+  if (update?.state === 'procurando') {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
+        <Loader2 size={12} strokeWidth={1.5} className="animate-spin" />
+        Procurando...
+      </span>
+    )
+  }
+
+  const resposta =
+    perguntou && update?.state === 'atual'
+      ? 'ja esta na ultima'
+      : perguntou && update?.state === 'erro'
+        ? 'nao consegui verificar'
+        : null
+
+  if (!appVersion) return null
+
   return (
     <button
       type="button"
-      disabled={rendering}
-      onClick={() => void window.dangai.installUpdate()}
-      title={rendering ? 'Termine o render primeiro' : `Instala a ${update.version} e reabre o app`}
-      className="flex shrink-0 items-center gap-1.5 rounded-sm border border-accent bg-accent-dim px-2 py-0.5 text-[11px] text-ink disabled:opacity-40"
+      onClick={perguntar}
+      title={
+        update?.state === 'erro'
+          ? update.message
+          : 'Versao instalada — clique para procurar atualizacao'
+      }
+      className={[
+        'tnum flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11px] transition-colors duration-150',
+        resposta === 'nao consegui verificar' ? 'text-danger' : 'text-ink-3 hover:text-ink',
+      ].join(' ')}
     >
-      <Download size={12} strokeWidth={1.5} className="text-accent" />
-      Atualizar para {update.version}
+      v{appVersion}
+      {resposta && <span className="text-ink-3">· {resposta}</span>}
     </button>
   )
 }

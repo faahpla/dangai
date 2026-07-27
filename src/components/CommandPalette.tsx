@@ -10,6 +10,10 @@ import {
   Film,
   FileText,
   Pencil,
+  Save,
+  FolderInput,
+  ListVideo,
+  Hash,
   type LucideIcon,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
@@ -158,8 +162,13 @@ function useCommands(): Command[] {
   const rendering = useProject((s) => s.render !== null)
   const script = useProject((s) => s.script)
   const captionsOpen = useProject((s) => s.captionsOpen)
+  const projectPath = useProject((s) => s.projectPath)
+  const queueRunning = useProject((s) => s.queueRunning)
+  const pendentes = useProject((s) => s.queue.filter((item) => item.status === 'pendente').length)
+  const transcriptText = useProject((s) => s.transcript?.text ?? '')
 
   const pronto = Boolean(audio) && imageCount > 0
+  const temTexto = (script?.trim().length ?? 0) >= 40 || transcriptText.trim().length >= 40
 
   return useMemo(() => {
     const store = useProject.getState
@@ -212,6 +221,55 @@ function useCommands(): Command[] {
         run: () => store().toggleSfx(),
       },
       {
+        id: 'save',
+        label: 'Salvar projeto',
+        // Sem arquivo ainda, o hint diz o que vai acontecer: abre o dialogo.
+        hint: projectPath ? 'Ctrl S' : 'escolher onde',
+        icon: Save,
+        disabled: !pronto,
+        run: () => void store().saveProject(),
+      },
+      // So aparece quando ha um arquivo do qual se separar. Sem projeto salvo
+      // ele faria exatamente o mesmo que o de cima.
+      ...(projectPath
+        ? [
+            {
+              id: 'save-as',
+              label: 'Salvar projeto como...',
+              hint: 'Ctrl Shift S',
+              icon: Save,
+              run: () => void store().saveProject(true),
+            },
+          ]
+        : []),
+      {
+        id: 'open',
+        label: 'Abrir projeto',
+        hint: 'Ctrl O',
+        icon: FolderInput,
+        disabled: rendering,
+        run: () => void store().openProject(),
+      },
+      ...(pendentes > 0
+        ? [
+            {
+              id: 'queue',
+              label: queueRunning ? 'Parar a fila' : `Renderizar a fila`,
+              hint: `${pendentes} na fila`,
+              icon: ListVideo,
+              run: () => (queueRunning ? store().stopQueue() : void store().runQueue()),
+            },
+          ]
+        : []),
+      {
+        id: 'metadata',
+        label: 'Escrever titulo, descricao e hashtags',
+        hint: 'pelo roteiro',
+        icon: Hash,
+        disabled: !temTexto || rendering,
+        run: () => void store().generateMetadata(),
+      },
+      {
         id: 'reveal',
         label: 'Abrir a pasta do video',
         icon: FolderOpen,
@@ -232,7 +290,12 @@ function useCommands(): Command[] {
         label: 'Limpar o projeto',
         icon: RotateCcw,
         disabled: !pronto,
-        run: () => store().reset(),
+        run: () => {
+          store().reset()
+          // Sem isto o proximo inicio ofereceria recuperar justamente o que o
+          // usuario acabou de mandar limpar.
+          void store().discardAutosave()
+        },
       },
     ]
   }, [
@@ -246,5 +309,9 @@ function useCommands(): Command[] {
     rendering,
     script,
     captionsOpen,
+    projectPath,
+    queueRunning,
+    pendentes,
+    temTexto,
   ])
 }

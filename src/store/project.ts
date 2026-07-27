@@ -1,10 +1,18 @@
 import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
-import type { UpdateStatus } from '@shared/channels'
-import { KEN_BURNS_EFFECTS } from '@shared/contract'
+import type { MusicPick, UpdateStatus } from '@shared/channels'
+import {
+  END_CARD_SEC_DEFAULT,
+  HOOK_SEC_DEFAULT,
+  KEN_BURNS_EFFECTS,
+  MUSIC_GAIN_DB_DEFAULT,
+  MUSIC_GAIN_DB_MAX,
+  MUSIC_GAIN_DB_MIN,
+} from '@shared/contract'
 import type {
   AudioAnalysis,
   ImageAsset,
+  Metadata,
   PlanOrigin,
   RenderProgress,
   Scene,
@@ -20,9 +28,22 @@ import {
   totalFrames,
 } from '@shared/plan'
 import type { CaptionBlock } from '@shared/contract'
+import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
+import { semSujar } from './quiet'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
 export type Phase = 'empty' | 'editing' | 'rendering'
+
+/** Um projeto na fila de render. */
+export interface QueueItem {
+  path: string
+  fileName: string
+  status: 'pendente' | 'renderizando' | 'pronto' | 'falhou'
+  /** MP4 gerado, quando deu certo. */
+  output: string | null
+  /** Por que falhou. A fila continua nos outros mesmo assim. */
+  error: string | null
+}
 
 interface ProjectState {
   audio: AudioAnalysis | null
@@ -80,6 +101,22 @@ interface ProjectState {
 
   /** Ligado quando o usuario mexe no plano: a analise para de sobrescrever. */
   planEdited: boolean
+  /**
+   * Texto do gancho e do fechamento, e por quantos segundos cada um fica.
+   *
+   * Vazio significa "sem card". Os segundos ficam guardados mesmo com o texto
+   * vazio para o usuario nao ter que reajustar toda vez que apagar e reescrever.
+   */
+  hookText: string
+  hookSec: number
+  endText: string
+  endSec: number
+  /** Titulo, descricao e hashtags gerados. null enquanto nao foram pedidos. */
+  metadata: Metadata | null
+  /** Cama de musica por baixo da narracao. null quando nao ha nenhuma. */
+  music: MusicPick | null
+  /** Quantos dB abaixo do fundo de escala a musica entra. Sempre negativo. */
+  musicGainDb: number
   sfxEnabled: boolean
   /** Arquivos de som disponiveis na pasta de SFX. */
   sfxFiles: string[]
@@ -89,6 +126,23 @@ interface ProjectState {
   captionsEnabled: boolean
   paletteOpen: boolean
 
+  /**
+   * Projetos esperando para renderizar, um atras do outro.
+   *
+   * A fila abre cada projeto de verdade e usa exatamente o mesmo caminho de
+   * render do botao -- por isso um video da fila sai identico ao mesmo video
+   * renderizado a mao. E o motivo de a fila morar aqui e nao no main.
+   */
+  queue: QueueItem[]
+  queueRunning: boolean
+
+  /** Caminho do .dangai aberto. null enquanto o projeto nunca foi salvo. */
+  projectPath: string | null
+  /** Ha edicao que ainda nao foi para o arquivo do usuario. */
+  projectDirty: boolean
+  /** Sobrou trabalho da ultima sessao. So consultado no estado vazio. */
+  hasAutosave: boolean
+
   phase: () => Phase
   ingest: (paths: readonly string[]) => Promise<void>
   /** Troca efeito, transicao ou intensidade de uma cena. */
@@ -96,6 +150,14 @@ interface ProjectState {
   /** Move a fronteira entre a cena index-1 e a cena index. */
   moveBoundary: (index: number, seconds: number) => void
   toggleSfx: () => void
+  /** Texto e duracao dos cards de abertura e fechamento. */
+  setCard: (qual: 'hook' | 'end', patch: { text?: string; seconds?: number }) => void
+  /** Pede titulo, descricao e hashtags a partir do roteiro. */
+  generateMetadata: () => Promise<void>
+  /** Abre o dialogo e passa a usar a faixa escolhida como cama. */
+  pickMusic: () => Promise<void>
+  clearMusic: () => void
+  setMusicGain: (db: number) => void
   /** Recarrega a lista de sons. Chamada na abertura e ao voltar das settings. */
   refreshSfx: () => Promise<void>
   setUpdate: (status: UpdateStatus) => void
@@ -135,13 +197,35 @@ interface ProjectState {
   setPlayhead: (seconds: number) => void
   togglePlay: () => void
   setPlaying: (playing: boolean) => void
-  startRender: () => Promise<void>
+  /** Resolve com o caminho do MP4, ou null se cancelou ou falhou. */
+  startRender: () => Promise<string | null>
   cancelRender: () => Promise<void>
+  /** Poe projetos salvos na fila. */
+  enqueue: (paths: readonly string[]) => void
+  removeFromQueue: (path: string) => void
+  clearQueue: () => void
+  /** Renderiza a fila inteira, um projeto de cada vez. */
+  runQueue: () => Promise<void>
+  stopQueue: () => void
   applyRenderProgress: (progress: RenderProgress) => void
   setBusy: (message: string | null) => void
   openSettings: (open: boolean) => void
   dismissError: () => void
   reset: () => void
+
+  /** Grava o projeto. `comoNovo` forca o dialogo de "salvar como". */
+  saveProject: (comoNovo?: boolean) => Promise<void>
+  /** Abre um .dangai. Sem caminho, pergunta qual. */
+  openProject: (path?: string) => Promise<void>
+  /** Monta o conteudo do arquivo a partir do estado atual. */
+  toProjectFile: () => ProjectFile | null
+  /** Verifica se sobrou trabalho da sessao anterior. */
+  checkAutosave: () => Promise<void>
+  /** Retoma o autosave da sessao anterior. */
+  restoreAutosave: () => Promise<void>
+  /** Descarta o autosave e comeca do zero. */
+  discardAutosave: () => Promise<void>
+  markSaved: (path: string | null) => void
 }
 
 type SetState = (partial: Partial<ProjectState>) => void
@@ -184,12 +268,24 @@ export const useProject = create<ProjectState>((set, get) => ({
   lastOutput: null,
   settingsOpen: false,
   planEdited: false,
+  hookText: '',
+  hookSec: HOOK_SEC_DEFAULT,
+  endText: '',
+  endSec: END_CARD_SEC_DEFAULT,
+  metadata: null,
+  music: null,
+  musicGainDb: MUSIC_GAIN_DB_DEFAULT,
   sfxEnabled: true,
   sfxFiles: [],
   update: null,
   appVersion: '',
   captionsEnabled: false,
   paletteOpen: false,
+  queue: [],
+  queueRunning: false,
+  projectPath: null,
+  projectDirty: false,
+  hasAutosave: false,
 
   phase: () => {
     const state = get()
@@ -204,6 +300,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const imagePaths: string[] = []
     const subtitlePaths: string[] = []
     const scriptPaths: string[] = []
+    const projectPaths: string[] = []
     const ignored: string[] = []
 
     for (const path of paths) {
@@ -220,9 +317,29 @@ export const useProject = create<ProjectState>((set, get) => ({
         case 'script':
           scriptPaths.push(path)
           break
+        case 'project':
+          projectPaths.push(path)
+          break
         default:
           ignored.push(path)
       }
+    }
+
+    /*
+     * Projeto salvo tem caminho proprio: soltar UM abre; soltar VARIOS enfileira.
+     *
+     * A regra sai do que a acao quer dizer. Ninguem solta cinco projetos para
+     * abrir cinco -- so cabe um na tela. Soltar cinco quer dizer "renderize
+     * esses".
+     */
+    if (projectPaths.length > 0) {
+      set({ error: null })
+      if (projectPaths.length === 1 && paths.length === 1) {
+        await get().openProject(projectPaths[0]!)
+      } else {
+        get().enqueue(projectPaths)
+      }
+      return
     }
 
     if (
@@ -666,6 +783,65 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   toggleSfx: () => set((state) => ({ sfxEnabled: !state.sfxEnabled })),
 
+  setCard: (qual, patch) => {
+    // Um card nao pode ser mais curto que o proprio fade de entrada e saida.
+    const segundos = patch.seconds === undefined ? undefined : Math.min(Math.max(patch.seconds, 0.5), 10)
+    if (qual === 'hook') {
+      set({
+        ...(patch.text !== undefined ? { hookText: patch.text } : {}),
+        ...(segundos !== undefined ? { hookSec: segundos } : {}),
+      })
+    } else {
+      set({
+        ...(patch.text !== undefined ? { endText: patch.text } : {}),
+        ...(segundos !== undefined ? { endSec: segundos } : {}),
+      })
+    }
+  },
+
+  /*
+   * O roteiro escrito e a melhor fonte; a transcricao serve de plano B.
+   *
+   * Ler do texto e nao do video e o que mantem a promessa da spec: so o texto
+   * sai da maquina, nunca o audio nem as imagens.
+   */
+  generateMetadata: async () => {
+    const { script, transcript } = get()
+    const texto = script?.trim() || transcript?.text?.trim() || ''
+
+    if (texto.length < 40) {
+      set({ error: 'Cole o roteiro para eu escrever o titulo e a descricao.' })
+      return
+    }
+
+    set({ busy: 'Escrevendo titulo e descricao...', error: null })
+    const result = await window.dangai.generateMetadata(texto)
+
+    if (!result.ok) {
+      set({ error: result.error, busy: null })
+      return
+    }
+    set({ metadata: result.value, busy: null })
+  },
+
+  pickMusic: async () => {
+    const result = await window.dangai.pickMusic()
+    if (!result.ok) {
+      set({ error: result.error })
+      return
+    }
+    // null = fechou o dialogo sem escolher. Nao mexe na faixa que ja havia.
+    if (result.value === null) return
+    set({ music: result.value })
+  },
+
+  clearMusic: () => set({ music: null }),
+
+  setMusicGain: (db) =>
+    set({
+      musicGainDb: Math.min(Math.max(Math.round(db), MUSIC_GAIN_DB_MIN), MUSIC_GAIN_DB_MAX),
+    }),
+
   refreshSfx: async () => {
     const result = await window.dangai.listSfx()
     if (result.ok) set({ sfxFiles: result.value })
@@ -702,8 +878,10 @@ export const useProject = create<ProjectState>((set, get) => ({
   setPlaying: (playing) => set({ playing }),
 
   startRender: async () => {
-    const { audio, images, plan, sfxEnabled, sfxFiles, captionsEnabled, captions } = get()
-    if (!audio || images.length === 0 || !plan) return
+    const {
+      audio, images, plan, sfxEnabled, sfxFiles, captionsEnabled, captions, music, musicGainDb,
+    } = get()
+    if (!audio || images.length === 0 || !plan) return null
 
     set({
       playing: false,
@@ -711,25 +889,35 @@ export const useProject = create<ProjectState>((set, get) => ({
       render: { progress: 0, stage: 'bundling', message: 'Preparando...' },
     })
 
+    const { hookText, hookSec, endText, endSec } = get()
+
     const result = await window.dangai.startRender({
-      props: toRenderProps(plan, images, captionsEnabled ? captions : []),
+      props: toRenderProps(plan, images, captionsEnabled ? captions : [], {
+        hook: hookText,
+        hookSec,
+        end: endText,
+        endSec,
+      }),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
       // Os cues sao montados aqui e nao guardados no plano: eles dependem dos
       // arquivos que estao na pasta AGORA, e o usuario pode ter acabado de
       // trocar os sons sem refazer a analise.
       sfxCues: sfxEnabled ? sfxCuesFor(plan.scenes, sfxFiles) : [],
+      music: music ? { path: music.path, gainDb: musicGainDb } : null,
     })
 
     if (!result.ok) {
       set({ error: result.error, render: null })
-      return
+      return null
     }
     // value === null significa que o usuario cancelou. Nao e erro, e o evento
     // 'cancelled' ja limpou o estado -- so garantimos que nada ficou pendurado.
     if (result.value === null) {
       set({ render: null })
+      return null
     }
+    return result.value
   },
 
   cancelRender: async () => {
@@ -787,8 +975,299 @@ export const useProject = create<ProjectState>((set, get) => ({
       render: null,
       lastOutput: null,
       planEdited: false,
+      music: null,
+      musicGainDb: MUSIC_GAIN_DB_DEFAULT,
+      hookText: '',
+      hookSec: HOOK_SEC_DEFAULT,
+      endText: '',
+      endSec: END_CARD_SEC_DEFAULT,
+      metadata: null,
+      projectPath: null,
+      projectDirty: false,
     }),
+
+  // ------------------------------------------------------------------ projeto
+
+  toProjectFile: () => {
+    const state = get()
+    if (!state.audio) return null
+
+    // `rel` sai null daqui: quem sabe para onde o arquivo esta indo e o main,
+    // que recalcula todos na hora de gravar. "Salvar como" em outra pasta
+    // reescreve os caminhos relativos sem o renderer participar.
+    return {
+      version: PROJECT_FILE_VERSION,
+      savedAt: new Date().toISOString(),
+      audio: { path: state.audio.path, rel: null, fileName: state.audio.fileName },
+      images: state.images.map((image) => ({
+        path: image.path,
+        rel: null,
+        fileName: image.fileName,
+        focusX: image.focusX,
+        focusY: image.focusY,
+      })),
+      script: state.script,
+      subtitle: state.subtitlePath
+        ? {
+            path: state.subtitlePath,
+            rel: null,
+            fileName: state.subtitlePath.split(/[\\/]/).pop() ?? '',
+          }
+        : null,
+      plan: state.plan,
+      planOrigin: state.planOrigin,
+      planEdited: state.planEdited,
+      transcript: state.transcript,
+      captions: state.captions,
+      captionsEdited: state.captionsEdited,
+      captionsEnabled: state.captionsEnabled,
+      sfxEnabled: state.sfxEnabled,
+      music: state.music
+        ? { path: state.music.path, rel: null, fileName: state.music.fileName }
+        : null,
+      musicGainDb: state.musicGainDb,
+      hookText: state.hookText,
+      hookSec: state.hookSec,
+      endText: state.endText,
+      endSec: state.endSec,
+      metadata: state.metadata,
+    }
+  },
+
+  saveProject: async (comoNovo) => {
+    const state = get()
+    const file = state.toProjectFile()
+    if (!file || !state.audio) {
+      set({ error: 'Nao ha projeto para salvar. Solte a narracao e as imagens primeiro.' })
+      return
+    }
+
+    const result = await window.dangai.saveProject({
+      path: comoNovo ? null : state.projectPath,
+      file,
+      suggestedName: state.audio.fileName.replace(/\.[^.]+$/, ''),
+    })
+
+    if (!result.ok) {
+      set({ error: result.error })
+      return
+    }
+    // null = fechou o dialogo. Cancelar nao e erro e nao vira mensagem.
+    if (result.value === null) return
+
+    get().markSaved(result.value)
+  },
+
+  openProject: async (path) => {
+    const result = await window.dangai.openProject(path ?? null)
+    if (!result.ok) {
+      set({ error: result.error })
+      return
+    }
+    if (result.value === null) return
+
+    await applyProjectFile(set, result.value.file, result.value.path, false)
+  },
+
+  checkAutosave: async () => {
+    const result = await window.dangai.readAutosave()
+    set({ hasAutosave: result.ok && result.value !== null })
+  },
+
+  restoreAutosave: async () => {
+    const result = await window.dangai.readAutosave()
+    if (!result.ok) {
+      set({ error: result.error, hasAutosave: false })
+      return
+    }
+    if (result.value === null) {
+      set({ hasAutosave: false })
+      return
+    }
+
+    // Sujo de proposito: o autosave e, por definicao, mais novo que o ultimo
+    // save de verdade. Marcar limpo faria o app dizer que nao ha nada a gravar
+    // justamente sobre o trabalho que quase se perdeu.
+    await applyProjectFile(set, result.value.file, result.value.path, true)
+  },
+
+  discardAutosave: async () => {
+    await window.dangai.clearAutosave()
+    set({ hasAutosave: false })
+  },
+
+  markSaved: (path) => set({ projectPath: path, projectDirty: false, hasAutosave: false }),
+
+  // --------------------------------------------------------------------- fila
+
+  enqueue: (paths) => {
+    const existentes = new Set(get().queue.map((item) => item.path))
+    const novos: QueueItem[] = paths
+      .filter((path) => !existentes.has(path))
+      .map((path) => ({
+        path,
+        fileName: path.split(/[\\/]/).pop()?.replace(/\.dangai$/i, '') ?? path,
+        status: 'pendente' as const,
+        output: null,
+        error: null,
+      }))
+
+    if (novos.length === 0) return
+    set((state) => ({ queue: [...state.queue, ...novos] }))
+  },
+
+  removeFromQueue: (path) =>
+    set((state) => ({ queue: state.queue.filter((item) => item.path !== path) })),
+
+  clearQueue: () => set({ queue: [] }),
+
+  stopQueue: () => set({ queueRunning: false }),
+
+  /**
+   * Renderiza a fila abrindo cada projeto de verdade.
+   *
+   * Parece indireto e e de proposito: abrir e renderizar pelo mesmo caminho da
+   * interface garante que um video da fila saia identico ao mesmo video
+   * renderizado a mao. Um segundo caminho de montagem no main seria outra
+   * implementacao para manter em dia -- e o dia em que as duas divergissem, o
+   * usuario descobriria pelo arquivo errado.
+   *
+   * Um projeto que falha nao para a fila: os outros continuam, e o erro fica
+   * registrado no item. Quem deixou cinco projetos rodando de madrugada quer
+   * quatro videos e um aviso, nao zero videos.
+   */
+  runQueue: async () => {
+    if (get().queueRunning) return
+    if (get().queue.every((item) => item.status !== 'pendente')) return
+
+    // A fila abre outro projeto por cima deste. Trabalho nao salvo morreria ai.
+    if (get().projectDirty && get().audio) {
+      set({ error: 'Salve o projeto aberto antes de rodar a fila (Ctrl+S).' })
+      return
+    }
+
+    set({ queueRunning: true, error: null })
+
+    const marcar = (path: string, patch: Partial<QueueItem>): void => {
+      set((state) => ({
+        queue: state.queue.map((item) => (item.path === path ? { ...item, ...patch } : item)),
+      }))
+    }
+
+    while (get().queueRunning) {
+      const proximo = get().queue.find((item) => item.status === 'pendente')
+      if (!proximo) break
+
+      marcar(proximo.path, { status: 'renderizando', error: null })
+
+      await get().openProject(proximo.path)
+      const erroAoAbrir = get().error
+      if (erroAoAbrir) {
+        marcar(proximo.path, { status: 'falhou', error: erroAoAbrir })
+        set({ error: null })
+        continue
+      }
+
+      const saida = await get().startRender()
+      if (saida) {
+        marcar(proximo.path, { status: 'pronto', output: saida })
+      } else {
+        marcar(proximo.path, {
+          status: 'falhou',
+          error: get().error ?? 'O render nao terminou.',
+        })
+        set({ error: null })
+      }
+    }
+
+    set({ queueRunning: false })
+  },
 }))
+
+/**
+ * Reconstroi o estado a partir de um arquivo de projeto.
+ *
+ * Miniatura, recorte e URL nao vem do arquivo -- sao refeitos a partir dos
+ * originais no disco. Por isso abrir custa quase o mesmo que importar, e por
+ * isso o .dangai fica em kilobytes em vez de dezenas de megabytes.
+ */
+async function applyProjectFile(
+  set: SetState,
+  file: ProjectFile,
+  path: string | null,
+  sujo: boolean,
+): Promise<void> {
+  await semSujar(async () => {
+    set({ busy: 'Abrindo projeto...', error: null })
+
+    const audio = await window.dangai.analyzeAudio(file.audio.path)
+    if (!audio.ok) {
+      set({ error: audio.error, busy: null })
+      return
+    }
+
+    const images = await window.dangai.importImages(
+      file.images.map((image) => image.path),
+      file.images.map((image) => ({ focusX: image.focusX, focusY: image.focusY })),
+    )
+    if (!images.ok) {
+      set({ error: images.error, busy: null })
+      return
+    }
+
+    /*
+     * A musica precisa de URL nova: o .dangai guarda o caminho, mas a URL do
+     * servidor local carrega um id sorteado que morre com a sessao.
+     *
+     * Faixa que sumiu do disco nao impede o projeto de abrir -- o main ja
+     * devolve `music: null` nesse caso, e o campo aparece vazio na interface.
+     */
+    let music: MusicPick | null = null
+    if (file.music) {
+      const carregada = await window.dangai.loadMusic(file.music.path)
+      if (carregada.ok) music = carregada.value
+    }
+
+    set({
+      audio: audio.value,
+      images: images.value,
+      music,
+      musicGainDb: file.musicGainDb,
+      hookText: file.hookText,
+      hookSec: file.hookSec,
+      endText: file.endText,
+      endSec: file.endSec,
+      metadata: file.metadata,
+      script: file.script,
+      subtitlePath: file.subtitle?.path ?? null,
+      plan: file.plan,
+      planOrigin: file.planOrigin,
+      planEdited: file.planEdited,
+      transcript: file.transcript,
+      captions: file.captions,
+      captionsEdited: file.captionsEdited,
+      captionsEnabled: file.captionsEnabled,
+      sfxEnabled: file.sfxEnabled,
+
+      // Nada de estado de sessao atravessa a abertura: o render anterior nao e
+      // deste projeto, e um erro antigo na barra confundiria com falha ao abrir.
+      playhead: 0,
+      playing: false,
+      selectedScene: null,
+      render: null,
+      lastOutput: null,
+      aiNote: null,
+      // O aviso do roteiro sai da analise, que nao roda de novo aqui. Manter o
+      // texto antigo seria afirmar um resultado que esta sessao nao mediu.
+      scriptNote: null,
+      busy: null,
+
+      projectPath: path,
+      projectDirty: sujo,
+      hasAutosave: false,
+    })
+  })
+}
 
 function clamp01(value: number): number {
   return Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0.5

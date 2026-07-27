@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { readdirSync } from 'node:fs'
 import { registerIpc } from './ipc'
 import { startMediaServer } from './services/media-server'
+import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
 import { configureSettings } from './services/settings'
 import { configureSfx, ensureSfxDir } from './services/sfx'
@@ -76,6 +77,9 @@ app.whenReady().then(async () => {
   process.chdir(userData)
 
   configureSettings(userData)
+  // O autosave mora no userData e nao ao lado do projeto: ele precisa existir
+  // mesmo antes de haver um projeto com pasta propria.
+  configureProjects(userData)
   // Binario e modelo do Whisper ficam no userData: sobrevivem a atualizacao do
   // app e nao sujam a pasta do projeto.
   configureWhisper(join(userData, 'whisper'))

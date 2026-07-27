@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ensureBrowser, makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer'
 import type { RenderProgress, RenderProps } from '@shared/contract'
-import { VIDEO_FPS } from '@shared/contract'
+import { MUSIC_FADE_IN_SEC, MUSIC_FADE_OUT_SEC, VIDEO_FPS } from '@shared/contract'
 import { makeWebpackOverride } from '../../remotion.webpack'
 import { ffmpegPath } from './ffmpeg-path'
 
@@ -51,6 +51,14 @@ export interface RenderRequest {
   sfxCues: readonly SfxCue[]
   /** Pasta alternativa de SFX. Vazio usa a que vem com o app. */
   sfxDir: string
+  /** Cama de musica por baixo de tudo. null quando o usuario nao escolheu nenhuma. */
+  music: MusicBed | null
+}
+
+export interface MusicBed {
+  path: string
+  /** Quantos dB abaixo do fundo de escala. Sempre negativo. */
+  gainDb: number
 }
 
 export interface SfxCue {
@@ -147,7 +155,14 @@ export async function renderVideo(
     })
 
     onProgress({ progress: 0.9, stage: 'muxing', message: 'Ajustando o audio...' })
-    await muxWithNormalizedAudio(silentVideo, request.audioPath, outputPath, resolveSfx(request))
+    await muxWithNormalizedAudio(
+      silentVideo,
+      request.audioPath,
+      outputPath,
+      resolveSfx(request),
+      resolveMusic(request),
+      request.durationInFrames / VIDEO_FPS,
+    )
 
     onProgress({ progress: 1, stage: 'done', outputPath })
     return outputPath
@@ -182,6 +197,22 @@ async function getServeUrl(): Promise<string> {
   const { appPath, prebuiltBundle } = requirePaths()
 
   if (existsSync(join(prebuiltBundle, 'index.html'))) {
+    /*
+     * Bundle mais velho que a composicao para o render em vez de reconstruir.
+     *
+     * Reconstruir aqui parece gentil e nao e: o bundler roda DENTRO do processo
+     * main, sem sinal de progresso, e um render que deveria levar 30 segundos
+     * fica minutos parado em "Preparando..." sem ninguem saber por que. Entre
+     * esperar em silencio e uma frase dizendo o comando, a frase ganha.
+     *
+     * So acontece em desenvolvimento: no app empacotado nao existe fonte ao
+     * lado do executavel e bundleVencido responde false na primeira linha.
+     */
+    if (bundleVencido(appPath, prebuiltBundle)) {
+      throw new Error(
+        'A composicao de video mudou depois do ultimo bundle. Rode "npm run remotion:bundle" e tente de novo.',
+      )
+    }
     cachedServeUrl = prebuiltBundle
     return prebuiltBundle
   }
@@ -199,6 +230,52 @@ async function getServeUrl(): Promise<string> {
       'A composicao de video nao esta montada. Rode "npm run remotion:bundle" e tente de novo.',
     )
   }
+}
+
+/**
+ * O bundle pre-gerado ficou para tras do codigo da composicao?
+ *
+ * Isto so acontece em desenvolvimento, e custa caro quando acontece: o preview
+ * usa o componente Video importado direto do fonte, mas o RENDER usa o bundle
+ * do disco. Com o bundle velho, o preview mostra a mudanca e o MP4 sai sem ela
+ * -- sem erro, sem aviso, so um video errado. Ja me custou um ciclo de render
+ * inteiro achando que a funcionalidade estava quebrada.
+ *
+ * No app empacotado nao ha o que comparar (nao existe fonte ao lado) e a funcao
+ * responde false na primeira linha: o bundle sempre foi gerado no mesmo build.
+ */
+function bundleVencido(appPath: string, bundle: string): boolean {
+  /*
+   * So o que a composicao de fato importa.
+   *
+   * Olhar shared/ inteiro daria alarme falso a cada mexida em channels.ts ou
+   * project-file.ts, que o bundle nem enxerga -- e alarme falso que custa um
+   * rebundle de um minuto ensina a ignorar o alarme. Hoje src/remotion importa
+   * exclusivamente de @shared/contract; se um dia importar outro modulo de
+   * shared/, ele entra nesta lista.
+   */
+  const fontes = [join(appPath, 'src', 'remotion'), join(appPath, 'shared', 'contract.ts')]
+  if (!fontes.every((caminho) => existsSync(caminho))) return false
+
+  try {
+    const gerado = statSync(join(bundle, 'index.html')).mtimeMs
+    return fontes.some((caminho) => maisRecente(caminho) > gerado)
+  } catch {
+    return false
+  }
+}
+
+/** Mtime mais recente de um arquivo ou de tudo dentro de uma pasta. */
+function maisRecente(caminho: string): number {
+  const info = statSync(caminho)
+  if (!info.isDirectory()) return info.mtimeMs
+
+  let maior = 0
+  for (const entrada of readdirSync(caminho, { withFileTypes: true })) {
+    const quando = maisRecente(join(caminho, entrada.name))
+    if (quando > maior) maior = quando
+  }
+  return maior
 }
 
 /**
@@ -298,11 +375,19 @@ function resolveSfx(request: RenderRequest): ResolvedCue[] {
   })
 }
 
+/** Descarta musica sem arquivo em vez de derrubar o render inteiro por ela. */
+function resolveMusic(request: RenderRequest): MusicBed | null {
+  if (!request.music) return null
+  return existsSync(request.music.path) ? request.music : null
+}
+
 async function muxWithNormalizedAudio(
   videoPath: string,
   audioPath: string,
   outputPath: string,
   sfx: readonly ResolvedCue[],
+  music: MusicBed | null,
+  durationSec: number,
 ): Promise<void> {
   const measured = await measureLoudness(audioPath)
 
@@ -312,6 +397,11 @@ async function muxWithNormalizedAudio(
 
   const inputs = ['-i', videoPath, '-i', audioPath]
   for (const cue of sfx) inputs.push('-i', cue.path)
+
+  // -stream_loop -1: uma faixa mais curta que o video se repete em vez de
+  // deixar o final em silencio. O atrim logo abaixo corta no lugar certo, entao
+  // o loop infinito nunca chega a segurar o encerramento do ffmpeg.
+  if (music) inputs.push('-stream_loop', '-1', '-i', music.path)
 
   // A narracao e normalizada primeiro e os SFX entram por cima em -12dB. Assim
   // o nivel de referencia do video continua sendo a voz, que e o que importa.
@@ -326,6 +416,24 @@ async function muxWithNormalizedAudio(
     )
     labels.push(label)
   })
+
+  if (music) {
+    const ganho = 10 ** (music.gainDb / 20)
+    // O fade de saida comeca cedo o bastante para terminar junto com o video --
+    // musica cortada a seco no fim soa como arquivo truncado.
+    const inicioFade = Math.max(durationSec - MUSIC_FADE_OUT_SEC, 0)
+    chain.push(
+      [
+        `[${sfx.length + 2}:a]aformat=channel_layouts=stereo`,
+        `atrim=0:${durationSec.toFixed(3)}`,
+        `asetpts=N/SR/TB`,
+        `volume=${ganho.toFixed(5)}`,
+        `afade=t=in:st=0:d=${MUSIC_FADE_IN_SEC}`,
+        `afade=t=out:st=${inicioFade.toFixed(3)}:d=${MUSIC_FADE_OUT_SEC}[mus]`,
+      ].join(','),
+    )
+    labels.push('[mus]')
+  }
 
   // normalize=0: sem isso o amix divide o volume pelo numero de entradas e a
   // narracao afunda a cada SFX adicionado.

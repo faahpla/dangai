@@ -171,6 +171,18 @@ export const VIDEO_WIDTH = 1080
 export const VIDEO_HEIGHT = 1920
 
 /**
+ * Folga de escala para o Ken Burns. A imagem preparada para o render tem 1.15x
+ * o quadro final: com scale(1.15) a regiao visivel volta a ser exatamente 1080
+ * pixels nativos, entao nao ha upscale visivel nem pixel desperdicado.
+ *
+ * Mora aqui e nao no servico de imagens porque a verificacao previa precisa do
+ * MESMO numero para dizer a verdade sobre quanto uma imagem sera ampliada.
+ */
+export const RENDER_HEADROOM = 1.15
+export const RENDER_WIDTH = Math.round(VIDEO_WIDTH * RENDER_HEADROOM)
+export const RENDER_HEIGHT = Math.round(VIDEO_HEIGHT * RENDER_HEADROOM)
+
+/**
  * 23.976 fps, o valor exato de 24000/1001 -- e nao o arredondado 23.976.
  *
  * Escrito como divisao de proposito: a diferenca entre 24000/1001 e 23.976 e de
@@ -201,6 +213,27 @@ export const captionBlockSchema = z.object({
 })
 export type CaptionBlock = z.infer<typeof captionBlockSchema>
 
+/**
+ * Um card de texto por cima do video.
+ *
+ * Gancho e final entram como SOBREPOSICAO, nunca como trecho extra: a narracao
+ * e continua e os blocos ja estao distribuidos sobre ela, entao empurrar o
+ * video para abrir espaco desalinharia tudo que vem depois. O texto aparece por
+ * cima da imagem que ja estava ali, e a duracao do video nao muda.
+ */
+export const overlayCardSchema = z.object({
+  text: z.string(),
+  from: z.number().int().nonnegative(),
+  durationInFrames: z.number().int().positive(),
+  /** O gancho fica no alto para nao brigar com a legenda, que mora embaixo. */
+  position: z.enum(['top', 'center']),
+})
+export type OverlayCard = z.infer<typeof overlayCardSchema>
+
+/** Quanto tempo cada card fica na tela, por padrao. */
+export const HOOK_SEC_DEFAULT = 2.5
+export const END_CARD_SEC_DEFAULT = 3
+
 export const renderPropsSchema = z.object({
   scenes: z.array(
     z.object({
@@ -215,6 +248,8 @@ export const renderPropsSchema = z.object({
   ),
   /** Vazio quando as legendas estao desligadas ou nao ha transcricao. */
   captions: z.array(captionBlockSchema).default([]),
+  /** Texto de abertura e de fechamento. Vazio quando o usuario nao pediu. */
+  cards: z.array(overlayCardSchema).default([]),
 })
 export type RenderProps = z.infer<typeof renderPropsSchema>
 
@@ -245,6 +280,55 @@ export const CAPTION_BREAK_AFTER = '.,!?;:…'
  * lidas. Este piso e a diferenca entre uma legenda rapida e um flash.
  */
 export const CAPTION_MIN_SEC = 0.45
+
+/**
+ * Quantos caracteres cabem numa linha no corpo padrao da legenda.
+ *
+ * Medido no render de verdade: a Komika Axis a 68px gasta ate ~46px por letra
+ * em palavra portuguesa, e sobram 920px entre as margens. Acima disso a linha
+ * passa da borda e as pontas somem da tela, entao a legenda encolhe a fonte
+ * para caber inteira.
+ *
+ * Pela regra de montagem, uma linha so passa daqui quando e uma palavra unica
+ * comprida demais para o limite -- a excecao que existe justamente porque
+ * quebrar palavra no meio seria pior.
+ */
+export const CAPTION_CHARS_PER_LINE = 18
+
+/**
+ * Cama de musica: quantos dB abaixo do fundo de escala ela entra.
+ *
+ * -20 dB por padrao. Com a narracao normalizada em -14 LUFS e uma faixa
+ * masterizada normal, isso poe a musica bem debaixo da voz -- presente no
+ * silencio entre as frases, sem nunca disputar a palavra.
+ *
+ * Nao ha ducking automatico de proposito: a narracao do Kintay e corrida, sem
+ * pausas, entao o compressor ficaria com o ganho fechado do inicio ao fim --
+ * exatamente o mesmo resultado de um volume fixo mais baixo, com mais coisa
+ * para dar errado.
+ */
+export const MUSIC_GAIN_DB_DEFAULT = -20
+export const MUSIC_GAIN_DB_MIN = -34
+export const MUSIC_GAIN_DB_MAX = -6
+
+/** Fade de entrada e de saida da musica, em segundos. */
+export const MUSIC_FADE_IN_SEC = 1.2
+export const MUSIC_FADE_OUT_SEC = 2
+
+// ----------------------------------------------------------- publicacao
+
+/**
+ * Titulo, descricao e hashtags para subir o video.
+ *
+ * Tres titulos e nao um: e a decisao de maior impacto do short, e escolher
+ * entre opcoes e mais rapido e melhor do que pedir outro e esperar de novo.
+ */
+export const metadataSchema = z.object({
+  titles: z.array(z.string()),
+  description: z.string(),
+  hashtags: z.array(z.string()),
+})
+export type Metadata = z.infer<typeof metadataSchema>
 
 export const renderProgressSchema = z.object({
   /** 0..1 */

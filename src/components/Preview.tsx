@@ -19,6 +19,18 @@ export function Preview() {
   const playing = useProject((s) => s.playing)
   const setPlayhead = useProject((s) => s.setPlayhead)
   const setPlaying = useProject((s) => s.setPlaying)
+  const music = useProject((s) => s.music)
+  const musicGainDb = useProject((s) => s.musicGainDb)
+
+  /*
+   * O mesmo ganho que o ffmpeg aplica no render, em amplitude linear.
+   *
+   * O equilibrio que se ouve aqui e proximo do final, nao identico: no render a
+   * narracao passa antes pelo loudnorm de -14 LUFS, e aqui ela toca no nivel
+   * cru do arquivo. Narracao de TTS costuma sair perto disso, entao a diferenca
+   * e pequena -- mas quem quiser o numero exato tem que renderizar.
+   */
+  const musicVolume = 10 ** (musicGainDb / 20)
 
   /*
    * O player entra em estado, nao em ref: ele so e montado depois que ha audio
@@ -38,12 +50,22 @@ export function Preview() {
   const captions = useProject((s) => s.captions)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
 
+  const hookText = useProject((s) => s.hookText)
+  const hookSec = useProject((s) => s.hookSec)
+  const endText = useProject((s) => s.endText)
+  const endSec = useProject((s) => s.endSec)
+
   const inputProps = useMemo(
     () =>
       plan && images.length > 0
-        ? toRenderProps(plan, images, captionsEnabled ? captions : [])
-        : { scenes: [], captions: [] },
-    [plan, images, captions, captionsEnabled],
+        ? toRenderProps(plan, images, captionsEnabled ? captions : [], {
+            hook: hookText,
+            hookSec,
+            end: endText,
+            endSec,
+          })
+        : { scenes: [], captions: [], cards: [] },
+    [plan, images, captions, captionsEnabled, hookText, hookSec, endText, endSec],
   )
 
   /*
@@ -150,7 +172,8 @@ export function Preview() {
             A narracao toca por fora da composicao porque o Remotion entrega
             video puro e o audio so entra no mux -- ver Video.tsx.
           */}
-          <NarrationAudio url={audio.url} />
+          <SyncedAudio url={audio.url} />
+          {music && <SyncedAudio url={music.url} volume={musicVolume} loop />}
         </>
       ) : (
         <div className="grid h-full place-items-center px-6 text-center text-[11px] text-ink-3">
@@ -165,8 +188,21 @@ export function Preview() {
   )
 }
 
-/** Elemento de audio cru, sincronizado com o playhead do store. */
-function NarrationAudio({ url }: { url: string }) {
+/**
+ * Elemento de audio cru, sincronizado com o playhead do store.
+ *
+ * Serve a narracao e a musica. A musica repete (`loop`) porque a faixa costuma
+ * ser mais curta que o video -- o mesmo que o -stream_loop faz no render.
+ */
+function SyncedAudio({
+  url,
+  volume = 1,
+  loop = false,
+}: {
+  url: string
+  volume?: number
+  loop?: boolean
+}) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playing = useProject((s) => s.playing)
   const playhead = useProject((s) => s.playhead)
@@ -181,12 +217,23 @@ function NarrationAudio({ url }: { url: string }) {
   useEffect(() => {
     const element = audioRef.current
     if (!element) return
+    element.volume = Math.min(Math.max(volume, 0), 1)
+  }, [volume])
+
+  useEffect(() => {
+    const element = audioRef.current
+    if (!element) return
     // Só corrige quando saiu de sincronia de verdade, senao o proprio play
     // dispara reposicionamento a cada frame.
+    //
+    // Com loop ligado o currentTime volta para zero sozinho a cada repeticao, e
+    // comparar com o playhead traria a faixa de volta ao inicio do video --
+    // entao a musica so e posicionada quando nao repete.
+    if (loop) return
     if (Math.abs(element.currentTime - playhead) > 0.25) {
       element.currentTime = playhead
     }
-  }, [playhead])
+  }, [playhead, loop])
 
-  return <audio ref={audioRef} src={url} preload="auto" className="hidden" />
+  return <audio ref={audioRef} src={url} preload="auto" loop={loop} className="hidden" />
 }

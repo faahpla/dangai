@@ -4,13 +4,22 @@ import {
   type AnalyzeArgs,
   type DangaiBridge,
   type IpcResult,
+  type MusicPick,
   type PublicSettings,
   type ReframeArgs,
+  type SaveProjectArgs,
   type SettingsPatch,
   type StartRenderArgs,
   type UpdateStatus,
 } from '@shared/channels'
-import type { AnalysisResult, AudioAnalysis, ImageAsset, RenderProgress } from '@shared/contract'
+import type {
+  AnalysisResult,
+  AudioAnalysis,
+  ImageAsset,
+  Metadata,
+  RenderProgress,
+} from '@shared/contract'
+import type { OpenedProject, ProjectFile } from '@shared/project-file'
 
 /**
  * Unica superficie entre renderer e sistema. Tipada por DangaiBridge, entao um
@@ -25,8 +34,8 @@ const bridge: DangaiBridge = {
   analyzeAudio: (path) =>
     ipcRenderer.invoke(IPC.analyzeAudio, path) as Promise<IpcResult<AudioAnalysis>>,
 
-  importImages: (paths) =>
-    ipcRenderer.invoke(IPC.importImages, paths) as Promise<IpcResult<ImageAsset[]>>,
+  importImages: (paths, focus) =>
+    ipcRenderer.invoke(IPC.importImages, paths, focus) as Promise<IpcResult<ImageAsset[]>>,
 
   reframeImage: (args: ReframeArgs) =>
     ipcRenderer.invoke(IPC.reframeImage, args) as Promise<IpcResult<string>>,
@@ -41,6 +50,8 @@ const bridge: DangaiBridge = {
 
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate) as Promise<IpcResult<null>>,
 
+  checkUpdate: () => ipcRenderer.invoke(IPC.checkUpdate) as Promise<IpcResult<null>>,
+
   onUpdateStatus: (listener) => {
     const handler = (_event: unknown, status: UpdateStatus): void => listener(status)
     ipcRenderer.on(IPC.updateStatus, handler)
@@ -51,6 +62,15 @@ const bridge: DangaiBridge = {
 
   pickFiles: () => ipcRenderer.invoke(IPC.pickFiles) as Promise<IpcResult<string[]>>,
 
+  pickMusic: () => ipcRenderer.invoke(IPC.pickMusic) as Promise<IpcResult<MusicPick | null>>,
+
+  loadMusic: (path) => ipcRenderer.invoke(IPC.loadMusic, path) as Promise<IpcResult<MusicPick>>,
+
+  generateMetadata: (texto) =>
+    ipcRenderer.invoke(IPC.generateMetadata, texto) as Promise<IpcResult<Metadata>>,
+
+  copyText: (text) => ipcRenderer.invoke(IPC.copyText, text) as Promise<IpcResult<null>>,
+
   startRender: (args: StartRenderArgs) =>
     ipcRenderer.invoke(IPC.startRender, args) as Promise<IpcResult<string | null>>,
 
@@ -60,6 +80,20 @@ const bridge: DangaiBridge = {
 
   analyze: (args: AnalyzeArgs) =>
     ipcRenderer.invoke(IPC.analyze, args) as Promise<IpcResult<AnalysisResult>>,
+
+  saveProject: (args: SaveProjectArgs) =>
+    ipcRenderer.invoke(IPC.saveProject, args) as Promise<IpcResult<string | null>>,
+
+  openProject: (path) =>
+    ipcRenderer.invoke(IPC.openProject, path) as Promise<IpcResult<OpenedProject | null>>,
+
+  autosaveProject: (file: ProjectFile, projectPath) =>
+    ipcRenderer.invoke(IPC.autosaveProject, file, projectPath) as Promise<IpcResult<null>>,
+
+  readAutosave: () =>
+    ipcRenderer.invoke(IPC.readAutosave) as Promise<IpcResult<OpenedProject | null>>,
+
+  clearAutosave: () => ipcRenderer.invoke(IPC.clearAutosave) as Promise<IpcResult<null>>,
 
   getSettings: () => ipcRenderer.invoke(IPC.getSettings) as Promise<IpcResult<PublicSettings>>,
 

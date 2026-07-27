@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useProject } from '@/store/project'
+import { startAutosave } from '@/store/autosave'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
@@ -12,6 +13,7 @@ import { Settings } from '@/components/Settings'
 import { Script } from '@/components/Script'
 import { CaptionEditor } from '@/components/CaptionEditor'
 import { CommandPalette } from '@/components/CommandPalette'
+import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
 
 export function App() {
@@ -25,6 +27,9 @@ export function App() {
   const refreshSfx = useProject((s) => s.refreshSfx)
   const setUpdate = useProject((s) => s.setUpdate)
   const setAppVersion = useProject((s) => s.setAppVersion)
+  const checkAutosave = useProject((s) => s.checkAutosave)
+  const projectPath = useProject((s) => s.projectPath)
+  const projectDirty = useProject((s) => s.projectDirty)
 
   // Progresso do render vindo do main.
   useEffect(() => window.dangai.onRenderProgress(applyRenderProgress), [applyRenderProgress])
@@ -43,6 +48,23 @@ export function App() {
   // Andamento da analise: Whisper e a chamada da IA levam tempo e nenhum
   // carregamento pode ficar sem sinal visivel.
   useEffect(() => window.dangai.onAnalyzeProgress((message) => setBusy(message)), [setBusy])
+
+  // Autosave e a pergunta "sobrou algo da sessao passada?", nesta ordem: o
+  // observador precisa estar de pe antes de qualquer coisa mexer no estado.
+  useEffect(() => startAutosave(), [])
+  useEffect(() => void checkAutosave(), [checkAutosave])
+
+  /*
+   * A barra de titulo da janela e o unico lugar onde cabe dizer QUAL projeto
+   * esta aberto sem gastar espaco da interface. O ponto antes do nome e a
+   * convencao de "tem coisa nao salva" que todo editor usa.
+   */
+  useEffect(() => {
+    const nome = projectPath?.split(/[\\/]/).pop()?.replace(/\.dangai$/i, '') ?? null
+    document.title = nome
+      ? `${projectDirty ? '• ' : ''}${nome} — Dangai`
+      : `${projectDirty ? '• ' : ''}Dangai`
+  }, [projectPath, projectDirty])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -92,6 +114,19 @@ export function App() {
           event.preventDefault()
           if (!rendering) void store.startRender()
           break
+        case 's':
+        case 'S':
+          if (!event.ctrlKey && !event.metaKey) return
+          event.preventDefault()
+          // Shift force o dialogo: e o "salvar como" de qualquer editor.
+          void store.saveProject(event.shiftKey)
+          break
+        case 'o':
+        case 'O':
+          if (!event.ctrlKey && !event.metaKey) return
+          event.preventDefault()
+          if (!rendering) void store.openProject()
+          break
         case ',':
           if (!event.ctrlKey && !event.metaKey) return
           event.preventDefault()
@@ -134,6 +169,14 @@ export function App() {
           <Timeline />
         </main>
       )}
+
+      {/*
+        Fora do <main>: a fila sobrevive a troca de estado vazio/editando, que
+        acontece sozinha a cada projeto que ela abre.
+      */}
+      <div className="px-6 pb-4 empty:hidden">
+        <Queue />
+      </div>
 
       <StatusBar isDragging={isDragging} />
       <Settings />

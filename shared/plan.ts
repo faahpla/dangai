@@ -9,6 +9,7 @@ import {
   VIDEO_FPS,
   type CaptionBlock,
   type ImageAsset,
+  type OverlayCard,
   type RenderProps,
   type Scene,
   type ScenePlan,
@@ -308,13 +309,23 @@ export function cutCandidatesFrom(words: readonly { start: number; end: number }
  * frames). Esta e a unica traducao segundo->frame do app; fazer isso em dois
  * lugares e como o audio e a imagem saem de sincronia.
  */
+export interface CardText {
+  /** Texto do gancho. Vazio nao gera card. */
+  hook: string
+  hookSec: number
+  /** Texto do fechamento. Vazio nao gera card. */
+  end: string
+  endSec: number
+}
+
 export function toRenderProps(
   plan: ScenePlan,
   images: readonly ImageAsset[],
   captions: readonly CaptionBlock[] = [],
+  cardText: CardText | null = null,
 ): RenderProps {
   const usable = plan.scenes.filter((scene) => images[scene.imageIndex])
-  if (usable.length === 0) return { scenes: [], captions: [] }
+  if (usable.length === 0) return { scenes: [], captions: [], cards: [] }
 
   const durationSec = usable.at(-1)!.end
 
@@ -365,7 +376,48 @@ export function toRenderProps(
     }
   })
 
-  return { scenes, captions: [...captions] }
+  return { scenes, captions: [...captions], cards: buildCards(cardText, bounds.at(-1)!) }
+}
+
+/**
+ * Gancho no comeco e fechamento no fim, em frames.
+ *
+ * O total do video nao entra na conta por acaso: os cards sao recortados dentro
+ * dele. Um fechamento mais longo que o video inteiro vira o video inteiro, e
+ * nao um video mais longo -- ver overlayCardSchema.
+ */
+function buildCards(texto: CardText | null, totalFrames: number): OverlayCard[] {
+  if (!texto || totalFrames <= 0) return []
+
+  const cards: OverlayCard[] = []
+
+  const hook = texto.hook.trim()
+  if (hook.length > 0) {
+    cards.push({
+      text: hook,
+      from: 0,
+      durationInFrames: Math.max(
+        Math.min(Math.round(texto.hookSec * VIDEO_FPS), totalFrames),
+        1,
+      ),
+      // No alto: embaixo mora a legenda, e os dois juntos se atropelariam
+      // justamente nos segundos que decidem se a pessoa continua vendo.
+      position: 'top',
+    })
+  }
+
+  const end = texto.end.trim()
+  if (end.length > 0) {
+    const duracao = Math.max(Math.min(Math.round(texto.endSec * VIDEO_FPS), totalFrames), 1)
+    cards.push({
+      text: end,
+      from: Math.max(totalFrames - duracao, 0),
+      durationInFrames: duracao,
+      position: 'center',
+    })
+  }
+
+  return cards
 }
 
 /**

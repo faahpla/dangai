@@ -3,31 +3,35 @@ import { mkdirSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
-import { VIDEO_HEIGHT, VIDEO_WIDTH, type ImageAsset } from '@shared/contract'
+import { RENDER_HEIGHT, RENDER_WIDTH, type ImageAsset } from '@shared/contract'
 import { publish } from './media-server'
 
 /** Largura da miniatura usada no strip e nas tiras da timeline. */
 const THUMBNAIL_WIDTH = 220
 
-/**
- * Folga de escala para o Ken Burns. A imagem de render tem 1.15x o quadro final:
- * com scale(1.15) a regiao visivel volta a ser exatamente 1080 pixels nativos,
- * entao nao ha upscale visivel nem pixel desperdicado.
- */
-const RENDER_HEADROOM = 1.15
-const RENDER_WIDTH = Math.round(VIDEO_WIDTH * RENDER_HEADROOM)
-const RENDER_HEIGHT = Math.round(VIDEO_HEIGHT * RENDER_HEADROOM)
-
 const cacheDir = join(tmpdir(), 'dangai-render-cache')
+
+/** Enquadramento ja escolhido, quando a imagem vem de um projeto salvo. */
+export interface ImportFocus {
+  focusX: number
+  focusY: number
+}
 
 /**
  * Le as dimensoes reais, gera a miniatura e a versao pronta para render. A ordem
  * do array de entrada e preservada na saida: a ordem em que o usuario solta e a
  * ordem do video.
+ *
+ * `focus` chega preenchido ao abrir um projeto salvo. Sem ele o recorte sairia
+ * centralizado e so depois seria refeito imagem por imagem -- o dobro do
+ * trabalho do sharp, e um piscar de enquadramento errado na tela.
  */
-export async function importImages(paths: readonly string[]): Promise<ImageAsset[]> {
+export async function importImages(
+  paths: readonly string[],
+  focus?: readonly ImportFocus[],
+): Promise<ImageAsset[]> {
   mkdirSync(cacheDir, { recursive: true })
-  return Promise.all(paths.map(importOne))
+  return Promise.all(paths.map((path, index) => importOne(path, focus?.[index])))
 }
 
 /**
@@ -49,15 +53,17 @@ export async function reframeImage(
   return publish(await makeRenderReady(path, id, focusX, focusY))
 }
 
-async function importOne(path: string): Promise<ImageAsset> {
+async function importOne(path: string, focus?: ImportFocus): Promise<ImageAsset> {
   const fileName = basename(path)
+  const focusX = clamp01(focus?.focusX ?? 0.5)
+  const focusY = clamp01(focus?.focusY ?? 0.5)
 
   try {
     const id = randomUUID()
     const { width, height } = await orientedSize(path)
     const [thumbnail, renderPath] = await Promise.all([
       makeThumbnail(path),
-      makeRenderReady(path, id, 0.5, 0.5),
+      makeRenderReady(path, id, focusX, focusY),
     ])
 
     return {
@@ -70,8 +76,8 @@ async function importOne(path: string): Promise<ImageAsset> {
       width,
       height,
       thumbnail,
-      focusX: 0.5,
-      focusY: 0.5,
+      focusX,
+      focusY,
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)

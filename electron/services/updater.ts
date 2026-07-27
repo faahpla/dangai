@@ -20,6 +20,18 @@ import { IPC } from '@shared/channels'
 type Enviar = (status: UpdateStatus) => void
 
 /**
+ * Como avisar a interface, guardado no modulo.
+ *
+ * Precisa viver fora de startUpdater porque a busca manual (o usuario clicando
+ * na versao) tambem precisa reportar -- inclusive o caso em que o updater nem
+ * chegou a iniciar, que antes ficava invisivel.
+ */
+let enviarStatus: Enviar | null = null
+
+/** Se o updater chegou a subir. Falso em dev e se a carga falhou. */
+let ativo = false
+
+/**
  * Carrega o electron-updater lidando com o embrulho de CJS.
  *
  * A biblioteca e CommonJS e o processo main sai bundlado como CJS, entao o
@@ -48,12 +60,14 @@ export async function startUpdater(
       if (!window.isDestroyed()) window.webContents.send(IPC.updateStatus, status)
     }
   }
+  enviarStatus = enviar
 
   // Em dev nao existe instalacao para substituir; o updater reclamaria da falta
   // de app-update.yml a cada abertura.
   if (!isPackaged) return
 
   const { autoUpdater } = await carregar()
+  ativo = true
 
   autoUpdater.autoDownload = true
   // Instalar sozinho ao fechar surpreenderia: a troca acontece quando o usuario
@@ -93,4 +107,43 @@ export async function startUpdater(
 export async function installUpdate(): Promise<void> {
   const { autoUpdater } = await carregar()
   autoUpdater.quitAndInstall()
+}
+
+/**
+ * Procura atualizacao agora, porque o usuario pediu.
+ *
+ * Existe por um motivo que a busca automatica nao resolve: quando tudo esta em
+ * dia, o app nao mostra nada -- e "em dia" fica visualmente igual a "quebrado".
+ * Sem uma forma de perguntar, a unica maneira de saber se a atualizacao
+ * funciona e esperar sair uma versao nova e torcer.
+ *
+ * Ao contrario da busca automatica, esta REPORTA o erro: quem clicou esta
+ * esperando uma resposta, e silencio seria a mesma armadilha de novo.
+ */
+export async function checkForUpdateNow(): Promise<void> {
+  const enviar = enviarStatus
+  if (!enviar) return
+
+  if (!ativo) {
+    enviar({
+      state: 'erro',
+      message: 'A atualizacao automatica so funciona no app instalado.',
+    })
+    return
+  }
+
+  enviar({ state: 'procurando' })
+
+  try {
+    const { autoUpdater } = await carregar()
+    const resultado = await autoUpdater.checkForUpdates()
+    // Sem updateInfo nao ha o que baixar, e nenhum evento vai chegar depois --
+    // sem isto a interface ficaria presa em "procurando" para sempre.
+    if (!resultado) enviar({ state: 'atual' })
+  } catch (err) {
+    enviar({
+      state: 'erro',
+      message: err instanceof Error ? err.message : 'Nao consegui verificar agora.',
+    })
+  }
 }
