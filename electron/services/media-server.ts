@@ -23,6 +23,12 @@ const MIME: Readonly<Record<string, string>> = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  // Clipes. O Range logo abaixo ja existia para o audio e serve a estes tambem
+  // -- e obrigatorio: o extrator de frames busca posicao em vez de ler tudo.
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.m4a': 'audio/mp4',

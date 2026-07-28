@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
-import { classifyFile } from '@shared/channels'
+import { isVisual } from '@shared/channels'
 import { useProject, formatTimecode } from '@/store/project'
 import { Waveform } from './Waveform'
 
@@ -200,7 +200,7 @@ export function Timeline() {
             if (isRendering || scenes.length === 0) return
             const paths = Array.from(event.dataTransfer.files)
               .map((file) => window.dangai.pathForFile(file))
-              .filter((path) => path && classifyFile(path) === 'image')
+              .filter((path) => path && isVisual(path))
             if (paths.length === 0) return
 
             // Sem isto o drop sobe ate a janela e as imagens iriam para o fim

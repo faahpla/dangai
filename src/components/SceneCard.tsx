@@ -1,5 +1,5 @@
-import { ImagePlus, Scissors } from 'lucide-react'
-import { classifyFile } from '@shared/channels'
+import { Film, ImagePlus, Scissors } from 'lucide-react'
+import { isVisual } from '@shared/channels'
 import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
@@ -36,7 +36,7 @@ export function SceneCard() {
   const inserir = async (seconds: number): Promise<void> => {
     const picked = await window.dangai.pickFiles()
     if (!picked.ok) return
-    const imagens = picked.value.filter((path) => classifyFile(path) === 'image')
+    const imagens = picked.value.filter((path) => isVisual(path))
     if (imagens.length > 0) await insertImages(imagens, seconds)
   }
 
@@ -80,58 +80,73 @@ export function SceneCard() {
         <Framing image={image} />
       </Field>
 
-      <Field label="Movimento">
-        <div className="grid grid-cols-2 gap-1.5">
-          {KEN_BURNS_EFFECTS.map((effect) => (
-            <Chip
-              key={effect}
-              active={scene.effect === effect}
-              onClick={() => updateScene(index, { effect })}
-            >
-              {EFFECT_LABEL[effect]}
-            </Chip>
-          ))}
-        </div>
-      </Field>
+      {/*
+        Clipe nao tem controle de movimento -- ele ja se move sozinho, e o Ken
+        Burns fica desligado nele. Esconder os controles em vez de deixa-los
+        inertes: um controle que nao faz nada e pior que um controle ausente,
+        porque o usuario mexe e culpa o render.
+      */}
+      {image.kind === 'video' ? (
+        <Field label="Movimento">
+          <p className="text-[11px] leading-relaxed text-ink-3">
+            O clipe ja tem o movimento dele, entao o app nao acrescenta nenhum. Os blocos de print
+            continuam com o movimento normal.
+          </p>
+        </Field>
+      ) : (
+        <>
+          <Field label="Movimento">
+            <div className="grid grid-cols-2 gap-1.5">
+              {KEN_BURNS_EFFECTS.map((effect) => (
+                <Chip
+                  key={effect}
+                  active={scene.effect === effect}
+                  onClick={() => updateScene(index, { effect })}
+                >
+                  {EFFECT_LABEL[effect]}
+                </Chip>
+              ))}
+            </div>
+          </Field>
 
-      <Field label="Intensidade">
-        <div className="flex items-center gap-2.5">
-          <input
-            type="range"
-            min={0.04}
-            max={0.15}
-            step={0.01}
-            value={scene.intensity}
-            onChange={(event) =>
-              updateScene(index, { intensity: Number(event.target.value) })
-            }
-            className="dangai-range min-w-0 flex-1"
-          />
-          <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
-            {Math.round(scene.intensity * 100)}%
-          </span>
-        </div>
-      </Field>
+          <Field label="Intensidade">
+            <div className="flex items-center gap-2.5">
+              <input
+                type="range"
+                min={0.04}
+                max={0.15}
+                step={0.01}
+                value={scene.intensity}
+                onChange={(event) => updateScene(index, { intensity: Number(event.target.value) })}
+                className="dangai-range min-w-0 flex-1"
+              />
+              <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
+                {Math.round(scene.intensity * 100)}%
+              </span>
+            </div>
+          </Field>
 
-      <Field label="Ritmo do movimento">
-        <div className="grid grid-cols-2 gap-1.5">
-          {MOTION_CURVES.map((curve) => (
-            <Chip
-              key={curve}
-              active={scene.curve === curve}
-              onClick={() => updateScene(index, { curve })}
-            >
-              {CURVE_LABEL[curve]}
-            </Chip>
-          ))}
-        </div>
-        <p className="text-[11px] leading-relaxed text-ink-3">{CURVE_HINT[scene.curve]}</p>
-        {total > 1 && !mesmaCurvaEmTodas && (
-          <Chip active={false} onClick={() => applyCurveToAll(scene.curve)}>
-            Usar em todos os {total} blocos
-          </Chip>
-        )}
-      </Field>
+          <Field label="Ritmo do movimento">
+            <div className="grid grid-cols-2 gap-1.5">
+              {MOTION_CURVES.map((curve) => (
+                <Chip
+                  key={curve}
+                  active={scene.curve === curve}
+                  onClick={() => updateScene(index, { curve })}
+                >
+                  {CURVE_LABEL[curve]}
+                </Chip>
+              ))}
+            </div>
+            <p className="text-[11px] leading-relaxed text-ink-3">{CURVE_HINT[scene.curve]}</p>
+            {total > 1 && !mesmaCurvaEmTodas && (
+              <Chip active={false} onClick={() => applyCurveToAll(scene.curve)}>
+                Usar em todos os {total} blocos
+              </Chip>
+            )}
+          </Field>
+        </>
+      )}
 
       <Field label="Transicao de entrada">
         {index === 0 ? (
@@ -153,7 +168,17 @@ export function SceneCard() {
         )}
       </Field>
 
-      <p className="text-[11px] leading-relaxed text-ink-3">{image.fileName}</p>
+      <p className="flex items-baseline gap-1.5 text-[11px] leading-relaxed text-ink-3">
+        {/* Miniatura de clipe e miniatura de print sao a mesma coisa na tela.
+            Sem esta marca nao da para saber qual bloco e qual. */}
+        {image.kind === 'video' && (
+          <span className="flex items-center gap-1 text-accent">
+            <Film size={11} strokeWidth={1.5} />
+            clipe
+          </span>
+        )}
+        <span className="min-w-0 truncate">{image.fileName}</span>
+      </p>
     </aside>
   )
 }

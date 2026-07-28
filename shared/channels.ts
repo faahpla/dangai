@@ -60,17 +60,32 @@ export const IPC = {
 
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] as const
 export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'] as const
+export const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'mkv'] as const
 
 export function classifyFile(
   fileName: string,
-): 'audio' | 'image' | 'subtitle' | 'script' | 'project' | 'unknown' {
+): 'audio' | 'image' | 'video' | 'subtitle' | 'script' | 'project' | 'unknown' {
   const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
   if ((AUDIO_EXTENSIONS as readonly string[]).includes(ext)) return 'audio'
   if ((IMAGE_EXTENSIONS as readonly string[]).includes(ext)) return 'image'
+  if ((VIDEO_EXTENSIONS as readonly string[]).includes(ext)) return 'video'
   if (ext === 'srt') return 'subtitle'
   if (ext === 'txt' || ext === 'md') return 'script'
   if (ext === 'dangai') return 'project'
   return 'unknown'
+}
+
+/**
+ * Print e clipe ocupam o MESMO lugar no app: a mesma lista, a mesma ordem, o
+ * mesmo bloco. Quem decide quanto tempo cada um fica na tela continua sendo a
+ * narracao.
+ *
+ * Por isso quase todo lugar que hoje pergunta "isso e imagem?" na verdade quer
+ * perguntar "isso entra na esteira?" -- e essa e a pergunta certa.
+ */
+export function isVisual(fileName: string): boolean {
+  const kind = classifyFile(fileName)
+  return kind === 'image' || kind === 'video'
 }
 
 export interface StartRenderArgs {

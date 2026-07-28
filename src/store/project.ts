@@ -328,6 +328,10 @@ export const useProject = create<ProjectState>((set, get) => ({
           audioPaths.push(path)
           break
         case 'image':
+        // Clipe entra na MESMA lista dos prints, na ordem em que foi solto.
+        // Ele nao e uma segunda esteira: e um bloco como qualquer outro, e a
+        // narracao continua mandando na duracao.
+        case 'video':
           imagePaths.push(path)
           break
         case 'subtitle':

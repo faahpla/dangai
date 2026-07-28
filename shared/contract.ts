@@ -53,6 +53,21 @@ export const imageAssetSchema = z.object({
    * escolha e dele.
    */
   focusAuto: z.boolean().default(false),
+  /**
+   * Print ou clipe. Com default para projeto salvo antes dos clipes abrir igual.
+   *
+   * O nome do tipo continua ImageAsset de proposito: clipe nao e uma segunda
+   * especie de midia com esteira propria, e uma imagem que se mexe. Mesma lista,
+   * mesma ordem, mesmo bloco -- ver isVisual em channels.ts.
+   */
+  kind: z.enum(['image', 'video']).default('image'),
+  /**
+   * Duracao do clipe em segundos. Ausente em print.
+   *
+   * Serve para uma coisa so, mas necessaria: saber se o clipe termina ANTES do
+   * bloco. Quando termina, o ultimo frame congela ate o bloco fechar.
+   */
+  durationSec: z.number().positive().optional(),
 })
 export type ImageAsset = z.infer<typeof imageAssetSchema>
 
@@ -366,6 +381,23 @@ export const renderPropsSchema = z.object({
       effect: z.enum(KEN_BURNS_EFFECTS),
       intensity: z.number(),
       curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
+      /**
+       * Print ou clipe. Com default para props antigas continuarem validas.
+       *
+       * O clipe entra como "uma imagem que se mexe": ocupa um bloco igual, na
+       * mesma lista, e quem decide quanto tempo ele fica na tela continua sendo
+       * a narracao. Se o clipe for mais longo, ele e cortado no fim do bloco.
+       */
+      kind: z.enum(['image', 'video']).default('image'),
+      /**
+       * Quantos frames o clipe tem de verdade. null em print, e tambem em clipe
+       * que cobre o bloco inteiro.
+       *
+       * Quando o clipe acaba antes do bloco, o ultimo frame CONGELA ate o bloco
+       * fechar. Foi a escolha do Kintay entre congelar, repetir em loop e cair
+       * para preto: congelar e o que menos chama atencao.
+       */
+      sourceDurationInFrames: z.number().int().positive().nullable().default(null),
       transitionIn: z.enum(TRANSITIONS),
       /** Frames da transicao de entrada. 0 = corte seco. */
       transitionInFrames: z.number().int().nonnegative(),

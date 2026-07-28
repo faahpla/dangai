@@ -4,13 +4,21 @@ import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { RENDER_HEIGHT, RENDER_WIDTH, type ImageAsset } from '@shared/contract'
+import { classifyFile } from '@shared/channels'
 import { publish } from './media-server'
 import { detectFocus } from './faces'
+import { configureClips, makeClipRenderReady, makeClipThumbnail, probeClip } from './clips'
 
 /** Largura da miniatura usada no strip e nas tiras da timeline. */
 const THUMBNAIL_WIDTH = 220
 
 const cacheDir = join(tmpdir(), 'dangai-render-cache')
+configureClips(cacheDir)
+
+/** Clipe e print dividem a esteira; so o jeito de preparar o arquivo difere. */
+function isClip(path: string): boolean {
+  return classifyFile(path) === 'video'
+}
 
 /** Enquadramento ja escolhido, quando a imagem vem de um projeto salvo. */
 export interface ImportFocus {
@@ -53,10 +61,65 @@ export async function reframeImage(
   focusY: number,
 ): Promise<string> {
   mkdirSync(cacheDir, { recursive: true })
+
+  // Clipe usa o mesmo controle e a mesma conta; muda so a ferramenta que corta.
+  // Custa ~0.28s contra alguns milissegundos da imagem, por isso a interface
+  // acompanha o arraste em CSS e so chama aqui quando o usuario solta.
+  if (isClip(path)) {
+    return publish(await makeClipRenderReady(path, id, focusX, focusY, await probeClip(path)))
+  }
   return publish(await makeRenderReady(path, id, focusX, focusY))
 }
 
 async function importOne(path: string, focus?: ImportFocus): Promise<ImageAsset> {
+  return isClip(path) ? importClip(path, focus) : importImage(path, focus)
+}
+
+/**
+ * Importa um clipe: sonda, gera a miniatura e converte para o quadro 9:16.
+ *
+ * Nao ha deteccao de rosto aqui. O detector foi medido em imagem parada; num
+ * clipe ele teria que rodar quadro a quadro para significar alguma coisa, e o
+ * enquadramento ficaria pulando de rosto em rosto ao longo do bloco. Clipe
+ * comeca no centro e o usuario ajusta, que e o mesmo controle da imagem.
+ */
+async function importClip(path: string, focus?: ImportFocus): Promise<ImageAsset> {
+  const fileName = basename(path)
+
+  const focusX = clamp01(focus?.focusX ?? 0.5)
+  const focusY = clamp01(focus?.focusY ?? 0.5)
+
+  try {
+    const id = randomUUID()
+    const info = await probeClip(path)
+    const [thumbnail, renderPath] = await Promise.all([
+      makeClipThumbnail(path),
+      makeClipRenderReady(path, id, focusX, focusY, info),
+    ])
+
+    return {
+      id,
+      path,
+      fileName,
+      url: publish(renderPath),
+      width: info.width,
+      height: info.height,
+      thumbnail,
+      focusX,
+      focusY,
+      focusAuto: false,
+      kind: 'video',
+      durationSec: info.durationSec,
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `Nao foi possivel ler o clipe "${fileName}" (${detail}). Exporte como MP4 H.264 e solte de novo.`,
+    )
+  }
+}
+
+async function importImage(path: string, focus?: ImportFocus): Promise<ImageAsset> {
   const fileName = basename(path)
 
   /*
@@ -92,6 +155,7 @@ async function importOne(path: string, focus?: ImportFocus): Promise<ImageAsset>
       focusX,
       focusY,
       focusAuto: focus ? (focus.focusAuto ?? false) : detectado !== null,
+      kind: 'image',
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)

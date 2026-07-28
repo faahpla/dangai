@@ -377,12 +377,29 @@ export function toRenderProps(
     // sobrar nem faltar frame.
     const padding = Math.floor(incoming / 2) + Math.ceil(outgoing / 2)
 
+    const durationInFrames = Math.max(base + padding, 1)
+
+    /*
+     * So informa a duracao do clipe quando ela e MENOR que o bloco.
+     *
+     * Clipe que cobre o bloco inteiro nao precisa de congelamento nenhum -- e o
+     * caso normal, ja que ele chega cortado. Mandar null ali deixa o Scene com
+     * um caminho a menos para errar.
+     */
+    const sourceFrames =
+      image.kind === 'video' && image.durationSec !== undefined
+        ? Math.floor(image.durationSec * VIDEO_FPS)
+        : null
+
     return {
       url: image.url,
-      durationInFrames: Math.max(base + padding, 1),
+      durationInFrames,
       effect: scene.effect,
       intensity: scene.intensity,
       curve: scene.curve,
+      kind: image.kind,
+      sourceDurationInFrames:
+        sourceFrames !== null && sourceFrames < durationInFrames ? Math.max(sourceFrames, 1) : null,
       transitionIn: scene.transitionIn,
       transitionInFrames: incoming,
     }
