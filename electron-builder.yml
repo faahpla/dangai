@@ -32,6 +32,9 @@ extraResources:
     to: remotion
   - from: assets/sfx
     to: sfx
+  # O cascade de rosto de anime e lido pelo main na importacao de imagens.
+  - from: assets/vision
+    to: vision
 
 # Binario dentro de asar nao pode ser executado, e o sharp carrega .node
 # nativo. Os dois precisam ficar desempacotados.
@@ -42,6 +45,8 @@ asarUnpack:
   # O compositor do Remotion e um executavel nativo; o main aponta para ele
   # explicitamente via binariesDirectory (ver findCompositorDir em main.ts).
   - '**/node_modules/@remotion/compositor-*/**'
+  # O OpenCV e um .wasm que o loader le do disco; dentro do asar ele nao abre.
+  - '**/node_modules/opencv-wasm/**'
 
 win:
   # O .ico sai de build/icon.ico, gerado por `npm run icon`.

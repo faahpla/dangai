@@ -9,6 +9,7 @@ import { configureSettings } from './services/settings'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { startUpdater } from './services/updater'
 import { configureWhisper } from './services/whisper'
+import { configureFaces } from './services/faces'
 
 const isDev = !app.isPackaged
 
@@ -94,6 +95,13 @@ app.whenReady().then(async () => {
       : join(app.getAppPath(), 'assets', 'sfx'),
   })
   ensureSfxDir()
+
+  // O cascade de rosto de anime: 247 KB soltos junto do app, como os SFX.
+  configureFaces(
+    app.isPackaged
+      ? join(process.resourcesPath, 'vision', 'anime-face.xml')
+      : join(app.getAppPath(), 'assets', 'vision', 'anime-face.xml'),
+  )
 
   configureRender({
     appPath: app.getAppPath(),

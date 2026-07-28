@@ -48,6 +48,8 @@ export type FileReference = z.infer<typeof referenceSchema>
 const savedImageSchema = referenceSchema.extend({
   focusX: z.number().min(0).max(1),
   focusY: z.number().min(0).max(1),
+  /** Se o enquadramento veio do rosto detectado. Default para projeto antigo abrir. */
+  focusAuto: z.boolean().default(false),
 })
 export type SavedImage = z.infer<typeof savedImageSchema>
 

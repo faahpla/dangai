@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react'
+import { ScanFace } from 'lucide-react'
 import { VIDEO_HEIGHT, VIDEO_WIDTH, type ImageAsset } from '@shared/contract'
 import { useProject } from '@/store/project'
 
@@ -86,16 +87,30 @@ export function Framing({ image }: { image: ImageAsset }) {
         />
       </div>
 
-      <button
-        type="button"
-        onClick={() => {
-          setImageFocus(image.id, 0.5, 0.5)
-          void commitImageFocus(image.id)
-        }}
-        className="self-start text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink-2"
-      >
-        Centralizar
-      </button>
+      <div className="flex items-baseline justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setImageFocus(image.id, 0.5, 0.5)
+            void commitImageFocus(image.id)
+          }}
+          className="text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink-2"
+        >
+          Centralizar
+        </button>
+
+        {/* Dizer que mexeu importa mais que ter mexido: sem isto o usuario
+            descobriria o enquadramento novo so no video pronto. */}
+        {image.focusAuto && (
+          <span
+            title="O app achou um rosto e enquadrou por ele. Arraste para assumir o controle."
+            className="flex items-center gap-1 text-[11px] text-accent"
+          >
+            <ScanFace size={11} strokeWidth={1.5} />
+            pelo rosto
+          </span>
+        )}
+      </div>
     </div>
   )
 }

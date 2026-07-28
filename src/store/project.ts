@@ -635,7 +635,10 @@ export const useProject = create<ProjectState>((set, get) => ({
     set((state) => ({
       images: state.images.map((image) =>
         image.id === id
-          ? { ...image, focusX: clamp01(focusX), focusY: clamp01(focusY) }
+          ? // Mexeu na mao, a marca de automatico sai: dali em diante o
+            // enquadramento e escolha dele, e a interface para de dizer que foi
+            // o detector que pos ali.
+            { ...image, focusX: clamp01(focusX), focusY: clamp01(focusY), focusAuto: false }
           : image,
       ),
     }))
@@ -1053,6 +1056,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         fileName: image.fileName,
         focusX: image.focusX,
         focusY: image.focusY,
+        focusAuto: image.focusAuto,
       })),
       script: state.script,
       subtitle: state.subtitlePath
@@ -1258,7 +1262,11 @@ async function applyProjectFile(
 
     const images = await window.dangai.importImages(
       file.images.map((image) => image.path),
-      file.images.map((image) => ({ focusX: image.focusX, focusY: image.focusY })),
+      file.images.map((image) => ({
+        focusX: image.focusX,
+        focusY: image.focusY,
+        focusAuto: image.focusAuto,
+      })),
     )
     if (!images.ok) {
       set({ error: images.error, busy: null })

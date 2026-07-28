@@ -43,6 +43,16 @@ export const imageAssetSchema = z.object({
    */
   focusX: z.number().min(0).max(1),
   focusY: z.number().min(0).max(1),
+  /**
+   * O enquadramento veio de um rosto detectado, e nao do centro nem da mao do
+   * usuario.
+   *
+   * Existe para a interface poder DIZER que mexeu. Enquadrar 46 imagens em
+   * silencio seria mudar o video sem avisar; marcado, o usuario sabe onde olhar
+   * e desfaz num clique. Arrastar a janela limpa a marca -- dali em diante a
+   * escolha e dele.
+   */
+  focusAuto: z.boolean().default(false),
 })
 export type ImageAsset = z.infer<typeof imageAssetSchema>
 

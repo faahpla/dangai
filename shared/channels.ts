@@ -154,7 +154,7 @@ export interface DangaiBridge {
   /** `focus` so vem preenchido ao abrir projeto salvo, para o recorte sair certo de primeira. */
   importImages(
     paths: readonly string[],
-    focus?: readonly { focusX: number; focusY: number }[],
+    focus?: readonly { focusX: number; focusY: number; focusAuto?: boolean }[],
   ): Promise<IpcResult<ImageAsset[]>>
   /** Recorta de novo com outro enquadramento. Resolve com a URL da nova versao. */
   reframeImage(args: ReframeArgs): Promise<IpcResult<string>>

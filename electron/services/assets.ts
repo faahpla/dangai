@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { RENDER_HEIGHT, RENDER_WIDTH, type ImageAsset } from '@shared/contract'
 import { publish } from './media-server'
+import { detectFocus } from './faces'
 
 /** Largura da miniatura usada no strip e nas tiras da timeline. */
 const THUMBNAIL_WIDTH = 220
@@ -15,6 +16,8 @@ const cacheDir = join(tmpdir(), 'dangai-render-cache')
 export interface ImportFocus {
   focusX: number
   focusY: number
+  /** Se aquele enquadramento tinha vindo do detector. Preserva a marca ao reabrir. */
+  focusAuto?: boolean
 }
 
 /**
@@ -55,8 +58,18 @@ export async function reframeImage(
 
 async function importOne(path: string, focus?: ImportFocus): Promise<ImageAsset> {
   const fileName = basename(path)
-  const focusX = clamp01(focus?.focusX ?? 0.5)
-  const focusY = clamp01(focus?.focusY ?? 0.5)
+
+  /*
+   * So procura rosto quando o enquadramento ainda nao foi decidido.
+   *
+   * Abrir projeto salvo passa o foco pronto, e ali a escolha ja e do usuario --
+   * mesmo quando ela veio de uma deteccao anterior. Redetectar desfaria o
+   * arraste que ele fez na mao.
+   */
+  const detectado = focus ? null : await detectFocus(path).catch(() => null)
+
+  const focusX = clamp01(focus?.focusX ?? detectado?.focusX ?? 0.5)
+  const focusY = clamp01(focus?.focusY ?? detectado?.focusY ?? 0.5)
 
   try {
     const id = randomUUID()
@@ -78,6 +91,7 @@ async function importOne(path: string, focus?: ImportFocus): Promise<ImageAsset>
       thumbnail,
       focusX,
       focusY,
+      focusAuto: focus ? (focus.focusAuto ?? false) : detectado !== null,
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
