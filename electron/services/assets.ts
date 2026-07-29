@@ -29,6 +29,20 @@ export interface ImportFocus {
 }
 
 /**
+ * A qual parte do roteiro o material pertence.
+ *
+ * Vem separado do `focus` de proposito. Em `importOne`, `focus` preenchido quer
+ * dizer "o usuario ja decidiu o enquadramento" e por isso desliga a deteccao de
+ * rosto. Se a parte viajasse dentro dele, soltar pastas desligaria o
+ * enquadramento automatico sem nenhuma relacao de causa -- um efeito colateral
+ * invisivel ate alguem comparar dois videos e nao entender a diferenca.
+ */
+export interface ImportSection {
+  index: number
+  name: string
+}
+
+/**
  * Le as dimensoes reais, gera a miniatura e a versao pronta para render. A ordem
  * do array de entrada e preservada na saida: a ordem em que o usuario solta e a
  * ordem do video.
@@ -40,9 +54,12 @@ export interface ImportFocus {
 export async function importImages(
   paths: readonly string[],
   focus?: readonly ImportFocus[],
+  sections?: readonly (ImportSection | null)[],
 ): Promise<ImageAsset[]> {
   mkdirSync(cacheDir, { recursive: true })
-  return Promise.all(paths.map((path, index) => importOne(path, focus?.[index])))
+  return Promise.all(
+    paths.map((path, index) => importOne(path, focus?.[index], sections?.[index] ?? null)),
+  )
 }
 
 /**
@@ -71,8 +88,12 @@ export async function reframeImage(
   return publish(await makeRenderReady(path, id, focusX, focusY))
 }
 
-async function importOne(path: string, focus?: ImportFocus): Promise<ImageAsset> {
-  return isClip(path) ? importClip(path, focus) : importImage(path, focus)
+async function importOne(
+  path: string,
+  focus: ImportFocus | undefined,
+  section: ImportSection | null,
+): Promise<ImageAsset> {
+  return isClip(path) ? importClip(path, focus, section) : importImage(path, focus, section)
 }
 
 /**
@@ -83,7 +104,11 @@ async function importOne(path: string, focus?: ImportFocus): Promise<ImageAsset>
  * enquadramento ficaria pulando de rosto em rosto ao longo do bloco. Clipe
  * comeca no centro e o usuario ajusta, que e o mesmo controle da imagem.
  */
-async function importClip(path: string, focus?: ImportFocus): Promise<ImageAsset> {
+async function importClip(
+  path: string,
+  focus: ImportFocus | undefined,
+  section: ImportSection | null,
+): Promise<ImageAsset> {
   const fileName = basename(path)
 
   const focusX = clamp01(focus?.focusX ?? 0.5)
@@ -109,6 +134,8 @@ async function importClip(path: string, focus?: ImportFocus): Promise<ImageAsset
       focusY,
       focusAuto: false,
       kind: 'video',
+      section: section?.index ?? null,
+      ...(section === null ? {} : { sectionName: section.name }),
       durationSec: info.durationSec,
     }
   } catch (err) {
@@ -119,7 +146,11 @@ async function importClip(path: string, focus?: ImportFocus): Promise<ImageAsset
   }
 }
 
-async function importImage(path: string, focus?: ImportFocus): Promise<ImageAsset> {
+async function importImage(
+  path: string,
+  focus: ImportFocus | undefined,
+  section: ImportSection | null,
+): Promise<ImageAsset> {
   const fileName = basename(path)
 
   /*
@@ -156,6 +187,8 @@ async function importImage(path: string, focus?: ImportFocus): Promise<ImageAsse
       focusY,
       focusAuto: focus ? (focus.focusAuto ?? false) : detectado !== null,
       kind: 'image',
+      section: section?.index ?? null,
+      ...(section === null ? {} : { sectionName: section.name }),
     }
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)

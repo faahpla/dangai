@@ -714,6 +714,98 @@ export function planByRhythm(
   return sanitize({ scenes }, imageCount, durationSec)
 }
 
+/**
+ * Onde cada parte do roteiro termina, em segundos.
+ *
+ * A parte vem da LINHA EM BRANCO do roteiro colado, que o alinhamento ja marca
+ * palavra por palavra (`paragraph`). Nao e um conceito novo: o ritmo ja dava
+ * peso extra a esse ponto para escolher cortes. Aqui ele deixa de ser uma dica
+ * e passa a ser uma fronteira dura.
+ *
+ * A ultima parte nao entra -- ela termina junto com o audio, e quem chama sabe
+ * disso. Palavra sem tempo medido (NaN) e ignorada: ela existe quando o Whisper
+ * nao ouviu aquele trecho, e usar um NaN como fronteira quebraria o plano todo.
+ */
+export function paragraphEnds(words: readonly Word[]): number[] {
+  const ends: number[] = []
+  for (let i = 0; i < words.length - 1; i++) {
+    const word = words[i]!
+    if (!word.paragraph) continue
+    if (!Number.isFinite(word.end)) continue
+    ends.push(word.end)
+  }
+  return ends
+}
+
+/**
+ * Um plano em que cada parte do roteiro so recebe o material da sua pasta.
+ *
+ * A diferenca para o planByRhythm nao esta no algoritmo -- e o mesmo -- e sim no
+ * escopo: em vez de escolher n-1 cortes ao longo do audio inteiro, escolhe os
+ * cortes DENTRO de cada parte, e as fronteiras entre partes ficam fixas.
+ *
+ * O caso de hoje (arquivo solto, sem pasta) e o caso particular de "uma parte
+ * so" -- por isso nao existe motor novo aqui para dar problema diferente.
+ *
+ * Devolve null quando a conta nao fecha: numero de partes diferente do numero
+ * de pastas, parte sem material, ou audio curto demais para os blocos pedidos.
+ * Quem chama avisa o usuario; nada aqui chuta.
+ */
+export function planBySections(
+  sectionCounts: readonly number[],
+  durationSec: number,
+  words: readonly Word[],
+): ScenePlan | null {
+  if (sectionCounts.length === 0) return null
+  if (sectionCounts.some((count) => count < 1)) return null
+
+  const ends = paragraphEnds(words)
+  if (ends.length + 1 !== sectionCounts.length) return null
+
+  const bounds = [0, ...ends, durationSec]
+  // Fronteira fora de ordem significa roteiro desalinhado do audio; melhor cair
+  // fora e deixar o caminho antigo assumir do que montar um plano torto.
+  for (let i = 1; i < bounds.length; i++) {
+    if (bounds[i]! <= bounds[i - 1]!) return null
+  }
+
+  const scenes: Scene[] = []
+  for (let s = 0; s < sectionCounts.length; s++) {
+    const inicio = bounds[s]!
+    const fim = bounds[s + 1]!
+    const duracao = fim - inicio
+    const quantos = sectionCounts[s]!
+
+    if (duracao < MIN_SCENE_SEC * quantos) return null
+
+    // Cortes internos da parte, medidos a partir do zero dela e devolvidos ao
+    // tempo absoluto no fim -- o pickCuts raciocina sempre em 0..duracao.
+    const locais = words
+      .filter((w) => Number.isFinite(w.start) && w.start >= inicio && w.end <= fim)
+      .map((w) => ({ ...w, start: w.start - inicio, end: w.end - inicio }))
+
+    const cortes =
+      quantos === 1 ? [] : pickCuts(boundariesFrom(locais), quantos - 1, duracao)
+    if (!cortes) return null
+
+    const dentro = [0, ...cortes, duracao]
+    for (let i = 0; i < quantos; i++) {
+      const index = scenes.length
+      scenes.push({
+        imageIndex: index,
+        start: inicio + dentro[i]!,
+        end: inicio + dentro[i + 1]!,
+        effect: pickEffect(index),
+        intensity: 0.12,
+        curve: MOTION_CURVE_DEFAULT,
+        transitionIn: 'cut' as const,
+      })
+    }
+  }
+
+  return sanitize({ scenes }, scenes.length, durationSec)
+}
+
 /** Plano de melhor esforco sem IA. Usado pelo fallback e pelo preview inicial. */
 export function planWithoutAI(
   imageCount: number,

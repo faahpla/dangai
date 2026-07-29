@@ -84,6 +84,8 @@ interface ProjectState {
   script: string | null
   /** Como o roteiro se saiu no casamento com o audio. */
   scriptNote: string | null
+  /** O que aconteceu com as pastas, quando o usuario soltou pastas. */
+  sectionNote: string | null
   scriptOpen: boolean
   /** Ligado quando o usuario mexe nas legendas: a analise para de sobrescrever. */
   captionsEdited: boolean
@@ -273,6 +275,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   aiNote: null,
   script: null,
   scriptNote: null,
+  sectionNote: null,
   scriptOpen: false,
   captionsEdited: false,
   captionsOpen: false,
@@ -317,10 +320,36 @@ export const useProject = create<ProjectState>((set, get) => ({
   ingest: async (paths) => {
     const audioPaths: string[] = []
     const imagePaths: string[] = []
+    /** A parte de cada arquivo visual, na mesma ordem de imagePaths. */
+    const imageSections: ({ index: number; name: string } | null)[] = []
     const subtitlePaths: string[] = []
     const scriptPaths: string[] = []
     const projectPaths: string[] = []
     const ignored: string[] = []
+
+    /*
+     * Pasta vira PARTE do roteiro; arquivo continua arquivo.
+     *
+     * O renderer so recebe caminho como texto e nao pode olhar o disco, entao
+     * quem resolve isso e o main. Antes disso pasta era simplesmente ignorada no
+     * drop -- por isso nada do caminho antigo muda de comportamento aqui.
+     *
+     * Quando o main nao consegue responder, o `for` abaixo assume sozinho: o
+     * caminho de arquivo solto nao depende disto para nada.
+     */
+    const expandido = await window.dangai.expandDrop(paths)
+    const expansao = expandido.ok ? expandido.value : { files: [], sections: [] }
+
+    expansao.sections.forEach((section, index) => {
+      for (const file of section.files) {
+        imagePaths.push(file)
+        imageSections.push({ index, name: section.name })
+      }
+    })
+    for (const file of expansao.files) {
+      imagePaths.push(file)
+      imageSections.push(null)
+    }
 
     for (const path of paths) {
       switch (classifyFile(path)) {
@@ -332,7 +361,12 @@ export const useProject = create<ProjectState>((set, get) => ({
         // Ele nao e uma segunda esteira: e um bloco como qualquer outro, e a
         // narracao continua mandando na duracao.
         case 'video':
-          imagePaths.push(path)
+          // Ja veio pela expansao acima -- que resolve pasta E arquivo solto.
+          // So entra aqui se o main nao respondeu, e ai nao ha o que duplicar.
+          if (!expandido.ok) {
+            imagePaths.push(path)
+            imageSections.push(null)
+          }
           break
         case 'subtitle':
           subtitlePaths.push(path)
@@ -393,7 +427,12 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     if (imagePaths.length > 0) {
       set({ busy: `Lendo ${imagePaths.length} ${imagePaths.length === 1 ? 'imagem' : 'imagens'}...` })
-      const result = await window.dangai.importImages(imagePaths)
+      const temParte = imageSections.some((s) => s !== null)
+      const result = await window.dangai.importImages(
+        imagePaths,
+        undefined,
+        temParte ? imageSections : undefined,
+      )
       if (result.ok) {
         // A ordem em que o usuario solta e a ordem do video.
         set((state) => ({ images: [...state.images, ...result.value] }))
@@ -462,6 +501,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           : buildCaptions(result.value.transcript),
         aiNote: result.value.aiNote,
         scriptNote: result.value.scriptNote,
+        sectionNote: result.value.sectionNote,
         planEdited: keepPlan,
         busy: null,
       })

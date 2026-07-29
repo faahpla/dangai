@@ -5,6 +5,7 @@ import {
   Sparkles,
   AudioWaveform,
   Rows3,
+  FolderTree,
   Pilcrow,
   Download,
 } from 'lucide-react'
@@ -31,6 +32,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const planOrigin = useProject((s) => s.planOrigin)
   const aiNote = useProject((s) => s.aiNote)
   const scriptNote = useProject((s) => s.scriptNote)
+  const sectionNote = useProject((s) => s.sectionNote)
   const dismissError = useProject((s) => s.dismissError)
   const openSettings = useProject((s) => s.openSettings)
   const openScript = useProject((s) => s.openScript)
@@ -65,6 +67,17 @@ export function StatusBar({ isDragging }: StatusBarProps) {
           <span className="truncate text-[11px] text-ink-3">{idleMessage}</span>
         )}
       </div>
+
+      {/* Antes do aviso do roteiro: quando o usuario soltou pastas e elas nao
+          foram respeitadas, e isto que ele precisa ler primeiro. */}
+      {!busy && sectionNote && (
+        <span
+          className="max-w-[340px] shrink-0 truncate text-[11px] text-ink-2"
+          title={sectionNote}
+        >
+          {sectionNote}
+        </span>
+      )}
 
       {!busy && scriptNote && (
         <button
@@ -197,6 +210,7 @@ function UpdateChip({ appVersion }: { appVersion: string }) {
 function PlanBadge({ origin, note }: { origin: PlanOrigin; note: string | null }) {
   const config: Record<PlanOrigin, { icon: typeof Sparkles; label: string }> = {
     ai: { icon: Sparkles, label: 'Cenas pela IA' },
+    sections: { icon: FolderTree, label: 'Cenas pelas pastas' },
     rhythm: { icon: Pilcrow, label: 'Cenas pela pontuacao' },
     silence: { icon: AudioWaveform, label: 'Cenas pelas pausas' },
     equal: { icon: Rows3, label: 'Cenas divididas igualmente' },

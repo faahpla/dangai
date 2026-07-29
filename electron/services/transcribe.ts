@@ -1,5 +1,11 @@
-import type { AnalysisResult, ImageAsset, Transcript } from '@shared/contract'
-import { planWithoutAI, sanitize, snapToCandidates } from '@shared/plan'
+import type { AnalysisResult, ImageAsset, ScenePlan, Transcript } from '@shared/contract'
+import {
+  paragraphEnds,
+  planBySections,
+  planWithoutAI,
+  sanitize,
+  snapToCandidates,
+} from '@shared/plan'
 import { transcriptFromScript } from '@shared/align'
 import { parseSrt } from './srt'
 import { transcribe } from './whisper'
@@ -48,6 +54,27 @@ export async function analyze(
 
   const { transcript, scriptNote } = applyScript(script, measured, onProgress)
 
+  // -------------------------------------------------- degrau 0: partes do roteiro
+  //
+  // Vem ANTES da IA de proposito. Quando o usuario soltou pastas, ele ja disse
+  // qual material pertence a qual parte -- e uma decisao dele, explicita, que
+  // nenhum modelo tem porque revisar. A IA continua no caminho de sempre para
+  // quem solta arquivo solto.
+  const porPartes = planFromSections(images, durationSec, transcript)
+  if (porPartes.plan) {
+    const snapped = transcript
+      ? snapToCandidates(porPartes.plan, transcript.cutCandidates, durationSec, images.length)
+      : porPartes.plan
+    return {
+      plan: snapped,
+      origin: 'sections',
+      transcript,
+      aiNote: null,
+      scriptNote,
+      sectionNote: porPartes.note,
+    }
+  }
+
   // --------------------------------------------------------------- degrau 1: IA
   if (settings.anthropicApiKey && transcript && transcript.text.length > 0) {
     try {
@@ -70,11 +97,25 @@ export async function analyze(
         images.length,
       )
 
-      return { plan: snapped, origin: 'ai', transcript, aiNote: null, scriptNote }
+      return {
+        plan: snapped,
+        origin: 'ai',
+        transcript,
+        aiNote: null,
+        scriptNote,
+        sectionNote: porPartes.note,
+      }
     } catch (err) {
       // Falha da IA nunca sobe: vira uma nota e o fallback assume.
       const note = err instanceof Error ? err.message : String(err)
-      return withoutAI(images.length, durationSec, transcript, friendlyAiNote(note), scriptNote)
+      return withoutAI(
+        images.length,
+        durationSec,
+        transcript,
+        friendlyAiNote(note),
+        scriptNote,
+        porPartes.note,
+      )
     }
   }
 
@@ -89,6 +130,7 @@ export async function analyze(
     transcript,
     whyNoAI(!!settings.anthropicApiKey, transcript),
     scriptNote,
+    porPartes.note,
   )
 }
 
@@ -133,6 +175,68 @@ function applyScript(
   }
 }
 
+/**
+ * Tenta montar o plano por partes, e explica em portugues quando nao da.
+ *
+ * A explicacao nao e cortesia: soltar pastas e um pedido explicito do usuario,
+ * e ignorar esse pedido em silencio faria o video sair com o material na parte
+ * errada sem ninguem perceber. Num video de teoria isso e pior que nao ter
+ * imagem -- a imagem passa a contradizer a narracao.
+ */
+function planFromSections(
+  images: readonly ImageAsset[],
+  durationSec: number,
+  transcript: Transcript | null,
+): { plan: ScenePlan | null; note: string | null } {
+  const seccionadas = images.filter((image) => image.section !== null)
+  if (seccionadas.length === 0) return { plan: null, note: null }
+
+  if (seccionadas.length !== images.length) {
+    return {
+      plan: null,
+      note: 'Voce soltou pastas e arquivos soltos juntos. Cenas distribuidas como de costume — deixe so pastas para o app respeitar as partes.',
+    }
+  }
+
+  // Conta quanto material caiu em cada parte, na ordem das pastas.
+  const contagem: number[] = []
+  for (const image of seccionadas) {
+    const s = image.section!
+    contagem[s] = (contagem[s] ?? 0) + 1
+  }
+  if (contagem.some((c) => c === undefined)) {
+    return { plan: null, note: 'Uma das pastas ficou sem material. Cenas distribuidas como de costume.' }
+  }
+
+  if (!transcript || transcript.words.length < 2) {
+    return {
+      plan: null,
+      note: 'Sem roteiro cronometrado, o app nao sabe onde cada parte comeca. Cole o roteiro com uma linha em branco entre as partes.',
+    }
+  }
+
+  const partesDoRoteiro = paragraphEnds(transcript.words).length + 1
+  if (partesDoRoteiro !== contagem.length) {
+    return {
+      plan: null,
+      note: `Seu roteiro tem ${partesDoRoteiro} ${partesDoRoteiro === 1 ? 'parte' : 'partes'} e voce soltou ${contagem.length} pastas. Separe as partes do roteiro com uma linha em branco, ou ajuste as pastas.`,
+    }
+  }
+
+  const plan = planBySections(contagem, durationSec, transcript.words)
+  if (!plan) {
+    return {
+      plan: null,
+      note: 'As partes batem, mas nao cabe tanto material no tempo de cada uma. Cenas distribuidas como de costume.',
+    }
+  }
+
+  return {
+    plan,
+    note: `${contagem.length} partes, material de cada pasta na sua parte.`,
+  }
+}
+
 function whyNoAI(hasKey: boolean, transcript: Transcript | null): string | null {
   if (!hasKey) {
     return 'Sem chave da API — cenas distribuidas pelas pausas da narracao.'
@@ -149,12 +253,14 @@ function withoutAI(
   transcript: Transcript | null,
   aiNote: string | null,
   scriptNote: string | null,
+  /** Por que as pastas nao foram respeitadas, quando havia pastas. */
+  sectionNote: string | null = null,
 ): AnalysisResult {
   const { plan, origin } = planWithoutAI(imageCount, durationSec, transcript)
   const snapped = transcript
     ? snapToCandidates(plan, transcript.cutCandidates, durationSec, imageCount)
     : plan
-  return { plan: snapped, origin, transcript, aiNote, scriptNote }
+  return { plan: snapped, origin, transcript, aiNote, scriptNote, sectionNote }
 }
 
 /**

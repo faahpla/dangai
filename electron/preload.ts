@@ -6,6 +6,7 @@ import {
   type IpcResult,
   type MusicPick,
   type PublicSettings,
+  type DropExpansion,
   type ReframeArgs,
   type SaveProjectArgs,
   type SettingsPatch,
@@ -34,11 +35,16 @@ const bridge: DangaiBridge = {
   analyzeAudio: (path) =>
     ipcRenderer.invoke(IPC.analyzeAudio, path) as Promise<IpcResult<AudioAnalysis>>,
 
-  importImages: (paths, focus) =>
-    ipcRenderer.invoke(IPC.importImages, paths, focus) as Promise<IpcResult<ImageAsset[]>>,
+  importImages: (paths, focus, sections) =>
+    ipcRenderer.invoke(IPC.importImages, paths, focus, sections) as Promise<
+      IpcResult<ImageAsset[]>
+    >,
 
   reframeImage: (args: ReframeArgs) =>
     ipcRenderer.invoke(IPC.reframeImage, args) as Promise<IpcResult<string>>,
+
+  expandDrop: (paths) =>
+    ipcRenderer.invoke(IPC.expandDrop, paths) as Promise<IpcResult<DropExpansion>>,
 
   readScript: (path) => ipcRenderer.invoke(IPC.readScript, path) as Promise<IpcResult<string>>,
 

@@ -62,6 +62,17 @@ export const imageAssetSchema = z.object({
    */
   kind: z.enum(['image', 'video']).default('image'),
   /**
+   * A qual parte do roteiro este material pertence, contando do zero.
+   *
+   * null quando o usuario soltou arquivos soltos -- que e o caso do recap, onde
+   * o material ja vem em ordem cronologica e nao ha o que agrupar. So deixa de
+   * ser null quando ele solta PASTAS: cada subpasta vira uma parte, e o
+   * planejador passa a resolver cada parte separadamente.
+   */
+  section: z.number().int().nonnegative().nullable().default(null),
+  /** Nome da pasta de onde veio. So para a interface conseguir dizer qual e. */
+  sectionName: z.string().optional(),
+  /**
    * Duracao do clipe em segundos. Ausente em print.
    *
    * Serve para uma coisa so, mas necessaria: saber se o clipe termina ANTES do
@@ -207,7 +218,7 @@ export const scenePlanSchema = z.object({
 export type ScenePlan = z.infer<typeof scenePlanSchema>
 
 /** Como o plano foi obtido. Aparece na interface para o usuario saber. */
-export const PLAN_ORIGINS = ['ai', 'rhythm', 'silence', 'equal'] as const
+export const PLAN_ORIGINS = ['ai', 'sections', 'rhythm', 'silence', 'equal'] as const
 export type PlanOrigin = (typeof PLAN_ORIGINS)[number]
 
 export interface AnalysisResult {
@@ -218,6 +229,14 @@ export interface AnalysisResult {
   aiNote: string | null
   /** Como o roteiro se saiu, quando houve roteiro. */
   scriptNote: string | null
+  /**
+   * O que aconteceu com as partes, quando o usuario soltou pastas.
+   *
+   * Existe para o caso que NAO bate: tres pastas e quatro paragrafos. Ali o app
+   * avisa em vez de chutar, porque num video de teoria a imagem errada nao passa
+   * despercebida -- ela contradiz o que a narracao esta dizendo.
+   */
+  sectionNote: string | null
 }
 
 // ---------------------------------------------------------------- render

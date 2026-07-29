@@ -27,6 +27,7 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
 export const IPC = {
   analyzeAudio: 'audio:analyze',
   importImages: 'images:import',
+  expandDrop: 'drop:expand',
   reframeImage: 'images:reframe',
   readScript: 'script:read',
   listSfx: 'sfx:list',
@@ -106,6 +107,19 @@ export interface MusicPick {
   url: string
 }
 
+/** Uma parte do roteiro e o material que o usuario pos nela. */
+export interface DropSection {
+  name: string
+  files: string[]
+}
+
+export interface DropExpansion {
+  /** Material sem parte. E o caminho de sempre. */
+  files: string[]
+  /** Partes na ordem das pastas. Vazio quando ninguem soltou pasta. */
+  sections: DropSection[]
+}
+
 export interface ReframeArgs {
   id: string
   path: string
@@ -170,9 +184,18 @@ export interface DangaiBridge {
   importImages(
     paths: readonly string[],
     focus?: readonly { focusX: number; focusY: number; focusAuto?: boolean }[],
+    /** A parte de cada arquivo, quando o usuario soltou pastas. null = sem parte. */
+    sections?: readonly ({ index: number; name: string } | null)[],
   ): Promise<IpcResult<ImageAsset[]>>
   /** Recorta de novo com outro enquadramento. Resolve com a URL da nova versao. */
   reframeImage(args: ReframeArgs): Promise<IpcResult<string>>
+  /**
+   * Resolve o que foi solto: pasta vira parte, arquivo continua arquivo.
+   *
+   * Mora no main porque so ele pode olhar o disco -- o renderer recebe caminhos
+   * como texto e nao tem como saber se um deles e uma pasta.
+   */
+  expandDrop(paths: readonly string[]): Promise<IpcResult<DropExpansion>>
   /** Le um .txt de roteiro do disco. */
   readScript(path: string): Promise<IpcResult<string>>
   /** Nomes dos arquivos de som na pasta de SFX em uso. */

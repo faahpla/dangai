@@ -10,6 +10,7 @@ import {
   type IpcResult,
   type MusicPick,
   type PublicSettings,
+  type DropExpansion,
   type ReframeArgs,
   type SaveProjectArgs,
   type SettingsPatch,
@@ -29,7 +30,13 @@ import {
 } from '@shared/project-file'
 import { analyzeAudio } from './services/audio'
 import { publish } from './services/media-server'
-import { importImages, reframeImage, type ImportFocus } from './services/assets'
+import {
+  importImages,
+  reframeImage,
+  type ImportFocus,
+  type ImportSection,
+} from './services/assets'
+import { expandDrop } from './services/folders'
 import {
   clearAutosave,
   openProjectFile,
@@ -79,13 +86,21 @@ function broadcastAnalyze(message: string): void {
 export function registerIpc(): void {
   handle<[string], AudioAnalysis>(IPC.analyzeAudio, (path) => analyzeAudio(path))
 
-  handle<[readonly string[], readonly ImportFocus[] | undefined], ImageAsset[]>(
-    IPC.importImages,
-    (paths, focus) => importImages(paths, focus),
-  )
+  handle<
+    [
+      readonly string[],
+      readonly ImportFocus[] | undefined,
+      readonly (ImportSection | null)[] | undefined,
+    ],
+    ImageAsset[]
+  >(IPC.importImages, (paths, focus, sections) => importImages(paths, focus, sections))
 
   handle<[ReframeArgs], string>(IPC.reframeImage, ({ id, path, focusX, focusY }) =>
     reframeImage(id, path, focusX, focusY),
+  )
+
+  handle<[readonly string[]], DropExpansion>(IPC.expandDrop, (paths) =>
+    Promise.resolve(expandDrop(paths)),
   )
 
   /*
