@@ -14,6 +14,7 @@ import {
   FolderInput,
   ListVideo,
   Hash,
+  Library as LibraryIcon,
   type LucideIcon,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
@@ -188,6 +189,13 @@ function useCommands(): Command[] {
         icon: playing ? Pause : Play,
         disabled: !pronto || rendering,
         run: () => store().togglePlay(),
+      },
+      {
+        id: 'library',
+        label: 'Procurar cenas na biblioteca',
+        hint: 'Ctrl+B',
+        icon: LibraryIcon,
+        run: () => void store().openLibrary(true),
       },
       {
         id: 'script',

@@ -11,6 +11,7 @@ import {
   type MusicPick,
   type PublicSettings,
   type DropExpansion,
+  type LibraryIndex,
   type ReframeArgs,
   type SaveProjectArgs,
   type SettingsPatch,
@@ -37,6 +38,7 @@ import {
   type ImportSection,
 } from './services/assets'
 import { expandDrop } from './services/folders'
+import { scanLibrary } from './services/library'
 import {
   clearAutosave,
   openProjectFile,
@@ -111,6 +113,43 @@ export function registerIpc(): void {
   handle<[string], string>(IPC.readScript, async (path) => {
     const raw = await readFile(path, 'utf8')
     return raw.replace(/^\ufeff/, '')
+  })
+
+  // ---------------------------------------------------------------- biblioteca
+
+  /*
+   * A biblioteca do AnCut e so leitura, e a varredura e sincrona de proposito:
+   * sao 27 arquivos de texto, 300ms no pior caso e 100ms com cache. Jogar isso
+   * num worker custaria mais em complexidade do que economiza em tempo.
+   */
+  handle<[], LibraryIndex>(IPC.scanLibrary, async () => {
+    const { libraryDir } = getSettings()
+    if (!libraryDir) {
+      throw new Error(
+        'Nenhuma biblioteca escolhida. Abra as configuracoes (Ctrl+,) e aponte a pasta onde o AnCut grava as cenas.',
+      )
+    }
+    return scanLibrary(libraryDir, publish)
+  })
+
+  handle<[], string | null>(IPC.pickLibraryDir, async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Escolher a pasta da biblioteca de cenas',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const escolhida = result.filePaths[0]!
+    saveSettings({ libraryDir: escolhida })
+    return escolhida
+  })
+
+  // So o clipe que vai realmente tocar entra no servidor. Publicar os 9 mil de
+  // uma vez encheria o mapa de ids para 99% de coisa que ninguem vai abrir.
+  handle<[string], string>(IPC.libraryClipUrl, async (path) => {
+    if (!existsSync(path)) {
+      throw new Error(`Essa cena nao esta mais no disco: ${basename(path)}`)
+    }
+    return publish(path)
   })
 
   handle<[], string[]>(IPC.listSfx, async () => listSfx())

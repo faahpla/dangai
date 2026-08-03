@@ -6,6 +6,7 @@ import { startMediaServer } from './services/media-server'
 import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
 import { configureSettings } from './services/settings'
+import { configureLibrary } from './services/library'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { startUpdater } from './services/updater'
 import { configureWhisper } from './services/whisper'
@@ -84,6 +85,9 @@ app.whenReady().then(async () => {
   // Binario e modelo do Whisper ficam no userData: sobrevivem a atualizacao do
   // app e nao sujam a pasta do projeto.
   configureWhisper(join(userData, 'whisper'))
+  // O cache da biblioteca tambem: a pasta de cenas do usuario e so leitura, e
+  // nada do Dangai pode ser gravado dentro dela.
+  configureLibrary(userData)
 
   // Os SFX moram no userData para o usuario poder trocar os arquivos: a pasta
   // do app some numa atualizacao e pode nem ter permissao de escrita.

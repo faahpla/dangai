@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { History, X } from 'lucide-react'
+import { History, Library as LibraryIcon, X } from 'lucide-react'
 import { useProject } from '@/store/project'
 
 interface DropzoneProps {
@@ -53,8 +53,36 @@ export function Dropzone({ isDragging }: DropzoneProps) {
         </motion.div>
       </button>
 
+      <AbrirBiblioteca />
       <Recuperar />
     </div>
+  )
+}
+
+/**
+ * Atalho para a biblioteca no canto da tela vazia.
+ *
+ * Fica aqui porque e aqui que a duvida aparece: "que material eu uso neste
+ * video?". Discreto de proposito -- soltar arquivo continua sendo o caminho
+ * principal, e quem nunca apontou uma pasta de biblioteca nao perde nada
+ * ignorando este botao.
+ */
+function AbrirBiblioteca() {
+  const openLibrary = useProject((s) => s.openLibrary)
+  const busy = useProject((s) => s.busy)
+
+  if (busy !== null) return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => void openLibrary(true)}
+      title="Procurar cenas na biblioteca (Ctrl+B)"
+      className="absolute right-6 top-6 flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
+    >
+      <LibraryIcon size={13} strokeWidth={1.5} className="text-accent" />
+      Biblioteca
+    </button>
   )
 }
 

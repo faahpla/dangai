@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
-import type { MusicPick, UpdateStatus } from '@shared/channels'
+import type { LibraryIndex, MusicPick, UpdateStatus } from '@shared/channels'
 import {
   CAPTION_COLOR_DEFAULT,
   CAPTION_Y_DEFAULT,
@@ -139,6 +139,19 @@ interface ProjectState {
   paletteOpen: boolean
 
   /**
+   * Biblioteca de cenas do AnCut.
+   *
+   * Mora na store e nao no componente porque a varredura custa uma leitura de
+   * disco e o indice inteiro passa pela ponte: reler isso a cada vez que a tela
+   * abre seria jogar fora trabalho ja feito.
+   */
+  libraryOpen: boolean
+  library: LibraryIndex | null
+  /** Texto de andamento da varredura, ou null. */
+  libraryBusy: string | null
+  libraryError: string | null
+
+  /**
    * Projetos esperando para renderizar, um atras do outro.
    *
    * A fila abre cada projeto de verdade e usa exatamente o mesmo caminho de
@@ -193,6 +206,12 @@ interface ProjectState {
   editCaptionWord: (index: number, wordIndex: number, text: string) => void
   resetCaptions: () => void
   openPalette: (open: boolean) => void
+  /** Abre a biblioteca. A primeira abertura varre sozinha. */
+  openLibrary: (open: boolean) => Promise<void>
+  /** Rele a biblioteca: episodio novo entra, episodio conhecido sai do cache. */
+  syncLibrary: () => Promise<void>
+  /** Manda as cenas escolhidas para o projeto, pela mesma porta do drop. */
+  addFromLibrary: (paths: readonly string[]) => Promise<void>
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -303,6 +322,10 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionColor: CAPTION_COLOR_DEFAULT,
   captionY: CAPTION_Y_DEFAULT,
   paletteOpen: false,
+  libraryOpen: false,
+  library: null,
+  libraryBusy: null,
+  libraryError: null,
   queue: [],
   queueRunning: false,
   projectPath: null,
@@ -947,6 +970,38 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   openPalette: (open) => set({ paletteOpen: open }),
 
+  /*
+   * Abrir varre so na primeira vez. Depois disso o indice fica no estado e a
+   * tela abre instantanea -- reler seria pagar de novo por uma resposta que nao
+   * mudou, e o botao "Sincronizar" existe justamente para quando ela mudou.
+   */
+  openLibrary: async (open) => {
+    set({ libraryOpen: open })
+    if (open && !get().library) await get().syncLibrary()
+  },
+
+  syncLibrary: async () => {
+    set({ libraryBusy: 'Lendo a biblioteca...', libraryError: null })
+    const result = await window.dangai.scanLibrary()
+    if (result.ok) {
+      set({ library: result.value, libraryBusy: null })
+    } else {
+      set({ libraryError: result.error, libraryBusy: null })
+    }
+  },
+
+  /*
+   * A biblioteca entrega CAMINHO, e caminho e exatamente o que o drop entrega.
+   * Por isso ela reusa o ingest inteiro em vez de ter porta propria: o clipe que
+   * veio da busca e o clipe que veio do Explorer sao a mesma coisa daqui para a
+   * frente, com a mesma analise e o mesmo render.
+   */
+  addFromLibrary: async (paths) => {
+    if (paths.length === 0) return
+    set({ libraryOpen: false })
+    await get().ingest(paths)
+  },
+
   selectScene: (index) => set({ selectedScene: index }),
 
   selectImage: (id) => {
@@ -1059,6 +1114,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       aiNote: null,
       script: null,
       scriptNote: null,
+      sectionNote: null,
       scriptOpen: false,
       captionsEdited: false,
       captionsOpen: false,

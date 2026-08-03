@@ -7,6 +7,7 @@ import {
   type MusicPick,
   type PublicSettings,
   type DropExpansion,
+  type LibraryIndex,
   type ReframeArgs,
   type SaveProjectArgs,
   type SettingsPatch,
@@ -47,6 +48,14 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.expandDrop, paths) as Promise<IpcResult<DropExpansion>>,
 
   readScript: (path) => ipcRenderer.invoke(IPC.readScript, path) as Promise<IpcResult<string>>,
+
+  scanLibrary: () => ipcRenderer.invoke(IPC.scanLibrary) as Promise<IpcResult<LibraryIndex>>,
+
+  pickLibraryDir: () =>
+    ipcRenderer.invoke(IPC.pickLibraryDir) as Promise<IpcResult<string | null>>,
+
+  libraryClipUrl: (path) =>
+    ipcRenderer.invoke(IPC.libraryClipUrl, path) as Promise<IpcResult<string>>,
 
   listSfx: () => ipcRenderer.invoke(IPC.listSfx) as Promise<IpcResult<string[]>>,
 

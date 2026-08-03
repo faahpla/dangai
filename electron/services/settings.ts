@@ -18,12 +18,15 @@ export interface Settings {
   whisperModel: 'base' | 'small' | 'medium'
   /** Pasta dos SFX. Vazio = usa a que vem com o app. */
   sfxDir: string
+  /** Raiz da biblioteca de cenas do AnCut. Vazio = a biblioteca fica desligada. */
+  libraryDir: string
 }
 
 const DEFAULTS: Settings = {
   anthropicApiKey: '',
   whisperModel: 'small',
   sfxDir: '',
+  libraryDir: '',
 }
 
 let filePath: string | null = null
@@ -74,6 +77,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
   return {
     whisperModel: settings.whisperModel,
     sfxDir: settings.sfxDir,
+    libraryDir: settings.libraryDir,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -89,5 +93,6 @@ function coerce(raw: unknown): Settings {
       typeof value['anthropicApiKey'] === 'string' ? value['anthropicApiKey'].trim() : '',
     whisperModel: model === 'base' || model === 'small' || model === 'medium' ? model : 'small',
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
+    libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
   }
 }

@@ -13,6 +13,7 @@ import { Settings } from '@/components/Settings'
 import { Script } from '@/components/Script'
 import { CaptionEditor } from '@/components/CaptionEditor'
 import { CommandPalette } from '@/components/CommandPalette'
+import { Library } from '@/components/Library'
 import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
 
@@ -73,7 +74,7 @@ export function App() {
 
       // A paleta e os modais tratam o proprio teclado; enquanto abertos, os
       // atalhos globais ficam quietos para nao disparar por baixo.
-      if (store.paletteOpen || store.settingsOpen || store.scriptOpen) {
+      if (store.paletteOpen || store.settingsOpen || store.scriptOpen || store.libraryOpen) {
         if ((event.key === 'k' || event.key === 'K') && (event.ctrlKey || event.metaKey)) {
           event.preventDefault()
           store.openPalette(false)
@@ -132,6 +133,12 @@ export function App() {
           event.preventDefault()
           store.openSettings(!store.settingsOpen)
           break
+        case 'b':
+        case 'B':
+          if (!event.ctrlKey && !event.metaKey) return
+          event.preventDefault()
+          if (!rendering) void store.openLibrary(true)
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -181,6 +188,7 @@ export function App() {
       <StatusBar isDragging={isDragging} />
       <Settings />
       <Script />
+      <Library />
       <CommandPalette />
     </div>
   )

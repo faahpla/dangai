@@ -1,0 +1,450 @@
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
+import type { LibraryClip, LibraryIndex } from '@shared/channels'
+
+/**
+ * Le a biblioteca de cenas que o AnCut HUB ja produziu.
+ *
+ * O AnCut corta o episodio em cenas, identifica os personagens por referencia e
+ * grava tudo em `metadata/shots.json`. Nada disso precisa ser refeito aqui: este
+ * servico so LE. Ele nunca escreve, move ou renomeia nada dentro da biblioteca
+ * do usuario -- se o Dangai sumir amanha, a pasta fica exatamente como estava.
+ *
+ * A pasta de um episodio processado e assim:
+ *
+ *   <serie>/<SxxExx>/
+ *     shots/0008.mp4          <- a cena
+ *     keyframes/0008_1.jpg    <- ja extraido, serve de miniatura
+ *     metadata/shots.json     <- personagem, duracao, posicao no episodio
+ *     metadata/characters.json
+ *     _lixeira/               <- o que o usuario descartou
+ */
+
+/** O que guardamos por episodio, para nao reler o que nao mudou. */
+interface CachedEpisode {
+  /** mtime do shots.json quando foi lido. Mudou = o AnCut reprocessou. */
+  mtimeMs: number
+  /** Quantos arquivos existiam em shots/. A lixeira mexe aqui sem tocar no json. */
+  fileCount: number
+  clips: StoredClip[]
+}
+
+/** No disco a URL nao entra: ela morre junto com a sessao que a criou. */
+type StoredClip = Omit<LibraryClip, 'thumbUrl'> & { thumb: string }
+
+interface CacheFile {
+  version: number
+  episodes: Record<string, CachedEpisode>
+}
+
+/**
+ * Muda quando a forma do que extraimos muda. Subir isto invalida o cache
+ * inteiro de proposito -- e mais barato reler 27 arquivos de texto do que
+ * carregar para sempre um indice montado por uma versao antiga.
+ */
+const CACHE_VERSION = 2
+
+/** Profundidade maxima da varredura a partir da raiz. */
+const MAX_DEPTH = 3
+
+let cachePath: string | null = null
+
+export function configureLibrary(userDataDir: string): void {
+  cachePath = join(userDataDir, 'library-cache.json')
+}
+
+/**
+ * Varre a raiz e devolve o indice inteiro.
+ *
+ * `publishThumb` vem de fora (o servidor de midia) para este arquivo continuar
+ * sendo so leitura de disco -- da para testar a varredura sem subir servidor.
+ */
+export function scanLibrary(
+  root: string,
+  publishThumb: (absolutePath: string) => string,
+): LibraryIndex {
+  if (!root) throw new Error('Nenhuma pasta de biblioteca escolhida.')
+  if (!ehPasta(root)) {
+    throw new Error(`A pasta da biblioteca nao existe mais: ${root}`)
+  }
+
+  const cache = lerCache()
+  const proximos: Record<string, CachedEpisode> = {}
+  const clips: LibraryClip[] = []
+  let scanned = 0
+
+  for (const dir of episodiosEm(root, 0)) {
+    const jsonPath = join(dir, 'metadata', 'shots.json')
+
+    let mtimeMs: number
+    try {
+      mtimeMs = statSync(jsonPath).mtimeMs
+    } catch {
+      continue
+    }
+
+    // A lixeira do AnCut move o mp4 e o keyframe para fora MAS NAO atualiza o
+    // shots.json -- ele continua listando a cena descartada. Por isso a lista de
+    // arquivos reais e a verdade, e por isso ela entra no cache: e a unica forma
+    // de perceber que o usuario descartou algo sem reler o json toda vez.
+    const naPasta = arquivosEm(join(dir, 'shots'))
+
+    const anterior = cache.episodes[dir]
+    const aproveitavel =
+      anterior && anterior.mtimeMs === mtimeMs && anterior.fileCount === naPasta.size
+
+    const guardados = aproveitavel ? anterior.clips : lerEpisodio(dir, root, naPasta)
+    if (!aproveitavel) scanned += 1
+
+    proximos[dir] = { mtimeMs, fileCount: naPasta.size, clips: guardados }
+
+    for (const clip of guardados) {
+      const { thumb, ...resto } = clip
+      clips.push({ ...resto, thumbUrl: publishThumb(thumb) })
+    }
+  }
+
+  // Episodios que sumiram do disco somem do cache junto: reescrevemos o mapa
+  // inteiro em vez de remendar o antigo.
+  gravarCache({ version: CACHE_VERSION, episodes: proximos })
+
+  clips.sort(ordemNatural)
+
+  return {
+    root,
+    clips,
+    animes: unicos(clips.map((c) => c.anime)),
+    characters: unicos(clips.flatMap((c) => c.characters)),
+    episodes: Object.keys(proximos).length,
+    scanned,
+  }
+}
+
+// ---------------------------------------------------------------- leitura crua
+
+/** O shots.json do AnCut, so os campos que usamos. */
+interface RawShot {
+  shot_id?: unknown
+  file?: unknown
+  keyframe?: unknown
+  start?: unknown
+  end?: unknown
+  duration?: unknown
+  characters?: unknown
+  anime?: unknown
+  season?: unknown
+  episode?: unknown
+}
+
+/**
+ * Monta as cenas de um episodio, com o DISCO mandando e o json respondendo.
+ *
+ * A ordem importa e custou uma medicao para descobrir. O shots.json e um retrato
+ * do momento do corte e nunca mais e reescrito: mandar a lixeira para uma cena
+ * nao apaga a linha dela, e JUNTAR cenas tambem nao. Quem itera o json acha
+ * cenas que nao existem mais e perde as que foram juntadas.
+ *
+ * Iterando os arquivos e consultando o json isso se resolve sozinho, e a conta
+ * fecha exata com o que o AnCut mostra na tela: no S01E42 sao 522 linhas no
+ * json, menos 4 na lixeira, menos 5 absorvidas por juncao, igual a 513.
+ */
+function lerEpisodio(dir: string, root: string, naPasta: ReadonlySet<string>): StoredClip[] {
+  let cru: unknown
+  try {
+    cru = JSON.parse(readFileSync(join(dir, 'metadata', 'shots.json'), 'utf8'))
+  } catch {
+    // Episodio no meio de um processamento, ou json truncado: pular e seguir. Um
+    // arquivo quebrado nao pode derrubar a biblioteca inteira.
+    return []
+  }
+  if (!Array.isArray(cru)) return []
+
+  const porShot = new Map<string, RawShot>()
+  for (const item of cru as RawShot[]) {
+    const shot = texto(item.shot_id)
+    if (shot) porShot.set(shot, item)
+  }
+
+  const canonico = nomesCanonicos(dir)
+  const keyframes = arquivosEm(join(dir, 'keyframes'))
+  const prefixo = relativo(root, dir)
+
+  /*
+   * Quem agrupa a serie e a PASTA do usuario, nao o campo `anime` do json.
+   *
+   * Medido na biblioteca real: o AnCut nem sempre acerta a serie e guarda o nome
+   * do arquivo no lugar ("S01E01-Jobless Reincarnation V2"), e quando acerta ele
+   * grava o titulo da TEMPORADA -- o Tensura sozinho aparece com cinco titulos
+   * diferentes. Os dois casos quebram o filtro exatamente onde ele mais serve.
+   *
+   * A pasta e escolha dele, e constante: "Tensura" e "Tensura" em todo episodio.
+   */
+  const serie = prefixo.split('/')[0] || basename(dir)
+  const titulo = (cru as RawShot[]).map((s) => texto(s.anime)).find((t) => t.length > 0) ?? ''
+
+  const saida: StoredClip[] = []
+
+  for (const nomeMp4 of [...naPasta].sort(naturalmente)) {
+    if (!nomeMp4.toLowerCase().endsWith('.mp4')) continue
+
+    const shot = nomeMp4.slice(0, -4)
+    const cobertas = abrangidas(shot, porShot)
+    if (cobertas.length === 0) continue
+
+    const inicio = cobertas[0]!
+    const fim = cobertas[cobertas.length - 1]!
+
+    const thumb = acharKeyframe(dir, keyframes, texto(inicio.keyframe), texto(inicio.shot_id))
+    if (!thumb) continue
+
+    // Numa cena juntada a duracao e o vao inteiro, nao a da primeira parte --
+    // senao o bloco receberia 1.2s de um clipe de 5.4s e cortaria no meio.
+    const span = numero(fim.end) - numero(inicio.start)
+
+    saida.push({
+      id: `${prefixo}/${shot}`,
+      path: join(dir, 'shots', nomeMp4),
+      thumb,
+      anime: serie,
+      animeTitle: titulo,
+      season: numero(inicio.season),
+      episode: numero(inicio.episode),
+      shot,
+      start: numero(inicio.start),
+      duration: span > 0 ? span : numero(inicio.duration),
+      characters: personagens(
+        cobertas.flatMap((s) => (Array.isArray(s.characters) ? s.characters : [])),
+        canonico,
+      ),
+    })
+  }
+
+  return saida
+}
+
+/**
+ * As linhas do json que um arquivo representa.
+ *
+ * `0008.mp4` e uma cena so. `0164-0167.mp4` e o resultado de o usuario ter
+ * juntado quatro cenas no AnCut -- os arquivos individuais somem e sobra este,
+ * que nao existe em lugar nenhum do json. Ele vale pelas quatro linhas juntas,
+ * inclusive somando os personagens: quem aparece so na terceira parte continua
+ * encontravel pelo clipe inteiro.
+ */
+function abrangidas(shot: string, porShot: ReadonlyMap<string, RawShot>): RawShot[] {
+  const direto = porShot.get(shot)
+  if (direto) return [direto]
+
+  const faixa = /^(\d+)-(\d+)$/.exec(shot)
+  if (!faixa) return []
+
+  const largura = faixa[1]!.length
+  const de = Number(faixa[1])
+  const ate = Number(faixa[2])
+  if (!Number.isFinite(de) || !Number.isFinite(ate) || ate < de) return []
+
+  const encontradas: RawShot[] = []
+  for (let n = de; n <= ate; n += 1) {
+    const item = porShot.get(String(n).padStart(largura, '0'))
+    if (item) encontradas.push(item)
+  }
+  return encontradas
+}
+
+/**
+ * Um personagem pode aparecer com mais de um nome apontando para o mesmo id --
+ * no Bleach, "Urahara" e "Kisuke Urahara" sao os dois o 422. Sem unificar, o
+ * mesmo personagem viraria dois filtros diferentes e cada um acharia metade das
+ * cenas.
+ *
+ * Fica o nome mais longo, que e o mais especifico ("Kisuke Urahara").
+ */
+function nomesCanonicos(dir: string): ReadonlyMap<string, string> {
+  const mapa = new Map<string, string>()
+
+  let cru: unknown
+  try {
+    cru = JSON.parse(readFileSync(join(dir, 'metadata', 'characters.json'), 'utf8'))
+  } catch {
+    // Episodio antigo sem characters.json: os nomes crus servem.
+    return mapa
+  }
+  if (!Array.isArray(cru)) return mapa
+
+  const porId = new Map<number, string[]>()
+  for (const item of cru as { name?: unknown; character_id?: unknown }[]) {
+    const nome = texto(item.name)
+    if (!nome || typeof item.character_id !== 'number') continue
+    const lista = porId.get(item.character_id) ?? []
+    lista.push(nome)
+    porId.set(item.character_id, lista)
+  }
+
+  for (const nomes of porId.values()) {
+    const melhor = nomes.reduce((a, b) => (b.length > a.length ? b : a))
+    for (const nome of nomes) mapa.set(nome, melhor)
+  }
+
+  return mapa
+}
+
+function personagens(cru: unknown, canonico: ReadonlyMap<string, string>): string[] {
+  if (!Array.isArray(cru)) return []
+  const vistos = new Set<string>()
+  for (const item of cru as { name?: unknown }[]) {
+    const nome = texto(item.name)
+    if (nome) vistos.add(canonico.get(nome) ?? nome)
+  }
+  return [...vistos].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
+
+/**
+ * O shots.json aponta para o keyframe do meio (`_1`), mas ele nem sempre esta
+ * la: a lixeira leva justamente esse, e um punhado de cenas nunca teve. Como
+ * existem tres por cena, cair para os vizinhos salva a miniatura.
+ */
+function acharKeyframe(
+  dir: string,
+  existentes: ReadonlySet<string>,
+  citado: string,
+  shot: string,
+): string | null {
+  const candidatos = [
+    citado ? basename(citado) : '',
+    `${shot}_1.jpg`,
+    `${shot}_0.jpg`,
+    `${shot}_2.jpg`,
+  ]
+  for (const nome of candidatos) {
+    if (nome && existentes.has(nome)) return join(dir, 'keyframes', nome)
+  }
+  return null
+}
+
+// ------------------------------------------------------------------ varredura
+
+/**
+ * Acha as pastas de episodio abaixo da raiz.
+ *
+ * Pasta que comeca com `_` fica de fora, e isso nao e cosmetico: `_lixeira` e
+ * `_quarentena_...` guardam material que o usuario ja tirou de circulacao, com
+ * shots.json proprio e tudo. Sem este filtro o descartado voltaria para a busca.
+ */
+function* episodiosEm(dir: string, profundidade: number): Generator<string> {
+  if (profundidade > MAX_DEPTH) return
+
+  if (existsSync(join(dir, 'metadata', 'shots.json'))) {
+    yield dir
+    return
+  }
+
+  let nomes: string[]
+  try {
+    nomes = readdirSync(dir)
+  } catch {
+    return
+  }
+
+  for (const nome of nomes.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))) {
+    if (nome.startsWith('_') || nome.startsWith('.')) continue
+    const filho = join(dir, nome)
+    if (ehPasta(filho)) yield* episodiosEm(filho, profundidade + 1)
+  }
+}
+
+/**
+ * Nomes dos arquivos de uma pasta, em Set.
+ *
+ * Uma leitura de pasta por episodio em vez de um stat por cena: sao 27 chamadas
+ * em vez de 9 mil para a mesma resposta.
+ */
+function arquivosEm(dir: string): Set<string> {
+  try {
+    return new Set(
+      readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isFile() && !e.name.startsWith('.'))
+        .map((e) => e.name),
+    )
+  } catch {
+    return new Set()
+  }
+}
+
+function ehPasta(caminho: string): boolean {
+  try {
+    return statSync(caminho).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------- cache
+
+function lerCache(): CacheFile {
+  if (!cachePath) throw new Error('Biblioteca nao configurada')
+  try {
+    const cru: unknown = JSON.parse(readFileSync(cachePath, 'utf8'))
+    if (
+      typeof cru === 'object' &&
+      cru !== null &&
+      (cru as CacheFile).version === CACHE_VERSION &&
+      typeof (cru as CacheFile).episodes === 'object'
+    ) {
+      return cru as CacheFile
+    }
+  } catch {
+    // Sem cache ou cache de outra versao: varre tudo de novo, que sao segundos.
+  }
+  return { version: CACHE_VERSION, episodes: {} }
+}
+
+function gravarCache(dados: CacheFile): void {
+  if (!cachePath) return
+  try {
+    // Temporario e rename, como o settings: morrer no meio da escrita deixa o
+    // cache antigo intacto em vez de virar json pela metade.
+    const temp = `${cachePath}.tmp`
+    writeFileSync(temp, JSON.stringify(dados), 'utf8')
+    renameSync(temp, cachePath)
+  } catch {
+    // Cache e otimizacao. Nao conseguir gravar deixa a proxima varredura lenta,
+    // nao quebrada -- entao nao vira erro na cara do usuario.
+  }
+}
+
+// --------------------------------------------------------------------- uteis
+
+/**
+ * Ordem natural, entendendo o numero: sem isto "0164-0167" e "10" cairiam em
+ * lugares errados na comparacao letra a letra.
+ */
+function naturalmente(a: string, b: string): number {
+  return a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' })
+}
+
+/** Ordem de leitura humana: anime, temporada, episodio, e a cena na sequencia. */
+function ordemNatural(a: LibraryClip, b: LibraryClip): number {
+  return (
+    a.anime.localeCompare(b.anime, 'pt-BR') ||
+    a.season - b.season ||
+    a.episode - b.episode ||
+    a.shot.localeCompare(b.shot, 'pt-BR', { numeric: true })
+  )
+}
+
+function unicos(valores: readonly string[]): string[] {
+  return [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+}
+
+function relativo(root: string, dir: string): string {
+  const corte = dir.startsWith(root) ? dir.slice(root.length) : dir
+  return corte.replace(/\\/g, '/').replace(/^\/+/, '')
+}
+
+function texto(valor: unknown): string {
+  return typeof valor === 'string' ? valor : ''
+}
+
+function numero(valor: unknown): number {
+  return typeof valor === 'number' && Number.isFinite(valor) ? valor : 0
+}

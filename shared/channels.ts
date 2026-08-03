@@ -57,6 +57,9 @@ export const IPC = {
   installUpdate: 'update:install',
   checkUpdate: 'update:check',
   appVersion: 'app:version',
+  scanLibrary: 'library:scan',
+  pickLibraryDir: 'library:pick-dir',
+  libraryClipUrl: 'library:clip-url',
 } as const
 
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] as const
@@ -120,6 +123,48 @@ export interface DropExpansion {
   sections: DropSection[]
 }
 
+/**
+ * Uma cena da biblioteca de clipes -- a que o AnCut HUB ja cortou e identificou.
+ *
+ * O Dangai so LE essa pasta. Tudo aqui ja existia no disco antes dele: quem
+ * corta a cena, acha o personagem e extrai o keyframe e o outro programa.
+ */
+export interface LibraryClip {
+  /** Caminho relativo a raiz. Estavel entre varreduras. */
+  id: string
+  /** Caminho absoluto do mp4, que e o que o importador do projeto recebe. */
+  path: string
+  /** Keyframe publicado no servidor local, para a grade desenhar. */
+  thumbUrl: string
+  /** A pasta da serie. E o que agrupa, porque e o nome que o usuario escolheu. */
+  anime: string
+  /**
+   * O titulo que o AnCut gravou no shots.json. Serve de detalhe e de alvo de
+   * busca -- nao de agrupador: ele varia por temporada e as vezes vem errado.
+   */
+  animeTitle: string
+  season: number
+  episode: number
+  /** Numero da cena no episodio. "0164-0167" quando o usuario juntou cenas. */
+  shot: string
+  /** Segundo em que a cena comeca no episodio original. */
+  start: number
+  duration: number
+  /** Vazio na maioria: quase dois tercos das cenas nao tem rosto identificado. */
+  characters: string[]
+}
+
+export interface LibraryIndex {
+  root: string
+  clips: LibraryClip[]
+  /** Facetas prontas, para a interface nao varrer milhares de itens para montar filtro. */
+  animes: string[]
+  characters: string[]
+  episodes: number
+  /** Episodios lidos do zero nesta varredura. O resto veio do cache. */
+  scanned: number
+}
+
 export interface ReframeArgs {
   id: string
   path: string
@@ -162,6 +207,8 @@ export type UpdateStatus =
 export interface PublicSettings {
   whisperModel: 'base' | 'small' | 'medium'
   sfxDir: string
+  /** Raiz da biblioteca do AnCut. Vazio = o usuario ainda nao escolheu. */
+  libraryDir: string
   hasApiKey: boolean
   apiKeyHint: string
 }
@@ -170,6 +217,7 @@ export interface SettingsPatch {
   anthropicApiKey?: string
   whisperModel?: 'base' | 'small' | 'medium'
   sfxDir?: string
+  libraryDir?: string
 }
 
 /**
@@ -198,6 +246,18 @@ export interface DangaiBridge {
   expandDrop(paths: readonly string[]): Promise<IpcResult<DropExpansion>>
   /** Le um .txt de roteiro do disco. */
   readScript(path: string): Promise<IpcResult<string>>
+  /**
+   * Le a biblioteca de cenas do AnCut e devolve o indice inteiro.
+   *
+   * Le, nunca escreve. Episodio ja conhecido sai do cache, entao chamar isto de
+   * novo custa quase nada -- e por isso que "sincronizar" e um botao e nao um
+   * vigia de pasta rodando o tempo todo em cima de milhares de arquivos.
+   */
+  scanLibrary(): Promise<IpcResult<LibraryIndex>>
+  /** Dialogo para apontar a raiz da biblioteca. null = fechou sem escolher. */
+  pickLibraryDir(): Promise<IpcResult<string | null>>
+  /** Publica um clipe no servidor local, so quando ele vai mesmo ser tocado. */
+  libraryClipUrl(path: string): Promise<IpcResult<string>>
   /** Nomes dos arquivos de som na pasta de SFX em uso. */
   listSfx(): Promise<IpcResult<string[]>>
   /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */

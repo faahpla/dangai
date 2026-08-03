@@ -51,6 +51,16 @@ export function Settings() {
     return result.ok
   }
 
+  // A pasta e gravada no main junto com o dialogo -- ele ja sabe o caminho
+  // escolhido, e devolve-lo so para o renderer regravar seria dar duas chances
+  // de as duas versoes discordarem.
+  const escolherBiblioteca = async () => {
+    const result = await window.dangai.pickLibraryDir()
+    if (!result.ok || !result.value) return
+    const atual = await window.dangai.getSettings()
+    if (atual.ok) setSettings(atual.value)
+  }
+
   const saveKey = async () => {
     const trimmed = keyInput.trim()
     if (trimmed.length === 0) return
@@ -157,6 +167,26 @@ export function Settings() {
         <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
           Solte os seus .mp3 ou .wav ai dentro. Eles entram em rodizio, uma transicao sim e outra
           nao — som em todo corte vira ruido de fundo.
+        </p>
+
+        <div className="my-5 h-px bg-line" />
+
+        <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+          Biblioteca de cenas
+        </label>
+        <button
+          type="button"
+          onClick={() => void escolherBiblioteca()}
+          className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
+        >
+          <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {settings?.libraryDir || 'Escolher a pasta...'}
+          </span>
+        </button>
+        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+          A pasta onde o AnCut grava as cenas. O Dangai so le: nunca renomeia, move nem apaga nada
+          ai dentro. Ctrl+B abre a busca.
         </p>
       </div>
     </div>
