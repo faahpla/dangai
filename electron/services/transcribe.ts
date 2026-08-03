@@ -178,10 +178,15 @@ function applyScript(
 /**
  * Tenta montar o plano por partes, e explica em portugues quando nao da.
  *
- * A explicacao nao e cortesia: soltar pastas e um pedido explicito do usuario,
- * e ignorar esse pedido em silencio faria o video sair com o material na parte
- * errada sem ninguem perceber. Num video de teoria isso e pior que nao ter
- * imagem -- a imagem passa a contradizer a narracao.
+ * A explicacao nao e cortesia: marcar as partes e um pedido explicito do
+ * usuario, e ignorar esse pedido em silencio faria o video sair com o material
+ * na parte errada sem ninguem perceber. Num video de teoria isso e pior que nao
+ * ter imagem -- a imagem passa a contradizer a narracao.
+ *
+ * A parte pode ter vindo de duas maneiras, e as mensagens daqui nao citam
+ * nenhuma das duas: soltando pastas na janela, ou marcando levas na Biblioteca.
+ * Falar em "pasta" para quem usou a Biblioteca mandaria arrumar algo que ele
+ * nem abriu.
  */
 function planFromSections(
   images: readonly ImageAsset[],
@@ -194,18 +199,18 @@ function planFromSections(
   if (seccionadas.length !== images.length) {
     return {
       plan: null,
-      note: 'Voce soltou pastas e arquivos soltos juntos. Cenas distribuidas como de costume — deixe so pastas para o app respeitar as partes.',
+      note: 'Ha material com parte e material solto no mesmo projeto. Cenas distribuidas como de costume — deixe tudo em partes para o app respeita-las.',
     }
   }
 
-  // Conta quanto material caiu em cada parte, na ordem das pastas.
+  // Conta quanto material caiu em cada parte, na ordem em que foram criadas.
   const contagem: number[] = []
   for (const image of seccionadas) {
     const s = image.section!
     contagem[s] = (contagem[s] ?? 0) + 1
   }
   if (contagem.some((c) => c === undefined)) {
-    return { plan: null, note: 'Uma das pastas ficou sem material. Cenas distribuidas como de costume.' }
+    return { plan: null, note: 'Uma das partes ficou sem material. Cenas distribuidas como de costume.' }
   }
 
   if (!transcript || transcript.words.length < 2) {
@@ -219,7 +224,7 @@ function planFromSections(
   if (partesDoRoteiro !== contagem.length) {
     return {
       plan: null,
-      note: `Seu roteiro tem ${partesDoRoteiro} ${partesDoRoteiro === 1 ? 'parte' : 'partes'} e voce soltou ${contagem.length} pastas. Separe as partes do roteiro com uma linha em branco, ou ajuste as pastas.`,
+      note: `Seu roteiro tem ${partesDoRoteiro} ${partesDoRoteiro === 1 ? 'parte' : 'partes'} e o material esta em ${contagem.length}. Separe as partes do roteiro com uma linha em branco, ou ajuste o material.`,
     }
   }
 
@@ -233,7 +238,7 @@ function planFromSections(
 
   return {
     plan,
-    note: `${contagem.length} partes, material de cada pasta na sua parte.`,
+    note: `${contagem.length} partes, cada uma com o seu material.`,
   }
 }
 

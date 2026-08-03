@@ -169,7 +169,8 @@ interface ProjectState {
   hasAutosave: boolean
 
   phase: () => Phase
-  ingest: (paths: readonly string[]) => Promise<void>
+  /** `parte` nomeia uma parte do roteiro para este material. So a Biblioteca usa. */
+  ingest: (paths: readonly string[], parte?: string) => Promise<void>
   /** Troca efeito, transicao, intensidade ou curva de uma cena. */
   updateScene: (
     index: number,
@@ -210,8 +211,13 @@ interface ProjectState {
   openLibrary: (open: boolean) => Promise<void>
   /** Rele a biblioteca: episodio novo entra, episodio conhecido sai do cache. */
   syncLibrary: () => Promise<void>
-  /** Manda as cenas escolhidas para o projeto, pela mesma porta do drop. */
-  addFromLibrary: (paths: readonly string[]) => Promise<void>
+  /**
+   * Manda as cenas escolhidas para o projeto, pela mesma porta do drop.
+   *
+   * `parte` preenchido transforma a leva numa parte do roteiro -- e o que a
+   * pasta faz no arraste, com um botao no lugar do gesto.
+   */
+  addFromLibrary: (paths: readonly string[], parte?: string) => Promise<void>
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -340,7 +346,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     return state.audio || state.images.length > 0 ? 'editing' : 'empty'
   },
 
-  ingest: async (paths) => {
+  ingest: async (paths, parte) => {
     const audioPaths: string[] = []
     const imagePaths: string[] = []
     /** A parte de cada arquivo visual, na mesma ordem de imagePaths. */
@@ -363,15 +369,31 @@ export const useProject = create<ProjectState>((set, get) => ({
     const expandido = await window.dangai.expandDrop(paths)
     const expansao = expandido.ok ? expandido.value : { files: [], sections: [] }
 
+    /*
+     * As partes novas continuam a numeracao das que ja estao no projeto.
+     *
+     * Sem isto uma segunda entrada de material recomecaria do zero e as partes
+     * se fundiriam duas a duas -- o material da parte 1 de agora cairia junto
+     * com o da parte 1 de antes, e a distribuicao sairia errada sem avisar.
+     */
+    const jaUsadas = get()
+      .images.map((image) => image.section)
+      .filter((s): s is number => s !== null)
+    const base = jaUsadas.length > 0 ? Math.max(...jaUsadas) + 1 : 0
+
     expansao.sections.forEach((section, index) => {
       for (const file of section.files) {
         imagePaths.push(file)
-        imageSections.push({ index, name: section.name })
+        imageSections.push({ index: base + index, name: section.name })
       }
     })
+
+    // Material sem pasta so vira parte quando alguem pediu por nome -- e a
+    // Biblioteca, que nao tem pasta para oferecer como gesto.
+    const daLeva = parte ? { index: base + expansao.sections.length, name: parte } : null
     for (const file of expansao.files) {
       imagePaths.push(file)
-      imageSections.push(null)
+      imageSections.push(daLeva)
     }
 
     for (const path of paths) {
@@ -996,10 +1018,17 @@ export const useProject = create<ProjectState>((set, get) => ({
    * veio da busca e o clipe que veio do Explorer sao a mesma coisa daqui para a
    * frente, com a mesma analise e o mesmo render.
    */
-  addFromLibrary: async (paths) => {
+  /*
+   * Adicionar uma PARTE deixa a biblioteca aberta; adicionar solto fecha.
+   *
+   * Sai do que cada acao quer dizer. Quem monta partes vai montar a proxima
+   * agora, e fechar a tela a cada leva transformaria um video de cinco partes
+   * em cinco reaberturas. Quem adiciona solto terminou de escolher.
+   */
+  addFromLibrary: async (paths, parte) => {
     if (paths.length === 0) return
-    set({ libraryOpen: false })
-    await get().ingest(paths)
+    if (!parte) set({ libraryOpen: false })
+    await get().ingest(paths, parte)
   },
 
   selectScene: (index) => set({ selectedScene: index }),
@@ -1157,6 +1186,8 @@ export const useProject = create<ProjectState>((set, get) => ({
         focusX: image.focusX,
         focusY: image.focusY,
         focusAuto: image.focusAuto,
+        section: image.section,
+        sectionName: image.sectionName,
       })),
       script: state.script,
       subtitle: state.subtitlePath
@@ -1367,6 +1398,16 @@ async function applyProjectFile(
         focusY: image.focusY,
         focusAuto: image.focusAuto,
       })),
+      // As partes voltam junto. Projeto salvo antes disto existir nao tem o
+      // campo, o schema devolve null, e o `undefined` abaixo desliga o caminho
+      // das partes exatamente como era antes.
+      file.images.some((image) => image.section !== null)
+        ? file.images.map((image) =>
+            image.section === null
+              ? null
+              : { index: image.section, name: image.sectionName ?? `Parte ${image.section + 1}` },
+          )
+        : undefined,
     )
     if (!images.ok) {
       set({ error: images.error, busy: null })

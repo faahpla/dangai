@@ -50,6 +50,15 @@ const savedImageSchema = referenceSchema.extend({
   focusY: z.number().min(0).max(1),
   /** Se o enquadramento veio do rosto detectado. Default para projeto antigo abrir. */
   focusAuto: z.boolean().default(false),
+  /**
+   * A parte do roteiro a que este material pertence.
+   *
+   * Sem gravar isto, salvar e reabrir perdia as partes em silencio: o plano
+   * salvo abria certo, mas a primeira reanalise -- trocar o roteiro, acrescentar
+   * material -- redistribuia tudo como se as partes nunca tivessem existido.
+   */
+  section: z.number().int().nonnegative().nullable().default(null),
+  sectionName: z.string().optional(),
 })
 export type SavedImage = z.infer<typeof savedImageSchema>
 

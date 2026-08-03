@@ -31,6 +31,7 @@ export function Library() {
   const error = useProject((s) => s.libraryError)
   const syncLibrary = useProject((s) => s.syncLibrary)
   const addFromLibrary = useProject((s) => s.addFromLibrary)
+  const images = useProject((s) => s.images)
 
   const [texto, setTexto] = useState('')
   const [anime, setAnime] = useState<string | null>(null)
@@ -70,6 +71,11 @@ export function Library() {
     })
   }, [library, texto, anime, personagem, minSec, maxSec])
 
+  // Quantas partes o projeto ja tem, para o botao dizer qual sera a proxima.
+  const partesNoProjeto = new Set(
+    images.map((image) => image.section).filter((s): s is number => s !== null),
+  ).size
+
   if (!open) return null
 
   const escolher = (id: string): void => {
@@ -78,16 +84,33 @@ export function Library() {
     )
   }
 
-  const adicionar = (): void => {
+  /**
+   * A ordem e a de CLIQUE, e nao a da grade.
+   *
+   * Vale para os dois usos e por motivos diferentes. Em recap a grade ja esta em
+   * ordem cronologica, entao clicar da esquerda para a direita da no mesmo. Em
+   * teoria a ordem e a do argumento, que nenhuma ordenacao de acervo conhece --
+   * e ali a ordem de clique e a unica informacao que existe.
+   */
+  const adicionar = (parte?: string): void => {
     if (!library) return
-    // A ordem e a da GRADE, nao a de clique: o usuario le a grade em ordem
-    // cronologica, e e essa a ordem que ele espera ver no video.
     const porId = new Map(library.clips.map((c) => [c.id, c.path]))
-    const caminhos = filtrados
-      .filter((c) => escolhidos.includes(c.id))
-      .map((c) => porId.get(c.id))
+    const caminhos = escolhidos
+      .map((id) => porId.get(id))
       .filter((p): p is string => p !== undefined)
-    void addFromLibrary(caminhos)
+    setEscolhidos([])
+    void addFromLibrary(caminhos, parte)
+  }
+
+  /**
+   * O nome da parte sai do filtro em uso.
+   *
+   * "Kurosaki, Ichigo" diz mais do que "Parte 2" na hora de conferir a barra de
+   * status, e nao custa nada: e o que ele acabou de escolher no rail.
+   */
+  const nomeDaLeva = (): string => {
+    const pedacos = [anime, personagem, texto.trim()].filter((p): p is string => !!p)
+    return pedacos.length > 0 ? pedacos.join(' · ') : `${escolhidos.length} cenas`
   }
 
   return (
@@ -162,23 +185,47 @@ export function Library() {
         </div>
       )}
 
-      {escolhidos.length > 0 && (
+      {(escolhidos.length > 0 || partesNoProjeto > 0) && (
         <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
           <span className="tnum text-[12px] text-ink-2">
-            {escolhidos.length} {escolhidos.length === 1 ? 'cena marcada' : 'cenas marcadas'}
+            {escolhidos.length > 0
+              ? `${escolhidos.length} ${escolhidos.length === 1 ? 'cena marcada' : 'cenas marcadas'}`
+              : 'Nada marcado'}
+            {partesNoProjeto > 0 && (
+              <span className="ml-2 text-ink-3">
+                · {partesNoProjeto} {partesNoProjeto === 1 ? 'parte' : 'partes'} no projeto
+              </span>
+            )}
           </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
+              disabled={escolhidos.length === 0}
               onClick={() => setEscolhidos([])}
-              className="rounded-sm px-2.5 py-1.5 text-[12px] text-ink-3 hover:text-ink"
+              className="rounded-sm px-2.5 py-1.5 text-[12px] text-ink-3 hover:text-ink disabled:opacity-40"
             >
               Limpar
             </button>
+            {/*
+              Duas acoes, e nenhum modo escondido: o botao diz o que faz.
+              Parte so existe quando o usuario pede, porque cena vinda da busca
+              nao tem pasta para servir de gesto como no arraste.
+            */}
             <button
               type="button"
-              onClick={adicionar}
-              className="lift rounded-sm border border-accent bg-accent-dim px-3.5 py-1.5 text-[13px] font-medium text-ink"
+              disabled={escolhidos.length === 0}
+              onClick={() => adicionar(nomeDaLeva())}
+              title="Vira uma parte do roteiro. A tela fica aberta para voce montar a proxima."
+              className="lift rounded-sm border border-line bg-elevated px-3 py-1.5 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
+            >
+              Adicionar como parte {partesNoProjeto + 1}
+            </button>
+            <button
+              type="button"
+              disabled={escolhidos.length === 0}
+              onClick={() => adicionar()}
+              title="Entra no fim da fila, na ordem em que voce marcou"
+              className="lift rounded-sm border border-accent bg-accent-dim px-3.5 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
             >
               Adicionar ao projeto
             </button>
@@ -472,6 +519,11 @@ function Grade({ clips, escolhidos, onEscolher }: GradeProps) {
   const ultima = Math.min(linhas, Math.ceil((scroll + altura) / linhaH) + FOLGA)
   const visiveis = clips.slice(primeira * colunas, ultima * colunas)
 
+  // Posicao de cada escolhida, para o cartao mostrar o numero em vez de so uma
+  // borda. Sem o numero visivel, "a ordem e a de clique" e uma promessa que o
+  // usuario tem que acreditar; com ele, da para conferir antes de adicionar.
+  const ordens = new Map(escolhidos.map((id, i) => [id, i + 1]))
+
   if (clips.length === 0) {
     return (
       <div className="grid flex-1 place-items-center text-[13px] text-ink-3">
@@ -503,7 +555,7 @@ function Grade({ clips, escolhidos, onEscolher }: GradeProps) {
               <Cartao
                 key={clip.id}
                 clip={clip}
-                marcado={escolhidos.includes(clip.id)}
+                ordem={ordens.get(clip.id) ?? 0}
                 onClick={() => onEscolher(clip.id)}
               />
             ))}
@@ -523,13 +575,15 @@ function Grade({ clips, escolhidos, onEscolher }: GradeProps) {
  */
 function Cartao({
   clip,
-  marcado,
+  ordem,
   onClick,
 }: {
   clip: LibraryClip
-  marcado: boolean
+  /** Posicao na fila, comecando em 1. Zero quando nao foi escolhida. */
+  ordem: number
   onClick: () => void
 }) {
+  const marcado = ordem > 0
   const [url, setUrl] = useState<string | null>(null)
   const [dentro, setDentro] = useState(false)
   const timer = useRef<number | null>(null)
@@ -588,7 +642,12 @@ function Cartao({
           {clip.duration.toFixed(1)}s
         </span>
         {marcado && (
-          <span className="absolute inset-0 border-2 border-accent bg-accent-dim/30" />
+          <>
+            <span className="absolute inset-0 border-2 border-accent bg-accent-dim/30" />
+            <span className="tnum absolute left-1 top-1 grid size-[18px] place-items-center rounded-full bg-accent text-[10px] font-semibold text-white">
+              {ordem}
+            </span>
+          </>
         )}
       </div>
 
