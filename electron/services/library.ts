@@ -108,6 +108,7 @@ export function scanLibrary(
   // inteiro em vez de remendar o antigo.
   gravarCache({ version: CACHE_VERSION, episodes: proximos })
 
+  unificarNomes(clips)
   clips.sort(ordemNatural)
 
   return {
@@ -118,6 +119,100 @@ export function scanLibrary(
     episodes: Object.keys(proximos).length,
     scanned,
   }
+}
+
+// --------------------------------------------------- o mesmo personagem, um nome
+
+/**
+ * Junta as varias grafias do mesmo personagem, dentro de cada serie.
+ *
+ * Roda DEPOIS de tudo lido porque o problema atravessa episodios, e o cache
+ * guarda os nomes crus -- entao mudar esta regra nao obriga a reler o disco.
+ *
+ * O `character_id` do AnCut nao resolve: ele vale por conjunto de referencias,
+ * nao por pessoa. Medido no acervo real, o Rimuru aparece com NOVE combinacoes
+ * de nome e id ("Tempest, Rimuru" com os ids 157, 582 e 706, "Rimuru Tempest"
+ * com 261 e 97, e por ai). Juntar por id entre episodios juntaria gente
+ * diferente; e nao juntar deixava 102 cenas dele invisiveis no filtro.
+ */
+function unificarNomes(clips: LibraryClip[]): void {
+  const porSerie = new Map<string, Map<string, number>>()
+  for (const clip of clips) {
+    const contagem = porSerie.get(clip.anime) ?? new Map<string, number>()
+    for (const nome of clip.characters) contagem.set(nome, (contagem.get(nome) ?? 0) + 1)
+    porSerie.set(clip.anime, contagem)
+  }
+
+  const mapas = new Map<string, ReadonlyMap<string, string>>()
+  for (const [serie, contagem] of porSerie) mapas.set(serie, canonizar(contagem))
+
+  for (const clip of clips) {
+    const mapa = mapas.get(clip.anime)
+    if (!mapa) continue
+    const vistos = new Set<string>()
+    for (const nome of clip.characters) vistos.add(mapa.get(nome) ?? nome)
+    clip.characters = [...vistos].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  }
+}
+
+/** Sem acento, minusculas, so as palavras, ordenadas: "Tempest, Rimuru" == "Rimuru Tempest". */
+function fichas(nome: string): string[] {
+  return nome
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .sort()
+}
+
+/** nome cru -> nome escolhido, para uma serie. */
+function canonizar(contagem: ReadonlyMap<string, number>): ReadonlyMap<string, string> {
+  interface Grupo {
+    fichas: string[]
+    nomes: [string, number][]
+  }
+
+  // 1) Mesmas palavras, mesma pessoa. Pega inversao e caixa de uma vez.
+  const grupos = new Map<string, Grupo>()
+  for (const [nome, n] of contagem) {
+    const f = fichas(nome)
+    const chave = f.join(' ')
+    const g = grupos.get(chave) ?? { fichas: f, nomes: [] }
+    g.nomes.push([nome, n])
+    grupos.set(chave, g)
+  }
+
+  /*
+   * 2) Nome curto entra no longo -- mas so quando cabe em UM. "Rudeus" so pode
+   * ser "Greyrat, Rudeus"; ja "Greyrat" sozinho caberia em Rudeus, Paul, Zenith
+   * e Eris, e um palpite ali juntaria a familia inteira numa pessoa so.
+   */
+  const chaves = [...grupos.keys()]
+  const destino = new Map<string, string>()
+  for (const chave of chaves) {
+    const g = grupos.get(chave)!
+    const maiores = chaves.filter((outra) => {
+      if (outra === chave) return false
+      const o = grupos.get(outra)!
+      return g.fichas.length < o.fichas.length && g.fichas.every((f) => o.fichas.includes(f))
+    })
+    if (maiores.length === 1) destino.set(chave, maiores[0]!)
+  }
+
+  // 3) Fica a grafia mais usada: e a que ele reconhece de ver na tela do AnCut.
+  const juntos = new Map<string, [string, number][]>()
+  for (const chave of chaves) {
+    const alvo = destino.get(chave) ?? chave
+    juntos.set(alvo, [...(juntos.get(alvo) ?? []), ...grupos.get(chave)!.nomes])
+  }
+
+  const mapa = new Map<string, string>()
+  for (const nomes of juntos.values()) {
+    const escolhido = nomes.reduce((a, b) => (b[1] > a[1] ? b : a))[0]
+    for (const [nome] of nomes) mapa.set(nome, escolhido)
+  }
+  return mapa
 }
 
 // ---------------------------------------------------------------- leitura crua

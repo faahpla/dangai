@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { FolderOpen, Loader2, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, FolderOpen, Loader2, RefreshCw, Search, X } from 'lucide-react'
 import type { LibraryClip } from '@shared/channels'
 import { useProject } from '@/store/project'
 
@@ -52,10 +52,23 @@ export function Library() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, openLibrary])
 
-  // Sair da tela zera a escolha: manter selecao de uma visita para a outra faria
-  // o usuario adicionar sem querer cenas que ele nem lembra ter marcado.
+  /*
+   * Fechar zera tudo: escolha e filtros.
+   *
+   * A tela nao desmonta quando fecha -- ela devolve null e o estado sobreviveria
+   * junto. Reabrir com o "ichigo" que o usuario digitou meia hora antes esconde
+   * o acervo inteiro atras de um filtro que ele nao lembra de ter posto, e a
+   * selecao seria pior ainda: cenas entrando no projeto sem ele ter marcado
+   * nesta visita.
+   */
   useEffect(() => {
-    if (!open) setEscolhidos([])
+    if (open) return
+    setEscolhidos([])
+    setTexto('')
+    setAnime(null)
+    setPersonagem(null)
+    setMinSec(0)
+    setMaxSec(0)
   }, [open])
 
   const filtrados = useMemo(() => {
@@ -164,8 +177,20 @@ export function Library() {
             clips={library.clips}
             anime={anime}
             personagem={personagem}
-            onAnime={setAnime}
-            onPersonagem={setPersonagem}
+            /*
+             * Trocar de anime limpa o personagem, e escolher um personagem
+             * assume o anime dele. Sem isso as duas colunas brigariam: pedir
+             * "Tensura" com o Ichigo ainda marcado devolveria zero resultado, e
+             * o motivo estaria escondido dois filtros acima.
+             */
+            onAnime={(serie) => {
+              setAnime(serie)
+              setPersonagem(null)
+            }}
+            onPersonagem={(nome, doAnime) => {
+              setPersonagem(nome)
+              if (nome !== null) setAnime(doAnime)
+            }}
           />
 
           <div className="flex min-w-0 flex-1 flex-col">
@@ -285,35 +310,56 @@ interface RailProps {
   anime: string | null
   personagem: string | null
   onAnime: (v: string | null) => void
-  onPersonagem: (v: string | null) => void
+  onPersonagem: (nome: string | null, doAnime: string | null) => void
 }
 
 /**
- * Animes e personagens com a contagem do lado.
+ * Animes, e os personagens DENTRO de cada anime.
  *
- * A contagem nao e enfeite: e ela que diz de cara que dois tercos das cenas nao
- * tem personagem nenhum identificado -- que e exatamente o buraco que a busca
- * por texto ainda nao cobre.
+ * A lista corrida nao servia: com seis series o rail virava cem nomes em uma
+ * coluna so, com Rimuru, Rudeus e Ichigo lado a lado ordenados por contagem. O
+ * personagem pertence a uma serie -- a lista tem que dizer isso.
+ *
+ * A contagem nao e enfeite: e ela que mostra de cara que dois tercos das cenas
+ * nao tem personagem nenhum identificado, que e o buraco que so o passo 2 fecha.
  */
 function Rail({ clips, anime, personagem, onAnime, onPersonagem }: RailProps) {
-  const { animes, personagens, semRosto } = useMemo(() => {
-    const porAnime = new Map<string, number>()
-    const porPersonagem = new Map<string, number>()
+  // Grupo aberto na mao. O do anime selecionado abre sozinho, entao aqui so
+  // entra o que o usuario abriu por conta.
+  const [abertos, setAbertos] = useState<readonly string[]>([])
+
+  const { animes, porAnime, semRosto } = useMemo(() => {
+    const contagemAnime = new Map<string, number>()
+    /** anime -> personagem -> quantas cenas */
+    const dentro = new Map<string, Map<string, number>>()
     let sem = 0
 
     for (const clip of clips) {
-      porAnime.set(clip.anime, (porAnime.get(clip.anime) ?? 0) + 1)
+      contagemAnime.set(clip.anime, (contagemAnime.get(clip.anime) ?? 0) + 1)
       if (clip.characters.length === 0) sem += 1
+
+      const doAnime = dentro.get(clip.anime) ?? new Map<string, number>()
       for (const nome of clip.characters) {
-        porPersonagem.set(nome, (porPersonagem.get(nome) ?? 0) + 1)
+        doAnime.set(nome, (doAnime.get(nome) ?? 0) + 1)
       }
+      dentro.set(clip.anime, doAnime)
     }
 
     const ordenar = (m: Map<string, number>): [string, number][] =>
       [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))
 
-    return { animes: ordenar(porAnime), personagens: ordenar(porPersonagem), semRosto: sem }
+    return {
+      animes: ordenar(contagemAnime),
+      porAnime: new Map([...dentro].map(([serie, nomes]) => [serie, ordenar(nomes)])),
+      semRosto: sem,
+    }
   }, [clips])
+
+  const alternar = (serie: string): void => {
+    setAbertos((atual) =>
+      atual.includes(serie) ? atual.filter((s) => s !== serie) : [...atual, serie],
+    )
+  }
 
   return (
     <nav className="w-[210px] shrink-0 overflow-y-auto border-r border-line p-3">
@@ -330,23 +376,56 @@ function Rail({ clips, anime, personagem, onAnime, onPersonagem }: RailProps) {
       <div className="my-3 h-px bg-line" />
 
       <Titulo>Personagem</Titulo>
-      <Item
-        ativo={personagem === null}
-        onClick={() => onPersonagem(null)}
-        contagem={clips.length}
-      >
+      <Item ativo={personagem === null} onClick={() => onPersonagem(null, anime)} contagem={clips.length}>
         Qualquer
       </Item>
-      {personagens.map(([nome, n]) => (
-        <Item
-          key={nome}
-          ativo={personagem === nome}
-          onClick={() => onPersonagem(nome)}
-          contagem={n}
-        >
-          {nome}
-        </Item>
-      ))}
+
+      {animes.map(([serie]) => {
+        const nomes = porAnime.get(serie) ?? []
+        if (nomes.length === 0) return null
+
+        /*
+         * O grupo da serie escolhida abre sozinho: escolher o anime e, na
+         * pratica, dizer "e daqui que eu quero o personagem". Ter que clicar de
+         * novo para expandir seria pedir duas vezes a mesma coisa.
+         */
+        const aberto = abertos.includes(serie) || anime === serie
+        const temEscolhido = nomes.some(([nome]) => nome === personagem)
+
+        return (
+          <div key={serie}>
+            <button
+              type="button"
+              onClick={() => alternar(serie)}
+              className="flex w-full items-center gap-1 rounded-sm px-1.5 py-1 text-left text-[11px] text-ink-2 transition-colors duration-150 hover:text-ink"
+            >
+              {aberto ? (
+                <ChevronDown size={11} strokeWidth={1.5} className="shrink-0 text-ink-3" />
+              ) : (
+                <ChevronRight size={11} strokeWidth={1.5} className="shrink-0 text-ink-3" />
+              )}
+              <span className="min-w-0 flex-1 truncate">{serie}</span>
+              {/* Ponto quando o personagem escolhido esta num grupo fechado --
+                  sem ele o filtro ativo ficaria invisivel. */}
+              {!aberto && temEscolhido && <span className="size-1.5 shrink-0 rounded-full bg-accent" />}
+              <span className="tnum shrink-0 text-[10px] text-ink-3">{nomes.length}</span>
+            </button>
+
+            {aberto &&
+              nomes.map(([nome, n]) => (
+                <Item
+                  key={`${serie}/${nome}`}
+                  ativo={personagem === nome}
+                  onClick={() => onPersonagem(personagem === nome ? null : nome, serie)}
+                  contagem={n}
+                  recuado
+                >
+                  {nome}
+                </Item>
+              ))}
+          </div>
+        )
+      })}
 
       <p className="mt-3 px-1.5 text-[10px] leading-relaxed text-ink-3">
         {semRosto.toLocaleString('pt-BR')} cenas sem personagem identificado — cenario, planos
@@ -368,11 +447,14 @@ function Item({
   ativo,
   onClick,
   contagem,
+  recuado = false,
   children,
 }: {
   ativo: boolean
   onClick: () => void
   contagem: number
+  /** Personagem dentro do grupo do anime. */
+  recuado?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -380,7 +462,8 @@ function Item({
       type="button"
       onClick={onClick}
       className={[
-        'flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-left text-[12px] transition-colors duration-150',
+        'flex w-full items-center gap-2 rounded-sm py-1 pr-1.5 text-left text-[12px] transition-colors duration-150',
+        recuado ? 'pl-5' : 'pl-1.5',
         ativo ? 'bg-accent-dim text-ink' : 'text-ink-2 hover:text-ink',
       ].join(' ')}
     >
