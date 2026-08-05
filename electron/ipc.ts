@@ -85,6 +85,12 @@ function broadcastAnalyze(message: string): void {
   }
 }
 
+function broadcastLibrary(message: string): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.webContents.send(IPC.libraryProgress, message)
+  }
+}
+
 export function registerIpc(): void {
   handle<[string], AudioAnalysis>(IPC.analyzeAudio, (path) => analyzeAudio(path))
 
@@ -129,7 +135,7 @@ export function registerIpc(): void {
         'Nenhuma biblioteca escolhida. Abra as configuracoes (Ctrl+,) e aponte a pasta onde o AnCut grava as cenas.',
       )
     }
-    return scanLibrary(libraryDir, publish)
+    return scanLibrary(libraryDir, publish, broadcastLibrary)
   })
 
   handle<[], string | null>(IPC.pickLibraryDir, async () => {

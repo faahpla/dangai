@@ -29,6 +29,7 @@ export function App() {
   const setUpdate = useProject((s) => s.setUpdate)
   const setAppVersion = useProject((s) => s.setAppVersion)
   const checkAutosave = useProject((s) => s.checkAutosave)
+  const setLibraryBusy = useProject((s) => s.setLibraryBusy)
   const projectPath = useProject((s) => s.projectPath)
   const projectDirty = useProject((s) => s.projectDirty)
 
@@ -49,6 +50,10 @@ export function App() {
   // Andamento da analise: Whisper e a chamada da IA levam tempo e nenhum
   // carregamento pode ficar sem sinal visivel.
   useEffect(() => window.dangai.onAnalyzeProgress((message) => setBusy(message)), [setBusy])
+
+  // A primeira varredura da biblioteca gera as miniaturas locais e leva perto de
+  // um minuto. Sem este sinal, um minuto parado parece travamento.
+  useEffect(() => window.dangai.onLibraryProgress(setLibraryBusy), [setLibraryBusy])
 
   // Autosave e a pergunta "sobrou algo da sessao passada?", nesta ordem: o
   // observador precisa estar de pe antes de qualquer coisa mexer no estado.

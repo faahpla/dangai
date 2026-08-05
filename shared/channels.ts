@@ -60,6 +60,8 @@ export const IPC = {
   scanLibrary: 'library:scan',
   pickLibraryDir: 'library:pick-dir',
   libraryClipUrl: 'library:clip-url',
+  /** main -> renderer, andamento da varredura da biblioteca */
+  libraryProgress: 'library:progress',
 } as const
 
 export const AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] as const
@@ -258,6 +260,12 @@ export interface DangaiBridge {
   pickLibraryDir(): Promise<IpcResult<string | null>>
   /** Publica um clipe no servidor local, so quando ele vai mesmo ser tocado. */
   libraryClipUrl(path: string): Promise<IpcResult<string>>
+  /**
+   * Andamento da varredura. So fala quando ha episodio novo para preparar --
+   * a primeira varredura de um acervo grande leva perto de um minuto gerando as
+   * miniaturas locais, e um minuto sem sinal na tela parece travamento.
+   */
+  onLibraryProgress(listener: (mensagem: string) => void): () => void
   /** Nomes dos arquivos de som na pasta de SFX em uso. */
   listSfx(): Promise<IpcResult<string[]>>
   /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */

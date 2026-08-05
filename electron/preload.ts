@@ -57,6 +57,14 @@ const bridge: DangaiBridge = {
   libraryClipUrl: (path) =>
     ipcRenderer.invoke(IPC.libraryClipUrl, path) as Promise<IpcResult<string>>,
 
+  onLibraryProgress: (listener) => {
+    const handler = (_event: unknown, mensagem: string): void => listener(mensagem)
+    ipcRenderer.on(IPC.libraryProgress, handler)
+    return () => {
+      ipcRenderer.off(IPC.libraryProgress, handler)
+    }
+  },
+
   listSfx: () => ipcRenderer.invoke(IPC.listSfx) as Promise<IpcResult<string[]>>,
 
   openSfxDir: () => ipcRenderer.invoke(IPC.openSfxDir) as Promise<IpcResult<null>>,

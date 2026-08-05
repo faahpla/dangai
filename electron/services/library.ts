@@ -1,5 +1,15 @@
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { createHash } from 'node:crypto'
 import { basename, join } from 'node:path'
+import sharp from 'sharp'
 import type { LibraryClip, LibraryIndex } from '@shared/channels'
 
 /**
@@ -14,10 +24,19 @@ import type { LibraryClip, LibraryIndex } from '@shared/channels'
  *
  *   <serie>/<SxxExx>/
  *     shots/0008.mp4          <- a cena
- *     keyframes/0008_1.jpg    <- ja extraido, serve de miniatura
+ *     keyframes/0008_1.jpg    <- ja extraido, em 1920x1080
  *     metadata/shots.json     <- personagem, duracao, posicao no episodio
  *     metadata/characters.json
  *     _lixeira/               <- o que o usuario descartou
+ *
+ * A miniatura que a grade usa NAO e o keyframe: e uma copia reduzida no
+ * userData. Medido no acervo real, os keyframes sao 5,6 GB -- quase um quarto do
+ * total -- porque estao em 1920x1080 para aparecer com 190 pixels de largura. A
+ * copia local fica em 53 MB e custa 44 segundos uma vez.
+ *
+ * Isso vale mesmo com tudo no disco (ler 200 KB para desenhar 190px e desperdicio)
+ * e e o que torna possivel por os clipes na nuvem depois: navegar deixa de tocar
+ * na biblioteca, e so o preview e o render precisam do arquivo grande.
  */
 
 /** O que guardamos por episodio, para nao reler o que nao mudou. */
@@ -42,15 +61,26 @@ interface CacheFile {
  * inteiro de proposito -- e mais barato reler 27 arquivos de texto do que
  * carregar para sempre um indice montado por uma versao antiga.
  */
-const CACHE_VERSION = 2
+const CACHE_VERSION = 3
 
 /** Profundidade maxima da varredura a partir da raiz. */
 const MAX_DEPTH = 3
 
+/**
+ * Largura da miniatura local. A grade desenha com ~190px; 320 cobre tela de
+ * densidade dobrada e ainda deixa folga se um dia ela aumentar.
+ */
+const THUMB_WIDTH = 320
+const THUMB_QUALITY = 72
+/** Quantas miniaturas em voo. Medido: 8 dá 4,8ms por imagem nesta maquina. */
+const THUMB_PARALELO = 8
+
 let cachePath: string | null = null
+let thumbsDir: string | null = null
 
 export function configureLibrary(userDataDir: string): void {
   cachePath = join(userDataDir, 'library-cache.json')
+  thumbsDir = join(userDataDir, 'thumbs')
 }
 
 /**
@@ -59,10 +89,11 @@ export function configureLibrary(userDataDir: string): void {
  * `publishThumb` vem de fora (o servidor de midia) para este arquivo continuar
  * sendo so leitura de disco -- da para testar a varredura sem subir servidor.
  */
-export function scanLibrary(
+export async function scanLibrary(
   root: string,
   publishThumb: (absolutePath: string) => string,
-): LibraryIndex {
+  onProgress: (mensagem: string) => void = () => {},
+): Promise<LibraryIndex> {
   if (!root) throw new Error('Nenhuma pasta de biblioteca escolhida.')
   if (!ehPasta(root)) {
     throw new Error(`A pasta da biblioteca nao existe mais: ${root}`)
@@ -73,7 +104,9 @@ export function scanLibrary(
   const clips: LibraryClip[] = []
   let scanned = 0
 
-  for (const dir of episodiosEm(root, 0)) {
+  const episodios = [...episodiosEm(root, 0)]
+
+  for (const [posicao, dir] of episodios.entries()) {
     const jsonPath = join(dir, 'metadata', 'shots.json')
 
     let mtimeMs: number
@@ -91,9 +124,21 @@ export function scanLibrary(
 
     const anterior = cache.episodes[dir]
     const aproveitavel =
-      anterior && anterior.mtimeMs === mtimeMs && anterior.fileCount === naPasta.size
+      anterior &&
+      anterior.mtimeMs === mtimeMs &&
+      anterior.fileCount === naPasta.size &&
+      // Uma conferida so por episodio: se alguem limpou o userData, as
+      // miniaturas sumiram e a grade viria com os quadros quebrados. Refazer sai
+      // mais barato do que 9 mil statSync a cada sincronizacao.
+      (anterior.clips.length === 0 || existsSync(anterior.clips[0]!.thumb))
 
-    const guardados = aproveitavel ? anterior.clips : lerEpisodio(dir, root, naPasta)
+    if (!aproveitavel) {
+      onProgress(
+        `Preparando ${basename(dir)} de ${basename(join(dir, '..'))}... (${posicao + 1}/${episodios.length})`,
+      )
+    }
+
+    const guardados = aproveitavel ? anterior.clips : await lerEpisodio(dir, root, naPasta)
     if (!aproveitavel) scanned += 1
 
     proximos[dir] = { mtimeMs, fileCount: naPasta.size, clips: guardados }
@@ -243,7 +288,11 @@ interface RawShot {
  * fecha exata com o que o AnCut mostra na tela: no S01E42 sao 522 linhas no
  * json, menos 4 na lixeira, menos 5 absorvidas por juncao, igual a 513.
  */
-function lerEpisodio(dir: string, root: string, naPasta: ReadonlySet<string>): StoredClip[] {
+async function lerEpisodio(
+  dir: string,
+  root: string,
+  naPasta: ReadonlySet<string>,
+): Promise<StoredClip[]> {
   let cru: unknown
   try {
     cru = JSON.parse(readFileSync(join(dir, 'metadata', 'shots.json'), 'utf8'))
@@ -314,7 +363,58 @@ function lerEpisodio(dir: string, root: string, naPasta: ReadonlySet<string>): S
     })
   }
 
+  // O `thumb` acima ainda e o keyframe grande do AnCut. Aqui ele vira a copia
+  // reduzida no userData -- e o que a grade vai de fato carregar.
+  await reduzirMiniaturas(saida)
+
   return saida
+}
+
+/**
+ * Troca o keyframe de 1920x1080 pela copia local de 320px.
+ *
+ * Roda so quando o episodio e lido do zero, entao o custo aparece uma vez por
+ * episodio e nunca mais: 44s pelo acervo inteiro na primeira vez, ~2s no
+ * episodio novo da semana.
+ *
+ * Falhar aqui nao pode custar a cena: se o sharp nao der conta de uma imagem,
+ * ela fica com o keyframe original, que funciona -- so pesa mais.
+ */
+async function reduzirMiniaturas(clips: StoredClip[]): Promise<void> {
+  if (!thumbsDir || clips.length === 0) return
+
+  let proxima = 0
+  const trabalhar = async (): Promise<void> => {
+    while (proxima < clips.length) {
+      const clip = clips[proxima++]!
+      const destino = caminhoDaMiniatura(clip.id)
+      try {
+        if (!existsSync(destino)) {
+          mkdirSync(join(destino, '..'), { recursive: true })
+          await sharp(clip.thumb)
+            .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
+            .webp({ quality: THUMB_QUALITY })
+            .toFile(destino)
+        }
+        clip.thumb = destino
+      } catch {
+        // Fica o keyframe original.
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: THUMB_PARALELO }, trabalhar))
+}
+
+/**
+ * Onde a miniatura de uma cena mora.
+ *
+ * Fatiado em subpastas pelos dois primeiros caracteres do hash: 9 mil arquivos
+ * numa pasta so deixa o proprio Explorer lento, e a biblioteca so cresce.
+ */
+function caminhoDaMiniatura(id: string): string {
+  const hash = createHash('sha1').update(id).digest('hex')
+  return join(thumbsDir!, hash.slice(0, 2), `${hash.slice(2)}.webp`)
 }
 
 /**

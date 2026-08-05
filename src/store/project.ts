@@ -211,6 +211,8 @@ interface ProjectState {
   openLibrary: (open: boolean) => Promise<void>
   /** Rele a biblioteca: episodio novo entra, episodio conhecido sai do cache. */
   syncLibrary: () => Promise<void>
+  /** Andamento vindo do main durante a varredura. */
+  setLibraryBusy: (mensagem: string | null) => void
   /**
    * Manda as cenas escolhidas para o projeto, pela mesma porta do drop.
    *
@@ -1001,6 +1003,11 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ libraryOpen: open })
     if (open && !get().library) await get().syncLibrary()
   },
+
+  // So substitui um andamento que ainda existe: a mensagem final do main pode
+  // chegar depois de a varredura ter terminado e ressuscitaria o "carregando".
+  setLibraryBusy: (mensagem) =>
+    set((state) => (state.libraryBusy === null ? state : { libraryBusy: mensagem })),
 
   syncLibrary: async () => {
     set({ libraryBusy: 'Lendo a biblioteca...', libraryError: null })
