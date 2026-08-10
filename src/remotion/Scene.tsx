@@ -37,16 +37,16 @@ export function Scene({
   })
 
   /*
-   * Clipe nao recebe Ken Burns.
+   * Quem decide o movimento e o BLOCO, nao o tipo de arquivo.
    *
-   * Mover uma imagem que ja se move some com o movimento proprio do clipe e
-   * costuma dar enjoo. A escolha e do bloco, nao global: print no bloco
-   * seguinte continua com o movimento de sempre.
+   * Antes o clipe nunca recebia Ken Burns, decidido aqui. O motivo continua
+   * valendo -- mover uma imagem que ja se move some com o movimento proprio do
+   * clipe e costuma dar enjoo -- mas virou o PADRAO em vez de uma regra: o
+   * plano marca 'nenhum' no clipe, e o usuario liga onde quiser. Print tambem
+   * pode ficar parado agora, que antes era impossivel.
    */
   const { scale, x, y } =
-    kind === 'video'
-      ? { scale: 1, x: 0, y: 0 }
-      : motionFor(effect, intensity, eased)
+    effect === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(effect, intensity, eased)
 
   /*
    * O ultimo frame que o clipe realmente tem.
@@ -128,7 +128,11 @@ interface Motion {
   y: number
 }
 
-function motionFor(effect: SceneProps['effect'], intensity: number, t: number): Motion {
+function motionFor(
+  effect: Exclude<SceneProps['effect'], 'nenhum'>,
+  intensity: number,
+  t: number,
+): Motion {
   // Deslocamento em % da propria imagem. A margem que a escala extra cria e
   // (scale-1)/2 de cada lado; ficar abaixo disso garante que a borda nao entra.
   const travel = (intensity / 2) * 100 * 0.8

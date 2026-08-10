@@ -67,11 +67,15 @@ export function Preview() {
             { hook: hookText, hookSec, end: endText, endSec },
             captionColor,
             captionY,
+            // O preview precisa do mesmo tempo do render, senao ele mostraria um
+            // final que o MP4 nao tem (ou esconderia um que ele tem).
+            audio?.durationSec,
           )
         : { scenes: [], captions: [], cards: [], captionColor, captionY },
     [
       plan,
       images,
+      audio,
       captions,
       captionsEnabled,
       captionColor,

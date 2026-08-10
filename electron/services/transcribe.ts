@@ -40,6 +40,35 @@ export async function analyze(
   request: AnalyzeRequest,
   onProgress: AnalyzeProgress,
 ): Promise<AnalysisResult> {
+  const resultado = await analisar(request, onProgress)
+  return { ...resultado, plan: semMovimentoEmClipe(resultado.plan, request.images) }
+}
+
+/**
+ * Clipe nasce parado; print nasce com movimento.
+ *
+ * Mover uma imagem que ja se move some com o movimento proprio do clipe e
+ * costuma dar enjoo -- por isso o padrao. Mas agora e so o PADRAO: o usuario
+ * liga o movimento no clipe que quiser pelo card da cena, e a escolha dele
+ * sobrevive porque editar o plano impede a redistribuicao automatica.
+ *
+ * Fica aqui, numa passada so no fim, e nao dentro de cada planejador: sao cinco
+ * origens de plano (partes, IA, pontuacao, pausas, divisao igual) e a regra e a
+ * mesma para todas.
+ */
+function semMovimentoEmClipe(plan: ScenePlan, images: readonly ImageAsset[]): ScenePlan {
+  return {
+    ...plan,
+    scenes: plan.scenes.map((scene) =>
+      images[scene.imageIndex]?.kind === 'video' ? { ...scene, effect: 'nenhum' as const } : scene,
+    ),
+  }
+}
+
+async function analisar(
+  request: AnalyzeRequest,
+  onProgress: AnalyzeProgress,
+): Promise<AnalysisResult> {
   const { audioPath, subtitlePath, images, durationSec, script } = request
   const settings = getSettings()
 

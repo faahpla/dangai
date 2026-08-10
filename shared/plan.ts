@@ -332,13 +332,33 @@ export function toRenderProps(
   cardText: CardText | null = null,
   captionColor: CaptionColor = CAPTION_COLOR_DEFAULT,
   captionY: number = CAPTION_Y_DEFAULT,
+  /**
+   * Duracao da narracao, que e quem manda no tamanho do video.
+   *
+   * Existe porque o render monta a composicao com o tempo do AUDIO enquanto a
+   * esteira de imagens era montada com o fim da ULTIMA CENA -- duas fontes de
+   * verdade para o mesmo numero. Quando discordavam, o final do video ficava sem
+   * imagem nenhuma e o card de fechamento disparava cedo, porque ele e colocado
+   * contra o fim da esteira.
+   *
+   * Discordar e facil: basta o plano nao alcancar o fim da narracao, ou uma cena
+   * ser descartada por apontar para imagem que nao existe mais -- e esse
+   * descarte e silencioso. Medido: um plano de 9s com narracao de 12s deixava 72
+   * frames, 3 segundos inteiros, sem nada.
+   *
+   * Ausente, cai no comportamento antigo: os testes de plano que nao conhecem o
+   * audio continuam valendo.
+   */
+  durationSec?: number,
 ): RenderProps {
   const usable = plan.scenes.filter((scene) => images[scene.imageIndex])
   if (usable.length === 0) {
     return { scenes: [], captions: [], cards: [], captionColor, captionY }
   }
 
-  const durationSec = usable.at(-1)!.end
+  // A ultima cena estica ate o fim da narracao. Congelar o ultimo quadro por
+  // alguns segundos e ruim; tela preta com a pessoa ainda falando e pior.
+  const fim = Math.max(durationSec ?? usable.at(-1)!.end, usable.at(-1)!.end)
 
   /**
    * Fronteiras em frames, calculadas a partir dos inicios absolutos em vez de
@@ -347,7 +367,7 @@ export function toRenderProps(
    */
   const bounds = [
     ...usable.map((scene) => Math.round(scene.start * VIDEO_FPS)),
-    Math.round(durationSec * VIDEO_FPS),
+    totalFrames(fim),
   ]
 
   const transitionFrames = usable.map((scene, index) =>

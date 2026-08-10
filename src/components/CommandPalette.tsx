@@ -15,9 +15,12 @@ import {
   ListVideo,
   Hash,
   Library as LibraryIcon,
+  Undo2,
+  Redo2,
   type LucideIcon,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
+import { desfazer, podeDesfazer, podeRefazer, refazer } from '@/store/undo'
 
 interface Command {
   id: string
@@ -189,6 +192,27 @@ function useCommands(): Command[] {
         icon: playing ? Pause : Play,
         disabled: !pronto || rendering,
         run: () => store().togglePlay(),
+      },
+      /*
+       * Desfazer aparece aqui mesmo tendo atalho: e o comando que a pessoa
+       * procura justamente quando esta nervosa por ter feito besteira, e nessa
+       * hora ninguem lembra de atalho.
+       */
+      {
+        id: 'undo',
+        label: 'Desfazer',
+        hint: 'Ctrl+Z',
+        icon: Undo2,
+        disabled: !podeDesfazer(),
+        run: () => void desfazer(),
+      },
+      {
+        id: 'redo',
+        label: 'Refazer',
+        hint: 'Ctrl+Shift+Z',
+        icon: Redo2,
+        disabled: !podeRefazer(),
+        run: () => void refazer(),
       },
       {
         id: 'library',

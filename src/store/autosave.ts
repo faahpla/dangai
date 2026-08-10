@@ -1,5 +1,6 @@
 import { useProject } from './project'
 import { estaCarregando } from './quiet'
+import { mudou } from './documento'
 
 /**
  * Rede de seguranca: grava o projeto sozinho no userData enquanto o usuario
@@ -12,37 +13,6 @@ import { estaCarregando } from './quiet'
  * Nao substitui salvar: o autosave e uma copia so, no userData, e a proxima
  * sessao pergunta se quer retomar.
  */
-
-/**
- * Os campos que constituem o documento.
- *
- * Estado de sessao (playhead, selecao, busy, o que esta aberto) fica de fora de
- * proposito: mover a agulha nao e editar o projeto, e marcar isso como alteracao
- * faria o app pedir para salvar depois de so assistir ao preview.
- */
-const CAMPOS = [
-  'audio',
-  'images',
-  'plan',
-  'planOrigin',
-  'planEdited',
-  'transcript',
-  'captions',
-  'captionsEdited',
-  'captionsEnabled',
-  'captionColor',
-  'captionY',
-  'sfxEnabled',
-  'music',
-  'musicGainDb',
-  'hookText',
-  'hookSec',
-  'endText',
-  'endSec',
-  'metadata',
-  'script',
-  'subtitlePath',
-] as const
 
 /**
  * Tempo de espera depois da ultima mudanca.
@@ -65,7 +35,9 @@ export function startAutosave(): () => void {
 
   const unsubscribe = useProject.subscribe((state, anterior) => {
     if (estaCarregando()) return
-    if (CAMPOS.every((campo) => state[campo] === anterior[campo])) return
+    // A lista dos campos mora em documento.ts: o desfazer observa a mesma coisa,
+    // e as duas respostas para "o usuario editou?" tem que ser uma so.
+    if (!mudou(state, anterior)) return
 
     // Setar aqui dispara este mesmo observador de novo, mas na segunda passada
     // nenhum campo do documento mudou e a comparacao acima corta o caminho.

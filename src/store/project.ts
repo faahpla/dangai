@@ -51,7 +51,7 @@ export interface QueueItem {
   error: string | null
 }
 
-interface ProjectState {
+export interface ProjectState {
   audio: AudioAnalysis | null
   images: ImageAsset[]
   subtitlePath: string | null
@@ -1083,6 +1083,9 @@ export const useProject = create<ProjectState>((set, get) => ({
         { hook: hookText, hookSec, end: endText, endSec },
         captionColor,
         captionY,
+        // O MESMO numero que vai na composicao logo abaixo. Eram duas contas
+        // separadas, e quando discordavam o fim do video ficava sem imagem.
+        audio.durationSec,
       ),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),

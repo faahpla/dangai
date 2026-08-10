@@ -81,34 +81,41 @@ export function SceneCard() {
       </Field>
 
       {/*
-        Clipe nao tem controle de movimento -- ele ja se move sozinho, e o Ken
-        Burns fica desligado nele. Esconder os controles em vez de deixa-los
-        inertes: um controle que nao faz nada e pior que um controle ausente,
-        porque o usuario mexe e culpa o render.
-      */}
-      {image.kind === 'video' ? (
-        <Field label="Movimento">
-          <p className="text-[11px] leading-relaxed text-ink-3">
-            O clipe ja tem o movimento dele, entao o app nao acrescenta nenhum. Os blocos de print
-            continuam com o movimento normal.
-          </p>
-        </Field>
-      ) : (
-        <>
-          <Field label="Movimento">
-            <div className="grid grid-cols-2 gap-1.5">
-              {KEN_BURNS_EFFECTS.map((effect) => (
-                <Chip
-                  key={effect}
-                  active={scene.effect === effect}
-                  onClick={() => updateScene(index, { effect })}
-                >
-                  {EFFECT_LABEL[effect]}
-                </Chip>
-              ))}
-            </div>
-          </Field>
+        Clipe tambem escolhe movimento agora.
 
+        Ele so COMECA em "nenhum", porque ja se move sozinho e mover de novo
+        costuma dar enjoo -- mas a decisao passou a ser do bloco. "Nenhum" fica
+        na frente e sozinho na linha: e o padrao do clipe, e e o unico jeito de
+        deixar um print parado, que antes nao existia.
+      */}
+      <Field label="Movimento">
+        <Chip
+          active={scene.effect === 'nenhum'}
+          onClick={() => updateScene(index, { effect: 'nenhum' })}
+        >
+          {image.kind === 'video' ? 'Nenhum (so o do clipe)' : 'Nenhum'}
+        </Chip>
+        <div className="grid grid-cols-2 gap-1.5">
+          {KEN_BURNS_EFFECTS.map((effect) => (
+            <Chip
+              key={effect}
+              active={scene.effect === effect}
+              onClick={() => updateScene(index, { effect })}
+            >
+              {EFFECT_LABEL[effect]}
+            </Chip>
+          ))}
+        </div>
+        {image.kind === 'video' && scene.effect !== 'nenhum' && (
+          <p className="text-[11px] leading-relaxed text-ink-3">
+            Movimento por cima de um clipe que ja se move. Use pouco, e confira no preview.
+          </p>
+        )}
+      </Field>
+
+      {/* Intensidade e ritmo so fazem sentido havendo movimento. */}
+      {scene.effect !== 'nenhum' && (
+        <>
           <Field label="Intensidade">
             <div className="flex items-center gap-2.5">
               <input

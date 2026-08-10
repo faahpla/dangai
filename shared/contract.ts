@@ -138,6 +138,20 @@ export const KEN_BURNS_EFFECTS = [
   'pan-down',
 ] as const
 
+/**
+ * O que um bloco pode ter de movimento, incluindo nenhum.
+ *
+ * 'nenhum' fica FORA de KEN_BURNS_EFFECTS de proposito: aquela lista e o
+ * rodizio automatico e o cardapio da IA, e nem um nem outro deve escolher
+ * "parado" sozinho -- print parado num short e tempo morto.
+ *
+ * Quem comeca em 'nenhum' e o clipe, porque ele ja tem movimento proprio e
+ * mover de novo costuma dar enjoo. Mas agora e escolha do bloco: o usuario liga
+ * o movimento no clipe que quiser, e desliga no print que quiser.
+ */
+export const SCENE_EFFECTS = ['nenhum', ...KEN_BURNS_EFFECTS] as const
+export type SceneEffect = (typeof SCENE_EFFECTS)[number]
+
 export const TRANSITIONS = ['cut', 'crossfade', 'slide-left', 'slide-right', 'whip-pan'] as const
 export type Transition = (typeof TRANSITIONS)[number]
 
@@ -189,7 +203,7 @@ export const sceneSchema = z.object({
   imageIndex: z.number().int().nonnegative(),
   start: z.number().nonnegative(),
   end: z.number().positive(),
-  effect: z.enum(KEN_BURNS_EFFECTS),
+  effect: z.enum(SCENE_EFFECTS),
   /** Quanto o Ken Burns se move. 0.10 a 0.15; acima disso fica tosco. */
   intensity: z.number().min(0.02).max(0.2),
   /**
@@ -397,7 +411,7 @@ export const renderPropsSchema = z.object({
     z.object({
       url: z.string(),
       durationInFrames: z.number().int().positive(),
-      effect: z.enum(KEN_BURNS_EFFECTS),
+      effect: z.enum(SCENE_EFFECTS),
       intensity: z.number(),
       curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
       /**

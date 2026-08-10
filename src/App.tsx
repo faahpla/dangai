@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useProject } from '@/store/project'
 import { startAutosave } from '@/store/autosave'
+import { desfazer, refazer, startUndo } from '@/store/undo'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
@@ -16,6 +17,16 @@ import { CommandPalette } from '@/components/CommandPalette'
 import { Library } from '@/components/Library'
 import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
+
+/** O foco esta num lugar onde o proprio campo trata o teclado. */
+function editando(alvo: EventTarget | null): boolean {
+  if (!(alvo instanceof HTMLElement)) return false
+  return (
+    alvo instanceof HTMLInputElement ||
+    alvo instanceof HTMLTextAreaElement ||
+    alvo.isContentEditable
+  )
+}
 
 export function App() {
   const isDragging = useFileDrop()
@@ -58,6 +69,9 @@ export function App() {
   // Autosave e a pergunta "sobrou algo da sessao passada?", nesta ordem: o
   // observador precisa estar de pe antes de qualquer coisa mexer no estado.
   useEffect(() => startAutosave(), [])
+  // Antes de qualquer coisa mexer no estado, como o autosave: os dois observam
+  // o documento e precisam ver a primeira edicao da sessao.
+  useEffect(() => startUndo(), [])
   useEffect(() => void checkAutosave(), [checkAutosave])
 
   /*
@@ -133,6 +147,28 @@ export function App() {
           event.preventDefault()
           if (!rendering) void store.openProject()
           break
+        /*
+         * Ctrl+Z desfaz, Ctrl+Shift+Z e Ctrl+Y refazem.
+         *
+         * Fica fora durante o render: o video sendo gerado usa o estado de
+         * agora, e mudar o projeto no meio produziria um MP4 que nao
+         * corresponde nem ao antes nem ao depois.
+         */
+        case 'z':
+        case 'Z':
+        case 'y':
+        case 'Y': {
+          if (!event.ctrlKey && !event.metaKey) return
+          // Digitando num campo, o Ctrl+Z e do campo. Desfazer o projeto
+          // inteiro porque a pessoa errou uma letra seria um susto.
+          if (editando(event.target)) return
+          event.preventDefault()
+          if (rendering) return
+          const chaveY = event.key === 'y' || event.key === 'Y'
+          if (chaveY || event.shiftKey) refazer()
+          else desfazer()
+          break
+        }
         case ',':
           if (!event.ctrlKey && !event.metaKey) return
           event.preventDefault()
