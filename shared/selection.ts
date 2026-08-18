@@ -45,7 +45,14 @@ export interface SelectionOptions {
   mode: SelectionMode
   /** Quantos candidatos por bloco. 6 cabe numa fita sem rolagem. */
   fita?: number
-  /** Limita a biblioteca a estas series. Vazio = todas. */
+  /**
+   * Limita a biblioteca a estas series. Ausente = deduz do proprio roteiro.
+   *
+   * Deduzir da certo porque nome de personagem nao colide entre as series dele
+   * -- medido: nas 7 series, 96 personagens, ZERO palavra de nome aparece em
+   * duas. Por isso o leitor pode indexar a biblioteca inteira sem perder nada,
+   * e nao ha um seletor de serie a mais entre ele e o video.
+   */
   series?: readonly string[]
 }
 
@@ -67,7 +74,7 @@ export function selectClips(
   options: SelectionOptions,
 ): SelectionBlock[] {
   const fita = options.fita ?? FITA_PADRAO
-  const series = options.series ?? []
+  const series = options.series ?? inferirSeries(lines, clips)
   const acervo = series.length > 0 ? clips.filter((c) => series.includes(c.anime)) : clips
 
   const usados = new Set<string>()
@@ -198,6 +205,30 @@ function pontuar(
   }
 
   return { score, reason: porques.join(', ') }
+}
+
+/**
+ * De que serie e este video, olhando so os personagens que o roteiro cita.
+ *
+ * Isto existe por causa do bloco que NAO cita ninguem. Ele pede plano sem
+ * personagem, e sem esta trava o candidato melhor pontuado poderia ser uma
+ * paisagem de Avatar no meio de um recap de Bleach -- plano sem personagem e
+ * plano sem personagem em qualquer serie, e nada no texto denunciaria.
+ *
+ * Sai vazio quando o roteiro nao cita ninguem em lugar nenhum, e ai a
+ * biblioteca inteira vale mesmo: nao ha o que contradizer.
+ */
+function inferirSeries(
+  lines: readonly (ScriptLine & { text: string; start: number; end: number })[],
+  clips: readonly LibraryClip[],
+): string[] {
+  const citados = new Set(lines.flatMap((l) => l.matches.map((m) => m.character)))
+  if (citados.size === 0) return []
+  const series = new Set<string>()
+  for (const clip of clips) {
+    if (clip.characters.some((c) => citados.has(c))) series.add(clip.anime)
+  }
+  return [...series]
 }
 
 /** Empate: a cena mais cedo primeiro, para a saida nao depender da ordem do disco. */
