@@ -5,6 +5,7 @@ import type {
   Metadata,
   RenderProgress,
   RenderProps,
+  Transcript,
 } from './contract'
 import type { OpenedProject, ProjectFile } from './project-file'
 
@@ -63,6 +64,7 @@ export const IPC = {
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
+  automount: 'automount:run',
   /** main -> renderer, andamento da varredura da biblioteca */
   libraryProgress: 'library:progress',
 } as const
@@ -190,6 +192,57 @@ export interface NicknameSuggestion {
   character: string
 }
 
+// ------------------------------------------------------- montagem automatica
+
+/** Recap ou teoria. Escolhido no gesto, quando ele solta a narracao. */
+export type AutomountMode = 'recap' | 'theory'
+
+export interface AutomountRequest {
+  audioPath: string
+  subtitlePath: string | null
+  /** Roteiro escrito, quando houver. Deixa o texto exato, sem erro de Whisper. */
+  script: string | null
+  mode: AutomountMode
+}
+
+/** Um clipe proposto para um bloco. */
+export interface AutomountCandidate {
+  /** Caminho do mp4. E o que o importador do projeto recebe -- a mesma porta do arraste. */
+  path: string
+  thumbUrl: string
+  /** "Tensura S04E15 #0195". So para ele saber de onde veio. */
+  label: string
+  durationSec: number
+  /** Por que este entrou: "Kisuke Urahara, so ele em cena, cobre o bloco". */
+  reason: string
+}
+
+export interface AutomountBlock {
+  start: number
+  end: number
+  text: string
+  /** Quem o leitor achou nesta frase. Vazio quando a frase nao cita ninguem. */
+  characters: string[]
+  /** O primeiro ja vai aplicado; o resto e a fita. Vazio quando nao havia material. */
+  candidates: AutomountCandidate[]
+}
+
+export interface AutomountResult {
+  blocks: AutomountBlock[]
+  /**
+   * A transcricao que decidiu os cortes. Vai junto de proposito.
+   *
+   * Sem ela o renderer transcreveria de novo para fazer as legendas -- e a
+   * segunda passada nao tem o vocabulario da biblioteca, entao escreveria
+   * "Ischigo" onde esta acertou "ichigo". A legenda contradiria o corte, e o
+   * usuario esperaria o Whisper duas vezes pelo mesmo audio.
+   */
+  transcript: Transcript | null
+  scriptNote: string | null
+  /** Aviso quando algum bloco ficou sem cena. null quando deu tudo certo. */
+  note: string | null
+}
+
 export interface ReframeArgs {
   id: string
   path: string
@@ -300,6 +353,13 @@ export interface DangaiBridge {
    * famoso. Errar aqui nao custa nada porque o usuario confirma item a item.
    */
   suggestNicknames(series: string, characters: readonly string[]): Promise<IpcResult<NicknameSuggestion[]>>
+  /**
+   * Monta o video sozinho a partir da narracao.
+   *
+   * Devolve uma PROPOSTA -- um clipe aplicado por bloco e cinco na fita --, e
+   * nunca escreve nada: quem aplica e o renderer, pela porta do arraste.
+   */
+  automount(request: AutomountRequest): Promise<IpcResult<AutomountResult>>
   /** Nomes dos arquivos de som na pasta de SFX em uso. */
   listSfx(): Promise<IpcResult<string[]>>
   /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */

@@ -61,7 +61,7 @@ interface CacheFile {
  * inteiro de proposito -- e mais barato reler 27 arquivos de texto do que
  * carregar para sempre um indice montado por uma versao antiga.
  */
-const CACHE_VERSION = 3
+const CACHE_VERSION = 4
 
 /** Profundidade maxima da varredura a partir da raiz. */
 const MAX_DEPTH = 3
@@ -326,6 +326,20 @@ async function lerEpisodio(
   const serie = prefixo.split('/')[0] || basename(dir)
   const titulo = (cru as RawShot[]).map((s) => texto(s.anime)).find((t) => t.length > 0) ?? ''
 
+  /*
+   * Temporada e episodio saem da PASTA tambem, pelo mesmo motivo.
+   *
+   * Medido na biblioteca dele: as pastas S17E41, S17E42, S17E43 e S17E44 de
+   * Bleach guardam no json as temporadas 1, 1, 1 e 17. O mesmo anime, a mesma
+   * leva, quatro pastas -- e uma delas discorda das outras tres.
+   *
+   * Isso nao era visivel enquanto a biblioteca so servia para BUSCAR. Passou a
+   * importar quando o recap ganhou cronologia: comparando os numeros do json, o
+   * episodio 44 fica dezesseis temporadas na frente do 43, e a montagem
+   * automatica acha que deu um salto gigante quando andou um episodio.
+   */
+  const daPasta = /S(\d+)E(\d+)/i.exec(basename(dir))
+
   const saida: StoredClip[] = []
 
   for (const nomeMp4 of [...naPasta].sort(naturalmente)) {
@@ -351,8 +365,8 @@ async function lerEpisodio(
       thumb,
       anime: serie,
       animeTitle: titulo,
-      season: numero(inicio.season),
-      episode: numero(inicio.episode),
+      season: daPasta ? Number(daPasta[1]) : numero(inicio.season),
+      episode: daPasta ? Number(daPasta[2]) : numero(inicio.episode),
       shot,
       start: numero(inicio.start),
       duration: span > 0 ? span : numero(inicio.duration),

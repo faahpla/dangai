@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   type AnalyzeArgs,
+  type AutomountRequest,
+  type AutomountResult,
   type DangaiBridge,
   type IpcResult,
   type MusicPick,
@@ -79,6 +81,9 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.suggestNicknames, series, characters) as Promise<
       IpcResult<NicknameSuggestion[]>
     >,
+
+  automount: (request) =>
+    ipcRenderer.invoke(IPC.automount, request) as Promise<IpcResult<AutomountResult>>,
 
   listSfx: () => ipcRenderer.invoke(IPC.listSfx) as Promise<IpcResult<string[]>>,
 

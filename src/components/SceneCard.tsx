@@ -14,6 +14,57 @@ import { Framing } from './Framing'
  * Painel fino da cena selecionada. So aparece quando ha cena selecionada -- e o
  * terceiro elemento do estado "editando", nao uma coluna permanente.
  */
+/**
+ * As outras cinco cenas que serviam neste bloco.
+ *
+ * So aparece no projeto que veio da montagem automatica -- e ali ela e o que
+ * torna a proposta revisavel. Sem a fita, discordar de uma escolha voltaria a
+ * ser uma busca na biblioteca inteira, e revisar 20 blocos assim custa mais que
+ * ter montado na mao.
+ *
+ * A razao aparece escrita ("Kisuke Urahara, so ele em cena, cobre o bloco")
+ * porque ele precisa saber se confia: um motivo fraco e o aviso de que este e
+ * um bloco para olhar com atencao.
+ */
+function Fita({ index }: { index: number }) {
+  const blocos = useProject((s) => s.automountBlocks)
+  const swapCandidate = useProject((s) => s.swapCandidate)
+  const busy = useProject((s) => s.busy)
+
+  if (!blocos) return null
+
+  /*
+   * O indice na TIMELINE nao e o indice no roteiro: bloco que ficou sem cena
+   * nao virou imagem. Andar pelos blocos uteis e o que liga os dois.
+   */
+  let restante = index
+  const bloco = blocos.find((b) => b.candidates.length > 0 && restante-- === 0)
+  const posicao = blocos.indexOf(bloco!)
+  if (!bloco || bloco.candidates.length < 2) return null
+
+  return (
+    <Field label={`Trocar a cena (${bloco.candidates.length - 1} opcoes)`}>
+      <div className="flex flex-col gap-1.5">
+        <p className="text-[11px] leading-relaxed text-ink-3">{bloco.candidates[0]!.reason}</p>
+        <div className="flex flex-wrap gap-1">
+          {bloco.candidates.slice(1).map((candidato, i) => (
+            <button
+              key={candidato.path}
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void swapCandidate(posicao, i + 1)}
+              title={`${candidato.label} -- ${candidato.reason}`}
+              className="overflow-hidden rounded-sm border border-line transition-colors duration-150 hover:border-accent disabled:opacity-40"
+            >
+              <img src={candidato.thumbUrl} alt={candidato.label} className="h-[38px] w-[68px] object-cover" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </Field>
+  )
+}
+
 export function SceneCard() {
   const images = useProject((s) => s.images)
   const plan = useProject((s) => s.plan)
@@ -50,6 +101,8 @@ export function SceneCard() {
           {(scene.end - scene.start).toFixed(1)}s
         </span>
       </header>
+
+      <Fita index={index} />
 
       <Field label="Entra em">
         <span className="tnum text-[13px] text-ink-2">{formatTimecode(scene.start)}</span>

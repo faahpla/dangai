@@ -359,3 +359,26 @@ function friendlyAiNote(raw: string): string {
   }
   return `A IA nao respondeu (${raw.slice(0, 60)}). Cenas distribuidas pelas pausas.`
 }
+
+/**
+ * So o TEXTO da narracao, sem planejar nada.
+ *
+ * A montagem automatica precisa saber o que a narracao diz ANTES de existir
+ * qualquer imagem -- e dai que ela tira quem esta em cada frase e quanto tempo
+ * cada frase dura. O caminho normal nao serve porque ele ja quer as imagens na
+ * mao para distribuir.
+ *
+ * Reusa exatamente a mesma cadeia (legenda -> Whisper -> roteiro por cima),
+ * entao o texto da montagem automatica e o mesmo que apareceria na legenda.
+ */
+export async function transcriptOnly(
+  audioPath: string,
+  subtitlePath: string | null,
+  script: string | null,
+  /** Nomes proprios para enviesar o Whisper -- ver buildVocabularyPrompt. */
+  vocabulary: readonly string[],
+  onProgress: AnalyzeProgress,
+): Promise<{ transcript: Transcript | null; scriptNote: string | null }> {
+  const measured = await getTranscript(audioPath, subtitlePath, vocabulary, onProgress)
+  return applyScript(script, measured, onProgress)
+}

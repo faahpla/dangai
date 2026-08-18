@@ -7,6 +7,8 @@ import {
   IMAGE_EXTENSIONS,
   IPC,
   type AnalyzeArgs,
+  type AutomountRequest,
+  type AutomountResult,
   type IpcResult,
   type MusicPick,
   type PublicSettings,
@@ -42,6 +44,7 @@ import {
 import { expandDrop } from './services/folders'
 import { scanLibrary } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
+import { automount } from './services/automount'
 import {
   clearAutosave,
   openProjectFile,
@@ -173,6 +176,14 @@ export function registerIpc(): void {
   handle<[string, readonly string[]], NicknameSuggestion[]>(
     IPC.suggestNicknames,
     (series, characters) => suggestNicknames(series, characters),
+  )
+
+  /*
+   * Reusa o mesmo aviso de andamento da analise: quem esta olhando a tela ve
+   * uma frase mudando, e nao dois indicadores disputando o mesmo canto.
+   */
+  handle<[AutomountRequest], AutomountResult>(IPC.automount, (request) =>
+    automount(request, publish, broadcastAnalyze),
   )
 
   handle<[], string[]>(IPC.listSfx, async () => listSfx())

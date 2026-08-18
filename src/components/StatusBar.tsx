@@ -8,6 +8,7 @@ import {
   FolderTree,
   Pilcrow,
   Download,
+  Wand2,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
 import type { PlanOrigin } from '@shared/contract'
@@ -209,6 +210,8 @@ function UpdateChip({ appVersion }: { appVersion: string }) {
  */
 function PlanBadge({ origin, note }: { origin: PlanOrigin; note: string | null }) {
   const config: Record<PlanOrigin, { icon: typeof Sparkles; label: string }> = {
+    // Cada bloco dura exatamente a frase que escolheu o clipe dele.
+    auto: { icon: Wand2, label: 'Montado pelo roteiro' },
     ai: { icon: Sparkles, label: 'Cenas pela IA' },
     // "partes" e nao "pastas": a parte pode ter vindo de uma pasta solta na
     // janela ou de uma leva marcada na Biblioteca.

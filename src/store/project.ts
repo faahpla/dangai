@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
-import type { LibraryIndex, MusicPick, Nickname, UpdateStatus } from '@shared/channels'
+import type {
+  AutomountBlock,
+  AutomountMode,
+  LibraryIndex,
+  MusicPick,
+  Nickname,
+  UpdateStatus,
+} from '@shared/channels'
 import {
   CAPTION_COLOR_DEFAULT,
   CAPTION_Y_DEFAULT,
@@ -9,6 +16,7 @@ import {
   END_CARD_SEC_DEFAULT,
   HOOK_SEC_DEFAULT,
   KEN_BURNS_EFFECTS,
+  MOTION_CURVE_DEFAULT,
   MUSIC_GAIN_DB_DEFAULT,
   MUSIC_GAIN_DB_MAX,
   MUSIC_GAIN_DB_MIN,
@@ -161,6 +169,17 @@ export interface ProjectState {
   nicknamesBusy: boolean
 
   /**
+   * A proposta da montagem automatica, bloco a bloco.
+   *
+   * Fica no estado depois de aplicada porque a FITA de candidatos e o que faz a
+   * proposta ser revisavel: sem ela, trocar uma cena de que ele nao gostou
+   * voltaria a ser uma busca na biblioteca inteira. null quando o projeto nao
+   * veio da montagem automatica.
+   */
+  automountBlocks: AutomountBlock[] | null
+  automountMode: AutomountMode | null
+
+  /**
    * Projetos esperando para renderizar, um atras do outro.
    *
    * A fila abre cada projeto de verdade e usa exatamente o mesmo caminho de
@@ -232,6 +251,15 @@ export interface ProjectState {
    * pasta faz no arraste, com um botao no lugar do gesto.
    */
   addFromLibrary: (paths: readonly string[], parte?: string) => Promise<void>
+  /**
+   * Monta o video sozinho a partir da narracao que ja esta carregada.
+   *
+   * Nao substitui o caminho manual: e um segundo gesto no mesmo estado vazio.
+   * Depois de montar, tudo continua editavel do jeito de sempre.
+   */
+  automount: (mode: AutomountMode) => Promise<void>
+  /** Troca a cena de um bloco por outro candidato da fita. */
+  swapCandidate: (blockIndex: number, candidateIndex: number) => Promise<void>
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -295,6 +323,35 @@ type SetState = (partial: Partial<ProjectState>) => void
  * roda -- e, principalmente, para `plan` nunca precisar ser derivado dentro de
  * um seletor.
  */
+/**
+ * O plano em que cada bloco dura exatamente a frase que escolheu o clipe dele.
+ *
+ * E o unico plano do app onde o corte e o conteudo vieram da mesma decisao: nos
+ * outros as imagens sao distribuidas POR CIMA de uma narracao que ja existia.
+ * Por isso os tempos vem dos blocos e nao passam por redistribuicao.
+ *
+ * O fim do ultimo bloco e esticado ate a narracao acabar. Sem isso o video
+ * terminaria na ultima frase transcrita e cortaria o respiro final -- foi
+ * exatamente o defeito que ele achou testando a v1.6.
+ */
+function planoDosBlocos(
+  blocos: readonly AutomountBlock[],
+  durationSec: number,
+): ScenePlan {
+  const scenes: Scene[] = blocos.map((bloco, index) => ({
+    imageIndex: index,
+    start: index === 0 ? 0 : bloco.start,
+    end: index === blocos.length - 1 ? Math.max(bloco.end, durationSec) : bloco.end,
+    // Clipe nasce parado: ele ja tem movimento proprio. Ligar num clipe
+    // especifico continua sendo um clique no card da cena.
+    effect: 'nenhum',
+    intensity: 0.12,
+    curve: MOTION_CURVE_DEFAULT,
+    transitionIn: 'cut',
+  }))
+  return { scenes }
+}
+
 function setInterimPlan(set: SetState, imageCount: number, durationSec: number): void {
   set({
     plan: planEqualSplit(imageCount, durationSec),
@@ -344,6 +401,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   paletteOpen: false,
   libraryOpen: false,
   library: null,
+  automountBlocks: null,
+  automountMode: null,
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
@@ -527,6 +586,116 @@ export const useProject = create<ProjectState>((set, get) => ({
       setInterimPlan(set, images.length, audio.durationSec)
     }
     await get().analyze()
+  },
+
+  automount: async (mode) => {
+    const { audio, subtitlePath, script } = get()
+    if (!audio) {
+      set({ error: 'Carregue a narracao antes de montar sozinho.' })
+      return
+    }
+
+    set({ busy: 'Montando...', error: null })
+
+    const proposta = await window.dangai.automount({
+      audioPath: audio.path,
+      subtitlePath,
+      script,
+      mode,
+    })
+    if (!proposta.ok) {
+      set({ busy: null, error: proposta.error })
+      return
+    }
+
+    const { blocks, note, scriptNote, transcript } = proposta.value
+    const uteis = blocks.filter((b) => b.candidates.length > 0)
+    if (uteis.length === 0) {
+      set({
+        busy: null,
+        error:
+          'A biblioteca nao tem cena para nenhum bloco desta narracao. Confira a pasta das cenas nas configuracoes.',
+      })
+      return
+    }
+
+    set({ busy: `Trazendo ${uteis.length} cenas...` })
+    const importadas = await window.dangai.importImages(uteis.map((b) => b.candidates[0]!.path))
+    if (!importadas.ok) {
+      set({ busy: null, error: importadas.error })
+      return
+    }
+
+    set({
+      images: importadas.value,
+      plan: planoDosBlocos(uteis, audio.durationSec),
+      planOrigin: 'auto',
+      /*
+       * Marcado como editado de proposito. O plano da montagem automatica sai
+       * das FRASES da narracao; qualquer reanalise o substituiria por uma
+       * distribuicao por cima, e a cena deixaria de casar com a frase que a
+       * escolheu.
+       */
+      planEdited: true,
+      automountBlocks: blocks,
+      automountMode: mode,
+      /*
+       * A transcricao vem junto da proposta, e nao de uma segunda analise.
+       *
+       * Transcrever de novo custaria outra passada de Whisper pelo mesmo audio
+       * E daria um texto PIOR: so a passada da montagem leva os nomes da
+       * biblioteca como vocabulario. Medido: com vocabulario sai "ichigo", sem
+       * sai "Ischigo" -- e a legenda contradiria o corte que aquele mesmo nome
+       * decidiu.
+       */
+      transcript,
+      captions: buildCaptions(transcript),
+      captionsEdited: false,
+      scriptNote,
+      sectionNote: note,
+      aiNote: null,
+      selectedScene: null,
+      busy: null,
+    })
+  },
+
+  swapCandidate: async (blockIndex, candidateIndex) => {
+    const { automountBlocks, images } = get()
+    const bloco = automountBlocks?.[blockIndex]
+    const escolhido = bloco?.candidates[candidateIndex]
+    if (!automountBlocks || !bloco || !escolhido) return
+
+    /*
+     * O indice na TIMELINE nao e o indice no roteiro: bloco sem cena nao virou
+     * imagem. Contar quantos blocos uteis vieram antes e o que liga os dois.
+     */
+    const posicao = automountBlocks
+      .slice(0, blockIndex)
+      .filter((b) => b.candidates.length > 0).length
+    if (!images[posicao]) return
+
+    set({ busy: 'Trocando a cena...', error: null })
+    const importada = await window.dangai.importImages([escolhido.path])
+    if (!importada.ok || !importada.value[0]) {
+      set({ busy: null, error: importada.ok ? 'Nao deu para abrir essa cena.' : importada.error })
+      return
+    }
+
+    // A fita passa a comecar pelo escolhido, para o proximo clique na seta
+    // continuar de onde ele parou em vez de voltar ao comeco.
+    const reordenada = [
+      escolhido,
+      ...bloco.candidates.filter((_c, i) => i !== candidateIndex),
+    ]
+
+    set((state) => ({
+      images: state.images.map((img, i) => (i === posicao ? importada.value[0]! : img)),
+      automountBlocks: state.automountBlocks!.map((b: AutomountBlock, i: number) =>
+        i === blockIndex ? { ...b, candidates: reordenada } : b,
+      ),
+      busy: null,
+      projectDirty: true,
+    }))
   },
 
   analyze: async () => {

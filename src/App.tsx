@@ -6,6 +6,7 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
 import { ImageStrip } from '@/components/ImageStrip'
+import { Automount } from '@/components/Automount'
 import { SceneCard } from '@/components/SceneCard'
 import { Preview } from '@/components/Preview'
 import { RenderBar } from '@/components/RenderBar'
@@ -203,6 +204,7 @@ export function App() {
             <Preview />
             <div className="flex min-w-0 flex-1 flex-col gap-4">
               <ImageStrip />
+              <Automount />
               {/*
                 O editor de legendas divide a coluna com a fila de imagens em
                 vez de virar uma tela: com o preview do lado, da para ver o

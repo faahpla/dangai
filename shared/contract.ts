@@ -231,8 +231,15 @@ export const scenePlanSchema = z.object({
 })
 export type ScenePlan = z.infer<typeof scenePlanSchema>
 
-/** Como o plano foi obtido. Aparece na interface para o usuario saber. */
-export const PLAN_ORIGINS = ['ai', 'sections', 'rhythm', 'silence', 'equal'] as const
+/**
+ * Como o plano foi obtido. Aparece na interface para o usuario saber.
+ *
+ * 'auto' e a montagem automatica: os cortes saem das FRASES da narracao, e nao
+ * de uma distribuicao por cima delas -- cada bloco dura exatamente a frase que
+ * escolheu o clipe dele. E o unico plano onde o corte e o conteudo vieram da
+ * mesma decisao.
+ */
+export const PLAN_ORIGINS = ['auto', 'ai', 'sections', 'rhythm', 'silence', 'equal'] as const
 export type PlanOrigin = (typeof PLAN_ORIGINS)[number]
 
 export interface AnalysisResult {
