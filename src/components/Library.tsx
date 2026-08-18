@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, FolderOpen, Loader2, RefreshCw, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, FolderOpen, Loader2, RefreshCw, Search, Tags, X } from 'lucide-react'
 import type { LibraryClip } from '@shared/channels'
 import { useProject } from '@/store/project'
+import { Nicknames } from './Nicknames'
 
 /**
  * Busca na biblioteca de cenas que o AnCut HUB ja cortou.
@@ -32,6 +33,7 @@ export function Library() {
   const syncLibrary = useProject((s) => s.syncLibrary)
   const addFromLibrary = useProject((s) => s.addFromLibrary)
   const images = useProject((s) => s.images)
+  const nicknames = useProject((s) => s.nicknames)
 
   const [texto, setTexto] = useState('')
   const [anime, setAnime] = useState<string | null>(null)
@@ -39,6 +41,7 @@ export function Library() {
   const [minSec, setMinSec] = useState(0)
   const [maxSec, setMaxSec] = useState(0)
   const [escolhidos, setEscolhidos] = useState<string[]>([])
+  const [apelidosAbertos, setApelidosAbertos] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -64,6 +67,7 @@ export function Library() {
   useEffect(() => {
     if (open) return
     setEscolhidos([])
+    setApelidosAbertos(false)
     setTexto('')
     setAnime(null)
     setPersonagem(null)
@@ -137,6 +141,24 @@ export function Library() {
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {/*
+            Aparece so com uma serie escolhida: apelido e por serie, e sem serie
+            nao ha lista de personagens para apontar.
+          */}
+          {anime && (
+            <button
+              type="button"
+              onClick={() => setApelidosAbertos(true)}
+              title="Como voce chama esses personagens no roteiro sem usar o nome"
+              className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink"
+            >
+              <Tags size={12} strokeWidth={1.5} />
+              Apelidos
+              <span className="tnum text-[10px] text-ink-3">
+                {(nicknames[anime] ?? []).length}
+              </span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void syncLibrary()}
@@ -208,6 +230,10 @@ export function Library() {
             <Grade clips={filtrados} escolhidos={escolhidos} onEscolher={escolher} />
           </div>
         </div>
+      )}
+
+      {apelidosAbertos && anime && (
+        <Nicknames series={anime} onClose={() => setApelidosAbertos(false)} />
       )}
 
       {(escolhidos.length > 0 || partesNoProjeto > 0) && (

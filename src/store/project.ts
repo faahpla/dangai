@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { classifyFile } from '@shared/channels'
-import type { LibraryIndex, MusicPick, UpdateStatus } from '@shared/channels'
+import type { LibraryIndex, MusicPick, Nickname, UpdateStatus } from '@shared/channels'
 import {
   CAPTION_COLOR_DEFAULT,
   CAPTION_Y_DEFAULT,
@@ -152,6 +152,15 @@ export interface ProjectState {
   libraryError: string | null
 
   /**
+   * Como ele chama cada personagem quando escreve o roteiro, por serie.
+   *
+   * Mora no estado global e nao na tela porque o leitor de roteiro vai precisar
+   * disto na hora de montar o video -- muito depois de a Biblioteca ter fechado.
+   */
+  nicknames: Record<string, Nickname[]>
+  nicknamesBusy: boolean
+
+  /**
    * Projetos esperando para renderizar, um atras do outro.
    *
    * A fila abre cada projeto de verdade e usa exatamente o mesmo caminho de
@@ -213,6 +222,9 @@ export interface ProjectState {
   syncLibrary: () => Promise<void>
   /** Andamento vindo do main durante a varredura. */
   setLibraryBusy: (mensagem: string | null) => void
+  loadNicknames: () => Promise<void>
+  /** Grava a lista inteira de uma serie. Lista vazia apaga a serie. */
+  saveNicknames: (series: string, list: readonly Nickname[]) => Promise<void>
   /**
    * Manda as cenas escolhidas para o projeto, pela mesma porta do drop.
    *
@@ -334,6 +346,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   library: null,
   libraryBusy: null,
   libraryError: null,
+  nicknames: {},
+  nicknamesBusy: false,
   queue: [],
   queueRunning: false,
   projectPath: null,
@@ -1001,7 +1015,22 @@ export const useProject = create<ProjectState>((set, get) => ({
    */
   openLibrary: async (open) => {
     set({ libraryOpen: open })
-    if (open && !get().library) await get().syncLibrary()
+    if (!open) return
+    // Os apelidos vem junto: sao poucos bytes e a tela precisa deles para dizer
+    // quantos cada serie tem.
+    await Promise.all([get().library ? Promise.resolve() : get().syncLibrary(), get().loadNicknames()])
+  },
+
+  loadNicknames: async () => {
+    const result = await window.dangai.readNicknames()
+    if (result.ok) set({ nicknames: result.value })
+  },
+
+  saveNicknames: async (series, list) => {
+    set({ nicknamesBusy: true })
+    const result = await window.dangai.saveNicknames(series, list)
+    if (result.ok) set({ nicknames: result.value, nicknamesBusy: false })
+    else set({ libraryError: result.error, nicknamesBusy: false })
   },
 
   // So substitui um andamento que ainda existe: a mensagem final do main pode

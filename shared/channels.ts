@@ -60,6 +60,9 @@ export const IPC = {
   scanLibrary: 'library:scan',
   pickLibraryDir: 'library:pick-dir',
   libraryClipUrl: 'library:clip-url',
+  readNicknames: 'nicknames:read',
+  saveNicknames: 'nicknames:save',
+  suggestNicknames: 'nicknames:suggest',
   /** main -> renderer, andamento da varredura da biblioteca */
   libraryProgress: 'library:progress',
 } as const
@@ -167,6 +170,26 @@ export interface LibraryIndex {
   scanned: number
 }
 
+/**
+ * Como o usuario chama um personagem quando escreve o roteiro.
+ *
+ * "o slime" e o Rimuru; "uma Lorde Demonio" e a Luminous. O leitor de roteiro
+ * resolve nome escrito e pronome com regra -- apelido nao da, porque nao esta
+ * no texto: e conhecimento da serie.
+ */
+export interface Nickname {
+  /** Como ele escreve no roteiro. Comparado sem acento e sem caixa. */
+  term: string
+  /** Nome do personagem na biblioteca, ja unificado. */
+  character: string
+}
+
+/** Uma sugestao do modelo local. So vale depois que ele confirmar. */
+export interface NicknameSuggestion {
+  term: string
+  character: string
+}
+
 export interface ReframeArgs {
   id: string
   path: string
@@ -266,6 +289,17 @@ export interface DangaiBridge {
    * miniaturas locais, e um minuto sem sinal na tela parece travamento.
    */
   onLibraryProgress(listener: (mensagem: string) => void): () => void
+  /** Apelidos cadastrados, por serie. */
+  readNicknames(): Promise<IpcResult<Record<string, Nickname[]>>>
+  /** Grava a lista INTEIRA de uma serie. Lista vazia apaga a serie. */
+  saveNicknames(series: string, list: readonly Nickname[]): Promise<IpcResult<Record<string, Nickname[]>>>
+  /**
+   * Pede sugestoes ao modelo local, se houver um.
+   *
+   * Sugestao, nunca decisao: medido, ele acerta o apelido famoso e erra o menos
+   * famoso. Errar aqui nao custa nada porque o usuario confirma item a item.
+   */
+  suggestNicknames(series: string, characters: readonly string[]): Promise<IpcResult<NicknameSuggestion[]>>
   /** Nomes dos arquivos de som na pasta de SFX em uso. */
   listSfx(): Promise<IpcResult<string[]>>
   /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */

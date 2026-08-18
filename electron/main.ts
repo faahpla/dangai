@@ -7,6 +7,7 @@ import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
 import { configureSettings } from './services/settings'
 import { configureLibrary } from './services/library'
+import { configureNicknames } from './services/nicknames'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { startUpdater } from './services/updater'
 import { configureWhisper } from './services/whisper'
@@ -88,6 +89,9 @@ app.whenReady().then(async () => {
   // O cache da biblioteca tambem: a pasta de cenas do usuario e so leitura, e
   // nada do Dangai pode ser gravado dentro dela.
   configureLibrary(userData)
+  // Apelidos tambem: e escolha do usuario sobre a biblioteca dele, nao parte
+  // dela -- a pasta de cenas continua sendo so leitura.
+  configureNicknames(userData)
 
   // Os SFX moram no userData para o usuario poder trocar os arquivos: a pasta
   // do app some numa atualizacao e pode nem ter permissao de escrita.

@@ -12,6 +12,8 @@ import {
   type PublicSettings,
   type DropExpansion,
   type LibraryIndex,
+  type Nickname,
+  type NicknameSuggestion,
   type ReframeArgs,
   type SaveProjectArgs,
   type SettingsPatch,
@@ -39,6 +41,7 @@ import {
 } from './services/assets'
 import { expandDrop } from './services/folders'
 import { scanLibrary } from './services/library'
+import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
 import {
   clearAutosave,
   openProjectFile,
@@ -157,6 +160,20 @@ export function registerIpc(): void {
     }
     return publish(path)
   })
+
+  // ----------------------------------------------------------------- apelidos
+
+  handle<[], Record<string, Nickname[]>>(IPC.readNicknames, async () => readNicknames())
+
+  handle<[string, readonly Nickname[]], Record<string, Nickname[]>>(
+    IPC.saveNicknames,
+    async (series, list) => saveNicknames(series, list),
+  )
+
+  handle<[string, readonly string[]], NicknameSuggestion[]>(
+    IPC.suggestNicknames,
+    (series, characters) => suggestNicknames(series, characters),
+  )
 
   handle<[], string[]>(IPC.listSfx, async () => listSfx())
 

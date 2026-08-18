@@ -8,6 +8,8 @@ import {
   type PublicSettings,
   type DropExpansion,
   type LibraryIndex,
+  type Nickname,
+  type NicknameSuggestion,
   type ReframeArgs,
   type SaveProjectArgs,
   type SettingsPatch,
@@ -64,6 +66,19 @@ const bridge: DangaiBridge = {
       ipcRenderer.off(IPC.libraryProgress, handler)
     }
   },
+
+  readNicknames: () =>
+    ipcRenderer.invoke(IPC.readNicknames) as Promise<IpcResult<Record<string, Nickname[]>>>,
+
+  saveNicknames: (series, list) =>
+    ipcRenderer.invoke(IPC.saveNicknames, series, list) as Promise<
+      IpcResult<Record<string, Nickname[]>>
+    >,
+
+  suggestNicknames: (series, characters) =>
+    ipcRenderer.invoke(IPC.suggestNicknames, series, characters) as Promise<
+      IpcResult<NicknameSuggestion[]>
+    >,
 
   listSfx: () => ipcRenderer.invoke(IPC.listSfx) as Promise<IpcResult<string[]>>,
 
