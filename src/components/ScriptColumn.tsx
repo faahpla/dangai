@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Loader2, Check } from 'lucide-react'
 import { useProject } from '@/store/project'
+import type { Word } from '@shared/contract'
 
 /**
  * O roteiro dentro da Biblioteca, frase a frase.
@@ -20,6 +21,7 @@ export function ScriptColumn() {
   const porBloco = useProject((s) => s.blockClips)
   const setAtivo = useProject((s) => s.setActiveBlock)
   const carregar = useProject((s) => s.loadScriptBlocks)
+  const transcript = useProject((s) => s.transcript)
 
   const lista = useRef<HTMLDivElement>(null)
 
@@ -107,19 +109,97 @@ export function ScriptColumn() {
                   </span>
                 )}
               </div>
-              <p
-                className={[
-                  'mt-1 text-[12px] leading-snug',
-                  aberto ? 'text-ink' : cenas.length > 0 ? 'text-ink-2' : 'text-ink-3',
-                ].join(' ')}
-              >
-                {bloco.text}
-              </p>
+              <Frase
+                texto={bloco.text}
+                palavras={transcript?.words ?? []}
+                start={bloco.start}
+                end={bloco.end}
+                cenas={cenas.length}
+                aberto={aberto}
+              />
             </div>
           )
         })}
       </div>
     </Coluna>
+  )
+}
+
+/**
+ * O texto da frase pintado por cena.
+ *
+ * Cada cena cobre um trecho, e o trecho aparece: "A magia mais fraca do Rudeus"
+ * e a cena 1, "gasta mais mana que a mais forte." e a cena 2. Foi o que ele
+ * pediu -- ver ao vivo ate onde cada clipe vai ficar -- e da para fazer por
+ * PALAVRA porque a transcricao ja traz o tempo de cada uma.
+ *
+ * Com uma cena so, ela cobre a frase inteira. Isso nao e um defeito da pintura:
+ * e a divisao de verdade aparecendo, e e o aviso de que falta cena ali.
+ */
+function Frase({
+  texto,
+  palavras,
+  start,
+  end,
+  cenas,
+  aberto,
+}: {
+  texto: string
+  palavras: readonly Word[]
+  start: number
+  end: number
+  cenas: number
+  aberto: boolean
+}) {
+  const cor = aberto ? 'text-ink' : 'text-ink-2'
+
+  // Sem cena marcada nao ha o que repartir; sem palavra medida tambem nao.
+  const daFrase = cenas > 0 ? palavras.filter((w) => w.start >= start && w.start < end) : []
+  if (cenas === 0 || daFrase.length === 0) {
+    return (
+      <p className={['mt-1 text-[12px] leading-snug', aberto ? 'text-ink' : 'text-ink-3'].join(' ')}>
+        {texto}
+      </p>
+    )
+  }
+
+  /*
+   * Uma palavra pertence a cena que cobre o INSTANTE EM QUE ELA COMECA.
+   *
+   * Pelo comeco e nao pelo meio: e o comeco que o espectador ouve junto com o
+   * corte, e uma palavra que atravessa a fronteira aparece pintada na cena em
+   * que ela entrou -- que e onde ela vai ser vista.
+   */
+  const passo = (end - start) / cenas
+  const trechos: Word[][] = Array.from({ length: cenas }, () => [])
+  for (const palavra of daFrase) {
+    const i = Math.min(cenas - 1, Math.max(0, Math.floor((palavra.start - start) / passo)))
+    trechos[i]!.push(palavra)
+  }
+
+  return (
+    <p className={['mt-1 text-[12px] leading-snug', cor].join(' ')}>
+      {trechos.map((trecho, i) =>
+        trecho.length === 0 ? null : (
+          <span
+            key={i}
+            title={`Cena ${i + 1} · ${passo.toFixed(1)}s`}
+            className={[
+              'mr-1 box-decoration-clone rounded-[2px] px-1 py-[1px]',
+              /*
+                Uma cor so, alternando a forca -- rosa e a unica cor da interface
+                por decisao dele. O que separa uma cena da outra e o contraste
+                entre cheia e apagada, que funciona em qualquer numero de cenas
+                sem inventar paleta nenhuma.
+              */
+              i % 2 === 0 ? 'bg-accent-dim text-ink' : 'bg-elevated text-ink-2',
+            ].join(' ')}
+          >
+            {trecho.map((w) => w.text.trim()).join(' ')}
+          </span>
+        ),
+      )}
+    </p>
   )
 }
 
