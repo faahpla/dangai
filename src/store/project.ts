@@ -16,6 +16,8 @@ import {
   CAPTION_Y_MIN,
   END_CARD_SEC_DEFAULT,
   HOOK_SEC_DEFAULT,
+  CLIP_INTENSITY,
+  CLIP_MOTION_CURVE,
   KEN_BURNS_EFFECTS,
   MOTION_CURVE_DEFAULT,
   MUSIC_GAIN_DB_DEFAULT,
@@ -368,11 +370,16 @@ function planoDosBlocos(
     imageIndex: index,
     start: index === 0 ? 0 : bloco.start,
     end: index === blocos.length - 1 ? Math.max(bloco.end, durationSec) : bloco.end,
-    // Clipe nasce parado: ele ja tem movimento proprio. Ligar num clipe
-    // especifico continua sendo um clique no card da cena.
-    effect: 'nenhum',
-    intensity: 0.12,
-    curve: MOTION_CURVE_DEFAULT,
+    /*
+     * Clipe tambem entra com movimento, em ritmo constante.
+     *
+     * Tudo que sai daqui e clipe, entao o rodizio de efeito e o mesmo do print
+     * -- o que muda e a curva e a intensidade. Remover o movimento de um bloco
+     * especifico continua sendo um clique no card da cena.
+     */
+    effect: KEN_BURNS_EFFECTS[index % KEN_BURNS_EFFECTS.length]!,
+    intensity: CLIP_INTENSITY,
+    curve: CLIP_MOTION_CURVE,
     transitionIn: 'cut',
   }))
   return { scenes }

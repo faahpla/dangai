@@ -145,9 +145,10 @@ export const KEN_BURNS_EFFECTS = [
  * rodizio automatico e o cardapio da IA, e nem um nem outro deve escolher
  * "parado" sozinho -- print parado num short e tempo morto.
  *
- * Quem comeca em 'nenhum' e o clipe, porque ele ja tem movimento proprio e
- * mover de novo costuma dar enjoo. Mas agora e escolha do bloco: o usuario liga
- * o movimento no clipe que quiser, e desliga no print que quiser.
+ * Ninguem comeca em 'nenhum': o clipe entra com movimento igual ao print, e a
+ * escolha dele foi essa -- "ja deixa eles com algum movimento, qualquer coisa
+ * eu altero ou removo manualmente depois o que eu nao gostar, e melhor do que
+ * eu ficar colocando um por um". Desligar continua sendo um clique no card.
  */
 export const SCENE_EFFECTS = ['nenhum', ...KEN_BURNS_EFFECTS] as const
 export type SceneEffect = (typeof SCENE_EFFECTS)[number]
@@ -197,6 +198,32 @@ export type MotionCurve = z.infer<typeof motionCurveSchema>
 
 /** O que o app sempre fez. Manter como padrao nao muda nenhum video existente. */
 export const MOTION_CURVE_DEFAULT: MotionCurve = 'ease-in-out'
+
+/**
+ * A curva do clipe: constante, e nao ease-in-out.
+ *
+ * Pedido dele -- "algum movimento em ritmo constante". E a curva certa para
+ * este caso pelo motivo que ja estava escrito ali em cima: num movimento lento
+ * o ease-in-out faz as pontas parecerem travadas, e o clipe ja tem o movimento
+ * proprio da animacao brigando com o da camera.
+ */
+export const CLIP_MOTION_CURVE: MotionCurve = 'linear'
+
+/**
+ * Quanto o clipe se move. Um pouco menos que o print.
+ *
+ * O print e preparado para o render com 1.15x de folga (RENDER_HEADROOM), entao
+ * o Ken Burns nele nao amplia nada. O clipe nao tem essa folga: um mp4 1920x1080
+ * cobrindo 1080x1920 ja esta ampliado 1.78x so para caber na tela, e o zoom
+ * entra POR CIMA disso.
+ *
+ * Comecou em 0.06 pela mesma preocupacao e ficou timido demais: medido no mp4,
+ * um bloco de 3 segundos rendia 0.47/255 de diferenca contra o mesmo bloco
+ * parado -- movimento que existe na matematica e nao se ve na tela. Em 0.10 a
+ * diferenca fica visivel, e a ampliacao vai de 1.78x para 1.96x, que em anime
+ * (cor chapada, pouca textura fina) nao se distingue de 1.78x.
+ */
+export const CLIP_INTENSITY = 0.1
 
 export const sceneSchema = z.object({
   /** Indice na lista de imagens do usuario. */

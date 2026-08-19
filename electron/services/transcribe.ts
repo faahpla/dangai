@@ -1,4 +1,5 @@
 import type { AnalysisResult, ImageAsset, ScenePlan, Transcript } from '@shared/contract'
+import { CLIP_INTENSITY, CLIP_MOTION_CURVE } from '@shared/contract'
 import {
   paragraphEnds,
   planBySections,
@@ -41,26 +42,33 @@ export async function analyze(
   onProgress: AnalyzeProgress,
 ): Promise<AnalysisResult> {
   const resultado = await analisar(request, onProgress)
-  return { ...resultado, plan: semMovimentoEmClipe(resultado.plan, request.images) }
+  return { ...resultado, plan: movimentoDeClipe(resultado.plan, request.images) }
 }
 
 /**
- * Clipe nasce parado; print nasce com movimento.
+ * Clipe tambem nasce com movimento -- so que mais lento e em ritmo constante.
  *
- * Mover uma imagem que ja se move some com o movimento proprio do clipe e
- * costuma dar enjoo -- por isso o padrao. Mas agora e so o PADRAO: o usuario
- * liga o movimento no clipe que quiser pelo card da cena, e a escolha dele
- * sobrevive porque editar o plano impede a redistribuicao automatica.
+ * Ate aqui o clipe nascia PARADO, com o argumento de que ele ja tem movimento
+ * proprio e mover de novo enjoa. Na pratica isso virou trabalho manual: ele
+ * montava trinta blocos e ligava o movimento um por um. Palavras dele: "e
+ * melhor do que eu ficar colocando um por um".
+ *
+ * O efeito e o mesmo rodizio do print (ja veio escolhido pelo planejador). O
+ * que muda e COMO: curva linear, porque num movimento lento o ease-in-out
+ * trava as pontas, e intensidade pela metade, porque o clipe nao tem a folga
+ * de escala que o print tem -- ver CLIP_INTENSITY.
  *
  * Fica aqui, numa passada so no fim, e nao dentro de cada planejador: sao cinco
  * origens de plano (partes, IA, pontuacao, pausas, divisao igual) e a regra e a
  * mesma para todas.
  */
-function semMovimentoEmClipe(plan: ScenePlan, images: readonly ImageAsset[]): ScenePlan {
+function movimentoDeClipe(plan: ScenePlan, images: readonly ImageAsset[]): ScenePlan {
   return {
     ...plan,
     scenes: plan.scenes.map((scene) =>
-      images[scene.imageIndex]?.kind === 'video' ? { ...scene, effect: 'nenhum' as const } : scene,
+      images[scene.imageIndex]?.kind === 'video'
+        ? { ...scene, curve: CLIP_MOTION_CURVE, intensity: CLIP_INTENSITY }
+        : scene,
     ),
   }
 }
