@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ChevronDown, ChevronRight, FolderOpen, Loader2, RefreshCw, Search, Tags, X } from 'lucide-react'
 import type { LibraryClip } from '@shared/channels'
 import { useProject } from '@/store/project'
+import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
 
 /**
@@ -34,6 +35,21 @@ export function Library() {
   const addFromLibrary = useProject((s) => s.addFromLibrary)
   const images = useProject((s) => s.images)
   const nicknames = useProject((s) => s.nicknames)
+  const audio = useProject((s) => s.audio)
+  const blocos = useProject((s) => s.scriptBlocks)
+  const activeBlock = useProject((s) => s.activeBlock)
+  const blockClips = useProject((s) => s.blockClips)
+  const toggleBlockClip = useProject((s) => s.toggleBlockClip)
+  const applyBlockClips = useProject((s) => s.applyBlockClips)
+
+  /*
+   * Com narracao carregada, marcar cena e marcar cena DE UMA FRASE.
+   *
+   * Nao ha modo escondido: a coluna do roteiro esta ali do lado, a frase aberta
+   * esta destacada, e o cartao marcado mostra o numero dela. Sem narracao nada
+   * disso existe e a Biblioteca continua exatamente como era.
+   */
+  const porRoteiro = audio !== null && blocos !== null
 
   const [texto, setTexto] = useState('')
   const [anime, setAnime] = useState<string | null>(null)
@@ -96,9 +112,46 @@ export function Library() {
   if (!open) return null
 
   const escolher = (id: string): void => {
+    if (porRoteiro) {
+      const path = library?.clips.find((c) => c.id === id)?.path
+      if (path) toggleBlockClip(path)
+      return
+    }
     setEscolhidos((atual) =>
       atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id],
     )
+  }
+
+  /** Ids marcados na frase aberta, para a grade poder numerar os cartoes. */
+  const marcadosNaFrase = (): string[] => {
+    if (!porRoteiro || activeBlock === null || !library) return []
+    const porPath = new Map(library.clips.map((c) => [c.path, c.id]))
+    return (blockClips[activeBlock] ?? [])
+      .map((p) => porPath.get(p))
+      .filter((id): id is string => id !== undefined)
+  }
+
+  const totalMarcado = Object.values(blockClips).reduce((n, c) => n + c.length, 0)
+
+  /*
+   * Cenas ja gastas em OUTRA frase.
+   *
+   * Trocar de frase troca o que aparece marcado, entao uma cena usada tres
+   * frases atras volta a parecer livre -- e repetir a mesma cena num video
+   * curto e o tipo de erro que so aparece depois de renderizar.
+   */
+  const usadasEmOutras = (): Set<string> => {
+    if (!porRoteiro || !library) return new Set()
+    const porPath = new Map(library.clips.map((c) => [c.path, c.id]))
+    const fora = new Set<string>()
+    for (const [chave, paths] of Object.entries(blockClips)) {
+      if (Number(chave) === activeBlock) continue
+      for (const p of paths) {
+        const id = porPath.get(p)
+        if (id) fora.add(id)
+      }
+    }
+    return fora
   }
 
   /**
@@ -195,6 +248,7 @@ export function Library() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
+          {porRoteiro || audio ? <ScriptColumn /> : null}
           <Rail
             clips={library.clips}
             anime={anime}
@@ -227,7 +281,12 @@ export function Library() {
               }}
               total={filtrados.length}
             />
-            <Grade clips={filtrados} escolhidos={escolhidos} onEscolher={escolher} />
+            <Grade
+              clips={filtrados}
+              escolhidos={porRoteiro ? marcadosNaFrase() : escolhidos}
+              usadas={usadasEmOutras()}
+              onEscolher={escolher}
+            />
           </div>
         </div>
       )}
@@ -236,7 +295,26 @@ export function Library() {
         <Nicknames series={anime} onClose={() => setApelidosAbertos(false)} />
       )}
 
-      {(escolhidos.length > 0 || partesNoProjeto > 0) && (
+      {porRoteiro ? (
+        <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
+          <span className="tnum text-[12px] text-ink-2">
+            {totalMarcado > 0
+              ? `${totalMarcado} ${totalMarcado === 1 ? 'cena marcada' : 'cenas marcadas'} em ${Object.values(blockClips).filter((c) => c.length > 0).length} de ${blocos.length} frases`
+              : 'Escolha uma frase e marque as cenas dela'}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={totalMarcado === 0}
+              onClick={() => void applyBlockClips()}
+              title="Cada frase se divide entre as cenas que voce marcou nela"
+              className="lift rounded-sm border border-accent bg-accent-dim px-3.5 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
+            >
+              Montar com essas cenas
+            </button>
+          </div>
+        </footer>
+      ) : (escolhidos.length > 0 || partesNoProjeto > 0) && (
         <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
           <span className="tnum text-[12px] text-ink-2">
             {escolhidos.length > 0
@@ -574,6 +652,8 @@ function Filtros({ texto, onTexto, minSec, maxSec, onFaixa, total }: FiltrosProp
 interface GradeProps {
   clips: readonly LibraryClip[]
   escolhidos: readonly string[]
+  /** Cenas ja marcadas em OUTRA frase do roteiro. Vazio no uso sem roteiro. */
+  usadas?: ReadonlySet<string>
   onEscolher: (id: string) => void
 }
 
@@ -585,7 +665,7 @@ interface GradeProps {
  * dezenas, e o espacador de cima e de baixo faz a barra de rolagem continuar
  * dizendo a verdade sobre o tamanho do acervo.
  */
-function Grade({ clips, escolhidos, onEscolher }: GradeProps) {
+function Grade({ clips, escolhidos, usadas, onEscolher }: GradeProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
   const [altura, setAltura] = useState(0)
@@ -665,6 +745,7 @@ function Grade({ clips, escolhidos, onEscolher }: GradeProps) {
                 key={clip.id}
                 clip={clip}
                 ordem={ordens.get(clip.id) ?? 0}
+                usada={usadas?.has(clip.id) ?? false}
                 onClick={() => onEscolher(clip.id)}
               />
             ))}
@@ -685,11 +766,14 @@ function Grade({ clips, escolhidos, onEscolher }: GradeProps) {
 function Cartao({
   clip,
   ordem,
+  usada,
   onClick,
 }: {
   clip: LibraryClip
   /** Posicao na fila, comecando em 1. Zero quando nao foi escolhida. */
   ordem: number
+  /** Ja foi gasta em outra frase. Nao impede -- so avisa. */
+  usada?: boolean
   onClick: () => void
 }) {
   const marcado = ordem > 0
@@ -723,10 +807,14 @@ function Cartao({
       onClick={onClick}
       onMouseEnter={entrar}
       onMouseLeave={sair}
-      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s`}
+      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${usada ? ' · ja usada em outra frase' : ''}`}
       className={[
         'group flex flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
-        marcado ? 'border-accent' : 'border-line hover:border-line-strong',
+        marcado
+          ? 'border-accent'
+          : usada
+            ? 'border-line opacity-45 hover:opacity-100'
+            : 'border-line hover:border-line-strong',
       ].join(' ')}
     >
       <div className="relative aspect-video w-full overflow-hidden bg-elevated">
@@ -757,6 +845,16 @@ function Cartao({
               {ordem}
             </span>
           </>
+        )}
+        {/*
+          Ja usada em outra frase: apagada, nao proibida. Repetir cena as vezes
+          e escolha (o mesmo plano voltando fecha uma ideia); repetir sem
+          perceber e erro, e so aparece depois de renderizar.
+        */}
+        {!marcado && usada && (
+          <span className="absolute left-1 top-1 grid size-[18px] place-items-center rounded-full bg-black/70 text-[10px] text-white">
+            ✓
+          </span>
         )}
       </div>
 

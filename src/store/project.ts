@@ -3,6 +3,7 @@ import { classifyFile } from '@shared/channels'
 import type {
   AutomountBlock,
   AutomountMode,
+  ScriptBlock,
   LibraryIndex,
   MusicPick,
   Nickname,
@@ -182,6 +183,21 @@ export interface ProjectState {
   automountSeries: string | null
 
   /**
+   * O roteiro quebrado em frases, com o tempo de cada uma.
+   *
+   * Existe para a Biblioteca poder mostrar ONDE cada cena marcada vai cair.
+   * Antes disso a escolha dele era uma fila sem destino: ele marcava as cenas e
+   * quem decidia o momento de cada uma era a distribuicao automatica -- nas
+   * palavras dele, "hoje e meio aleatorio ne?!".
+   */
+  scriptBlocks: ScriptBlock[] | null
+  scriptBlocksBusy: string | null
+  /** Qual frase esta recebendo cenas agora. */
+  activeBlock: number | null
+  /** frase -> caminhos das cenas dela, na ordem em que ele marcou. */
+  blockClips: Record<number, string[]>
+
+  /**
    * Projetos esperando para renderizar, um atras do outro.
    *
    * A fila abre cada projeto de verdade e usa exatamente o mesmo caminho de
@@ -263,6 +279,13 @@ export interface ProjectState {
   /** Troca a cena de um bloco por outro candidato da fita. */
   swapCandidate: (blockIndex: number, candidateIndex: number) => Promise<void>
   setAutomountSeries: (series: string | null) => void
+  /** Le a narracao e quebra em frases. Chamada quando a Biblioteca abre. */
+  loadScriptBlocks: () => Promise<void>
+  setActiveBlock: (index: number | null) => void
+  /** Marca ou desmarca uma cena na frase aberta. */
+  toggleBlockClip: (path: string) => void
+  /** Joga o roteiro montado no projeto: cada frase dividida entre as cenas dela. */
+  applyBlockClips: () => Promise<void>
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -407,6 +430,10 @@ export const useProject = create<ProjectState>((set, get) => ({
   automountBlocks: null,
   automountMode: null,
   automountSeries: null,
+  scriptBlocks: null,
+  scriptBlocksBusy: null,
+  activeBlock: null,
+  blockClips: {},
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
@@ -545,7 +572,11 @@ export const useProject = create<ProjectState>((set, get) => ({
     const scriptPath = scriptPaths[0]
     if (scriptPath) {
       const result = await window.dangai.readScript(scriptPath)
-      if (result.ok) set({ script: result.value, captionsEdited: false })
+      // Roteiro novo muda onde cada frase comeca e acaba: o que estava lido
+      // deixa de valer.
+      if (result.ok) {
+        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {} })
+      }
       else set({ error: result.error })
     }
 
@@ -573,7 +604,20 @@ export const useProject = create<ProjectState>((set, get) => ({
       set({ busy: 'Analisando a narracao...' })
       const result = await window.dangai.analyzeAudio(audioPath)
       if (result.ok) {
-        set({ audio: result.value, playhead: 0 })
+        /*
+         * Narracao nova zera o roteiro lido e o que ele marcou nele.
+         *
+         * Os tempos das frases sao medidos NAQUELE audio -- mantidos, apontariam
+         * para instantes que nao existem mais, e as cenas marcadas cairiam em
+         * lugar nenhum sem nada na tela dizendo por que.
+         */
+        set({
+          audio: result.value,
+          playhead: 0,
+          scriptBlocks: null,
+          activeBlock: null,
+          blockClips: {},
+        })
       } else {
         set({ error: result.error })
       }
@@ -667,6 +711,117 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   setAutomountSeries: (series) => set({ automountSeries: series }),
+
+  loadScriptBlocks: async () => {
+    const { audio, subtitlePath, script, scriptBlocks, scriptBlocksBusy } = get()
+    // Ja lido, ou lendo: transcrever de novo custaria outra passada de Whisper
+    // pelo mesmo audio para chegar no mesmo texto.
+    if (!audio || scriptBlocks || scriptBlocksBusy) return
+
+    set({ scriptBlocksBusy: 'Ouvindo a narracao...' })
+    const r = await window.dangai.scriptBlocks({
+      audioPath: audio.path,
+      subtitlePath,
+      script,
+    })
+    if (!r.ok) {
+      set({ scriptBlocksBusy: null, libraryError: r.error })
+      return
+    }
+    set({
+      scriptBlocks: r.value.blocks,
+      // A transcricao vem junto e fica: as legendas saem dela sem outra passada.
+      transcript: r.value.transcript,
+      captions: get().captionsEdited ? get().captions : buildCaptions(r.value.transcript),
+      scriptNote: r.value.scriptNote,
+      activeBlock: r.value.blocks.length > 0 ? 0 : null,
+      scriptBlocksBusy: null,
+    })
+  },
+
+  setActiveBlock: (index) => set({ activeBlock: index }),
+
+  toggleBlockClip: (path) => {
+    const { activeBlock, blockClips } = get()
+    if (activeBlock === null) return
+    const atuais = blockClips[activeBlock] ?? []
+    /*
+     * A ordem e a de MARCACAO, nao a da grade.
+     *
+     * Dentro de uma frase a ordem e a do argumento dele -- a grade so sabe a
+     * ordem do episodio, que em video de teoria nao quer dizer nada.
+     */
+    const proximos = atuais.includes(path)
+      ? atuais.filter((p) => p !== path)
+      : [...atuais, path]
+    set({ blockClips: { ...blockClips, [activeBlock]: proximos } })
+  },
+
+  applyBlockClips: async () => {
+    const { scriptBlocks, blockClips, audio } = get()
+    if (!scriptBlocks || !audio) return
+
+    /*
+     * Cada frase se divide igualmente entre as cenas que ELE marcou nela.
+     *
+     * Igualmente e nao por pausa: dentro de uma frase nao ha pontuacao para
+     * consultar, e inventar um ritmo aqui seria decidir por ele exatamente onde
+     * ele acabou de pedir para decidir. Frase sem cena nenhuma nao vira bloco --
+     * o tempo dela e absorvido pela cena anterior, que so fica mais longa.
+     */
+    const caminhos: string[] = []
+    const spans: { start: number; end: number }[] = []
+    for (const [i, frase] of scriptBlocks.entries()) {
+      const cenas = blockClips[i] ?? []
+      if (cenas.length === 0) continue
+      const passo = (frase.end - frase.start) / cenas.length
+      for (const [j, path] of cenas.entries()) {
+        caminhos.push(path)
+        spans.push({ start: frase.start + j * passo, end: frase.start + (j + 1) * passo })
+      }
+    }
+
+    if (caminhos.length === 0) {
+      set({ libraryError: 'Marque pelo menos uma cena em alguma frase.' })
+      return
+    }
+
+    set({ busy: `Trazendo ${caminhos.length} cenas...`, libraryError: null })
+    const importadas = await window.dangai.importImages(caminhos)
+    if (!importadas.ok) {
+      set({ busy: null, error: importadas.error })
+      return
+    }
+
+    /*
+     * As cenas se costuram: cada uma comeca onde a anterior acabou.
+     *
+     * Frase sem cena nenhuma deixaria um VAO -- e vao no plano e tela preta no
+     * video. Costurando, o tempo da frase pulada e absorvido pela cena que vem
+     * antes dela, que so fica um pouco mais longa. O primeiro bloco comeca em
+     * zero e o ultimo fecha com a narracao, pelo mesmo motivo nas pontas.
+     */
+    const blocos = spans.map((s, i) => ({
+      start: i === 0 ? 0 : spans[i - 1]!.end,
+      end: i === spans.length - 1 ? Math.max(s.end, audio.durationSec) : s.end,
+      text: '',
+      characters: [],
+      candidates: [],
+    }))
+
+    set({
+      images: importadas.value,
+      plan: planoDosBlocos(blocos, audio.durationSec),
+      planOrigin: 'auto',
+      // O plano saiu das frases dele; reanalisar o trocaria por distribuicao.
+      planEdited: true,
+      automountBlocks: null,
+      libraryOpen: false,
+      selectedScene: null,
+      busy: null,
+      projectDirty: true,
+    })
+  },
 
   swapCandidate: async (blockIndex, candidateIndex) => {
     const { automountBlocks, images } = get()
@@ -1372,6 +1527,13 @@ export const useProject = create<ProjectState>((set, get) => ({
       render: null,
       lastOutput: null,
       planEdited: false,
+      automountBlocks: null,
+      automountMode: null,
+      automountSeries: null,
+      scriptBlocks: null,
+      scriptBlocksBusy: null,
+      activeBlock: null,
+      blockClips: {},
       music: null,
       musicGainDb: MUSIC_GAIN_DB_DEFAULT,
       hookText: '',

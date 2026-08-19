@@ -65,6 +65,7 @@ export const IPC = {
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
   automount: 'automount:run',
+  scriptBlocks: 'automount:blocks',
   /** main -> renderer, andamento da varredura da biblioteca */
   libraryProgress: 'library:progress',
 } as const
@@ -252,6 +253,26 @@ export interface AutomountResult {
   note: string | null
 }
 
+/**
+ * Uma frase do roteiro, com o tempo que ela ocupa na narracao.
+ *
+ * Frase INTEIRA, e nao o bloco de 3s da montagem automatica: aqui quem decide
+ * quantas cenas cada frase tem e ele. Palavras dele sobre o gancho -- "nessa
+ * parte eu usaria 3 cenas provavelmente".
+ */
+export interface ScriptBlock {
+  text: string
+  start: number
+  end: number
+}
+
+export interface ScriptBlocksResult {
+  blocks: ScriptBlock[]
+  /** A mesma transcricao, para o projeto nao ter que ouvir o audio de novo. */
+  transcript: Transcript | null
+  scriptNote: string | null
+}
+
 export interface ReframeArgs {
   id: string
   path: string
@@ -369,6 +390,17 @@ export interface DangaiBridge {
    * nunca escreve nada: quem aplica e o renderer, pela porta do arraste.
    */
   automount(request: AutomountRequest): Promise<IpcResult<AutomountResult>>
+  /**
+   * Quebra a narracao em frases com tempo medido, sem escolher cena nenhuma.
+   *
+   * E o que deixa a Biblioteca mostrar o roteiro ao vivo: ele le a frase, marca
+   * as cenas dela e ve na hora quanto tempo cada uma vai durar.
+   */
+  scriptBlocks(request: {
+    audioPath: string
+    subtitlePath: string | null
+    script: string | null
+  }): Promise<IpcResult<ScriptBlocksResult>>
   /** Nomes dos arquivos de som na pasta de SFX em uso. */
   listSfx(): Promise<IpcResult<string[]>>
   /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */

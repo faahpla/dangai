@@ -9,6 +9,7 @@ import {
   type AnalyzeArgs,
   type AutomountRequest,
   type AutomountResult,
+  type ScriptBlocksResult,
   type IpcResult,
   type MusicPick,
   type PublicSettings,
@@ -44,7 +45,7 @@ import {
 import { expandDrop } from './services/folders'
 import { scanLibrary } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
-import { automount } from './services/automount'
+import { automount, scriptBlocks } from './services/automount'
 import {
   clearAutosave,
   openProjectFile,
@@ -185,6 +186,11 @@ export function registerIpc(): void {
   handle<[AutomountRequest], AutomountResult>(IPC.automount, (request) =>
     automount(request, publish, broadcastAnalyze),
   )
+
+  handle<
+    [{ audioPath: string; subtitlePath: string | null; script: string | null }],
+    ScriptBlocksResult
+  >(IPC.scriptBlocks, (request) => scriptBlocks(request, publish, broadcastAnalyze))
 
   handle<[], string[]>(IPC.listSfx, async () => listSfx())
 

@@ -4,6 +4,7 @@ import {
   type AnalyzeArgs,
   type AutomountRequest,
   type AutomountResult,
+  type ScriptBlocksResult,
   type DangaiBridge,
   type IpcResult,
   type MusicPick,
@@ -84,6 +85,9 @@ const bridge: DangaiBridge = {
 
   automount: (request) =>
     ipcRenderer.invoke(IPC.automount, request) as Promise<IpcResult<AutomountResult>>,
+
+  scriptBlocks: (request) =>
+    ipcRenderer.invoke(IPC.scriptBlocks, request) as Promise<IpcResult<ScriptBlocksResult>>,
 
   listSfx: () => ipcRenderer.invoke(IPC.listSfx) as Promise<IpcResult<string[]>>,
 

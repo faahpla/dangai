@@ -1,4 +1,9 @@
-import type { AutomountRequest, AutomountResult, AutomountBlock } from '@shared/channels'
+import type {
+  AutomountRequest,
+  AutomountResult,
+  AutomountBlock,
+  ScriptBlocksResult,
+} from '@shared/channels'
 import { buildScriptIndex, readScript, toSentences } from '@shared/script-reader'
 import { selectClips } from '@shared/selection'
 import { transcriptOnly } from './transcribe'
@@ -145,5 +150,49 @@ export async function automount(
       vazios > 0
         ? `${vazios} ${vazios === 1 ? 'bloco ficou' : 'blocos ficaram'} sem cena -- a biblioteca nao tem material para ${vazios === 1 ? 'ele' : 'eles'}.`
         : null,
+  }
+}
+
+/**
+ * So as frases da narracao, com tempo. Nenhuma cena escolhida.
+ *
+ * A montagem automatica quebra a frase no teto de 3 segundos porque ELA precisa
+ * decidir sozinha quantos cortes existem. Aqui nao: quem decide e ele, marcando
+ * as cenas de cada frase. Por isso a frase chega inteira -- o teto viraria uma
+ * escolha tomada por mim antes de ele abrir a tela.
+ */
+export async function scriptBlocks(
+  request: { audioPath: string; subtitlePath: string | null; script: string | null },
+  publishThumb: (absolutePath: string) => string,
+  onProgress: (message: string) => void,
+): Promise<ScriptBlocksResult> {
+  const { libraryDir } = getSettings()
+  // O vocabulario e opcional aqui: sem biblioteca apontada, transcreve igual.
+  let vocab: string[] = []
+  if (libraryDir) {
+    try {
+      vocab = vocabulario(await scanLibrary(libraryDir, publishThumb, () => {}), null)
+    } catch {
+      // Biblioteca ilegivel nao pode impedir de ler o roteiro.
+    }
+  }
+
+  onProgress('Ouvindo a narracao...')
+  const { transcript, scriptNote } = await transcriptOnly(
+    request.audioPath,
+    request.subtitlePath,
+    request.script,
+    vocab,
+    onProgress,
+  )
+  if (!transcript || transcript.words.length === 0) {
+    throw new Error('Nao deu para ouvir a narracao. Sem o texto nao ha frase para marcar.')
+  }
+
+  // Sem teto e sem piso: a frase e a unidade, do jeito que ele escreveu.
+  return {
+    blocks: toSentences(transcript.words, Number.POSITIVE_INFINITY, 0),
+    transcript,
+    scriptNote,
   }
 }
