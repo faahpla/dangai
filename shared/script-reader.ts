@@ -206,15 +206,25 @@ export function readScript(frases: readonly string[], index: ScriptIndex): Scrip
 /**
  * Quanto tempo um bloco pode durar, e o minimo para ele existir.
  *
- * Num short a imagem tem que trocar. Um bloco de 40 segundos nao e uma cena
- * longa: e um clipe de 4s congelado por 36, porque nenhum clipe da biblioteca
- * dele chega perto disso -- as cenas do AnCut tem 3 a 10 segundos.
+ * Tres segundos e teto DURO, e e o numero dele: "NO MAXIMO 3s e olhe la, pq
+ * isso ja e demais". Num short a imagem parada por cinco segundos ja perdeu o
+ * espectador -- quem edita isso todo dia sabe o ritmo melhor que qualquer
+ * regra que eu inventasse.
+ *
+ * Por isso juntar sobra curta NUNCA estoura o teto: um bloco de 0,9s e pior
+ * que o ideal, mas um de 3,5s quebra a regra que ele deu.
  */
-const BLOCO_MAX_SEC = 6
-const BLOCO_MIN_SEC = 1.6
+const BLOCO_MAX_SEC = 3
+const BLOCO_MIN_SEC = 1
 
-/** Fecha frase. Reticencia nao fecha: ela costuma ser pausa no meio da fala. */
-const FIM_DE_FRASE = /[.!?](["')\]]?)$/
+/**
+ * Fecha frase.
+ *
+ * Reticencia NAO fecha: "Gaste tudo... e desapareca." e uma frase so, e ali as
+ * reticencias sao a pausa dramatica dela. Cortar no meio poria uma imagem nova
+ * bem no suspense.
+ */
+const FIM_DE_FRASE = /(^|[^.])[.!?](["')\]]?)$/
 
 /** Corte de respiro dentro da frase, para quebrar frase comprida demais. */
 const PAUSA_INTERNA = /[,;:](["')\]]?)$/
@@ -258,8 +268,11 @@ export function toSentences(
   }
   if (atual.length > 0) frases.push(atual)
 
-  // 2. frase comprida demais quebra nas pausas internas
-  const partidas = frases.flatMap((frase) => quebrar(frase, maxSec))
+  // 2. frase comprida demais quebra nas pausas internas, sem perder de vista
+  //    de QUAL frase cada pedaco veio
+  const partidas = frases.flatMap((frase, iFrase) =>
+    quebrar(frase, maxSec).map((parte) => ({ parte, frase: iFrase })),
+  )
 
   /*
    * 3. sobra curta demais se junta a uma vizinha.
@@ -269,45 +282,56 @@ export function toSentences(
    * depois de um bloco de 5.9s -- juntar ali estouraria o teto, e o bloco
    * ficava sozinho com 0.5s, que na tela e um flash, nao um corte.
    */
-  const blocos: (typeof limpas)[] = [...partidas]
+  const blocos = [...partidas]
   const dura = (b: (typeof limpas)[number][]): number => b[b.length - 1]!.end - b[0]!.start
 
   for (let i = 0; i < blocos.length; i++) {
-    if (blocos.length === 1) break
-    if (dura(blocos[i]!) >= minSec) continue
+    if (dura(blocos[i]!.parte) >= minSec) continue
 
-    const tras = i > 0 ? [...blocos[i - 1]!, ...blocos[i]!] : null
-    const frente = i < blocos.length - 1 ? [...blocos[i]!, ...blocos[i + 1]!] : null
-    const cabe = [tras, frente].filter((c): c is (typeof limpas)[number][] => c !== null && dura(c) <= maxSec)
-    // Nenhuma das duas cabe: junta na menor mesmo assim. Um bloco um pouco
-    // acima do teto e melhor que meio segundo de imagem.
-    const escolha =
-      cabe.length > 0
-        ? cabe.reduce((a, b) => (dura(a) <= dura(b) ? a : b))
-        : [tras, frente].filter((c) => c !== null).reduce((a, b) => (dura(a!) <= dura(b!) ? a : b))!
+    /*
+     * So junta pedaco da MESMA frase.
+     *
+     * Atravessar um ponto final juntaria duas ideias num bloco so, que e
+     * exatamente o que a pontuacao esta dizendo para nao fazer -- "E nao e
+     * teoria de fa." e "Nos episodios recentes..." sao dois assuntos. O preco e
+     * que uma frase curtissima fica um bloco curtissimo, e esse preco e a regra
+     * dele: a pontuacao manda.
+     */
+    const mesma = (j: number): boolean => blocos[j]?.frase === blocos[i]!.frase
+    const tras = i > 0 && mesma(i - 1) ? [...blocos[i - 1]!.parte, ...blocos[i]!.parte] : null
+    const frente =
+      i < blocos.length - 1 && mesma(i + 1) ? [...blocos[i]!.parte, ...blocos[i + 1]!.parte] : null
 
-    if (escolha === tras) {
-      blocos.splice(i - 1, 2, escolha)
-      i -= 1
-    } else {
-      blocos.splice(i, 2, escolha)
-      i -= 1
-    }
+    const cabe = [tras, frente].filter(
+      (c): c is (typeof limpas)[number][] => c !== null && dura(c) <= maxSec,
+    )
+    // Nenhuma das duas cabe no teto: o bloco curto fica curto. O teto e dele e
+    // e duro -- estourar para arredondar seria trocar a regra dele pela minha.
+    if (cabe.length === 0) continue
+    const escolha = cabe.reduce((a, b) => (dura(a) <= dura(b) ? a : b))
+
+    const inicio = escolha === tras ? i - 1 : i
+    blocos.splice(inicio, 2, { parte: escolha, frase: blocos[i]!.frase })
+    i = inicio - 1
   }
 
-  return blocos.map((bloco) => ({
-    text: bloco.map((w) => w.text.trim()).join(' '),
-    start: bloco[0]!.start,
-    end: bloco[bloco.length - 1]!.end,
+  return blocos.map(({ parte }) => ({
+    text: parte.map((w) => w.text.trim()).join(' '),
+    start: parte[0]!.start,
+    end: parte[parte.length - 1]!.end,
   }))
 }
 
 /**
  * Parte uma frase comprida no respiro mais central.
  *
- * A virgula primeiro, porque ali a narracao ja pausa e o corte nao se ouve.
- * Sem virgula nenhuma, parte no meio das palavras: uma frase de doze segundos
- * sem pausa nenhuma ainda precisa trocar de imagem.
+ * A pontuacao manda, sempre: primeiro o ponto (que ja separou as frases), aqui
+ * a virgula, o ponto-e-virgula e os dois-pontos. Ali a narracao ja pausa e o
+ * corte nao se ouve.
+ *
+ * Sem pontuacao nenhuma, parte no meio das palavras -- uma frase de nove
+ * segundos corrida ainda precisa trocar de imagem tres vezes, e nao ha
+ * pontuacao que ajude.
  */
 function quebrar<T extends { start: number; end: number; text: string }>(
   frase: readonly T[],
