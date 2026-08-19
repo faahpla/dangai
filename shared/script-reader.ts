@@ -72,9 +72,23 @@ function fichas(nome: string): string[] {
     .filter((f) => f.length > 0)
 }
 
+/**
+ * Tamanho minimo para uma palavra do texto valer como INICIO de um nome.
+ *
+ * Ele encurta nome ao escrever: "Sylphie" onde a biblioteca tem "Sylphiette".
+ * Cinco letras e nao quatro porque quatro letras casariam pedaco de palavra
+ * comum portuguesa com nome proprio.
+ *
+ * Medido nos tres roteiros reais dele (~800 palavras, 96 personagens): ganha
+ * "sylphie" e nao produz NENHUM falso positivo.
+ */
+const MIN_PREFIXO = 5
+
 export interface ScriptIndex {
   /** palavra do nome -> personagem, so quando a palavra identifica UM */
   porPalavra: Map<string, string>
+  /** todas as palavras de nome, para casar nome encurtado por prefixo */
+  fichas: Map<string, Set<string>>
   /** apelidos do mais longo para o mais curto, ja normalizados */
   apelidos: { termo: string; character: string }[]
 }
@@ -120,7 +134,19 @@ export function buildScriptIndex(
     .filter((n) => n.termo.length > 0)
     .sort((a, b) => b.termo.length - a.termo.length)
 
-  return { porPalavra, apelidos }
+  return { porPalavra, fichas: candidatos, apelidos }
+}
+
+/** Nome encurtado -> personagem. Cabe em UM, ou nao casa. */
+function porPrefixo(palavra: string, index: ScriptIndex): string | null {
+  if (palavra.length < MIN_PREFIXO) return null
+  const donos = new Set<string>()
+  for (const [ficha, quem] of index.fichas) {
+    if (ficha.length > palavra.length && ficha.startsWith(palavra)) {
+      for (const p of quem) donos.add(p)
+    }
+  }
+  return donos.size === 1 ? [...donos][0]! : null
 }
 
 /** Quem a frase nomeia por escrito ou por apelido. Vazio quando ninguem. */
@@ -136,7 +162,7 @@ export function readLine(frase: string, index: ScriptIndex): ScriptMatch[] {
   }
 
   for (const palavra of texto.split(/[^a-z0-9]+/)) {
-    const dono = index.porPalavra.get(palavra)
+    const dono = index.porPalavra.get(palavra) ?? porPrefixo(palavra, index)
     if (dono) guardar(dono, 'name')
   }
 
@@ -178,44 +204,133 @@ export function readScript(frases: readonly string[], index: ScriptIndex): Scrip
 }
 
 /**
- * Quebra a narracao em frases, mantendo o intervalo de tempo de cada uma.
+ * Quanto tempo um bloco pode durar, e o minimo para ele existir.
  *
- * Os segmentos que o Whisper devolve nao sao frases: ele corta por respiro, e
- * uma frase costuma vir partida em dois ou tres. Juntar por pontuacao final e o
- * que faz "quem esta em cena" valer pelo que a frase diz, e nao por onde o
- * narrador respirou.
+ * Num short a imagem tem que trocar. Um bloco de 40 segundos nao e uma cena
+ * longa: e um clipe de 4s congelado por 36, porque nenhum clipe da biblioteca
+ * dele chega perto disso -- as cenas do AnCut tem 3 a 10 segundos.
  */
+const BLOCO_MAX_SEC = 6
+const BLOCO_MIN_SEC = 1.6
+
+/** Fecha frase. Reticencia nao fecha: ela costuma ser pausa no meio da fala. */
+const FIM_DE_FRASE = /[.!?](["')\]]?)$/
+
+/** Corte de respiro dentro da frase, para quebrar frase comprida demais. */
+const PAUSA_INTERNA = /[,;:](["')\]]?)$/
+
 export interface ScriptSentence {
   text: string
   start: number
   end: number
 }
 
+/**
+ * Quebra a narracao em blocos, um por frase, com tempo medido.
+ *
+ * Sai das PALAVRAS e nao dos segmentos, e isso foi aprendido errando: os
+ * segmentos do Whisper quebram por respiro, no meio da frase
+ * ("...ficou completamente" / "zerada depois de..."), e nenhum deles termina em
+ * ponto. Juntando segmento ate achar pontuacao, a narracao real do Kintay
+ * (69s, 265 palavras) virou QUATRO blocos, um deles com 41 segundos -- e num
+ * bloco de 41s nenhum clipe serve, entao a escolha degenerou.
+ *
+ * A palavra sabe o que o segmento nao sabe: quando o texto vem do roteiro dele,
+ * a pontuacao e a que ele escreveu, exata.
+ */
 export function toSentences(
-  segments: readonly { text: string; start: number; end: number }[],
+  words: readonly { text: string; start: number; end: number }[],
+  maxSec: number = BLOCO_MAX_SEC,
+  minSec: number = BLOCO_MIN_SEC,
 ): ScriptSentence[] {
-  const saida: ScriptSentence[] = []
-  let atual: ScriptSentence | null = null
+  const limpas = words.filter((w) => w.text.trim().length > 0)
+  if (limpas.length === 0) return []
 
-  for (const segmento of segments) {
-    const texto = segmento.text.trim()
-    if (texto.length === 0) continue
-
-    if (atual === null) {
-      atual = { text: texto, start: segmento.start, end: segmento.end }
-    } else {
-      atual.text += ' ' + texto
-      atual.end = segmento.end
+  // 1. por pontuacao final
+  const frases: (typeof limpas)[] = []
+  let atual: typeof limpas = []
+  for (const palavra of limpas) {
+    atual = [...atual, palavra]
+    if (FIM_DE_FRASE.test(palavra.text.trim())) {
+      frases.push(atual)
+      atual = []
     }
+  }
+  if (atual.length > 0) frases.push(atual)
 
-    // Reticencias no meio da fala nao fecham frase; ponto, exclamacao,
-    // interrogacao e dois-pontos fecham.
-    if (/[.!?:](["')\]]|\.\.\.)?$/.test(texto) && !texto.endsWith('...')) {
-      saida.push(atual)
-      atual = null
+  // 2. frase comprida demais quebra nas pausas internas
+  const partidas = frases.flatMap((frase) => quebrar(frase, maxSec))
+
+  /*
+   * 3. sobra curta demais se junta a uma vizinha.
+   *
+   * Para TRAS quando cabe, para a FRENTE quando nao cabe. As duas direcoes
+   * porque so a de tras deixava orfao: "E nem sentiu." dura meio segundo e vem
+   * depois de um bloco de 5.9s -- juntar ali estouraria o teto, e o bloco
+   * ficava sozinho com 0.5s, que na tela e um flash, nao um corte.
+   */
+  const blocos: (typeof limpas)[] = [...partidas]
+  const dura = (b: (typeof limpas)[number][]): number => b[b.length - 1]!.end - b[0]!.start
+
+  for (let i = 0; i < blocos.length; i++) {
+    if (blocos.length === 1) break
+    if (dura(blocos[i]!) >= minSec) continue
+
+    const tras = i > 0 ? [...blocos[i - 1]!, ...blocos[i]!] : null
+    const frente = i < blocos.length - 1 ? [...blocos[i]!, ...blocos[i + 1]!] : null
+    const cabe = [tras, frente].filter((c): c is (typeof limpas)[number][] => c !== null && dura(c) <= maxSec)
+    // Nenhuma das duas cabe: junta na menor mesmo assim. Um bloco um pouco
+    // acima do teto e melhor que meio segundo de imagem.
+    const escolha =
+      cabe.length > 0
+        ? cabe.reduce((a, b) => (dura(a) <= dura(b) ? a : b))
+        : [tras, frente].filter((c) => c !== null).reduce((a, b) => (dura(a!) <= dura(b!) ? a : b))!
+
+    if (escolha === tras) {
+      blocos.splice(i - 1, 2, escolha)
+      i -= 1
+    } else {
+      blocos.splice(i, 2, escolha)
+      i -= 1
     }
   }
 
-  if (atual !== null) saida.push(atual)
-  return saida
+  return blocos.map((bloco) => ({
+    text: bloco.map((w) => w.text.trim()).join(' '),
+    start: bloco[0]!.start,
+    end: bloco[bloco.length - 1]!.end,
+  }))
+}
+
+/**
+ * Parte uma frase comprida no respiro mais central.
+ *
+ * A virgula primeiro, porque ali a narracao ja pausa e o corte nao se ouve.
+ * Sem virgula nenhuma, parte no meio das palavras: uma frase de doze segundos
+ * sem pausa nenhuma ainda precisa trocar de imagem.
+ */
+function quebrar<T extends { start: number; end: number; text: string }>(
+  frase: readonly T[],
+  maxSec: number,
+): T[][] {
+  const dura = frase[frase.length - 1]!.end - frase[0]!.start
+  if (dura <= maxSec || frase.length < 4) return [[...frase]]
+
+  const meio = frase[0]!.start + dura / 2
+  const candidatos = frase
+    .map((palavra, i) => ({ i, palavra }))
+    .slice(1, -1)
+    .filter(({ palavra }) => PAUSA_INTERNA.test(palavra.text.trim()))
+
+  const corte =
+    candidatos.length > 0
+      ? candidatos.reduce((a, b) =>
+          Math.abs(a.palavra.end - meio) <= Math.abs(b.palavra.end - meio) ? a : b,
+        ).i
+      : Math.floor(frase.length / 2) - 1
+
+  return [
+    ...quebrar(frase.slice(0, corte + 1), maxSec),
+    ...quebrar(frase.slice(corte + 1), maxSec),
+  ]
 }

@@ -178,6 +178,8 @@ export interface ProjectState {
    */
   automountBlocks: AutomountBlock[] | null
   automountMode: AutomountMode | null
+  /** Serie escolhida para a proxima montagem. null = deduzir do roteiro. */
+  automountSeries: string | null
 
   /**
    * Projetos esperando para renderizar, um atras do outro.
@@ -257,9 +259,10 @@ export interface ProjectState {
    * Nao substitui o caminho manual: e um segundo gesto no mesmo estado vazio.
    * Depois de montar, tudo continua editavel do jeito de sempre.
    */
-  automount: (mode: AutomountMode) => Promise<void>
+  automount: (mode: AutomountMode, series: string | null) => Promise<void>
   /** Troca a cena de um bloco por outro candidato da fita. */
   swapCandidate: (blockIndex: number, candidateIndex: number) => Promise<void>
+  setAutomountSeries: (series: string | null) => void
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -403,6 +406,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   library: null,
   automountBlocks: null,
   automountMode: null,
+  automountSeries: null,
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
@@ -588,7 +592,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     await get().analyze()
   },
 
-  automount: async (mode) => {
+  automount: async (mode, series) => {
     const { audio, subtitlePath, script } = get()
     if (!audio) {
       set({ error: 'Carregue a narracao antes de montar sozinho.' })
@@ -602,6 +606,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       subtitlePath,
       script,
       mode,
+      series,
     })
     if (!proposta.ok) {
       set({ busy: null, error: proposta.error })
@@ -614,7 +619,9 @@ export const useProject = create<ProjectState>((set, get) => ({
       set({
         busy: null,
         error:
-          'A biblioteca nao tem cena para nenhum bloco desta narracao. Confira a pasta das cenas nas configuracoes.',
+          series
+            ? `Nao ha cena de "${series}" para nenhum bloco desta narracao.`
+            : 'A biblioteca nao tem cena para nenhum bloco desta narracao. Confira a pasta das cenas nas configuracoes.',
       })
       return
     }
@@ -658,6 +665,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       busy: null,
     })
   },
+
+  setAutomountSeries: (series) => set({ automountSeries: series }),
 
   swapCandidate: async (blockIndex, candidateIndex) => {
     const { automountBlocks, images } = get()

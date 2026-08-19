@@ -26,9 +26,15 @@ const VOCABULARIO_MAX = 40
  * Quando ele solta o roteiro em .txt isto vira redundante, porque o texto passa
  * a ser o dele, exato. Mas o roteiro e opcional e a dica nao custa nada.
  */
-function vocabulario(library: { clips: readonly { characters: string[] }[] }): string[] {
+function vocabulario(
+  library: { clips: readonly { anime: string; characters: string[] }[] },
+  series: string | null,
+): string[] {
   const quantos = new Map<string, number>()
   for (const clip of library.clips) {
+    // Com a serie escolhida, so os nomes dela viram dica -- 40 vagas gastas com
+    // personagem de outro anime sao 40 vagas a menos para o que a narracao cita.
+    if (series && clip.anime !== series) continue
     for (const nome of clip.characters) quantos.set(nome, (quantos.get(nome) ?? 0) + 1)
   }
   return [...quantos]
@@ -72,7 +78,7 @@ export async function automount(
     request.audioPath,
     request.subtitlePath,
     request.script,
-    vocabulario(library),
+    vocabulario(library, request.series),
     onProgress,
   )
   if (!transcript || transcript.segments.length === 0) {
@@ -92,7 +98,7 @@ export async function automount(
   const apelidos = Object.values(readNicknames()).flat()
   const index = buildScriptIndex(library.characters, apelidos)
 
-  const frases = toSentences(transcript.segments)
+  const frases = toSentences(transcript.words)
   const lidas = readScript(
     frases.map((f) => f.text),
     index,
@@ -105,7 +111,10 @@ export async function automount(
   }))
 
   onProgress('Escolhendo as cenas...')
-  const blocos = selectClips(linhas, library.clips, { mode: request.mode })
+  const blocos = selectClips(linhas, library.clips, {
+    mode: request.mode,
+    series: request.series ? [request.series] : undefined,
+  })
 
   const saida: AutomountBlock[] = blocos.map((b) => ({
     start: b.start,

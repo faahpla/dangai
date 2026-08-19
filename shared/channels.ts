@@ -203,6 +203,15 @@ export interface AutomountRequest {
   /** Roteiro escrito, quando houver. Deixa o texto exato, sem erro de Whisper. */
   script: string | null
   mode: AutomountMode
+  /**
+   * De que serie sao as cenas. Vazio = deduz do proprio roteiro.
+   *
+   * Deduzir funciona -- nome de personagem nao colide entre as series dele --
+   * mas ele quis dizer. Palavras dele: "quando o roteiro for de Mushoku Tensei
+   * ele tem q buscar coisas diretamente de mushoku tensei". Escolher tambem
+   * blinda o bloco que nao cita ninguem, que e onde a deducao nao alcanca.
+   */
+  series: string | null
 }
 
 /** Um clipe proposto para um bloco. */
