@@ -46,6 +46,7 @@ import { expandDrop } from './services/folders'
 import { scanLibrary } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
 import { automount, scriptBlocks } from './services/automount'
+import { readFavorites, toggleFavorite } from './services/favorites'
 import {
   clearAutosave,
   openProjectFile,
@@ -191,6 +192,9 @@ export function registerIpc(): void {
     [{ audioPath: string; subtitlePath: string | null; script: string | null }],
     ScriptBlocksResult
   >(IPC.scriptBlocks, (request) => scriptBlocks(request, publish, broadcastAnalyze))
+
+  handle<[], string[]>(IPC.readFavorites, async () => readFavorites())
+  handle<[string], string[]>(IPC.toggleFavorite, async (id) => toggleFavorite(id))
 
   handle<[], string[]>(IPC.listSfx, async () => listSfx())
 

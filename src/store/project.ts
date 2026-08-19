@@ -172,6 +172,17 @@ export interface ProjectState {
   nicknamesBusy: boolean
 
   /**
+   * Ids das cenas favoritadas.
+   *
+   * Mora na store e nao na tela da Biblioteca porque a tela nao desmonta ao
+   * fechar -- e porque relê-los do disco a cada abertura seria jogar fora uma
+   * leitura ja feita. O anime esta dentro do proprio id, entao filtrar
+   * "favoritos de Tensura" e cruzar esta lista com o filtro de anime que ja
+   * existe, sem uma segunda lista por serie para manter em dia.
+   */
+  favorites: string[]
+
+  /**
    * A proposta da montagem automatica, bloco a bloco.
    *
    * Fica no estado depois de aplicada porque a FITA de candidatos e o que faz a
@@ -262,6 +273,10 @@ export interface ProjectState {
   /** Andamento vindo do main durante a varredura. */
   setLibraryBusy: (mensagem: string | null) => void
   loadNicknames: () => Promise<void>
+  /** Le os favoritos do disco. Chamada junto da varredura. */
+  loadFavorites: () => Promise<void>
+  /** Liga ou desliga o favorito de uma cena. */
+  toggleFavorite: (id: string) => Promise<void>
   /** Grava a lista inteira de uma serie. Lista vazia apaga a serie. */
   saveNicknames: (series: string, list: readonly Nickname[]) => Promise<void>
   /**
@@ -444,6 +459,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
+  favorites: [],
   nicknamesBusy: false,
   queue: [],
   queueRunning: false,
@@ -1358,12 +1374,39 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (!open) return
     // Os apelidos vem junto: sao poucos bytes e a tela precisa deles para dizer
     // quantos cada serie tem.
-    await Promise.all([get().library ? Promise.resolve() : get().syncLibrary(), get().loadNicknames()])
+    await Promise.all([
+      get().library ? Promise.resolve() : get().syncLibrary(),
+      get().loadNicknames(),
+      get().loadFavorites(),
+    ])
   },
 
   loadNicknames: async () => {
     const result = await window.dangai.readNicknames()
     if (result.ok) set({ nicknames: result.value })
+  },
+
+  loadFavorites: async () => {
+    const result = await window.dangai.readFavorites()
+    if (result.ok) set({ favorites: result.value })
+  },
+
+  toggleFavorite: async (id) => {
+    /*
+     * A tela muda ANTES do disco responder.
+     *
+     * Favoritar e um gesto de garimpo: ele passa por dezenas de cenas marcando
+     * as boas, e uma estrela que so acende depois do ida-e-volta do IPC faz
+     * cada clique parecer que nao pegou. O disco confirma logo atras, e se
+     * falhar a lista volta ao que o main disse que e verdade.
+     */
+    const antes = get().favorites
+    set({
+      favorites: antes.includes(id) ? antes.filter((x) => x !== id) : [...antes, id],
+    })
+    const result = await window.dangai.toggleFavorite(id)
+    if (result.ok) set({ favorites: result.value })
+    else set({ favorites: antes, libraryError: result.error })
   },
 
   saveNicknames: async (series, list) => {

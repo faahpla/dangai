@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, FolderOpen, Loader2, RefreshCw, Search, Tags, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Loader2,
+  RefreshCw,
+  Search,
+  Star,
+  Tags,
+  X,
+} from 'lucide-react'
 import type { LibraryClip } from '@shared/channels'
 import { useProject } from '@/store/project'
 import { ScriptColumn } from '@/components/ScriptColumn'
@@ -40,6 +50,8 @@ export function Library() {
   const activeBlock = useProject((s) => s.activeBlock)
   const blockClips = useProject((s) => s.blockClips)
   const toggleBlockClip = useProject((s) => s.toggleBlockClip)
+  const favorites = useProject((s) => s.favorites)
+  const toggleFavorite = useProject((s) => s.toggleFavorite)
   const applyBlockClips = useProject((s) => s.applyBlockClips)
 
   /*
@@ -58,6 +70,7 @@ export function Library() {
   const [maxSec, setMaxSec] = useState(0)
   const [escolhidos, setEscolhidos] = useState<string[]>([])
   const [apelidosAbertos, setApelidosAbertos] = useState(false)
+  const [soFavoritos, setSoFavoritos] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -89,20 +102,39 @@ export function Library() {
     setPersonagem(null)
     setMinSec(0)
     setMaxSec(0)
+    setSoFavoritos(false)
   }, [open])
+
+  const favoritosSet = useMemo(() => new Set(favorites), [favorites])
 
   const filtrados = useMemo(() => {
     if (!library) return []
     const busca = texto.trim().toLowerCase()
     return library.clips.filter((clip) => {
       if (anime && clip.anime !== anime) return false
+      if (soFavoritos && !favoritosSet.has(clip.id)) return false
       if (personagem && !clip.characters.includes(personagem)) return false
       if (minSec > 0 && clip.duration < minSec) return false
       if (maxSec > 0 && clip.duration > maxSec) return false
       if (!busca) return true
       return textoDe(clip).includes(busca)
     })
-  }, [library, texto, anime, personagem, minSec, maxSec])
+  }, [library, texto, anime, personagem, minSec, maxSec, soFavoritos, favoritosSet])
+
+  /*
+   * Quantos favoritos existem NO ANIME em uso, e nao no total.
+   *
+   * Palavras dele: "Tensura tem seus clipes favoritos, Mushoku Tensei os seus,
+   * e Bleach os seus. nao e legal ficar misturado". A separacao ja existe de
+   * graca -- o anime esta dentro do id da cena --, entao o que faltava era o
+   * numero dizer de qual pilha ele esta falando.
+   */
+  const totalFavoritos = useMemo(() => {
+    if (!library) return 0
+    return library.clips.filter(
+      (clip) => favoritosSet.has(clip.id) && (!anime || clip.anime === anime),
+    ).length
+  }, [library, favoritosSet, anime])
 
   // Quantas partes o projeto ja tem, para o botao dizer qual sera a proxima.
   const partesNoProjeto = new Set(
@@ -250,7 +282,13 @@ export function Library() {
         <div className="flex min-h-0 flex-1">
           {porRoteiro || audio ? <ScriptColumn /> : null}
           <Rail
-            clips={library.clips}
+            /*
+             * Com o filtro de favoritos ligado, o rail conta FAVORITOS por
+             * anime -- que e o que ele pediu: "Tensura tem seus clipes
+             * favoritos, Mushoku Tensei os seus". Sem isso o rail diria 3.211
+             * cenas de Mushoku enquanto a grade mostra as quatro marcadas.
+             */
+            clips={soFavoritos ? library.clips.filter((c) => favoritosSet.has(c.id)) : library.clips}
             anime={anime}
             personagem={personagem}
             /*
@@ -279,12 +317,17 @@ export function Library() {
                 setMinSec(min)
                 setMaxSec(max)
               }}
+              favoritos={soFavoritos}
+              totalFavoritos={totalFavoritos}
+              onFavoritos={() => setSoFavoritos((v) => !v)}
               total={filtrados.length}
             />
             <Grade
               clips={filtrados}
               escolhidos={porRoteiro ? marcadosNaFrase() : escolhidos}
               usadas={usadasEmOutras()}
+              favoritos={favoritosSet}
+              onFavoritar={(id) => void toggleFavorite(id)}
               onEscolher={escolher}
             />
           </div>
@@ -580,6 +623,11 @@ function Item({
 // ------------------------------------------------------------------- filtros
 
 interface FiltrosProps {
+  /** So favoritos. */
+  favoritos: boolean
+  /** Quantos favoritos existem no recorte de anime em uso. */
+  totalFavoritos: number
+  onFavoritos: () => void
   texto: string
   onTexto: (v: string) => void
   minSec: number
@@ -600,7 +648,17 @@ const FAIXAS: readonly { nome: string; min: number; max: number }[] = [
   { nome: 'mais de 5s', min: 5, max: 0 },
 ]
 
-function Filtros({ texto, onTexto, minSec, maxSec, onFaixa, total }: FiltrosProps) {
+function Filtros({
+  texto,
+  onTexto,
+  minSec,
+  maxSec,
+  onFaixa,
+  favoritos,
+  totalFavoritos,
+  onFavoritos,
+  total,
+}: FiltrosProps) {
   return (
     <div className="flex h-[46px] shrink-0 items-center gap-3 border-b border-line px-4">
       <div className="relative min-w-0 flex-1">
@@ -619,26 +677,47 @@ function Filtros({ texto, onTexto, minSec, maxSec, onFaixa, total }: FiltrosProp
         />
       </div>
 
-      <div className="flex shrink-0 gap-1">
-        {FAIXAS.map((faixa) => {
-          const ativa = minSec === faixa.min && maxSec === faixa.max
-          return (
-            <button
-              key={faixa.nome}
-              type="button"
-              onClick={() => onFaixa(faixa.min, faixa.max)}
-              className={[
-                'rounded-sm border px-2 py-1 text-[11px] transition-colors duration-150',
-                ativa
-                  ? 'border-accent bg-accent-dim text-ink'
-                  : 'border-line bg-elevated text-ink-2 hover:text-ink',
-              ].join(' ')}
-            >
-              {faixa.nome}
-            </button>
-          )
-        })}
-      </div>
+      {/*
+        Uma lista que abre e recolhe, e nao quatro botoes lado a lado.
+        Ele so escolhe faixa de vez em quando, e enquanto nao escolhe os quatro
+        botoes gastavam largura permanente da barra -- largura que a busca, que
+        ele usa o tempo todo, estava perdendo.
+      */}
+      <button
+        type="button"
+        onClick={onFavoritos}
+        title={favoritos ? 'Mostrando so os favoritos' : 'Mostrar so os favoritos'}
+        className={[
+          'lift flex shrink-0 items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[11px] transition-colors duration-150',
+          favoritos
+            ? 'border-accent bg-accent-dim text-ink'
+            : 'border-line bg-elevated text-ink-2 hover:text-ink',
+        ].join(' ')}
+      >
+        <Star
+          size={12}
+          strokeWidth={1.5}
+          className={favoritos ? 'fill-accent text-accent' : 'text-ink-3'}
+        />
+        Favoritos
+        <span className="tnum text-[10px] text-ink-3">{totalFavoritos}</span>
+      </button>
+
+      <select
+        value={`${minSec}-${maxSec}`}
+        onChange={(event) => {
+          const [min, max] = event.target.value.split('-')
+          onFaixa(Number(min), Number(max))
+        }}
+        title="Duracao da cena"
+        className="shrink-0 rounded-sm border border-line bg-elevated px-2 py-1 text-[11px] text-ink-2 focus:border-line-strong focus:outline-none"
+      >
+        {FAIXAS.map((faixa) => (
+          <option key={faixa.nome} value={`${faixa.min}-${faixa.max}`}>
+            {faixa.nome}
+          </option>
+        ))}
+      </select>
 
       <span className="tnum shrink-0 text-[11px] text-ink-3">
         {total.toLocaleString('pt-BR')} {total === 1 ? 'resultado' : 'resultados'}
@@ -654,6 +733,8 @@ interface GradeProps {
   escolhidos: readonly string[]
   /** Cenas ja marcadas em OUTRA frase do roteiro. Vazio no uso sem roteiro. */
   usadas?: ReadonlySet<string>
+  favoritos: ReadonlySet<string>
+  onFavoritar: (id: string) => void
   onEscolher: (id: string) => void
 }
 
@@ -665,7 +746,7 @@ interface GradeProps {
  * dezenas, e o espacador de cima e de baixo faz a barra de rolagem continuar
  * dizendo a verdade sobre o tamanho do acervo.
  */
-function Grade({ clips, escolhidos, usadas, onEscolher }: GradeProps) {
+function Grade({ clips, escolhidos, usadas, favoritos, onFavoritar, onEscolher }: GradeProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
   const [altura, setAltura] = useState(0)
@@ -746,6 +827,8 @@ function Grade({ clips, escolhidos, usadas, onEscolher }: GradeProps) {
                 clip={clip}
                 ordem={ordens.get(clip.id) ?? 0}
                 usada={usadas?.has(clip.id) ?? false}
+                favorito={favoritos.has(clip.id)}
+                onFavoritar={() => onFavoritar(clip.id)}
                 onClick={() => onEscolher(clip.id)}
               />
             ))}
@@ -767,6 +850,8 @@ function Cartao({
   clip,
   ordem,
   usada,
+  favorito,
+  onFavoritar,
   onClick,
 }: {
   clip: LibraryClip
@@ -774,6 +859,8 @@ function Cartao({
   ordem: number
   /** Ja foi gasta em outra frase. Nao impede -- so avisa. */
   usada?: boolean
+  favorito: boolean
+  onFavoritar: () => void
   onClick: () => void
 }) {
   const marcado = ordem > 0
@@ -801,15 +888,29 @@ function Cartao({
     if (timer.current !== null) window.clearTimeout(timer.current)
   }, [])
 
+  /*
+   * <div role="button">, e nao <button>.
+   *
+   * A estrela de favorito e um segundo alvo clicavel dentro do cartao, e
+   * elemento interativo dentro de <button> e invalido -- o teclado e o leitor
+   * de tela param de enxergar o de dentro. Mesma correcao que a timeline ja
+   * tinha precisado ao ganhar o botao de excluir bloco.
+   */
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        onClick()
+      }}
       onMouseEnter={entrar}
       onMouseLeave={sair}
       title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${usada ? ' · ja usada em outra frase' : ''}`}
       className={[
-        'group flex flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
+        'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
         marcado
           ? 'border-accent'
           : usada
@@ -837,6 +938,39 @@ function Cartao({
         )}
         <span className="tnum absolute bottom-1 right-1 rounded-sm bg-black/70 px-1 py-0.5 text-[10px] text-white">
           {clip.duration.toFixed(1)}s
+        </span>
+        {/*
+          A estrela mora DENTRO do cartao mas fora do clique dele: marcar
+          favorito e escolher a cena para o video sao duas intencoes diferentes,
+          e juntar as duas no mesmo alvo faria uma virar acidente da outra.
+          Some quando o mouse sai, para nao poluir uma grade de cinquenta
+          cartoes -- menos quando ja esta marcada, que e a informacao.
+        */}
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label={favorito ? 'Desfavoritar esta cena' : 'Favoritar esta cena'}
+          title={favorito ? 'Desfavoritar' : 'Favoritar'}
+          onClick={(event) => {
+            event.stopPropagation()
+            onFavoritar()
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            event.stopPropagation()
+            onFavoritar()
+          }}
+          className={[
+            'absolute right-1 top-1 grid size-[20px] cursor-pointer place-items-center rounded-sm bg-black/60 transition-opacity duration-150',
+            favorito ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          ].join(' ')}
+        >
+          <Star
+            size={12}
+            strokeWidth={1.5}
+            className={favorito ? 'fill-accent text-accent' : 'text-white'}
+          />
         </span>
         {marcado && (
           <>
@@ -866,7 +1000,7 @@ function Cartao({
           {clip.characters.join(', ')}
         </span>
       </div>
-    </button>
+    </div>
   )
 }
 

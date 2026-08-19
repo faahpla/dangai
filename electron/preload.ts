@@ -89,6 +89,11 @@ const bridge: DangaiBridge = {
   scriptBlocks: (request) =>
     ipcRenderer.invoke(IPC.scriptBlocks, request) as Promise<IpcResult<ScriptBlocksResult>>,
 
+  readFavorites: () => ipcRenderer.invoke(IPC.readFavorites) as Promise<IpcResult<string[]>>,
+
+  toggleFavorite: (id) =>
+    ipcRenderer.invoke(IPC.toggleFavorite, id) as Promise<IpcResult<string[]>>,
+
   listSfx: () => ipcRenderer.invoke(IPC.listSfx) as Promise<IpcResult<string[]>>,
 
   openSfxDir: () => ipcRenderer.invoke(IPC.openSfxDir) as Promise<IpcResult<null>>,

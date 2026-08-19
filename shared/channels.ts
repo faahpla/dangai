@@ -66,6 +66,8 @@ export const IPC = {
   suggestNicknames: 'nicknames:suggest',
   automount: 'automount:run',
   scriptBlocks: 'automount:blocks',
+  readFavorites: 'favorites:read',
+  toggleFavorite: 'favorites:toggle',
   /** main -> renderer, andamento da varredura da biblioteca */
   libraryProgress: 'library:progress',
 } as const
@@ -396,6 +398,10 @@ export interface DangaiBridge {
    * E o que deixa a Biblioteca mostrar o roteiro ao vivo: ele le a frase, marca
    * as cenas dela e ve na hora quanto tempo cada uma vai durar.
    */
+  /** Ids das cenas favoritadas. O anime esta dentro do proprio id. */
+  readFavorites(): Promise<IpcResult<string[]>>
+  /** Liga ou desliga um favorito. Devolve a lista inteira depois da troca. */
+  toggleFavorite(id: string): Promise<IpcResult<string[]>>
   scriptBlocks(request: {
     audioPath: string
     subtitlePath: string | null

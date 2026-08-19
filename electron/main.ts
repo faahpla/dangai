@@ -8,6 +8,7 @@ import { configureRender } from './services/render'
 import { configureSettings } from './services/settings'
 import { configureLibrary } from './services/library'
 import { configureNicknames } from './services/nicknames'
+import { configureFavorites } from './services/favorites'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { startUpdater } from './services/updater'
 import { configureWhisper } from './services/whisper'
@@ -92,6 +93,7 @@ app.whenReady().then(async () => {
   // Apelidos tambem: e escolha do usuario sobre a biblioteca dele, nao parte
   // dela -- a pasta de cenas continua sendo so leitura.
   configureNicknames(userData)
+  configureFavorites(userData)
 
   // Os SFX moram no userData para o usuario poder trocar os arquivos: a pasta
   // do app some numa atualizacao e pode nem ter permissao de escrita.
