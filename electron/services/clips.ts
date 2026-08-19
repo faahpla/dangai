@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
 import { ffmpegPath } from './ffmpeg-path'
@@ -83,18 +83,44 @@ export async function probeClip(path: string): Promise<ClipInfo> {
   return info
 }
 
-/** Miniatura do primeiro frame, no mesmo formato que a da imagem. */
-export async function makeClipThumbnail(path: string): Promise<string> {
+/**
+ * Menor webp que ainda pode ser uma imagem de verdade.
+ *
+ * Existe porque o ffmpeg NAO reclama quando o instante pedido cai depois do fim
+ * do clipe: ele sai com codigo 0 e deixa um arquivo de 8 bytes. Sem esta
+ * conferencia o arquivo vazio ia para o cache e a cena ficava preta na esteira
+ * para sempre, sem nenhum erro em lugar nenhum.
+ */
+const THUMB_MINIMO_BYTES = 200
+
+/**
+ * Miniatura de um frame do meio do clipe, no mesmo formato que a da imagem.
+ *
+ * O instante e `min(1s, metade do clipe)`. Um segundo fixo era o que existia
+ * antes, com um bom motivo -- o frame zero costuma ser fade de entrada --, mas
+ * cena de anime nao tem duracao minima: no episodio de teste dele, 15 de 321
+ * cenas duram MENOS de um segundo, e nelas o instante pedido caia depois do
+ * fim. Duas apareceram pretas na esteira dele.
+ *
+ * A metade resolve os dois casos: foge do fade nos clipes longos e continua
+ * dentro do arquivo nos curtos.
+ */
+export async function makeClipThumbnail(path: string, durationSec?: number): Promise<string> {
   const alvo = join(cacheDir, `thumb-${hashDe(path)}.webp`)
+
+  // Vazio guardado por uma versao anterior nao pode sobreviver para sempre.
+  if (existsSync(alvo) && statSync(alvo).size < THUMB_MINIMO_BYTES) rmSync(alvo, { force: true })
+
   if (!existsSync(alvo)) {
     mkdirSync(cacheDir, { recursive: true })
+    const dur = durationSec ?? (await probeClip(path)).durationSec
+    const instante = Math.min(1, dur / 2)
     await runFfmpeg([
       '-hide_banner',
       '-loglevel',
       'error',
-      // Um segundo dentro do clipe: o frame zero costuma ser fade de entrada.
       '-ss',
-      '1',
+      instante.toFixed(3),
       '-i',
       path,
       '-frames:v',
@@ -109,6 +135,11 @@ export async function makeClipThumbnail(path: string): Promise<string> {
       alvo,
     ])
   }
+
+  if (!existsSync(alvo) || statSync(alvo).size < THUMB_MINIMO_BYTES) {
+    throw new Error('nao deu para extrair um frame do clipe')
+  }
+
   const { readFile } = await import('node:fs/promises')
   return `data:image/webp;base64,${(await readFile(alvo)).toString('base64')}`
 }

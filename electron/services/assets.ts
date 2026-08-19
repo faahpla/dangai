@@ -118,7 +118,9 @@ async function importClip(
     const id = randomUUID()
     const info = await probeClip(path)
     const [thumbnail, renderPath] = await Promise.all([
-      makeClipThumbnail(path),
+      // A duracao vai junto: a miniatura sai da METADE do clipe, e cena de
+      // anime pode durar menos de um segundo.
+      makeClipThumbnail(path, info.durationSec),
       makeClipRenderReady(path, id, focusX, focusY, info),
     ])
 
