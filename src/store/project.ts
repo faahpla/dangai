@@ -301,6 +301,8 @@ export interface ProjectState {
   setActiveBlock: (index: number | null) => void
   /** Marca ou desmarca uma cena na frase aberta. */
   toggleBlockClip: (path: string) => void
+  /** Troca a ordem das cenas dentro de uma frase. */
+  reorderBlockClips: (blockIndex: number, paths: readonly string[]) => void
   /** Joga o roteiro montado no projeto: cada frase dividida entre as cenas dela. */
   applyBlockClips: () => Promise<void>
   analyze: () => Promise<void>
@@ -778,6 +780,18 @@ export const useProject = create<ProjectState>((set, get) => ({
       ? atuais.filter((p) => p !== path)
       : [...atuais, path]
     set({ blockClips: { ...blockClips, [activeBlock]: proximos } })
+  },
+
+  reorderBlockClips: (blockIndex, paths) => {
+    /*
+     * Sem isto, errar a ordem custava desmarcar e remarcar tudo.
+     *
+     * Dentro de uma frase a ordem e a do argumento dele, nao a do episodio --
+     * nenhuma ordenacao automatica sabe qual imagem vem primeiro em "comprime
+     * uma nuvem carregada". Por isso ela precisa ser arrastavel, e nao apenas a
+     * ordem em que ele calhou de clicar.
+     */
+    set((state) => ({ blockClips: { ...state.blockClips, [blockIndex]: [...paths] } }))
   },
 
   applyBlockClips: async () => {

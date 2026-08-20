@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { Loader2, Check } from 'lucide-react'
+import { Reorder } from 'motion/react'
+import { AlertTriangle, Check, GripVertical, Loader2 } from 'lucide-react'
 import { useProject } from '@/store/project'
+import type { LibraryClip } from '@shared/channels'
 import type { Word } from '@shared/contract'
 
 /**
@@ -22,6 +24,8 @@ export function ScriptColumn() {
   const setAtivo = useProject((s) => s.setActiveBlock)
   const carregar = useProject((s) => s.loadScriptBlocks)
   const transcript = useProject((s) => s.transcript)
+  const library = useProject((s) => s.library)
+  const reordenar = useProject((s) => s.reorderBlockClips)
 
   const lista = useRef<HTMLDivElement>(null)
 
@@ -57,6 +61,9 @@ export function ScriptColumn() {
 
   const marcadas = Object.values(porBloco).reduce((n, c) => n + c.length, 0)
 
+  /** Caminho -> a cena da biblioteca, para saber duracao e miniatura. */
+  const porCaminho = new Map((library?.clips ?? []).map((c) => [c.path, c]))
+
   return (
     <Coluna>
       <header className="flex shrink-0 items-baseline justify-between border-b border-line px-4 py-2.5">
@@ -72,6 +79,20 @@ export function ScriptColumn() {
           const dura = bloco.end - bloco.start
           const cada = cenas.length > 0 ? dura / cenas.length : dura
           const aberto = ativo === i
+
+          /*
+           * Quanto cada cena curta demais vai CONGELAR.
+           *
+           * Clipe menor que a fatia dele nao encolhe o bloco: o ultimo frame
+           * fica parado ate o bloco fechar. Meio segundo passa; dois segundos
+           * viram um print no meio do video, e ate agora isso so aparecia no
+           * mp4 pronto -- a escolha manual nao tinha nenhuma trava, enquanto a
+           * montagem automatica ja recusava clipe curto demais.
+           */
+          const congelamentos = cenas
+            .map((caminho) => porCaminho.get(caminho))
+            .filter((c): c is LibraryClip => c !== undefined && c.duration < cada)
+            .map((c) => cada - c.duration)
 
           return (
             <div
@@ -98,14 +119,29 @@ export function ScriptColumn() {
                   {tempo(bloco.start)} – {tempo(bloco.end)}
                 </span>
                 {cenas.length > 0 && (
-                  <span
-                    className="tnum flex items-center gap-1 text-[10px] text-accent"
-                    /* O numero que ensina o ritmo: 4,2s numa cena so grita que
-                       falta cena, sem eu ter que proibir nada. */
-                    title={`${cenas.length} cenas dividindo ${dura.toFixed(1)}s`}
-                  >
-                    <Check size={10} strokeWidth={2} />
-                    {cenas.length}× {cada.toFixed(1)}s
+                  <span className="flex items-center gap-2">
+                    {congelamentos.length > 0 && (
+                      <span
+                        className="flex items-center gap-1 text-[10px] text-accent"
+                        title={
+                          congelamentos.length === 1
+                            ? `Uma cena e curta demais: vai congelar ${congelamentos[0]!.toFixed(1)}s no fim`
+                            : `${congelamentos.length} cenas sao curtas demais; a pior congela ${Math.max(...congelamentos).toFixed(1)}s`
+                        }
+                      >
+                        <AlertTriangle size={10} strokeWidth={2} />
+                        congela
+                      </span>
+                    )}
+                    <span
+                      className="tnum flex items-center gap-1 text-[10px] text-accent"
+                      /* O numero que ensina o ritmo: 4,2s numa cena so grita que
+                         falta cena, sem eu ter que proibir nada. */
+                      title={`${cenas.length} cenas dividindo ${dura.toFixed(1)}s`}
+                    >
+                      <Check size={10} strokeWidth={2} />
+                      {cenas.length}× {cada.toFixed(1)}s
+                    </span>
                   </span>
                 )}
               </div>
@@ -117,6 +153,20 @@ export function ScriptColumn() {
                 cenas={cenas.length}
                 aberto={aberto}
               />
+
+              {/*
+                As cenas da frase ABERTA, na ordem do video, arrastaveis. So na
+                aberta: a fita nas vinte e seis linhas de uma vez transformaria
+                a coluna do roteiro numa segunda esteira.
+              */}
+              {aberto && cenas.length > 0 && (
+                <Fita
+                  caminhos={cenas}
+                  fatia={cada}
+                  porCaminho={porCaminho}
+                  onOrdem={(paths) => reordenar(i, paths)}
+                />
+              )}
             </div>
           )
         })}
@@ -200,6 +250,81 @@ function Frase({
         ),
       )}
     </p>
+  )
+}
+
+/**
+ * As cenas de uma frase, na ordem do video, arrastaveis.
+ *
+ * A ordem dentro da frase e a do ARGUMENTO dele -- nenhuma ordenacao automatica
+ * sabe qual imagem vem primeiro em "comprime uma nuvem carregada bem menor". Ate
+ * agora ela era a ordem em que ele calhou de clicar, e errar custava desmarcar e
+ * remarcar tudo.
+ *
+ * A borda acesa marca a cena que nao cobre a fatia dela, que e a mesma
+ * informacao do aviso la em cima -- mas aqui apontando QUAL delas.
+ */
+function Fita({
+  caminhos,
+  fatia,
+  porCaminho,
+  onOrdem,
+}: {
+  caminhos: readonly string[]
+  /** Quanto tempo cada cena vai ocupar. */
+  fatia: number
+  porCaminho: Map<string, LibraryClip>
+  onOrdem: (paths: string[]) => void
+}) {
+  return (
+    <Reorder.Group
+      axis="x"
+      values={[...caminhos]}
+      onReorder={onOrdem}
+      as="ul"
+      className="mt-2 flex gap-1"
+      // Arrastar nao pode virar troca de frase: o clique da linha ja faz isso.
+      onClick={(event) => event.stopPropagation()}
+    >
+      {caminhos.map((caminho, i) => {
+        const clip = porCaminho.get(caminho)
+        const congela = clip ? fatia - clip.duration : 0
+        return (
+          <Reorder.Item
+            key={caminho}
+            value={caminho}
+            as="li"
+            className="relative cursor-grab active:cursor-grabbing"
+            title={
+              clip
+                ? `Cena ${i + 1} · #${clip.shot} · ${clip.duration.toFixed(1)}s numa fatia de ${fatia.toFixed(1)}s` +
+                  (congela > 0.05 ? ` · congela ${congela.toFixed(1)}s no fim` : '')
+                : `Cena ${i + 1}`
+            }
+          >
+            {clip && (
+              <img
+                src={clip.thumbUrl}
+                alt=""
+                draggable={false}
+                className={[
+                  'h-[30px] w-[54px] rounded-[2px] border object-cover',
+                  congela > 0.05 ? 'border-accent' : 'border-line',
+                ].join(' ')}
+              />
+            )}
+            <span className="tnum absolute left-0 top-0 rounded-br-[2px] bg-black/70 px-1 text-[9px] text-white">
+              {i + 1}
+            </span>
+            <GripVertical
+              size={10}
+              strokeWidth={1.5}
+              className="absolute bottom-0 right-0 text-white/50"
+            />
+          </Reorder.Item>
+        )
+      })}
+    </Reorder.Group>
   )
 }
 
