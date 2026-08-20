@@ -47,6 +47,7 @@ import { scanLibrary } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
 import { automount, scriptBlocks } from './services/automount'
 import { readFavorites, toggleFavorite } from './services/favorites'
+import { readTags, tagClips } from './services/tagger'
 import {
   clearAutosave,
   openProjectFile,
@@ -192,6 +193,19 @@ export function registerIpc(): void {
     [{ audioPath: string; subtitlePath: string | null; script: string | null }],
     ScriptBlocksResult
   >(IPC.scriptBlocks, (request) => scriptBlocks(request, publish, broadcastAnalyze))
+
+  handle<[], Record<string, string[]>>(IPC.readTags, async () => readTags())
+
+  handle<[], Record<string, string[]>>(IPC.tagLibrary, async () => {
+    const { libraryDir } = getSettings()
+    if (!libraryDir) {
+      throw new Error('Escolha a pasta das cenas nas configuracoes antes de etiquetar.')
+    }
+    // A varredura e cacheada: pedir o indice de novo aqui custa quase nada e
+    // garante que episodio recem-adicionado tambem seja etiquetado.
+    const library = await scanLibrary(libraryDir, publish, broadcastLibrary)
+    return tagClips(library.clips, broadcastLibrary)
+  })
 
   handle<[], string[]>(IPC.readFavorites, async () => readFavorites())
   handle<[string], string[]>(IPC.toggleFavorite, async (id) => toggleFavorite(id))

@@ -89,6 +89,11 @@ const bridge: DangaiBridge = {
   scriptBlocks: (request) =>
     ipcRenderer.invoke(IPC.scriptBlocks, request) as Promise<IpcResult<ScriptBlocksResult>>,
 
+  tagLibrary: () =>
+    ipcRenderer.invoke(IPC.tagLibrary) as Promise<IpcResult<Record<string, string[]>>>,
+
+  readTags: () => ipcRenderer.invoke(IPC.readTags) as Promise<IpcResult<Record<string, string[]>>>,
+
   readFavorites: () => ipcRenderer.invoke(IPC.readFavorites) as Promise<IpcResult<string[]>>,
 
   toggleFavorite: (id) =>

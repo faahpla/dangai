@@ -183,6 +183,17 @@ export interface ProjectState {
   favorites: string[]
 
   /**
+   * O que aparece em cada cena, por id.
+   *
+   * Sao dois tercos da biblioteca dele que nao tem personagem nenhum -- e sem
+   * isto elas so eram alcancaveis rolando a grade. Mora na store porque a busca
+   * consulta a cada tecla e reler do disco a cada abertura seria trabalho
+   * jogado fora.
+   */
+  tags: Record<string, string[]>
+  taggerBusy: boolean
+
+  /**
    * A proposta da montagem automatica, bloco a bloco.
    *
    * Fica no estado depois de aplicada porque a FITA de candidatos e o que faz a
@@ -275,6 +286,10 @@ export interface ProjectState {
   loadNicknames: () => Promise<void>
   /** Le os favoritos do disco. Chamada junto da varredura. */
   loadFavorites: () => Promise<void>
+  /** Le as etiquetas ja guardadas. */
+  loadTags: () => Promise<void>
+  /** Etiqueta as cenas que ainda nao tem etiqueta. */
+  tagLibrary: () => Promise<void>
   /** Liga ou desliga o favorito de uma cena. */
   toggleFavorite: (id: string) => Promise<void>
   /** Grava a lista inteira de uma serie. Lista vazia apaga a serie. */
@@ -462,6 +477,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   libraryError: null,
   nicknames: {},
   favorites: [],
+  tags: {},
+  taggerBusy: false,
   nicknamesBusy: false,
   queue: [],
   queueRunning: false,
@@ -1392,6 +1409,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       get().library ? Promise.resolve() : get().syncLibrary(),
       get().loadNicknames(),
       get().loadFavorites(),
+      get().loadTags(),
     ])
   },
 
@@ -1403,6 +1421,27 @@ export const useProject = create<ProjectState>((set, get) => ({
   loadFavorites: async () => {
     const result = await window.dangai.readFavorites()
     if (result.ok) set({ favorites: result.value })
+  },
+
+  loadTags: async () => {
+    const result = await window.dangai.readTags()
+    if (result.ok) set({ tags: result.value })
+  },
+
+  tagLibrary: async () => {
+    if (get().taggerBusy) return
+    /*
+     * `libraryBusy` comeca preenchido de proposito.
+     *
+     * setLibraryBusy so substitui um andamento que JA existe -- guarda que
+     * existe para a mensagem final da varredura nao ressuscitar o "carregando".
+     * Sem semear aqui, os treze minutos de etiquetagem passariam em silencio e
+     * a tela pareceria travada.
+     */
+    set({ taggerBusy: true, libraryError: null, libraryBusy: 'Preparando o etiquetador...' })
+    const result = await window.dangai.tagLibrary()
+    if (result.ok) set({ tags: result.value, taggerBusy: false, libraryBusy: null })
+    else set({ libraryError: result.error, taggerBusy: false, libraryBusy: null })
   },
 
   toggleFavorite: async (id) => {

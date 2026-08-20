@@ -47,6 +47,10 @@ asarUnpack:
   - '**/node_modules/@remotion/compositor-*/**'
   # O OpenCV e um .wasm que o loader le do disco; dentro do asar ele nao abre.
   - '**/node_modules/opencv-wasm/**'
+  # O etiquetador de cenas carrega um .node nativo e as DLLs do DirectML ao
+  # lado dele. Provado no app empacotado antes de entrar: sessao DML criada e
+  # inferencia em 72ms.
+  - '**/node_modules/onnxruntime-node/**'
 
 win:
   # O .ico sai de build/icon.ico, gerado por `npm run icon`.

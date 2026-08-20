@@ -66,6 +66,8 @@ export const IPC = {
   suggestNicknames: 'nicknames:suggest',
   automount: 'automount:run',
   scriptBlocks: 'automount:blocks',
+  tagLibrary: 'tagger:run',
+  readTags: 'tagger:read',
   readFavorites: 'favorites:read',
   toggleFavorite: 'favorites:toggle',
   /** main -> renderer, andamento da varredura da biblioteca */
@@ -146,6 +148,22 @@ export interface LibraryClip {
   path: string
   /** Keyframe publicado no servidor local, para a grade desenhar. */
   thumbUrl: string
+  /**
+   * O mesmo keyframe como caminho de arquivo, para quem le do disco.
+   *
+   * Aponta para a miniatura de 320px que o Dangai guarda no perfil, e nao para
+   * a da biblioteca -- e a que continua a mao no dia em que os clipes forem
+   * para a nuvem.
+   */
+  thumbPath: string
+  /**
+   * O keyframe ORIGINAL do AnCut, em resolucao cheia. Vazio quando sumiu.
+   *
+   * O etiquetador prefere este quando existe: medido, ele e a miniatura
+   * concordam em 84% das etiquetas, e o detalhe fino que so aparece aqui
+   * (`cloud` num ceu) e justamente o que a busca por cenario quer.
+   */
+  keyframe: string
   /** A pasta da serie. E o que agrupa, porque e o nome que o usuario escolheu. */
   anime: string
   /**
@@ -398,6 +416,15 @@ export interface DangaiBridge {
    * E o que deixa a Biblioteca mostrar o roteiro ao vivo: ele le a frase, marca
    * as cenas dela e ve na hora quanto tempo cada uma vai durar.
    */
+  /**
+   * Descobre o que aparece em cada cena e guarda.
+   *
+   * Incremental: so etiqueta o que ainda nao tem etiqueta, entao o episodio da
+   * semana custa segundos. O andamento vem pelo mesmo canal da varredura.
+   */
+  tagLibrary(): Promise<IpcResult<Record<string, string[]>>>
+  /** As etiquetas ja guardadas. Vazio antes da primeira etiquetagem. */
+  readTags(): Promise<IpcResult<Record<string, string[]>>>
   /** Ids das cenas favoritadas. O anime esta dentro do proprio id. */
   readFavorites(): Promise<IpcResult<string[]>>
   /** Liga ou desliga um favorito. Devolve a lista inteira depois da troca. */

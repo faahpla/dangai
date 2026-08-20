@@ -49,7 +49,7 @@ interface CachedEpisode {
 }
 
 /** No disco a URL nao entra: ela morre junto com a sessao que a criou. */
-type StoredClip = Omit<LibraryClip, 'thumbUrl'> & { thumb: string }
+type StoredClip = Omit<LibraryClip, 'thumbUrl' | 'thumbPath'> & { thumb: string }
 
 interface CacheFile {
   version: number
@@ -61,7 +61,7 @@ interface CacheFile {
  * inteiro de proposito -- e mais barato reler 27 arquivos de texto do que
  * carregar para sempre um indice montado por uma versao antiga.
  */
-const CACHE_VERSION = 4
+const CACHE_VERSION = 5
 
 /** Profundidade maxima da varredura a partir da raiz. */
 const MAX_DEPTH = 3
@@ -145,7 +145,10 @@ export async function scanLibrary(
 
     for (const clip of guardados) {
       const { thumb, ...resto } = clip
-      clips.push({ ...resto, thumbUrl: publishThumb(thumb) })
+      // `thumb` vira DUAS coisas: a URL que a grade desenha e o caminho que o
+      // etiquetador le. Sao o mesmo arquivo, e quem le do disco nao deveria ter
+      // que desmontar uma URL para chegar nele.
+      clips.push({ ...resto, thumbUrl: publishThumb(thumb), thumbPath: thumb })
     }
   }
 
@@ -363,6 +366,9 @@ async function lerEpisodio(
       id: `${prefixo}/${shot}`,
       path: join(dir, 'shots', nomeMp4),
       thumb,
+      // Guardado ANTES de reduzirMiniaturas trocar `thumb` pela copia de 320px:
+      // o etiquetador prefere a resolucao cheia quando ela ainda esta no disco.
+      keyframe: thumb,
       anime: serie,
       animeTitle: titulo,
       season: daPasta ? Number(daPasta[1]) : numero(inicio.season),

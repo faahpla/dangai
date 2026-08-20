@@ -6,6 +6,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Sparkles,
   Star,
   Tags,
   X,
@@ -52,6 +53,9 @@ export function Library() {
   const toggleBlockClip = useProject((s) => s.toggleBlockClip)
   const favorites = useProject((s) => s.favorites)
   const toggleFavorite = useProject((s) => s.toggleFavorite)
+  const tags = useProject((s) => s.tags)
+  const taggerBusy = useProject((s) => s.taggerBusy)
+  const tagLibrary = useProject((s) => s.tagLibrary)
   const applyBlockClips = useProject((s) => s.applyBlockClips)
 
   /*
@@ -117,9 +121,17 @@ export function Library() {
       if (minSec > 0 && clip.duration < minSec) return false
       if (maxSec > 0 && clip.duration > maxSec) return false
       if (!busca) return true
-      return textoDe(clip).includes(busca)
+      /*
+       * A etiqueta entra na busca junto com o resto.
+       *
+       * E o que finalmente alcanca as 8.201 cenas sem personagem: ate agora
+       * "floresta" nao achava nada porque cenario nao tem nome no shots.json.
+       * As etiquetas sao em INGLES -- vocabulario do modelo -- entao "forest"
+       * acha e "floresta" ainda nao.
+       */
+      return textoDe(clip).includes(busca) || (tags[clip.id] ?? []).some((e) => e.includes(busca))
     })
-  }, [library, texto, anime, personagem, minSec, maxSec, soFavoritos, favoritosSet])
+  }, [library, texto, anime, personagem, minSec, maxSec, soFavoritos, favoritosSet, tags])
 
   /*
    * Quantos favoritos existem NO ANIME em uso, e nao no total.
@@ -129,6 +141,9 @@ export function Library() {
    * graca -- o anime esta dentro do id da cena --, entao o que faltava era o
    * numero dizer de qual pilha ele esta falando.
    */
+  /** Quantas cenas ja tem etiqueta, para o botao dizer o quanto falta. */
+  const etiquetadas = Object.keys(tags).length
+
   const totalFavoritos = useMemo(() => {
     if (!library) return 0
     return library.clips.filter(
@@ -244,6 +259,34 @@ export function Library() {
               </span>
             </button>
           )}
+          {/*
+            Etiquetar e um botao e nao acontece sozinho: a primeira vez baixa
+            379 MB e ocupa a GPU por uns treze minutos. Depois e incremental --
+            so o que chegou de novo --, mas quem manda comecar e ele.
+          */}
+          <button
+            type="button"
+            onClick={() => void tagLibrary()}
+            disabled={taggerBusy || busy !== null}
+            title={
+              etiquetadas > 0
+                ? `${etiquetadas.toLocaleString('pt-BR')} cenas ja descritas. Etiqueta as que faltam.`
+                : 'Descobre o que aparece em cada cena (cenario, objetos, acao) para a busca alcancar as cenas sem personagem'
+            }
+            className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
+          >
+            {taggerBusy ? (
+              <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" />
+            ) : (
+              <Sparkles size={12} strokeWidth={1.5} className="text-accent" />
+            )}
+            Etiquetar
+            {etiquetadas > 0 && (
+              <span className="tnum text-[10px] text-ink-3">
+                {Math.round((etiquetadas / Math.max(library?.clips.length ?? 1, 1)) * 100)}%
+              </span>
+            )}
+          </button>
           <button
             type="button"
             onClick={() => void syncLibrary()}
