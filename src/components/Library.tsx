@@ -72,6 +72,14 @@ export function Library() {
 
   const [texto, setTexto] = useState('')
   const [anime, setAnime] = useState<string | null>(null)
+  /**
+   * Episodio escolhido, como "S17E42".
+   *
+   * Existe porque a biblioteca dele cresce por EPISODIO -- ele corta um no
+   * AnCut e vem montar o recap dele aqui. Sem este nivel, chegar nas 300 cenas
+   * do episodio da semana era rolar 13 mil.
+   */
+  const [episodio, setEpisodio] = useState<string | null>(null)
   const [personagem, setPersonagem] = useState<string | null>(null)
   const [minSec, setMinSec] = useState(0)
   const [maxSec, setMaxSec] = useState(0)
@@ -106,6 +114,7 @@ export function Library() {
     setApelidosAbertos(false)
     setTexto('')
     setAnime(null)
+    setEpisodio(null)
     setPersonagem(null)
     setMinSec(0)
     setMaxSec(0)
@@ -141,6 +150,7 @@ export function Library() {
     const busca = texto.trim().toLowerCase()
     return library.clips.filter((clip) => {
       if (anime && clip.anime !== anime) return false
+      if (episodio && chaveEpisodio(clip) !== episodio) return false
       if (soFavoritos && !favoritosSet.has(clip.id)) return false
       if (personagem && !clip.characters.includes(personagem)) return false
       if (minSec > 0 && clip.duration < minSec) return false
@@ -156,7 +166,7 @@ export function Library() {
        */
       return textoDe(clip).includes(busca) || buscavel(clip.id).includes(busca)
     })
-  }, [library, texto, anime, personagem, minSec, maxSec, soFavoritos, favoritosSet, buscavel])
+  }, [library, texto, anime, episodio, personagem, minSec, maxSec, soFavoritos, favoritosSet, buscavel])
 
   /*
    * Quantos favoritos existem NO ANIME em uso, e nao no total.
@@ -261,7 +271,7 @@ export function Library() {
    * status, e nao custa nada: e o que ele acabou de escolher no rail.
    */
   const nomeDaLeva = (): string => {
-    const pedacos = [anime, personagem, texto.trim()].filter((p): p is string => !!p)
+    const pedacos = [anime, episodio, personagem, texto.trim()].filter((p): p is string => !!p)
     return pedacos.length > 0 ? pedacos.join(' · ') : `${escolhidos.length} cenas`
   }
 
@@ -388,6 +398,7 @@ export function Library() {
              */
             clips={soFavoritos ? library.clips.filter((c) => favoritosSet.has(c.id)) : library.clips}
             anime={anime}
+            episodio={episodio}
             personagem={personagem}
             /*
              * Trocar de anime limpa o personagem, e escolher um personagem
@@ -397,6 +408,16 @@ export function Library() {
              */
             onAnime={(serie) => {
               setAnime(serie)
+              setPersonagem(null)
+              // Trocar de serie zera o episodio: "S17E42" nao quer dizer nada
+              // dentro de Tensura.
+              setEpisodio(null)
+            }}
+            onEpisodio={(chave, doAnime) => {
+              setEpisodio(chave)
+              // Escolher um episodio assume a serie dele, como o personagem ja
+              // fazia -- pedir a serie de novo seria pedir duas vezes o mesmo.
+              if (chave !== null) setAnime(doAnime)
               setPersonagem(null)
             }}
             onPersonagem={(nome, doAnime) => {
@@ -553,9 +574,17 @@ function SemBiblioteca({ mensagem }: { mensagem: string }) {
 interface RailProps {
   clips: readonly LibraryClip[]
   anime: string | null
+  /** Chave "S17E42", ou null para o anime inteiro. */
+  episodio: string | null
   personagem: string | null
   onAnime: (v: string | null) => void
+  onEpisodio: (chave: string | null, doAnime: string) => void
   onPersonagem: (nome: string | null, doAnime: string | null) => void
+}
+
+/** A etiqueta do episodio, na mesma forma que a pasta do AnCut usa. */
+export function chaveEpisodio(clip: LibraryClip): string {
+  return `S${pad(clip.season)}E${pad(clip.episode)}`
 }
 
 /**
@@ -568,15 +597,26 @@ interface RailProps {
  * A contagem nao e enfeite: e ela que mostra de cara que dois tercos das cenas
  * nao tem personagem nenhum identificado, que e o buraco que so o passo 2 fecha.
  */
-function Rail({ clips, anime, personagem, onAnime, onPersonagem }: RailProps) {
+function Rail({
+  clips,
+  anime,
+  episodio,
+  personagem,
+  onAnime,
+  onEpisodio,
+  onPersonagem,
+}: RailProps) {
   // Grupo aberto na mao. O do anime selecionado abre sozinho, entao aqui so
   // entra o que o usuario abriu por conta.
   const [abertos, setAbertos] = useState<readonly string[]>([])
+  const [episodiosAbertos, setEpisodiosAbertos] = useState<readonly string[]>([])
 
-  const { animes, porAnime, semRosto } = useMemo(() => {
+  const { animes, porAnime, episodios, semRosto } = useMemo(() => {
     const contagemAnime = new Map<string, number>()
     /** anime -> personagem -> quantas cenas */
     const dentro = new Map<string, Map<string, number>>()
+    /** anime -> episodio -> quantas cenas */
+    const eps = new Map<string, Map<string, number>>()
     let sem = 0
 
     for (const clip of clips) {
@@ -588,6 +628,11 @@ function Rail({ clips, anime, personagem, onAnime, onPersonagem }: RailProps) {
         doAnime.set(nome, (doAnime.get(nome) ?? 0) + 1)
       }
       dentro.set(clip.anime, doAnime)
+
+      const chave = chaveEpisodio(clip)
+      const osEps = eps.get(clip.anime) ?? new Map<string, number>()
+      osEps.set(chave, (osEps.get(chave) ?? 0) + 1)
+      eps.set(clip.anime, osEps)
     }
 
     const ordenar = (m: Map<string, number>): [string, number][] =>
@@ -596,6 +641,20 @@ function Rail({ clips, anime, personagem, onAnime, onPersonagem }: RailProps) {
     return {
       animes: ordenar(contagemAnime),
       porAnime: new Map([...dentro].map(([serie, nomes]) => [serie, ordenar(nomes)])),
+      /*
+       * Episodio ordenado do MAIOR para o menor, e nao por contagem.
+       *
+       * A ordem existe para um uso so, dito por ele: "eu vou fazer o corte dele
+       * la e na hora de montar o recap aqui no dangai eu vou ir direto no ep
+       * recem cortado". O recem-cortado e sempre o de numero maior, entao ele
+       * fica na primeira linha sem depender de nenhuma data.
+       */
+      episodios: new Map(
+        [...eps].map(([serie, mapa]) => [
+          serie,
+          [...mapa.entries()].sort((a, b) => b[0].localeCompare(a[0], 'en')),
+        ]),
+      ),
       semRosto: sem,
     }
   }, [clips])
@@ -606,17 +665,69 @@ function Rail({ clips, anime, personagem, onAnime, onPersonagem }: RailProps) {
     )
   }
 
+  const alternarEpisodios = (serie: string): void => {
+    setEpisodiosAbertos((atual) =>
+      atual.includes(serie) ? atual.filter((s) => s !== serie) : [...atual, serie],
+    )
+  }
+
   return (
     <nav className="w-[210px] shrink-0 overflow-y-auto border-r border-line p-3">
       <Titulo>Anime</Titulo>
-      <Item ativo={anime === null} onClick={() => onAnime(null)} contagem={clips.length}>
+      <Item ativo={anime === null && episodio === null} onClick={() => onAnime(null)} contagem={clips.length}>
         Todos
       </Item>
-      {animes.map(([nome, n]) => (
-        <Item key={nome} ativo={anime === nome} onClick={() => onAnime(nome)} contagem={n}>
-          {nome}
-        </Item>
-      ))}
+      {animes.map(([nome, n]) => {
+        const eps = episodios.get(nome) ?? []
+        /*
+         * O anime escolhido abre os episodios sozinho, pelo mesmo motivo do
+         * grupo de personagem: escolher a serie e dizer "e daqui que eu quero".
+         */
+        const aberto = episodiosAbertos.includes(nome) || anime === nome
+
+        return (
+          <div key={nome}>
+            <div className="flex items-center">
+              {/*
+                A seta e o nome sao alvos SEPARADOS: abrir a lista de episodios
+                e escolher a serie inteira sao duas intencoes, e juntar as duas
+                obrigaria a escolher a serie so para dar uma espiada nos
+                episodios dela.
+              */}
+              <button
+                type="button"
+                onClick={() => alternarEpisodios(nome)}
+                aria-label={aberto ? `Fechar os episodios de ${nome}` : `Ver os episodios de ${nome}`}
+                className="grid size-5 shrink-0 place-items-center rounded-sm text-ink-3 hover:text-ink"
+              >
+                {aberto ? (
+                  <ChevronDown size={11} strokeWidth={1.5} />
+                ) : (
+                  <ChevronRight size={11} strokeWidth={1.5} />
+                )}
+              </button>
+              <div className="min-w-0 flex-1">
+                <Item ativo={anime === nome && episodio === null} onClick={() => onAnime(nome)} contagem={n}>
+                  {nome}
+                </Item>
+              </div>
+            </div>
+
+            {aberto &&
+              eps.map(([chave, quantas]) => (
+                <Item
+                  key={`${nome}/${chave}`}
+                  ativo={episodio === chave && anime === nome}
+                  onClick={() => onEpisodio(episodio === chave && anime === nome ? null : chave, nome)}
+                  contagem={quantas}
+                  recuado
+                >
+                  {chave}
+                </Item>
+              ))}
+          </div>
+        )
+      })}
 
       <div className="my-3 h-px bg-line" />
 
@@ -674,7 +785,8 @@ function Rail({ clips, anime, personagem, onAnime, onPersonagem }: RailProps) {
 
       <p className="mt-3 px-1.5 text-[10px] leading-relaxed text-ink-3">
         {semRosto.toLocaleString('pt-BR')} cenas sem personagem identificado — cenario, planos
-        abertos e detalhes. Por enquanto so da para chegar nelas rolando a grade.
+        abertos e detalhes. Chegue nelas pelo episodio, ou buscando o que aparece
+        (&ldquo;floresta&rdquo;, &ldquo;noite&rdquo;).
       </p>
     </nav>
   )
