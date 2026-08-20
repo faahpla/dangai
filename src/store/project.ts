@@ -3,6 +3,7 @@ import { classifyFile } from '@shared/channels'
 import type {
   AutomountBlock,
   AutomountMode,
+  LibraryClip,
   ScriptBlock,
   LibraryIndex,
   MusicPick,
@@ -207,6 +208,16 @@ export interface ProjectState {
   automountSeries: string | null
 
   /**
+   * Qual bloco da timeline esta esperando uma cena escolhida na Biblioteca.
+   *
+   * A fita de candidatos resolve o caso comum -- discordar da escolha e pegar
+   * outra das seis. Nao resolve o caso MUITO especifico, quando ele sabe
+   * exatamente qual cena quer e ela nao esta entre as seis. Ai ele abre a
+   * Biblioteca inteira, com busca, e a proxima que clicar entra neste bloco.
+   */
+  replaceTarget: number | null
+
+  /**
    * O roteiro quebrado em frases, com o tempo de cada uma.
    *
    * Existe para a Biblioteca poder mostrar ONDE cada cena marcada vai cair.
@@ -311,6 +322,10 @@ export interface ProjectState {
   /** Troca a cena de um bloco por outro candidato da fita. */
   swapCandidate: (blockIndex: number, candidateIndex: number) => Promise<void>
   setAutomountSeries: (series: string | null) => void
+  /** Abre a Biblioteca para escolher a cena de um bloco especifico. */
+  openLibraryToReplace: (sceneIndex: number) => Promise<void>
+  /** Troca a cena de um bloco por um caminho vindo da Biblioteca. */
+  replaceSceneWith: (path: string) => Promise<void>
   /** Le a narracao e quebra em frases. Chamada quando a Biblioteca abre. */
   loadScriptBlocks: () => Promise<void>
   setActiveBlock: (index: number | null) => void
@@ -417,6 +432,37 @@ function planoDosBlocos(
   return { scenes }
 }
 
+/**
+ * Poe a cena escolhida na mao a frente da fita daquele bloco.
+ *
+ * O indice na TIMELINE nao e o indice no roteiro: bloco que ficou sem cena nao
+ * virou imagem. Contar quantos blocos uteis vieram antes e o que liga os dois
+ * -- a mesma conta que a fita e o swapCandidate ja fazem.
+ */
+function substituirNaFita(
+  blocos: readonly AutomountBlock[],
+  posicaoNaTimeline: number,
+  path: string,
+  clip: LibraryClip | undefined,
+): AutomountBlock[] {
+  let restante = posicaoNaTimeline
+  const alvo = blocos.findIndex((b) => b.candidates.length > 0 && restante-- === 0)
+  if (alvo < 0) return [...blocos]
+
+  const escolhida = {
+    path,
+    thumbUrl: clip?.thumbUrl ?? '',
+    label: clip ? `${clip.anime} S${clip.season}E${clip.episode} #${clip.shot}` : 'Cena escolhida',
+    durationSec: clip?.duration ?? 0,
+    reason: 'escolhida por voce na biblioteca',
+  }
+  return blocos.map((b, i) =>
+    i === alvo
+      ? { ...b, candidates: [escolhida, ...b.candidates.filter((c) => c.path !== path)] }
+      : b,
+  )
+}
+
 function setInterimPlan(set: SetState, imageCount: number, durationSec: number): void {
   set({
     plan: planEqualSplit(imageCount, durationSec),
@@ -469,6 +515,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   automountBlocks: null,
   automountMode: null,
   automountSeries: null,
+  replaceTarget: null,
   scriptBlocks: null,
   scriptBlocksBusy: null,
   activeBlock: null,
@@ -753,6 +800,43 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   setAutomountSeries: (series) => set({ automountSeries: series }),
+
+  openLibraryToReplace: async (sceneIndex) => {
+    set({ replaceTarget: sceneIndex })
+    await get().openLibrary(true)
+  },
+
+  replaceSceneWith: async (path) => {
+    const { replaceTarget, images, library } = get()
+    if (replaceTarget === null || !images[replaceTarget]) return
+
+    set({ busy: 'Trocando a cena...', error: null, libraryOpen: false })
+    const importada = await window.dangai.importImages([path])
+    if (!importada.ok || !importada.value[0]) {
+      set({ busy: null, replaceTarget: null, error: importada.ok ? 'Nao deu para abrir essa cena.' : importada.error })
+      return
+    }
+
+    /*
+     * A fita da montagem automatica passa a comecar pela escolha DELE.
+     *
+     * Sem isto a fita seguiria anunciando o candidato que o app tinha
+     * escolhido, e o card diria uma coisa enquanto a timeline mostra outra. O
+     * motivo vira "escolhida por voce" porque e a verdade -- nenhuma regra
+     * levou a esta cena.
+     */
+    const clip = library?.clips.find((c) => c.path === path)
+    set((state) => ({
+      images: state.images.map((img, i) => (i === replaceTarget ? importada.value[0]! : img)),
+      automountBlocks: state.automountBlocks
+        ? substituirNaFita(state.automountBlocks, replaceTarget, path, clip)
+        : null,
+      busy: null,
+      replaceTarget: null,
+      selectedScene: replaceTarget,
+      projectDirty: true,
+    }))
+  },
 
   loadScriptBlocks: async () => {
     const { audio, subtitlePath, script, scriptBlocks, scriptBlocksBusy } = get()
@@ -1401,7 +1485,8 @@ export const useProject = create<ProjectState>((set, get) => ({
    * mudou, e o botao "Sincronizar" existe justamente para quando ela mudou.
    */
   openLibrary: async (open) => {
-    set({ libraryOpen: open })
+    // Fechar cancela a substituicao: sair da tela e desistir da pergunta.
+    set(open ? { libraryOpen: true } : { libraryOpen: false, replaceTarget: null })
     if (!open) return
     // Os apelidos vem junto: sao poucos bytes e a tela precisa deles para dizer
     // quantos cada serie tem.
@@ -1633,6 +1718,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       automountBlocks: null,
       automountMode: null,
       automountSeries: null,
+      replaceTarget: null,
       scriptBlocks: null,
       scriptBlocksBusy: null,
       activeBlock: null,

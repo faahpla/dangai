@@ -1,4 +1,4 @@
-import { Film, ImagePlus, Scissors } from 'lucide-react'
+import { Film, ImagePlus, Library as LibraryIcon, Scissors } from 'lucide-react'
 import { isVisual } from '@shared/channels'
 import {
   KEN_BURNS_EFFECTS,
@@ -72,6 +72,7 @@ export function SceneCard() {
   const updateScene = useProject((s) => s.updateScene)
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
   const insertImages = useProject((s) => s.insertImages)
+  const abrirBiblioteca = useProject((s) => s.openLibraryToReplace)
 
   const scene = index === null ? undefined : plan?.scenes[index]
   const image = scene ? images[scene.imageIndex] : undefined
@@ -103,6 +104,20 @@ export function SceneCard() {
       </header>
 
       <Fita index={index} />
+
+      <Field label="Trocar por outra cena">
+        {/*
+          A fita resolve o caso comum -- discordar e pegar outra das seis. Esta
+          porta e para o caso MUITO especifico, quando ele sabe exatamente qual
+          cena quer e ela nao esta entre as seis. Fica fora da Fita de proposito:
+          vale para qualquer bloco, inclusive nos projetos que nao vieram da
+          montagem automatica.
+        */}
+        <Chip active={false} onClick={() => void abrirBiblioteca(index)}>
+          <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+          Buscar na biblioteca
+        </Chip>
+      </Field>
 
       <Field label="Entra em">
         <span className="tnum text-[13px] text-ink-2">{formatTimecode(scene.start)}</span>

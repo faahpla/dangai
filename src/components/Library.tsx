@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react'
 import type { LibraryClip } from '@shared/channels'
+import { TAGS_PT } from '@shared/tags-pt'
 import { useProject } from '@/store/project'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
@@ -54,6 +55,8 @@ export function Library() {
   const favorites = useProject((s) => s.favorites)
   const toggleFavorite = useProject((s) => s.toggleFavorite)
   const tags = useProject((s) => s.tags)
+  const replaceTarget = useProject((s) => s.replaceTarget)
+  const replaceSceneWith = useProject((s) => s.replaceSceneWith)
   const taggerBusy = useProject((s) => s.taggerBusy)
   const tagLibrary = useProject((s) => s.tagLibrary)
   const applyBlockClips = useProject((s) => s.applyBlockClips)
@@ -111,6 +114,28 @@ export function Library() {
 
   const favoritosSet = useMemo(() => new Set(favorites), [favorites])
 
+  /*
+   * O texto buscavel de cada cena, montado UMA vez por leva de etiquetas.
+   *
+   * Sao 13 mil cenas com ~13 etiquetas cada, e cada etiqueta traz ate tres
+   * termos em portugues: refazer essa juncao a cada tecla digitada seria meio
+   * milhao de concatenacoes por letra.
+   */
+  const buscavel = useMemo(() => {
+    const cache = new Map<string, string>()
+    return (id: string): string => {
+      const pronto = cache.get(id)
+      if (pronto !== undefined) return pronto
+      const etiquetas = tags[id] ?? []
+      const texto = etiquetas
+        .flatMap((e) => [e, ...(TAGS_PT[e] ?? [])])
+        .join(' ')
+        .toLowerCase()
+      cache.set(id, texto)
+      return texto
+    }
+  }, [tags])
+
   const filtrados = useMemo(() => {
     if (!library) return []
     const busca = texto.trim().toLowerCase()
@@ -122,16 +147,16 @@ export function Library() {
       if (maxSec > 0 && clip.duration > maxSec) return false
       if (!busca) return true
       /*
-       * A etiqueta entra na busca junto com o resto.
+       * A etiqueta entra na busca junto com o resto, em portugues E em ingles.
        *
-       * E o que finalmente alcanca as 8.201 cenas sem personagem: ate agora
+       * E o que finalmente alcanca as 8.171 cenas sem personagem: ate agora
        * "floresta" nao achava nada porque cenario nao tem nome no shots.json.
-       * As etiquetas sao em INGLES -- vocabulario do modelo -- entao "forest"
-       * acha e "floresta" ainda nao.
+       * O modelo so fala ingles, entao cada etiqueta viaja com os termos que
+       * ele digitaria -- ver shared/tags-pt.
        */
-      return textoDe(clip).includes(busca) || (tags[clip.id] ?? []).some((e) => e.includes(busca))
+      return textoDe(clip).includes(busca) || buscavel(clip.id).includes(busca)
     })
-  }, [library, texto, anime, personagem, minSec, maxSec, soFavoritos, favoritosSet, tags])
+  }, [library, texto, anime, personagem, minSec, maxSec, soFavoritos, favoritosSet, buscavel])
 
   /*
    * Quantos favoritos existem NO ANIME em uso, e nao no total.
@@ -159,6 +184,16 @@ export function Library() {
   if (!open) return null
 
   const escolher = (id: string): void => {
+    /*
+     * Substituir vem ANTES de tudo: e um gesto de um clique so, e enquanto ele
+     * esta ativo a Biblioteca nao esta montando nada -- esta respondendo uma
+     * pergunta especifica ("qual cena vai neste bloco?").
+     */
+    if (replaceTarget !== null) {
+      const path = library?.clips.find((c) => c.id === id)?.path
+      if (path) void replaceSceneWith(path)
+      return
+    }
     if (porRoteiro) {
       const path = library?.clips.find((c) => c.id === id)?.path
       if (path) toggleBlockClip(path)
@@ -312,6 +347,26 @@ export function Library() {
         </div>
       </header>
 
+      {/*
+        Uma faixa, e nao um modo escondido: entrar aqui pela seta do card e sair
+        pelo Escape sao dois caminhos, e sem dizer o que esta acontecendo o
+        proximo clique viraria surpresa.
+      */}
+      {replaceTarget !== null && (
+        <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-accent bg-accent-dim px-5">
+          <span className="text-[12px] text-ink">
+            Escolha a cena que entra no bloco {replaceTarget + 1} — um clique substitui
+          </span>
+          <button
+            type="button"
+            onClick={() => void openLibrary(false)}
+            className="rounded-sm px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
       {error ? (
         <SemBiblioteca mensagem={error} />
       ) : !library ? (
@@ -323,7 +378,7 @@ export function Library() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1">
-          {porRoteiro || audio ? <ScriptColumn /> : null}
+          {replaceTarget === null && (porRoteiro || audio) ? <ScriptColumn /> : null}
           <Rail
             /*
              * Com o filtro de favoritos ligado, o rail conta FAVORITOS por
@@ -367,7 +422,7 @@ export function Library() {
             />
             <Grade
               clips={filtrados}
-              escolhidos={porRoteiro ? marcadosNaFrase() : escolhidos}
+              escolhidos={replaceTarget !== null ? [] : porRoteiro ? marcadosNaFrase() : escolhidos}
               usadas={usadasEmOutras()}
               favoritos={favoritosSet}
               onFavoritar={(id) => void toggleFavorite(id)}
@@ -381,7 +436,7 @@ export function Library() {
         <Nicknames series={anime} onClose={() => setApelidosAbertos(false)} />
       )}
 
-      {porRoteiro ? (
+      {replaceTarget !== null ? null : porRoteiro ? (
         <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
           <span className="tnum text-[12px] text-ink-2">
             {totalMarcado > 0
