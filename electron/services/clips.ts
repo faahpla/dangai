@@ -114,30 +114,52 @@ export async function makeClipThumbnail(path: string, durationSec?: number): Pro
   if (!existsSync(alvo)) {
     mkdirSync(cacheDir, { recursive: true })
     const dur = durationSec ?? (await probeClip(path)).durationSec
-    const instante = Math.min(1, dur / 2)
-    await runFfmpeg([
-      '-hide_banner',
-      '-loglevel',
-      'error',
-      '-ss',
-      instante.toFixed(3),
-      '-i',
-      path,
-      '-frames:v',
-      '1',
-      '-vf',
-      'scale=220:-2',
-      '-c:v',
-      'libwebp',
-      '-quality',
-      '78',
-      '-y',
-      alvo,
-    ])
+
+    /*
+     * Tres instantes, e nao um.
+     *
+     * O primeiro e o de sempre: um segundo dentro, ou a metade quando a cena e
+     * mais curta que isso. Os outros dois existem porque frame preto acontece
+     * -- abertura de episodio, fade, cena que comeca no escuro. Achei isso numa
+     * cena de 7 minutos da biblioteca dele: o frame saia com 134 bytes em
+     * qualquer ponto perto do comeco, e a importacao FALHAVA, deixando ele sem
+     * poder usar o arquivo.
+     *
+     * Desistir na primeira tentativa transformava "a miniatura ficou feia" em
+     * "essa cena nao entra no projeto", que e muito pior.
+     */
+    for (const instante of [Math.min(1, dur / 2), dur * 0.25, dur * 0.5]) {
+      await runFfmpeg([
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-ss',
+        instante.toFixed(3),
+        '-i',
+        path,
+        '-frames:v',
+        '1',
+        '-vf',
+        'scale=220:-2',
+        '-c:v',
+        'libwebp',
+        '-quality',
+        '78',
+        '-y',
+        alvo,
+      ])
+      if (existsSync(alvo) && statSync(alvo).size >= THUMB_MINIMO_BYTES) break
+    }
   }
 
   if (!existsSync(alvo) || statSync(alvo).size < THUMB_MINIMO_BYTES) {
-    throw new Error('nao deu para extrair um frame do clipe')
+    /*
+     * Todos os instantes vieram vazios: o clipe e preto de ponta a ponta, ou
+     * esta corrompido. Ai a miniatura nao e o problema, e recusar e honesto --
+     * mas a mensagem tem que dizer o que ele veria no video.
+     */
+    rmSync(alvo, { force: true })
+    throw new Error('nao ha imagem nesse clipe -- ele parece preto do comeco ao fim')
   }
 
   const { readFile } = await import('node:fs/promises')

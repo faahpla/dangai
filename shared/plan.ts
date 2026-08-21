@@ -73,6 +73,8 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
     effect: pickEffect(index),
     intensity: 0.12,
     curve: MOTION_CURVE_DEFAULT,
+    // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
+    sourceStart: 0,
     transitionIn: index === 0 ? ('cut' as const) : ('cut' as const),
   }))
 
@@ -132,6 +134,8 @@ export function planFromCandidates(
     effect: pickEffect(index),
     intensity: 0.12,
     curve: MOTION_CURVE_DEFAULT,
+    // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
+    sourceStart: 0,
     transitionIn: 'cut' as const,
   }))
 
@@ -227,6 +231,8 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
           effect: pickEffect(index),
           intensity: 0.12,
           curve: MOTION_CURVE_DEFAULT,
+          // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
+          sourceStart: 0,
           transitionIn: 'cut' as const,
         }
   })
@@ -406,10 +412,28 @@ export function toRenderProps(
      * caso normal, ja que ele chega cortado. Mandar null ali deixa o Scene com
      * um caminho a menos para errar.
      */
-    const sourceFrames =
+    /*
+     * De onde o clipe parte, e quanto dele ainda resta a partir dali.
+     *
+     * O deslocamento entra ANTES da conta do congelamento: um clipe de 6s
+     * comecando no segundo 5 tem 1 segundo de sobra, nao 6. Sem descontar,
+     * um bloco de 2s acharia que esta coberto e o video ficaria preto no fim.
+     *
+     * Fica preso ao que existe: pedir para comecar depois do fim do clipe
+     * deixaria a tela preta, entao o valor cai para "o ultimo instante em que
+     * ainda ha imagem".
+     */
+    const totalFonte =
       image.kind === 'video' && image.durationSec !== undefined
         ? Math.floor(image.durationSec * VIDEO_FPS)
         : null
+
+    const inicioFonte =
+      totalFonte === null
+        ? 0
+        : clamp(Math.round((scene.sourceStart ?? 0) * VIDEO_FPS), 0, Math.max(totalFonte - 1, 0))
+
+    const sourceFrames = totalFonte === null ? null : totalFonte - inicioFonte
 
     return {
       url: image.url,
@@ -420,6 +444,7 @@ export function toRenderProps(
       kind: image.kind,
       sourceDurationInFrames:
         sourceFrames !== null && sourceFrames < durationInFrames ? Math.max(sourceFrames, 1) : null,
+      sourceStartFrames: inicioFonte,
       transitionIn: scene.transitionIn,
       transitionInFrames: incoming,
     }
@@ -728,6 +753,8 @@ export function planByRhythm(
     effect: pickEffect(index),
     intensity: 0.12,
     curve: MOTION_CURVE_DEFAULT,
+    // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
+    sourceStart: 0,
     transitionIn: 'cut' as const,
   }))
 
@@ -818,6 +845,8 @@ export function planBySections(
         effect: pickEffect(index),
         intensity: 0.12,
         curve: MOTION_CURVE_DEFAULT,
+        // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
+        sourceStart: 0,
         transitionIn: 'cut' as const,
       })
     }

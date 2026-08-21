@@ -27,6 +27,7 @@ export function Scene({
   curve,
   kind,
   sourceDurationInFrames,
+  sourceStartFrames,
 }: SceneProps) {
   const frame = useCurrentFrame()
 
@@ -91,7 +92,20 @@ export function Scene({
            * muted por decisao de produto -- os clipes ja chegam cortados e o
            * audio do video e a narracao, nao o som original da cena.
            */}
-          <OffthreadVideo src={url} muted style={cobrindo} />
+          {/*
+           * `trimBefore` e de onde o clipe COMECA a tocar.
+           *
+           * O clipe ja vem cortado do AnCut, mas o bloco quase nunca tem a
+           * mesma duracao dele: uma cena de 6 segundos num bloco de 2 mostrava
+           * sempre os dois primeiros, e o que interessa costuma estar no meio
+           * ou no fim. Quem escolhe o ponto e o usuario, pelo card da cena.
+           */}
+          <OffthreadVideo
+            src={url}
+            muted
+            trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
+            style={cobrindo}
+          />
         </Freeze>
       ) : (
         <Img src={url} style={cobrindo} />

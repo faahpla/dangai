@@ -255,7 +255,7 @@ export interface ProjectState {
   /** Troca efeito, transicao, intensidade ou curva de uma cena. */
   updateScene: (
     index: number,
-    patch: Partial<Pick<Scene, 'effect' | 'transitionIn' | 'intensity' | 'curve'>>,
+    patch: Partial<Pick<Scene, 'effect' | 'transitionIn' | 'intensity' | 'curve' | 'sourceStart'>>,
   ) => void
   /** Joga a curva de uma cena em todas as outras. */
   applyCurveToAll: (curve: MotionCurve) => void
@@ -427,6 +427,9 @@ function planoDosBlocos(
     effect: KEN_BURNS_EFFECTS[index % KEN_BURNS_EFFECTS.length]!,
     intensity: CLIP_INTENSITY,
     curve: CLIP_MOTION_CURVE,
+    // Parte do comeco do clipe. Mover o ponto de entrada e escolha dele, no
+    // card da cena.
+    sourceStart: 0,
     transitionIn: 'cut',
   }))
   return { scenes }
@@ -1143,6 +1146,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       end: i === n - 1 ? fim : inicio + (i + 1) * passo,
       effect: KEN_BURNS_EFFECTS[(at + i) % KEN_BURNS_EFFECTS.length] ?? 'zoom-in',
       intensity: 0.12,
+      // Comeca no inicio do clipe, como todo bloco novo.
+      sourceStart: 0,
       // Herda a curva do bloco que cedeu o tempo, e nao o padrao: quem ja
       // ajustou o ritmo do video inteiro nao quer o bloco novo destoando.
       curve: anfitriao.curve,

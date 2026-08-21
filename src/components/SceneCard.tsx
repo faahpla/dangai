@@ -4,7 +4,9 @@ import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
   TRANSITIONS,
+  type ImageAsset,
   type MotionCurve,
+  type Scene,
   type Transition,
 } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
@@ -104,6 +106,8 @@ export function SceneCard() {
       </header>
 
       <Fita index={index} />
+
+      <PontoDeEntrada index={index} scene={scene} image={image} />
 
       <Field label="Trocar por outra cena">
         {/*
@@ -255,6 +259,69 @@ export function SceneCard() {
         <span className="min-w-0 truncate">{image.fileName}</span>
       </p>
     </aside>
+  )
+}
+
+/**
+ * De que ponto do clipe este bloco parte.
+ *
+ * O clipe chega cortado do AnCut, mas o bloco quase nunca tem a duracao dele:
+ * uma cena de 6 segundos num bloco de 2 mostrava sempre os dois PRIMEIROS
+ * segundos. Palavras dele: "a parte q eu quero e la pro final ou no meio, por
+ * padrao ele ta so no inicio certo?". Antes disso a unica saida era procurar
+ * outra cena.
+ *
+ * So aparece em clipe que SOBRA. Print nao tem de onde partir, e clipe que ja
+ * cabe justo nao tem para onde correr -- oferecer um controle que nao muda nada
+ * e pior que nao oferecer.
+ */
+function PontoDeEntrada({
+  index,
+  scene,
+  image,
+}: {
+  index: number
+  scene: Scene
+  image: ImageAsset
+}) {
+  const updateScene = useProject((s) => s.updateScene)
+  const setPlayhead = useProject((s) => s.setPlayhead)
+
+  const bloco = scene.end - scene.start
+  const total = image.durationSec ?? 0
+  const sobra = total - bloco
+  if (image.kind !== 'video' || sobra <= 0.05) return null
+
+  const inicio = Math.min(scene.sourceStart ?? 0, sobra)
+
+  return (
+    <Field label="Trecho do clipe">
+      <div className="flex flex-col gap-1.5">
+        <input
+          type="range"
+          min={0}
+          max={Math.round(sobra * 10)}
+          value={Math.round(inicio * 10)}
+          onChange={(event) => {
+            updateScene(index, { sourceStart: Number(event.target.value) / 10 })
+            /*
+             * Leva o preview para o comeco do bloco a cada arrasto.
+             *
+             * Sem isto ele arrastaria olhando um instante do video que nao tem
+             * relacao com o que esta mudando -- e o ponto de entrada so se ve
+             * assistindo o bloco.
+             */
+            setPlayhead(scene.start)
+          }}
+          className="w-full accent-accent"
+          aria-label="De que ponto do clipe este bloco comeca"
+        />
+        <span className="tnum text-[11px] text-ink-2">
+          {inicio.toFixed(1)}s – {(inicio + bloco).toFixed(1)}s
+          <span className="text-ink-3"> de {total.toFixed(1)}s</span>
+        </span>
+      </div>
+    </Field>
   )
 }
 

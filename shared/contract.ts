@@ -240,6 +240,18 @@ export const sceneSchema = z.object({
    * de gosto do Kintay, nao de modelo.
    */
   curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
+  /**
+   * De que ponto do CLIPE este bloco parte, em segundos. 0 = do comeco.
+   *
+   * O clipe chega cortado do AnCut, mas o bloco quase nunca tem a mesma
+   * duracao dele: uma cena de 6 segundos num bloco de 2 mostrava sempre os
+   * dois PRIMEIROS segundos, e o que ele queria costuma estar no meio ou no
+   * fim. Sem isto a unica saida era procurar outra cena.
+   *
+   * So faz sentido em clipe. Com default para projeto salvo antes disso abrir
+   * igual, e para a IA nao precisar escolher.
+   */
+  sourceStart: z.number().nonnegative().default(0),
   transitionIn: z.enum(TRANSITIONS),
   reason: z.string().optional(),
 })
@@ -465,6 +477,13 @@ export const renderPropsSchema = z.object({
        * para preto: congelar e o que menos chama atencao.
        */
       sourceDurationInFrames: z.number().int().positive().nullable().default(null),
+      /**
+       * Quantos frames do clipe sao PULADOS antes de comecar.
+       *
+       * Vira `trimBefore` no OffthreadVideo. Com default para props antigas
+       * continuarem validas -- e porque zero e o que o app sempre fez.
+       */
+      sourceStartFrames: z.number().int().nonnegative().default(0),
       transitionIn: z.enum(TRANSITIONS),
       /** Frames da transicao de entrada. 0 = corte seco. */
       transitionInFrames: z.number().int().nonnegative(),

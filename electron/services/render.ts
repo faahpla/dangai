@@ -493,6 +493,17 @@ async function measureLoudness(audioPath: string): Promise<LoudnessMeasurement |
     const fields = ['input_i', 'input_tp', 'input_lra', 'input_thresh', 'target_offset'] as const
     if (!fields.every((f) => typeof m[f] === 'string')) return null
 
+    /*
+     * Narracao MUDA devolve `-inf` e `inf` nas medidas, e o ffmpeg recusa esses
+     * valores na segunda passada com "Result too large" -- uma mensagem que nao
+     * ajuda ninguem a entender que o audio esta silencioso.
+     *
+     * Devolver null aqui faz o loudnorm cair para a passada unica, que aceita
+     * silencio sem reclamar. O video sai mudo, que e o correto: o audio dele e
+     * que estava mudo.
+     */
+    if (fields.some((f) => !Number.isFinite(Number(m[f])))) return null
+
     return {
       input_i: m['input_i'] as string,
       input_tp: m['input_tp'] as string,
