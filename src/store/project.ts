@@ -923,7 +923,26 @@ export const useProject = create<ProjectState>((set, get) => ({
     }
 
     if (caminhos.length === 0) {
-      set({ libraryError: 'Marque pelo menos uma cena em alguma frase.' })
+      set({ libraryError: 'Marque pelo menos uma cena em algum trecho.' })
+      return
+    }
+
+    /*
+     * Marca que sobrou de um roteiro ANTERIOR nao entra em silencio.
+     *
+     * blockClips e indexado por posicao do trecho. Se o roteiro foi relido e
+     * encurtou, os indices que passam do fim nao viram bloco nenhum -- e o que
+     * ele marcou simplesmente nao aparece no video. Melhor dizer.
+     */
+    const perdidas = Object.entries(blockClips).filter(
+      ([chave, cenas]) => cenas.length > 0 && Number(chave) >= scriptBlocks.length,
+    )
+    if (perdidas.length > 0) {
+      set({
+        libraryError:
+          `${perdidas.length} ${perdidas.length === 1 ? 'trecho marcado nao existe' : 'trechos marcados nao existem'} ` +
+          'mais no roteiro -- ele mudou depois que voce marcou. Limpe e marque de novo.',
+      })
       return
     }
 
@@ -1621,6 +1640,27 @@ export const useProject = create<ProjectState>((set, get) => ({
       captionY, music, musicGainDb,
     } = get()
     if (!audio || images.length === 0 || !plan) return null
+
+    /*
+     * Bloco que aponta para imagem inexistente some do video EM SILENCIO.
+     *
+     * toRenderProps descarta essas cenas -- e precisa descartar, senao o render
+     * quebraria --, mas ate agora ninguem era avisado: o video saia com a
+     * duracao certa e um pedaco a menos de conteudo, que e exatamente o
+     * sintoma de "cortou os ultimos blocos". Se o plano e a esteira
+     * discordarem, e melhor recusar e dizer do que entregar um video errado
+     * sem avisar.
+     */
+    const orfas = plan.scenes.filter((scene) => !images[scene.imageIndex])
+    if (orfas.length > 0) {
+      set({
+        error:
+          `${orfas.length} ${orfas.length === 1 ? 'bloco aponta' : 'blocos apontam'} para uma cena ` +
+          'que nao esta mais no projeto, e sairiam do video sem aviso. ' +
+          'Monte de novo antes de renderizar.',
+      })
+      return null
+    }
 
     set({
       playing: false,
