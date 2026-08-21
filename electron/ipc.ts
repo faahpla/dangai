@@ -127,7 +127,7 @@ export function registerIpc(): void {
    */
   handle<[string], string>(IPC.readScript, async (path) => {
     const raw = await readFile(path, 'utf8')
-    return raw.replace(/^\ufeff/, '')
+    return semGrifo(raw.replace(/^\ufeff/, ''))
   })
 
   // ---------------------------------------------------------------- biblioteca
@@ -385,4 +385,27 @@ export function registerIpc(): void {
     saveSettings(patch)
     return getSettingsForRenderer()
   })
+}
+
+/**
+ * Tira o GRIFO de markdown do roteiro, sem tocar no texto.
+ *
+ * Ele escreve o roteiro com destaque (`**todas as mortes dele.**`) para saber o
+ * que enfatizar ao gravar, e a TTS nunca leu os asteriscos -- sao anotacao
+ * dele, nao fala.
+ *
+ * Deixar passar quebrava tres coisas de uma vez, e a primeira em silencio:
+ * `dele.**` nao termina em ponto, entao a frase NAO FECHAVA e emendava na
+ * seguinte. No roteiro de Re:Zero dele isso virou um bloco de 10,5 segundos
+ * com tres frases dentro. Alem disso a legenda sairia com `**todas` queimado
+ * no video, e o alinhamento tentaria casar `**todas` com o `todas` que o
+ * Whisper ouviu.
+ *
+ * So os marcadores que envolvem palavra -- asterisco, til e crase. O sublinhado
+ * fica de fora de proposito: ele aparece em nome de arquivo e de episodio, e
+ * tirar seria estragar texto de verdade para consertar um grifo que ele quase
+ * nunca usa.
+ */
+function semGrifo(texto: string): string {
+  return texto.replace(/[*~`]/g, '')
 }
