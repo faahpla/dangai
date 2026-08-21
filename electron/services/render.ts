@@ -437,10 +437,22 @@ async function muxWithNormalizedAudio(
 
   // normalize=0: sem isso o amix divide o volume pelo numero de entradas e a
   // narracao afunda a cada SFX adicionado.
-  const mix =
+  const misturado =
     labels.length > 1
-      ? `${labels.join('')}amix=inputs=${labels.length}:duration=first:normalize=0[out]`
-      : `[narr]anull[out]`
+      ? `${labels.join('')}amix=inputs=${labels.length}:duration=first:normalize=0`
+      : `[narr]anull`
+
+  /*
+   * O audio termina EXATAMENTE junto com o video, medido e nao negociado.
+   *
+   * apad enche o que faltar com silencio, atrim corta o que passar. Antes disso
+   * quem alinhava as pontas era o -shortest, e ele cortava o video: com trilha,
+   * o -stream_loop -1 da musica fazia o ffmpeg encerrar no comeco do fade de
+   * saida e o video perdia os ultimos segundos -- os "ultimos blocos sumiram"
+   * que ele viu em 21/08. Sem trilha o defeito nao aparecia, que e por que ele
+   * demorou tanto a ser achado.
+   */
+  const mix = `${misturado}[cru];[cru]apad,atrim=0:${durationSec.toFixed(3)},asetpts=N/SR/TB[out]`
 
   await runFfmpeg([
     '-y',
@@ -456,9 +468,10 @@ async function muxWithNormalizedAudio(
     // encoders de plataforma tratam mono de forma inconsistente.
     '-ac', '2',
     '-movflags', '+faststart',
-    // O video tem exatamente a duracao do audio; -shortest apara qualquer
-    // sobra de arredondamento de frame.
-    '-shortest',
+    // Trava de seguranca: o audio ja sai no tamanho certo do filtro, e o video
+    // vem com a duracao exata do Remotion. -t garante que nenhuma entrada
+    // (a musica em loop, em particular) estique a saida.
+    '-t', durationSec.toFixed(3),
     outputPath,
   ])
 }
