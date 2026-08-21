@@ -395,7 +395,29 @@ async function muxWithNormalizedAudio(
     ? `loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true`
     : 'loudnorm=I=-14:TP=-1.5:LRA=11'
 
-  const inputs = ['-i', videoPath, '-i', audioPath]
+  /*
+   * A normalizacao acontece SOZINHA, num passo antes do mix.
+   *
+   * O loudnorm olha 3 segundos a frente. Quando ele divide o grafo com uma
+   * entrada que sobrevive a narracao -- a trilha, e so ela: SFX sao curtos e
+   * acabam antes -- esses 3 segundos finais nunca saem do filtro, e o video
+   * termina com imagem e sem voz. Foi o que ele viu em 21/08: primeiro o video
+   * cortava junto, depois so o audio. Mesma causa, dois sintomas.
+   *
+   * Normalizando em separado o mix recebe um arquivo comum, ja no nivel certo,
+   * e a interacao deixa de existir. Custa ~2s numa narracao de 77s.
+   */
+  const narracaoNormalizada = join(dirname(videoPath), 'narracao-normalizada.wav')
+  await runFfmpeg([
+    '-y',
+    '-i', audioPath,
+    '-af', `${loudnormFilter},aformat=channel_layouts=stereo`,
+    '-c:a', 'pcm_s16le',
+    '-ar', '48000',
+    narracaoNormalizada,
+  ])
+
+  const inputs = ['-i', videoPath, '-i', narracaoNormalizada]
   for (const cue of sfx) inputs.push('-i', cue.path)
 
   // -stream_loop -1: uma faixa mais curta que o video se repete em vez de
@@ -403,9 +425,9 @@ async function muxWithNormalizedAudio(
   // o loop infinito nunca chega a segurar o encerramento do ffmpeg.
   if (music) inputs.push('-stream_loop', '-1', '-i', music.path)
 
-  // A narracao e normalizada primeiro e os SFX entram por cima em -12dB. Assim
-  // o nivel de referencia do video continua sendo a voz, que e o que importa.
-  const chain = [`[1:a]${loudnormFilter},aformat=channel_layouts=stereo[narr]`]
+  // Os SFX entram por cima da narracao em -12dB, para o nivel de referencia do
+  // video continuar sendo a voz, que e o que importa.
+  const chain = [`[1:a]aformat=channel_layouts=stereo[narr]`]
   const labels = ['[narr]']
 
   sfx.forEach((cue, index) => {
@@ -437,20 +459,23 @@ async function muxWithNormalizedAudio(
 
   // normalize=0: sem isso o amix divide o volume pelo numero de entradas e a
   // narracao afunda a cada SFX adicionado.
+  /*
+   * duration=longest e nao first: toda entrada aqui ja tem fim proprio -- a
+   * trilha vem cortada em durationSec logo acima, os SFX sao curtos -- entao
+   * "longest" nao tem como correr solto, e ainda cobre a narracao que acabe
+   * antes do fim da composicao.
+   */
   const misturado =
     labels.length > 1
-      ? `${labels.join('')}amix=inputs=${labels.length}:duration=first:normalize=0`
+      ? `${labels.join('')}amix=inputs=${labels.length}:duration=longest:normalize=0`
       : `[narr]anull`
 
   /*
    * O audio termina EXATAMENTE junto com o video, medido e nao negociado.
    *
    * apad enche o que faltar com silencio, atrim corta o que passar. Antes disso
-   * quem alinhava as pontas era o -shortest, e ele cortava o video: com trilha,
-   * o -stream_loop -1 da musica fazia o ffmpeg encerrar no comeco do fade de
-   * saida e o video perdia os ultimos segundos -- os "ultimos blocos sumiram"
-   * que ele viu em 21/08. Sem trilha o defeito nao aparecia, que e por que ele
-   * demorou tanto a ser achado.
+   * quem alinhava as pontas era o -shortest, e ele cortava o VIDEO quando havia
+   * trilha, levando embora os ultimos blocos.
    */
   const mix = `${misturado}[cru];[cru]apad,atrim=0:${durationSec.toFixed(3)},asetpts=N/SR/TB[out]`
 
