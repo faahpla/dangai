@@ -4,7 +4,7 @@ import type {
   AutomountBlock,
   ScriptBlocksResult,
 } from '@shared/channels'
-import { buildScriptIndex, readScript, toSentences } from '@shared/script-reader'
+import { buildScriptIndex, readScript, toPieces, toSentences } from '@shared/script-reader'
 import { selectClips } from '@shared/selection'
 import { transcriptOnly } from './transcribe'
 import { readNicknames } from './nicknames'
@@ -189,9 +189,17 @@ export async function scriptBlocks(
     throw new Error('Nao deu para ouvir a narracao. Sem o texto nao ha frase para marcar.')
   }
 
-  // Sem teto e sem piso: a frase e a unidade, do jeito que ele escreveu.
+  /*
+   * O bloco aqui e o TRECHO entre pontuacoes, e nao a frase.
+   *
+   * A montagem automatica quebra no teto de 3 segundos porque LA e o app que
+   * decide sozinho quantos cortes existem. Aqui quem decide e ele, e a unidade
+   * de decisao dele e o trecho: "eu quero ter a possibilidade de selecionar a
+   * linha inteira antes de qualquer pontuacao". A frase sobrevive como
+   * agrupamento na tela, pelo campo `sentence`.
+   */
   return {
-    blocks: toSentences(transcript.words, Number.POSITIVE_INFINITY, 0),
+    blocks: toPieces(transcript.words),
     transcript,
     scriptNote,
   }

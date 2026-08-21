@@ -284,6 +284,16 @@ export interface ScriptBlock {
   text: string
   start: number
   end: number
+  /**
+   * A qual FRASE este trecho pertence, contando do zero.
+   *
+   * O bloco deixou de ser a frase e passou a ser o TRECHO entre pontuacoes --
+   * "Isso acontece quando Subaru abre o Livro dos Mortos de Reid e," e um,
+   * "em vez de encontrar as memorias dele," e outro. A frase continua existindo
+   * como agrupamento na tela, e este numero e o que permite remonta-la sem
+   * trocar a lista de blocos por uma arvore.
+   */
+  sentence: number
 }
 
 export interface ScriptBlocksResult {

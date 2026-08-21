@@ -6,14 +6,24 @@ import type { LibraryClip } from '@shared/channels'
 import type { Word } from '@shared/contract'
 
 /**
- * O roteiro dentro da Biblioteca, frase a frase.
+ * O roteiro dentro da Biblioteca, trecho a trecho.
  *
  * Existe porque escolher cena sem saber ONDE ela cai era escolher no escuro --
- * palavras dele, "hoje e meio aleatorio ne?!". A frase aberta recebe as cenas
+ * palavras dele, "hoje e meio aleatorio ne?!". O trecho aberto recebe as cenas
  * que ele marcar na grade, e o contador diz na hora quanto cada uma vai durar.
  *
- * A frase e a unidade, e nao um bloco de tantos segundos: quantas cenas o
- * gancho tem e decisao dele. "Nessa parte eu usaria 3 cenas provavelmente".
+ * O alvo e o TRECHO entre pontuacoes, e nao a frase inteira. Ele pediu assim
+ * depois de usar: "eu quero ter a possibilidade de selecionar a linha inteira
+ * antes de qualquer pontuacao, virgula ou qualquer coisa do genero". Cortar so
+ * no ponto final deixava um bloco de 5,5 segundos onde ele queria tres cortes:
+ *
+ *   "Isso acontece quando Subaru abre o Livro dos Mortos de Reid e,"
+ *   "em vez de encontrar as memorias dele,"
+ *   "acaba no Corredor das Lembrancas."
+ *
+ * A frase continua na tela como AGRUPAMENTO, para ele nao perder de vista onde
+ * uma ideia comeca e acaba -- foi como ele descreveu, "cada frase que esta
+ * dentro de um bloco".
  */
 export function ScriptColumn() {
   const audio = useProject((s) => s.audio)
@@ -64,17 +74,54 @@ export function ScriptColumn() {
   /** Caminho -> a cena da biblioteca, para saber duracao e miniatura. */
   const porCaminho = new Map((library?.clips ?? []).map((c) => [c.path, c]))
 
+  /*
+   * Os trechos remontados em frases.
+   *
+   * A lista que vem do main e achatada -- e o que toda a maquinaria ja consome
+   * --, e cada trecho carrega o numero da frase de onde saiu. Agrupar aqui e
+   * so juntar os vizinhos que tem o mesmo numero.
+   */
+  const frases: { indices: number[]; start: number; end: number }[] = []
+  for (const [i, bloco] of blocos.entries()) {
+    const ultima = frases[frases.length - 1]
+    const mesma = ultima && blocos[ultima.indices[0]!]!.sentence === bloco.sentence
+    if (mesma) {
+      ultima.indices.push(i)
+      ultima.end = bloco.end
+    } else {
+      frases.push({ indices: [i], start: bloco.start, end: bloco.end })
+    }
+  }
+
   return (
     <Coluna>
       <header className="flex shrink-0 items-baseline justify-between border-b border-line px-4 py-2.5">
         <span className="text-[12px] font-medium text-ink">Roteiro</span>
         <span className="tnum text-[11px] text-ink-3">
-          {blocos.length} frases · {marcadas} cenas
+          {frases.length} frases · {blocos.length} trechos · {marcadas} cenas
         </span>
       </header>
 
       <div ref={lista} className="min-h-0 flex-1 overflow-y-auto">
-        {blocos.map((bloco, i) => {
+        {frases.map((frase, iFrase) => (
+          <div key={iFrase} className="border-b border-line">
+            {/*
+              O cabecalho da frase existe para ele nao perder de vista onde uma
+              ideia comeca e acaba. Ele nao e clicavel: quem recebe cena e o
+              TRECHO, e um alvo que parece clicavel e nao e seria pior que
+              nenhum.
+            */}
+            <div className="flex items-baseline justify-between gap-2 px-4 pb-0.5 pt-2">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-ink-3">
+                Frase {iFrase + 1}
+              </span>
+              <span className="tnum text-[10px] text-ink-3">
+                {tempo(frase.start)} – {tempo(frase.end)}
+              </span>
+            </div>
+
+            {frase.indices.map((i) => {
+          const bloco = blocos[i]!
           const cenas = porBloco[i] ?? []
           const dura = bloco.end - bloco.start
           const cada = cenas.length > 0 ? dura / cenas.length : dura
@@ -108,7 +155,7 @@ export function ScriptColumn() {
                 }
               }}
               className={[
-                'w-full cursor-pointer border-l-2 px-4 py-2.5 text-left transition-colors duration-150',
+                'w-full cursor-pointer border-l-2 py-2 pl-4 pr-4 text-left transition-colors duration-150',
                 aberto
                   ? 'border-l-accent bg-accent-dim'
                   : 'border-l-transparent hover:bg-elevated',
@@ -169,7 +216,9 @@ export function ScriptColumn() {
               )}
             </div>
           )
-        })}
+            })}
+          </div>
+        ))}
       </div>
     </Coluna>
   )

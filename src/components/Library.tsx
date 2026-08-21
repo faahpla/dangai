@@ -461,8 +461,8 @@ export function Library() {
         <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
           <span className="tnum text-[12px] text-ink-2">
             {totalMarcado > 0
-              ? `${totalMarcado} ${totalMarcado === 1 ? 'cena marcada' : 'cenas marcadas'} em ${Object.values(blockClips).filter((c) => c.length > 0).length} de ${blocos.length} frases`
-              : 'Escolha uma frase e marque as cenas dela'}
+              ? `${totalMarcado} ${totalMarcado === 1 ? 'cena marcada' : 'cenas marcadas'} em ${Object.values(blockClips).filter((c) => c.length > 0).length} de ${blocos.length} trechos`
+              : 'Escolha um trecho do roteiro e marque as cenas dele'}
           </span>
           <div className="flex items-center gap-2">
             <button

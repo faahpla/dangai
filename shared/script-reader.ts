@@ -358,3 +358,77 @@ function quebrar<T extends { start: number; end: number; text: string }>(
     ...quebrar(frase.slice(corte + 1), maxSec),
   ]
 }
+
+// ------------------------------------------------------------- trechos
+
+/**
+ * Onde um TRECHO termina: qualquer pontuacao, inclusive reticencia.
+ *
+ * Mais fino que FIM_DE_FRASE de proposito. A frase e a unidade da IDEIA; o
+ * trecho e a unidade do CORTE, e sao coisas diferentes. Palavras dele:
+ * "eu quero ter a possibilidade de selecionar a linha inteira antes de qualquer
+ * pontuacao, virgula ou qualquer coisa do genero".
+ *
+ * Reticencia entra na lista por escolha dele. Ela nao fecha a FRASE -- "morrer
+ * e voltar... ela decide" continua uma ideia so -- mas fecha o trecho, porque
+ * pausa dramatica costuma ser um bom lugar para a imagem trocar.
+ */
+const FIM_DE_TRECHO = /[.!?,;:](["')\]]?)$/
+
+/** Um pedaco de frase que ele pode marcar sozinho. */
+export interface ScriptPiece {
+  text: string
+  start: number
+  end: number
+  /** A qual frase este trecho pertence, contando do zero. */
+  sentence: number
+}
+
+/**
+ * Quebra a narracao em TRECHOS, e diz de qual frase cada um veio.
+ *
+ * Devolve a lista achatada, e nao a arvore: tudo que ja existe -- o que ele
+ * marcou, a pintura, a divisao do tempo, o plano montado -- trabalha com uma
+ * lista de blocos, e o numero da frase e o suficiente para a tela agrupar de
+ * volta. Trocar a lista por arvore obrigaria a reescrever quatro coisas que
+ * funcionam para ganhar nada.
+ *
+ * Trecho que ele deixar vazio nao vira bloco: o tempo dele e absorvido pela
+ * cena anterior. E o que deixa marcar so onde ele quer que a imagem troque.
+ */
+export function toPieces(
+  words: readonly { text: string; start: number; end: number }[],
+): ScriptPiece[] {
+  const limpas = words.filter((w) => w.text.trim().length > 0)
+  if (limpas.length === 0) return []
+
+  const saida: ScriptPiece[] = []
+  let atual: typeof limpas = []
+  let frase = 0
+
+  const fechar = (): void => {
+    if (atual.length === 0) return
+    saida.push({
+      text: atual.map((w) => w.text.trim()).join(' '),
+      start: atual[0]!.start,
+      end: atual[atual.length - 1]!.end,
+      sentence: frase,
+    })
+    atual = []
+  }
+
+  for (const palavra of limpas) {
+    atual = [...atual, palavra]
+    const texto = palavra.text.trim()
+    if (!FIM_DE_TRECHO.test(texto)) continue
+
+    // A frase so avanca no ponto final -- a virgula fecha o trecho e continua
+    // na mesma ideia.
+    const fechaFrase = FIM_DE_FRASE.test(texto)
+    fechar()
+    if (fechaFrase) frase += 1
+  }
+  fechar()
+
+  return saida
+}
