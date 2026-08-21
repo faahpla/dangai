@@ -38,6 +38,14 @@ const ESCALA = 1.05
 export interface FaceFocus {
   focusX: number
   focusY: number
+  /**
+   * Que fracao da imagem o rosto ocupa, de 0 a 1.
+   *
+   * Existe para o CLIPE, que e olhado em varios instantes: entre um rosto de
+   * perto e um la no fundo, quem manda no enquadramento e o de perto. Num print
+   * so ha um instante e o numero nao decide nada -- mas nao custa carregar.
+   */
+  area: number
 }
 
 let cascadePath: string | null = null
@@ -204,8 +212,9 @@ export async function detectFocus(caminho: string): Promise<FaceFocus | null> {
     // resolucao em que a analise rodou.
     const centroX = (maior.x + maior.width / 2) / info.width
     const centroY = (maior.y + maior.height / 2) / info.height
+    const area = (maior.width * maior.height) / (info.width * info.height)
 
-    return focoPara(caminho, centroX, centroY)
+    return focoPara(caminho, centroX, centroY, area)
   } catch {
     return null
   }
@@ -222,6 +231,7 @@ async function focoPara(
   caminho: string,
   centroX: number,
   centroY: number,
+  area: number,
 ): Promise<FaceFocus | null> {
   const metadata = await sharp(caminho).metadata()
   const bruta = { width: metadata.width ?? 0, height: metadata.height ?? 0 }
@@ -242,7 +252,7 @@ async function focoPara(
   const focusX = folgaX > 0 ? (centroX * largura - RENDER_WIDTH / 2) / folgaX : 0.5
   const focusY = folgaY > 0 ? (centroY * altura - RENDER_HEIGHT / 2) / folgaY : 0.5
 
-  return { focusX: clamp01(focusX), focusY: clamp01(focusY) }
+  return { focusX: clamp01(focusX), focusY: clamp01(focusY), area }
 }
 
 function clamp01(valor: number): number {

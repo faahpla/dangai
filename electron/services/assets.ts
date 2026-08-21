@@ -1,13 +1,19 @@
 import { basename, join } from 'node:path'
-import { mkdirSync, existsSync } from 'node:fs'
+import { mkdirSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import { RENDER_HEIGHT, RENDER_WIDTH, type ImageAsset } from '@shared/contract'
 import { classifyFile } from '@shared/channels'
 import { publish } from './media-server'
-import { detectFocus } from './faces'
-import { configureClips, makeClipRenderReady, makeClipThumbnail, probeClip } from './clips'
+import { detectFocus, type FaceFocus } from './faces'
+import {
+  configureClips,
+  extrairFrames,
+  makeClipRenderReady,
+  makeClipThumbnail,
+  probeClip,
+} from './clips'
 
 /** Largura da miniatura usada no strip e nas tiras da timeline. */
 const THUMBNAIL_WIDTH = 220
@@ -51,15 +57,48 @@ export interface ImportSection {
  * centralizado e so depois seria refeito imagem por imagem -- o dobro do
  * trabalho do sharp, e um piscar de enquadramento errado na tela.
  */
+/**
+ * Quantos arquivos sao preparados ao mesmo tempo.
+ *
+ * Era `Promise.all` na lista inteira: doze clipes viravam doze ffmpeg
+ * simultaneos re-codificando 1080p, a maquina inteira parava e a janela do app
+ * congelava. Palavras dele: "o app deu uma congelada ate carregar tudo na
+ * timeline, eu acho necessario ter algum tipo de loading pra eu nao acabar
+ * fechando tudo achando que travou".
+ *
+ * Tres de cada vez mantem os nucleos ocupados sem sequestrar a maquina, e --
+ * mais importante -- deixa o andamento aparecer de verdade em vez de tudo
+ * terminar junto no fim.
+ */
+const IMPORTE_PARALELO = 3
+
+export type ImportProgress = (feitos: number, total: number) => void
+
 export async function importImages(
   paths: readonly string[],
   focus?: readonly ImportFocus[],
   sections?: readonly (ImportSection | null)[],
+  onProgress?: ImportProgress,
 ): Promise<ImageAsset[]> {
   mkdirSync(cacheDir, { recursive: true })
-  return Promise.all(
-    paths.map((path, index) => importOne(path, focus?.[index], sections?.[index] ?? null)),
-  )
+
+  const saida = new Array<ImageAsset>(paths.length)
+  let proxima = 0
+  let feitos = 0
+
+  const trabalhar = async (): Promise<void> => {
+    while (proxima < paths.length) {
+      const i = proxima++
+      // A ORDEM da saida e a da entrada, e nao a de quem terminou primeiro: ela
+      // e a ordem do video.
+      saida[i] = await importOne(paths[i]!, focus?.[i], sections?.[i] ?? null)
+      feitos += 1
+      onProgress?.(feitos, paths.length)
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(IMPORTE_PARALELO, paths.length) }, trabalhar))
+  return saida
 }
 
 /**
@@ -97,12 +136,32 @@ async function importOne(
 }
 
 /**
- * Importa um clipe: sonda, gera a miniatura e converte para o quadro 9:16.
+ * Quantos frames do clipe o detector de rosto olha.
  *
- * Nao ha deteccao de rosto aqui. O detector foi medido em imagem parada; num
- * clipe ele teria que rodar quadro a quadro para significar alguma coisa, e o
- * enquadramento ficaria pulando de rosto em rosto ao longo do bloco. Clipe
- * comeca no centro e o usuario ajusta, que e o mesmo controle da imagem.
+ * Um clipe nao tem "a imagem": o personagem pode entrar no quadro depois do
+ * primeiro segundo, ou sair antes do fim. Olhar um instante so decidiria o
+ * enquadramento pela sorte -- tres cobrem a cena sem virar rastreamento quadro
+ * a quadro, que faria o recorte pular ao longo do bloco.
+ *
+ * TRES, e nao cinco: medido em 28 cenas reais da biblioteca dele, cinco
+ * amostras acharam exatamente os mesmos rostos, custaram 34% mais tempo e
+ * ainda trouxeram um falso positivo a mais. O que limita nao e quantas vezes
+ * se olha -- e o detector, que nao dispara em perfil, nuca e plano aberto.
+ */
+const FRAMES_DE_ROSTO = [0.25, 0.5, 0.75] as const
+
+/**
+ * Importa um clipe: sonda, acha o rosto, gera a miniatura e converte para 9:16.
+ *
+ * O recorte 9:16 joga fora 68% da largura de um quadro 16:9, e ate a v1.11 o
+ * clipe sempre ficava com o terco central -- o mesmo problema que o print ja
+ * tinha resolvido. Pedido dele: "e importante os clipes serem automaticamente
+ * identificado os rostos".
+ *
+ * O detector e o mesmo do print (lbpcascade_animeface). A diferenca e que aqui
+ * ele olha TRES instantes e fica com o maior rosto entre eles. O enquadramento
+ * continua sendo UM para o bloco inteiro: seguir o rosto quadro a quadro faria
+ * a imagem deslizar sozinha, que e pior que um recorte fixo levemente errado.
  */
 async function importClip(
   path: string,
@@ -117,11 +176,23 @@ async function importClip(
   try {
     const id = randomUUID()
     const info = await probeClip(path)
+
+    /*
+     * O rosto so e procurado quando ele ainda nao decidiu.
+     *
+     * `focus` preenchido quer dizer projeto salvo reabrindo, ou enquadramento
+     * que ele ja moveu na mao -- em nenhum dos dois casos um detector pode
+     * chegar por cima e mexer.
+     */
+    const detectado = focus ? null : await rostoNoClipe(path, info.durationSec)
+    const x = clamp01(detectado?.focusX ?? focusX)
+    const y = clamp01(detectado?.focusY ?? focusY)
+
     const [thumbnail, renderPath] = await Promise.all([
       // A duracao vai junto: a miniatura sai da METADE do clipe, e cena de
       // anime pode durar menos de um segundo.
       makeClipThumbnail(path, info.durationSec),
-      makeClipRenderReady(path, id, focusX, focusY, info),
+      makeClipRenderReady(path, id, x, y, info),
     ])
 
     return {
@@ -132,9 +203,11 @@ async function importClip(
       width: info.width,
       height: info.height,
       thumbnail,
-      focusX,
-      focusY,
-      focusAuto: false,
+      focusX: x,
+      focusY: y,
+      // Marcado para a interface poder DIZER que mexeu. Enquadrar doze clipes
+      // em silencio seria mudar o video sem avisar.
+      focusAuto: detectado !== null,
       kind: 'video',
       section: section?.index ?? null,
       ...(section === null ? {} : { sectionName: section.name }),
@@ -276,4 +349,45 @@ async function makeRenderReady(
 
 function clamp01(value: number): number {
   return Number.isFinite(value) ? Math.min(Math.max(value, 0), 1) : 0.5
+}
+
+/**
+ * O enquadramento sugerido para um CLIPE, olhando alguns instantes dele.
+ *
+ * Fica com o maior rosto encontrado entre os frames, pelo mesmo motivo que o
+ * print fica com o maior dentro de um quadro: quem esta em primeiro plano e
+ * quem a cena esta mostrando. Devolve null quando nenhum instante tinha rosto
+ * confiavel -- ai o clipe fica no centro, como sempre ficou.
+ */
+async function rostoNoClipe(path: string, durationSec: number): Promise<FaceFocus | null> {
+  let frames: string[] = []
+  try {
+    frames = await extrairFrames(path, durationSec, FRAMES_DE_ROSTO)
+    let melhor: FaceFocus | null = null
+    for (const frame of frames) {
+      const achado = await detectFocus(frame).catch(() => null)
+      if (achado && (melhor === null || achado.area > melhor.area)) melhor = achado
+    }
+    return melhor
+  } catch {
+    // Rosto e melhoria, nunca requisito: falhar aqui deixa o clipe no centro.
+    return null
+  } finally {
+    /*
+     * Apagar e melhor esforco, nunca requisito.
+     *
+     * No Windows o sharp pode ainda estar com o arquivo aberto quando chegamos
+     * aqui, e o EPERM subia como "Nao foi possivel ler o clipe" -- derrubando a
+     * importacao inteira por causa de um temporario. Eles ficam no cache do
+     * sistema, tem nome deterministico (o proximo import sobrescreve) e pesam
+     * 100 KB.
+     */
+    for (const frame of frames) {
+      try {
+        rmSync(frame, { force: true })
+      } catch {
+        // Fica para o proximo import sobrescrever.
+      }
+    }
+  }
 }

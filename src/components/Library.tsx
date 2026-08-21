@@ -42,6 +42,12 @@ export function Library() {
   const openLibrary = useProject((s) => s.openLibrary)
   const library = useProject((s) => s.library)
   const busy = useProject((s) => s.libraryBusy)
+  /*
+   * O trabalho GERAL do app, que e o que acontece ao montar: preparar os clipes
+   * roda no main e leva dezenas de segundos. `libraryBusy` e outra coisa -- e a
+   * varredura da pasta.
+   */
+  const trabalhando = useProject((s) => s.busy)
   const error = useProject((s) => s.libraryError)
   const syncLibrary = useProject((s) => s.syncLibrary)
   const addFromLibrary = useProject((s) => s.addFromLibrary)
@@ -450,6 +456,22 @@ export function Library() {
               onEscolher={escolher}
             />
           </div>
+        </div>
+      )}
+
+      {/*
+        Enquanto prepara as cenas, uma cortina por cima de tudo.
+        Preparar doze clipes leva dezenas de segundos de ffmpeg, e ate agora a
+        tela ficava igual -- ele achava que o app tinha travado e cogitava
+        fechar. A cortina tambem impede um segundo clique em "Montar" no meio
+        do trabalho.
+      */}
+      {trabalhando !== null && (
+        <div className="absolute inset-0 z-50 grid place-items-center bg-bg/85">
+          <span className="flex items-center gap-2.5 text-[13px] text-ink">
+            <Loader2 size={16} strokeWidth={1.5} className="animate-spin text-accent" />
+            {trabalhando}
+          </span>
         </div>
       )}
 

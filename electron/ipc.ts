@@ -110,7 +110,15 @@ export function registerIpc(): void {
       readonly (ImportSection | null)[] | undefined,
     ],
     ImageAsset[]
-  >(IPC.importImages, (paths, focus, sections) => importImages(paths, focus, sections))
+  >(IPC.importImages, (paths, focus, sections) =>
+    /*
+     * O andamento vai pelo mesmo canal da analise: quem esta olhando a tela ve
+     * uma frase mudando, e nao dois indicadores disputando o mesmo canto.
+     */
+    importImages(paths, focus, sections, (feitos, total) => {
+      if (total > 1) broadcastAnalyze(`Preparando cena ${feitos} de ${total}...`)
+    }),
+  )
 
   handle<[ReframeArgs], string>(IPC.reframeImage, ({ id, path, focusX, focusY }) =>
     reframeImage(id, path, focusX, focusY),

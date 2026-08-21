@@ -266,3 +266,53 @@ function hashDe(texto: string): string {
   for (let i = 0; i < texto.length; i++) h = (Math.imul(31, h) + texto.charCodeAt(i)) | 0
   return (h >>> 0).toString(36)
 }
+
+/**
+ * Alguns frames soltos do clipe, para quem precisa OLHAR o conteudo.
+ *
+ * Existe para a deteccao de rosto. Um clipe nao tem "a imagem" -- o personagem
+ * pode entrar no quadro depois do primeiro segundo, ou sair antes do fim --,
+ * entao olhar um frame so decidiria o enquadramento pela sorte do instante.
+ *
+ * Os arquivos saem no cache e o chamador apaga: sao temporarios de verdade,
+ * usados e descartados dentro da importacao.
+ */
+export async function extrairFrames(
+  path: string,
+  durationSec: number,
+  fracoes: readonly number[],
+): Promise<string[]> {
+  mkdirSync(cacheDir, { recursive: true })
+  const base = hashDe(path)
+  const saida: string[] = []
+
+  for (const [i, fracao] of fracoes.entries()) {
+    const alvo = join(cacheDir, `face-${base}-${i}.jpg`)
+    const instante = Math.max(0, Math.min(durationSec * fracao, Math.max(durationSec - 0.05, 0)))
+    try {
+      await runFfmpeg([
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-ss',
+        instante.toFixed(3),
+        '-i',
+        path,
+        '-frames:v',
+        '1',
+        // 960px e a largura que o detector usa; maior custa tres vezes mais e
+        // nao acha mais rosto nenhum.
+        '-vf',
+        'scale=960:-2',
+        '-q:v',
+        '3',
+        '-y',
+        alvo,
+      ])
+      if (existsSync(alvo) && statSync(alvo).size > 1000) saida.push(alvo)
+    } catch {
+      // Um instante que nao abre nao pode derrubar os outros.
+    }
+  }
+  return saida
+}
