@@ -8,6 +8,7 @@ import { buildScriptIndex, readScript, toPieces, toSentences } from '@shared/scr
 import { selectClips } from '@shared/selection'
 import { transcriptOnly } from './transcribe'
 import { readNicknames } from './nicknames'
+import { readDescriptions } from './describe'
 import { scanLibrary } from './library'
 import { getSettings } from './settings'
 
@@ -119,6 +120,12 @@ export async function automount(
   const blocos = selectClips(linhas, library.clips, {
     mode: request.mode,
     series: request.series ? [request.series] : undefined,
+    /*
+     * O que ja foi lido das cenas. Vazio antes da primeira leitura, e ai a
+     * escolha continua sendo a de antes -- ligar o leitor e escolha dele, nao
+     * um pedagio antes do primeiro video.
+     */
+    descriptions: readDescriptions(),
   })
 
   const saida: AutomountBlock[] = blocos.map((b) => ({

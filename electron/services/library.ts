@@ -651,9 +651,24 @@ function unicos(valores: readonly string[]): string[] {
   return [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 }
 
+/**
+ * O caminho da pasta a partir da raiz da biblioteca.
+ *
+ * Barra e caixa sao normalizadas dos DOIS lados antes de comparar. O root vem
+ * das configuracoes e o dir vem da varredura do disco: no Windows eles podem
+ * discordar na barra ("D:/x" contra "D:\\x") ou na caixa ("d:" contra "D:").
+ * Quando discordam, o startsWith falha, o caminho INTEIRO vira o prefixo e a
+ * serie de toda cena passa a ser "D:" -- a biblioteca colapsa num anime so.
+ *
+ * E o estrago passa longe do filtro: o id da cena tambem sai daqui, entao
+ * etiqueta, favorito e descricao ficariam orfaos de uma vez, sem erro nenhum.
+ */
 function relativo(root: string, dir: string): string {
-  const corte = dir.startsWith(root) ? dir.slice(root.length) : dir
-  return corte.replace(/\\/g, '/').replace(/^\/+/, '')
+  const barras = (s: string): string => s.replace(/\\/g, '/').replace(/\/+$/, '')
+  const raiz = barras(root)
+  const pasta = barras(dir)
+  const dentro = pasta.toLowerCase().startsWith(raiz.toLowerCase())
+  return (dentro ? pasta.slice(raiz.length) : pasta).replace(/^\/+/, '')
 }
 
 function texto(valor: unknown): string {

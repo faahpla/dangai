@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   ChevronDown,
   ChevronRight,
+  Eye,
   FolderOpen,
   Loader2,
   RefreshCw,
@@ -65,6 +66,9 @@ export function Library() {
   const replaceSceneWith = useProject((s) => s.replaceSceneWith)
   const taggerBusy = useProject((s) => s.taggerBusy)
   const tagLibrary = useProject((s) => s.tagLibrary)
+  const descriptions = useProject((s) => s.descriptions)
+  const describeBusy = useProject((s) => s.describeBusy)
+  const describeLibrary = useProject((s) => s.describeLibrary)
   const applyBlockClips = useProject((s) => s.applyBlockClips)
 
   /*
@@ -142,14 +146,24 @@ export function Library() {
       const pronto = cache.get(id)
       if (pronto !== undefined) return pronto
       const etiquetas = tags[id] ?? []
-      const texto = etiquetas
-        .flatMap((e) => [e, ...(TAGS_PT[e] ?? [])])
+      /*
+       * As etiquetas e o que a cena MOSTRA entram no MESMO campo de busca.
+       *
+       * Dois campos separados obrigariam ele a saber de antemao se "tristeza"
+       * e etiqueta ou emocao -- que e detalhe de implementacao, nao decisao de
+       * edicao. Ele digita a palavra e a cena aparece, venha de onde vier.
+       */
+      const d = descriptions[id]
+      const texto = [
+        ...etiquetas.flatMap((e) => [e, ...(TAGS_PT[e] ?? [])]),
+        ...(d ? [d.emocao, d.acao, d.cenario, d.plano] : []),
+      ]
         .join(' ')
         .toLowerCase()
       cache.set(id, texto)
       return texto
     }
-  }, [tags])
+  }, [tags, descriptions])
 
   const filtrados = useMemo(() => {
     if (!library) return []
@@ -184,6 +198,19 @@ export function Library() {
    */
   /** Quantas cenas ja tem etiqueta, para o botao dizer o quanto falta. */
   const etiquetadas = Object.keys(tags).length
+
+  /*
+   * Quantas cenas DO ANIME ABERTO ja foram lidas.
+   *
+   * Do anime e nao do acervo porque a leitura e por anime: sao ~4,9s por cena,
+   * um episodio leva meia hora e o acervo inteiro passa de 24. Uma porcentagem
+   * do total inteiro ficaria em 3% por semanas e nao diria nada a ele.
+   */
+  const { lidas, doAnime } = useMemo(() => {
+    if (!library) return { lidas: 0, doAnime: 0 }
+    const alvo = anime ? library.clips.filter((c) => c.anime === anime) : library.clips
+    return { lidas: alvo.filter((c) => descriptions[c.id]).length, doAnime: alvo.length }
+  }, [library, anime, descriptions])
 
   const totalFavoritos = useMemo(() => {
     if (!library) return 0
@@ -335,6 +362,37 @@ export function Library() {
             {etiquetadas > 0 && (
               <span className="tnum text-[10px] text-ink-3">
                 {Math.round((etiquetadas / Math.max(library?.clips.length ?? 1, 1)) * 100)}%
+              </span>
+            )}
+          </button>
+          {/*
+            Ler cenas e SEMPRE do anime aberto, nunca do acervo.
+
+            Sao ~4,9s por cena: um episodio leva meia hora, o acervo inteiro
+            passa de 24 horas. Um botao que so funcionasse "para tudo" seria um
+            botao que ele nunca clicaria. Com o anime aberto ele le o que vai
+            usar hoje e monta hoje.
+          */}
+          <button
+            type="button"
+            onClick={() => void describeLibrary(anime)}
+            disabled={describeBusy || busy !== null || doAnime === 0}
+            title={
+              anime
+                ? `Le emocao, acao e cenario das cenas de ${anime}. ${lidas.toLocaleString('pt-BR')} de ${doAnime.toLocaleString('pt-BR')} ja lidas. Precisa do Ollama aberto.`
+                : 'Abra um anime na lista ao lado para ler as cenas dele. Ler o acervo inteiro levaria mais de 24 horas.'
+            }
+            className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
+          >
+            {describeBusy ? (
+              <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" />
+            ) : (
+              <Eye size={12} strokeWidth={1.5} className="text-accent" />
+            )}
+            Ler cenas
+            {doAnime > 0 && (
+              <span className="tnum text-[10px] text-ink-3">
+                {Math.round((lidas / doAnime) * 100)}%
               </span>
             )}
           </button>

@@ -15,6 +15,7 @@ import {
   type NicknameSuggestion,
   type ReframeArgs,
   type SaveProjectArgs,
+  type SceneDescription,
   type SettingsPatch,
   type StartRenderArgs,
   type UpdateStatus,
@@ -93,6 +94,12 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.tagLibrary) as Promise<IpcResult<Record<string, string[]>>>,
 
   readTags: () => ipcRenderer.invoke(IPC.readTags) as Promise<IpcResult<Record<string, string[]>>>,
+
+  describeLibrary: (anime: string | null) =>
+    ipcRenderer.invoke(IPC.describeLibrary, anime) as Promise<IpcResult<Record<string, SceneDescription>>>,
+
+  readDescriptions: () =>
+    ipcRenderer.invoke(IPC.readDescriptions) as Promise<IpcResult<Record<string, SceneDescription>>>,
 
   readFavorites: () => ipcRenderer.invoke(IPC.readFavorites) as Promise<IpcResult<string[]>>,
 

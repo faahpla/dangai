@@ -8,6 +8,7 @@ import type {
   LibraryIndex,
   MusicPick,
   Nickname,
+  SceneDescription,
   UpdateStatus,
 } from '@shared/channels'
 import {
@@ -193,6 +194,9 @@ export interface ProjectState {
    */
   tags: Record<string, string[]>
   taggerBusy: boolean
+  /** O que cada cena mostra: emocao, acao, cenario, plano. */
+  descriptions: Record<string, SceneDescription>
+  describeBusy: boolean
 
   /**
    * A proposta da montagem automatica, bloco a bloco.
@@ -299,6 +303,9 @@ export interface ProjectState {
   loadFavorites: () => Promise<void>
   /** Le as etiquetas ja guardadas. */
   loadTags: () => Promise<void>
+  loadDescriptions: () => Promise<void>
+  /** Le as cenas de UM anime. null le o acervo inteiro, que leva horas. */
+  describeLibrary: (anime: string | null) => Promise<void>
   /** Etiqueta as cenas que ainda nao tem etiqueta. */
   tagLibrary: () => Promise<void>
   /** Liga ou desliga o favorito de uma cena. */
@@ -529,6 +536,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   favorites: [],
   tags: {},
   taggerBusy: false,
+  descriptions: {},
+  describeBusy: false,
   nicknamesBusy: false,
   queue: [],
   queueRunning: false,
@@ -1519,6 +1528,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       get().loadNicknames(),
       get().loadFavorites(),
       get().loadTags(),
+      get().loadDescriptions(),
     ])
   },
 
@@ -1535,6 +1545,26 @@ export const useProject = create<ProjectState>((set, get) => ({
   loadTags: async () => {
     const result = await window.dangai.readTags()
     if (result.ok) set({ tags: result.value })
+  },
+
+  loadDescriptions: async () => {
+    const result = await window.dangai.readDescriptions()
+    if (result.ok) set({ descriptions: result.value })
+  },
+
+  describeLibrary: async (anime) => {
+    if (get().describeBusy) return
+    /*
+     * Um anime por vez, e nunca sozinho.
+     *
+     * Sao ~4,9s por cena: um episodio leva meia hora e o acervo inteiro passa
+     * de 24. Por isso o botao le o anime aberto, e nao tudo -- ele consegue
+     * trabalhar no mesmo dia em vez de esperar uma noite antes do primeiro uso.
+     */
+    set({ describeBusy: true, libraryError: null, libraryBusy: 'Preparando o leitor de cenas...' })
+    const result = await window.dangai.describeLibrary(anime)
+    if (result.ok) set({ descriptions: result.value, describeBusy: false, libraryBusy: null })
+    else set({ libraryError: result.error, describeBusy: false, libraryBusy: null })
   },
 
   tagLibrary: async () => {

@@ -68,6 +68,8 @@ export const IPC = {
   scriptBlocks: 'automount:blocks',
   tagLibrary: 'tagger:run',
   readTags: 'tagger:read',
+  describeLibrary: 'describe:run',
+  readDescriptions: 'describe:read',
   readFavorites: 'favorites:read',
   toggleFavorite: 'favorites:toggle',
   /** main -> renderer, andamento da varredura da biblioteca */
@@ -362,6 +364,25 @@ export interface SettingsPatch {
  * A superficie que o preload expoe. O renderer nao conhece nada alem disto.
  * O import de contract aqui e `import type`, entao e apagado na compilacao.
  */
+/**
+ * O que uma cena mostra, em portugues.
+ *
+ * Curto e em portugues de proposito: o roteiro dele e em portugues, entao
+ * casar "raiva" com "raiva" dispensa a tabela de traducao que as etiquetas em
+ * ingles exigiram. Campo vazio significa que a cena foi lida e o modelo nao
+ * soube dizer -- diferente de nao estar no mapa, que significa nao lida.
+ */
+export interface SceneDescription {
+  /** O sentimento dominante, uma palavra. */
+  emocao: string
+  /** O que acontece, poucas palavras. */
+  acao: string
+  /** Onde se passa, poucas palavras. */
+  cenario: string
+  /** close, medio, aberto ou detalhe. */
+  plano: string
+}
+
 export interface DangaiBridge {
   /** Resolve o caminho real de um File soltado na janela (Electron >= 32). */
   pathForFile(file: File): string
@@ -435,6 +456,15 @@ export interface DangaiBridge {
   tagLibrary(): Promise<IpcResult<Record<string, string[]>>>
   /** As etiquetas ja guardadas. Vazio antes da primeira etiquetagem. */
   readTags(): Promise<IpcResult<Record<string, string[]>>>
+  /**
+   * Le o que cada cena mostra: emocao, acao, cenario e plano.
+   *
+   * Passe o nome do anime para ler so ele. O acervo inteiro leva horas -- um
+   * anime por vez e o uso esperado. null le tudo que ainda falta.
+   */
+  describeLibrary(anime: string | null): Promise<IpcResult<Record<string, SceneDescription>>>
+  /** O que ja foi lido. Vazio antes da primeira leitura. */
+  readDescriptions(): Promise<IpcResult<Record<string, SceneDescription>>>
   /** Ids das cenas favoritadas. O anime esta dentro do proprio id. */
   readFavorites(): Promise<IpcResult<string[]>>
   /** Liga ou desliga um favorito. Devolve a lista inteira depois da troca. */

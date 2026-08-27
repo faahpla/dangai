@@ -19,6 +19,7 @@ import {
   type NicknameSuggestion,
   type ReframeArgs,
   type SaveProjectArgs,
+  type SceneDescription,
   type SettingsPatch,
   type StartRenderArgs,
 } from '@shared/channels'
@@ -47,6 +48,7 @@ import { scanLibrary } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
 import { automount, scriptBlocks } from './services/automount'
 import { readFavorites, toggleFavorite } from './services/favorites'
+import { describeClips, readDescriptions } from './services/describe'
 import { readTags, tagClips } from './services/tagger'
 import {
   clearAutosave,
@@ -213,6 +215,26 @@ export function registerIpc(): void {
     // garante que episodio recem-adicionado tambem seja etiquetado.
     const library = await scanLibrary(libraryDir, publish, broadcastLibrary)
     return tagClips(library.clips, broadcastLibrary)
+  })
+
+  handle<[], Record<string, SceneDescription>>(IPC.readDescriptions, async () => readDescriptions())
+
+  handle<[string | null], Record<string, SceneDescription>>(IPC.describeLibrary, async (anime) => {
+    const { libraryDir } = getSettings()
+    if (!libraryDir) {
+      throw new Error('Escolha a pasta das cenas nas configuracoes antes de ler as cenas.')
+    }
+    const library = await scanLibrary(libraryDir, publish, broadcastLibrary)
+    /*
+     * Um anime por vez e o uso esperado: sao ~4,7s por cena, entao o acervo
+     * inteiro passa de 24 horas e um episodio sai em meia hora. null le tudo,
+     * para quem quiser deixar rodando de madrugada.
+     */
+    const alvo = anime ? library.clips.filter((c) => c.anime === anime) : library.clips
+    if (alvo.length === 0) {
+      throw new Error(`Nenhuma cena encontrada${anime ? ` em "${anime}"` : ''}.`)
+    }
+    return describeClips(alvo, broadcastLibrary)
   })
 
   handle<[], string[]>(IPC.readFavorites, async () => readFavorites())

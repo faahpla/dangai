@@ -9,6 +9,7 @@ import { configureSettings } from './services/settings'
 import { configureLibrary } from './services/library'
 import { configureNicknames } from './services/nicknames'
 import { configureFavorites } from './services/favorites'
+import { configureDescribe } from './services/describe'
 import { configureTagger } from './services/tagger'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { startUpdater } from './services/updater'
@@ -96,6 +97,7 @@ app.whenReady().then(async () => {
   configureNicknames(userData)
   configureFavorites(userData)
   configureTagger(userData)
+  configureDescribe(userData)
 
   // Os SFX moram no userData para o usuario poder trocar os arquivos: a pasta
   // do app some numa atualizacao e pode nem ter permissao de escrita.
