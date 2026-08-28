@@ -862,8 +862,18 @@ export const useProject = create<ProjectState>((set, get) => ({
       subtitlePath,
       script,
     })
+    /*
+     * `busy` tambem tem que ser limpo, e nao so o `scriptBlocksBusy`.
+     *
+     * O main transmite o andamento desta leitura pelo canal de analise, e o
+     * App joga toda mensagem desse canal no `busy` geral. Como quem clareia o
+     * `busy` e sempre a acao que o ACENDEU, e esta acendia so o proprio
+     * estado, a ultima mensagem ficava pendurada para sempre -- e a cortina da
+     * Biblioteca, que olha o `busy`, cobria a tela inteira com "Casando o
+     * roteiro com a narracao..." depois de a leitura ja ter dado certo.
+     */
     if (!r.ok) {
-      set({ scriptBlocksBusy: null, libraryError: r.error })
+      set({ scriptBlocksBusy: null, busy: null, libraryError: r.error })
       return
     }
     set({
@@ -874,6 +884,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       scriptNote: r.value.scriptNote,
       activeBlock: r.value.blocks.length > 0 ? 0 : null,
       scriptBlocksBusy: null,
+      busy: null,
     })
   },
 
