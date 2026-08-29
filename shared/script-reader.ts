@@ -370,10 +370,16 @@ function quebrar<T extends { start: number; end: number; text: string }>(
  * pontuacao, virgula ou qualquer coisa do genero".
  *
  * Reticencia entra na lista por escolha dele. Ela nao fecha a FRASE -- "morrer
- * e voltar... ela decide" continua uma ideia so -- mas fecha o trecho, porque
+ * e voltar… ela decide" continua uma ideia so -- mas fecha o trecho, porque
  * pausa dramatica costuma ser um bom lugar para a imagem trocar.
+ *
+ * As DUAS formas contam. "..." ja fechava por terminar em ponto, mas o roteiro
+ * dele sai do editor com “…”, o caractere unico U+2026 -- medido no Resumo
+ * S4EP02: quatro reticencias, todas U+2026, nenhuma com tres pontos. Sem ele
+ * na lista, "morrer e voltar… ela decide que quer experimentar todas as mortes
+ * dele." virava um trecho so de cinco segundos.
  */
-const FIM_DE_TRECHO = /[.!?,;:](["')\]]?)$/
+const FIM_DE_TRECHO = /[.!?,;:…](["')\]]?)$/
 
 /** Um pedaco de frase que ele pode marcar sozinho. */
 export interface ScriptPiece {

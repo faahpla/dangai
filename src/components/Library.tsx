@@ -264,6 +264,20 @@ export function Library() {
     }
   }, [tags, descriptions])
 
+  /*
+   * A Biblioteca nao abre despejando o acervo.
+   *
+   * Sem filtro nenhum a grade mostrava as 21 mil cenas na ordem do disco --
+   * comeca em Avatar, que quase nunca e o que ele veio buscar. Palavras dele:
+   * "a pagina inicial da biblioteca eu nao queria que ficasse mostrando os
+   * clipes logo de cara".
+   *
+   * Com roteiro carregado isso quase nunca aparece: o anime ja vem deduzido do
+   * proprio roteiro, entao um filtro ja esta ativo na primeira tela.
+   */
+  const semFiltro =
+    !anime && !episodio && !personagem && texto.trim() === '' && !soFavoritos && replaceTarget === null
+
   const filtrados = useMemo(() => {
     if (!library) return []
     const busca = texto.trim().toLowerCase()
@@ -644,14 +658,18 @@ export function Library() {
               />
             )}
 
-            <Grade
-              clips={filtrados}
-              escolhidos={replaceTarget !== null ? [] : porRoteiro ? marcadosNaFrase() : escolhidos}
-              usadas={usadasEmOutras}
-              favoritos={favoritosSet}
-              onFavoritar={(id) => void toggleFavorite(id)}
-              onEscolher={escolher}
-            />
+            {semFiltro ? (
+              <Comeco animes={library.animes.length} cenas={library.clips.length} />
+            ) : (
+              <Grade
+                clips={filtrados}
+                escolhidos={replaceTarget !== null ? [] : porRoteiro ? marcadosNaFrase() : escolhidos}
+                usadas={usadasEmOutras}
+                favoritos={favoritosSet}
+                onFavoritar={(id) => void toggleFavorite(id)}
+                onEscolher={escolher}
+              />
+            )}
           </div>
         </div>
       )}
@@ -1305,6 +1323,30 @@ function Grade({ clips, escolhidos, usadas, favoritos, onFavoritar, onEscolher }
  * diferente aqui faria parecer outra coisa, e nao e: sao as mesmas cenas da
  * biblioteca, so que ordenadas pelo que o trecho pede.
  */
+/**
+ * A primeira tela da Biblioteca, sem filtro nenhum.
+ *
+ * Melhor que 21 mil miniaturas na ordem do disco: elas comecavam em Avatar,
+ * que quase nunca e o que ele veio buscar, e a rolagem nao levava a lugar
+ * nenhum. Aqui o proximo passo esta escrito, e a coluna da esquerda -- que ja
+ * lista anime, episodio e personagem -- e o caminho.
+ */
+function Comeco({ animes, cenas }: { animes: number; cenas: number }) {
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center px-8">
+      <div className="max-w-[380px] text-center">
+        <p className="text-[13px] text-ink-2">
+          {cenas.toLocaleString('pt-BR')} cenas em {animes} {animes === 1 ? 'anime' : 'animes'}.
+        </p>
+        <p className="mt-1.5 text-[12px] leading-relaxed text-ink-3">
+          Escolha um anime ou episodio na coluna ao lado, ou busque pelo que aparece na cena —
+          um personagem, um cenario, uma emocao.
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function Sugestoes({
   candidatos,
   escolhidos,
