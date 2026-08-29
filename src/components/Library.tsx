@@ -13,6 +13,8 @@ import {
   X,
 } from 'lucide-react'
 import type { LibraryClip } from '@shared/channels'
+import { seriesDoRoteiro, sugerirParaBloco } from '@shared/suggest'
+import type { SelectionCandidate } from '@shared/selection'
 import { TAGS_PT } from '@shared/tags-pt'
 import { useProject } from '@/store/project'
 import { ScriptColumn } from '@/components/ScriptColumn'
@@ -57,6 +59,7 @@ export function Library() {
   const audio = useProject((s) => s.audio)
   const blocos = useProject((s) => s.scriptBlocks)
   const activeBlock = useProject((s) => s.activeBlock)
+  const setActiveBlock = useProject((s) => s.setActiveBlock)
   const blockClips = useProject((s) => s.blockClips)
   const toggleBlockClip = useProject((s) => s.toggleBlockClip)
   const favorites = useProject((s) => s.favorites)
@@ -82,6 +85,28 @@ export function Library() {
 
   const [texto, setTexto] = useState('')
   const [anime, setAnime] = useState<string | null>(null)
+  /*
+   * A pre-selecao acontece uma vez POR ROTEIRO, e nunca depois.
+   *
+   * A trava e o proprio roteiro, e nao um booleano de abertura: com a
+   * Biblioteca aberta ele pode largar outra narracao na janela, e uma trava
+   * por abertura deixaria o roteiro novo sem pre-selecao nenhuma -- foi o que
+   * o teste pegou. Guardando QUAL roteiro ja foi atendido, trocar de roteiro
+   * re-arma sozinho.
+   *
+   * E continua sendo so ponto de partida: clicar em "Todos" ou em outro
+   * episodio vale a partir dali, porque o roteiro nao mudou.
+   */
+  const preSelecionadoPara = useRef<unknown>(null)
+  /*
+   * Ja avisou que existem trechos vazios?
+   *
+   * O aviso e um passo, nao uma janela -- a spec dele nao tem modal fora do
+   * ⌘K e das configuracoes. Primeiro clique explica o que vai acontecer,
+   * segundo clique monta. Trecho vazio nao trava nada: as vezes ele quer
+   * mesmo que a cena anterior estique.
+   */
+  const [avisouVazios, setAvisouVazios] = useState(false)
   /**
    * Episodio escolhido, como "S17E42".
    *
@@ -103,11 +128,50 @@ export function Library() {
       if (event.key === 'Escape') {
         event.preventDefault()
         void openLibrary(false)
+        return
+      }
+
+      /*
+       * Teclado para andar pelo roteiro sem largar o mouse da grade.
+       *
+       * Sao ~39 trechos por video, e ate agora trocar de trecho era ir ate a
+       * coluna da esquerda e voltar. Com as setas a mao do mouse nunca sai da
+       * grade. Nada disso vale quando ele esta digitando na busca, ou o "j"
+       * de "jaqueta" viraria um pulo de trecho.
+       */
+      const alvo = event.target as HTMLElement | null
+      if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable)) return
+      if (!porRoteiro || !blocos || blocos.length === 0) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+
+      const atual = activeBlock ?? 0
+      if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        setActiveBlock(Math.min(atual + 1, blocos.length - 1))
+      } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+        event.preventDefault()
+        setActiveBlock(Math.max(atual - 1, 0))
+      } else if (event.key === 'Tab') {
+        /*
+         * Tab pula para o proximo trecho AINDA VAZIO, dando a volta no fim.
+         *
+         * E o gesto que fecha o trabalho: no fim da passada ele aperta Tab e,
+         * se nada acontecer, e porque nao falta nenhum.
+         */
+        event.preventDefault()
+        const total = blocos.length
+        for (let passo = 1; passo <= total; passo++) {
+          const i = (atual + passo) % total
+          if ((blockClips[i] ?? []).length === 0) {
+            setActiveBlock(i)
+            break
+          }
+        }
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, openLibrary])
+  }, [open, openLibrary, porRoteiro, blocos, activeBlock, blockClips, setActiveBlock])
 
   /*
    * Fechar zera tudo: escolha e filtros.
@@ -124,12 +188,47 @@ export function Library() {
     setApelidosAbertos(false)
     setTexto('')
     setAnime(null)
+    preSelecionadoPara.current = null
+    setAvisouVazios(false)
     setEpisodio(null)
     setPersonagem(null)
     setMinSec(0)
     setMaxSec(0)
     setSoFavoritos(false)
   }, [open])
+
+  /*
+   * O contexto que o motor de sugestao precisa, montado uma vez.
+   *
+   * Sao os mesmos dados que a montagem automatica usa -- personagens da
+   * biblioteca, apelidos dele, o que cada cena mostra --, so que aqui servem
+   * para ORDENAR, nunca para decidir.
+   */
+  const contexto = useMemo(() => {
+    if (!porRoteiro || !library || !blocos) return null
+    return {
+      blocks: blocos,
+      clips: library.clips,
+      characters: library.characters,
+      nicknames: Object.values(nicknames).flat(),
+      descriptions,
+    }
+  }, [porRoteiro, library, blocos, nicknames, descriptions])
+
+  /*
+   * Abrir ja no anime que o roteiro cita.
+   *
+   * Só quando a deducao aponta para UMA serie: roteiro que mistura duas -- ou
+   * que nao cita ninguem -- nao pre-seleciona nada, porque escolher errado por
+   * ele custaria mais do que nao escolher. E acontece uma vez so, entao clicar
+   * em "Todos" ou em outro episodio vale a partir dali.
+   */
+  useEffect(() => {
+    if (!open || !contexto || preSelecionadoPara.current === contexto.blocks) return
+    preSelecionadoPara.current = contexto.blocks
+    const series = seriesDoRoteiro(contexto)
+    if (series.length === 1) setAnime(series[0]!)
+  }, [open, contexto])
 
   const favoritosSet = useMemo(() => new Set(favorites), [favorites])
 
@@ -224,6 +323,48 @@ export function Library() {
     images.map((image) => image.section).filter((s): s is number => s !== null),
   ).size
 
+  /*
+   * Cenas ja gastas em OUTRA frase.
+   *
+   * Trocar de frase troca o que aparece marcado, entao uma cena usada tres
+   * frases atras volta a parecer livre -- e repetir a mesma cena num video
+   * curto e o tipo de erro que so aparece depois de renderizar.
+   *
+   * Fica ANTES do `if (!open) return null`, junto das sugestoes que dependem
+   * dela: hook depois de saida antecipada e o que derruba o React inteiro com
+   * "Rendered more hooks than during the previous render".
+   */
+  const usadasEmOutras = useMemo(() => {
+    if (!porRoteiro || !library) return new Set<string>()
+    const porPath = new Map(library.clips.map((c) => [c.path, c.id]))
+    const fora = new Set<string>()
+    for (const [chave, paths] of Object.entries(blockClips)) {
+      if (Number(chave) === activeBlock) continue
+      for (const p of paths) {
+        const id = porPath.get(p)
+        if (id) fora.add(id)
+      }
+    }
+    return fora
+  }, [porRoteiro, library, blockClips, activeBlock])
+
+  /*
+   * As cenas mais provaveis para o trecho aberto.
+   *
+   * Medido no acervo dele (20.693 cenas): 5ms por trecho, entao recalcular a
+   * cada troca de trecho e barato. Cena ja marcada em OUTRO trecho sai da
+   * frente -- ver no topo o que ele acabou de usar seria convite a repetir.
+   */
+  /** Trechos sem cena nenhuma. O tempo deles e absorvido pelo anterior. */
+  const trechosVazios = blocos
+    ? blocos.reduce((n, _, i) => n + ((blockClips[i] ?? []).length === 0 ? 1 : 0), 0)
+    : 0
+
+  const sugestoes = useMemo(() => {
+    if (!contexto || activeBlock === null || replaceTarget !== null) return []
+    return sugerirParaBloco(contexto, activeBlock, usadasEmOutras)
+  }, [contexto, activeBlock, replaceTarget, usadasEmOutras])
+
   if (!open) return null
 
   const escolher = (id: string): void => {
@@ -258,26 +399,6 @@ export function Library() {
 
   const totalMarcado = Object.values(blockClips).reduce((n, c) => n + c.length, 0)
 
-  /*
-   * Cenas ja gastas em OUTRA frase.
-   *
-   * Trocar de frase troca o que aparece marcado, entao uma cena usada tres
-   * frases atras volta a parecer livre -- e repetir a mesma cena num video
-   * curto e o tipo de erro que so aparece depois de renderizar.
-   */
-  const usadasEmOutras = (): Set<string> => {
-    if (!porRoteiro || !library) return new Set()
-    const porPath = new Map(library.clips.map((c) => [c.path, c.id]))
-    const fora = new Set<string>()
-    for (const [chave, paths] of Object.entries(blockClips)) {
-      if (Number(chave) === activeBlock) continue
-      for (const p of paths) {
-        const id = porPath.get(p)
-        if (id) fora.add(id)
-      }
-    }
-    return fora
-  }
 
   /**
    * A ordem e a de CLIQUE, e nao a da grade.
@@ -505,10 +626,28 @@ export function Library() {
               onFavoritos={() => setSoFavoritos((v) => !v)}
               total={filtrados.length}
             />
+            {/*
+              As sugestoes ficam ACIMA da grade, nunca no lugar dela.
+
+              O custo do modo manual e varrer 20 mil cenas 39 vezes, uma por
+              trecho. Isto corta o palheiro sem tirar nada: a biblioteca
+              inteira continua logo abaixo, com todos os filtros de sempre. E
+              e sugestao mesmo -- nada entra no video sem ele clicar.
+            */}
+            {sugestoes.length > 0 && (
+              <Sugestoes
+                candidatos={sugestoes}
+                escolhidos={porRoteiro ? marcadosNaFrase() : escolhidos}
+                favoritos={favoritosSet}
+                onFavoritar={(id) => void toggleFavorite(id)}
+                onEscolher={escolher}
+              />
+            )}
+
             <Grade
               clips={filtrados}
               escolhidos={replaceTarget !== null ? [] : porRoteiro ? marcadosNaFrase() : escolhidos}
-              usadas={usadasEmOutras()}
+              usadas={usadasEmOutras}
               favoritos={favoritosSet}
               onFavoritar={(id) => void toggleFavorite(id)}
               onEscolher={escolher}
@@ -540,19 +679,33 @@ export function Library() {
       {replaceTarget !== null ? null : porRoteiro ? (
         <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
           <span className="tnum text-[12px] text-ink-2">
-            {totalMarcado > 0
-              ? `${totalMarcado} ${totalMarcado === 1 ? 'cena marcada' : 'cenas marcadas'} em ${Object.values(blockClips).filter((c) => c.length > 0).length} de ${blocos.length} trechos`
-              : 'Escolha um trecho do roteiro e marque as cenas dele'}
+            {trechosVazios > 0 && avisouVazios ? (
+              <span className="text-accent">
+                {trechosVazios} {trechosVazios === 1 ? 'trecho esta' : 'trechos estao'} sem cena — o tempo{' '}
+                {trechosVazios === 1 ? 'dele vai' : 'deles vai'} para a cena anterior. Tab pula para{' '}
+                {trechosVazios === 1 ? 'ele' : 'o proximo'}.
+              </span>
+            ) : totalMarcado > 0 ? (
+              `${totalMarcado} ${totalMarcado === 1 ? 'cena marcada' : 'cenas marcadas'} em ${Object.values(blockClips).filter((c) => c.length > 0).length} de ${blocos.length} trechos`
+            ) : (
+              'Escolha um trecho do roteiro e marque as cenas dele'
+            )}
           </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               disabled={totalMarcado === 0}
-              onClick={() => void applyBlockClips()}
+              onClick={() => {
+                if (trechosVazios > 0 && !avisouVazios) {
+                  setAvisouVazios(true)
+                  return
+                }
+                void applyBlockClips()
+              }}
               title="Cada frase se divide entre as cenas que voce marcou nela"
               className="lift rounded-sm border border-accent bg-accent-dim px-3.5 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
             >
-              Montar com essas cenas
+              {trechosVazios > 0 && avisouVazios ? 'Montar assim mesmo' : 'Montar com essas cenas'}
             </button>
           </div>
         </footer>
@@ -1136,6 +1289,55 @@ function Grade({ clips, escolhidos, usadas, favoritos, onFavoritar, onEscolher }
  * miniaturas de um mesmo plano sao quase iguais, e o movimento e o que
  * distingue uma da outra.
  */
+/**
+ * A faixa de sugestoes do trecho aberto.
+ *
+ * Rola na horizontal e usa o MESMO cartao da grade -- prever, favoritar e
+ * marcar funcionam igual, e o numero de ordem aparece igual. Um cartao
+ * diferente aqui faria parecer outra coisa, e nao e: sao as mesmas cenas da
+ * biblioteca, so que ordenadas pelo que o trecho pede.
+ */
+function Sugestoes({
+  candidatos,
+  escolhidos,
+  favoritos,
+  onFavoritar,
+  onEscolher,
+}: {
+  candidatos: readonly SelectionCandidate[]
+  escolhidos: readonly string[]
+  favoritos: ReadonlySet<string>
+  onFavoritar: (id: string) => void
+  onEscolher: (id: string) => void
+}) {
+  const ordens = new Map(escolhidos.map((id, i) => [id, i + 1]))
+  return (
+    <div className="border-b border-line px-3 pb-3 pt-2">
+      <div className="mb-1.5 flex items-baseline gap-2">
+        <span className="text-[11px] uppercase tracking-wide text-ink-3">Sugestoes para este trecho</span>
+        <span className="tnum text-[10px] text-ink-3">{candidatos.length}</span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {candidatos.map((c) => (
+          <div key={c.clip.id} className="w-[168px] shrink-0">
+            <Cartao
+              clip={c.clip}
+              ordem={ordens.get(c.clip.id) ?? 0}
+              favorito={favoritos.has(c.clip.id)}
+              onFavoritar={() => onFavoritar(c.clip.id)}
+              onClick={() => onEscolher(c.clip.id)}
+            />
+            {/* Por que esta cena entrou. Sem isso a faixa e um palpite sem defesa. */}
+            <p className="mt-0.5 truncate text-[10px] text-ink-3" title={c.reason}>
+              {c.reason}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function Cartao({
   clip,
   ordem,

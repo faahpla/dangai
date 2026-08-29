@@ -31,6 +31,8 @@ export function ScriptColumn() {
   const busy = useProject((s) => s.scriptBlocksBusy)
   const ativo = useProject((s) => s.activeBlock)
   const porBloco = useProject((s) => s.blockClips)
+  const pesos = useProject((s) => s.blockWeights)
+  const cycleBlockWeight = useProject((s) => s.cycleBlockWeight)
   const setAtivo = useProject((s) => s.setActiveBlock)
   const carregar = useProject((s) => s.loadScriptBlocks)
   const transcript = useProject((s) => s.transcript)
@@ -71,6 +73,15 @@ export function ScriptColumn() {
 
   const marcadas = Object.values(porBloco).reduce((n, c) => n + c.length, 0)
 
+  /*
+   * Quantos trechos ainda estao sem cena.
+   *
+   * O cabecalho dizia "39 trechos · 12 cenas" e nao dizia QUAIS faltavam --
+   * numa passada de 39 e facil pular um. Trecho vazio nao some do video: o
+   * tempo dele e absorvido pelo trecho anterior, em silencio.
+   */
+  const vazios = blocos.filter((_, i) => (porBloco[i] ?? []).length === 0).length
+
   /** Caminho -> a cena da biblioteca, para saber duracao e miniatura. */
   const porCaminho = new Map((library?.clips ?? []).map((c) => [c.path, c]))
 
@@ -99,6 +110,11 @@ export function ScriptColumn() {
         <span className="text-[12px] font-medium text-ink">Roteiro</span>
         <span className="tnum text-[11px] text-ink-3">
           {frases.length} frases · {blocos.length} trechos · {marcadas} cenas
+          {vazios > 0 && (
+            <span className="ml-1.5 text-accent" title={`${vazios} ${vazios === 1 ? 'trecho ainda sem cena. O tempo dele vai para o trecho anterior.' : 'trechos ainda sem cena. O tempo deles vai para o trecho anterior.'} Tab pula para o proximo.`}>
+              · {vazios} {vazios === 1 ? 'vazio' : 'vazios'}
+            </span>
+          )}
         </span>
       </header>
 
@@ -124,6 +140,16 @@ export function ScriptColumn() {
           const bloco = blocos[i]!
           const cenas = porBloco[i] ?? []
           const dura = bloco.end - bloco.start
+          /*
+           * As fatias saem do PESO de cada cena, nao do numero delas.
+           *
+           * Sem peso todas valem 1 e a conta volta a ser a de antes -- partes
+           * iguais. A mesma conta roda no applyBlockClips; se as duas
+           * discordassem, o que ele ve na fita nao seria o que sai no video.
+           */
+          const pesosDoBloco = cenas.map((_, j) => pesos[i]?.[j] ?? 1)
+          const somaPesos = pesosDoBloco.reduce((a, b) => a + b, 0)
+          const fatias = pesosDoBloco.map((peso) => (dura * peso) / somaPesos)
           const cada = cenas.length > 0 ? dura / cenas.length : dura
           const aberto = ativo === i
 
@@ -137,9 +163,11 @@ export function ScriptColumn() {
            * montagem automatica ja recusava clipe curto demais.
            */
           const congelamentos = cenas
-            .map((caminho) => porCaminho.get(caminho))
-            .filter((c): c is LibraryClip => c !== undefined && c.duration < cada)
-            .map((c) => cada - c.duration)
+            .map((caminho, j) => ({ clip: porCaminho.get(caminho), fatia: fatias[j] ?? cada }))
+            .filter((x): x is { clip: LibraryClip; fatia: number } =>
+              x.clip !== undefined && x.clip.duration < x.fatia,
+            )
+            .map((x) => x.fatia - x.clip.duration)
 
           return (
             <div
@@ -165,6 +193,19 @@ export function ScriptColumn() {
                 <span className="tnum text-[10px] text-ink-3">
                   {tempo(bloco.start)} – {tempo(bloco.end)}
                 </span>
+                {/*
+                  Trecho vazio se anuncia.
+                  Ele nao some do video -- o tempo dele e absorvido pelo trecho
+                  anterior --, entao pular um sem querer muda a montagem em
+                  silencio. Um ponto basta: a lista tem 39 linhas e um aviso
+                  por linha viraria ruido.
+                */}
+                {cenas.length === 0 && !aberto && (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-ink-3/50"
+                    title="Sem cena. O tempo deste trecho vai para o anterior."
+                  />
+                )}
                 {cenas.length > 0 && (
                   <span className="flex items-center gap-2">
                     {congelamentos.length > 0 && (
@@ -209,9 +250,11 @@ export function ScriptColumn() {
               {aberto && cenas.length > 0 && (
                 <Fita
                   caminhos={cenas}
-                  fatia={cada}
+                  duracao={dura}
+                  pesos={pesosDoBloco}
                   porCaminho={porCaminho}
                   onOrdem={(paths) => reordenar(i, paths)}
+                  onPeso={(posicao) => cycleBlockWeight(i, posicao)}
                 />
               )}
             </div>
@@ -315,16 +358,22 @@ function Frase({
  */
 function Fita({
   caminhos,
-  fatia,
+  duracao,
+  pesos,
   porCaminho,
   onOrdem,
+  onPeso,
 }: {
   caminhos: readonly string[]
-  /** Quanto tempo cada cena vai ocupar. */
-  fatia: number
+  /** O tempo do trecho inteiro, repartido entre as cenas conforme o peso. */
+  duracao: number
+  /** Peso de cada cena, na ordem da fita. 1 = todas iguais. */
+  pesos: readonly number[]
   porCaminho: Map<string, LibraryClip>
   onOrdem: (paths: string[]) => void
+  onPeso: (posicao: number) => void
 }) {
+  const soma = caminhos.reduce((a, _, i) => a + (pesos[i] ?? 1), 0)
   return (
     <Reorder.Group
       axis="x"
@@ -337,6 +386,8 @@ function Fita({
     >
       {caminhos.map((caminho, i) => {
         const clip = porCaminho.get(caminho)
+        const peso = pesos[i] ?? 1
+        const fatia = (duracao * peso) / soma
         const congela = clip ? fatia - clip.duration : 0
         return (
           <Reorder.Item
@@ -365,6 +416,28 @@ function Fita({
             <span className="tnum absolute left-0 top-0 rounded-br-[2px] bg-black/70 px-1 text-[9px] text-white">
               {i + 1}
             </span>
+            {/*
+              O peso da cena, num alvo proprio.
+              Nao no thumbnail inteiro: ele ja e alca de arrastar, e um clique
+              que as vezes reordena e as vezes muda o ritmo seria pior que nao
+              ter o controle. Ciclo curto -- 1x, 2x, 3x -- porque a decisao e
+              "qual dessas importa", nao um numero exato.
+            */}
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                onPeso(i)
+              }}
+              title={`Esta cena pesa ${peso}x — ${fatia.toFixed(1)}s. Clique para mudar.`}
+              className={[
+                'tnum absolute right-0 top-0 rounded-bl-[2px] px-1 text-[9px]',
+                peso > 1 ? 'bg-accent text-white' : 'bg-black/70 text-white/60',
+              ].join(' ')}
+            >
+              {peso}×
+            </button>
             <GripVertical
               size={10}
               strokeWidth={1.5}

@@ -235,6 +235,14 @@ export interface ProjectState {
   activeBlock: number | null
   /** frase -> caminhos das cenas dela, na ordem em que ele marcou. */
   blockClips: Record<number, string[]>
+  /*
+   * Quanto cada cena marcada pesa dentro do trecho, na ordem da fita.
+   *
+   * Ausente ou 1 = todas iguais, que e o comportamento de sempre. Existe
+   * porque dividir sempre em partes iguais decidia o RITMO por ele: tres cenas
+   * num trecho de 3s davam 1s cada, mesmo quando uma delas era a que importava.
+   */
+  blockWeights: Record<number, number[]>
 
   /**
    * Projetos esperando para renderizar, um atras do outro.
@@ -340,6 +348,8 @@ export interface ProjectState {
   toggleBlockClip: (path: string) => void
   /** Troca a ordem das cenas dentro de uma frase. */
   reorderBlockClips: (blockIndex: number, paths: readonly string[]) => void
+  /** Cicla o peso de uma cena da fita: 1x, 2x, 3x e volta. */
+  cycleBlockWeight: (blockIndex: number, posicao: number) => void
   /** Joga o roteiro montado no projeto: cada frase dividida entre as cenas dela. */
   applyBlockClips: () => Promise<void>
   analyze: () => Promise<void>
@@ -530,6 +540,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   scriptBlocksBusy: null,
   activeBlock: null,
   blockClips: {},
+  blockWeights: {},
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
@@ -676,7 +687,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Roteiro novo muda onde cada frase comeca e acaba: o que estava lido
       // deixa de valer.
       if (result.ok) {
-        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {} })
+        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {} })
       }
       else set({ error: result.error })
     }
@@ -718,6 +729,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           scriptBlocks: null,
           activeBlock: null,
           blockClips: {},
+          blockWeights: {},
         })
       } else {
         set({ error: result.error })
@@ -903,7 +915,15 @@ export const useProject = create<ProjectState>((set, get) => ({
     const proximos = atuais.includes(path)
       ? atuais.filter((p) => p !== path)
       : [...atuais, path]
-    set({ blockClips: { ...blockClips, [activeBlock]: proximos } })
+    /*
+     * Mexer na fita zera os pesos DAQUELE trecho.
+     *
+     * O peso e por POSICAO na fita. Tirar a cena do meio faria o peso dela
+     * escorregar para a vizinha em silencio, e o video sairia com o ritmo
+     * trocado sem ninguem ter pedido.
+     */
+    const { [activeBlock]: _fora, ...outrosPesos } = get().blockWeights
+    set({ blockClips: { ...blockClips, [activeBlock]: proximos }, blockWeights: outrosPesos })
   },
 
   reorderBlockClips: (blockIndex, paths) => {
@@ -915,11 +935,37 @@ export const useProject = create<ProjectState>((set, get) => ({
      * uma nuvem carregada". Por isso ela precisa ser arrastavel, e nao apenas a
      * ordem em que ele calhou de clicar.
      */
-    set((state) => ({ blockClips: { ...state.blockClips, [blockIndex]: [...paths] } }))
+    set((state) => {
+      // Reordenar tambem invalida o peso por posicao, pelo mesmo motivo.
+      const { [blockIndex]: _fora, ...outros } = state.blockWeights
+      return { blockClips: { ...state.blockClips, [blockIndex]: [...paths] }, blockWeights: outros }
+    })
+  },
+
+  cycleBlockWeight: (blockIndex, posicao) => {
+    /*
+     * Um clique na miniatura da fita: 1x, 2x, 3x e volta ao 1x.
+     *
+     * Ciclo curto de proposito. O que ele precisa e dizer "esta aqui e a que
+     * importa"; uma caixa de numero, ou arrastar borda, cobraria precisao que
+     * ele nao tem como ter olhando uma miniatura -- e o ajuste fino ja existe
+     * na linha do tempo, depois de montado.
+     */
+    set((state) => {
+      const quantas = (state.blockClips[blockIndex] ?? []).length
+      if (posicao < 0 || posicao >= quantas) return {}
+      const atuais = state.blockWeights[blockIndex] ?? []
+      const pesos = Array.from({ length: quantas }, (_, i) => atuais[i] ?? 1)
+      pesos[posicao] = (pesos[posicao]! % 3) + 1
+      return {
+        blockWeights: { ...state.blockWeights, [blockIndex]: pesos },
+        projectDirty: true,
+      }
+    })
   },
 
   applyBlockClips: async () => {
-    const { scriptBlocks, blockClips, audio } = get()
+    const { scriptBlocks, blockClips, blockWeights, audio } = get()
     if (!scriptBlocks || !audio) return
 
     /*
@@ -935,10 +981,23 @@ export const useProject = create<ProjectState>((set, get) => ({
     for (const [i, frase] of scriptBlocks.entries()) {
       const cenas = blockClips[i] ?? []
       if (cenas.length === 0) continue
-      const passo = (frase.end - frase.start) / cenas.length
+      /*
+       * A divisao segue o PESO de cada cena, e nao o numero delas.
+       *
+       * Sem peso todas valem 1 e a conta e a de sempre -- partes iguais. Com
+       * peso, uma cena marcada 2x fica com o dobro do tempo da vizinha: e como
+       * ele diz qual das tres cenas do trecho e a que importa, sem ter que
+       * montar e depois arrastar na linha do tempo.
+       */
+      const pesos = cenas.map((_, j) => blockWeights[i]?.[j] ?? 1)
+      const soma = pesos.reduce((a, b) => a + b, 0)
+      const duracao = frase.end - frase.start
+      let cursor = frase.start
       for (const [j, path] of cenas.entries()) {
+        const fatia = (duracao * pesos[j]!) / soma
         caminhos.push(path)
-        spans.push({ start: frase.start + j * passo, end: frase.start + (j + 1) * passo })
+        spans.push({ start: cursor, end: cursor + fatia })
+        cursor += fatia
       }
     }
 
