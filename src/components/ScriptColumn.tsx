@@ -108,10 +108,21 @@ export function ScriptColumn() {
     <Coluna>
       <header className="flex shrink-0 items-baseline justify-between border-b border-line px-4 py-2.5">
         <span className="text-[12px] font-medium text-ink">Roteiro</span>
+        {/*
+          Duas ou tres contagens, nunca quatro.
+          "25 frases" saia junto e nao mudava decisao nenhuma -- a frase e
+          agrupamento visual, o TRECHO e a unidade de trabalho. Com quatro
+          numeros o rosa dos vazios ainda quebrava linha.
+        */}
         <span className="tnum text-[11px] text-ink-3">
-          {frases.length} frases · {blocos.length} trechos · {marcadas} cenas
+          {blocos.length} trechos
+          {marcadas > 0 && ` · ${marcadas} cenas`}
           {vazios > 0 && (
-            <span className="ml-1.5 text-accent" title={`${vazios} ${vazios === 1 ? 'trecho ainda sem cena. O tempo dele vai para o trecho anterior.' : 'trechos ainda sem cena. O tempo deles vai para o trecho anterior.'} Tab pula para o proximo.`}>
+            <span
+              className="text-accent"
+              title={`${vazios} ${vazios === 1 ? 'trecho ainda sem cena. O tempo dele vai para o trecho anterior.' : 'trechos ainda sem cena. O tempo deles vai para o trecho anterior.'} Tab pula para o proximo.`}
+            >
+              {' '}
               · {vazios} {vazios === 1 ? 'vazio' : 'vazios'}
             </span>
           )}
@@ -127,12 +138,15 @@ export function ScriptColumn() {
               TRECHO, e um alvo que parece clicavel e nao e seria pior que
               nenhum.
             */}
-            <div className="flex items-baseline justify-between gap-2 px-4 pb-0.5 pt-2">
+            {/*
+              A frase nao repete o tempo.
+              Numa frase de um trecho so, o intervalo dela e o do trecho logo
+              abaixo -- o mesmo numero duas vezes seguidas. Quem recebe cena e
+              o trecho, entao o tempo fica com ele.
+            */}
+            <div className="px-4 pb-0.5 pt-2">
               <span className="text-[10px] font-medium uppercase tracking-wide text-ink-3">
                 Frase {iFrase + 1}
-              </span>
-              <span className="tnum text-[10px] text-ink-3">
-                {tempo(frase.start)} – {tempo(frase.end)}
               </span>
             </div>
 

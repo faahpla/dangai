@@ -1058,7 +1058,15 @@ function Item({
       ].join(' ')}
     >
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      <span className="tnum shrink-0 text-[10px] text-ink-3">{contagem}</span>
+      {/*
+        A contagem cede o peso visual para o NOME.
+        Ela continua ali -- e ela que mostra de cara que dois tercos das cenas
+        nao tem personagem --, mas "21017" com o mesmo peso de "Tensura" fazia
+        a coluna inteira parecer uma planilha.
+      */}
+      <span className="tnum shrink-0 text-[10px] text-ink-3/60">
+        {contagem.toLocaleString('pt-BR')}
+      </span>
     </button>
   )
 }
@@ -1311,15 +1319,29 @@ function Sugestoes({
   onEscolher: (id: string) => void
 }) {
   const ordens = new Map(escolhidos.map((id, i) => [id, i + 1]))
+
+  /*
+   * O motivo aparece UMA vez, no cabecalho -- nao um por cartao.
+   *
+   * Os doze costumam entrar pela mesma razao ("Natsuki, Subaru, so ele em
+   * cena"), entao repetir doze vezes a mesma frase truncada nao informava
+   * nada: so enchia a faixa de texto. Quando os motivos divergem, o cabecalho
+   * cala e cada cartao continua explicando no proprio tooltip.
+   */
+  const contagem = new Map<string, number>()
+  for (const c of candidatos) contagem.set(c.reason, (contagem.get(c.reason) ?? 0) + 1)
+  const [motivo, quantos] = [...contagem].sort((a, b) => b[1] - a[1])[0] ?? ['', 0]
+  const comum = quantos >= candidatos.length / 2 ? motivo : ''
+
   return (
     <div className="border-b border-line px-3 pb-3 pt-2">
       <div className="mb-1.5 flex items-baseline gap-2">
         <span className="text-[11px] uppercase tracking-wide text-ink-3">Sugestoes para este trecho</span>
-        <span className="tnum text-[10px] text-ink-3">{candidatos.length}</span>
+        {comum && <span className="min-w-0 truncate text-[11px] text-ink-3">· {comum}</span>}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {candidatos.map((c) => (
-          <div key={c.clip.id} className="w-[168px] shrink-0">
+          <div key={c.clip.id} className="w-[168px] shrink-0" title={c.reason}>
             <Cartao
               clip={c.clip}
               ordem={ordens.get(c.clip.id) ?? 0}
@@ -1327,10 +1349,6 @@ function Sugestoes({
               onFavoritar={() => onFavoritar(c.clip.id)}
               onClick={() => onEscolher(c.clip.id)}
             />
-            {/* Por que esta cena entrou. Sem isso a faixa e um palpite sem defesa. */}
-            <p className="mt-0.5 truncate text-[10px] text-ink-3" title={c.reason}>
-              {c.reason}
-            </p>
           </div>
         ))}
       </div>
@@ -1400,7 +1418,15 @@ function Cartao({
       }}
       onMouseEnter={entrar}
       onMouseLeave={sair}
-      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${usada ? ' · ja usada em outra frase' : ''}`}
+      /*
+       * Tudo que e texto vive AQUI, no tooltip, e nao embaixo da miniatura.
+       *
+       * Sao ~40 cartoes na tela: uma legenda por cartao virava 40 linhas de
+       * texto truncado disputando com as imagens. Palavras dele: "escolho pela
+       * imagem, pode tirar tudo". Quem precisa do episodio ou do personagem
+       * passa o mouse -- e a previa em video ja toca no mesmo gesto.
+       */
+      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.join(', ')}` : ''}${usada ? ' · ja usada em outra frase' : ''}`}
       className={[
         'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
         marcado
@@ -1484,14 +1510,6 @@ function Cartao({
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 px-1.5 py-1">
-        <span className="tnum shrink-0 text-[10px] text-ink-3">
-          E{pad(clip.episode)}·{clip.shot}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[10px] text-ink-2">
-          {clip.characters.join(', ')}
-        </span>
-      </div>
     </div>
   )
 }
