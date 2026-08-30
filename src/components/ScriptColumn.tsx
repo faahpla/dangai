@@ -33,6 +33,9 @@ export function ScriptColumn() {
   const porBloco = useProject((s) => s.blockClips)
   const pesos = useProject((s) => s.blockWeights)
   const cycleBlockWeight = useProject((s) => s.cycleBlockWeight)
+  const duplicateBlockClip = useProject((s) => s.duplicateBlockClip)
+  const unioes = useProject((s) => s.blockSplits)
+  const toggleBlockSplit = useProject((s) => s.toggleBlockSplit)
   const setAtivo = useProject((s) => s.setActiveBlock)
   const carregar = useProject((s) => s.loadScriptBlocks)
   const transcript = useProject((s) => s.transcript)
@@ -269,6 +272,9 @@ export function ScriptColumn() {
                   porCaminho={porCaminho}
                   onOrdem={(paths) => reordenar(i, paths)}
                   onPeso={(posicao) => cycleBlockWeight(i, posicao)}
+                  onRepetir={(posicao) => duplicateBlockClip(i, posicao)}
+                  unidas={unioes[i] ?? []}
+                  onDividir={(posicao) => toggleBlockSplit(i, posicao)}
                 />
               )}
             </div>
@@ -377,6 +383,9 @@ function Fita({
   porCaminho,
   onOrdem,
   onPeso,
+  onRepetir,
+  unidas,
+  onDividir,
 }: {
   caminhos: readonly string[]
   /** O tempo do trecho inteiro, repartido entre as cenas conforme o peso. */
@@ -386,8 +395,19 @@ function Fita({
   porCaminho: Map<string, LibraryClip>
   onOrdem: (paths: string[]) => void
   onPeso: (posicao: number) => void
+  onRepetir: (posicao: number) => void
+  /** Posicoes unidas com a seguinte, em tela dividida. */
+  unidas: readonly number[]
+  onDividir: (posicao: number) => void
 }) {
-  const soma = caminhos.reduce((a, _, i) => a + (pesos[i] ?? 1), 0)
+  /*
+   * O par unido ocupa UM slot, entao a soma dos pesos conta o par uma vez so --
+   * a mesma conta do applyBlockClips. Se as duas discordassem, o tempo que ele
+   * ve na fita nao seria o do video.
+   */
+  const uniao = new Set(unidas)
+  const donos = caminhos.map((_, i) => (uniao.has(i - 1) ? i - 1 : i))
+  const soma = caminhos.reduce((a, _, i) => (donos[i] === i ? a + (pesos[i] ?? 1) : a), 0)
   return (
     <Reorder.Group
       axis="x"
@@ -400,8 +420,11 @@ function Fita({
     >
       {caminhos.map((caminho, i) => {
         const clip = porCaminho.get(caminho)
-        const peso = pesos[i] ?? 1
+        const dono = donos[i]!
+        const peso = pesos[dono] ?? 1
         const fatia = (duracao * peso) / soma
+        const uneComProxima = uniao.has(i)
+        const eMetadeDeBaixo = dono !== i
         const congela = clip ? fatia - clip.duration : 0
         return (
           <Reorder.Item
@@ -452,6 +475,51 @@ function Fita({
             >
               {peso}×
             </button>
+            {/*
+              Repetir a mesma cena, logo depois desta.
+              Aqui e nao no cartao da grade: la o clique ALTERNA, e e assim que
+              ele desmarca. Na fita a ordem esta a vista, entao "de novo, logo
+              depois desta" nao tem ambiguidade.
+            */}
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                onRepetir(i)
+              }}
+              title="Usar esta cena mais uma vez, logo depois"
+              className="absolute bottom-0 left-0 rounded-tr-[2px] bg-black/70 px-1 text-[9px] leading-[13px] text-white/70 hover:text-white"
+            >
+              +
+            </button>
+            {/*
+              Unir esta cena com a proxima em tela dividida.
+              So aparece quando existe uma proxima. O par ocupa um slot so: as
+              duas tocam ao mesmo tempo, uma em cima e uma embaixo, pelo tempo
+              que uma sozinha teria.
+            */}
+            {i < caminhos.length - 1 && !eMetadeDeBaixo && (
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onDividir(i)
+                }}
+                title={
+                  uneComProxima
+                    ? 'Separar: cada cena volta a ocupar o quadro inteiro'
+                    : 'Dividir a tela com a proxima cena — esta em cima, a proxima embaixo'
+                }
+                className={[
+                  'absolute -right-[5px] top-1/2 z-10 grid size-[14px] -translate-y-1/2 place-items-center rounded-full text-[9px] leading-none',
+                  uneComProxima ? 'bg-accent text-white' : 'bg-black/70 text-white/60 hover:text-white',
+                ].join(' ')}
+              >
+                {uneComProxima ? '=' : '+'}
+              </button>
+            )}
             <GripVertical
               size={10}
               strokeWidth={1.5}

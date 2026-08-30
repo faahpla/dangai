@@ -28,6 +28,9 @@ export function Scene({
   kind,
   sourceDurationInFrames,
   sourceStartFrames,
+  abaixo,
+  focusX,
+  focusY,
 }: SceneProps) {
   const frame = useCurrentFrame()
 
@@ -67,6 +70,43 @@ export function Scene({
     transform: `scale(${scale}) translate(${x}%, ${y}%)`,
     // A transformacao parte do centro para o zoom nao puxar para um canto.
     transformOrigin: 'center center',
+  }
+
+  /*
+   * TELA DIVIDIDA: duas cenas ao mesmo tempo, uma em cima e uma embaixo.
+   *
+   * Cada metade ocupa 1080x960 e faz o proprio corte preenchendo, com o foco
+   * que o app ja tem -- o rosto detectado na importacao, ou o que ele arrastou.
+   * Por isso as duas partem do arquivo ORIGINAL: recortar o que ja veio em 9:16
+   * mostraria so a faixa central de um quadro estreito, e corta rosto.
+   *
+   * O Ken Burns fica de fora da divisao de proposito. Sao duas imagens
+   * disputando o olho num quadro pela metade; somar movimento em cada uma
+   * cansa mais do que ajuda, e ele pode dar ritmo com a duracao do bloco.
+   */
+  if (abaixo) {
+    return (
+      <AbsoluteFill style={{ backgroundColor: '#000', display: 'flex', flexDirection: 'column' }}>
+        <Metade
+          url={url}
+          kind={kind}
+          focusX={focusX}
+          focusY={focusY}
+          sourceDurationInFrames={sourceDurationInFrames}
+          sourceStartFrames={sourceStartFrames}
+          durationInFrames={durationInFrames}
+        />
+        <Metade
+          url={abaixo.url}
+          kind={abaixo.kind}
+          focusX={abaixo.focusX}
+          focusY={abaixo.focusY}
+          sourceDurationInFrames={abaixo.sourceDurationInFrames}
+          sourceStartFrames={abaixo.sourceStartFrames}
+          durationInFrames={durationInFrames}
+        />
+      </AbsoluteFill>
+    )
   }
 
   return (
@@ -165,4 +205,57 @@ function motionFor(
     case 'pan-down':
       return { scale: 1 + intensity, x: 0, y: travel - travel * 2 * (1 - t) }
   }
+}
+
+/**
+ * Uma das duas metades da tela dividida.
+ *
+ * Corte preenchendo: o quadro 16:9 entra numa caixa de 1080x960 com `cover`, e
+ * `objectPosition` usa o foco da cena para escolher QUAL parte fica. Sem isso a
+ * metade cortaria sempre pelo centro e o personagem sairia do quadro.
+ */
+function Metade({
+  url,
+  kind,
+  focusX,
+  focusY,
+  sourceDurationInFrames,
+  sourceStartFrames,
+  durationInFrames,
+}: {
+  url: string
+  kind: 'image' | 'video'
+  focusX: number
+  focusY: number
+  sourceDurationInFrames: number | null
+  sourceStartFrames: number
+  durationInFrames: number
+}) {
+  const frame = useCurrentFrame()
+  const ultimoFrame = Math.max((sourceDurationInFrames ?? durationInFrames) - 1, 0)
+  const congelando = sourceDurationInFrames !== null && frame > ultimoFrame
+
+  const preenchendo = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover' as const,
+    objectPosition: `${(focusX * 100).toFixed(1)}% ${(focusY * 100).toFixed(1)}%`,
+  }
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+      {kind === 'video' ? (
+        <Freeze frame={ultimoFrame} active={congelando}>
+          <OffthreadVideo
+            src={url}
+            muted
+            trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
+            style={preenchendo}
+          />
+        </Freeze>
+      ) : (
+        <Img src={url} style={preenchendo} />
+      )}
+    </div>
+  )
 }

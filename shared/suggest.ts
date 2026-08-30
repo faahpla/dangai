@@ -78,10 +78,17 @@ export function sugerirParaBloco(
   const linha = linhas[bloco]
   if (!linha) return []
 
-  const disponiveis = ctx.clips.filter((c) => !jaUsadas.has(c.id))
+  /*
+   * Cena ja usada continua aparecendo -- e so desce na lista.
+   *
+   * Antes ela sumia da faixa, para nao convidar a repetir. Estava errado:
+   * repetir e escolha dele ("em alguns momentos e cabivel eu colocar a mesma
+   * cena novamente"), e esconder tirava do alcance justamente a cena que ele
+   * queria de volta. O cartao ja mostra "ja usada"; avisar basta.
+   */
   const saida = selectClips(
     [{ ...linha, text: alvo.text, start: alvo.start, end: alvo.end }],
-    disponiveis,
+    ctx.clips,
     {
       /*
        * Modo teoria mesmo no recap: cronologia so faz sentido quando o app
@@ -97,5 +104,11 @@ export function sugerirParaBloco(
       series: seriesDoRoteiro(ctx),
     },
   )
-  return saida[0]?.candidates ?? []
+  const candidatos = saida[0]?.candidates ?? []
+  // Estavel: as nao usadas primeiro, mantendo a ordem de nota dentro de cada
+  // grupo. Assim repetir continua a um clique, sem roubar a frente.
+  return [
+    ...candidatos.filter((c) => !jaUsadas.has(c.clip.id)),
+    ...candidatos.filter((c) => jaUsadas.has(c.clip.id)),
+  ]
 }

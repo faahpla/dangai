@@ -68,6 +68,8 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
   const per = durationSec / imageCount
   const scenes: Scene[] = Array.from({ length: imageCount }, (_, index) => ({
     imageIndex: index,
+    // Tela cheia. A divisao e escolha dele, feita na fita da Biblioteca.
+    imageIndexB: null,
     start: index * per,
     end: index === imageCount - 1 ? durationSec : (index + 1) * per,
     effect: pickEffect(index),
@@ -129,6 +131,8 @@ export function planFromCandidates(
   const bounds = [0, ...chosen, durationSec]
   const scenes: Scene[] = Array.from({ length: imageCount }, (_, index) => ({
     imageIndex: index,
+    // Tela cheia. A divisao e escolha dele, feita na fita da Biblioteca.
+    imageIndexB: null,
     start: bounds[index]!,
     end: bounds[index + 1]!,
     effect: pickEffect(index),
@@ -226,6 +230,8 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
       ? { ...found, imageIndex: index }
       : {
           imageIndex: index,
+          // Tela cheia. A divisao e escolha dele, feita na fita da Biblioteca.
+          imageIndexB: null,
           start: (index * durationSec) / imageCount,
           end: ((index + 1) * durationSec) / imageCount,
           effect: pickEffect(index),
@@ -357,7 +363,9 @@ export function toRenderProps(
    */
   durationSec?: number,
 ): RenderProps {
-  const usable = plan.scenes.filter((scene) => images[scene.imageIndex])
+  const usable = plan.scenes.filter(
+    (scene) => images[scene.imageIndex] && (scene.imageIndexB === null || images[scene.imageIndexB]),
+  )
   if (usable.length === 0) {
     return { scenes: [], captions: [], cards: [], captionColor, captionY }
   }
@@ -435,8 +443,46 @@ export function toRenderProps(
 
     const sourceFrames = totalFonte === null ? null : totalFonte - inicioFonte
 
+    /*
+     * A metade de baixo, quando o bloco e tela dividida.
+     *
+     * Ela usa o arquivo ORIGINAL (`urlSource`) e nao o recorte 9:16: cada
+     * metade ocupa 1080x960, e recortar o que ja veio recortado mostraria so a
+     * faixa central de um quadro que ja e estreito -- corta rosto. Com o
+     * original, cada metade faz o proprio corte preenchendo, com o foco que o
+     * app ja guarda (o rosto detectado na importacao, ou o que ele arrastou).
+     */
+    const parceira = scene.imageIndexB === null ? undefined : images[scene.imageIndexB]
+    const fonteDe = (asset: typeof image): { total: number | null; inicio: number } => {
+      const total =
+        asset.kind === 'video' && asset.durationSec !== undefined
+          ? Math.floor(asset.durationSec * VIDEO_FPS)
+          : null
+      return { total, inicio: 0 }
+    }
+    const abaixo =
+      parceira === undefined
+        ? null
+        : (() => {
+            const { total } = fonteDe(parceira)
+            return {
+              url: parceira.urlSource ?? parceira.url,
+              kind: parceira.kind,
+              focusX: parceira.focusX,
+              focusY: parceira.focusY,
+              sourceDurationInFrames: total !== null && total < durationInFrames ? Math.max(total, 1) : null,
+              sourceStartFrames: 0,
+            }
+          })()
+
     return {
-      url: image.url,
+      // Na tela dividida a metade de CIMA tambem parte do original, pelo mesmo
+      // motivo da de baixo: recortar duas vezes come o enquadramento.
+      url: abaixo === null ? image.url : (image.urlSource ?? image.url),
+      urlSource: image.urlSource ?? null,
+      focusX: image.focusX,
+      focusY: image.focusY,
+      abaixo,
       durationInFrames,
       effect: scene.effect,
       intensity: scene.intensity,
@@ -748,6 +794,8 @@ export function planByRhythm(
   const bounds = [0, ...cortes, durationSec]
   const scenes: Scene[] = Array.from({ length: imageCount }, (_, index) => ({
     imageIndex: index,
+    // Tela cheia. A divisao e escolha dele, feita na fita da Biblioteca.
+    imageIndexB: null,
     start: bounds[index]!,
     end: bounds[index + 1]!,
     effect: pickEffect(index),
@@ -840,6 +888,8 @@ export function planBySections(
       const index = scenes.length
       scenes.push({
         imageIndex: index,
+        // Tela cheia. A divisao e escolha dele, feita na fita da Biblioteca.
+        imageIndexB: null,
         start: inicio + dentro[i]!,
         end: inicio + dentro[i + 1]!,
         effect: pickEffect(index),

@@ -200,6 +200,8 @@ async function importClip(
       path,
       fileName,
       url: publish(renderPath),
+      // O original vai junto, para a tela dividida poder fazer o proprio corte.
+      urlSource: publish(path),
       width: info.width,
       height: info.height,
       thumbnail,
@@ -252,6 +254,9 @@ async function importImage(
       id,
       path,
       fileName,
+      // Print nao entra em tela dividida -- a divisao existe para mostrar duas
+      // CENAS ao mesmo tempo, e print ja e um quadro parado.
+      urlSource: null,
       // Publica a versao reduzida, nao a original: e o que o preview e o render
       // consomem, e a diferenca no tempo de render e grande.
       url: publish(renderPath),

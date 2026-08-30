@@ -243,6 +243,14 @@ export interface ProjectState {
    * num trecho de 3s davam 1s cada, mesmo quando uma delas era a que importava.
    */
   blockWeights: Record<number, number[]>
+  /*
+   * Posicoes da fita que estao UNIDAS com a seguinte, em tela dividida.
+   *
+   * Guardado por posicao, como o peso. A posicao 0 na lista quer dizer que a
+   * cena 1 e a cena 2 daquele trecho tocam juntas -- uma em cima, uma embaixo
+   * -- e ocupam um slot so.
+   */
+  blockSplits: Record<number, number[]>
 
   /**
    * Projetos esperando para renderizar, um atras do outro.
@@ -350,6 +358,10 @@ export interface ProjectState {
   reorderBlockClips: (blockIndex: number, paths: readonly string[]) => void
   /** Cicla o peso de uma cena da fita: 1x, 2x, 3x e volta. */
   cycleBlockWeight: (blockIndex: number, posicao: number) => void
+  /** Poe outra copia da cena logo depois dela, no mesmo trecho. */
+  duplicateBlockClip: (blockIndex: number, posicao: number) => void
+  /** Une esta cena com a proxima em tela dividida, ou desfaz a uniao. */
+  toggleBlockSplit: (blockIndex: number, posicao: number) => void
   /** Joga o roteiro montado no projeto: cada frase dividida entre as cenas dela. */
   applyBlockClips: () => Promise<void>
   analyze: () => Promise<void>
@@ -429,9 +441,19 @@ type SetState = (partial: Partial<ProjectState>) => void
 function planoDosBlocos(
   blocos: readonly AutomountBlock[],
   durationSec: number,
+  /*
+   * Quais imagens cada bloco usa, por posicao na lista importada.
+   *
+   * Sem isto o bloco N usava sempre a imagem N -- verdade enquanto cada bloco
+   * tinha uma cena so. Com tela dividida um bloco consome DUAS imagens, e as
+   * contas deixam de bater a partir do primeiro par: os ultimos blocos
+   * apontariam para imagem que nao existe.
+   */
+  pares?: readonly (readonly number[])[],
 ): ScenePlan {
   const scenes: Scene[] = blocos.map((bloco, index) => ({
-    imageIndex: index,
+    imageIndex: pares?.[index]?.[0] ?? index,
+    imageIndexB: pares?.[index]?.[1] ?? null,
     start: index === 0 ? 0 : bloco.start,
     end: index === blocos.length - 1 ? Math.max(bloco.end, durationSec) : bloco.end,
     /*
@@ -541,6 +563,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   activeBlock: null,
   blockClips: {},
   blockWeights: {},
+  blockSplits: {},
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
@@ -687,7 +710,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Roteiro novo muda onde cada frase comeca e acaba: o que estava lido
       // deixa de valer.
       if (result.ok) {
-        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {} })
+        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {}, blockSplits: {} })
       }
       else set({ error: result.error })
     }
@@ -730,6 +753,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           activeBlock: null,
           blockClips: {},
           blockWeights: {},
+          blockSplits: {},
         })
       } else {
         set({ error: result.error })
@@ -923,7 +947,12 @@ export const useProject = create<ProjectState>((set, get) => ({
      * trocado sem ninguem ter pedido.
      */
     const { [activeBlock]: _fora, ...outrosPesos } = get().blockWeights
-    set({ blockClips: { ...blockClips, [activeBlock]: proximos }, blockWeights: outrosPesos })
+    const { [activeBlock]: _foraSplit, ...outrasUnioes } = get().blockSplits
+    set({
+      blockClips: { ...blockClips, [activeBlock]: proximos },
+      blockWeights: outrosPesos,
+      blockSplits: outrasUnioes,
+    })
   },
 
   reorderBlockClips: (blockIndex, paths) => {
@@ -938,7 +967,67 @@ export const useProject = create<ProjectState>((set, get) => ({
     set((state) => {
       // Reordenar tambem invalida o peso por posicao, pelo mesmo motivo.
       const { [blockIndex]: _fora, ...outros } = state.blockWeights
-      return { blockClips: { ...state.blockClips, [blockIndex]: [...paths] }, blockWeights: outros }
+      const { [blockIndex]: _foraSplit, ...semUniao } = state.blockSplits
+      return {
+        blockClips: { ...state.blockClips, [blockIndex]: [...paths] },
+        blockWeights: outros,
+        blockSplits: semUniao,
+      }
+    })
+  },
+
+  toggleBlockSplit: (blockIndex, posicao) => {
+    /*
+     * Une a cena com a SEGUINTE, e as duas passam a ocupar um slot so.
+     *
+     * Em recap ele quer, as vezes, mostrar duas cenas ao mesmo tempo -- reacao
+     * em cima, o que causou embaixo. O par nao ganha tempo extra: ele divide o
+     * trecho como uma cena unica dividiria, e o peso continua sendo do par.
+     *
+     * Uniao encadeada nao existe: unir 1-2 e 2-3 daria tres cenas num quadro
+     * partido em dois. Por isso unir a posicao 1 desfaz qualquer uniao que a 0
+     * tivesse com ela.
+     */
+    set((state) => {
+      const cenas = state.blockClips[blockIndex] ?? []
+      if (posicao < 0 || posicao + 1 >= cenas.length) return {}
+      const atuais = state.blockSplits[blockIndex] ?? []
+      const proximos = atuais.includes(posicao)
+        ? atuais.filter((i) => i !== posicao)
+        : [...atuais.filter((i) => i !== posicao - 1 && i !== posicao + 1), posicao].sort((a, b) => a - b)
+      return {
+        blockSplits: { ...state.blockSplits, [blockIndex]: proximos },
+        projectDirty: true,
+      }
+    })
+  },
+
+  duplicateBlockClip: (blockIndex, posicao) => {
+    /*
+     * Repetir a mesma cena e legitimo, e ate agora nao dava.
+     *
+     * O clique no cartao ALTERNA -- e assim que ele desmarca --, entao clicar
+     * de novo numa cena ja marcada tirava a cena em vez de repetir. A repeticao
+     * ganha um gesto proprio, na fita, onde a ordem ja e visivel: a copia entra
+     * logo depois da original.
+     *
+     * Palavras dele: "em alguns momentos e cabivel eu colocar a mesma cena
+     * novamente e hj eu nao posso fazer isso".
+     */
+    set((state) => {
+      const atuais = state.blockClips[blockIndex] ?? []
+      const alvo = atuais[posicao]
+      if (alvo === undefined) return {}
+      const proximos = [...atuais.slice(0, posicao + 1), alvo, ...atuais.slice(posicao + 1)]
+      // A fita mudou de tamanho: o peso e por POSICAO e nao sobrevive a isso.
+      const { [blockIndex]: _fora, ...outrosPesos } = state.blockWeights
+      const { [blockIndex]: _foraSplit, ...semUniao } = state.blockSplits
+      return {
+        blockClips: { ...state.blockClips, [blockIndex]: proximos },
+        blockWeights: outrosPesos,
+        blockSplits: semUniao,
+        projectDirty: true,
+      }
     })
   },
 
@@ -965,7 +1054,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   applyBlockClips: async () => {
-    const { scriptBlocks, blockClips, blockWeights, audio } = get()
+    const { scriptBlocks, blockClips, blockWeights, blockSplits, audio } = get()
     if (!scriptBlocks || !audio) return
 
     /*
@@ -977,6 +1066,9 @@ export const useProject = create<ProjectState>((set, get) => ({
      * o tempo dela e absorvido pela cena anterior, que so fica mais longa.
      */
     const caminhos: string[] = []
+    // Para cada slot, os indices em `caminhos` das suas imagens: um so em tela
+    // cheia, dois quando ele uniu as cenas.
+    const pares: number[][] = []
     const spans: { start: number; end: number }[] = []
     for (const [i, frase] of scriptBlocks.entries()) {
       const cenas = blockClips[i] ?? []
@@ -989,13 +1081,35 @@ export const useProject = create<ProjectState>((set, get) => ({
        * ele diz qual das tres cenas do trecho e a que importa, sem ter que
        * montar e depois arrastar na linha do tempo.
        */
-      const pesos = cenas.map((_, j) => blockWeights[i]?.[j] ?? 1)
-      const soma = pesos.reduce((a, b) => a + b, 0)
+      /*
+       * As cenas UNIDAS viram um slot so.
+       *
+       * Tela dividida mostra duas cenas ao mesmo tempo, entao o par ocupa o
+       * lugar de uma: ele nao ganha tempo extra nem peso proprio. Os dois
+       * caminhos entram na lista de importacao -- as duas metades precisam do
+       * arquivo -- e o slot guarda os dois indices.
+       */
+      const unidas = new Set(blockSplits[i] ?? [])
+      const slots: { paths: string[]; peso: number }[] = []
+      for (let j = 0; j < cenas.length; j++) {
+        const peso = blockWeights[i]?.[j] ?? 1
+        if (unidas.has(j) && j + 1 < cenas.length) {
+          slots.push({ paths: [cenas[j]!, cenas[j + 1]!], peso })
+          j += 1
+        } else {
+          slots.push({ paths: [cenas[j]!], peso })
+        }
+      }
+
+      const soma = slots.reduce((a, sl) => a + sl.peso, 0)
       const duracao = frase.end - frase.start
       let cursor = frase.start
-      for (const [j, path] of cenas.entries()) {
-        const fatia = (duracao * pesos[j]!) / soma
-        caminhos.push(path)
+      for (const slot of slots) {
+        const fatia = (duracao * slot.peso) / soma
+        pares.push(slot.paths.map((path) => {
+          caminhos.push(path)
+          return caminhos.length - 1
+        }))
         spans.push({ start: cursor, end: cursor + fatia })
         cursor += fatia
       }
@@ -1050,7 +1164,7 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     set({
       images: importadas.value,
-      plan: planoDosBlocos(blocos, audio.durationSec),
+      plan: planoDosBlocos(blocos, audio.durationSec, pares),
       planOrigin: 'auto',
       // O plano saiu das frases dele; reanalisar o trocaria por distribuicao.
       planEdited: true,
@@ -1240,6 +1354,8 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     const inseridas: Scene[] = novas.map((_, i) => ({
       imageIndex: at + i,
+      // Tela cheia: a divisao e escolha dele, feita na fita da Biblioteca.
+      imageIndexB: null,
       start: inicio + i * passo,
       end: i === n - 1 ? fim : inicio + (i + 1) * passo,
       effect: KEN_BURNS_EFFECTS[(at + i) % KEN_BURNS_EFFECTS.length] ?? 'zoom-in',
@@ -1751,7 +1867,11 @@ export const useProject = create<ProjectState>((set, get) => ({
      * discordarem, e melhor recusar e dizer do que entregar um video errado
      * sem avisar.
      */
-    const orfas = plan.scenes.filter((scene) => !images[scene.imageIndex])
+    // A metade de baixo conta igual: bloco dividido com uma das duas faltando
+    // sairia com meia tela preta, e em silencio.
+    const orfas = plan.scenes.filter(
+      (scene) => !images[scene.imageIndex] || (scene.imageIndexB !== null && !images[scene.imageIndexB]),
+    )
     if (orfas.length > 0) {
       set({
         error:

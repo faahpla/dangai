@@ -27,8 +27,18 @@ export const imageAssetSchema = z.object({
   id: z.string(),
   path: z.string(),
   fileName: z.string(),
-  /** URL do servidor de midia local. */
+  /** URL do servidor de midia local. Ja com o recorte 9:16 aplicado. */
   url: z.string(),
+  /**
+   * O arquivo ORIGINAL servido, sem o recorte 9:16.
+   *
+   * So a tela dividida usa: cada metade ocupa 1080x960 e faz o proprio corte, e
+   * partir do recorte 9:16 cortaria duas vezes -- sobraria a faixa central de
+   * um quadro que ja e estreito. null em print, que nao entra em divisao.
+   *
+   * Com default para projeto salvo antes disto continuar abrindo.
+   */
+  urlSource: z.string().nullable().default(null),
   /** Dimensoes ja orientadas pelo EXIF -- o que o olho ve, nao o que o arquivo diz. */
   width: z.number().int().positive(),
   height: z.number().int().positive(),
@@ -228,6 +238,17 @@ export const CLIP_INTENSITY = 0.1
 export const sceneSchema = z.object({
   /** Indice na lista de imagens do usuario. */
   imageIndex: z.number().int().nonnegative(),
+  /**
+   * A segunda cena, quando o bloco e TELA DIVIDIDA.
+   *
+   * null e o caso normal: uma cena ocupa o quadro inteiro. Com um indice aqui,
+   * as duas tocam ao mesmo tempo -- `imageIndex` em cima, esta embaixo --, cada
+   * metade com o proprio enquadramento. E um bloco so: a duracao, o peso e a
+   * transicao continuam sendo do bloco, nao de cada metade.
+   *
+   * Com default para plano salvo antes disto continuar abrindo.
+   */
+  imageIndexB: z.number().int().nonnegative().nullable().default(null),
   start: z.number().nonnegative(),
   end: z.number().positive(),
   effect: z.enum(SCENE_EFFECTS),
@@ -484,6 +505,30 @@ export const renderPropsSchema = z.object({
        * continuarem validas -- e porque zero e o que o app sempre fez.
        */
       sourceStartFrames: z.number().int().nonnegative().default(0),
+      /**
+       * A metade de BAIXO, quando o bloco e tela dividida. null = tela cheia.
+       *
+       * Cada metade traz a propria fonte e o proprio enquadramento: no quadro
+       * dividido cada uma ocupa 1080x960, e o recorte 9:16 que o app faz para
+       * tela cheia cortaria duas vezes. Por isso a divisao usa o arquivo
+       * ORIGINAL do clipe e enquadra por CSS, com o foco que o app ja tem.
+       */
+      abaixo: z
+        .object({
+          url: z.string(),
+          kind: z.enum(['image', 'video']).default('video'),
+          focusX: z.number().min(0).max(1).default(0.5),
+          focusY: z.number().min(0).max(1).default(0.5),
+          sourceDurationInFrames: z.number().int().positive().nullable().default(null),
+          sourceStartFrames: z.number().int().nonnegative().default(0),
+        })
+        .nullable()
+        .default(null),
+      /** O enquadramento da metade de CIMA. So usado quando `abaixo` existe. */
+      focusX: z.number().min(0).max(1).default(0.5),
+      focusY: z.number().min(0).max(1).default(0.5),
+      /** O arquivo original, sem o recorte 9:16. Usado so na tela dividida. */
+      urlSource: z.string().nullable().default(null),
       transitionIn: z.enum(TRANSITIONS),
       /** Frames da transicao de entrada. 0 = corte seco. */
       transitionInFrames: z.number().int().nonnegative(),
