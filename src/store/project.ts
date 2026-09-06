@@ -29,6 +29,7 @@ import {
 import type {
   AudioAnalysis,
   CaptionColor,
+  CurvePoints,
   ImageAsset,
   MotionCurve,
   Metadata,
@@ -275,10 +276,19 @@ export interface ProjectState {
   /** Troca efeito, transicao, intensidade ou curva de uma cena. */
   updateScene: (
     index: number,
-    patch: Partial<Pick<Scene, 'effect' | 'transitionIn' | 'intensity' | 'curve' | 'sourceStart'>>,
+    patch: Partial<
+      Pick<
+        Scene,
+        'effect' | 'transitionIn' | 'intensity' | 'curve' | 'sourceStart' | 'rotation' | 'curvePoints'
+      >
+    >,
   ) => void
   /** Joga a curva de uma cena em todas as outras. */
-  applyCurveToAll: (curve: MotionCurve) => void
+  /**
+   * Joga o ritmo de uma cena em todas. `pontos` leva junto a curva desenhada --
+   * sem isso, "usar em todos" espalharia o preset e deixaria o desenho para tras.
+   */
+  applyCurveToAll: (curve: MotionCurve, pontos?: CurvePoints | null) => void
   /** Move a fronteira entre a cena index-1 e a cena index. */
   moveBoundary: (index: number, seconds: number) => void
   toggleSfx: () => void
@@ -469,6 +479,8 @@ function planoDosBlocos(
     // Parte do comeco do clipe. Mover o ponto de entrada e escolha dele, no
     // card da cena.
     sourceStart: 0,
+    curvePoints: null,
+    rotation: 0,
     transitionIn: 'cut',
   }))
   return { scenes }
@@ -1365,6 +1377,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Herda a curva do bloco que cedeu o tempo, e nao o padrao: quem ja
       // ajustou o ritmo do video inteiro nao quer o bloco novo destoando.
       curve: anfitriao.curve,
+      curvePoints: null,
+      rotation: 0 as const,
       transitionIn: 'cut' as const,
     }))
 
@@ -1487,11 +1501,14 @@ export const useProject = create<ProjectState>((set, get) => ({
    * um a um seria 46 idas ao painel para uma decisao que quase sempre e do video
    * inteiro, nao de um bloco.
    */
-  applyCurveToAll: (curve) => {
+  applyCurveToAll: (curve, pontos) => {
     const { plan } = get()
     if (!plan) return
     set({
-      plan: { ...plan, scenes: plan.scenes.map((scene) => ({ ...scene, curve })) },
+      plan: {
+        ...plan,
+        scenes: plan.scenes.map((scene) => ({ ...scene, curve, curvePoints: pontos ?? null })),
+      },
       planEdited: true,
     })
   },
@@ -1988,6 +2005,15 @@ export const useProject = create<ProjectState>((set, get) => ({
       scriptBlocksBusy: null,
       activeBlock: null,
       blockClips: {},
+      /*
+       * Peso e uniao morrem junto com as marcacoes.
+       *
+       * Sao indexados por posicao do trecho, entao sobreviver a um "limpar"
+       * significaria o proximo roteiro nascer com o 2x e a tela dividida do
+       * roteiro anterior em trechos que nada tem a ver.
+       */
+      blockWeights: {},
+      blockSplits: {},
       music: null,
       musicGainDb: MUSIC_GAIN_DB_DEFAULT,
       hookText: '',

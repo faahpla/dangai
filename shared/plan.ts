@@ -77,6 +77,8 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
+    curvePoints: null,
+    rotation: 0 as const,
     transitionIn: index === 0 ? ('cut' as const) : ('cut' as const),
   }))
 
@@ -140,6 +142,8 @@ export function planFromCandidates(
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
+    curvePoints: null,
+    rotation: 0 as const,
     transitionIn: 'cut' as const,
   }))
 
@@ -239,7 +243,9 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
           curve: MOTION_CURVE_DEFAULT,
           // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
           sourceStart: 0,
-          transitionIn: 'cut' as const,
+          curvePoints: null,
+    rotation: 0 as const,
+    transitionIn: 'cut' as const,
         }
   })
 
@@ -475,10 +481,24 @@ export function toRenderProps(
             }
           })()
 
+    /*
+     * Giro de um QUARTO parte do original, e nao do recorte 9:16.
+     *
+     * `url` ja vem cortado em 1080x1920. Gira-lo um quarto de volta poria uma
+     * tira estreita e deitada dentro de um quadro em pe, e cobrir isso
+     * significaria ampliar a tira ate a imagem virar zoom -- o inverso do que
+     * girar deveria fazer. Com o original, o corte acontece DEPOIS do giro.
+     *
+     * Meia volta nao precisa: 180 graus nao troca largura por altura, entao o
+     * recorte que ja existe serve inteiro e sem reamostrar nada.
+     */
+    const quarto = (scene.rotation ?? 0) === 90 || (scene.rotation ?? 0) === 270
+
     return {
       // Na tela dividida a metade de CIMA tambem parte do original, pelo mesmo
       // motivo da de baixo: recortar duas vezes come o enquadramento.
-      url: abaixo === null ? image.url : (image.urlSource ?? image.url),
+      url:
+        abaixo === null && !quarto ? image.url : (image.urlSource ?? image.url),
       urlSource: image.urlSource ?? null,
       focusX: image.focusX,
       focusY: image.focusY,
@@ -487,10 +507,12 @@ export function toRenderProps(
       effect: scene.effect,
       intensity: scene.intensity,
       curve: scene.curve,
+      curvePoints: scene.curvePoints ?? null,
       kind: image.kind,
       sourceDurationInFrames:
         sourceFrames !== null && sourceFrames < durationInFrames ? Math.max(sourceFrames, 1) : null,
       sourceStartFrames: inicioFonte,
+      rotation: scene.rotation ?? 0,
       transitionIn: scene.transitionIn,
       transitionInFrames: incoming,
     }
@@ -803,6 +825,8 @@ export function planByRhythm(
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
+    curvePoints: null,
+    rotation: 0 as const,
     transitionIn: 'cut' as const,
   }))
 
@@ -897,7 +921,9 @@ export function planBySections(
         curve: MOTION_CURVE_DEFAULT,
         // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
         sourceStart: 0,
-        transitionIn: 'cut' as const,
+        curvePoints: null,
+    rotation: 0 as const,
+    transitionIn: 'cut' as const,
       })
     }
   }

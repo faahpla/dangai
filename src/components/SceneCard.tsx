@@ -1,9 +1,12 @@
-import { Film, ImagePlus, Library as LibraryIcon, Scissors } from 'lucide-react'
+import { Film, ImagePlus, Library as LibraryIcon, Scissors, Spline } from 'lucide-react'
+import { useRef, useState } from 'react'
 import { isVisual } from '@shared/channels'
 import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
+  ROTATIONS,
   TRANSITIONS,
+  type CurvePoints,
   type ImageAsset,
   type MotionCurve,
   type Scene,
@@ -85,7 +88,15 @@ export function SceneCard() {
 
   // O botao de aplicar em todos so aparece quando ha o que aplicar -- se o
   // video inteiro ja usa esta curva, ele nao faria nada.
-  const mesmaCurvaEmTodas = plan?.scenes.every((s) => s.curve === scene.curve) ?? true
+  // Compara o DESENHO junto: com a curva na mao, "todos iguais" so e verdade se
+  // os quatro numeros baterem -- senao o botao sumiria com o desenho por
+  // espalhar, so porque o preset por baixo coincidia.
+  const mesmaCurvaEmTodas =
+    plan?.scenes.every(
+      (s) =>
+        s.curve === scene.curve &&
+        JSON.stringify(s.curvePoints ?? null) === JSON.stringify(scene.curvePoints ?? null),
+    ) ?? true
 
   const inserir = async (seconds: number): Promise<void> => {
     const picked = await window.dangai.pickFiles()
@@ -153,6 +164,30 @@ export function SceneCard() {
       </Field>
 
       {/*
+        Girar existe para o material que chega deitado -- clipe gravado de lado,
+        print girado, quadro de manga. Sao os quatro angulos retos: o corte
+        continua preenchendo em todos, entao girar nunca abre tarja preta.
+
+        Fora da tela dividida de proposito: ali sao duas cenas dividindo o
+        quadro, e girar uma das metades gira a moldura junto.
+      */}
+      {scene.imageIndexB === null && (
+        <Field label="Girar">
+          <div className="grid grid-cols-4 gap-1.5">
+            {ROTATIONS.map((graus) => (
+              <Chip
+                key={graus}
+                active={(scene.rotation ?? 0) === graus}
+                onClick={() => updateScene(index, { rotation: graus })}
+              >
+                {ROTATION_LABEL[graus]}
+              </Chip>
+            ))}
+          </div>
+        </Field>
+      )}
+
+      {/*
         Clipe tambem escolhe movimento agora.
 
         Ele so COMECA em "nenhum", porque ja se move sozinho e mover de novo
@@ -210,16 +245,52 @@ export function SceneCard() {
               {MOTION_CURVES.map((curve) => (
                 <Chip
                   key={curve}
-                  active={scene.curve === curve}
-                  onClick={() => updateScene(index, { curve })}
+                  active={scene.curvePoints === null && scene.curve === curve}
+                  // Escolher um preset apaga o desenho: sao dois jeitos de dizer
+                  // a mesma coisa, e guardar o desenho por baixo faria o clique
+                  // seguinte no "Desenhar" ressuscitar algo que ele largou.
+                  onClick={() => updateScene(index, { curve, curvePoints: null })}
                 >
                   {CURVE_LABEL[curve]}
                 </Chip>
               ))}
             </div>
-            <p className="text-[11px] leading-relaxed text-ink-3">{CURVE_HINT[scene.curve]}</p>
+
+            {/*
+              A curva na mao, pedido dele: "liberdade de mexer no movimento de
+              cada imagem". Fica atras de um clique de proposito -- os quatro
+              presets resolvem quase tudo e continuam sendo o que a montagem
+              entrega pronta; o grafico e a saida para o bloco onde nenhum serve.
+            */}
+            <Chip
+              active={scene.curvePoints !== null}
+              onClick={() =>
+                updateScene(index, {
+                  curvePoints: scene.curvePoints === null ? CURVE_AS_BEZIER[scene.curve] : null,
+                })
+              }
+            >
+              <Spline size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+              Desenhar a curva
+            </Chip>
+
+            {scene.curvePoints !== null && (
+              <GraficoDeCurva
+                pontos={scene.curvePoints}
+                onChange={(pontos) => updateScene(index, { curvePoints: pontos })}
+              />
+            )}
+
+            <p className="text-[11px] leading-relaxed text-ink-3">
+              {scene.curvePoints === null
+                ? CURVE_HINT[scene.curve]
+                : 'A linha diz quanto do movimento ja aconteceu ao longo do bloco. Plana e pausa, ingreme e disparada.'}
+            </p>
             {total > 1 && !mesmaCurvaEmTodas && (
-              <Chip active={false} onClick={() => applyCurveToAll(scene.curve)}>
+              <Chip
+                active={false}
+                onClick={() => applyCurveToAll(scene.curve, scene.curvePoints)}
+              >
                 Usar em todos os {total} blocos
               </Chip>
             )}
@@ -358,6 +429,137 @@ function Chip({
       {children}
     </button>
   )
+}
+
+/**
+ * De onde o desenho PARTE quando ele abre o grafico.
+ *
+ * Cada preset na forma de bezier, com os mesmos numeros do CSS. Abrir o grafico
+ * numa curva qualquer faria o movimento saltar no instante do clique; assim ele
+ * comeca exatamente onde estava e so muda o que arrastar.
+ */
+const CURVE_AS_BEZIER: Record<MotionCurve, CurvePoints> = {
+  'ease-in-out': [0.42, 0, 0.58, 1],
+  linear: [0, 0, 1, 1],
+  'ease-out': [0, 0, 0.58, 1],
+  'ease-in': [0.42, 0, 1, 1],
+}
+
+/**
+ * O grafico da curva: dois pontos de controle arrastaveis.
+ *
+ * Horizontal e o tempo do bloco, vertical e quanto do movimento ja aconteceu.
+ * Trecho plano e uma pausa, trecho ingreme e uma disparada -- e o mesmo desenho
+ * de qualquer editor de video, que e onde ele ja sabe ler isto.
+ *
+ * A CAIXA E O LIMITE, e nao uma sugestao: arrastar para fora nao passa de 0..1.
+ * Fora dessa faixa a curva ultrapassaria o fim do movimento e voltaria, e o pan
+ * comeria a folga de borda que existe para nunca aparecer tarja preta.
+ */
+function GraficoDeCurva({
+  pontos,
+  onChange,
+}: {
+  pontos: CurvePoints
+  onChange: (pontos: CurvePoints) => void
+}) {
+  const area = useRef<SVGSVGElement>(null)
+  const [arrastando, setArrastando] = useState<0 | 1 | null>(null)
+  const [x1, y1, x2, y2] = pontos
+
+  const mover = (event: React.PointerEvent, qual: 0 | 1): void => {
+    const caixa = area.current?.getBoundingClientRect()
+    if (!caixa) return
+    const x = presa(emUnidades((event.clientX - caixa.left) / caixa.width))
+    // O SVG cresce para baixo e o progresso para cima: o eixo vira aqui.
+    const y = presa(1 - emUnidades((event.clientY - caixa.top) / caixa.height))
+    onChange(qual === 0 ? [x, y, x2, y2] : [x1, y1, x, y])
+  }
+
+  const px = (v: number): number => v * 100
+  const py = (v: number): number => 100 - v * 100
+
+  return (
+    <div className="flex flex-col gap-1">
+      <svg
+        ref={area}
+        viewBox={`${-FOLGA} ${-FOLGA} ${100 + FOLGA * 2} ${100 + FOLGA * 2}`}
+        className="w-full touch-none rounded-sm bg-elevated"
+        onPointerMove={(event) => arrastando !== null && mover(event, arrastando)}
+        onPointerUp={() => setArrastando(null)}
+        onPointerLeave={() => setArrastando(null)}
+      >
+        {/* A caixa desenhada, e nao a borda do elemento: com a folga em volta, a
+            borda ficaria longe do limite real e mentiria sobre onde ele esta. */}
+        <rect x={0} y={0} width={100} height={100} fill="none" className="stroke-line-strong" strokeWidth={0.8} />
+
+        {/* Referencia: a diagonal e o movimento em ritmo constante. */}
+        <line x1={0} y1={100} x2={100} y2={0} className="stroke-line-strong" strokeWidth={0.8} strokeDasharray="3 3" />
+
+        <line x1={0} y1={100} x2={px(x1)} y2={py(y1)} className="stroke-ink-3" strokeWidth={0.8} />
+        <line x1={100} y1={0} x2={px(x2)} y2={py(y2)} className="stroke-ink-3" strokeWidth={0.8} />
+
+        <path
+          d={`M 0 100 C ${px(x1)} ${py(y1)}, ${px(x2)} ${py(y2)}, 100 0`}
+          fill="none"
+          className="stroke-accent"
+          strokeWidth={2}
+        />
+
+        {([0, 1] as const).map((qual) => (
+          <g key={qual} className="cursor-grab">
+            <circle cx={px(qual === 0 ? x1 : x2)} cy={py(qual === 0 ? y1 : y2)} r={4} className="fill-accent" />
+            {/* Alvo maior que a bolinha: 4 unidades dao uns 8 pixels na largura
+                do card, que e pouco para pegar com o mouse. */}
+            <circle
+              cx={px(qual === 0 ? x1 : x2)}
+              cy={py(qual === 0 ? y1 : y2)}
+              r={10}
+              fill="transparent"
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId)
+                setArrastando(qual)
+              }}
+            />
+          </g>
+        ))}
+      </svg>
+      {/* Os quatro numeros: e o que ele repete em outro bloco quando acerta um ritmo. */}
+      <p className="tnum text-[10px] text-ink-3">{pontos.map((v) => v.toFixed(2)).join(', ')}</p>
+    </div>
+  )
+}
+
+/**
+ * Folga em volta da caixa, em unidades do desenho.
+ *
+ * A alca de um preset comum cai exatamente em cima do limite -- o ease-in-out
+ * poe uma no chao e outra no teto. Sem esta folga, metade da bolinha fica fora
+ * do desenho e nao da para pegar.
+ */
+const FOLGA = 8
+
+/** Fracao do ELEMENTO para unidade do desenho, descontando a folga das bordas. */
+function emUnidades(fracao: number): number {
+  return (fracao * (100 + FOLGA * 2) - FOLGA) / 100
+}
+
+/** Preso entre 0 e 1: a caixa do grafico e o limite do que a curva pode fazer. */
+function presa(v: number): number {
+  return Math.min(Math.max(v, 0), 1)
+}
+
+/**
+ * O giro em graus, do jeito que ele pediu: 90, 180 e -90.
+ *
+ * -90 e 270 sao a mesma volta; o rotulo usa o numero negativo porque e assim
+ * que se pensa em "gira para o outro lado", e nao em "gira tres quartos".
+ */
+const ROTATION_LABEL: Record<(typeof ROTATIONS)[number], string> = {
+  0: 'Nao',
+  90: '90°',
+  180: '180°',
+  270: '-90°',
 }
 
 const EFFECT_LABEL: Readonly<Record<(typeof KEN_BURNS_EFFECTS)[number], string>> = {

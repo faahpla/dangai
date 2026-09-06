@@ -254,9 +254,19 @@ async function importImage(
       id,
       path,
       fileName,
-      // Print nao entra em tela dividida -- a divisao existe para mostrar duas
-      // CENAS ao mesmo tempo, e print ja e um quadro parado.
-      urlSource: null,
+      /*
+       * O original vai junto tambem no print.
+       *
+       * Nao e para a tela dividida -- essa continua sendo coisa de clipe. E
+       * para o GIRO: `url` ja vem recortado em 9:16, e girar um quarto de volta
+       * um quadro recortado ampliaria uma tira estreita ate cobrir a tela. Com
+       * o original, o recorte acontece DEPOIS do giro e a imagem inteira volta
+       * a estar disponivel.
+       *
+       * Publicar nao custa render: `url` continua sendo a versao reduzida, e o
+       * original so e lido quando o bloco esta girado.
+       */
+      urlSource: publish(path),
       // Publica a versao reduzida, nao a original: e o que o preview e o render
       // consomem, e a diferenca no tempo de render e grande.
       url: publish(renderPath),

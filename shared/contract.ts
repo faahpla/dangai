@@ -183,6 +183,26 @@ export const TRANSITION_FRAMES: Readonly<Record<Transition, number>> = {
   'whip-pan': 3, // 125ms
 }
 
+/**
+ * Quarto de volta que o bloco leva antes de entrar no quadro.
+ *
+ * Existe porque nem todo material chega em pe: clipe gravado deitado, print de
+ * celular que veio girado, quadro de manga que so faz sentido de lado. Ate
+ * agora a unica saida era corrigir fora do app e importar de novo.
+ *
+ * Sao os quatro angulos retos e mais nenhum. Girar sete graus e correcao de
+ * foto, nao montagem -- e um angulo torto deixaria canto vazio no quadro, que e
+ * exatamente a tarja preta que o resto do app existe para evitar.
+ */
+export const ROTATIONS = [0, 90, 180, 270] as const
+export const rotationSchema = z.union([
+  z.literal(0),
+  z.literal(90),
+  z.literal(180),
+  z.literal(270),
+])
+export type Rotation = (typeof ROTATIONS)[number]
+
 export const SFX_SOUNDS = ['whoosh', 'impact'] as const
 export type SfxSound = (typeof SFX_SOUNDS)[number]
 
@@ -208,6 +228,30 @@ export type MotionCurve = z.infer<typeof motionCurveSchema>
 
 /** O que o app sempre fez. Manter como padrao nao muda nenhum video existente. */
 export const MOTION_CURVE_DEFAULT: MotionCurve = 'ease-in-out'
+
+/**
+ * A curva desenhada a mao: os dois pontos de controle de uma bezier cubica.
+ *
+ * Pedido dele em 27/08 -- "um grafico de curvas para eu ter liberdade de mexer
+ * no movimento de cada imagem". Os quatro presets continuam sendo o padrao e
+ * continuam saindo prontos da montagem: isto e uma SAIDA para o bloco em que
+ * eles nao servem, nunca o caminho normal.
+ *
+ * A ordem e a mesma do cubic-bezier do CSS: [x1, y1, x2, y2].
+ *
+ * Os quatro numeros ficam presos entre 0 e 1, inclusive os do eixo Y -- onde o
+ * CSS deixaria passar. Y fora da faixa e overshoot: a curva ultrapassa o fim do
+ * movimento e volta. Isso empurraria o pan alem da folga de borda que o
+ * motionFor reserva, e a tarja preta entraria no quadro. No grafico, a caixa E
+ * o limite: nao ha como arrastar para fora.
+ */
+export const curvePointsSchema = z.tuple([
+  z.number().min(0).max(1),
+  z.number().min(0).max(1),
+  z.number().min(0).max(1),
+  z.number().min(0).max(1),
+])
+export type CurvePoints = z.infer<typeof curvePointsSchema>
 
 /**
  * A curva do clipe: constante, e nao ease-in-out.
@@ -262,6 +306,14 @@ export const sceneSchema = z.object({
    */
   curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
   /**
+   * A curva desenhada a mao. null = vale o preset em `curve`.
+   *
+   * Nasce null em todo bloco, e a montagem automatica nunca preenche: o ritmo
+   * de camera continua saindo pronto como sempre saiu, e desenhar e uma escolha
+   * dele, bloco a bloco.
+   */
+  curvePoints: curvePointsSchema.nullable().default(null),
+  /**
    * De que ponto do CLIPE este bloco parte, em segundos. 0 = do comeco.
    *
    * O clipe chega cortado do AnCut, mas o bloco quase nunca tem a mesma
@@ -273,6 +325,14 @@ export const sceneSchema = z.object({
    * igual, e para a IA nao precisar escolher.
    */
   sourceStart: z.number().nonnegative().default(0),
+  /**
+   * Quantos graus o bloco gira, no sentido horario. 0 = como o arquivo veio.
+   *
+   * Com default para plano salvo antes disto abrir igual, e para a IA nao
+   * precisar escolher: girar e correcao do material, e so quem esta olhando
+   * sabe que o clipe chegou deitado.
+   */
+  rotation: rotationSchema.default(0),
   transitionIn: z.enum(TRANSITIONS),
   reason: z.string().optional(),
 })
@@ -481,6 +541,8 @@ export const renderPropsSchema = z.object({
       effect: z.enum(SCENE_EFFECTS),
       intensity: z.number(),
       curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
+      /** A curva desenhada a mao; null usa o preset. Default para props antigas valerem. */
+      curvePoints: curvePointsSchema.nullable().default(null),
       /**
        * Print ou clipe. Com default para props antigas continuarem validas.
        *
@@ -505,6 +567,8 @@ export const renderPropsSchema = z.object({
        * continuarem validas -- e porque zero e o que o app sempre fez.
        */
       sourceStartFrames: z.number().int().nonnegative().default(0),
+      /** Graus de giro do bloco. Com default para props antigas continuarem validas. */
+      rotation: rotationSchema.default(0),
       /**
        * A metade de BAIXO, quando o bloco e tela dividida. null = tela cheia.
        *

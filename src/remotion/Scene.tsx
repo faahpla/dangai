@@ -6,6 +6,7 @@ import {
   OffthreadVideo,
   interpolate,
   useCurrentFrame,
+  useVideoConfig,
 } from 'remotion'
 import type { RenderProps } from '@shared/contract'
 
@@ -31,11 +32,14 @@ export function Scene({
   abaixo,
   focusX,
   focusY,
+  rotation,
+  curvePoints,
 }: SceneProps) {
   const frame = useCurrentFrame()
+  const { width, height } = useVideoConfig()
 
   const eased = interpolate(frame, [0, Math.max(durationInFrames - 1, 1)], [0, 1], {
-    easing: easingFor(curve),
+    easing: easingFor(curve, curvePoints),
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   })
@@ -63,10 +67,48 @@ export function Scene({
   const ultimoFrame = Math.max((sourceDurationInFrames ?? durationInFrames) - 1, 0)
   const congelando = sourceDurationInFrames !== null && frame > ultimoFrame
 
+  /*
+   * GIRO: a CAIXA gira, e o corte continua preenchendo.
+   *
+   * Girar so a imagem deixaria canto vazio -- um quadro deitado dentro de um
+   * quadro em pe nao cobre as pontas. Entao quem gira e uma caixa com as
+   * medidas TROCADAS: num giro de um quarto ela nasce 1920x1080, preenche isso
+   * com cover, e so entao vira. O que chega ao quadro ja e 1080x1920 cheio, e
+   * nenhuma tarja preta aparece em angulo nenhum.
+   *
+   * As medidas saem do useVideoConfig e nao de numero fixo: quem manda no
+   * tamanho e a composicao, e escrever 1080 aqui seria uma segunda verdade
+   * esperando divergir da primeira.
+   */
+  const quarto = rotation === 90 || rotation === 270
+  const caixa =
+    rotation === 0
+      ? { width: '100%', height: '100%' }
+      : {
+          position: 'absolute' as const,
+          top: '50%',
+          left: '50%',
+          width: quarto ? height : width,
+          height: quarto ? width : height,
+          transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+        }
+
   const cobrindo = {
     width: '100%',
     height: '100%',
     objectFit: 'cover' as const,
+    /*
+     * Girado de um quarto, a fonte e o arquivo ORIGINAL -- sem o recorte 9:16
+     * que a importacao faz. Entao quem escolhe qual parte dele fica no quadro e
+     * o foco, como na tela dividida; sem isto o corte cairia no centro e o
+     * rosto sairia.
+     *
+     * O foco vale em coordenadas da IMAGEM, nao da tela: o cover acontece antes
+     * do giro, entao nao ha eixo para trocar.
+     */
+    ...(quarto
+      ? { objectPosition: `${(focusX * 100).toFixed(1)}% ${(focusY * 100).toFixed(1)}%` }
+      : {}),
     transform: `scale(${scale}) translate(${x}%, ${y}%)`,
     // A transformacao parte do centro para o zoom nao puxar para um canto.
     transformOrigin: 'center center',
@@ -109,47 +151,53 @@ export function Scene({
     )
   }
 
+  /*
+   * O Ken Burns fica DENTRO da caixa, e por isso acompanha o giro: num bloco
+   * deitado, "pan para a esquerda" continua sendo a esquerda de quem assiste.
+   */
   return (
     <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
-      {kind === 'video' ? (
-        /*
-         * O clipe acabou antes do bloco: o ultimo frame fica parado ate o bloco
-         * fechar. Sem isso o quadro cairia para preto no meio da narracao.
-         *
-         * O Freeze fica sempre montado e liga pela funcao em `active`. Trocar
-         * <OffthreadVideo> por <Freeze><OffthreadVideo></Freeze> no meio do bloco
-         * remontaria o video e daria um piscar exatamente no ponto da emenda.
-         *
-         * `ultimoFrame` e local ao bloco, que e o que o Freeze espera -- ele
-         * mesmo soma o deslocamento da Sequence.
-         */
-        <Freeze frame={ultimoFrame} active={congelando}>
-          {/*
-           * OffthreadVideo, e nao Video: o frame e extraido pelo compositor em
-           * vez de depender do relogio de um <video> do Chrome, que no render
-           * sem tela escorrega e entrega frame repetido ou fora de ordem.
+      <div style={caixa}>
+        {kind === 'video' ? (
+          /*
+           * O clipe acabou antes do bloco: o ultimo frame fica parado ate o bloco
+           * fechar. Sem isso o quadro cairia para preto no meio da narracao.
            *
-           * muted por decisao de produto -- os clipes ja chegam cortados e o
-           * audio do video e a narracao, nao o som original da cena.
-           */}
-          {/*
-           * `trimBefore` e de onde o clipe COMECA a tocar.
+           * O Freeze fica sempre montado e liga pela funcao em `active`. Trocar
+           * <OffthreadVideo> por <Freeze><OffthreadVideo></Freeze> no meio do bloco
+           * remontaria o video e daria um piscar exatamente no ponto da emenda.
            *
-           * O clipe ja vem cortado do AnCut, mas o bloco quase nunca tem a
-           * mesma duracao dele: uma cena de 6 segundos num bloco de 2 mostrava
-           * sempre os dois primeiros, e o que interessa costuma estar no meio
-           * ou no fim. Quem escolhe o ponto e o usuario, pelo card da cena.
-           */}
-          <OffthreadVideo
-            src={url}
-            muted
-            trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
-            style={cobrindo}
-          />
-        </Freeze>
-      ) : (
-        <Img src={url} style={cobrindo} />
-      )}
+           * `ultimoFrame` e local ao bloco, que e o que o Freeze espera -- ele
+           * mesmo soma o deslocamento da Sequence.
+           */
+          <Freeze frame={ultimoFrame} active={congelando}>
+            {/*
+             * OffthreadVideo, e nao Video: o frame e extraido pelo compositor em
+             * vez de depender do relogio de um <video> do Chrome, que no render
+             * sem tela escorrega e entrega frame repetido ou fora de ordem.
+             *
+             * muted por decisao de produto -- os clipes ja chegam cortados e o
+             * audio do video e a narracao, nao o som original da cena.
+             */}
+            {/*
+             * `trimBefore` e de onde o clipe COMECA a tocar.
+             *
+             * O clipe ja vem cortado do AnCut, mas o bloco quase nunca tem a
+             * mesma duracao dele: uma cena de 6 segundos num bloco de 2 mostrava
+             * sempre os dois primeiros, e o que interessa costuma estar no meio
+             * ou no fim. Quem escolhe o ponto e o usuario, pelo card da cena.
+             */}
+            <OffthreadVideo
+              src={url}
+              muted
+              trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
+              style={cobrindo}
+            />
+          </Freeze>
+        ) : (
+          <Img src={url} style={cobrindo} />
+        )}
+      </div>
     </AbsoluteFill>
   )
 }
@@ -161,8 +209,23 @@ export function Scene({
  * que mudar so o ritmo, nao a "quantidade" de movimento. Nenhuma delas passa de
  * 0..1 -- curva com overshoot empurraria o pan alem da folga de borda que o
  * motionFor reserva, e a tarja preta entraria no quadro.
+ *
+ * A curva desenhada a mao entra por cima dos quatro presets, com a mesma
+ * restricao: e uma cubica, e os pontos de controle vivem dentro de 0..1.
  */
-function easingFor(curve: SceneProps['curve']): ((t: number) => number) | undefined {
+function easingFor(
+  curve: SceneProps['curve'],
+  pontos: SceneProps['curvePoints'],
+): ((t: number) => number) | undefined {
+  /*
+   * A curva desenhada a mao ganha do preset.
+   *
+   * Os quatro numeros ja chegam presos entre 0 e 1 pelo schema, entao esta
+   * bezier obedece a mesma regra das outras quatro: nunca passa de 0..1, e o
+   * pan nunca ultrapassa a folga de borda que o motionFor reserva.
+   */
+  if (pontos) return Easing.bezier(pontos[0], pontos[1], pontos[2], pontos[3])
+
   switch (curve) {
     case 'ease-in-out':
       return Easing.inOut(Easing.cubic)

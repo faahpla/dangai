@@ -13,8 +13,9 @@ import {
   TriangleAlert,
   Type,
   Hash,
+  House,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useProject } from '@/store/project'
 import {
   CAPTION_COLOR_HEX,
@@ -26,6 +27,70 @@ import {
   MUSIC_GAIN_DB_MIN,
 } from '@shared/contract'
 import { dedupe, preflight } from '@shared/preflight'
+
+/**
+ * Volta para a tela de soltar arquivos -- o comeco de um video novo.
+ *
+ * Isso ja existia so no Ctrl+K ("Limpar o projeto"), onde ninguem acha sem
+ * procurar. Aqui e o primeiro elemento da barra porque e o unico caminho de
+ * VOLTA que o app tem: todo o resto avanca.
+ *
+ * PERGUNTA ANTES, e nao e modal.
+ *
+ * A paleta podia limpar de primeira -- quem digita "limpar" ja decidiu. Um
+ * botao fixo ao lado do play e outra coisa: um clique errado apagaria 39
+ * trechos escolhidos na mao. Entao o botao vira a propria pergunta por alguns
+ * segundos, o segundo clique confirma, e a espera se cancela sozinha.
+ *
+ * A regra de "sem modal" fica de pe, e Ctrl+Z continua trazendo tudo de volta.
+ */
+function Home() {
+  const reset = useProject((s) => s.reset)
+  const discardAutosave = useProject((s) => s.discardAutosave)
+  const [perguntando, setPerguntando] = useState(false)
+
+  // A pergunta desiste sozinha: um botao que fica vermelho para sempre depois
+  // de um clique errado vira armadilha na proxima vez que o olho passar por ali.
+  useEffect(() => {
+    if (!perguntando) return
+    const id = window.setTimeout(() => setPerguntando(false), 4000)
+    return () => window.clearTimeout(id)
+  }, [perguntando])
+
+  const clicar = (): void => {
+    if (!perguntando) {
+      setPerguntando(true)
+      return
+    }
+    setPerguntando(false)
+    reset()
+    // Sem isto o proximo inicio ofereceria recuperar justamente o que ele
+    // acabou de mandar limpar.
+    void discardAutosave()
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={clicar}
+      onBlur={() => setPerguntando(false)}
+      title={
+        perguntando
+          ? 'Clique de novo para limpar. Ctrl+Z traz de volta.'
+          : 'Comecar outro video (Ctrl+Z traz de volta)'
+      }
+      className={[
+        'lift flex h-8 shrink-0 items-center gap-1.5 rounded-sm border px-2 text-[11px]',
+        perguntando
+          ? 'border-danger text-danger'
+          : 'border-line bg-elevated text-ink-3 hover:text-ink',
+      ].join(' ')}
+    >
+      <House size={14} strokeWidth={1.5} />
+      {perguntando && 'Limpar?'}
+    </button>
+  )
+}
 
 /**
  * Transporte e acao. Um botao primario so -- renderizar, que vira cancelar
@@ -59,6 +124,8 @@ export function RenderBar() {
 
   return (
     <div className="flex items-center gap-3">
+      {!isRendering && <Home />}
+
       <button
         type="button"
         onClick={togglePlay}
