@@ -49,6 +49,15 @@ import {
 } from '@shared/plan'
 import type { CaptionBlock } from '@shared/contract'
 import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
+import {
+  cabeCortePorPalavra,
+  cortesAutomaticos,
+  limitesDaFronteira,
+  palavrasDoTrecho,
+  prender,
+  slotsDoTrecho,
+  spansDoTrecho,
+} from '@shared/trecho'
 import { semSujar } from './quiet'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
@@ -252,6 +261,24 @@ export interface ProjectState {
    * -- e ocupam um slot so.
    */
   blockSplits: Record<number, number[]>
+  /**
+   * Onde ele PUXOU cada fronteira do trecho, em indice de palavra.
+   *
+   * Ausente = as fronteiras saem da divisao proporcional ao peso, que e o que
+   * o app sempre fez. Presente = ele arrastou, e a fronteira cai no comeco de
+   * uma palavra escolhida -- "esse clipe comeca em 'como'".
+   *
+   * Por palavra e nao por segundo porque e assim que ele pensa o corte
+   * ("quero que comece uma palavra antes") e porque um corte no meio de uma
+   * palavra e sempre errado num recap: o espectador ouve uma palavra so em
+   * cima de duas imagens.
+   *
+   * O array tem uma entrada por FRONTEIRA -- um trecho com tres slots tem
+   * duas. Se o numero de slots muda (ele marca outra cena, repete, une), o
+   * tamanho deixa de bater e os cortes daquele trecho sao descartados: seriam
+   * fronteiras de uma divisao que nao existe mais.
+   */
+  blockCuts: Record<number, number[]>
 
   /**
    * Projetos esperando para renderizar, um atras do outro.
@@ -372,6 +399,16 @@ export interface ProjectState {
   duplicateBlockClip: (blockIndex: number, posicao: number) => void
   /** Une esta cena com a proxima em tela dividida, ou desfaz a uniao. */
   toggleBlockSplit: (blockIndex: number, posicao: number) => void
+  /**
+   * Puxa uma fronteira do trecho para outra palavra.
+   *
+   * So a fronteira arrastada se move: o slot antes dela encolhe e o de depois
+   * cresce, e as outras fronteiras ficam onde estao. Empurrar tudo em cascata
+   * faria um ajuste de uma palavra reorganizar o trecho inteiro.
+   */
+  setBlockCut: (blockIndex: number, fronteira: number, palavra: number) => void
+  /** Devolve o trecho a divisao proporcional. */
+  clearBlockCuts: (blockIndex: number) => void
   /** Joga o roteiro montado no projeto: cada frase dividida entre as cenas dela. */
   applyBlockClips: () => Promise<void>
   analyze: () => Promise<void>
@@ -576,6 +613,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   blockClips: {},
   blockWeights: {},
   blockSplits: {},
+  blockCuts: {},
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
@@ -722,7 +760,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Roteiro novo muda onde cada frase comeca e acaba: o que estava lido
       // deixa de valer.
       if (result.ok) {
-        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {}, blockSplits: {} })
+        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {}, blockSplits: {}, blockCuts: {} })
       }
       else set({ error: result.error })
     }
@@ -766,6 +804,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           blockClips: {},
           blockWeights: {},
           blockSplits: {},
+          blockCuts: {},
         })
       } else {
         set({ error: result.error })
@@ -960,10 +999,14 @@ export const useProject = create<ProjectState>((set, get) => ({
      */
     const { [activeBlock]: _fora, ...outrosPesos } = get().blockWeights
     const { [activeBlock]: _foraSplit, ...outrasUnioes } = get().blockSplits
+    // A fronteira puxada tambem e por posicao: mudar o numero de cenas a
+    // transforma numa fronteira de uma divisao que nao existe mais.
+    const { [activeBlock]: _foraCorte, ...outrosCortes } = get().blockCuts
     set({
       blockClips: { ...blockClips, [activeBlock]: proximos },
       blockWeights: outrosPesos,
       blockSplits: outrasUnioes,
+      blockCuts: outrosCortes,
     })
   },
 
@@ -980,10 +1023,12 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Reordenar tambem invalida o peso por posicao, pelo mesmo motivo.
       const { [blockIndex]: _fora, ...outros } = state.blockWeights
       const { [blockIndex]: _foraSplit, ...semUniao } = state.blockSplits
+      const { [blockIndex]: _foraCorte, ...semCortes } = state.blockCuts
       return {
         blockClips: { ...state.blockClips, [blockIndex]: [...paths] },
         blockWeights: outros,
         blockSplits: semUniao,
+        blockCuts: semCortes,
       }
     })
   },
@@ -1007,8 +1052,12 @@ export const useProject = create<ProjectState>((set, get) => ({
       const proximos = atuais.includes(posicao)
         ? atuais.filter((i) => i !== posicao)
         : [...atuais.filter((i) => i !== posicao - 1 && i !== posicao + 1), posicao].sort((a, b) => a - b)
+      // Unir junta dois slots num so: as fronteiras puxadas eram de outra
+      // divisao e nao querem dizer mais nada.
+      const { [blockIndex]: _foraCorte, ...semCortes } = state.blockCuts
       return {
         blockSplits: { ...state.blockSplits, [blockIndex]: proximos },
+        blockCuts: semCortes,
         projectDirty: true,
       }
     })
@@ -1034,10 +1083,12 @@ export const useProject = create<ProjectState>((set, get) => ({
       // A fita mudou de tamanho: o peso e por POSICAO e nao sobrevive a isso.
       const { [blockIndex]: _fora, ...outrosPesos } = state.blockWeights
       const { [blockIndex]: _foraSplit, ...semUniao } = state.blockSplits
+      const { [blockIndex]: _foraCorte, ...semCortes } = state.blockCuts
       return {
         blockClips: { ...state.blockClips, [blockIndex]: proximos },
         blockWeights: outrosPesos,
         blockSplits: semUniao,
+        blockCuts: semCortes,
         projectDirty: true,
       }
     })
@@ -1058,15 +1109,73 @@ export const useProject = create<ProjectState>((set, get) => ({
       const atuais = state.blockWeights[blockIndex] ?? []
       const pesos = Array.from({ length: quantas }, (_, i) => atuais[i] ?? 1)
       pesos[posicao] = (pesos[posicao]! % 3) + 1
+      /*
+       * Mexer no peso devolve o trecho a divisao proporcional.
+       *
+       * Peso e fronteira puxada sao dois jeitos de dizer onde a cena comeca, e
+       * a puxada ganha. Sem isto, clicar no 2x com o trecho ja puxado nao faria
+       * absolutamente nada e pareceria botao quebrado.
+       */
+      const { [blockIndex]: _foraCorte, ...semCortes } = state.blockCuts
       return {
         blockWeights: { ...state.blockWeights, [blockIndex]: pesos },
+        blockCuts: semCortes,
         projectDirty: true,
       }
     })
   },
 
+  setBlockCut: (blockIndex, fronteira, palavra) => {
+    set((state) => {
+      const cenas = state.blockClips[blockIndex] ?? []
+      const bloco = state.scriptBlocks?.[blockIndex]
+      if (!bloco || cenas.length === 0) return {}
+
+      const slots = slotsDoTrecho(cenas, state.blockWeights[blockIndex], state.blockSplits[blockIndex])
+      const palavras = palavrasDoTrecho(state.transcript?.words ?? [], bloco.start, bloco.end)
+      if (!cabeCortePorPalavra(slots.length, palavras.length)) return {}
+      if (fronteira < 0 || fronteira >= slots.length - 1) return {}
+
+      /*
+       * O primeiro arraste congela TODAS as fronteiras onde elas ja estavam.
+       *
+       * Sem isso, puxar a segunda fronteira faria a primeira -- ate entao
+       * proporcional -- se recalcular junto, e o trecho se reorganizaria
+       * inteiro a cada arraste.
+       */
+      const atuais =
+        state.blockCuts[blockIndex]?.length === slots.length - 1
+          ? state.blockCuts[blockIndex]!
+          : cortesAutomaticos(slots, palavras, bloco.start, bloco.end)
+
+      /*
+       * A fronteira PARA na vizinha em vez de empurra-la.
+       *
+       * Sem este limite, arrastar a primeira ate o fim levava a segunda junto e
+       * o trecho inteiro se reorganizava -- o oposto de "uma palavra antes".
+       */
+      const { min, max } = limitesDaFronteira(atuais, fronteira, slots.length, palavras.length)
+      const preso = Math.min(Math.max(palavra, min), max)
+      const proximos = prender(
+        atuais.map((v, k) => (k === fronteira ? preso : v)),
+        slots.length,
+        palavras.length,
+      )
+      return { blockCuts: { ...state.blockCuts, [blockIndex]: proximos }, projectDirty: true }
+    })
+  },
+
+  clearBlockCuts: (blockIndex) => {
+    set((state) => {
+      if (!state.blockCuts[blockIndex]) return {}
+      const { [blockIndex]: _fora, ...resto } = state.blockCuts
+      return { blockCuts: resto, projectDirty: true }
+    })
+  },
+
   applyBlockClips: async () => {
-    const { scriptBlocks, blockClips, blockWeights, blockSplits, audio } = get()
+    const { scriptBlocks, blockClips, blockWeights, blockSplits, blockCuts, transcript, audio } =
+      get()
     if (!scriptBlocks || !audio) return
 
     /*
@@ -1085,45 +1194,28 @@ export const useProject = create<ProjectState>((set, get) => ({
     for (const [i, frase] of scriptBlocks.entries()) {
       const cenas = blockClips[i] ?? []
       if (cenas.length === 0) continue
-      /*
-       * A divisao segue o PESO de cada cena, e nao o numero delas.
-       *
-       * Sem peso todas valem 1 e a conta e a de sempre -- partes iguais. Com
-       * peso, uma cena marcada 2x fica com o dobro do tempo da vizinha: e como
-       * ele diz qual das tres cenas do trecho e a que importa, sem ter que
-       * montar e depois arrastar na linha do tempo.
-       */
-      /*
-       * As cenas UNIDAS viram um slot so.
-       *
-       * Tela dividida mostra duas cenas ao mesmo tempo, entao o par ocupa o
-       * lugar de uma: ele nao ganha tempo extra nem peso proprio. Os dois
-       * caminhos entram na lista de importacao -- as duas metades precisam do
-       * arquivo -- e o slot guarda os dois indices.
-       */
-      const unidas = new Set(blockSplits[i] ?? [])
-      const slots: { paths: string[]; peso: number }[] = []
-      for (let j = 0; j < cenas.length; j++) {
-        const peso = blockWeights[i]?.[j] ?? 1
-        if (unidas.has(j) && j + 1 < cenas.length) {
-          slots.push({ paths: [cenas[j]!, cenas[j + 1]!], peso })
-          j += 1
-        } else {
-          slots.push({ paths: [cenas[j]!], peso })
-        }
-      }
 
-      const soma = slots.reduce((a, sl) => a + sl.peso, 0)
-      const duracao = frase.end - frase.start
-      let cursor = frase.start
-      for (const slot of slots) {
-        const fatia = (duracao * slot.peso) / soma
-        pares.push(slot.paths.map((path) => {
-          caminhos.push(path)
-          return caminhos.length - 1
-        }))
-        spans.push({ start: cursor, end: cursor + fatia })
-        cursor += fatia
+      /*
+       * A conta de como o trecho se reparte mora em @shared/trecho, e nao aqui.
+       *
+       * Ela roda em dois lugares -- aqui e na pintura das palavras da coluna do
+       * roteiro. Enquanto eram duas contas parecidas elas DIVERGIRAM: a pintura
+       * dividia em partes iguais enquanto o video ja respeitava o peso, e a cor
+       * mostrava uma coisa enquanto o mp4 fazia outra.
+       */
+      const slots = slotsDoTrecho(cenas, blockWeights[i], blockSplits[i])
+      const palavras = palavrasDoTrecho(transcript?.words ?? [], frase.start, frase.end)
+      const cortes = blockCuts[i]?.length === slots.length - 1 ? blockCuts[i]! : null
+      const doTrecho = spansDoTrecho(frase.start, frase.end, slots, palavras, cortes)
+
+      for (const [k, slot] of slots.entries()) {
+        pares.push(
+          slot.paths.map((path) => {
+            caminhos.push(path)
+            return caminhos.length - 1
+          }),
+        )
+        spans.push(doTrecho[k]!)
       }
     }
 
@@ -2014,6 +2106,7 @@ export const useProject = create<ProjectState>((set, get) => ({
        */
       blockWeights: {},
       blockSplits: {},
+      blockCuts: {},
       music: null,
       musicGainDb: MUSIC_GAIN_DB_DEFAULT,
       hookText: '',

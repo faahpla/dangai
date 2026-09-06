@@ -1,9 +1,17 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Reorder } from 'motion/react'
 import { AlertTriangle, Check, GripVertical, Loader2 } from 'lucide-react'
 import { useProject } from '@/store/project'
 import type { LibraryClip } from '@shared/channels'
 import type { Word } from '@shared/contract'
+import {
+  cabeCortePorPalavra,
+  palavrasDoTrecho,
+  palavrasPorSlot,
+  slotsDoTrecho,
+  spansDoTrecho,
+  type Span,
+} from '@shared/trecho'
 
 /**
  * O roteiro dentro da Biblioteca, trecho a trecho.
@@ -35,6 +43,9 @@ export function ScriptColumn() {
   const cycleBlockWeight = useProject((s) => s.cycleBlockWeight)
   const duplicateBlockClip = useProject((s) => s.duplicateBlockClip)
   const unioes = useProject((s) => s.blockSplits)
+  const cortes = useProject((s) => s.blockCuts)
+  const setBlockCut = useProject((s) => s.setBlockCut)
+  const clearBlockCuts = useProject((s) => s.clearBlockCuts)
   const toggleBlockSplit = useProject((s) => s.toggleBlockSplit)
   const setAtivo = useProject((s) => s.setActiveBlock)
   const carregar = useProject((s) => s.loadScriptBlocks)
@@ -165,10 +176,48 @@ export function ScriptColumn() {
            * discordassem, o que ele ve na fita nao seria o que sai no video.
            */
           const pesosDoBloco = cenas.map((_, j) => pesos[i]?.[j] ?? 1)
-          const somaPesos = pesosDoBloco.reduce((a, b) => a + b, 0)
-          const fatias = pesosDoBloco.map((peso) => (dura * peso) / somaPesos)
           const cada = cenas.length > 0 ? dura / cenas.length : dura
           const aberto = ativo === i
+
+          /*
+           * Como o trecho se reparte, pela MESMA conta que monta o plano.
+           *
+           * Antes eram duas contas parecidas e elas divergiram: a pintura
+           * dividia em partes iguais enquanto o video ja respeitava o peso.
+           * Agora as duas chamam @shared/trecho, e a cor nao tem como mentir.
+           */
+          const slots = slotsDoTrecho(cenas, pesos[i], unioes[i])
+          const palavrasDaFrase = palavrasDoTrecho(
+            transcript?.words ?? [],
+            bloco.start,
+            bloco.end,
+          )
+          const cortesDoBloco =
+            cortes[i]?.length === slots.length - 1 ? cortes[i]! : null
+          const spans = spansDoTrecho(
+            bloco.start,
+            bloco.end,
+            slots,
+            palavrasDaFrase,
+            cortesDoBloco,
+          )
+          const podePuxar = cabeCortePorPalavra(slots.length, palavrasDaFrase.length)
+
+          /*
+           * Quanto tempo sobra para CADA CENA, e nao para cada slot: a cena
+           * unida divide o quadro com a parceira mas dura o slot inteiro.
+           */
+          const fatias = cenas.map((_, j) => {
+            let posicao = 0
+            for (const [k, slot] of slots.entries()) {
+              if (posicao === j || (slot.paths.length === 2 && posicao + 1 === j)) {
+                const sp = spans[k]
+                return sp ? sp.end - sp.start : cada
+              }
+              posicao += slot.paths.length
+            }
+            return cada
+          })
 
           /*
            * Quanto cada cena curta demais vai CONGELAR.
@@ -252,11 +301,13 @@ export function ScriptColumn() {
               </div>
               <Frase
                 texto={bloco.text}
-                palavras={transcript?.words ?? []}
-                start={bloco.start}
-                end={bloco.end}
-                cenas={cenas.length}
+                palavras={palavrasDaFrase}
+                spans={spans}
                 aberto={aberto}
+                podePuxar={podePuxar}
+                puxada={cortesDoBloco !== null}
+                onPuxar={(fronteira, palavra) => setBlockCut(i, fronteira, palavra)}
+                onSoltar={() => clearBlockCuts(i)}
               />
 
               {/*
@@ -301,23 +352,25 @@ export function ScriptColumn() {
 function Frase({
   texto,
   palavras,
-  start,
-  end,
-  cenas,
+  spans,
   aberto,
+  podePuxar,
+  puxada,
+  onPuxar,
+  onSoltar,
 }: {
   texto: string
   palavras: readonly Word[]
-  start: number
-  end: number
-  cenas: number
+  spans: readonly Span[]
   aberto: boolean
+  podePuxar: boolean
+  puxada: boolean
+  onPuxar: (fronteira: number, palavra: number) => void
+  onSoltar: () => void
 }) {
-  const cor = aberto ? 'text-ink' : 'text-ink-2'
+  const [puxando, setPuxando] = useState<number | null>(null)
 
-  // Sem cena marcada nao ha o que repartir; sem palavra medida tambem nao.
-  const daFrase = cenas > 0 ? palavras.filter((w) => w.start >= start && w.start < end) : []
-  if (cenas === 0 || daFrase.length === 0) {
+  if (spans.length === 0 || palavras.length === 0) {
     return (
       <p className={['mt-1 text-[12px] leading-snug', aberto ? 'text-ink' : 'text-ink-3'].join(' ')}>
         {texto}
@@ -325,43 +378,111 @@ function Frase({
     )
   }
 
+  const doSlot = palavrasPorSlot(palavras, spans)
+
   /*
-   * Uma palavra pertence a cena que cobre o INSTANTE EM QUE ELA COMECA.
+   * As palavras agrupadas por cena, para o fundo ser CONTINUO.
    *
-   * Pelo comeco e nao pelo meio: e o comeco que o espectador ouve junto com o
-   * corte, e uma palavra que atravessa a fronteira aparece pintada na cena em
-   * que ela entrou -- que e onde ela vai ser vista.
+   * Pintar palavra por palavra transformava a frase numa grade de caixinhas e
+   * escondia justamente o que a cor existe para mostrar: onde uma cena comeca e
+   * acaba. O fundo e do grupo; cada palavra continua sendo um elemento proprio
+   * por dentro, que e o que o arraste precisa para saber onde o dedo esta.
    */
-  const passo = (end - start) / cenas
-  const trechos: Word[][] = Array.from({ length: cenas }, () => [])
-  for (const palavra of daFrase) {
-    const i = Math.min(cenas - 1, Math.max(0, Math.floor((palavra.start - start) / passo)))
-    trechos[i]!.push(palavra)
+  const grupos: { slot: number; palavras: { texto: string; indice: number }[] }[] = []
+  for (const [indice, palavra] of palavras.entries()) {
+    const slot = doSlot[indice]!
+    const ultimo = grupos[grupos.length - 1]
+    if (!ultimo || ultimo.slot !== slot) {
+      grupos.push({ slot, palavras: [{ texto: palavra.text.trim(), indice }] })
+    } else {
+      ultimo.palavras.push({ texto: palavra.text.trim(), indice })
+    }
+  }
+
+  /*
+   * Qual palavra esta debaixo do dedo.
+   *
+   * Vai pelo elemento sob o ponteiro em vez de por coordenada calculada: o
+   * texto QUEBRA LINHA, entao a posicao horizontal sozinha nao diz nada -- a
+   * primeira palavra da segunda linha fica a esquerda da ultima da primeira.
+   */
+  const palavraSob = (x: number, y: number): number | null => {
+    const alvo = document.elementFromPoint(x, y)?.closest('[data-palavra]')
+    const valor = alvo?.getAttribute('data-palavra')
+    return valor === null || valor === undefined ? null : Number(valor)
   }
 
   return (
-    <p className={['mt-1 text-[12px] leading-snug', cor].join(' ')}>
-      {trechos.map((trecho, i) =>
-        trecho.length === 0 ? null : (
-          <span
-            key={i}
-            title={`Cena ${i + 1} · ${passo.toFixed(1)}s`}
-            className={[
-              'mr-1 box-decoration-clone rounded-[2px] px-1 py-[1px]',
-              /*
-                Uma cor so, alternando a forca -- rosa e a unica cor da interface
-                por decisao dele. O que separa uma cena da outra e o contraste
-                entre cheia e apagada, que funciona em qualquer numero de cenas
-                sem inventar paleta nenhuma.
-              */
-              i % 2 === 0 ? 'bg-accent-dim text-ink' : 'bg-elevated text-ink-2',
-            ].join(' ')}
-          >
-            {trecho.map((w) => w.text.trim()).join(' ')}
+    <>
+      <p
+        className={['mt-1 text-[12px] leading-snug', aberto ? 'text-ink' : 'text-ink-2'].join(' ')}
+        onPointerMove={(event) => {
+          if (puxando === null) return
+          const palavra = palavraSob(event.clientX, event.clientY)
+          if (palavra !== null) onPuxar(puxando, palavra)
+        }}
+        onPointerUp={() => setPuxando(null)}
+        onPointerLeave={() => setPuxando(null)}
+      >
+        {grupos.map((grupo, g) => (
+          <span key={g}>
+            {/*
+              A alca so aparece no trecho ABERTO. Nas quarenta e tres linhas de
+              uma vez, uma alca por fronteira viraria uma parede de pontinhos.
+            */}
+            {g > 0 && aberto && podePuxar && (
+              <span
+                role="separator"
+                title={`Puxe para a cena ${grupo.slot + 1} comecar em outra palavra`}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  setPuxando(grupo.slot - 1)
+                }}
+                className={[
+                  'mx-1 inline-block w-[3px] cursor-ew-resize rounded-full align-middle',
+                  puxando === grupo.slot - 1
+                    ? 'h-4 bg-accent'
+                    : 'h-3 bg-accent/50 hover:h-4 hover:bg-accent',
+                ].join(' ')}
+              />
+            )}
+            <span
+              className={[
+                'mr-1 box-decoration-clone rounded-[2px] px-1 py-[1px]',
+                /*
+                  Uma cor so, alternando a forca -- rosa e a unica cor da
+                  interface por decisao dele. O que separa uma cena da outra e o
+                  contraste entre cheia e apagada, que funciona em qualquer
+                  numero de cenas sem inventar paleta nenhuma.
+                */
+                grupo.slot % 2 === 0 ? 'bg-accent-dim text-ink' : 'bg-elevated text-ink-2',
+              ].join(' ')}
+            >
+              {grupo.palavras.map((palavra, i) => (
+                <span key={palavra.indice} data-palavra={palavra.indice}>
+                  {i > 0 ? ' ' : ''}
+                  {palavra.texto}
+                </span>
+              ))}
+            </span>
           </span>
-        ),
+        ))}
+      </p>
+
+      {aberto && puxada && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation()
+            onSoltar()
+          }}
+          className="mt-1 text-[10px] text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline"
+        >
+          voltar a divisao automatica
+        </button>
       )}
-    </p>
+    </>
   )
 }
 
