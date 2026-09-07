@@ -12,7 +12,14 @@ import type {
   UpdateStatus,
 } from '@shared/channels'
 import {
+  CAPTION_ANIMATION_DEFAULT,
+  CAPTION_ANIMATION_FRAMES_DEFAULT,
+  CAPTION_ANIMATION_FRAMES_MAX,
+  CAPTION_ANIMATION_FRAMES_MIN,
+  CAPTION_MARK_DEFAULT,
+  CAPTION_SHADOW_DEFAULT,
   CAPTION_COLOR_DEFAULT,
+  familiaDaFonte,
   CAPTION_Y_DEFAULT,
   CAPTION_Y_MAX,
   CAPTION_Y_MIN,
@@ -28,7 +35,10 @@ import {
 } from '@shared/contract'
 import type {
   AudioAnalysis,
+  CaptionAnimation,
   CaptionColor,
+  CaptionMark,
+  CaptionShadow,
   CurvePoints,
   ImageAsset,
   MotionCurve,
@@ -157,6 +167,24 @@ export interface ProjectState {
   captionsEnabled: boolean
   /** Cor do marcador de palavra na legenda queimada. */
   captionColor: CaptionColor
+  /**
+   * A fonte escolhida para as legendas, das que ele largou na pasta.
+   *
+   * null = a embutida, que e o padrao e o que o app sempre fez. Guarda o NOME
+   * do arquivo junto com a URL: o nome e o que sobrevive no projeto salvo, a
+   * URL morre com a sessao que a criou.
+   */
+  captionFont: { nome: string; url: string } | null
+  /** As fontes disponiveis na pasta. Lida na abertura e ao voltar das settings. */
+  fontes: { nome: string; url: string }[]
+  /** Como a legenda entra na tela. 'nenhuma' e o padrao. */
+  captionAnimation: CaptionAnimation
+  /** Quantos frames a entrada elastica leva. Menos = mais rapida. */
+  captionAnimationFrames: number
+  /** Cor so na palavra dita ('palavra', o padrao) ou na legenda toda ('tudo'). */
+  captionMark: CaptionMark
+  /** A sombra projetada do texto. Opacidade zero = sem sombra. */
+  captionShadow: CaptionShadow
   /** Altura da legenda na tela, fracao a partir do rodape. */
   captionY: number
   paletteOpen: boolean
@@ -333,6 +361,17 @@ export interface ProjectState {
   setAppVersion: (version: string) => void
   toggleCaptions: () => void
   setCaptionColor: (color: CaptionColor) => void
+  /** Recarrega a lista de fontes da pasta. */
+  refreshFontes: () => Promise<void>
+  /** Escolhe a fonte da legenda pelo nome do arquivo. null volta a embutida. */
+  setCaptionFont: (nome: string | null) => void
+  /** Abre a pasta de fontes no explorador, para ele largar os arquivos dele. */
+  openFontesDir: () => Promise<void>
+  setCaptionAnimation: (animation: CaptionAnimation) => void
+  setCaptionAnimationFrames: (frames: number) => void
+  setCaptionMark: (mark: CaptionMark) => void
+  /** Ajusta um dos tres numeros da sombra. */
+  setCaptionShadow: (patch: Partial<CaptionShadow>) => void
   setCaptionY: (y: number) => void
   setScript: (script: string | null) => Promise<void>
   openScript: (open: boolean) => void
@@ -599,6 +638,12 @@ export const useProject = create<ProjectState>((set, get) => ({
   appVersion: '',
   captionsEnabled: false,
   captionColor: CAPTION_COLOR_DEFAULT,
+  captionFont: null,
+  fontes: [],
+  captionAnimation: CAPTION_ANIMATION_DEFAULT,
+  captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
+  captionMark: CAPTION_MARK_DEFAULT,
+  captionShadow: CAPTION_SHADOW_DEFAULT,
   captionY: CAPTION_Y_DEFAULT,
   paletteOpen: false,
   libraryOpen: false,
@@ -938,7 +983,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   loadScriptBlocks: async () => {
-    const { audio, subtitlePath, script, scriptBlocks, scriptBlocksBusy } = get()
+    const { audio, subtitlePath, script, scriptBlocks, scriptBlocksBusy, transcript } = get()
     // Ja lido, ou lendo: transcrever de novo custaria outra passada de Whisper
     // pelo mesmo audio para chegar no mesmo texto.
     if (!audio || scriptBlocks || scriptBlocksBusy) return
@@ -948,6 +993,14 @@ export const useProject = create<ProjectState>((set, get) => ({
       audioPath: audio.path,
       subtitlePath,
       script,
+      /*
+       * A transcricao da importacao vai junto.
+       *
+       * Sem ela, o main mandava o Whisper passar de novo pelo mesmo audio para
+       * chegar ao mesmo texto -- e a Biblioteca ficava minutos "ouvindo a
+       * narracao" que ela ja tinha ouvido.
+       */
+      transcript,
     })
     /*
      * `busy` tambem tem que ser limpo, e nao so o `scriptBlocksBusy`.
@@ -1800,6 +1853,50 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   setCaptionColor: (color) => set({ captionColor: color }),
 
+  refreshFontes: async () => {
+    const r = await window.dangai.listFontes()
+    if (!r.ok) return
+    const fontes = r.value
+    /*
+     * A fonte escolhida some quando o arquivo some.
+     *
+     * Ele pode apagar da pasta entre uma sessao e outra. Manter a escolha
+     * apontando para um arquivo que nao existe faria o render cair na fonte
+     * reserva sem dizer por que.
+     */
+    const escolhida = get().captionFont
+    const aindaExiste = escolhida && fontes.find((f) => f.nome === escolhida.nome)
+    set({ fontes, captionFont: aindaExiste ?? null })
+  },
+
+  setCaptionFont: (nome) => {
+    if (nome === null) {
+      set({ captionFont: null })
+      return
+    }
+    const achada = get().fontes.find((f) => f.nome === nome)
+    if (achada) set({ captionFont: achada })
+  },
+
+  openFontesDir: async () => {
+    await window.dangai.openFontesDir()
+  },
+
+  setCaptionAnimation: (animation) => set({ captionAnimation: animation }),
+
+  setCaptionAnimationFrames: (frames) =>
+    set({
+      captionAnimationFrames: Math.min(
+        Math.max(Math.round(frames), CAPTION_ANIMATION_FRAMES_MIN),
+        CAPTION_ANIMATION_FRAMES_MAX,
+      ),
+    }),
+
+  setCaptionMark: (mark) => set({ captionMark: mark }),
+
+  setCaptionShadow: (patch) =>
+    set((state) => ({ captionShadow: { ...state.captionShadow, ...patch } })),
+
   // Grampeia aqui e nao so na interface: a store tambem e chamada pelo Ctrl+K e
   // pela restauracao de projeto, e um valor fora da faixa jogaria a legenda para
   // fora da tela ou para cima do card de fechamento.
@@ -2010,6 +2107,17 @@ export const useProject = create<ProjectState>((set, get) => ({
         // O MESMO numero que vai na composicao logo abaixo. Eram duas contas
         // separadas, e quando discordavam o fim do video ficava sem imagem.
         audio.durationSec,
+        {
+          font: get().captionFont?.url ? {
+            family: familiaDaFonte(get().captionFont!.nome),
+            url: get().captionFont!.url,
+          }
+        : null,
+          animation: get().captionAnimation,
+          animationFrames: get().captionAnimationFrames,
+          mark: get().captionMark,
+          shadow: get().captionShadow,
+        },
       ),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
@@ -2157,6 +2265,12 @@ export const useProject = create<ProjectState>((set, get) => ({
       captionsEdited: state.captionsEdited,
       captionsEnabled: state.captionsEnabled,
       captionColor: state.captionColor,
+      // So o nome: a URL e desta sessao e nao vale nada na proxima abertura.
+      captionFont: state.captionFont?.nome ?? '',
+      captionAnimation: state.captionAnimation,
+      captionAnimationFrames: state.captionAnimationFrames,
+      captionMark: state.captionMark,
+      captionShadow: state.captionShadow,
       captionY: state.captionY,
       sfxEnabled: state.sfxEnabled,
       music: state.music
@@ -2204,6 +2318,9 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (result.value === null) return
 
     await applyProjectFile(set, result.value.file, result.value.path, false)
+    // O projeto guarda so o NOME da fonte; e esta leitura que reencontra a URL
+    // dela na pasta -- ou derruba a escolha, se o arquivo nao estiver mais la.
+    await get().refreshFontes()
   },
 
   checkAutosave: async () => {
@@ -2226,6 +2343,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     // save de verdade. Marcar limpo faria o app dizer que nao ha nada a gravar
     // justamente sobre o trabalho que quase se perdeu.
     await applyProjectFile(set, result.value.file, result.value.path, true)
+    // Mesmo motivo do openProject: a fonte volta pelo nome e precisa da URL.
+    await get().refreshFontes()
   },
 
   discardAutosave: async () => {
@@ -2399,6 +2518,18 @@ async function applyProjectFile(
       captionsEdited: file.captionsEdited,
       captionsEnabled: file.captionsEnabled,
       captionColor: file.captionColor,
+      /*
+       * A fonte volta pelo nome, e a URL e reencontrada.
+       *
+       * `refreshFontes` roda logo depois de abrir e resolve o par nome->URL; se
+       * o arquivo nao estiver mais na pasta, ela derruba a escolha para a fonte
+       * embutida em vez de deixar uma URL morta no projeto.
+       */
+      captionFont: file.captionFont ? { nome: file.captionFont, url: '' } : null,
+      captionAnimation: file.captionAnimation,
+      captionAnimationFrames: file.captionAnimationFrames,
+      captionMark: file.captionMark,
+      captionShadow: file.captionShadow,
       captionY: file.captionY,
       sfxEnabled: file.sfxEnabled,
 

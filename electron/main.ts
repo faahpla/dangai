@@ -12,6 +12,7 @@ import { configureFavorites } from './services/favorites'
 import { configureDescribe } from './services/describe'
 import { configureTagger } from './services/tagger'
 import { configureSfx, ensureSfxDir } from './services/sfx'
+import { configureFontes, ensureFontesDir } from './services/fontes'
 import { startUpdater } from './services/updater'
 import { configureWhisper } from './services/whisper'
 import { configureFaces } from './services/faces'
@@ -109,6 +110,12 @@ app.whenReady().then(async () => {
       : join(app.getAppPath(), 'assets', 'sfx'),
   })
   ensureSfxDir()
+
+  // As fontes das legendas seguem o mesmo desenho dos SFX: pasta no userData
+  // onde ele larga os arquivos. O app nao vem com fonte nenhuma alem da
+  // embutida -- fonte tem licenca, e a escolha do visual e dele.
+  configureFontes(join(userData, 'fontes'))
+  ensureFontesDir()
 
   // O cascade de rosto de anime: 247 KB soltos junto do app, como os SFX.
   configureFaces(

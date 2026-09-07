@@ -18,13 +18,18 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import { useProject } from '@/store/project'
 import {
+  familiaDaFonte,
+  CAPTION_ANIMATION_FRAMES_MAX,
+  CAPTION_ANIMATION_FRAMES_MIN,
   CAPTION_COLOR_HEX,
+  CAPTION_SHADOW_DEFAULT,
   CAPTION_COLORS,
   CAPTION_Y_DEFAULT,
   CAPTION_Y_MAX,
   CAPTION_Y_MIN,
   MUSIC_GAIN_DB_MAX,
   MUSIC_GAIN_DB_MIN,
+  VIDEO_FPS,
 } from '@shared/contract'
 import { dedupe, preflight } from '@shared/preflight'
 
@@ -425,7 +430,26 @@ function EstiloControl() {
   const setCaptionColor = useProject((s) => s.setCaptionColor)
   const captionY = useProject((s) => s.captionY)
   const setCaptionY = useProject((s) => s.setCaptionY)
+  const fontes = useProject((s) => s.fontes)
+  const captionFont = useProject((s) => s.captionFont)
+  const setCaptionFont = useProject((s) => s.setCaptionFont)
+  const refreshFontes = useProject((s) => s.refreshFontes)
+  const openFontesDir = useProject((s) => s.openFontesDir)
+  const captionAnimation = useProject((s) => s.captionAnimation)
+  const setCaptionAnimation = useProject((s) => s.setCaptionAnimation)
+  const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
+  const setCaptionAnimationFrames = useProject((s) => s.setCaptionAnimationFrames)
+  const captionMark = useProject((s) => s.captionMark)
+  const setCaptionMark = useProject((s) => s.setCaptionMark)
+  const sombra = useProject((s) => s.captionShadow)
+  const setCaptionShadow = useProject((s) => s.setCaptionShadow)
   const [aberto, setAberto] = useState(false)
+
+  // A pasta e do usuario: ele pode ter largado uma fonte com o app aberto.
+  // Reler ao abrir o painel e mais barato que um botao de "atualizar".
+  useEffect(() => {
+    if (aberto) void refreshFontes()
+  }, [aberto, refreshFontes])
 
   return (
     <div className="relative">
@@ -452,7 +476,9 @@ function EstiloControl() {
         <>
           <div className="fixed inset-0 z-40" onPointerDown={() => setAberto(false)} />
           <div className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 w-[248px] rounded-md p-3">
-            <span className="text-[10px] uppercase tracking-wide text-ink-3">Cor da palavra</span>
+            <span className="text-[10px] uppercase tracking-wide text-ink-3">
+              {captionMark === 'tudo' ? 'Cor do texto' : 'Cor da palavra'}
+            </span>
             <div className="mt-1.5 flex gap-1">
               {CAPTION_COLORS.map((cor) => (
                 <button
@@ -473,6 +499,18 @@ function EstiloControl() {
                   />
                 </button>
               ))}
+            </div>
+
+            <div className="mt-2 flex flex-col gap-1">
+              <Opcao
+                ativo={captionMark === 'palavra'}
+                onClick={() => setCaptionMark('palavra')}
+              >
+                So na palavra dita <span className="text-ink-3">(acompanha a narracao)</span>
+              </Opcao>
+              <Opcao ativo={captionMark === 'tudo'} onClick={() => setCaptionMark('tudo')}>
+                No texto inteiro <span className="text-ink-3">(sem marcar palavra)</span>
+              </Opcao>
             </div>
 
             <div className="my-3 h-px bg-line" />
@@ -505,10 +543,206 @@ function EstiloControl() {
                   ? 'Perto do meio da tela, onde o card de fechamento aparece.'
                   : 'Fora da area que a interface do TikTok e do Reels cobre.'}
             </p>
+
+            <div className="my-3 h-px bg-line" />
+
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] uppercase tracking-wide text-ink-3">Sombra</span>
+              <button
+                type="button"
+                onClick={() => setCaptionShadow(CAPTION_SHADOW_DEFAULT)}
+                disabled={
+                  sombra.distancia === CAPTION_SHADOW_DEFAULT.distancia &&
+                  sombra.desfoque === CAPTION_SHADOW_DEFAULT.desfoque &&
+                  sombra.opacidade === CAPTION_SHADOW_DEFAULT.opacidade
+                }
+                className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
+              >
+                voltar ao padrao
+              </button>
+            </div>
+            {/* Opacidade primeiro: e o controle que APAGA a sombra, e quem quer
+                desligar procura por ele antes de qualquer ajuste fino. */}
+            <Medida
+              rotulo="Forca"
+              valor={`${Math.round(sombra.opacidade * 100)}%`}
+              min={0}
+              max={100}
+              valorBruto={Math.round(sombra.opacidade * 100)}
+              onChange={(v) => setCaptionShadow({ opacidade: v / 100 })}
+            />
+            <Medida
+              rotulo="Distancia"
+              valor={`${sombra.distancia}px`}
+              min={0}
+              max={24}
+              valorBruto={sombra.distancia}
+              onChange={(v) => setCaptionShadow({ distancia: v })}
+            />
+            <Medida
+              rotulo="Desfoque"
+              valor={`${sombra.desfoque}px`}
+              min={0}
+              max={40}
+              valorBruto={sombra.desfoque}
+              onChange={(v) => setCaptionShadow({ desfoque: v })}
+            />
+            {sombra.opacidade === 0 && (
+              <p className="mt-1 text-[11px] leading-relaxed text-ink-3">
+                Sem sombra. O contorno preto continua separando a letra do fundo.
+              </p>
+            )}
+
+            <div className="my-3 h-px bg-line" />
+
+            <span className="text-[10px] uppercase tracking-wide text-ink-3">Fonte</span>
+            <div className="mt-1.5 flex flex-col gap-1">
+              <Opcao ativo={captionFont === null} onClick={() => setCaptionFont(null)}>
+                Komika Axis <span className="text-ink-3">(a que vem no app)</span>
+              </Opcao>
+              {fontes.map((fonte) => (
+                <Opcao
+                  key={fonte.nome}
+                  ativo={captionFont?.nome === fonte.nome}
+                  onClick={() => setCaptionFont(fonte.nome)}
+                >
+                  {familiaDaFonte(fonte.nome)}
+                </Opcao>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => void openFontesDir()}
+              className="mt-1.5 text-[11px] text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline"
+            >
+              {fontes.length === 0
+                ? 'Abrir a pasta e largar suas fontes (.ttf, .otf)'
+                : 'Abrir a pasta de fontes'}
+            </button>
+
+            <div className="my-3 h-px bg-line" />
+
+            <span className="text-[10px] uppercase tracking-wide text-ink-3">Entrada</span>
+            <div className="mt-1.5 flex flex-col gap-1">
+              <Opcao
+                ativo={captionAnimation === 'nenhuma'}
+                onClick={() => setCaptionAnimation('nenhuma')}
+              >
+                Sem animacao
+              </Opcao>
+              <Opcao
+                ativo={captionAnimation === 'elastica'}
+                onClick={() => setCaptionAnimation('elastica')}
+              >
+                Elastica <span className="text-ink-3">(cresce e repica)</span>
+              </Opcao>
+            </div>
+
+            {/* A velocidade so aparece havendo o que acelerar. */}
+            {captionAnimation === 'elastica' && (
+              <>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <span className="text-[10px] uppercase tracking-wide text-ink-3">
+                    Velocidade
+                  </span>
+                  <span className="tnum text-[10px] text-ink-3">
+                    {(captionAnimationFrames / VIDEO_FPS).toFixed(2)}s
+                  </span>
+                </div>
+                {/*
+                  O controle anda ao contrario do numero: para a DIREITA e mais
+                  rapido, que e como se le "velocidade". Guardar frames e mostrar
+                  segundos mantem a conta honesta -- a mola trabalha em frames.
+                */}
+                <input
+                  type="range"
+                  aria-label="Velocidade da entrada"
+                  min={CAPTION_ANIMATION_FRAMES_MIN}
+                  max={CAPTION_ANIMATION_FRAMES_MAX}
+                  step={1}
+                  value={
+                    CAPTION_ANIMATION_FRAMES_MIN +
+                    CAPTION_ANIMATION_FRAMES_MAX -
+                    captionAnimationFrames
+                  }
+                  onChange={(event) =>
+                    setCaptionAnimationFrames(
+                      CAPTION_ANIMATION_FRAMES_MIN +
+                        CAPTION_ANIMATION_FRAMES_MAX -
+                        Number(event.target.value),
+                    )
+                  }
+                  className="dangai-range mt-1.5 w-full"
+                />
+              </>
+            )}
           </div>
         </>
       )}
     </div>
+  )
+}
+
+/** Um controle deslizante com rotulo e valor, do jeito do painel de estilo. */
+function Medida({
+  rotulo,
+  valor,
+  min,
+  max,
+  valorBruto,
+  onChange,
+}: {
+  rotulo: string
+  valor: string
+  min: number
+  max: number
+  valorBruto: number
+  onChange: (valor: number) => void
+}) {
+  return (
+    <div className="mt-1.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] text-ink-2">{rotulo}</span>
+        <span className="tnum text-[10px] text-ink-3">{valor}</span>
+      </div>
+      <input
+        type="range"
+        aria-label={rotulo}
+        min={min}
+        max={max}
+        step={1}
+        value={valorBruto}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="dangai-range mt-1 w-full"
+      />
+    </div>
+  )
+}
+
+/** Uma linha escolhivel dentro do painel de estilo. */
+function Opcao({
+  ativo,
+  onClick,
+  children,
+}: {
+  ativo: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      className={[
+        'rounded-sm border px-2 py-1 text-left text-[11px]',
+        ativo
+          ? 'border-accent bg-accent-dim text-ink'
+          : 'border-line bg-elevated text-ink-2 hover:text-ink',
+      ].join(' ')}
+    >
+      {children}
+    </button>
   )
 }
 

@@ -1,7 +1,15 @@
 import { z } from 'zod'
 import {
   captionBlockSchema,
+  CAPTION_ANIMATION_DEFAULT,
+  CAPTION_ANIMATION_FRAMES_DEFAULT,
+  CAPTION_MARK_DEFAULT,
+  CAPTION_SHADOW_DEFAULT,
   CAPTION_COLOR_DEFAULT,
+  captionAnimationFramesSchema,
+  captionAnimationSchema,
+  captionMarkSchema,
+  captionShadowSchema,
   captionColorSchema,
   captionYSchema,
   END_CARD_SEC_DEFAULT,
@@ -86,6 +94,24 @@ export const projectFileSchema = z.object({
   captionColor: captionColorSchema.default(CAPTION_COLOR_DEFAULT),
   /** Altura da legenda na tela. Idem: projeto antigo abre nos 420px de sempre. */
   captionY: captionYSchema,
+  /**
+   * A fonte escolhida, pelo NOME do arquivo.
+   *
+   * So o nome: a URL e do servidor local desta sessao e nao significa nada na
+   * proxima abertura. Ao abrir o projeto, o nome e reencontrado na pasta -- e
+   * se o arquivo nao estiver mais la, volta para a fonte embutida.
+   */
+  captionFont: z.string().default(''),
+  /** Como a legenda entra. Default para projeto salvo antes disto abrir igual. */
+  captionAnimation: captionAnimationSchema.default(CAPTION_ANIMATION_DEFAULT),
+  /** Velocidade da entrada elastica, em frames. Default para projeto antigo. */
+  captionAnimationFrames: captionAnimationFramesSchema.default(
+    CAPTION_ANIMATION_FRAMES_DEFAULT,
+  ),
+  /** Cor na palavra dita ou na legenda toda. Default = o de sempre. */
+  captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
+  /** A sombra do texto. Default para projeto salvo antes dela existir. */
+  captionShadow: captionShadowSchema.default(CAPTION_SHADOW_DEFAULT),
   sfxEnabled: z.boolean(),
   /** Cama de musica. Com default para projeto salvo antes dela existir abrir igual. */
   music: referenceSchema.nullable().default(null),

@@ -13,6 +13,7 @@ import { transcribe } from './whisper'
 import { detectSilences } from './silence'
 import { planWithAI } from './planner'
 import { getSettings } from './settings'
+import { vocabularioDaBiblioteca } from './vocabulario'
 
 /**
  * A cadeia inteira: transcrever -> planejar -> sanear -> alinhar aos cortes
@@ -40,8 +41,10 @@ export type AnalyzeProgress = (message: string) => void
 export async function analyze(
   request: AnalyzeRequest,
   onProgress: AnalyzeProgress,
+  /** Publica o keyframe no servidor local. So serve para ler a biblioteca. */
+  publishThumb: (absolutePath: string) => string,
 ): Promise<AnalysisResult> {
-  const resultado = await analisar(request, onProgress)
+  const resultado = await analisar(request, onProgress, publishThumb)
   return { ...resultado, plan: movimentoDeClipe(resultado.plan, request.images) }
 }
 
@@ -76,16 +79,28 @@ function movimentoDeClipe(plan: ScenePlan, images: readonly ImageAsset[]): Scene
 async function analisar(
   request: AnalyzeRequest,
   onProgress: AnalyzeProgress,
+  publishThumb: (absolutePath: string) => string,
 ): Promise<AnalysisResult> {
   const { audioPath, subtitlePath, images, durationSec, script } = request
   const settings = getSettings()
 
-  // Os nomes dos arquivos viram vocabulario para o Whisper -- ver
-  // buildVocabularyPrompt.
+  /*
+   * A dica do Whisper sai da BIBLIOTECA, e nao dos nomes dos arquivos.
+   *
+   * Os nomes dos arquivos eram vocabulario ruim -- "print-1.jpg" o
+   * buildVocabularyPrompt descarta quase inteiro -- e, pior, eram DIFERENTES da
+   * dica que a Biblioteca usava. Duas dicas diferentes para o mesmo audio
+   * significavam duas transcricoes diferentes, e por isso abrir a Biblioteca
+   * mandava o Whisper rodar tudo de novo.
+   *
+   * Com a mesma dica dos dois lados, a primeira transcricao serve para as duas
+   * telas -- e ainda por cima e a boa, a que conhece os nomes dos personagens.
+   */
+  const nomes = await vocabularioDaBiblioteca(publishThumb)
   const measured = await getTranscript(
     audioPath,
     subtitlePath,
-    images.map((image) => image.fileName),
+    nomes.length > 0 ? nomes : images.map((image) => image.fileName),
     onProgress,
   )
 
@@ -178,7 +193,7 @@ async function analisar(
  * metade), fica com a transcricao original e avisa. Silenciosamente usar um
  * roteiro errado produziria legendas confiantes e completamente fora.
  */
-function applyScript(
+export function applyScript(
   script: string | null,
   measured: Transcript | null,
   onProgress: AnalyzeProgress,

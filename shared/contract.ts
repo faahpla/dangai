@@ -203,6 +203,106 @@ export const rotationSchema = z.union([
 ])
 export type Rotation = (typeof ROTATIONS)[number]
 
+/**
+ * Como a legenda entra na tela.
+ *
+ * 'nenhuma' e o padrao: o bloco aparece parado, e foi assim o app inteiro ate
+ * aqui. 'elastica' e a entrada com escala e repique -- ela chama atencao, e por
+ * isso e uma escolha por video e nunca o padrao.
+ */
+/**
+ * Onde a cor da legenda e aplicada.
+ *
+ * 'palavra' e o padrao e o que o app sempre fez: o texto sai branco e SO a
+ * palavra sendo dita ganha cor, acompanhando a narracao. 'tudo' pinta a legenda
+ * inteira da cor escolhida e nao marca palavra nenhuma -- e o estilo de quem
+ * quer a legenda como um bloco so, sem o karaoke.
+ *
+ * Um nao substitui o outro: sao dois visuais, e a escolha e por video.
+ */
+/**
+ * A sombra projetada do texto da legenda.
+ *
+ * Sao tres numeros e nao uma string de CSS: assim o projeto salvo guarda algo
+ * que da para validar, e a interface tem o que mostrar num controle.
+ *
+ * Vira DUAS camadas na tela -- uma curta e fechada, que desenha a borda da
+ * sombra, e uma longa e aberta, que espalha. Uma sombra so ou fica dura demais
+ * ou some sobre fundo claro. Os controles mexem na primeira e a segunda
+ * acompanha em proporcao, para os dois nunca sairem de sintonia.
+ *
+ * Opacidade zero apaga a sombra por inteiro: e o jeito de desligar sem um
+ * interruptor separado dizendo a mesma coisa.
+ */
+export const captionShadowSchema = z.object({
+  /** Quanto a sombra desce, em pixels do quadro 1080x1920. */
+  distancia: z.number().min(0).max(24),
+  desfoque: z.number().min(0).max(40),
+  opacidade: z.number().min(0).max(1),
+})
+export type CaptionShadow = z.infer<typeof captionShadowSchema>
+
+/** O que ele viu e aprovou em 07/09. Mexer aqui muda o padrao de todo video novo. */
+export const CAPTION_SHADOW_DEFAULT: CaptionShadow = {
+  distancia: 4,
+  desfoque: 6,
+  opacidade: 0.55,
+}
+
+/**
+ * As duas camadas da sombra, prontas para o CSS.
+ *
+ * Uma definicao so, usada pelo render e pelo preview -- que sao o mesmo
+ * componente, mas a conta tambem serve para qualquer lugar que precise mostrar
+ * a sombra fora dele.
+ */
+export function sombraCss({ distancia, desfoque, opacidade }: CaptionShadow): string | undefined {
+  if (opacidade <= 0) return undefined
+  const espalhada = `0 ${(distancia * 2.5).toFixed(1)}px ${(desfoque * 3.6).toFixed(1)}px rgba(0,0,0,${(opacidade * 0.8).toFixed(3)})`
+  return `0 ${distancia.toFixed(1)}px ${desfoque.toFixed(1)}px rgba(0,0,0,${opacidade.toFixed(3)}), ${espalhada}`
+}
+
+export const CAPTION_MARKS = ['palavra', 'tudo'] as const
+export const captionMarkSchema = z.enum(CAPTION_MARKS)
+export type CaptionMark = z.infer<typeof captionMarkSchema>
+export const CAPTION_MARK_DEFAULT: CaptionMark = 'palavra'
+
+/**
+ * Quantos frames a entrada elastica leva para assentar.
+ *
+ * Vira `durationInFrames` da mola do Remotion, que estica ou comprime a curva
+ * inteira sem mudar o formato dela -- o repique continua sendo o mesmo repique,
+ * so mais rapido ou mais lento.
+ *
+ * O padrao e 6 e nao 9: a primeira versao ficou lenta demais para short, dito
+ * por ele depois de ver rodando.
+ */
+export const CAPTION_ANIMATION_FRAMES_MIN = 3
+export const CAPTION_ANIMATION_FRAMES_MAX = 16
+export const CAPTION_ANIMATION_FRAMES_DEFAULT = 6
+export const captionAnimationFramesSchema = z
+  .number()
+  .int()
+  .min(CAPTION_ANIMATION_FRAMES_MIN)
+  .max(CAPTION_ANIMATION_FRAMES_MAX)
+
+/**
+ * O nome da familia CSS de uma fonte, a partir do nome do ARQUIVO.
+ *
+ * Uma definicao so, usada pelo main e pela tela: se os dois derivassem o nome
+ * por conta propria, bastaria um divergir para o CSS pedir uma familia que o
+ * FontFace nunca registrou -- e a legenda sairia na fonte reserva sem erro
+ * nenhum aparecendo.
+ */
+export function familiaDaFonte(nomeDoArquivo: string): string {
+  return nomeDoArquivo.replace(/\.[^.]+$/, '')
+}
+
+export const CAPTION_ANIMATIONS = ['nenhuma', 'elastica'] as const
+export const captionAnimationSchema = z.enum(CAPTION_ANIMATIONS)
+export type CaptionAnimation = z.infer<typeof captionAnimationSchema>
+export const CAPTION_ANIMATION_DEFAULT: CaptionAnimation = 'nenhuma'
+
 export const SFX_SOUNDS = ['whoosh', 'impact'] as const
 export type SfxSound = (typeof SFX_SOUNDS)[number]
 
@@ -494,7 +594,7 @@ export const END_CARD_SEC_DEFAULT = 3
  * vinho) se dissolve dentro do contorno preto de 6px, e o marcador sumiria
  * justamente no frame em que deveria chamar atencao.
  */
-export const CAPTION_COLORS = ['rosa', 'amarelo', 'verde', 'vermelho', 'azul'] as const
+export const CAPTION_COLORS = ['rosa', 'amarelo', 'verde', 'vermelho', 'azul', 'branco'] as const
 export const captionColorSchema = z.enum(CAPTION_COLORS)
 export type CaptionColor = z.infer<typeof captionColorSchema>
 
@@ -504,6 +604,14 @@ export const CAPTION_COLOR_HEX: Record<CaptionColor, string> = {
   verde: '#34E06A',
   vermelho: '#FF3B30',
   azul: '#3DB8FF',
+  /*
+   * Branco existe para o texto INTEIRO de uma cor.
+   *
+   * Como marcador de palavra ele nao marca nada -- a palavra dita fica igual as
+   * outras --, e e justamente por isso que ele entra: e o jeito de ter legenda
+   * sem cor nenhuma, que ate agora nao dava.
+   */
+  branco: '#FFFFFF',
 }
 
 /** Rosa e o padrao: e a cor do app, e o video sai parecido com ele. */
@@ -515,16 +623,19 @@ export const CAPTION_COLOR_DEFAULT: CaptionColor = 'rosa'
  * Fracao e nao pixel de proposito: o valor fica preso ao enquadramento, nao a
  * resolucao, e continua valendo se um dia a composicao mudar de tamanho.
  *
- * O padrao e exatamente os 420px que o app sempre usou -- e ele nao e um numero
- * bonito escolhido a esmo. No TikTok e no Reels a faixa de baixo da tela fica
- * coberta pela interface do proprio aplicativo (usuario, legenda, botoes), e
- * legenda queimada ali simplesmente nao e lida. Descer daqui e uma escolha
- * consciente de quem sabe onde o video vai ser publicado.
+ * O padrao e 0,355 -- uns 682px do rodape. Nao e conta: e a altura que ele
+ * ajustou no olho e mandou virar padrao em 07/09. Ate ali eram 420px, escolhidos
+ * por caberem acima da interface do TikTok e do Reels; a altura nova respeita a
+ * mesma faixa com folga bem maior.
+ *
+ * O piso continua existindo pelo motivo de sempre: no TikTok e no Reels a faixa
+ * de baixo da tela fica coberta pela interface do proprio aplicativo (usuario,
+ * legenda, botoes), e legenda queimada ali simplesmente nao e lida.
  *
  * O teto para antes do meio da tela: acima disso a legenda briga com o card de
  * fechamento, que e centralizado.
  */
-export const CAPTION_Y_DEFAULT = 420 / VIDEO_HEIGHT
+export const CAPTION_Y_DEFAULT = 0.355
 export const CAPTION_Y_MIN = 0.08
 export const CAPTION_Y_MAX = 0.55
 export const captionYSchema = z
@@ -604,19 +715,50 @@ export const renderPropsSchema = z.object({
   captionColor: captionColorSchema.default(CAPTION_COLOR_DEFAULT),
   /** Altura da legenda, fracao da tela a partir do rodape. */
   captionY: captionYSchema,
+  /**
+   * A fonte das legendas, quando ele escolheu uma das que largou na pasta.
+   *
+   * null = a embutida (Komika Axis), que e o que o app sempre fez. A URL vem
+   * junto porque o Chrome do render nao enxerga as fontes do Windows: ele busca
+   * o arquivo pelo mesmo servidor local que serve os clipes.
+   */
+  captionFont: z
+    .object({ family: z.string(), url: z.string() })
+    .nullable()
+    .default(null),
+  /**
+   * Como cada bloco de legenda ENTRA na tela.
+   *
+   * 'nenhuma' e o padrao e continua sendo: a legenda aparece no lugar, sem
+   * chamar atencao para si. 'elastica' e a entrada com escala e repique, que ele
+   * pediu para poder ligar quando quiser -- nunca por padrao.
+   */
+  captionAnimation: captionAnimationSchema.default(CAPTION_ANIMATION_DEFAULT),
+  /** Quantos frames a entrada elastica leva. So vale com a animacao ligada. */
+  captionAnimationFrames: captionAnimationFramesSchema.default(
+    CAPTION_ANIMATION_FRAMES_DEFAULT,
+  ),
+  /** Cor so na palavra dita, ou na legenda inteira. */
+  captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
+  /** A sombra projetada do texto. Opacidade zero = sem sombra. */
+  captionShadow: captionShadowSchema.default(CAPTION_SHADOW_DEFAULT),
   /** Texto de abertura e de fechamento. Vazio quando o usuario nao pediu. */
   cards: z.array(overlayCardSchema).default([]),
 })
 export type RenderProps = z.infer<typeof renderPropsSchema>
 
 /**
- * Um bloco de legenda e uma linha so. No maximo tres palavras e doze
+ * Um bloco de legenda e uma linha so. No maximo DUAS palavras e doze
  * caracteres -- mais que isso nao da tempo de ler num short.
+ *
+ * Eram tres ate 07/09, e ele pediu duas depois de ver rodando: com tres, linhas
+ * como "ate quem leu" batiam exatamente nos doze caracteres e passavam rapido
+ * demais para o olho pegar as tres.
  *
  * A unica excecao e a palavra que sozinha ja passa do limite: ela fica sozinha
  * na linha, porque quebrar palavra no meio e pior que uma linha comprida.
  */
-export const CAPTION_MAX_WORDS = 3
+export const CAPTION_MAX_WORDS = 2
 export const CAPTION_MAX_CHARS = 12
 
 /**

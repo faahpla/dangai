@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
-import { VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
+import { familiaDaFonte, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
 import { useProject } from '@/store/project'
 import { Video } from '@/remotion/Video'
@@ -50,6 +50,11 @@ export function Preview() {
   const captions = useProject((s) => s.captions)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const captionColor = useProject((s) => s.captionColor)
+  const captionFont = useProject((s) => s.captionFont)
+  const captionAnimation = useProject((s) => s.captionAnimation)
+  const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
+  const captionMark = useProject((s) => s.captionMark)
+  const captionShadow = useProject((s) => s.captionShadow)
   const captionY = useProject((s) => s.captionY)
 
   const hookText = useProject((s) => s.hookText)
@@ -70,8 +75,32 @@ export function Preview() {
             // O preview precisa do mesmo tempo do render, senao ele mostraria um
             // final que o MP4 nao tem (ou esconderia um que ele tem).
             audio?.durationSec,
+            {
+              // Sem URL resolvida (projeto recem-aberto), vale a embutida ate o
+              // refreshFontes reencontrar o arquivo na pasta.
+              font: captionFont?.url ? {
+                    family: familiaDaFonte(captionFont.nome),
+                    url: captionFont.url,
+                  }
+                : null,
+              animation: captionAnimation,
+              animationFrames: captionAnimationFrames,
+              mark: captionMark,
+              shadow: captionShadow,
+            },
           )
-        : { scenes: [], captions: [], cards: [], captionColor, captionY },
+        : {
+            scenes: [],
+            captions: [],
+            cards: [],
+            captionColor,
+            captionY,
+            captionFont: null,
+            captionAnimation,
+            captionAnimationFrames,
+            captionMark,
+            captionShadow,
+          },
     [
       plan,
       images,
@@ -80,6 +109,20 @@ export function Preview() {
       captionsEnabled,
       captionColor,
       captionY,
+      /*
+       * Tudo que entra nas props tem que estar AQUI.
+       *
+       * Faltando um campo, o memo nao recalcula e o player continua com as props
+       * antigas: mudar a fonte, a animacao ou o modo de cor nao surtia efeito
+       * nenhum ate encostar em alguma coisa que estivesse na lista -- ligar e
+       * desligar a legenda, por exemplo. O render nunca teve esse problema
+       * porque le o estado direto, e foi por isso que passou despercebido.
+       */
+      captionFont,
+      captionAnimation,
+      captionAnimationFrames,
+      captionMark,
+      captionShadow,
       hookText,
       hookSec,
       endText,

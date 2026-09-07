@@ -1,5 +1,9 @@
 import { Composition } from 'remotion'
 import {
+  CAPTION_ANIMATION_DEFAULT,
+  CAPTION_ANIMATION_FRAMES_DEFAULT,
+  CAPTION_MARK_DEFAULT,
+  CAPTION_SHADOW_DEFAULT,
   CAPTION_COLOR_DEFAULT,
   CAPTION_Y_DEFAULT,
   VIDEO_FPS,
@@ -21,6 +25,11 @@ const FALLBACK_PROPS: RenderProps = {
   cards: [],
   captionColor: CAPTION_COLOR_DEFAULT,
   captionY: CAPTION_Y_DEFAULT,
+  captionFont: null,
+  captionAnimation: CAPTION_ANIMATION_DEFAULT,
+  captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
+  captionMark: CAPTION_MARK_DEFAULT,
+  captionShadow: CAPTION_SHADOW_DEFAULT,
 }
 
 export function RemotionRoot() {

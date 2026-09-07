@@ -110,6 +110,11 @@ const bridge: DangaiBridge = {
 
   openSfxDir: () => ipcRenderer.invoke(IPC.openSfxDir) as Promise<IpcResult<null>>,
 
+  listFontes: () =>
+    ipcRenderer.invoke(IPC.listFontes) as Promise<IpcResult<{ nome: string; url: string }[]>>,
+
+  openFontesDir: () => ipcRenderer.invoke(IPC.openFontesDir) as Promise<IpcResult<null>>,
+
   appVersion: () => ipcRenderer.invoke(IPC.appVersion) as Promise<IpcResult<string>>,
 
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate) as Promise<IpcResult<null>>,

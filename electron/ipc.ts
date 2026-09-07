@@ -29,6 +29,7 @@ import type {
   ImageAsset,
   Metadata,
   RenderProgress,
+  Transcript,
 } from '@shared/contract'
 import {
   PROJECT_EXTENSION,
@@ -62,6 +63,7 @@ import { analyze } from './services/transcribe'
 import { generateMetadata } from './services/metadata'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
 import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
+import { caminhoDaFonte, ensureFontesDir, fontesDir, listFontes } from './services/fontes'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 
 /**
@@ -200,7 +202,14 @@ export function registerIpc(): void {
   )
 
   handle<
-    [{ audioPath: string; subtitlePath: string | null; script: string | null }],
+    [
+      {
+        audioPath: string
+        subtitlePath: string | null
+        script: string | null
+        transcript: Transcript | null
+      },
+    ],
     ScriptBlocksResult
   >(IPC.scriptBlocks, (request) => scriptBlocks(request, publish, broadcastAnalyze))
 
@@ -245,6 +254,19 @@ export function registerIpc(): void {
   handle<[], null>(IPC.openSfxDir, async () => {
     ensureSfxDir()
     await shell.openPath(sfxDir())
+    return null
+  })
+
+  handle<[], { nome: string; url: string }[]>(IPC.listFontes, async () =>
+    listFontes().flatMap((nome) => {
+      const caminho = caminhoDaFonte(nome)
+      return caminho ? [{ nome, url: publish(caminho) }] : []
+    }),
+  )
+
+  handle<[], null>(IPC.openFontesDir, async () => {
+    ensureFontesDir()
+    await shell.openPath(fontesDir())
     return null
   })
 
@@ -334,7 +356,9 @@ export function registerIpc(): void {
     return null
   })
 
-  handle<[AnalyzeArgs], AnalysisResult>(IPC.analyze, (args) => analyze(args, broadcastAnalyze))
+  handle<[AnalyzeArgs], AnalysisResult>(IPC.analyze, (args) =>
+    analyze(args, broadcastAnalyze, publish),
+  )
 
   // ------------------------------------------------------------------ projeto
 

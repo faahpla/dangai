@@ -1,3 +1,4 @@
+import type { Transcript } from '@shared/contract'
 import type {
   AutomountRequest,
   AutomountResult,
@@ -6,48 +7,12 @@ import type {
 } from '@shared/channels'
 import { buildScriptIndex, readScript, toPieces, toSentences } from '@shared/script-reader'
 import { selectClips } from '@shared/selection'
-import { transcriptOnly } from './transcribe'
+import { applyScript, transcriptOnly } from './transcribe'
 import { readNicknames } from './nicknames'
 import { readDescriptions } from './describe'
 import { scanLibrary } from './library'
+import { vocabulario, vocabularioDaBiblioteca } from './vocabulario'
 import { getSettings } from './settings'
-
-/**
- * Quantos personagens entram como dica para o Whisper.
- *
- * O prompt inicial do whisper.cpp cabe em ~224 tokens; a biblioteca dele ja tem
- * 96 personagens, e mandar todos passaria do limite e diluiria os que
- * importam. Os mais filmados sao os que a narracao tem mais chance de citar.
- */
-const VOCABULARIO_MAX = 40
-
-/**
- * Os nomes que o Whisper mais erra, entregues antes de ele errar.
- *
- * No caminho manual o vocabulario sai dos NOMES DOS ARQUIVOS que o usuario
- * soltou. Na montagem automatica nao ha arquivo nenhum ainda -- e sem isso o
- * Whisper escreveu "Ischigo", o leitor nao reconheceu ninguem e o bloco caiu no
- * plano generico. Medido no app, com a narracao de teste dele.
- *
- * Quando ele solta o roteiro em .txt isto vira redundante, porque o texto passa
- * a ser o dele, exato. Mas o roteiro e opcional e a dica nao custa nada.
- */
-function vocabulario(
-  library: { clips: readonly { anime: string; characters: string[] }[] },
-  series: string | null,
-): string[] {
-  const quantos = new Map<string, number>()
-  for (const clip of library.clips) {
-    // Com a serie escolhida, so os nomes dela viram dica -- 40 vagas gastas com
-    // personagem de outro anime sao 40 vagas a menos para o que a narracao cita.
-    if (series && clip.anime !== series) continue
-    for (const nome of clip.characters) quantos.set(nome, (quantos.get(nome) ?? 0) + 1)
-  }
-  return [...quantos]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, VOCABULARIO_MAX)
-    .map(([nome]) => nome)
-}
 
 /**
  * Montar o video sozinho: narracao entra, clipes escolhidos saem.
@@ -169,20 +134,36 @@ export async function automount(
  * escolha tomada por mim antes de ele abrir a tela.
  */
 export async function scriptBlocks(
-  request: { audioPath: string; subtitlePath: string | null; script: string | null },
+  request: {
+    audioPath: string
+    subtitlePath: string | null
+    script: string | null
+    transcript?: Transcript | null
+  },
   publishThumb: (absolutePath: string) => string,
   onProgress: (message: string) => void,
 ): Promise<ScriptBlocksResult> {
-  const { libraryDir } = getSettings()
-  // O vocabulario e opcional aqui: sem biblioteca apontada, transcreve igual.
-  let vocab: string[] = []
-  if (libraryDir) {
-    try {
-      vocab = vocabulario(await scanLibrary(libraryDir, publishThumb, () => {}), null)
-    } catch {
-      // Biblioteca ilegivel nao pode impedir de ler o roteiro.
+  /*
+   * A transcricao que a tela ja tem serve inteira.
+   *
+   * A importacao ouve a narracao e guarda o resultado; ate aqui esta funcao
+   * ignorava isso e mandava o Whisper passar DE NOVO pelo mesmo audio, so para
+   * chegar ao mesmo texto. Em um minuto e meio de narracao isso eram varios
+   * minutos de espera na abertura da Biblioteca.
+   *
+   * So vale com PALAVRAS medidas: a transcricao que saiu da deteccao de pausas
+   * nao tem palavra nenhuma, e e de palavra que sai o trecho.
+   */
+  const pronta = request.transcript
+  if (pronta && pronta.words.length > 0) {
+    const { transcript, scriptNote } = applyScript(request.script, pronta, onProgress)
+    if (transcript && transcript.words.length > 0) {
+      return { blocks: toPieces(transcript.words), transcript, scriptNote }
     }
   }
+
+  // O vocabulario e opcional: sem biblioteca apontada, transcreve igual.
+  const vocab = await vocabularioDaBiblioteca(publishThumb)
 
   onProgress('Ouvindo a narracao...')
   const { transcript, scriptNote } = await transcriptOnly(

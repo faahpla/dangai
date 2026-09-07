@@ -32,6 +32,8 @@ export const IPC = {
   reframeImage: 'images:reframe',
   readScript: 'script:read',
   listSfx: 'sfx:list',
+  listFontes: 'fontes:list',
+  openFontesDir: 'fontes:open',
   openSfxDir: 'sfx:open',
   pickFiles: 'dialog:pick-files',
   pickMusic: 'dialog:pick-music',
@@ -473,11 +475,28 @@ export interface DangaiBridge {
     audioPath: string
     subtitlePath: string | null
     script: string | null
+    /**
+     * A transcricao que a tela JA tem, quando tem.
+     *
+     * A importacao ja ouviu esta narracao inteira. Sem este campo, abrir a
+     * Biblioteca mandava o Whisper passar de novo pelo mesmo audio para chegar
+     * ao mesmo texto -- minutos de espera por nada, que e o que ele reclamou.
+     */
+    transcript: Transcript | null
   }): Promise<IpcResult<ScriptBlocksResult>>
   /** Nomes dos arquivos de som na pasta de SFX em uso. */
   listSfx(): Promise<IpcResult<string[]>>
   /** Abre a pasta de SFX no explorador, para o usuario largar os arquivos dele. */
   openSfxDir(): Promise<IpcResult<null>>
+  /**
+   * As fontes que ele largou na pasta, ja publicadas no servidor local.
+   *
+   * A URL vem junto porque o Chrome do render nao enxerga as fontes do Windows
+   * nem o disco: ele busca o arquivo pelo mesmo 127.0.0.1 que serve os clipes.
+   */
+  listFontes(): Promise<IpcResult<{ nome: string; url: string }[]>>
+  /** Abre a pasta de fontes no explorador. */
+  openFontesDir(): Promise<IpcResult<null>>
   /** Versao instalada, para a interface mostrar. */
   appVersion(): Promise<IpcResult<string>>
   /** Fecha e instala a atualizacao ja baixada. */

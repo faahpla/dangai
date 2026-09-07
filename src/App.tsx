@@ -38,6 +38,7 @@ export function App() {
   const setBusy = useProject((s) => s.setBusy)
   const captionsOpen = useProject((s) => s.captionsOpen)
   const refreshSfx = useProject((s) => s.refreshSfx)
+  const refreshFontes = useProject((s) => s.refreshFontes)
   const setUpdate = useProject((s) => s.setUpdate)
   const setAppVersion = useProject((s) => s.setAppVersion)
   const checkAutosave = useProject((s) => s.checkAutosave)
@@ -50,6 +51,10 @@ export function App() {
 
   // Lista de SFX na abertura: ela define quantos sons entram no video.
   useEffect(() => void refreshSfx(), [refreshSfx])
+
+  // As fontes tambem: um projeto aberto guarda so o NOME do arquivo, e e esta
+  // leitura que reencontra a URL dele -- ou derruba a escolha, se ele apagou.
+  useEffect(() => void refreshFontes(), [refreshFontes])
 
   // Atualizacao do app: o main avisa, a barra de status mostra.
   useEffect(() => window.dangai.onUpdateStatus(setUpdate), [setUpdate])

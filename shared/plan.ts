@@ -1,6 +1,10 @@
 import { boundariesFrom, pickCuts } from './rhythm'
 import {
   CAPTION_BREAK_AFTER,
+  CAPTION_ANIMATION_DEFAULT,
+  CAPTION_ANIMATION_FRAMES_DEFAULT,
+  CAPTION_MARK_DEFAULT,
+  CAPTION_SHADOW_DEFAULT,
   CAPTION_COLOR_DEFAULT,
   CAPTION_Y_DEFAULT,
   CAPTION_MAX_CHARS,
@@ -11,6 +15,9 @@ import {
   TRANSITION_FRAMES,
   VIDEO_FPS,
   type CaptionBlock,
+  type CaptionAnimation,
+  type CaptionMark,
+  type CaptionShadow,
   type CaptionColor,
   type ImageAsset,
   type OverlayCard,
@@ -368,12 +375,40 @@ export function toRenderProps(
    * audio continuam valendo.
    */
   durationSec?: number,
+  /**
+   * O que a legenda ganhou depois, num objeto em vez de mais dois parametros
+   * posicionais -- oito posicoes ja e mais do que qualquer chamada consegue ler
+   * sem contar virgula.
+   */
+  legenda: {
+    font?: { family: string; url: string } | null
+    animation?: CaptionAnimation
+    animationFrames?: number
+    mark?: CaptionMark
+    shadow?: CaptionShadow
+  } = {},
 ): RenderProps {
+  const captionFont = legenda.font ?? null
+  const captionAnimation = legenda.animation ?? CAPTION_ANIMATION_DEFAULT
+  const captionAnimationFrames = legenda.animationFrames ?? CAPTION_ANIMATION_FRAMES_DEFAULT
+  const captionMark = legenda.mark ?? CAPTION_MARK_DEFAULT
+  const captionShadow = legenda.shadow ?? CAPTION_SHADOW_DEFAULT
   const usable = plan.scenes.filter(
     (scene) => images[scene.imageIndex] && (scene.imageIndexB === null || images[scene.imageIndexB]),
   )
   if (usable.length === 0) {
-    return { scenes: [], captions: [], cards: [], captionColor, captionY }
+    return {
+      scenes: [],
+      captions: [],
+      cards: [],
+      captionColor,
+      captionY,
+      captionFont,
+      captionAnimation,
+      captionAnimationFrames,
+      captionMark,
+      captionShadow,
+    }
   }
 
   // A ultima cena estica ate o fim da narracao. Congelar o ultimo quadro por
@@ -524,6 +559,11 @@ export function toRenderProps(
     cards: buildCards(cardText, bounds.at(-1)!),
     captionColor,
     captionY,
+    captionFont,
+    captionAnimation,
+    captionAnimationFrames,
+    captionMark,
+    captionShadow,
   }
 }
 
