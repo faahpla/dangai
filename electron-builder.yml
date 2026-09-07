@@ -35,6 +35,11 @@ extraResources:
   # O cascade de rosto de anime e lido pelo main na importacao de imagens.
   - from: assets/vision
     to: vision
+  # O modelo de upscale (2,4 MB) e a licenca BSD-3 dele. Vai junto em vez de ser
+  # baixado: descobrir que a internet caiu no meio de um render seria o pior
+  # momento possivel.
+  - from: assets/upscale
+    to: upscale
 
 # Binario dentro de asar nao pode ser executado, e o sharp carrega .node
 # nativo. Os dois precisam ficar desempacotados.

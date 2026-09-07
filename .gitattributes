@@ -1,0 +1,32 @@
+# Fim de linha, declarado no repositorio em vez de depender da config de cada
+# maquina.
+#
+# Sem este arquivo o Git do Windows usa core.autocrlf=true e avisa em CADA
+# commit que "LF will be replaced by CRLF" -- um aviso por arquivo tocado, que
+# com o tempo esconde os avisos que importam.
+#
+# LF em tudo: o projeto roda em Electron/Node, as ferramentas todas aceitam LF,
+# e um so tipo de quebra de linha evita diff fantasma entre maquinas.
+* text=auto eol=lf
+
+# Binario nao passa por conversao nenhuma. Converter um destes corromperia o
+# arquivo em silencio -- e o modelo de upscale e a fonte das legendas quebrariam
+# de um jeito dificil de rastrear.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.onnx binary
+*.mp3 binary
+*.wav binary
+*.mp4 binary
+*.exe binary
+*.dll binary
+*.7z binary
+*.zip binary

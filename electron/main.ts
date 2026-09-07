@@ -13,6 +13,7 @@ import { configureDescribe } from './services/describe'
 import { configureTagger } from './services/tagger'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureFontes, ensureFontesDir } from './services/fontes'
+import { configureUpscale, configureUpscaleCache } from './services/upscale'
 import { startUpdater } from './services/updater'
 import { configureWhisper } from './services/whisper'
 import { configureFaces } from './services/faces'
@@ -116,6 +117,15 @@ app.whenReady().then(async () => {
   // embutida -- fonte tem licenca, e a escolha do visual e dele.
   configureFontes(join(userData, 'fontes'))
   ensureFontesDir()
+
+  // O modelo de upscale vai junto com o app (2,4 MB); os arquivos melhorados
+  // vao para o userData, que e onde ha permissao de escrita.
+  configureUpscale(
+    app.isPackaged
+      ? join(process.resourcesPath, 'upscale')
+      : join(app.getAppPath(), 'assets', 'upscale'),
+  )
+  configureUpscaleCache(userData)
 
   // O cascade de rosto de anime: 247 KB soltos junto do app, como os SFX.
   configureFaces(

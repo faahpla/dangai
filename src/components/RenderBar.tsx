@@ -14,6 +14,7 @@ import {
   Type,
   Hash,
   House,
+  Sparkle,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useProject } from '@/store/project'
@@ -121,6 +122,8 @@ export function RenderBar() {
   const captionsOpen = useProject((s) => s.captionsOpen)
   const openCaptions = useProject((s) => s.openCaptions)
   const togglePlay = useProject((s) => s.togglePlay)
+  const upscale = useProject((s) => s.upscale)
+  const toggleUpscale = useProject((s) => s.toggleUpscale)
   const startRender = useProject((s) => s.startRender)
   const cancelRender = useProject((s) => s.cancelRender)
 
@@ -256,14 +259,42 @@ export function RenderBar() {
           </button>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={() => void startRender()}
-          disabled={!canRender}
-          className="lift rounded-sm border border-line bg-elevated px-3.5 py-1.5 text-[13px] font-medium text-ink hover:bg-[#1d1d21] disabled:opacity-40"
-        >
-          Renderizar
-        </button>
+        <>
+          {/*
+            O upscale fica COLADO no Renderizar, e nao no painel de estilo: e
+            uma decisao que se toma no instante de apertar o botao, junto com
+            "esse render vai demorar?". Desligado por padrao, como ele pediu.
+          */}
+          <button
+            type="button"
+            onClick={toggleUpscale}
+            disabled={!canRender}
+            aria-pressed={upscale}
+            title={
+              upscale
+                ? 'Melhora a imagem das cenas antes de renderizar. Custa alguns minutos.'
+                : 'Renderiza com a qualidade de sempre'
+            }
+            className={[
+              'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px] disabled:opacity-40',
+              upscale
+                ? 'border-accent bg-accent-dim text-ink'
+                : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+            ].join(' ')}
+          >
+            <Sparkle size={12} strokeWidth={1.5} />
+            Upscale
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void startRender()}
+            disabled={!canRender}
+            className="lift rounded-sm border border-line bg-elevated px-3.5 py-1.5 text-[13px] font-medium text-ink hover:bg-[#1d1d21] disabled:opacity-40"
+          >
+            Renderizar
+          </button>
+        </>
       )}
     </div>
   )

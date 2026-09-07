@@ -33,6 +33,7 @@ export const IPC = {
   readScript: 'script:read',
   listSfx: 'sfx:list',
   listFontes: 'fontes:list',
+  upscaleAssets: 'upscale:assets',
   openFontesDir: 'fontes:open',
   openSfxDir: 'sfx:open',
   pickFiles: 'dialog:pick-files',
@@ -497,6 +498,17 @@ export interface DangaiBridge {
   listFontes(): Promise<IpcResult<{ nome: string; url: string }[]>>
   /** Abre a pasta de fontes no explorador. */
   openFontesDir(): Promise<IpcResult<null>>
+  /**
+   * Melhora as cenas antes do render e devolve, por id, a URL do arquivo novo.
+   *
+   * O arquivo sai com as MESMAS medidas do recorte de sempre, entao quem chama
+   * so precisa trocar a `url` do asset e seguir o caminho de sempre.
+   */
+  upscaleAssets(
+    assets: readonly ImageAsset[],
+    /** Ate que segundo de cada clipe o video chega, por id do asset. */
+    limites: Readonly<Record<string, number>>,
+  ): Promise<IpcResult<Record<string, string>>>
   /** Versao instalada, para a interface mostrar. */
   appVersion(): Promise<IpcResult<string>>
   /** Fecha e instala a atualizacao ja baixada. */

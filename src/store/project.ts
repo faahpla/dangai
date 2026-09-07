@@ -185,6 +185,13 @@ export interface ProjectState {
   captionMark: CaptionMark
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
   captionShadow: CaptionShadow
+  /**
+   * Melhorar a imagem das cenas antes de renderizar.
+   *
+   * Desligado por padrao: custa minutos. Medido na 3060 dele, ~236ms por quadro
+   * -- perto de 6 minutos num video de um minuto.
+   */
+  upscale: boolean
   /** Altura da legenda na tela, fracao a partir do rodape. */
   captionY: number
   paletteOpen: boolean
@@ -372,6 +379,7 @@ export interface ProjectState {
   setCaptionMark: (mark: CaptionMark) => void
   /** Ajusta um dos tres numeros da sombra. */
   setCaptionShadow: (patch: Partial<CaptionShadow>) => void
+  toggleUpscale: () => void
   setCaptionY: (y: number) => void
   setScript: (script: string | null) => Promise<void>
   openScript: (open: boolean) => void
@@ -644,6 +652,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
   captionMark: CAPTION_MARK_DEFAULT,
   captionShadow: CAPTION_SHADOW_DEFAULT,
+  upscale: false,
   captionY: CAPTION_Y_DEFAULT,
   paletteOpen: false,
   libraryOpen: false,
@@ -1897,6 +1906,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   setCaptionShadow: (patch) =>
     set((state) => ({ captionShadow: { ...state.captionShadow, ...patch } })),
 
+  toggleUpscale: () => set((state) => ({ upscale: !state.upscale })),
+
   // Grampeia aqui e nao so na interface: a store tambem e chamada pelo Ctrl+K e
   // pela restauracao de projeto, e um valor fora da faixa jogaria a legenda para
   // fora da tela ou para cima do card de fechamento.
@@ -2096,10 +2107,60 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     const { hookText, hookSec, endText, endSec } = get()
 
+    /*
+     * O upscale acontece AQUI, antes de montar as props.
+     *
+     * As cenas melhoradas saem com as mesmas medidas do recorte de sempre, e a
+     * unica coisa que muda e a `url` de cada asset. Assim nada depois deste
+     * ponto -- nem as props, nem o Remotion, nem a mixagem -- precisa saber que
+     * o upscale existiu.
+     *
+     * So as cenas que o video USA: o plano pode apontar para 40 de 200 imagens
+     * importadas, e melhorar as outras 160 seria pagar por nada.
+     *
+     * Falhando, o render segue sem upscale em vez de morrer. Perder a melhoria
+     * e chato; perder o render inteiro depois de esperar por ele e pior.
+     */
+    let imagens = images
+    if (get().upscale) {
+      const usadas = new Set<number>()
+      /*
+       * Ate que segundo de cada clipe o video chega.
+       *
+       * O bloco toca de `sourceStart` por `end - start` segundos; depois disso
+       * o clipe continua existindo mas ninguem ve. Melhorar so ate ali corta um
+       * bom pedaco da espera -- as cenas da biblioteca quase sempre sobram.
+       *
+       * A mesma cena pode aparecer duas vezes com pontos de entrada diferentes,
+       * entao vale o MAIOR alcance entre os blocos que a usam.
+       */
+      const limites: Record<string, number> = {}
+      const alcancar = (indice: number, cena: (typeof plan.scenes)[number]): void => {
+        usadas.add(indice)
+        const id = images[indice]?.id
+        if (!id) return
+        const ate = (cena.sourceStart ?? 0) + (cena.end - cena.start)
+        limites[id] = Math.max(limites[id] ?? 0, ate)
+      }
+      for (const cena of plan.scenes) {
+        alcancar(cena.imageIndex, cena)
+        if (cena.imageIndexB !== null) alcancar(cena.imageIndexB, cena)
+      }
+      const alvos = images.filter((_, i) => usadas.has(i))
+      const melhoradas = await window.dangai.upscaleAssets(alvos, limites)
+      if (melhoradas.ok) {
+        imagens = images.map((img) =>
+          melhoradas.value[img.id] ? { ...img, url: melhoradas.value[img.id]! } : img,
+        )
+      } else {
+        set({ error: `O upscale falhou (${melhoradas.error}); renderizando sem ele.` })
+      }
+    }
+
     const result = await window.dangai.startRender({
       props: toRenderProps(
         plan,
-        images,
+        imagens,
         captionsEnabled ? captions : [],
         { hook: hookText, hookSec, end: endText, endSec },
         captionColor,

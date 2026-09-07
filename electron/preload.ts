@@ -115,6 +115,11 @@ const bridge: DangaiBridge = {
 
   openFontesDir: () => ipcRenderer.invoke(IPC.openFontesDir) as Promise<IpcResult<null>>,
 
+  upscaleAssets: (assets, limites) =>
+    ipcRenderer.invoke(IPC.upscaleAssets, assets, limites) as Promise<
+      IpcResult<Record<string, string>>
+    >,
+
   appVersion: () => ipcRenderer.invoke(IPC.appVersion) as Promise<IpcResult<string>>,
 
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate) as Promise<IpcResult<null>>,

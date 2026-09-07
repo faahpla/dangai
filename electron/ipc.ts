@@ -64,6 +64,7 @@ import { generateMetadata } from './services/metadata'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
 import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
 import { caminhoDaFonte, ensureFontesDir, fontesDir, listFontes } from './services/fontes'
+import { upscaleAssets, upscaleReady } from './services/upscale'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 
 /**
@@ -269,6 +270,31 @@ export function registerIpc(): void {
     await shell.openPath(fontesDir())
     return null
   })
+
+  /*
+   * Melhorar as cenas leva MINUTOS, entao o andamento vai pelo mesmo canal do
+   * render -- e la que o olho dele ja esta quando aperta Renderizar.
+   */
+  handle<[ImageAsset[], Record<string, number>], Record<string, string>>(
+    IPC.upscaleAssets,
+    async (assets, limites) => {
+    if (!upscaleReady()) {
+      throw new Error('O modelo de upscale nao veio com esta instalacao do app.')
+    }
+    const mapa = await upscaleAssets(assets, limites, (feitos, total, nome) => {
+      broadcast({
+        // Fica na primeira metade da barra: o render de verdade vem depois.
+        progress: total === 0 ? 0 : (feitos / total) * 0.5,
+        stage: 'bundling',
+        message: nome
+          ? `Melhorando as cenas (${feitos + 1} de ${total}) -- ${nome}`
+          : 'Cenas melhoradas.',
+      })
+    })
+    // O render le por URL do servidor local, como todo o resto.
+    return Object.fromEntries(Object.entries(mapa).map(([id, caminho]) => [id, publish(caminho)]))
+    },
+  )
 
   handle<[], string>(IPC.appVersion, async () => app.getVersion())
 
