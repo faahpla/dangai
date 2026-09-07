@@ -82,10 +82,24 @@ export function cortesAutomaticos(
   return prender(cortes, slots.length, palavras.length)
 }
 
-/** A primeira palavra que comeca em `instante` ou depois dele. */
+/**
+ * A palavra cujo comeco esta MAIS PERTO de `instante`.
+ *
+ * Mais perto, e nao "a proxima": arredondar sempre para frente empurraria todo
+ * corte para depois do instante ideal, e num trecho de 2s isso e a diferenca
+ * entre o corte cair na palavra certa ou uma palavra atrasado.
+ */
 function palavraNoInstante(palavras: readonly Word[], instante: number): number {
-  const i = palavras.findIndex((w) => w.start >= instante)
-  return i < 0 ? palavras.length : i
+  let melhor = 0
+  let perto = Infinity
+  for (const [i, w] of palavras.entries()) {
+    const d = Math.abs(w.start - instante)
+    if (d < perto) {
+      perto = d
+      melhor = i
+    }
+  }
+  return melhor
 }
 
 /**
@@ -154,8 +168,27 @@ export function spansDoTrecho(
 ): Span[] {
   if (slots.length === 0) return []
 
-  if (cortes && cabeCortePorPalavra(slots.length, palavras.length)) {
-    const presos = prender(cortes, slots.length, palavras.length)
+  /*
+   * SEM ninguem puxar nada, o corte ainda cai numa PALAVRA.
+   *
+   * Ate 07/09 a divisao automatica era pura proporcao: pegava a duracao do
+   * trecho e repartia pelo peso. O instante que saia dai quase nunca coincidia
+   * com o comeco de uma palavra -- medido no projeto real dele, SEIS de treze
+   * cortes caiam no meio de uma palavra falada ("FINAL" cortada em 44%, "nao"
+   * em 38%). A imagem trocava no meio da palavra e ele arrumava bloco por bloco
+   * na linha do tempo.
+   *
+   * Pior: a Biblioteca ja pintava as palavras agrupadas por cena, prometendo um
+   * corte que o video nao fazia. Arredondar para a palavra mais proxima e o que
+   * faz a promessa virar verdade -- e e a mesma conta que a fronteira puxada na
+   * mao ja usava.
+   */
+  const podePorPalavra = cabeCortePorPalavra(slots.length, palavras.length)
+  const efetivos =
+    cortes ?? (podePorPalavra ? cortesAutomaticos(slots, palavras, start, end) : null)
+
+  if (efetivos && podePorPalavra) {
+    const presos = prender(efetivos, slots.length, palavras.length)
     const spans: Span[] = []
     let cursor = start
     for (let k = 0; k < slots.length; k++) {

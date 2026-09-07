@@ -8,6 +8,7 @@ import { Timeline } from '@/components/Timeline'
 import { ImageStrip } from '@/components/ImageStrip'
 import { Automount } from '@/components/Automount'
 import { SceneCard } from '@/components/SceneCard'
+import { SceneEdit } from '@/components/SceneEdit'
 import { Preview } from '@/components/Preview'
 import { RenderBar } from '@/components/RenderBar'
 import { StatusBar } from '@/components/StatusBar'
@@ -211,11 +212,17 @@ export function App() {
               <ImageStrip />
               <Automount />
               {/*
-                O editor de legendas divide a coluna com a fila de imagens em
-                vez de virar uma tela: com o preview do lado, da para ver o
-                efeito de cada mesclagem sem trocar de contexto.
+                A area do meio REVEZA, e nao acumula.
+                O editor de legendas ja morava aqui -- com o preview do lado, da
+                para ver o efeito de cada mesclagem sem trocar de contexto. Fora
+                dele, o espaco ficava vazio enquanto os controles do bloco se
+                espremiam numa coluna de 228px com rolagem. Ideia dele: "essa
+                area ai so usamos para edicao de legenda... entao acredito que de
+                pra revezar ne?".
+                A legenda tem prioridade: quando ele abre o editor e porque e
+                nele que quer mexer.
               */}
-              {captionsOpen && <CaptionEditor />}
+              {captionsOpen ? <CaptionEditor /> : <SceneEdit />}
             </div>
             <SceneCard />
           </div>

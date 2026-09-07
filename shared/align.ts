@@ -222,9 +222,53 @@ function fillGaps(words: Word[], timed: readonly Word[]): void {
   for (let k = 0; k < known.length - 1; k++) {
     const from = known[k]!
     const to = known[k + 1]!
-    if (to - from > 1) spread(from + 1, to - 1, words[from]!.end, words[to]!.start)
+    const quantas = to - from - 1
+    if (quantas <= 0) continue
+
+    const inicio = words[from]!.end
+    let fim = words[to]!.start
+
+    /*
+     * Quando NAO SOBRA TEMPO entre as duas medidas, tira da seguinte.
+     *
+     * O Whisper as vezes fecha uma palavra exatamente onde abre a proxima, e a
+     * palavra do roteiro que mora entre as duas ficava com duracao ZERO. No
+     * projeto real dele isso aconteceu 9 vezes, e todas as 9 eram a primeira
+     * palavra depois de um ponto final -- "original." / No, "importante." / O,
+     * "final." / Ou. Sao palavrinhas ditas COLADAS na palavra seguinte, e o
+     * Whisper simplesmente as contou como parte dela.
+     *
+     * Duracao zero nao e um detalhe: a legenda que comeca com essa palavra
+     * nascia curta demais, o piso de leitura a esticava para tras, e ela
+     * aparecia ate 0,29s ANTES de ser dita. Emprestar da seguinte -- que e de
+     * onde o audio veio -- poe cada uma perto de onde ela realmente esta.
+     *
+     * O emprestimo para na metade da palavra seguinte: ela e medida, e mexer
+     * demais numa medida honesta para acomodar uma estimativa seria trocar um
+     * erro pequeno por outro maior.
+     */
+    const precisa = MINIMO_ESTIMADO * quantas
+    if (fim - inicio < precisa) {
+      const seguinte = words[to]!
+      const cede = Math.min(precisa - (fim - inicio), (seguinte.end - seguinte.start) / 2)
+      if (cede > 0) {
+        fim += cede
+        seguinte.start = fim
+      }
+    }
+
+    spread(from + 1, to - 1, inicio, fim)
   }
 }
+
+/**
+ * Tempo minimo que uma palavra estimada recebe, em segundos.
+ *
+ * Perto de um frame e meio a 23,976fps. Nao e para ela ser lida com calma -- e
+ * para ela EXISTIR: com zero, a legenda que comeca nela nasce sem duracao e o
+ * resto do sistema tenta consertar empurrando a legenda para tras.
+ */
+const MINIMO_ESTIMADO = 0.06
 
 /**
  * Transcricao com o texto do roteiro e os tempos medidos.

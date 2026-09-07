@@ -740,6 +740,24 @@ function endsSentence(text: string): boolean {
 function enforceMinimumDuration(blocks: CaptionBlock[]): void {
   const minimum = Math.round(CAPTION_MIN_SEC * VIDEO_FPS)
 
+  /*
+   * A LEGENDA NUNCA COMECA ANTES DA PROPRIA PALAVRA.
+   *
+   * Ate 07/09 esta funcao, para alcancar o piso de leitura, recuava o bloco
+   * para dentro do silencio anterior e, se ainda faltasse, encurtava o bloco de
+   * tras. O resultado media assim num video real dele: 23 de 159 legendas
+   * apareciam ANTES de a palavra ser dita, ate 0,29s adiantadas -- e ele
+   * desligou as legendas do video por causa disso.
+   *
+   * O que fez a conta virar impossivel foi o limite de duas palavras por linha:
+   * 159 blocos num audio de 62,8s dao 0,39s de media, e o piso pedia 0,45s para
+   * cada -- 114% do tempo que existe. A funcao passava o video inteiro
+   * empurrando bloco para alcancar um alvo inalcancavel.
+   *
+   * Agora ela so usa o que e DE GRACA: o silencio depois do bloco, e a folga do
+   * bloco seguinte acima do proprio piso. Nao chegando la, o bloco fica curto
+   * mesmo -- uma legenda rapida e menos ruim que uma legenda fora de hora.
+   */
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i]!
     let deficit = minimum - block.durationInFrames
@@ -753,29 +771,12 @@ function enforceMinimumDuration(blocks: CaptionBlock[]): void {
     deficit -= takeAfter
     if (deficit <= 0) continue
 
-    // Silencio antes: o limite e o fim do bloco anterior, ou o comeco do video.
-    const previous = blocks[i - 1]
-    const floor = previous ? previous.from + previous.durationInFrames : 0
-    const takeBefore = Math.min(deficit, Math.max(block.from - floor, 0))
-    block.from -= takeBefore
-    block.durationInFrames += takeBefore
-    deficit -= takeBefore
-    if (deficit <= 0) continue
-
-    // Sem silencio sobrando: pede emprestado ao vizinho que tiver folga acima
-    // do proprio piso. Encurtar um bloco confortavel e melhor que deixar outro
-    // piscando.
+    // A folga do proximo, se ele tiver de sobra. Encurtar um bloco confortavel
+    // ninguem percebe; adiantar uma legenda se ve.
     if (next) {
       const borrowed = Math.min(deficit, Math.max(next.durationInFrames - minimum, 0))
       next.from += borrowed
       next.durationInFrames -= borrowed
-      block.durationInFrames += borrowed
-      deficit -= borrowed
-    }
-    if (deficit > 0 && previous) {
-      const borrowed = Math.min(deficit, Math.max(previous.durationInFrames - minimum, 0))
-      previous.durationInFrames -= borrowed
-      block.from -= borrowed
       block.durationInFrames += borrowed
     }
   }

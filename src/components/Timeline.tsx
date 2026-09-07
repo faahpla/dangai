@@ -328,12 +328,29 @@ export function Timeline() {
                   onPointerUp={stopDragging}
                   onPointerCancel={stopDragging}
                   style={{ left: `${(scene.start / duration) * 100}%` }}
-                  className="absolute inset-y-0 -ml-[5px] w-[10px] cursor-col-resize"
+                  /*
+                   * A alca vive SO na faixa dos blocos, e nao na altura inteira.
+                   *
+                   * Ela cobria os 104px e, num video de 44 blocos, as 43 alcas
+                   * de 10px ocupavam quase um terco da largura da linha do
+                   * tempo -- puxar a agulha virava sorteio entre mover a agulha
+                   * e esticar um bloco, e ele reclamou disso com estas palavras:
+                   * "as vezes acabo aumentando o tamanho do bloco sem querer".
+                   *
+                   * Agora o waveform inteiro e da agulha e a faixa de baixo e
+                   * dos blocos: um gesto por lugar, como em qualquer editor.
+                   */
+                  className="absolute bottom-0 h-[38px] -ml-[5px] w-[10px] cursor-col-resize"
                   aria-label={`Ajustar limite do bloco ${index + 1}`}
                 >
+                  {/*
+                    O traco continua subindo pela altura toda -- ele so MOSTRA
+                    onde o corte esta, e enxergar isso contra o waveform e o que
+                    permite mirar. Sem eventos: quem pega e a caixa de baixo.
+                  */}
                   <span
                     className={[
-                      'absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
+                      'pointer-events-none absolute -top-[66px] bottom-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
                       dragging === index ? 'bg-accent' : 'bg-transparent group-hover:bg-line-strong',
                     ].join(' ')}
                   />

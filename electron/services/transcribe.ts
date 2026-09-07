@@ -324,6 +324,35 @@ function withoutAI(
  * .srt ganha do Whisper quando existe: os tempos ja foram conferidos pelo
  * usuario e o parse e instantaneo. Sem nenhum dos dois, ainda sobram as pausas.
  */
+/**
+ * Duracao minima de uma palavra, em segundos. Perto de um frame e meio.
+ *
+ * O whisper.cpp as vezes devolve token com start igual ao end. Palavra de
+ * duracao zero envenena tudo que le tempo dela: a legenda que comeca nela nasce
+ * sem duracao, o marcador de karaoke nunca a acende, e o corte por palavra
+ * ganha uma fronteira que nao existe.
+ */
+const MINIMO_POR_PALAVRA = 0.06
+
+/**
+ * Da duracao para as palavras que vieram com zero.
+ *
+ * So estica para a DIREITA, e no maximo ate onde a proxima palavra comeca:
+ * assim ninguem e deslocado e nada se sobrepoe. Nao inventa tempo -- apenas
+ * usa o silencio que ja estava ali entre uma palavra e a seguinte.
+ */
+function comDuracaoMinima(transcript: Transcript): Transcript {
+  if (transcript.words.length === 0) return transcript
+
+  const words = transcript.words.map((word) => ({ ...word }))
+  for (const [i, word] of words.entries()) {
+    if (word.end - word.start >= MINIMO_POR_PALAVRA) continue
+    const teto = words[i + 1]?.start ?? word.start + MINIMO_POR_PALAVRA
+    word.end = Math.max(word.end, Math.min(word.start + MINIMO_POR_PALAVRA, teto))
+  }
+  return { ...transcript, words }
+}
+
 async function getTranscript(
   audioPath: string,
   subtitlePath: string | null,
@@ -333,7 +362,7 @@ async function getTranscript(
   if (subtitlePath) {
     onProgress('Lendo a legenda...')
     try {
-      return parseSrt(subtitlePath)
+      return comDuracaoMinima(parseSrt(subtitlePath))
     } catch {
       // .srt ilegivel nao interrompe: tenta transcrever.
     }
@@ -347,7 +376,7 @@ async function getTranscript(
       onProgress,
       imageNames,
     )
-    if (fromWhisper) return fromWhisper
+    if (fromWhisper) return comDuracaoMinima(fromWhisper)
   } catch {
     // Whisper indisponivel ou falhou: sobra a deteccao de pausas.
   }

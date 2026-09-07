@@ -53,6 +53,41 @@ conferir(
   [[0, 6], [6, 8]],
 )
 
+console.log('\no corte automatico GRUDA na palavra (o defeito de 07/09)')
+{
+  // Palavras em tempos irregulares, como fala de verdade -- e nenhuma comeca
+  // no instante que a proporcao escolheria.
+  const irregulares = [
+    { text: 'a', start: 0.0, end: 0.34 },
+    { text: 'b', start: 0.41, end: 0.79 },
+    { text: 'c', start: 0.88, end: 1.52 },
+    { text: 'd', start: 1.61, end: 2.13 },
+    { text: 'e', start: 2.28, end: 2.61 },
+    { text: 'f', start: 2.74, end: 3.2 },
+  ]
+  const duas = slotsDoTrecho(['x', 'y'], undefined, undefined)
+  // A proporcao cairia em 1,60s -- que e silencio entre 'c' e 'd', mas o corte
+  // antigo caia em qualquer lugar, inclusive no meio de uma palavra.
+  const spans = spansDoTrecho(0, 3.2, duas, irregulares, null)
+  const fronteira = spans[0]!.end
+  conferir('a fronteira cai no comeco de uma palavra', irregulares.some((w) => Math.abs(w.start - fronteira) < 1e-9), true)
+  conferir('e e a palavra mais proxima da proporcao (1,60s -> "d" em 1,61s)', fronteira, 1.61)
+
+  const tres = slotsDoTrecho(['x', 'y', 'z'], undefined, undefined)
+  const s3 = spansDoTrecho(0, 3.2, tres, irregulares, null)
+  const caemEmPalavra = s3
+    .slice(1)
+    .every((sp) => irregulares.some((w) => Math.abs(w.start - sp.start) < 1e-9))
+  conferir('com tres cenas, TODAS as fronteiras caem em palavra', caemEmPalavra, true)
+
+  // Nenhuma fronteira pode cair DENTRO de uma palavra falada -- era isso que
+  // fazia a imagem trocar no meio da palavra.
+  const dentro = s3
+    .slice(1)
+    .filter((sp) => irregulares.some((w) => sp.start > w.start && sp.start < w.end))
+  conferir('nenhuma fronteira cai no meio de uma palavra', dentro.length, 0)
+}
+
 console.log('\ncorte por palavra')
 conferir('cabe: 3 slots e 10 palavras', cabeCortePorPalavra(3, 10), true)
 conferir('nao cabe: 3 slots e 2 palavras', cabeCortePorPalavra(3, 2), false)
