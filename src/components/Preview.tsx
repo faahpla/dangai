@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { familiaDaFonte, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
+import { sfxParaDisparar } from '@shared/sfx'
 import { useProject } from '@/store/project'
 import { Video } from '@/remotion/Video'
 
@@ -55,6 +56,7 @@ export function Preview() {
   const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
   const captionMark = useProject((s) => s.captionMark)
   const captionShadow = useProject((s) => s.captionShadow)
+  const captionStroke = useProject((s) => s.captionStroke)
   const captionY = useProject((s) => s.captionY)
 
   const hookText = useProject((s) => s.hookText)
@@ -87,6 +89,7 @@ export function Preview() {
               animationFrames: captionAnimationFrames,
               mark: captionMark,
               shadow: captionShadow,
+              stroke: captionStroke,
             },
           )
         : {
@@ -100,6 +103,7 @@ export function Preview() {
             captionAnimationFrames,
             captionMark,
             captionShadow,
+            captionStroke,
           },
     [
       plan,
@@ -123,6 +127,7 @@ export function Preview() {
       captionAnimationFrames,
       captionMark,
       captionShadow,
+      captionStroke,
       hookText,
       hookSec,
       endText,
@@ -236,6 +241,7 @@ export function Preview() {
           */}
           <SyncedAudio url={audio.url} />
           {music && <SyncedAudio url={music.url} volume={musicVolume} loop />}
+          <SfxPreview />
         </>
       ) : (
         <div className="grid h-full place-items-center px-6 text-center text-[11px] text-ink-3">
@@ -247,6 +253,77 @@ export function Preview() {
         {VIDEO_WIDTH} x {VIDEO_HEIGHT}
       </span>
     </div>
+  )
+}
+
+/**
+ * Os SFX postos a mao, tocando no preview.
+ *
+ * Sem isto ele posicionava no escuro: o som so existia no MP4, entao conferir
+ * se o whoosh caiu na silaba certa exigia renderizar. Palavras dele: "como q eu
+ * vou saber se ta certo".
+ *
+ * Cada som e um DISPARO, e nao uma faixa sincronizada como a narracao: ele nao
+ * acompanha o playhead, ele toca do inicio quando a agulha CRUZA o instante
+ * dele. Quem decide isso e `sfxParaDisparar`, em @shared/sfx -- ela vive fora
+ * daqui porque o Player pausa a cada seek externo, e sem isso nao haveria como
+ * PROVAR a regra sem um par de olhos e um par de ouvidos na frente da tela.
+ *
+ * Os automaticos ficam de fora de proposito: eles sao decididos na hora do
+ * render, a partir dos cortes, e nao existem como objeto ate la.
+ */
+function SfxPreview() {
+  const sfxManual = useProject((s) => s.sfxManual)
+  const sfxEnabled = useProject((s) => s.sfxEnabled)
+  const playing = useProject((s) => s.playing)
+  const playhead = useProject((s) => s.playhead)
+
+  const elementos = useRef(new Map<string, HTMLAudioElement>())
+  const anterior = useRef(playhead)
+
+  useEffect(() => {
+    const antes = anterior.current
+    anterior.current = playhead
+
+    if (!playing || !sfxEnabled) return
+
+    // A regra de quem dispara mora em @shared/sfx, onde ela e testada -- aqui
+    // sobra so ligar o resultado nos elementos.
+    for (const id of sfxParaDisparar(sfxManual, antes, playhead)) {
+      const el = elementos.current.get(id)
+      if (!el) continue
+      el.currentTime = 0
+      void el.play().catch(() => undefined)
+    }
+  }, [playhead, playing, sfxEnabled, sfxManual])
+
+  // Pausar o video cala o que estiver tocando -- senao o som continua sozinho
+  // depois que a imagem parou.
+  useEffect(() => {
+    if (playing) return
+    for (const el of elementos.current.values()) {
+      el.pause()
+      el.currentTime = 0
+    }
+  }, [playing])
+
+  return (
+    <>
+      {sfxManual.map((som) =>
+        som.url ? (
+          <audio
+            key={som.id}
+            ref={(el) => {
+              if (el) elementos.current.set(som.id, el)
+              else elementos.current.delete(som.id)
+            }}
+            src={som.url}
+            preload="auto"
+            className="hidden"
+          />
+        ) : null,
+      )}
+    </>
   )
 }
 

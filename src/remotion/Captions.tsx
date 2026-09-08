@@ -34,6 +34,7 @@ export function Captions({
   animationFrames,
   mark,
   shadow,
+  stroke,
 }: {
   blocks: readonly CaptionBlock[]
   color: CaptionColor
@@ -45,6 +46,7 @@ export function Captions({
   animationFrames: number
   mark: CaptionMark
   shadow: CaptionShadow
+  stroke: number
 }) {
   // Pedir a fonte aqui, e nao dentro do bloco: sao dezenas de blocos por video,
   // e cada um pediria o mesmo arquivo.
@@ -70,6 +72,7 @@ export function Captions({
             animationFrames={animationFrames}
             mark={mark}
             shadow={shadow}
+            stroke={stroke}
           />
         </Sequence>
       ))}
@@ -86,6 +89,7 @@ function Block({
   animationFrames,
   mark,
   shadow,
+  stroke,
 }: {
   block: CaptionBlock
   color: CaptionColor
@@ -95,6 +99,7 @@ function Block({
   animationFrames: number
   mark: CaptionMark
   shadow: CaptionShadow
+  stroke: number
 }) {
   const { fps } = useVideoConfig()
   // useCurrentFrame dentro da Sequence e relativo a ela; as palavras carregam
@@ -161,7 +166,12 @@ function Block({
           lineHeight: 1.15,
           textAlign: 'center',
           textTransform: 'uppercase',
-          WebkitTextStroke: '6px #000',
+          /*
+           * Zero desliga o contorno: o -webkit-text-stroke com 0px ainda
+           * desenha uma linha de meio pixel em alguns zooms, e `undefined`
+           * some de verdade.
+           */
+          WebkitTextStroke: stroke > 0 ? `${stroke}px #000` : undefined,
           paintOrder: 'stroke fill',
           /*
            * Sombra projetada por baixo do contorno.

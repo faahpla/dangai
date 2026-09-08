@@ -18,6 +18,12 @@ import {
   CAPTION_ANIMATION_FRAMES_MIN,
   CAPTION_MARK_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
+  CAPTION_STROKE_DEFAULT,
+  CAPTION_STROKE_MAX,
+  CAPTION_STROKE_MIN,
+  SFX_GAIN_MAX,
+  SFX_GAIN_MIN,
+  SFX_MINIMO_SEC,
   CAPTION_COLOR_DEFAULT,
   familiaDaFonte,
   CAPTION_Y_DEFAULT,
@@ -185,6 +191,53 @@ export interface ProjectState {
   captionMark: CaptionMark
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
   captionShadow: CaptionShadow
+  /** Espessura do contorno preto da legenda. Zero = sem contorno. */
+  captionStroke: number
+  /**
+   * Os SFX que ELE posicionou na faixa da linha do tempo.
+   *
+   * Vazio = vale a regra automatica de sempre (um corte sim, outro nao,
+   * rodando os arquivos da pasta). Com um som aqui, a regra automatica sai de
+   * cena inteira: misturar "a cada dois cortes" com sons postos a mao daria um
+   * resultado que ninguem consegue prever olhando a tela.
+   *
+   * Guarda o CAMINHO e nao o nome: ele arrasta de onde quiser, sem precisar
+   * mover o arquivo para a pasta do app.
+   */
+  sfxManual: {
+    id: string
+    path: string
+    fileName: string
+    at: number
+    /** Duracao do som, para o chip ter a LARGURA do tempo que ele ocupa. */
+    durationSec: number
+    /** Picos para desenhar a onda dentro do chip. */
+    peaks: number[]
+    /** URL do servidor local. Morre com a sessao; e reposta ao abrir o projeto. */
+    url: string
+    /**
+     * Quanto do som TOCA, em segundos. null = o arquivo inteiro.
+     *
+     * Existe porque som longo atravessava a faixa e ficava por cima dos outros
+     * -- "se arrasto outro pra onde eu quero fica por debaixo e eu nao consigo
+     * ver". Cortando, cada som ocupa so o que vai ser ouvido.
+     */
+    usarSec: number | null
+    /**
+     * Ganho em dB SOBRE o nivel padrao dos SFX (que ja e -12 dB sob a voz).
+     *
+     * Zero e o de sempre; -5 e "esse aqui mais baixo", que foi como ele pediu.
+     */
+    gainDb: number
+  }[]
+  /**
+   * As curvas de movimento que ele guardou.
+   *
+   * Moram nas CONFIGURACOES e nao no projeto: um ritmo que ele gostou vale para
+   * os proximos videos, e guardar no projeto o obrigaria a redesenhar em cada
+   * um. Por isso nao entram no documento nem no desfazer.
+   */
+  curvePresets: { nome: string; pontos: CurvePoints }[]
   /**
    * Melhorar a imagem das cenas antes de renderizar.
    *
@@ -379,6 +432,25 @@ export interface ProjectState {
   setCaptionMark: (mark: CaptionMark) => void
   /** Ajusta um dos tres numeros da sombra. */
   setCaptionShadow: (patch: Partial<CaptionShadow>) => void
+  setCaptionStroke: (px: number) => void
+  /** Poe um som na faixa, no instante onde ele soltou. */
+  addSfxAt: (paths: readonly string[], seconds: number) => Promise<void>
+  /** Reencontra as URLs dos sons ao abrir um projeto. */
+  refreshSfxManual: () => Promise<void>
+  /** Arrasta um som ja posto para outro instante. */
+  moveSfx: (id: string, seconds: number) => void
+  /** Corta o som: quanto dele toca. null devolve o arquivo inteiro. */
+  trimSfx: (id: string, seconds: number | null) => void
+  /** Volume deste som, em dB sobre o padrao. */
+  setSfxGain: (id: string, gainDb: number) => void
+  removeSfx: (id: string) => void
+  /** Tira todos e devolve o rodizio automatico. */
+  clearSfxManual: () => void
+  /** Le as curvas guardadas nas configuracoes. */
+  loadCurvePresets: () => Promise<void>
+  /** Guarda a curva atual com um nome automatico. */
+  saveCurvePreset: (pontos: CurvePoints) => Promise<void>
+  removeCurvePreset: (nome: string) => Promise<void>
   toggleUpscale: () => void
   setCaptionY: (y: number) => void
   setScript: (script: string | null) => Promise<void>
@@ -601,6 +673,25 @@ function substituirNaFita(
   )
 }
 
+/**
+ * Menos picos para o chip do SFX.
+ *
+ * O analisador devolve milhares, feitos para uma faixa de 1400 pixels. O chip
+ * tem algumas dezenas -- guardar o resto so engordaria o arquivo do projeto
+ * sem mudar um pixel na tela.
+ */
+function reduzirPicos(peaks: readonly number[], quantos = 40): number[] {
+  if (peaks.length <= quantos) return [...peaks]
+  const passo = peaks.length / quantos
+  return Array.from({ length: quantos }, (_, i) => {
+    let maior = 0
+    for (let j = Math.floor(i * passo); j < Math.floor((i + 1) * passo); j++) {
+      maior = Math.max(maior, peaks[j] ?? 0)
+    }
+    return maior
+  })
+}
+
 function setInterimPlan(set: SetState, imageCount: number, durationSec: number): void {
   set({
     plan: planEqualSplit(imageCount, durationSec),
@@ -652,6 +743,9 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
   captionMark: CAPTION_MARK_DEFAULT,
   captionShadow: CAPTION_SHADOW_DEFAULT,
+  captionStroke: CAPTION_STROKE_DEFAULT,
+  sfxManual: [],
+  curvePresets: [],
   upscale: false,
   captionY: CAPTION_Y_DEFAULT,
   paletteOpen: false,
@@ -1906,6 +2000,135 @@ export const useProject = create<ProjectState>((set, get) => ({
   setCaptionShadow: (patch) =>
     set((state) => ({ captionShadow: { ...state.captionShadow, ...patch } })),
 
+  setCaptionStroke: (px) =>
+    set({
+      captionStroke: Math.min(Math.max(Math.round(px), CAPTION_STROKE_MIN), CAPTION_STROKE_MAX),
+    }),
+
+  addSfxAt: async (paths, seconds) => {
+    const audios = paths.filter((p) => classifyFile(p) === 'audio')
+    if (audios.length === 0) return
+
+    /*
+     * Analisa o som para saber quanto ele DURA e como e a onda dele.
+     *
+     * Sem isso o chip era um retangulo de tamanho fixo, e ele nao tinha como
+     * saber onde estava pondo -- palavras dele: "como eu vou saber onde estou
+     * pondo se o sfx nao tem waveform". A mesma analise devolve a URL do
+     * servidor local, que e o que faz o som TOCAR no preview.
+     */
+    for (const [i, path] of audios.entries()) {
+      const r = await window.dangai.analyzeAudio(path)
+      if (!r.ok) {
+        set({ error: r.error })
+        continue
+      }
+      set((state) => ({
+        sfxManual: [
+          ...state.sfxManual,
+          {
+            id: `${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+            path,
+            fileName: r.value.fileName,
+            // Soltar dois de uma vez espalha, para nao empilharem no mesmo ponto.
+            at: Math.max(0, seconds + i * 0.25),
+            durationSec: r.value.durationSec,
+            peaks: reduzirPicos(r.value.peaks),
+            url: r.value.url,
+            usarSec: null,
+            gainDb: 0,
+          },
+        ],
+        projectDirty: true,
+      }))
+    }
+  },
+
+  refreshSfxManual: async () => {
+    const atuais = get().sfxManual
+    if (atuais.length === 0) return
+    const repostos = await Promise.all(
+      atuais.map(async (som) => {
+        const r = await window.dangai.analyzeAudio(som.path)
+        return r.ok ? { ...som, url: r.value.url } : som
+      }),
+    )
+    set({ sfxManual: repostos })
+  },
+
+  moveSfx: (id, seconds) =>
+    set((state) => ({
+      sfxManual: state.sfxManual.map((s) => (s.id === id ? { ...s, at: Math.max(0, seconds) } : s)),
+      projectDirty: true,
+    })),
+
+  trimSfx: (id, seconds) =>
+    set((state) => ({
+      sfxManual: state.sfxManual.map((som) =>
+        som.id === id
+          ? {
+              ...som,
+              /*
+               * O corte nao passa do arquivo nem fica curto demais para ouvir.
+               * Puxar a alca ate o comeco deixaria um som de duracao zero, que
+               * no video e silencio com um chip ocupando espaco.
+               */
+              usarSec:
+                seconds === null
+                  ? null
+                  : Math.min(Math.max(seconds, SFX_MINIMO_SEC), som.durationSec),
+            }
+          : som,
+      ),
+      projectDirty: true,
+    })),
+
+  setSfxGain: (id, gainDb) =>
+    set((state) => ({
+      sfxManual: state.sfxManual.map((som) =>
+        som.id === id
+          ? { ...som, gainDb: Math.min(Math.max(Math.round(gainDb), SFX_GAIN_MIN), SFX_GAIN_MAX) }
+          : som,
+      ),
+      projectDirty: true,
+    })),
+
+  removeSfx: (id) =>
+    set((state) => ({
+      sfxManual: state.sfxManual.filter((s) => s.id !== id),
+      projectDirty: true,
+    })),
+
+  clearSfxManual: () => set({ sfxManual: [], projectDirty: true }),
+
+  loadCurvePresets: async () => {
+    const r = await window.dangai.getSettings()
+    if (r.ok) set({ curvePresets: r.value.curvePresets })
+  },
+
+  saveCurvePreset: async (pontos) => {
+    const atuais = get().curvePresets
+    /*
+     * Nome automatico, e nao um campo de texto.
+     *
+     * Batizar cada curva no meio do ajuste quebra o ritmo do trabalho, e um
+     * modal para isso brigaria com a regra de nao ter modal. "Minha 1, 2, 3"
+     * e feio mas basta: o que identifica uma curva na lista e o desenho dela
+     * na cabeca dele, nao o nome.
+     */
+    let n = atuais.length + 1
+    while (atuais.some((c) => c.nome === `Minha ${n}`)) n += 1
+    const proximas = [...atuais, { nome: `Minha ${n}`, pontos }]
+    set({ curvePresets: proximas })
+    await window.dangai.saveSettings({ curvePresets: proximas })
+  },
+
+  removeCurvePreset: async (nome) => {
+    const proximas = get().curvePresets.filter((c) => c.nome !== nome)
+    set({ curvePresets: proximas })
+    await window.dangai.saveSettings({ curvePresets: proximas })
+  },
+
   toggleUpscale: () => set((state) => ({ upscale: !state.upscale })),
 
   // Grampeia aqui e nao so na interface: a store tambem e chamada pelo Ctrl+K e
@@ -2178,6 +2401,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           animationFrames: get().captionAnimationFrames,
           mark: get().captionMark,
           shadow: get().captionShadow,
+          stroke: get().captionStroke,
         },
       ),
       audioPath: audio.path,
@@ -2185,7 +2409,20 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Os cues sao montados aqui e nao guardados no plano: eles dependem dos
       // arquivos que estao na pasta AGORA, e o usuario pode ter acabado de
       // trocar os sons sem refazer a analise.
-      sfxCues: sfxEnabled ? sfxCuesFor(plan.scenes, sfxFiles) : [],
+      /*
+       * Os postos a mao mandam. So quando nao ha nenhum e que o rodizio
+       * automatico entra -- ver o comentario de `sfxManual` no estado.
+       */
+      sfxCues: !sfxEnabled
+        ? []
+        : get().sfxManual.length > 0
+          ? get().sfxManual.map((s) => ({
+              at: s.at,
+              sound: s.path,
+              gainDb: s.gainDb,
+              durationSec: s.usarSec,
+            }))
+          : sfxCuesFor(plan.scenes, sfxFiles),
       music: music ? { path: music.path, gainDb: musicGainDb } : null,
     })
 
@@ -2276,6 +2513,14 @@ export const useProject = create<ProjectState>((set, get) => ({
       blockWeights: {},
       blockSplits: {},
       blockCuts: {},
+      /*
+       * A faixa de SFX tambem esvazia.
+       *
+       * Sao sons posicionados contra ESTA narracao; sobreviver a um "limpar"
+       * significaria o proximo video comecando com efeitos em instantes que
+       * nao querem dizer nada nele.
+       */
+      sfxManual: [],
       music: null,
       musicGainDb: MUSIC_GAIN_DB_DEFAULT,
       hookText: '',
@@ -2332,6 +2577,9 @@ export const useProject = create<ProjectState>((set, get) => ({
       captionAnimationFrames: state.captionAnimationFrames,
       captionMark: state.captionMark,
       captionShadow: state.captionShadow,
+      captionStroke: state.captionStroke,
+      // A URL fica de fora: ela e desta sessao e nao vale nada amanha.
+      sfxManual: state.sfxManual.map(({ url: _fora, ...resto }) => resto),
       captionY: state.captionY,
       sfxEnabled: state.sfxEnabled,
       music: state.music
@@ -2382,6 +2630,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     // O projeto guarda so o NOME da fonte; e esta leitura que reencontra a URL
     // dela na pasta -- ou derruba a escolha, se o arquivo nao estiver mais la.
     await get().refreshFontes()
+    await get().refreshSfxManual()
   },
 
   checkAutosave: async () => {
@@ -2406,6 +2655,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     await applyProjectFile(set, result.value.file, result.value.path, true)
     // Mesmo motivo do openProject: a fonte volta pelo nome e precisa da URL.
     await get().refreshFontes()
+    await get().refreshSfxManual()
   },
 
   discardAutosave: async () => {
@@ -2591,6 +2841,9 @@ async function applyProjectFile(
       captionAnimationFrames: file.captionAnimationFrames,
       captionMark: file.captionMark,
       captionShadow: file.captionShadow,
+      captionStroke: file.captionStroke,
+      // Sem URL ainda; `refreshSfxManual` a repoe logo depois de abrir.
+      sfxManual: file.sfxManual.map((s) => ({ ...s, url: '' })),
       captionY: file.captionY,
       sfxEnabled: file.sfxEnabled,
 

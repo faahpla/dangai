@@ -16,7 +16,7 @@ import {
   House,
   Sparkle,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProject } from '@/store/project'
 import {
   familiaDaFonte,
@@ -24,6 +24,8 @@ import {
   CAPTION_ANIMATION_FRAMES_MIN,
   CAPTION_COLOR_HEX,
   CAPTION_SHADOW_DEFAULT,
+  CAPTION_STROKE_MAX,
+  CAPTION_STROKE_MIN,
   CAPTION_COLORS,
   CAPTION_Y_DEFAULT,
   CAPTION_Y_MAX,
@@ -224,9 +226,7 @@ export function RenderBar() {
         </button>
       )}
 
-      {!isRendering && <CardsControl />}
 
-      {!isRendering && <Publicacao />}
 
       {!isRendering && <MusicControl />}
 
@@ -474,7 +474,29 @@ function EstiloControl() {
   const setCaptionMark = useProject((s) => s.setCaptionMark)
   const sombra = useProject((s) => s.captionShadow)
   const setCaptionShadow = useProject((s) => s.setCaptionShadow)
+  const captionStroke = useProject((s) => s.captionStroke)
+  const setCaptionStroke = useProject((s) => s.setCaptionStroke)
   const [aberto, setAberto] = useState(false)
+  const painel = useRef<HTMLDivElement | null>(null)
+  const [alturaMax, setAlturaMax] = useState<number | null>(null)
+
+  /*
+   * Quanto cabe acima do botao, medido na hora de abrir.
+   *
+   * O painel e ancorado no topo do botao, entao o teto dele e a distancia ate o
+   * alto da janela -- nao a altura da tela. Redimensionar a janela com o painel
+   * aberto refaz a conta.
+   */
+  useEffect(() => {
+    if (!aberto) return
+    const medir = (): void => {
+      const caixa = painel.current?.parentElement?.getBoundingClientRect()
+      if (caixa) setAlturaMax(Math.max(Math.round(caixa.top - 16), 160))
+    }
+    medir()
+    window.addEventListener('resize', medir)
+    return () => window.removeEventListener('resize', medir)
+  }, [aberto])
 
   // A pasta e do usuario: ele pode ter largado uma fonte com o app aberto.
   // Reler ao abrir o painel e mais barato que um botao de "atualizar".
@@ -506,7 +528,32 @@ function EstiloControl() {
       {aberto && (
         <>
           <div className="fixed inset-0 z-40" onPointerDown={() => setAberto(false)} />
-          <div className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 w-[248px] rounded-md p-3">
+          {/*
+            DUAS COLUNAS, e nao uma lista alta.
+            O painel cresceu com o contorno, a sombra e a entrada, e passou a
+            ser cortado pela borda da tela -- pior ainda em janela, onde sobra
+            menos altura acima da barra. Deitado ele cabe inteiro, e continua
+            sem rolagem, que e o que ele pediu quando reclamou da coluna antiga.
+
+            O max-h e a rede: numa tela muito baixa ele rola em vez de sumir.
+          */}
+          {/*
+            DUAS COLUNAS, e nao uma lista alta.
+            O painel cresceu com o contorno, a sombra e a entrada, e passou a
+            ser cortado pela borda da tela -- pior em janela, onde sobra menos
+            altura acima da barra. Deitado ele cabe, e continua sem rolagem.
+
+            A altura maxima e MEDIDA, e nao chutada em vh: o que limita nao e a
+            tela e sim o espaco acima do botao, que tem a barra e a linha do
+            tempo por baixo. Numa janela baixa demais ele rola, que ainda e
+            melhor do que sumir pela borda.
+          */}
+          <div
+            ref={painel}
+            style={alturaMax === null ? undefined : { maxHeight: `${alturaMax}px` }}
+            className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 grid w-[520px] grid-cols-2 gap-x-4 overflow-y-auto rounded-md p-3"
+          >
+            <div>
             <span className="text-[10px] uppercase tracking-wide text-ink-3">
               {captionMark === 'tudo' ? 'Cor do texto' : 'Cor da palavra'}
             </span>
@@ -576,6 +623,20 @@ function EstiloControl() {
             </p>
 
             <div className="my-3 h-px bg-line" />
+
+            <span className="text-[10px] uppercase tracking-wide text-ink-3">Contorno</span>
+            <Medida
+              rotulo="Espessura"
+              valor={captionStroke === 0 ? 'sem' : `${captionStroke}px`}
+              min={CAPTION_STROKE_MIN}
+              max={CAPTION_STROKE_MAX}
+              valorBruto={captionStroke}
+              onChange={setCaptionStroke}
+            />
+
+            </div>
+
+            <div>
 
             <div className="flex items-baseline justify-between">
               <span className="text-[10px] uppercase tracking-wide text-ink-3">Sombra</span>
@@ -707,6 +768,7 @@ function EstiloControl() {
                 />
               </>
             )}
+            </div>
           </div>
         </>
       )}

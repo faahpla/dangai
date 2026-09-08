@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Minus, Plus, X } from 'lucide-react'
-import { isVisual } from '@shared/channels'
+import { Minus, Plus, Volume2, X } from 'lucide-react'
+import { classifyFile, isVisual } from '@shared/channels'
+import { SFX_GAIN_MAX, SFX_GAIN_MIN } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 import { Waveform } from './Waveform'
 
@@ -380,7 +381,249 @@ export function Timeline() {
             </div>
           )}
         </div>
+
+        {/*
+          A FAIXA DE SFX, embaixo da esteira e dentro do mesmo rolamento.
+          Fica aqui e nao num painel para o som ser posicionado OLHANDO a onda
+          da narracao -- e contra a fala que se decide onde um whoosh entra.
+        */}
+        {duration > 0 && !isRendering && (
+          <FaixaSfx duration={duration} zoom={zoom} timeAt={timeAt} />
+        )}
       </div>
     </section>
+  )
+}
+
+/**
+ * Os SFX postos a mao, cada um um chip no instante dele.
+ *
+ * Arrastar arquivo de fora poe; arrastar o chip move; o x tira. Enquanto a
+ * faixa estiver vazia vale o rodizio automatico de sempre, e a propria faixa
+ * diz isso -- senao "sem som nenhum aqui" pareceria "sem som no video".
+ */
+function FaixaSfx({
+  duration,
+  zoom,
+  timeAt,
+}: {
+  duration: number
+  zoom: number
+  timeAt: (clientX: number) => number
+}) {
+  const sfxManual = useProject((s) => s.sfxManual)
+  const sfxEnabled = useProject((s) => s.sfxEnabled)
+  const addSfxAt = useProject((s) => s.addSfxAt)
+  const moveSfx = useProject((s) => s.moveSfx)
+  const removeSfx = useProject((s) => s.removeSfx)
+  const trimSfx = useProject((s) => s.trimSfx)
+  const setSfxGain = useProject((s) => s.setSfxGain)
+  const clearSfxManual = useProject((s) => s.clearSfxManual)
+
+  const [arrastando, setArrastando] = useState<{ id: string; pega: number } | null>(null)
+  const [cortandoId, setCortandoId] = useState<string | null>(null)
+  // Qual som esta com o controle de volume aberto. Pegar um som ja o seleciona.
+  const [selecionado, setSelecionado] = useState<string | null>(null)
+  const escolhido = sfxManual.find((s) => s.id === selecionado) ?? null
+  const [sobre, setSobre] = useState(false)
+
+  return (
+    <div
+      onDragOver={(event) => {
+        event.preventDefault()
+        setSobre(true)
+      }}
+      onDragLeave={() => setSobre(false)}
+      onDrop={(event) => {
+        setSobre(false)
+        const paths = Array.from(event.dataTransfer.files)
+          .map((file) => window.dangai.pathForFile(file))
+          .filter((path) => classifyFile(path) === 'audio')
+        if (paths.length === 0) return
+        // Sem isto o drop sobe ate a janela e o audio viraria narracao nova.
+        event.preventDefault()
+        event.stopPropagation()
+        addSfxAt(paths, timeAt(event.clientX))
+      }}
+      onPointerMove={(event) => {
+        // Desconta onde ele pegou: o som anda com o cursor, nao pula para ele.
+        if (arrastando) moveSfx(arrastando.id, timeAt(event.clientX) - arrastando.pega)
+        if (cortandoId) {
+          const som = sfxManual.find((s) => s.id === cortandoId)
+          if (som) trimSfx(cortandoId, timeAt(event.clientX) - som.at)
+        }
+      }}
+      onPointerUp={() => {
+        setArrastando(null)
+        setCortandoId(null)
+      }}
+      onPointerLeave={() => {
+        setArrastando(null)
+        setCortandoId(null)
+      }}
+      style={{ width: `${zoom * 100}%` }}
+      className={[
+        'relative h-[30px] min-w-full border-t border-line',
+        sobre ? 'bg-accent-dim' : 'bg-surface',
+      ].join(' ')}
+    >
+      {sfxManual.length === 0 ? (
+        <span className="pointer-events-none absolute inset-0 flex items-center px-2 text-[10px] text-ink-3">
+          Solte um som aqui para posicionar na mao. Vazia, os SFX entram sozinhos
+          a cada dois cortes.
+        </span>
+      ) : (
+        <>
+          {sfxManual.map((som) => {
+            /*
+             * A largura e a duracao DE VERDADE, sem piso.
+             *
+             * Tinha um minimo de 3% aqui e ele mentia: um som de 0,3s num video
+             * de 77s aparecia com a largura de dois segundos, a onda esticava
+             * para preencher, e nada correspondia ao audio.
+             *
+             * Som curto continua pegavel porque a AREA DE CLIQUE tem um minimo
+             * proprio, invisivel, em volta do chip.
+             */
+            const toca = som.usarSec ?? som.durationSec
+            const largura = (toca / duration) * 100
+            const esquerda = (som.at / duration) * 100
+            const cortado = som.usarSec !== null
+            return (
+              <div
+                key={som.id}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  // Guarda ONDE dentro do chip ele pegou: sem isso o inicio do
+                  // som pulava para debaixo do cursor no primeiro movimento.
+                  setArrastando({ id: som.id, pega: timeAt(event.clientX) - som.at })
+                  setSelecionado(som.id)
+                }}
+                style={{ left: `${esquerda}%`, width: `${largura}%` }}
+                title={`${som.fileName} — entra em ${som.at.toFixed(2)}s, toca ${toca.toFixed(2)}s${
+                  cortado ? ` de ${som.durationSec.toFixed(2)}s` : ''
+                }${som.gainDb === 0 ? '' : `, ${som.gainDb > 0 ? '+' : ''}${som.gainDb} dB`}`}
+                className={[
+                  'group/sfx absolute top-1/2 h-[24px] -translate-y-1/2 rounded-sm border',
+                  arrastando?.id === som.id || cortandoId === som.id || selecionado === som.id
+                    ? 'border-accent bg-accent-dim'
+                    : sfxEnabled
+                      ? 'border-line-strong bg-elevated'
+                      : 'border-line bg-elevated opacity-50',
+                ].join(' ')}
+              >
+                {/* Alvo de clique com no minimo 14px, transbordando pelos lados. */}
+                <span className="absolute -inset-x-[7px] inset-y-0 cursor-ew-resize" />
+
+                {/*
+                  A onda mostra o som INTEIRO, e a parte cortada fica apagada.
+                  Assim ele ve o que esta deixando de fora em vez de so ver o
+                  pedaco que sobrou.
+                */}
+                {som.peaks.length > 0 && (
+                  <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-sm">
+                    <div
+                      className="absolute inset-y-0 left-0"
+                      style={{ width: `${(som.durationSec / toca) * 100}%` }}
+                    >
+                      <Waveform peaks={som.peaks} className="block h-full w-full" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Nome e controles so no hover, para a onda ficar limpa. */}
+                <span className="pointer-events-none absolute inset-0 flex items-center gap-1 rounded-sm bg-surface/85 px-1 text-[10px] text-ink opacity-0 transition-opacity duration-150 group-hover/sfx:opacity-100">
+                  <Volume2 size={9} strokeWidth={1.5} className="shrink-0" />
+                  <span className="min-w-0 truncate">{som.fileName}</span>
+                  {som.gainDb !== 0 && (
+                    <span className="tnum shrink-0 text-accent">
+                      {som.gainDb > 0 ? '+' : ''}
+                      {som.gainDb}dB
+                    </span>
+                  )}
+                </span>
+
+                {/*
+                  A ALCA DE CORTE, na borda direita. Puxar para a esquerda
+                  encurta o pedaco que toca; um duplo clique devolve o som
+                  inteiro, que e mais rapido do que puxar de volta ate o fim.
+                */}
+                <span
+                  onPointerDown={(event) => {
+                    event.stopPropagation()
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    setCortandoId(som.id)
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation()
+                    trimSfx(som.id, null)
+                  }}
+                  title="Puxe para cortar o som; dois cliques devolvem inteiro"
+                  className="absolute inset-y-0 -right-1 w-[8px] cursor-col-resize rounded-r-sm opacity-0 group-hover/sfx:opacity-100"
+                >
+                  <span className="absolute inset-y-1 right-[3px] w-[2px] rounded-full bg-accent" />
+                </span>
+
+                <button
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => removeSfx(som.id)}
+                  aria-label={`Tirar ${som.fileName}`}
+                  className="absolute -right-1 -top-1 z-10 grid size-[14px] place-items-center rounded-full border border-line bg-surface text-ink-3 opacity-0 hover:text-danger group-hover/sfx:opacity-100"
+                >
+                  <X size={8} strokeWidth={2.5} />
+                </button>
+              </div>
+            )
+          })}
+          {/*
+            O VOLUME do som escolhido, no espaco vazio da faixa.
+            Nao cabe dentro de um chip de 24px de altura, e um painel a parte
+            faria ele tirar o olho da linha do tempo justamente enquanto compara
+            o som com a fala. Aqui fica ao lado, sem cobrir nada.
+          */}
+          {escolhido ? (
+            <div className="absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1.5 rounded-sm border border-line bg-surface px-1.5 py-0.5">
+              <span className="max-w-[90px] truncate text-[10px] text-ink-3">
+                {escolhido.fileName}
+              </span>
+              <input
+                type="range"
+                aria-label={`Volume de ${escolhido.fileName}`}
+                min={SFX_GAIN_MIN}
+                max={SFX_GAIN_MAX}
+                step={1}
+                value={escolhido.gainDb}
+                onChange={(event) => setSfxGain(escolhido.id, Number(event.target.value))}
+                onPointerDown={(event) => event.stopPropagation()}
+                className="dangai-range w-[70px]"
+              />
+              <span className="tnum w-[42px] text-right text-[10px] text-ink-2">
+                {escolhido.gainDb > 0 ? '+' : ''}
+                {escolhido.gainDb} dB
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelecionado(null)}
+                aria-label="Fechar o volume"
+                className="text-ink-3 hover:text-ink"
+              >
+                <X size={9} strokeWidth={2} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={clearSfxManual}
+              title="Tira todos e devolve o rodizio automatico"
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-ink-3 hover:text-ink-2"
+            >
+              limpar
+            </button>
+          )}
+        </>
+      )}
+    </div>
   )
 }

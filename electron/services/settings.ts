@@ -20,6 +20,14 @@ export interface Settings {
   sfxDir: string
   /** Raiz da biblioteca de cenas do AnCut. Vazio = a biblioteca fica desligada. */
   libraryDir: string
+  /**
+   * Curvas de movimento que ele guardou.
+   *
+   * Ficam aqui e nao no projeto porque um ritmo que ele gostou vale para os
+   * PROXIMOS videos -- guardar no projeto obrigaria a redesenhar a mesma curva
+   * em cada um.
+   */
+  curvePresets: { nome: string; pontos: [number, number, number, number] }[]
 }
 
 const DEFAULTS: Settings = {
@@ -27,6 +35,7 @@ const DEFAULTS: Settings = {
   whisperModel: 'small',
   sfxDir: '',
   libraryDir: '',
+  curvePresets: [],
 }
 
 let filePath: string | null = null
@@ -78,6 +87,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
     whisperModel: settings.whisperModel,
     sfxDir: settings.sfxDir,
     libraryDir: settings.libraryDir,
+    curvePresets: settings.curvePresets,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -94,5 +104,28 @@ function coerce(raw: unknown): Settings {
     whisperModel: model === 'base' || model === 'small' || model === 'medium' ? model : 'small',
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
+    curvePresets: curvasSalvas(value['curvePresets']),
   }
+}
+
+/**
+ * As curvas guardadas, conferidas uma a uma.
+ *
+ * Este arquivo e editavel a mao e sobrevive a atualizacao do app: um valor
+ * estranho aqui viraria uma curva que o Remotion nao sabe interpolar, e o
+ * sintoma apareceria como movimento travado no meio do render.
+ */
+function curvasSalvas(raw: unknown): Settings['curvePresets'] {
+  if (!Array.isArray(raw)) return []
+  const ok: Settings['curvePresets'] = []
+  for (const item of raw) {
+    if (typeof item !== 'object' || item === null) continue
+    const { nome, pontos } = item as Record<string, unknown>
+    if (typeof nome !== 'string' || !nome.trim()) continue
+    if (!Array.isArray(pontos) || pontos.length !== 4) continue
+    if (!pontos.every((n) => typeof n === 'number' && n >= 0 && n <= 1)) continue
+    ok.push({ nome: nome.trim().slice(0, 40), pontos: pontos as [number, number, number, number] })
+  }
+  // Vinte ja e mais do que qualquer pessoa distingue numa lista de chips.
+  return ok.slice(0, 20)
 }

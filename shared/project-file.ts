@@ -5,11 +5,13 @@ import {
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_MARK_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
+  CAPTION_STROKE_DEFAULT,
   CAPTION_COLOR_DEFAULT,
   captionAnimationFramesSchema,
   captionAnimationSchema,
   captionMarkSchema,
   captionShadowSchema,
+  captionStrokeSchema,
   captionColorSchema,
   captionYSchema,
   END_CARD_SEC_DEFAULT,
@@ -112,6 +114,29 @@ export const projectFileSchema = z.object({
   captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
   /** A sombra do texto. Default para projeto salvo antes dela existir. */
   captionShadow: captionShadowSchema.default(CAPTION_SHADOW_DEFAULT),
+  /** Espessura do contorno. Default para projeto salvo antes dela existir. */
+  captionStroke: captionStrokeSchema.default(CAPTION_STROKE_DEFAULT),
+  /**
+   * Os SFX postos a mao na faixa. Default vazio para projeto antigo abrir com
+   * o rodizio automatico, que era o unico jeito ate aqui.
+   */
+  sfxManual: z
+    .array(
+      z.object({
+        id: z.string(),
+        path: z.string(),
+        fileName: z.string(),
+        at: z.number().nonnegative(),
+        /** Com default para projeto salvo antes do chip ter onda e largura. */
+        durationSec: z.number().positive().default(0.5),
+        peaks: z.array(z.number().min(0).max(1)).default([]),
+        /** Quanto do som toca. null = inteiro. Default para projeto antigo. */
+        usarSec: z.number().positive().nullable().default(null),
+        /** Ganho sobre o nivel padrao. Zero = como o app sempre fez. */
+        gainDb: z.number().default(0),
+      }),
+    )
+    .default([]),
   sfxEnabled: z.boolean(),
   /** Cama de musica. Com default para projeto salvo antes dela existir abrir igual. */
   music: referenceSchema.nullable().default(null),

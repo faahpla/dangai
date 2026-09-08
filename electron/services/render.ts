@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
-import { basename, dirname, extname, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ensureBrowser, makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer'
 import type { RenderProgress, RenderProps } from '@shared/contract'
@@ -64,6 +64,10 @@ export interface MusicBed {
 export interface SfxCue {
   at: number
   sound: string
+  /** Ganho em dB sobre o nivel padrao. Ausente = 0, o de sempre. */
+  gainDb?: number
+  /** Quanto do som toca. Ausente = o arquivo inteiro. */
+  durationSec?: number | null
 }
 
 type ProgressSink = (progress: RenderProgress) => void
@@ -352,9 +356,16 @@ function findInstalledBrowser(): string | null {
 /** -12 dB abaixo da narracao, como a spec pede. 10^(-12/20). */
 const SFX_GAIN = 0.2512
 
+/** Fade aplicado no fim de um SFX cortado, para o corte nao estalar. */
+const FADE_CORTE_SEC = 0.03
+
 interface ResolvedCue {
   path: string
   at: number
+  /** Ganho em dB SOBRE o nivel padrao dos SFX. 0 = como sempre foi. */
+  gainDb: number
+  /** Quanto do som toca, em segundos. null = o arquivo inteiro. */
+  durationSec: number | null
 }
 
 /**
@@ -367,11 +378,28 @@ interface ResolvedCue {
 function resolveSfx(request: RenderRequest): ResolvedCue[] {
   const dir = request.sfxDir || requirePaths().defaultSfxDir
   return request.sfxCues.flatMap((cue) => {
+    /*
+     * Caminho inteiro tambem vale.
+     *
+     * A faixa de SFX da linha do tempo aceita arquivo arrastado de QUALQUER
+     * lugar do disco -- ele nao precisa mover o som para a pasta do app so
+     * para usar uma vez. Os automaticos continuam vindo pelo nome.
+     */
+    const extra = {
+      at: Math.max(cue.at, 0),
+      gainDb: cue.gainDb ?? 0,
+      durationSec: cue.durationSec ?? null,
+    }
+
+    if (isAbsolute(cue.sound) && existsSync(cue.sound)) {
+      return [{ path: cue.sound, ...extra }]
+    }
+
     const direct = join(dir, cue.sound)
-    if (existsSync(direct)) return [{ path: direct, at: Math.max(cue.at, 0) }]
+    if (existsSync(direct)) return [{ path: direct, ...extra }]
 
     const legacy = join(dir, `${cue.sound}.mp3`)
-    return existsSync(legacy) ? [{ path: legacy, at: Math.max(cue.at, 0) }] : []
+    return existsSync(legacy) ? [{ path: legacy, ...extra }] : []
   })
 }
 
@@ -418,7 +446,12 @@ async function muxWithNormalizedAudio(
   ])
 
   const inputs = ['-i', videoPath, '-i', narracaoNormalizada]
-  for (const cue of sfx) inputs.push('-i', cue.path)
+  for (const cue of sfx) {
+    // `-t` ANTES do `-i` limita a leitura da entrada: e assim que um som longo
+    // entra so pelo pedaco que ele deixou na faixa.
+    if (cue.durationSec !== null) inputs.push('-t', cue.durationSec.toFixed(3))
+    inputs.push('-i', cue.path)
+  }
 
   // -stream_loop -1: uma faixa mais curta que o video se repete em vez de
   // deixar o final em silencio. O atrim logo abaixo corta no lugar certo, entao
@@ -433,8 +466,25 @@ async function muxWithNormalizedAudio(
   sfx.forEach((cue, index) => {
     const ms = Math.round(cue.at * 1000)
     const label = `[s${index}]`
+
+    // O ganho dele multiplica o nivel padrao: 0 dB continua sendo -12 dB sob a
+    // voz, e o que ele escolhe e o quanto ESTE som foge desse padrao.
+    const ganho = SFX_GAIN * 10 ** (cue.gainDb / 20)
+
+    /*
+     * Cortar um som no meio da onda estala.
+     *
+     * Um fade curtinho no fim do pedaco resolve, e so entra quando ha corte --
+     * som inteiro ja termina no proprio silencio. 30ms e curto demais para
+     * mudar o ataque e longo o bastante para o clique sumir.
+     */
+    const fade =
+      cue.durationSec !== null && cue.durationSec > FADE_CORTE_SEC
+        ? `,afade=t=out:st=${(cue.durationSec - FADE_CORTE_SEC).toFixed(3)}:d=${FADE_CORTE_SEC}`
+        : ''
+
     chain.push(
-      `[${index + 2}:a]aformat=channel_layouts=stereo,adelay=${ms}|${ms},volume=${SFX_GAIN}${label}`,
+      `[${index + 2}:a]aformat=channel_layouts=stereo${fade},adelay=${ms}|${ms},volume=${ganho.toFixed(5)}${label}`,
     )
     labels.push(label)
   })

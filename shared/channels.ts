@@ -114,7 +114,14 @@ export interface StartRenderArgs {
   audioPath: string
   durationInFrames: number
   /** Vazio quando o usuario mutou os SFX. */
-  sfxCues: readonly { at: number; sound: string }[]
+  sfxCues: readonly {
+    at: number
+    sound: string
+    /** Ganho em dB sobre o nivel padrao dos SFX. Ausente = 0. */
+    gainDb?: number
+    /** Quanto do som toca. Ausente = o arquivo inteiro. */
+    durationSec?: number | null
+  }[]
   /** Cama de musica, quando ha uma escolhida. */
   music: { path: string; gainDb: number } | null
 }
@@ -354,6 +361,8 @@ export interface PublicSettings {
   libraryDir: string
   hasApiKey: boolean
   apiKeyHint: string
+  /** Curvas de movimento que ele guardou, para reusar em outros videos. */
+  curvePresets: { nome: string; pontos: [number, number, number, number] }[]
 }
 
 export interface SettingsPatch {
@@ -361,6 +370,7 @@ export interface SettingsPatch {
   whisperModel?: 'base' | 'small' | 'medium'
   sfxDir?: string
   libraryDir?: string
+  curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
 }
 
 /**

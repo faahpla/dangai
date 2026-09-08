@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react'
-import { Spline } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { BookmarkPlus, Spline, X } from 'lucide-react'
 import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
@@ -35,6 +35,13 @@ export function SceneEdit() {
   const index = useProject((s) => s.selectedScene)
   const updateScene = useProject((s) => s.updateScene)
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
+  const salvas = useProject((s) => s.curvePresets)
+  const carregarCurvas = useProject((s) => s.loadCurvePresets)
+  const guardarCurva = useProject((s) => s.saveCurvePreset)
+  const removerCurva = useProject((s) => s.removeCurvePreset)
+
+  // As curvas guardadas vivem nas configuracoes, entao vem do main uma vez.
+  useEffect(() => void carregarCurvas(), [carregarCurvas])
 
   const scene = index === null ? undefined : plan?.scenes[index]
   const image = scene ? images[scene.imageIndex] : undefined
@@ -171,10 +178,59 @@ export function SceneEdit() {
             </Chip>
 
             {scene.curvePoints !== null && (
-              <GraficoDeCurva
-                pontos={scene.curvePoints}
-                onChange={(pontos) => updateScene(index, { curvePoints: pontos })}
-              />
+              <>
+                {/*
+                  Quatro ritmos prontos, para nao ter que desenhar do zero toda
+                  vez. Sao os que aparecem em recap: sair voando e assentar,
+                  segurar e disparar, chegar freando, e o pulinho de mola.
+                */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  {CURVAS_PRONTAS.map((preset) => (
+                    <Chip
+                      key={preset.nome}
+                      active={mesmaCurva(scene.curvePoints, preset.pontos)}
+                      onClick={() => updateScene(index, { curvePoints: preset.pontos })}
+                    >
+                      {preset.nome}
+                    </Chip>
+                  ))}
+                </div>
+
+                {/* As dele, guardadas nas configuracoes e validas em todo video. */}
+                {salvas.length > 0 && (
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {salvas.map((preset) => (
+                      <div key={preset.nome} className="relative">
+                        <Chip
+                          active={mesmaCurva(scene.curvePoints, preset.pontos)}
+                          onClick={() => updateScene(index, { curvePoints: preset.pontos })}
+                        >
+                          <span className="block truncate pr-3">{preset.nome}</span>
+                        </Chip>
+                        <button
+                          type="button"
+                          onClick={() => void removerCurva(preset.nome)}
+                          title={`Esquecer "${preset.nome}"`}
+                          aria-label={`Esquecer ${preset.nome}`}
+                          className="absolute right-1 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:text-danger"
+                        >
+                          <X size={10} strokeWidth={2} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <GraficoDeCurva
+                  pontos={scene.curvePoints}
+                  onChange={(pontos) => updateScene(index, { curvePoints: pontos })}
+                />
+
+                <Chip active={false} onClick={() => void guardarCurva(scene.curvePoints!)}>
+                  <BookmarkPlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                  Salvar esta curva
+                </Chip>
+              </>
             )}
 
             <p className="text-[11px] leading-relaxed text-ink-3">
@@ -216,6 +272,28 @@ export function SceneEdit() {
       </Grupo>
     </div>
   )
+}
+
+/**
+ * Ritmos prontos, para nao desenhar do zero toda vez.
+ *
+ * Sao os quatro que aparecem em recap de anime, nomeados pelo que fazem e nao
+ * pela matematica -- "0.2, 0.9, 0.3, 1" nao diz nada a quem esta escolhendo.
+ */
+const CURVAS_PRONTAS: readonly { nome: string; pontos: CurvePoints }[] = [
+  // Dispara e assenta: o movimento acontece quase todo no comeco do bloco.
+  { nome: 'Sai voando', pontos: [0, 0.85, 0.15, 1] },
+  // Fica parado, e o movimento inteiro cai no fim -- bom para revelar algo.
+  { nome: 'Segura e vai', pontos: [0.85, 0, 1, 0.35] },
+  // Chega freando: entra rapido e encosta devagar.
+  { nome: 'Chega freando', pontos: [0.1, 0.7, 0.35, 1] },
+  // Passa do ponto e volta -- o mesmo repique da entrada elastica da legenda.
+  { nome: 'Com repique', pontos: [0.3, 1, 0.5, 0.92] },
+]
+
+/** Duas curvas sao a mesma quando os quatro numeros batem. */
+function mesmaCurva(a: CurvePoints | null, b: CurvePoints): boolean {
+  return a !== null && a.every((v, i) => Math.abs(v - b[i]!) < 0.005)
 }
 
 /**

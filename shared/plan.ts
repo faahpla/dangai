@@ -5,8 +5,10 @@ import {
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_MARK_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
+  CAPTION_STROKE_DEFAULT,
   CAPTION_COLOR_DEFAULT,
   CAPTION_Y_DEFAULT,
+  CAPTION_CHARS_PER_LINE,
   CAPTION_MAX_CHARS,
   CAPTION_MAX_WORDS,
   CAPTION_MIN_SEC,
@@ -386,6 +388,7 @@ export function toRenderProps(
     animationFrames?: number
     mark?: CaptionMark
     shadow?: CaptionShadow
+    stroke?: number
   } = {},
 ): RenderProps {
   const captionFont = legenda.font ?? null
@@ -393,6 +396,7 @@ export function toRenderProps(
   const captionAnimationFrames = legenda.animationFrames ?? CAPTION_ANIMATION_FRAMES_DEFAULT
   const captionMark = legenda.mark ?? CAPTION_MARK_DEFAULT
   const captionShadow = legenda.shadow ?? CAPTION_SHADOW_DEFAULT
+  const captionStroke = legenda.stroke ?? CAPTION_STROKE_DEFAULT
   const usable = plan.scenes.filter(
     (scene) => images[scene.imageIndex] && (scene.imageIndexB === null || images[scene.imageIndexB]),
   )
@@ -408,6 +412,7 @@ export function toRenderProps(
       captionAnimationFrames,
       captionMark,
       captionShadow,
+      captionStroke,
     }
   }
 
@@ -564,6 +569,7 @@ export function toRenderProps(
     captionAnimationFrames,
     captionMark,
     captionShadow,
+    captionStroke,
   }
 }
 
@@ -711,9 +717,91 @@ export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
   }
   flush()
 
+  resgatarPiscadas(blocks)
   enforceMinimumDuration(blocks)
   return blocks
 }
+
+/**
+ * Junta o bloco que ia PISCAR com o vizinho.
+ *
+ * A regra de duas palavras e doze caracteres cria orfaos: "suficiente para" tem
+ * quinze caracteres, entao "para" fica sozinha -- e sozinha ela dura os 0,13s
+ * que se leva para dizer "para". Tres quadros na tela nao sao lidos como uma
+ * legenda rapida, e sim como legenda fora de hora. Foi assim que ele descreveu,
+ * apontando o segundo exato: 45,44s do video do Rudeus.
+ *
+ * O resgate quebra a regra dele, e quebra de proposito e so aqui. Os limites:
+ *
+ *   - no maximo TRES palavras, e so quando a alternativa e piscar
+ *   - no maximo dezoito caracteres, que e a largura da linha -- acima disso a
+ *     legenda encolheria a fonte, e uma linha menor e pior que uma rapida
+ *
+ * Tenta o vizinho de TRAS primeiro: prender a palavrinha no que veio antes soa
+ * como a fala ("suficiente para"), enquanto empurra-la para frente inventaria
+ * uma pausa que nao existe.
+ */
+function resgatarPiscadas(blocks: CaptionBlock[]): void {
+  const piso = CAPTION_MIN_SEC * VIDEO_FPS
+
+  for (let i = 0; i < blocks.length; i++) {
+    const bloco = blocks[i]!
+    if (bloco.durationInFrames >= piso * PISCA_FRACAO) continue
+
+    const anterior = blocks[i - 1]
+    const proximo = blocks[i + 1]
+
+    if (anterior && cabeJunto(anterior, bloco)) {
+      anterior.words = [...anterior.words, ...bloco.words]
+      anterior.durationInFrames = bloco.from + bloco.durationInFrames - anterior.from
+      blocks.splice(i, 1)
+      i -= 1
+      continue
+    }
+
+    if (proximo && cabeJunto(bloco, proximo)) {
+      bloco.words = [...bloco.words, ...proximo.words]
+      bloco.durationInFrames = proximo.from + proximo.durationInFrames - bloco.from
+      blocks.splice(i + 1, 1)
+    }
+  }
+}
+
+/** Os dois blocos juntos ainda cabem numa linha que nao encolhe a fonte? */
+function cabeJunto(a: CaptionBlock, b: CaptionBlock): boolean {
+  /*
+   * O ponto final continua sendo parede, mesmo no resgate.
+   *
+   * "imagina. E onde" cabe nos limites e ainda assim esta errado: sao duas
+   * ideias, e o olho le as duas como uma frase so. E a regra que ele pediu com
+   * todas as letras, e piscar e menos ruim que costurar frases.
+   */
+  const ultima = a.words.at(-1)
+  if (ultima && fechaIdeia(ultima.text)) return false
+
+  if (a.words.length + b.words.length > RESGATE_MAX_PALAVRAS) return false
+  const texto = [...a.words, ...b.words].map((w) => w.text).join(' ')
+  return texto.length <= CAPTION_CHARS_PER_LINE
+}
+
+/** O mesmo criterio do agrupamento: aspas e parenteses nao escondem a pontuacao. */
+function fechaIdeia(text: string): boolean {
+  const bare = text.replace(/["'”’)\]}»]+$/u, '')
+  const last = bare.at(-1)
+  return last !== undefined && CAPTION_BREAK_AFTER.includes(last)
+}
+
+/**
+ * Abaixo de que fracao do piso um bloco conta como piscada.
+ *
+ * Nao e o piso inteiro: com duas palavras por linha quase metade dos blocos
+ * fica abaixo dele, e resgatar todos viraria uma legenda de tres palavras o
+ * video inteiro. Metade do piso -- uns 0,22s -- pega so o que realmente pisca.
+ */
+const PISCA_FRACAO = 0.5
+
+/** Teto de palavras no resgate. A regra dele e duas; aqui abre para tres. */
+const RESGATE_MAX_PALAVRAS = 3
 
 /**
  * A palavra termina fechando uma ideia?

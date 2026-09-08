@@ -30,6 +30,8 @@ export const CAMPOS = [
   'captionAnimationFrames',
   'captionMark',
   'captionShadow',
+  'captionStroke',
+  'sfxManual',
   'sfxEnabled',
   'music',
   'musicGainDb',

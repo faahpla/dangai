@@ -242,11 +242,19 @@ export const captionShadowSchema = z.object({
 })
 export type CaptionShadow = z.infer<typeof captionShadowSchema>
 
-/** O que ele viu e aprovou em 07/09. Mexer aqui muda o padrao de todo video novo. */
+/**
+ * O que ele ajustou no olho e mandou virar padrao em 07/09.
+ *
+ * Sombra dura e colada: opacidade cheia, tres pixels de queda e desfoque
+ * NENHUM. E o contorno solido que o traco de anime pede -- desfoque espalha e
+ * suja a linha, que era o que os valores antigos (4/6/55%) faziam.
+ *
+ * Continua tudo configuravel; isto e so o ponto de partida de todo video novo.
+ */
 export const CAPTION_SHADOW_DEFAULT: CaptionShadow = {
-  distancia: 4,
-  desfoque: 6,
-  opacidade: 0.55,
+  distancia: 3,
+  desfoque: 0,
+  opacidade: 1,
 }
 
 /**
@@ -261,6 +269,36 @@ export function sombraCss({ distancia, desfoque, opacidade }: CaptionShadow): st
   const espalhada = `0 ${(distancia * 2.5).toFixed(1)}px ${(desfoque * 3.6).toFixed(1)}px rgba(0,0,0,${(opacidade * 0.8).toFixed(3)})`
   return `0 ${distancia.toFixed(1)}px ${desfoque.toFixed(1)}px rgba(0,0,0,${opacidade.toFixed(3)}), ${espalhada}`
 }
+
+/**
+ * A espessura do contorno preto da legenda, em pixels do quadro do render.
+ *
+ * Era fixo em 6px desde a v1. Pedido dele em 08/09, pelo mesmo motivo da
+ * sombra: o contorno e o que separa a letra da cena, e quanto ele pesa e
+ * decisao de estilo -- traco fino em cena clara some, traco grosso em fonte
+ * estreita come o miolo da letra.
+ *
+ * Zero desliga o contorno. Nesse caso so a sombra separa a letra do fundo.
+ */
+/**
+ * Limites do que ele pode fazer com um SFX na faixa.
+ *
+ * O ganho e RELATIVO ao nivel padrao (-12 dB sob a voz): zero e o de sempre.
+ * O teto de +6 existe para um som nao passar por cima da narracao, que e o
+ * nivel de referencia do video.
+ */
+export const SFX_GAIN_MIN = -24
+export const SFX_GAIN_MAX = 6
+/** Pedaco minimo de um som cortado. Abaixo disso nao da tempo de ouvir. */
+export const SFX_MINIMO_SEC = 0.05
+
+export const CAPTION_STROKE_MIN = 0
+export const CAPTION_STROKE_MAX = 16
+export const CAPTION_STROKE_DEFAULT = 6
+export const captionStrokeSchema = z
+  .number()
+  .min(CAPTION_STROKE_MIN)
+  .max(CAPTION_STROKE_MAX)
 
 export const CAPTION_MARKS = ['palavra', 'tudo'] as const
 export const captionMarkSchema = z.enum(CAPTION_MARKS)
@@ -742,6 +780,8 @@ export const renderPropsSchema = z.object({
   captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
   captionShadow: captionShadowSchema.default(CAPTION_SHADOW_DEFAULT),
+  /** Espessura do contorno preto. Zero = sem contorno. */
+  captionStroke: captionStrokeSchema.default(CAPTION_STROKE_DEFAULT),
   /** Texto de abertura e de fechamento. Vazio quando o usuario nao pediu. */
   cards: z.array(overlayCardSchema).default([]),
 })
