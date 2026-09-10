@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Film, ImagePlus, Library as LibraryIcon, Scissors } from 'lucide-react'
 import { isVisual } from '@shared/channels'
 import { type ImageAsset, type Scene } from '@shared/contract'
@@ -194,6 +195,7 @@ function PontoDeEntrada({
 }) {
   const updateScene = useProject((s) => s.updateScene)
   const setPlayhead = useProject((s) => s.setPlayhead)
+  const quadroRef = useRef<HTMLVideoElement | null>(null)
 
   const bloco = scene.end - scene.start
   const total = image.durationSec ?? 0
@@ -205,13 +207,39 @@ function PontoDeEntrada({
   return (
     <Field label="Trecho do clipe">
       <div className="flex flex-col gap-1.5">
+        {/*
+          O QUADRO DAQUELE INSTANTE, enquanto ele arrasta.
+
+          O slider sozinho pedia fe: mexer nele mostrava "1,2s - 3,2s de 6,0s" e
+          mais nada, entao descobrir se o ponto era o certo exigia dar play e
+          esperar o bloco chegar. Escolher onde o clipe comeca olhando numero e
+          o que tornava esta parte confusa de usar.
+
+          E um <video> parado servindo de visor: nada toca, so o currentTime
+          anda junto com o slider.
+        */}
+        <video
+          ref={quadroRef}
+          src={image.url}
+          muted
+          playsInline
+          preload="metadata"
+          // O primeiro quadro so pode ser posicionado depois que o navegador
+          // sabe a duracao; antes disso, atribuir currentTime nao faz nada.
+          onLoadedMetadata={() => {
+            if (quadroRef.current) quadroRef.current.currentTime = inicio
+          }}
+          className="h-[104px] w-full rounded-sm border border-line bg-black object-contain"
+        />
         <input
           type="range"
           min={0}
           max={Math.round(sobra * 10)}
           value={Math.round(inicio * 10)}
           onChange={(event) => {
-            updateScene(index, { sourceStart: Number(event.target.value) / 10 })
+            const alvo = Number(event.target.value) / 10
+            updateScene(index, { sourceStart: alvo })
+            if (quadroRef.current) quadroRef.current.currentTime = alvo
             /*
              * Leva o preview para o comeco do bloco a cada arrasto.
              *
