@@ -283,8 +283,22 @@ export function registerIpc(): void {
     }
     const mapa = await upscaleAssets(assets, limites, (feitos, total, nome) => {
       broadcast({
-        // Fica na primeira metade da barra: o render de verdade vem depois.
-        progress: total === 0 ? 0 : (feitos / total) * 0.5,
+        /*
+         * A fracao e das CENAS, e nao metade da barra.
+         *
+         * Antes isto era `(feitos / total) * 0.5`, para o upscale ocupar a
+         * primeira metade e o render a segunda. A conta fechava, mas a barra
+         * mora EM CIMA dos blocos da linha do tempo -- e ali toda faixa pintada
+         * se le como "e aqui que estou". Melhorando a cena 50 de 57, a barra
+         * parava no bloco 25 e parecia travada. Palavras dele: "ela nao
+         * acompanha as cenas q ela realmente esta melhorando".
+         *
+         * Agora ela anda junto com a cena que esta sendo melhorada. A barra
+         * enche duas vezes num render com upscale -- uma por fase -- e cada
+         * passada diz a verdade sobre a sua. Qual fase e, quem diz e a mensagem
+         * logo acima dela.
+         */
+        progress: total === 0 ? 0 : feitos / total,
         stage: 'bundling',
         message: nome
           ? `Melhorando as cenas (${feitos + 1} de ${total}) -- ${nome}`

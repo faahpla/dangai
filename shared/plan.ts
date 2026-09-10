@@ -84,6 +84,9 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
     end: index === imageCount - 1 ? durationSec : (index + 1) * per,
     effect: pickEffect(index),
     intensity: 0.12,
+    // A metade de baixo segue a de cima ate ele separar as duas.
+    effectB: null,
+    intensityB: null,
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
@@ -149,6 +152,9 @@ export function planFromCandidates(
     end: bounds[index + 1]!,
     effect: pickEffect(index),
     intensity: 0.12,
+    // A metade de baixo segue a de cima ate ele separar as duas.
+    effectB: null,
+    intensityB: null,
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
@@ -250,6 +256,9 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
           end: ((index + 1) * durationSec) / imageCount,
           effect: pickEffect(index),
           intensity: 0.12,
+          // A metade de baixo segue a de cima ate ele separar as duas.
+          effectB: null,
+          intensityB: null,
           curve: MOTION_CURVE_DEFAULT,
           // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
           sourceStart: 0,
@@ -522,6 +531,13 @@ export function toRenderProps(
               focusY: parceira.focusY,
               sourceDurationInFrames: total !== null && total < durationInFrames ? Math.max(total, 1) : null,
               sourceStartFrames: 0,
+              /*
+               * `null` na cena quer dizer "segue a de cima", e a conta e feita
+               * AQUI -- o Remotion recebe o movimento ja resolvido, sem precisar
+               * saber que existe heranca.
+               */
+              effect: scene.effectB ?? scene.effect,
+              intensity: scene.intensityB ?? scene.intensity,
             }
           })()
 
@@ -964,6 +980,9 @@ export function planByRhythm(
     end: bounds[index + 1]!,
     effect: pickEffect(index),
     intensity: 0.12,
+    // A metade de baixo segue a de cima ate ele separar as duas.
+    effectB: null,
+    intensityB: null,
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
@@ -1060,6 +1079,9 @@ export function planBySections(
         end: inicio + dentro[i + 1]!,
         effect: pickEffect(index),
         intensity: 0.12,
+        // A metade de baixo segue a de cima ate ele separar as duas.
+        effectB: null,
+        intensityB: null,
         curve: MOTION_CURVE_DEFAULT,
         // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
         sourceStart: 0,

@@ -48,6 +48,26 @@ export function SceneEdit() {
 
   if (index === null || !scene || !image) return null
 
+  /*
+   * A metade de BAIXO, quando o bloco e tela dividida.
+   *
+   * Ate 10/09 ela nao tinha controle nenhum: o enquadramento e o movimento da
+   * tela dividida valiam so para a de cima, e centralizar um rosto na de baixo
+   * era impossivel. Palavras dele: "so consigo mexer na primeira".
+   */
+  const imageB = scene.imageIndexB === null ? undefined : images[scene.imageIndexB]
+
+  /*
+   * O que a metade de baixo esta fazendo AGORA.
+   *
+   * `null` no campo quer dizer "segue a de cima", entao o que a tela mostra e
+   * sempre o valor efetivo -- e nao um controle vazio que nao corresponde ao
+   * que se ve no preview.
+   */
+  const efeitoB = scene.effectB ?? scene.effect
+  const intensidadeB = scene.intensityB ?? scene.intensity
+  const separada = scene.effectB !== null || scene.intensityB !== null
+
   const total = plan?.scenes.length ?? 0
 
   // O botao de aplicar em todos so aparece quando ha o que aplicar -- se o
@@ -62,7 +82,23 @@ export function SceneEdit() {
   return (
     <div className="enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] items-start gap-3 overflow-y-auto">
       <Grupo titulo="Enquadramento">
-        <Framing image={image} />
+        {imageB ? (
+          <>
+            {/*
+              Duas janelas, uma por metade. O rotulo diz qual e qual: sao dois
+              enquadramentos parecidos empilhados, e sem nome eles se confundem
+              -- ainda mais quando as duas cenas sao do mesmo personagem.
+            */}
+            <Field label="Metade de cima">
+              <Framing image={image} />
+            </Field>
+            <Field label="Metade de baixo">
+              <Framing image={imageB} />
+            </Field>
+          </>
+        ) : (
+          <Framing image={image} />
+        )}
 
       {/*
         Girar existe para o material que chega deitado -- clipe gravado de lado,
@@ -247,6 +283,73 @@ export function SceneEdit() {
               </Chip>
             )}
           </Field>
+        </>
+      )}
+
+      {/*
+        O MOVIMENTO DA METADE DE BAIXO.
+
+        A divisao nao se mexia: eram duas imagens disputando o olho num quadro
+        pela metade, e somar movimento parecia enjoativo. Ele usou e discordou
+        -- parada no meio de um video que anda o tempo todo, a divisao destoa.
+
+        O RITMO continua sendo do bloco, e por isso nao aparece aqui: duas
+        metades acelerando em tempos diferentes e que dariam o enjoo que a
+        decisao antiga temia. O que se separa e o efeito e a intensidade.
+      */}
+      {imageB && (
+        <>
+          <div className="my-1 h-px bg-line" />
+
+          <Field label="Movimento da metade de baixo">
+            <Chip
+              active={!separada}
+              // Volta os dois campos para null de uma vez: "igual" e a ausencia
+              // de escolha, e nao uma copia dos valores de cima -- copiados,
+              // eles parariam de acompanhar a de cima na proxima mudanca.
+              onClick={() => updateScene(index, { effectB: null, intensityB: null })}
+            >
+              Igual a de cima
+            </Chip>
+            <Chip
+              active={separada && efeitoB === 'nenhum'}
+              onClick={() => updateScene(index, { effectB: 'nenhum' })}
+            >
+              {imageB.kind === 'video' ? 'Parada (so o do clipe)' : 'Parada'}
+            </Chip>
+            <div className="grid grid-cols-2 gap-1.5">
+              {KEN_BURNS_EFFECTS.map((effect) => (
+                <Chip
+                  key={effect}
+                  active={separada && efeitoB === effect}
+                  onClick={() => updateScene(index, { effectB: effect })}
+                >
+                  {EFFECT_LABEL[effect]}
+                </Chip>
+              ))}
+            </div>
+          </Field>
+
+          {efeitoB !== 'nenhum' && (
+            <Field label="Intensidade da metade de baixo">
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="range"
+                  min={0.04}
+                  max={0.15}
+                  step={0.01}
+                  value={intensidadeB}
+                  onChange={(event) =>
+                    updateScene(index, { intensityB: Number(event.target.value) })
+                  }
+                  className="dangai-range min-w-0 flex-1"
+                />
+                <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
+                  {Math.round(intensidadeB * 100)}%
+                </span>
+              </div>
+            </Field>
+          )}
         </>
       )}
       </Grupo>

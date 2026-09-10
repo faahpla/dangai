@@ -399,7 +399,16 @@ export interface ProjectState {
     patch: Partial<
       Pick<
         Scene,
-        'effect' | 'transitionIn' | 'intensity' | 'curve' | 'sourceStart' | 'rotation' | 'curvePoints'
+        | 'effect'
+        | 'transitionIn'
+        | 'intensity'
+        | 'curve'
+        | 'sourceStart'
+        | 'rotation'
+        | 'curvePoints'
+        // O movimento proprio da metade de baixo, na tela dividida.
+        | 'effectB'
+        | 'intensityB'
       >
     >,
   ) => void
@@ -639,6 +648,11 @@ function planoDosBlocos(
      */
     effect: KEN_BURNS_EFFECTS[index % KEN_BURNS_EFFECTS.length]!,
     intensity: CLIP_INTENSITY,
+    // A metade de baixo segue a de cima ate ele separar as duas -- e aqui,
+    // onde a montagem automatica ja emparelha as divididas, e o lugar onde
+    // isso mais aparece.
+    effectB: null,
+    intensityB: null,
     curve: CLIP_MOTION_CURVE,
     // Parte do comeco do clipe. Mover o ponto de entrada e escolha dele, no
     // card da cena.
@@ -1629,6 +1643,9 @@ export const useProject = create<ProjectState>((set, get) => ({
       end: i === n - 1 ? fim : inicio + (i + 1) * passo,
       effect: KEN_BURNS_EFFECTS[(at + i) % KEN_BURNS_EFFECTS.length] ?? 'zoom-in',
       intensity: 0.12,
+      // A metade de baixo segue a de cima ate ele separar as duas.
+      effectB: null,
+      intensityB: null,
       // Comeca no inicio do clipe, como todo bloco novo.
       sourceStart: 0,
       // Herda a curva do bloco que cedeu o tempo, e nao o padrao: quem ja

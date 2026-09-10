@@ -141,6 +141,10 @@ export function Scene({
           sourceDurationInFrames={sourceDurationInFrames}
           sourceStartFrames={sourceStartFrames}
           durationInFrames={durationInFrames}
+          effect={effect}
+          intensity={intensity}
+          curve={curve}
+          curvePoints={curvePoints}
         />
         <Metade
           url={abaixo.url}
@@ -150,6 +154,11 @@ export function Scene({
           sourceDurationInFrames={abaixo.sourceDurationInFrames}
           sourceStartFrames={abaixo.sourceStartFrames}
           durationInFrames={durationInFrames}
+          // Ja resolvido pelo plano: aqui nao existe "segue a de cima".
+          effect={abaixo.effect}
+          intensity={abaixo.intensity}
+          curve={curve}
+          curvePoints={curvePoints}
         />
       </AbsoluteFill>
     )
@@ -312,6 +321,10 @@ function Metade({
   sourceDurationInFrames,
   sourceStartFrames,
   durationInFrames,
+  effect,
+  intensity,
+  curve,
+  curvePoints,
 }: {
   url: string
   kind: 'image' | 'video'
@@ -320,16 +333,45 @@ function Metade({
   sourceDurationInFrames: number | null
   sourceStartFrames: number
   durationInFrames: number
+  effect: SceneProps['effect']
+  intensity: number
+  curve: SceneProps['curve']
+  curvePoints: SceneProps['curvePoints']
 }) {
   const frame = useCurrentFrame()
   const ultimoFrame = Math.max((sourceDurationInFrames ?? durationInFrames) - 1, 0)
   const congelando = sourceDurationInFrames !== null && frame > ultimoFrame
+
+  /*
+   * A METADE TAMBEM SE MEXE, e cada uma com o seu movimento.
+   *
+   * Houve uma decisao de deixar o Ken Burns fora da divisao: sao duas imagens
+   * disputando o olho num quadro pela metade, e somar movimento em cada uma
+   * cansaria mais do que ajudaria. Ele usou e discordou -- a divisao ficava
+   * parada no meio de um video que se move o tempo todo, e destoava.
+   *
+   * A CURVA continua sendo do bloco. O que separa e o efeito e a intensidade:
+   * o ritmo de uma emenda e do bloco inteiro, e duas metades acelerando em
+   * tempos diferentes e que dariam o enjoo que a decisao antiga temia.
+   */
+  const eased = interpolate(frame, [0, Math.max(durationInFrames - 1, 1)], [0, 1], {
+    easing: easingFor(curve, curvePoints),
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  })
+  const { scale, x, y } =
+    effect === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(effect, intensity, eased)
 
   const preenchendo = {
     width: '100%',
     height: '100%',
     objectFit: 'cover' as const,
     objectPosition: `${(focusX * 100).toFixed(1)}% ${(focusY * 100).toFixed(1)}%`,
+    // O cover ja preencheu a metade, entao ampliar daqui nunca abre tarja --
+    // o mesmo motivo pelo qual o Ken Burns de tela cheia parte de uma escala
+    // ja ampliada.
+    transform: `scale(${scale}) translate(${x}%, ${y}%)`,
+    transformOrigin: 'center center',
   }
 
   return (

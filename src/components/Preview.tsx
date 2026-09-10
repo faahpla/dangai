@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { familiaDaFonte, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
+import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
 import { useProject } from '@/store/project'
 import { Video } from '@/remotion/Video'
@@ -16,10 +17,6 @@ import { Video } from '@/remotion/Video'
 export function Preview() {
   const audio = useProject((s) => s.audio)
   const images = useProject((s) => s.images)
-  const playhead = useProject((s) => s.playhead)
-  const playing = useProject((s) => s.playing)
-  const setPlayhead = useProject((s) => s.setPlayhead)
-  const setPlaying = useProject((s) => s.setPlaying)
   const music = useProject((s) => s.music)
   const musicGainDb = useProject((s) => s.musicGainDb)
 
@@ -138,6 +135,196 @@ export function Preview() {
       endSec,
     ],
   )
+
+
+  return (
+    <div className="relative aspect-[9/16] h-full shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+      {images.length > 0 && audio ? (
+        <>
+          <Player
+            ref={setPlayer}
+            component={Video}
+            inputProps={inputProps}
+            durationInFrames={durationInFrames}
+            fps={VIDEO_FPS}
+            compositionWidth={VIDEO_WIDTH}
+            compositionHeight={VIDEO_HEIGHT}
+            style={{ width: '100%', height: '100%' }}
+            // Sem controles proprios: a timeline do app e o unico transporte.
+            controls={false}
+            clickToPlay={false}
+            doubleClickToFullscreen={false}
+            acknowledgeRemotionLicense
+          />
+          {/*
+            A narracao toca por fora da composicao porque o Remotion entrega
+            video puro e o audio so entra no mux -- ver Video.tsx.
+          */}
+          <SyncedAudio url={audio.url} />
+          {music && <SyncedAudio url={music.url} volume={musicVolume} loop />}
+          <SfxPreview />
+          <Sincronia player={player} plan={plan} images={images} />
+        </>
+      ) : (
+        <div className="grid h-full place-items-center px-6 text-center text-[11px] text-ink-3">
+          {images.length === 0 ? 'Solte imagens para ver o preview' : 'Solte a narracao'}
+        </div>
+      )}
+
+      <span className="tnum pointer-events-none absolute bottom-2 right-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
+        {VIDEO_WIDTH} x {VIDEO_HEIGHT}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Os SFX postos a mao, tocando no preview.
+ *
+ * Sem isto ele posicionava no escuro: o som so existia no MP4, entao conferir
+ * se o whoosh caiu na silaba certa exigia renderizar. Palavras dele: "como q eu
+ * vou saber se ta certo".
+ *
+ * Cada som e um DISPARO, e nao uma faixa sincronizada como a narracao: ele nao
+ * acompanha o playhead, ele toca do inicio quando a agulha CRUZA o instante
+ * dele. Quem decide isso e `sfxParaDisparar`, em @shared/sfx -- ela vive fora
+ * daqui porque o Player pausa a cada seek externo, e sem isso nao haveria como
+ * PROVAR a regra sem um par de olhos e um par de ouvidos na frente da tela.
+ *
+ * Os automaticos ficam de fora de proposito: eles sao decididos na hora do
+ * render, a partir dos cortes, e nao existem como objeto ate la.
+ */
+function SfxPreview() {
+  const sfxManual = useProject((s) => s.sfxManual)
+  const sfxEnabled = useProject((s) => s.sfxEnabled)
+  const playing = useProject((s) => s.playing)
+  const playhead = useProject((s) => s.playhead)
+
+  const elementos = useRef(new Map<string, HTMLAudioElement>())
+  const anterior = useRef(playhead)
+
+  useEffect(() => {
+    const antes = anterior.current
+    anterior.current = playhead
+
+    if (!playing || !sfxEnabled) return
+
+    // A regra de quem dispara mora em @shared/sfx, onde ela e testada -- aqui
+    // sobra so ligar o resultado nos elementos.
+    for (const id of sfxParaDisparar(sfxManual, antes, playhead)) {
+      const el = elementos.current.get(id)
+      if (!el) continue
+      el.currentTime = 0
+      void el.play().catch(() => undefined)
+    }
+  }, [playhead, playing, sfxEnabled, sfxManual])
+
+  // Pausar o video cala o que estiver tocando -- senao o som continua sozinho
+  // depois que a imagem parou.
+  useEffect(() => {
+    if (playing) return
+    for (const el of elementos.current.values()) {
+      el.pause()
+      el.currentTime = 0
+    }
+  }, [playing])
+
+  return (
+    <>
+      {sfxManual.map((som) =>
+        som.url ? (
+          <audio
+            key={som.id}
+            ref={(el) => {
+              if (el) elementos.current.set(som.id, el)
+              else elementos.current.delete(som.id)
+            }}
+            src={som.url}
+            preload="auto"
+            className="hidden"
+          />
+        ) : null,
+      )}
+    </>
+  )
+}
+
+/**
+ * Elemento de audio cru, sincronizado com o playhead do store.
+ *
+ * Serve a narracao e a musica. A musica repete (`loop`) porque a faixa costuma
+ * ser mais curta que o video -- o mesmo que o -stream_loop faz no render.
+ */
+function SyncedAudio({
+  url,
+  volume = 1,
+  loop = false,
+}: {
+  url: string
+  volume?: number
+  loop?: boolean
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const playing = useProject((s) => s.playing)
+  const playhead = useProject((s) => s.playhead)
+
+  useEffect(() => {
+    const element = audioRef.current
+    if (!element) return
+    if (playing) void element.play().catch(() => undefined)
+    else element.pause()
+  }, [playing])
+
+  useEffect(() => {
+    const element = audioRef.current
+    if (!element) return
+    element.volume = Math.min(Math.max(volume, 0), 1)
+  }, [volume])
+
+  useEffect(() => {
+    const element = audioRef.current
+    if (!element) return
+    // Só corrige quando saiu de sincronia de verdade, senao o proprio play
+    // dispara reposicionamento a cada frame.
+    //
+    // Com loop ligado o currentTime volta para zero sozinho a cada repeticao, e
+    // comparar com o playhead traria a faixa de volta ao inicio do video --
+    // entao a musica so e posicionada quando nao repete.
+    if (loop) return
+    if (Math.abs(element.currentTime - playhead) > 0.25) {
+      element.currentTime = playhead
+    }
+  }, [playhead, loop])
+
+  return <audio ref={audioRef} src={url} preload="auto" loop={loop} className="hidden" />
+}
+
+/**
+ * Tudo que depende do PLAYHEAD, fora do componente que segura o Player.
+ *
+ * O Preview assinava o playhead direto, e com isso re-renderizava trinta vezes
+ * por segundo -- arrastando o <Player> junto na reconciliacao a cada frame que
+ * o video andava. Ele so precisava do playhead para duas coisas: mandar o
+ * player pular quando a agulha e arrastada, e escolher a janela de cenas a
+ * preparar. Nenhuma das duas desenha nada.
+ *
+ * Entao as duas moram aqui, num componente que retorna null. Ele re-renderiza
+ * a cada frame como antes, mas re-renderizar nada e barato -- e o Player parou
+ * de ser tocado.
+ */
+function Sincronia({
+  player,
+  plan,
+  images,
+}: {
+  player: PlayerRef | null
+  plan: ScenePlan | null
+  images: readonly ImageAsset[]
+}) {
+  const playhead = useProject((s) => s.playhead)
+  const playing = useProject((s) => s.playing)
+  const setPlayhead = useProject((s) => s.setPlayhead)
+  const setPlaying = useProject((s) => s.setPlaying)
 
   /*
    * Prepara as proximas cenas -- print e clipe -- antes de elas entrarem.
@@ -274,163 +461,5 @@ export function Preview() {
     }
   }, [player, setPlayhead, setPlaying])
 
-  return (
-    <div className="relative aspect-[9/16] h-full shrink-0 overflow-hidden rounded-md border border-line bg-surface">
-      {images.length > 0 && audio ? (
-        <>
-          <Player
-            ref={setPlayer}
-            component={Video}
-            inputProps={inputProps}
-            durationInFrames={durationInFrames}
-            fps={VIDEO_FPS}
-            compositionWidth={VIDEO_WIDTH}
-            compositionHeight={VIDEO_HEIGHT}
-            style={{ width: '100%', height: '100%' }}
-            // Sem controles proprios: a timeline do app e o unico transporte.
-            controls={false}
-            clickToPlay={false}
-            doubleClickToFullscreen={false}
-            acknowledgeRemotionLicense
-          />
-          {/*
-            A narracao toca por fora da composicao porque o Remotion entrega
-            video puro e o audio so entra no mux -- ver Video.tsx.
-          */}
-          <SyncedAudio url={audio.url} />
-          {music && <SyncedAudio url={music.url} volume={musicVolume} loop />}
-          <SfxPreview />
-        </>
-      ) : (
-        <div className="grid h-full place-items-center px-6 text-center text-[11px] text-ink-3">
-          {images.length === 0 ? 'Solte imagens para ver o preview' : 'Solte a narracao'}
-        </div>
-      )}
-
-      <span className="tnum pointer-events-none absolute bottom-2 right-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
-        {VIDEO_WIDTH} x {VIDEO_HEIGHT}
-      </span>
-    </div>
-  )
-}
-
-/**
- * Os SFX postos a mao, tocando no preview.
- *
- * Sem isto ele posicionava no escuro: o som so existia no MP4, entao conferir
- * se o whoosh caiu na silaba certa exigia renderizar. Palavras dele: "como q eu
- * vou saber se ta certo".
- *
- * Cada som e um DISPARO, e nao uma faixa sincronizada como a narracao: ele nao
- * acompanha o playhead, ele toca do inicio quando a agulha CRUZA o instante
- * dele. Quem decide isso e `sfxParaDisparar`, em @shared/sfx -- ela vive fora
- * daqui porque o Player pausa a cada seek externo, e sem isso nao haveria como
- * PROVAR a regra sem um par de olhos e um par de ouvidos na frente da tela.
- *
- * Os automaticos ficam de fora de proposito: eles sao decididos na hora do
- * render, a partir dos cortes, e nao existem como objeto ate la.
- */
-function SfxPreview() {
-  const sfxManual = useProject((s) => s.sfxManual)
-  const sfxEnabled = useProject((s) => s.sfxEnabled)
-  const playing = useProject((s) => s.playing)
-  const playhead = useProject((s) => s.playhead)
-
-  const elementos = useRef(new Map<string, HTMLAudioElement>())
-  const anterior = useRef(playhead)
-
-  useEffect(() => {
-    const antes = anterior.current
-    anterior.current = playhead
-
-    if (!playing || !sfxEnabled) return
-
-    // A regra de quem dispara mora em @shared/sfx, onde ela e testada -- aqui
-    // sobra so ligar o resultado nos elementos.
-    for (const id of sfxParaDisparar(sfxManual, antes, playhead)) {
-      const el = elementos.current.get(id)
-      if (!el) continue
-      el.currentTime = 0
-      void el.play().catch(() => undefined)
-    }
-  }, [playhead, playing, sfxEnabled, sfxManual])
-
-  // Pausar o video cala o que estiver tocando -- senao o som continua sozinho
-  // depois que a imagem parou.
-  useEffect(() => {
-    if (playing) return
-    for (const el of elementos.current.values()) {
-      el.pause()
-      el.currentTime = 0
-    }
-  }, [playing])
-
-  return (
-    <>
-      {sfxManual.map((som) =>
-        som.url ? (
-          <audio
-            key={som.id}
-            ref={(el) => {
-              if (el) elementos.current.set(som.id, el)
-              else elementos.current.delete(som.id)
-            }}
-            src={som.url}
-            preload="auto"
-            className="hidden"
-          />
-        ) : null,
-      )}
-    </>
-  )
-}
-
-/**
- * Elemento de audio cru, sincronizado com o playhead do store.
- *
- * Serve a narracao e a musica. A musica repete (`loop`) porque a faixa costuma
- * ser mais curta que o video -- o mesmo que o -stream_loop faz no render.
- */
-function SyncedAudio({
-  url,
-  volume = 1,
-  loop = false,
-}: {
-  url: string
-  volume?: number
-  loop?: boolean
-}) {
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  const playing = useProject((s) => s.playing)
-  const playhead = useProject((s) => s.playhead)
-
-  useEffect(() => {
-    const element = audioRef.current
-    if (!element) return
-    if (playing) void element.play().catch(() => undefined)
-    else element.pause()
-  }, [playing])
-
-  useEffect(() => {
-    const element = audioRef.current
-    if (!element) return
-    element.volume = Math.min(Math.max(volume, 0), 1)
-  }, [volume])
-
-  useEffect(() => {
-    const element = audioRef.current
-    if (!element) return
-    // Só corrige quando saiu de sincronia de verdade, senao o proprio play
-    // dispara reposicionamento a cada frame.
-    //
-    // Com loop ligado o currentTime volta para zero sozinho a cada repeticao, e
-    // comparar com o playhead traria a faixa de volta ao inicio do video --
-    // entao a musica so e posicionada quando nao repete.
-    if (loop) return
-    if (Math.abs(element.currentTime - playhead) > 0.25) {
-      element.currentTime = playhead
-    }
-  }, [playhead, loop])
-
-  return <audio ref={audioRef} src={url} preload="auto" loop={loop} className="hidden" />
+  return null
 }

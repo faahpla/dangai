@@ -437,6 +437,22 @@ export const sceneSchema = z.object({
   /** Quanto o Ken Burns se move. 0.10 a 0.15; acima disso fica tosco. */
   intensity: z.number().min(0.02).max(0.2),
   /**
+   * O movimento da metade DE BAIXO, na tela dividida.
+   *
+   * `null` quer dizer "segue a de cima" -- e nao "parado". E isso que faz o
+   * projeto antigo abrir ja com movimento nas duas metades: ate 10/09 a divisao
+   * simplesmente nao tinha Ken Burns, por uma decisao que dizia que duas
+   * imagens se mexendo no mesmo quadro cansam o olho. Ele discordou depois de
+   * usar, e agora quem decide isso e ele, metade por metade.
+   *
+   * Preenchido, vale o que esta aqui -- inclusive 'nenhum', que e como se deixa
+   * a de baixo parada com a de cima andando.
+   *
+   * `intensityB` segue a mesma regra: null usa a intensidade do bloco.
+   */
+  effectB: z.enum(SCENE_EFFECTS).nullable().default(null),
+  intensityB: z.number().min(0.02).max(0.2).nullable().default(null),
+  /**
    * Com default de proposito: projeto salvo antes da curva existir abre igual, e
    * a IA nao precisa escolher. O planner valida a saida dela contra este schema,
    * entao o campo ausente vira ease-in-out sozinho -- ritmo de camera e decisao
@@ -773,6 +789,16 @@ export const renderPropsSchema = z.object({
           focusY: z.number().min(0).max(1).default(0.5),
           sourceDurationInFrames: z.number().int().positive().nullable().default(null),
           sourceStartFrames: z.number().int().nonnegative().default(0),
+          /**
+           * O movimento desta metade, ja resolvido.
+           *
+           * Aqui nao ha `null`: quem decide se a de baixo segue a de cima ou
+           * tem movimento proprio e o plano, e o Remotion so recebe o resultado.
+           * Com default para props antigas continuarem validas -- e o default e
+           * 'nenhum' porque props antigas vem de quando a divisao nao se mexia.
+           */
+          effect: z.enum(SCENE_EFFECTS).default('nenhum'),
+          intensity: z.number().min(0.02).max(0.2).default(0.12),
         })
         .nullable()
         .default(null),

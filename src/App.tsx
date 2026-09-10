@@ -223,8 +223,16 @@ export function App() {
         </main>
       ) : (
         <main className="enter flex min-h-0 flex-1 flex-col gap-5 p-6">
+          {/*
+            A ORDEM E: controles do bloco, area que reveza, preview.
+
+            O preview morava na esquerda, que e onde o olho cai primeiro. Mas
+            quem edita passa o dia nos controles, e o preview e para CONFERIR --
+            ele se olha depois de mexer, nao antes. Pedido dele, e a ordem que
+            todo editor de video usa.
+          */}
           <div className="flex min-h-0 flex-1 gap-6">
-            <Preview />
+            <SceneCard />
             <div className="flex min-w-0 flex-1 flex-col gap-4">
               <ImageStrip />
               <Automount />
@@ -241,7 +249,7 @@ export function App() {
               */}
               {captionsOpen ? <CaptionEditor /> : <SceneEdit />}
             </div>
-            <SceneCard />
+            <Preview />
           </div>
 
           <RenderBar />
