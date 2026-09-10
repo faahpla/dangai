@@ -92,8 +92,13 @@ export function presentationFor(transition: Transition): OpaquePresentation {
       return slide({ direction: 'from-right' }) as OpaquePresentation
     case 'slide-right':
       return slide({ direction: 'from-left' }) as OpaquePresentation
+    case 'whip-pan-left':
+    // O valor sem sentido vem de projeto salvo antes de o par existir, e o que
+    // ele fazia era o chicote para a esquerda. Cai aqui para abrir igual.
     case 'whip-pan':
       return whipPan({ direction: 'left' }) as OpaquePresentation
+    case 'whip-pan-right':
+      return whipPan({ direction: 'right' }) as OpaquePresentation
     case 'cut':
       return fade() as OpaquePresentation
   }

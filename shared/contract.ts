@@ -163,8 +163,37 @@ export const KEN_BURNS_EFFECTS = [
 export const SCENE_EFFECTS = ['nenhum', ...KEN_BURNS_EFFECTS] as const
 export type SceneEffect = (typeof SCENE_EFFECTS)[number]
 
-export const TRANSITIONS = ['cut', 'crossfade', 'slide-left', 'slide-right', 'whip-pan'] as const
+/**
+ * O whip-pan tem os DOIS sentidos, como o slide sempre teve.
+ *
+ * Ate 10/09 existia um so, preso na esquerda -- entao emendar duas cenas com
+ * chicote para a direita era impossivel, e nao por decisao nenhuma: o valor
+ * antigo simplesmente nao dizia o lado.
+ *
+ * `whip-pan` sem sentido continua no enum de proposito. Projeto salvo antes
+ * disto guarda esse valor, e tira-lo faria o arquivo nao abrir mais. Ele nao
+ * aparece na tela e vale como esquerda, que era o que ele fazia.
+ */
+export const TRANSITIONS = [
+  'cut',
+  'crossfade',
+  'slide-left',
+  'slide-right',
+  'whip-pan-left',
+  'whip-pan-right',
+  'whip-pan',
+] as const
 export type Transition = (typeof TRANSITIONS)[number]
+
+/** O que a tela oferece. Sem o `whip-pan` antigo, que so existe para abrir projeto velho. */
+export const TRANSITIONS_NA_TELA = [
+  'cut',
+  'crossfade',
+  'slide-left',
+  'slide-right',
+  'whip-pan-left',
+  'whip-pan-right',
+] as const satisfies readonly Transition[]
 
 /**
  * Duracao de cada transicao em frames. A spec pede entre 120ms e 250ms; a
@@ -180,7 +209,10 @@ export const TRANSITION_FRAMES: Readonly<Record<Transition, number>> = {
   crossfade: 5, // 209ms
   'slide-left': 4, // 167ms
   'slide-right': 4,
-  'whip-pan': 3, // 125ms
+  'whip-pan-left': 3, // 125ms
+  'whip-pan-right': 3,
+  // O valor antigo, que so chega de projeto salvo. Mesma duracao de sempre.
+  'whip-pan': 3,
 }
 
 /**

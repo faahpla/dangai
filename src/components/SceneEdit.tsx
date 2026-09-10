@@ -4,7 +4,7 @@ import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
   ROTATIONS,
-  TRANSITIONS,
+  TRANSITIONS_NA_TELA,
   type CurvePoints,
   type MotionCurve,
   type Transition,
@@ -56,6 +56,9 @@ export function SceneEdit() {
    * era impossivel. Palavras dele: "so consigo mexer na primeira".
    */
   const imageB = scene.imageIndexB === null ? undefined : images[scene.imageIndexB]
+
+  /** O bloco seguinte: e a `transitionIn` DELE que descreve a saida deste. */
+  const proxima = plan?.scenes[index + 1]
 
   /*
    * O que a metade de baixo esta fazendo AGORA.
@@ -363,24 +366,59 @@ export function SceneEdit() {
 
       </Grupo>
 
+      {/*
+        UMA EMENDA, DOIS PONTOS DE ACESSO.
+
+        A transicao mora ENTRE dois blocos: a saida deste e a entrada do
+        proximo sao o mesmo crossfade acontecendo uma vez. Por isso nao ha dois
+        campos -- haveria como os dois lados discordarem, e alguem teria que
+        perder em silencio.
+        O que existe e o mesmo dado alcancavel dos dois lados: "Entrada" escreve
+        no proprio bloco, "Saida" escreve no seguinte. Mexer na saida daqui e o
+        mesmo que ir ao proximo bloco e mexer na entrada dele.
+      */}
       <Grupo titulo="Transicao">
-        {index === 0 ? (
-          <p className="text-[11px] leading-relaxed text-ink-3">
-            O primeiro bloco nao tem de onde entrar.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {TRANSITIONS.map((transition) => (
-              <Chip
-                key={transition}
-                active={scene.transitionIn === transition}
-                onClick={() => updateScene(index, { transitionIn: transition })}
-              >
-                {TRANSITION_LABEL[transition]}
-              </Chip>
-            ))}
-          </div>
-        )}
+        <Field label="Entrada (emenda com o bloco anterior)">
+          {index === 0 ? (
+            <p className="text-[11px] leading-relaxed text-ink-3">
+              O primeiro bloco nao tem de onde entrar.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {TRANSITIONS_NA_TELA.map((transition) => (
+                <Chip
+                  key={transition}
+                  active={scene.transitionIn === transition}
+                  onClick={() => updateScene(index, { transitionIn: transition })}
+                >
+                  {TRANSITION_LABEL[transition]}
+                </Chip>
+              ))}
+            </div>
+          )}
+        </Field>
+
+        <Field label="Saida (emenda com o proximo bloco)">
+          {proxima === undefined ? (
+            <p className="text-[11px] leading-relaxed text-ink-3">
+              O ultimo bloco nao tem para onde sair.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {TRANSITIONS_NA_TELA.map((transition) => (
+                <Chip
+                  key={transition}
+                  active={proxima.transitionIn === transition}
+                  // Escreve no bloco SEGUINTE: e a entrada dele que descreve
+                  // esta emenda.
+                  onClick={() => updateScene(index + 1, { transitionIn: transition })}
+                >
+                  {TRANSITION_LABEL[transition]}
+                </Chip>
+              ))}
+            </div>
+          )}
+        </Field>
       </Grupo>
     </div>
   )
@@ -568,10 +606,21 @@ const CURVE_HINT: Readonly<Record<MotionCurve, string>> = {
   'ease-in': 'Parte devagar e acelera. Cria tensao entrando no corte.',
 }
 
+/*
+ * O nome diz PARA ONDE A IMAGEM VAI, e nao de onde ela vem.
+ *
+ * "Slide esquerda" ja era isso por dentro -- o bloco novo entra pela direita e
+ * tudo escorrega para a esquerda --, mas o rotulo dava para ler dos dois
+ * jeitos, e quem le "esquerda" tende a esperar a cena chegando desse lado.
+ * "Desliza p/ esquerda" fecha a duvida sem mudar nada do que o efeito faz.
+ */
 const TRANSITION_LABEL: Readonly<Record<Transition, string>> = {
   cut: 'Corte seco',
   crossfade: 'Crossfade',
-  'slide-left': 'Slide esquerda',
-  'slide-right': 'Slide direita',
-  'whip-pan': 'Whip-pan',
+  'slide-left': 'Desliza p/ esquerda',
+  'slide-right': 'Desliza p/ direita',
+  'whip-pan-left': 'Whip-pan p/ esquerda',
+  'whip-pan-right': 'Whip-pan p/ direita',
+  // Fora da tela: so chega de projeto salvo antes de o par existir.
+  'whip-pan': 'Whip-pan p/ esquerda',
 }
