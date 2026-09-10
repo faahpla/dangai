@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Minus, Plus, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { SFX_GAIN_MAX, SFX_GAIN_MIN } from '@shared/contract'
-import { MIN_SCENE_SEC } from '@shared/plan'
 import { useProject, formatTimecode } from '@/store/project'
 import { Waveform } from './Waveform'
 
@@ -333,22 +332,19 @@ export function Timeline() {
               const index = i + 1
               const image = images[scene.imageIndex]
               /*
-               * A fronteira nao tem para onde ir.
+               * Nao ha mais alca travada.
                *
-               * `moveBoundary` mexe SO nos dois blocos vizinhos -- essa e a
-               * regra, e ela fica. Mas quando os dois juntos nao comportam dois
-               * minimos, ela desistia calada: ele arrastava, nada acontecia, e
-               * parecia defeito. Agora a alca diz que bateu no limite antes de
-               * ele gastar o gesto.
+               * Ela existia porque `moveBoundary` recusava encolher um bloco
+               * abaixo de 0,6s, e a recusa era calada -- entao a alca avisava
+               * antes do gesto. Agora o arraste e livre: o piso vale so na
+               * montagem, e no ajuste a mao sobra o limite de um frame, que
+               * ninguem alcanca de proposito.
                */
-              const anterior = scenes[index - 1]
-              const travada = anterior !== undefined && scene.end - anterior.start <= MIN_SCENE_SEC * 2
               return (
                 <div
                   key={`limite-${image?.id ?? index}-${index}`}
                   onPointerDown={(event) => {
                     event.stopPropagation()
-                    if (travada) return
                     event.currentTarget.setPointerCapture(event.pointerId)
                     setDragging(index)
                   }}
@@ -357,11 +353,6 @@ export function Timeline() {
                   }}
                   onPointerUp={stopDragging}
                   onPointerCancel={stopDragging}
-                  title={
-                    travada
-                      ? `Os dois blocos ja estao no minimo de ${MIN_SCENE_SEC}s. Para abrir espaco, estique um dos vizinhos primeiro.`
-                      : undefined
-                  }
                   style={{ left: `${(scene.start / duration) * 100}%` }}
                   /*
                    * A alca vive SO na faixa dos blocos, e nao na altura inteira.
@@ -375,34 +366,18 @@ export function Timeline() {
                    * Agora o waveform inteiro e da agulha e a faixa de baixo e
                    * dos blocos: um gesto por lugar, como em qualquer editor.
                    */
-                  className={[
-                    'absolute bottom-0 h-[38px] -ml-[5px] w-[10px]',
-                    travada ? 'cursor-not-allowed' : 'cursor-col-resize',
-                  ].join(' ')}
-                  aria-label={
-                    travada
-                      ? `Limite do bloco ${index + 1} no minimo, sem espaco para ajustar`
-                      : `Ajustar limite do bloco ${index + 1}`
-                  }
+                  className="absolute bottom-0 h-[38px] -ml-[5px] w-[10px] cursor-col-resize"
+                  aria-label={`Ajustar limite do bloco ${index + 1}`}
                 >
                   {/*
                     O traco continua subindo pela altura toda -- ele so MOSTRA
                     onde o corte esta, e enxergar isso contra o waveform e o que
                     permite mirar. Sem eventos: quem pega e a caixa de baixo.
-
-                    Travado, ele aparece em vermelho no hover. O aviso so surge
-                    quando o cursor chega ali: pintar de vermelho o tempo todo
-                    encheria a linha de alarme por uma coisa que nem sempre
-                    incomoda.
                   */}
                   <span
                     className={[
                       'pointer-events-none absolute -top-[66px] bottom-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
-                      dragging === index
-                        ? 'bg-accent'
-                        : travada
-                          ? 'bg-transparent group-hover:bg-danger'
-                          : 'bg-transparent group-hover:bg-line-strong',
+                      dragging === index ? 'bg-accent' : 'bg-transparent group-hover:bg-line-strong',
                     ].join(' ')}
                   />
                 </div>

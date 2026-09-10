@@ -24,6 +24,7 @@ import {
   SFX_GAIN_MAX,
   SFX_GAIN_MIN,
   SFX_MINIMO_SEC,
+  VIDEO_FPS,
   CAPTION_COLOR_DEFAULT,
   familiaDaFonte,
   CAPTION_Y_DEFAULT,
@@ -646,12 +647,22 @@ function planoDosBlocos(
      * -- o que muda e a curva e a intensidade. Remover o movimento de um bloco
      * especifico continua sendo um clique no card da cena.
      */
-    effect: KEN_BURNS_EFFECTS[index % KEN_BURNS_EFFECTS.length]!,
+    /*
+     * TELA DIVIDIDA NASCE COM AS METADES INDO PARA LADOS OPOSTOS.
+     *
+     * Cima para a esquerda, baixo para a direita. Duas metades andando para o
+     * mesmo lado leem como uma imagem so escorregando; indo em sentidos
+     * contrarios, cada uma se afirma como uma cena, e a divisao ganha a
+     * tensao que e o motivo de existir dela -- reacao em cima, causa embaixo.
+     *
+     * E so o PONTO DE PARTIDA. Os dois controles ficam no card do bloco, e
+     * trocar qualquer um deles nao traz este padrao de volta.
+     */
+    effect: pares?.[index]?.[1] !== undefined
+      ? ('pan-left' as const)
+      : KEN_BURNS_EFFECTS[index % KEN_BURNS_EFFECTS.length]!,
     intensity: CLIP_INTENSITY,
-    // A metade de baixo segue a de cima ate ele separar as duas -- e aqui,
-    // onde a montagem automatica ja emparelha as divididas, e o lugar onde
-    // isso mais aparece.
-    effectB: null,
+    effectB: pares?.[index]?.[1] !== undefined ? ('pan-right' as const) : null,
     intensityB: null,
     curve: CLIP_MOTION_CURVE,
     // Parte do comeco do clipe. Mover o ponto de entrada e escolha dele, no
@@ -1801,8 +1812,23 @@ export const useProject = create<ProjectState>((set, get) => ({
     const previous = plan.scenes[index - 1]!
     const next = plan.scenes[index]!
 
-    const min = previous.start + MIN_SCENE_SEC
-    const max = next.end - MIN_SCENE_SEC
+    /*
+     * O ARRASTE E LIVRE. O piso de 0,6s vale na MONTAGEM, nao aqui.
+     *
+     * `MIN_SCENE_SEC` existe para nenhum bloco NASCER piscando, e nisso ele
+     * continua mandando: e o planner, o snap e o sanitize que o respeitam. Mas
+     * ele tambem barrava o ajuste a mao, e a fronteira entre dois blocos curtos
+     * simplesmente nao andava -- ele arrastava e nada acontecia. Palavras dele:
+     * "nao quero ser barrado quando quero expandir ou diminuir um clipe".
+     *
+     * Sobra o unico limite que nao e gosto e sim aritmetica: um bloco nao pode
+     * ter duracao zero nem negativa, senao ele some do video e leva junto o
+     * proprio meio de ser recuperado. Um frame de cada lado basta para isso, e
+     * um frame e curto o suficiente para nao atrapalhar ninguem.
+     */
+    const umFrame = 1 / VIDEO_FPS
+    const min = previous.start + umFrame
+    const max = next.end - umFrame
     if (max <= min) return
 
     const clamped = Math.min(Math.max(seconds, min), max)
