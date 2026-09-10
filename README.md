@@ -52,10 +52,20 @@ npm run dev
 ### Publicar uma versão
 
 ```bash
-npm version patch
+npm version minor        # patch, se for só correção
+git push
+git push origin vX.Y.Z
 npm run release
-git push --follow-tags
 ```
+
+**O push vem ANTES do release.** O `npm run release` publica com
+`--publish always`, e o GitHub recusa criar uma release publicada numa tag que
+o remoto não conhece: `Published releases must have a valid tag`. A ordem
+inversa falha depois de gastar todo o tempo de empacotamento.
+
+A tag vai num push próprio porque `--follow-tags` só envia tags **anotadas**, e
+as deste projeto são leves — `git push --follow-tags` deixa a tag para trás sem
+reclamar.
 
 `npm run release` monta o instalador e publica direto na release do GitHub.
 Precisa de `GH_TOKEN` no ambiente — `gh auth token` serve.
