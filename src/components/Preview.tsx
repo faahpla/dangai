@@ -326,10 +326,6 @@ function Sincronia({
   const setPlayhead = useProject((s) => s.setPlayhead)
   const setPlaying = useProject((s) => s.setPlaying)
 
-  // Medidor temporario -- ver o comentario no onFrame, mais abaixo.
-  const [fps, setFps] = useState(0)
-  const medidor = useRef({ frames: 0, desde: performance.now() })
-
   /*
    * Prepara as proximas cenas -- print e clipe -- antes de elas entrarem.
    *
@@ -464,25 +460,6 @@ function Sincronia({
     if (!player) return
 
     const onFrame = (event: { detail: { frame: number } }): void => {
-      /*
-       * MEDIDOR TEMPORARIO -- para descobrir o quanto o preview esta travando.
-       *
-       * Conta quantos frames o player REALMENTE entrega por segundo. A
-       * composicao roda a 30, entao 30 e fluido, 15 e a metade da taxa, e
-       * abaixo de 10 e o travamento que ele descreve. Sem este numero, mexer em
-       * desempenho aqui e chutar -- e ja foi chutado duas vezes.
-       *
-       * Sai assim que a causa estiver identificada.
-       */
-      const c = medidor.current
-      c.frames += 1
-      const agora = performance.now()
-      if (agora - c.desde >= 1000) {
-        setFps(Math.round((c.frames * 1000) / (agora - c.desde)))
-        c.frames = 0
-        c.desde = agora
-      }
-
       // Anota antes de escrever no store: o efeito de sincronizacao roda logo
       // em seguida e precisa reconhecer este numero como sendo dele.
       frameDoPlayer.current = event.detail.frame
@@ -501,13 +478,5 @@ function Sincronia({
     }
   }, [player, setPlayhead, setPlaying])
 
-  /*
-   * O numero fica no canto de cima, longe do "1080 x 1920" que ja mora embaixo.
-   * Temporario: sai quando a causa do travamento estiver achada.
-   */
-  return (
-    <span className="tnum pointer-events-none absolute left-2 top-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
-      {playing ? `${fps} fps` : 'parado'}
-    </span>
-  )
+  return null
 }
