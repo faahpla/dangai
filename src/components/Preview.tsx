@@ -185,10 +185,27 @@ export function Preview() {
     }
   }, [plan, images, blocoAtual])
 
+  /*
+   * O ultimo frame que o PROPRIO player anunciou.
+   *
+   * Os dois lados escrevem no playhead: o player avisa cada frame que passa, e
+   * o store manda o player pular quando ele arrasta a agulha. Sem saber de onde
+   * veio a mexida, os dois entravam em rebote -- o player emitia o frame 90, o
+   * store guardava 3,0s, e o efeito abaixo comparava isso com o frame que o
+   * player JA estava tocando (91 ou 92) e mandava voltar para 90. Trinta vezes
+   * por segundo, e esse puxao para tras que aparece como tremor na imagem.
+   *
+   * Guardando o numero que o player anunciou, a volta e reconhecida e ignorada.
+   * O arraste da agulha traz um numero que o player nao anunciou, entao continua
+   * fazendo o player pular -- inclusive com o video tocando.
+   */
+  const frameDoPlayer = useRef<number | null>(null)
+
   // O store e a fonte da verdade do playhead; o player segue.
   useEffect(() => {
     if (!player) return
     const target = Math.round(playhead * VIDEO_FPS)
+    if (frameDoPlayer.current === target) return
     if (Math.abs(player.getCurrentFrame() - target) > 1) {
       player.seekTo(target)
     }
@@ -205,6 +222,9 @@ export function Preview() {
     if (!player) return
 
     const onFrame = (event: { detail: { frame: number } }): void => {
+      // Anota antes de escrever no store: o efeito de sincronizacao roda logo
+      // em seguida e precisa reconhecer este numero como sendo dele.
+      frameDoPlayer.current = event.detail.frame
       setPlayhead(event.detail.frame / VIDEO_FPS)
     }
     const onPause = (): void => setPlaying(false)

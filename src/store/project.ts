@@ -1802,21 +1802,22 @@ export const useProject = create<ProjectState>((set, get) => ({
   /**
    * Parte em dois o bloco que esta sob a agulha.
    *
-   * A REGRA "UMA IMAGEM, UM BLOCO" CONTINUA DE PE -- ela vale contra o app
-   * repartir sozinho, que foi o que se removeu do plano automatico. Aqui quem
-   * corta e ele, no ponto que ele escolheu: quem aperta C esta pedindo o bloco
-   * a mais e sabe de onde ele veio.
+   * UMA IMAGEM, UM BLOCO -- inclusive aqui. A regra vale contra o app repartir
+   * sozinho, e quem aperta C esta pedindo o bloco a mais. Mas o bloco novo ganha
+   * a PROPRIA entrada na lista de imagens, uma copia da que ele partiu, em vez
+   * de as duas metades dividirem a mesma.
    *
-   * As duas metades ficam com a MESMA imagem. Serve para dar ritmo e para trocar
-   * o efeito no meio de um print que ficou tempo demais na tela.
+   * Foi assim que a primeira versao errou. Ela deixava as duas metades com o
+   * mesmo `imageIndex`, e o app inteiro conta com a igualdade "cena i usa imagem
+   * i": `openLibraryToReplace` guarda o indice da CENA e depois escreve em
+   * `images[indice]`. Depois de um corte, mandar trocar a segunda metade
+   * trocava o clipe do bloco SEGUINTE -- que foi exatamente o que ele viu.
    *
-   * Nao mexe no `sanitize`: ele reconstroi o plano com uma cena por imagem e
-   * desfaria este corte. Como ele so roda quando o plano e refeito do zero, o
-   * corte sobrevive a tudo menos a uma reanalise -- que, essa sim, refaz o
-   * video inteiro e por isso pode mesmo esquecer o corte.
+   * Duplicar a imagem conserta isso na raiz, e de quebra faz o corte sobreviver
+   * ao `sanitize`, que reconstroi o plano contando uma cena por imagem.
    */
   splitSceneAtPlayhead: () => {
-    const { plan, playhead } = get()
+    const { plan, playhead, images } = get()
     if (!plan) return
 
     const index = plan.scenes.findIndex(
@@ -1830,11 +1831,31 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (playhead - scene.start < MIN_SCENE_SEC) return
     if (scene.end - playhead < MIN_SCENE_SEC) return
 
+    const original = images[scene.imageIndex]
+    if (!original) return
+
+    // A copia entra logo DEPOIS da original: na fita da Biblioteca as imagens
+    // aparecem na ordem dos blocos, e mandar a copia para o fim da lista poria
+    // na tela uma ordem que nao existe na linha do tempo.
+    const at = scene.imageIndex + 1
+    const copia = { ...original, id: `${original.id}+corte${Math.round(playhead * 1000)}` }
+
+    /** Todo indice a partir do ponto de insercao anda uma casa. */
+    const reindexar = (alvo: Scene): Scene => ({
+      ...alvo,
+      imageIndex: alvo.imageIndex >= at ? alvo.imageIndex + 1 : alvo.imageIndex,
+      imageIndexB:
+        alvo.imageIndexB !== null && alvo.imageIndexB >= at
+          ? alvo.imageIndexB + 1
+          : alvo.imageIndexB,
+    })
+
     const scenes = [
-      ...plan.scenes.slice(0, index),
-      { ...scene, end: playhead },
+      ...plan.scenes.slice(0, index).map(reindexar),
+      { ...reindexar(scene), end: playhead },
       {
-        ...scene,
+        ...reindexar(scene),
+        imageIndex: at,
         start: playhead,
         /*
          * O clipe CONTINUA de onde parou, em vez de rebobinar.
@@ -1848,10 +1869,17 @@ export const useProject = create<ProjectState>((set, get) => ({
         // que ele nao pediu, bem no ponto onde ele mandou cortar.
         transitionIn: 'cut' as const,
       },
-      ...plan.scenes.slice(index + 1),
+      ...plan.scenes.slice(index + 1).map(reindexar),
     ]
 
-    set({ plan: { ...plan, scenes }, planEdited: true })
+    set({
+      images: [...images.slice(0, at), copia, ...images.slice(at)],
+      plan: { ...plan, scenes },
+      planEdited: true,
+      // A segunda metade fica selecionada: quem corta costuma querer mexer
+      // justamente no pedaco novo.
+      selectedScene: index + 1,
+    })
   },
 
   setScript: async (script) => {
