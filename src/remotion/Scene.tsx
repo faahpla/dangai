@@ -188,7 +188,19 @@ export function Scene({
           incomodo que so existe na edicao nao vale pendurar um elemento a mais
           no caminho do arquivo final.
         */}
-        {kind === 'video' && thumbnail && !getRemotionEnvironment().isRendering && (
+        {/*
+          E so nos primeiros quadros: passado isso, ela vira peso morto.
+
+          A cama existe para cobrir a ENTRADA do bloco, enquanto o <video>
+          ainda procura o quadro. Deixa-la montada o bloco inteiro punha uma
+          camada de 1080x1920 embaixo de todo clipe do video, para o compositor
+          empilhar em cada frame -- e o preview ja anda apertado (medido: 24
+          quadros por segundo num bloco comum, 14 num dividido).
+
+          Doze quadros sao 0,4s: tempo de sobra para o video pintar, e curto o
+          bastante para nao pesar o resto do bloco.
+        */}
+        {kind === 'video' && thumbnail && frame < 12 && !getRemotionEnvironment().isRendering && (
           // Absoluta, senao ela nao ficaria ATRAS do clipe: os dois sao filhos
           // da mesma caixa e, no fluxo normal, a cama empurraria o video para
           // baixo em vez de ficar embaixo dele.

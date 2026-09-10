@@ -66,7 +66,12 @@ export function SceneEdit() {
    */
   const efeitoB = scene.effectB ?? scene.effect
   const intensidadeB = scene.intensityB ?? scene.intensity
-  const separada = scene.effectB !== null || scene.intensityB !== null
+  /*
+   * `!= null` e nao `!== null`: num projeto salvo antes destes campos existirem
+   * eles chegam como UNDEFINED, e `undefined !== null` e verdadeiro -- a tela
+   * diria "separada" para um bloco que na verdade segue a metade de cima.
+   */
+  const separada = scene.effectB != null || scene.intensityB != null
 
   const total = plan?.scenes.length ?? 0
 
@@ -134,7 +139,7 @@ export function SceneEdit() {
         na frente e sozinho na linha: e o padrao do clipe, e e o unico jeito de
         deixar um print parado, que antes nao existia.
       */}
-      <Field label="Efeito">
+      <Field label={imageB ? 'Efeito da metade de cima' : 'Efeito'}>
         <Chip
           active={scene.effect === 'nenhum'}
           onClick={() => updateScene(index, { effect: 'nenhum' })}
@@ -161,24 +166,94 @@ export function SceneEdit() {
 
       {/* Intensidade e ritmo so fazem sentido havendo movimento. */}
       {scene.effect !== 'nenhum' && (
+        <Field label={imageB ? 'Intensidade da metade de cima' : 'Intensidade'}>
+          <div className="flex items-center gap-2.5">
+            <input
+              type="range"
+              min={0.04}
+              max={0.15}
+              step={0.01}
+              value={scene.intensity}
+              onChange={(event) => updateScene(index, { intensity: Number(event.target.value) })}
+              className="dangai-range min-w-0 flex-1"
+            />
+            <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
+              {Math.round(scene.intensity * 100)}%
+            </span>
+          </div>
+        </Field>
+      )}
+
+      {/*
+        A METADE DE BAIXO VEM AQUI, e nao no fim do painel.
+
+        Ela estava depois da intensidade, do ritmo e dos presets de curva -- ou
+        seja, fora da vista numa coluna que rola. Ele mexeu no efeito, viu as
+        duas metades andarem juntas e concluiu que o controle nao existia:
+        "se eu coloco movimento pan esq ele faz nas duas". O controle existia;
+        estava enterrado.
+
+        Agora as duas metades ficam uma embaixo da outra, na mesma ordem do
+        Enquadramento -- cima, depois baixo -- e o que e do BLOCO (o ritmo) vem
+        depois das duas.
+      */}
+      {imageB && (
         <>
-          <Field label="Intensidade">
-            <div className="flex items-center gap-2.5">
-              <input
-                type="range"
-                min={0.04}
-                max={0.15}
-                step={0.01}
-                value={scene.intensity}
-                onChange={(event) => updateScene(index, { intensity: Number(event.target.value) })}
-                className="dangai-range min-w-0 flex-1"
-              />
-              <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
-                {Math.round(scene.intensity * 100)}%
-              </span>
+          <Field label="Efeito da metade de baixo">
+            <Chip
+              active={!separada}
+              // Volta os dois campos para null de uma vez: "igual" e a ausencia
+              // de escolha, e nao uma copia dos valores de cima -- copiados,
+              // eles parariam de acompanhar a de cima na proxima mudanca.
+              onClick={() => updateScene(index, { effectB: null, intensityB: null })}
+            >
+              Igual a de cima
+            </Chip>
+            <Chip
+              active={separada && efeitoB === 'nenhum'}
+              onClick={() => updateScene(index, { effectB: 'nenhum' })}
+            >
+              {imageB.kind === 'video' ? 'Parada (so o do clipe)' : 'Parada'}
+            </Chip>
+            <div className="grid grid-cols-2 gap-1.5">
+              {KEN_BURNS_EFFECTS.map((effect) => (
+                <Chip
+                  key={effect}
+                  active={separada && efeitoB === effect}
+                  onClick={() => updateScene(index, { effectB: effect })}
+                >
+                  {EFFECT_LABEL[effect]}
+                </Chip>
+              ))}
             </div>
           </Field>
 
+          {efeitoB !== 'nenhum' && (
+            <Field label="Intensidade da metade de baixo">
+              <div className="flex items-center gap-2.5">
+                <input
+                  type="range"
+                  min={0.04}
+                  max={0.15}
+                  step={0.01}
+                  value={intensidadeB}
+                  onChange={(event) =>
+                    updateScene(index, { intensityB: Number(event.target.value) })
+                  }
+                  className="dangai-range min-w-0 flex-1"
+                />
+                <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
+                  {Math.round(intensidadeB * 100)}%
+                </span>
+              </div>
+            </Field>
+          )}
+        </>
+      )}
+
+      {scene.effect !== 'nenhum' && (
+        <>
+          {/* O ritmo e do BLOCO: vale para as duas metades, e por isso vem depois. */}
           <Field label="Ritmo do movimento">
             <div className="grid grid-cols-2 gap-1.5">
               {MOTION_CURVES.map((curve) => (
@@ -286,72 +361,6 @@ export function SceneEdit() {
         </>
       )}
 
-      {/*
-        O MOVIMENTO DA METADE DE BAIXO.
-
-        A divisao nao se mexia: eram duas imagens disputando o olho num quadro
-        pela metade, e somar movimento parecia enjoativo. Ele usou e discordou
-        -- parada no meio de um video que anda o tempo todo, a divisao destoa.
-
-        O RITMO continua sendo do bloco, e por isso nao aparece aqui: duas
-        metades acelerando em tempos diferentes e que dariam o enjoo que a
-        decisao antiga temia. O que se separa e o efeito e a intensidade.
-      */}
-      {imageB && (
-        <>
-          <div className="my-1 h-px bg-line" />
-
-          <Field label="Movimento da metade de baixo">
-            <Chip
-              active={!separada}
-              // Volta os dois campos para null de uma vez: "igual" e a ausencia
-              // de escolha, e nao uma copia dos valores de cima -- copiados,
-              // eles parariam de acompanhar a de cima na proxima mudanca.
-              onClick={() => updateScene(index, { effectB: null, intensityB: null })}
-            >
-              Igual a de cima
-            </Chip>
-            <Chip
-              active={separada && efeitoB === 'nenhum'}
-              onClick={() => updateScene(index, { effectB: 'nenhum' })}
-            >
-              {imageB.kind === 'video' ? 'Parada (so o do clipe)' : 'Parada'}
-            </Chip>
-            <div className="grid grid-cols-2 gap-1.5">
-              {KEN_BURNS_EFFECTS.map((effect) => (
-                <Chip
-                  key={effect}
-                  active={separada && efeitoB === effect}
-                  onClick={() => updateScene(index, { effectB: effect })}
-                >
-                  {EFFECT_LABEL[effect]}
-                </Chip>
-              ))}
-            </div>
-          </Field>
-
-          {efeitoB !== 'nenhum' && (
-            <Field label="Intensidade da metade de baixo">
-              <div className="flex items-center gap-2.5">
-                <input
-                  type="range"
-                  min={0.04}
-                  max={0.15}
-                  step={0.01}
-                  value={intensidadeB}
-                  onChange={(event) =>
-                    updateScene(index, { intensityB: Number(event.target.value) })
-                  }
-                  className="dangai-range min-w-0 flex-1"
-                />
-                <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
-                  {Math.round(intensidadeB * 100)}%
-                </span>
-              </div>
-            </Field>
-          )}
-        </>
-      )}
       </Grupo>
 
       <Grupo titulo="Transicao">
