@@ -35,6 +35,7 @@ export function Captions({
   mark,
   shadow,
   stroke,
+  scale,
 }: {
   blocks: readonly CaptionBlock[]
   color: CaptionColor
@@ -47,6 +48,7 @@ export function Captions({
   mark: CaptionMark
   shadow: CaptionShadow
   stroke: number
+  scale: number
 }) {
   // Pedir a fonte aqui, e nao dentro do bloco: sao dezenas de blocos por video,
   // e cada um pediria o mesmo arquivo.
@@ -73,6 +75,7 @@ export function Captions({
             mark={mark}
             shadow={shadow}
             stroke={stroke}
+            scale={scale}
           />
         </Sequence>
       ))}
@@ -90,6 +93,7 @@ function Block({
   mark,
   shadow,
   stroke,
+  scale,
 }: {
   block: CaptionBlock
   color: CaptionColor
@@ -100,6 +104,7 @@ function Block({
   mark: CaptionMark
   shadow: CaptionShadow
   stroke: number
+  scale: number
 }) {
   const { fps } = useVideoConfig()
   // useCurrentFrame dentro da Sequence e relativo a ela; as palavras carregam
@@ -109,7 +114,10 @@ function Block({
   // Palavra comprida demais encolhe o suficiente para caber inteira, em vez de
   // sair pelos dois lados da tela.
   const chars = block.words.map((word) => word.text).join(' ').length
-  const fontSize = FONT_SIZE * Math.min(1, CAPTION_CHARS_PER_LINE / chars)
+  // O tamanho que ele escolheu so vale enquanto a linha couber: passando da
+  // largura, quem manda continua sendo o ajuste automatico. Por isso os dois
+  // disputam no mesmo Math.min, em vez de um multiplicar o outro.
+  const fontSize = FONT_SIZE * Math.min(scale, CAPTION_CHARS_PER_LINE / chars)
 
   const marcada = activeWordIndex(block, frame)
 

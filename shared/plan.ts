@@ -11,6 +11,7 @@ import {
   CAPTION_CHARS_PER_LINE,
   CAPTION_MAX_CHARS,
   CAPTION_MAX_WORDS,
+  CAPTION_SCALE_DEFAULT,
   CAPTION_MIN_SEC,
   KEN_BURNS_EFFECTS,
   MOTION_CURVE_DEFAULT,
@@ -389,6 +390,7 @@ export function toRenderProps(
     mark?: CaptionMark
     shadow?: CaptionShadow
     stroke?: number
+    scale?: number
   } = {},
 ): RenderProps {
   const captionFont = legenda.font ?? null
@@ -397,6 +399,7 @@ export function toRenderProps(
   const captionMark = legenda.mark ?? CAPTION_MARK_DEFAULT
   const captionShadow = legenda.shadow ?? CAPTION_SHADOW_DEFAULT
   const captionStroke = legenda.stroke ?? CAPTION_STROKE_DEFAULT
+  const captionScale = legenda.scale ?? CAPTION_SCALE_DEFAULT
   const usable = plan.scenes.filter(
     (scene) => images[scene.imageIndex] && (scene.imageIndexB === null || images[scene.imageIndexB]),
   )
@@ -413,6 +416,7 @@ export function toRenderProps(
       captionMark,
       captionShadow,
       captionStroke,
+      captionScale,
     }
   }
 
@@ -570,6 +574,7 @@ export function toRenderProps(
     captionMark,
     captionShadow,
     captionStroke,
+    captionScale,
   }
 }
 
@@ -658,8 +663,8 @@ function buildCards(texto: CardText | null, totalFrames: number): OverlayCard[] 
 /**
  * Agrupa as palavras da transcricao em blocos de legenda.
  *
- * Cada bloco e uma linha: no maximo duas palavras e doze caracteres. Uma
- * palavra que sozinha ja estoura os doze caracteres fica sozinha -- quebrar
+ * Cada bloco e uma linha: no maximo duas palavras e dez caracteres. Uma
+ * palavra que sozinha ja estoura os dez caracteres fica sozinha -- quebrar
  * palavra no meio seria pior que a linha comprida.
  *
  * Um bloco tambem quebra quando ha uma pausa grande entre palavras: ler uma
@@ -725,17 +730,23 @@ export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
 /**
  * Junta o bloco que ia PISCAR com o vizinho.
  *
- * A regra de duas palavras e doze caracteres cria orfaos: "suficiente para" tem
+ * A regra de duas palavras e dez caracteres cria orfaos: "suficiente para" tem
  * quinze caracteres, entao "para" fica sozinha -- e sozinha ela dura os 0,13s
  * que se leva para dizer "para". Tres quadros na tela nao sao lidos como uma
  * legenda rapida, e sim como legenda fora de hora. Foi assim que ele descreveu,
  * apontando o segundo exato: 45,44s do video do Rudeus.
  *
- * O resgate quebra a regra dele, e quebra de proposito e so aqui. Os limites:
+ * O resgate NAO quebra mais a regra das duas palavras. Ate 10/09 ele abria para
+ * tres, e era exatamente isso que ele via na tela quando dizia que a legenda
+ * "nao segue as regras impostas" -- a excecao aparecia com frequencia suficiente
+ * para parecer a regra. Agora os limites sao:
  *
- *   - no maximo TRES palavras, e so quando a alternativa e piscar
+ *   - no maximo DUAS palavras, o mesmo teto do agrupamento
  *   - no maximo dezoito caracteres, que e a largura da linha -- acima disso a
  *     legenda encolheria a fonte, e uma linha menor e pior que uma rapida
+ *
+ * O que sobra sem resgate continua curto, mas nao fica desamparado: quem estica
+ * esses blocos e o enforceMinimumDuration, usando o silencio livre em volta.
  *
  * Tenta o vizinho de TRAS primeiro: prender a palavrinha no que veio antes soa
  * como a fala ("suficiente para"), enquanto empurra-la para frente inventaria
@@ -795,13 +806,13 @@ function fechaIdeia(text: string): boolean {
  * Abaixo de que fracao do piso um bloco conta como piscada.
  *
  * Nao e o piso inteiro: com duas palavras por linha quase metade dos blocos
- * fica abaixo dele, e resgatar todos viraria uma legenda de tres palavras o
- * video inteiro. Metade do piso -- uns 0,22s -- pega so o que realmente pisca.
+ * fica abaixo dele, e resgatar todos costuraria o video inteiro em pares de
+ * palavras. Metade do piso -- uns 0,22s -- pega so o que realmente pisca.
  */
 const PISCA_FRACAO = 0.5
 
-/** Teto de palavras no resgate. A regra dele e duas; aqui abre para tres. */
-const RESGATE_MAX_PALAVRAS = 3
+/** Teto de palavras no resgate. E o mesmo do agrupamento: a regra dele e duas. */
+const RESGATE_MAX_PALAVRAS = 2
 
 /**
  * A palavra termina fechando uma ideia?

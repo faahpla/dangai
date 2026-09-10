@@ -682,6 +682,29 @@ export const captionYSchema = z
   .max(CAPTION_Y_MAX)
   .default(CAPTION_Y_DEFAULT)
 
+/**
+ * Tamanho da legenda, como multiplicador do corpo padrao.
+ *
+ * O corpo ja encolhe sozinho quando a linha nao cabe na largura da tela, e isso
+ * continua valendo por cima deste numero -- legenda que sai pela borda nao se
+ * le, e nenhuma escolha de tamanho justifica perder a ponta da palavra. O que
+ * este ajuste faz e mover o ponto de partida: quem quer a legenda mais discreta
+ * ou mais gritante que o padrao pede aqui.
+ *
+ * Os limites existem para o ajuste nao virar defeito. Abaixo de 0,7 a legenda
+ * fica menor que a interface que o TikTok desenha por cima do video; acima de
+ * 1,5 duas palavras de dez caracteres ja nao cabem na largura de um short, e o
+ * ajuste automatico desfaria o aumento na mesma hora.
+ */
+export const CAPTION_SCALE_DEFAULT = 1
+export const CAPTION_SCALE_MIN = 0.7
+export const CAPTION_SCALE_MAX = 1.5
+export const captionScaleSchema = z
+  .number()
+  .min(CAPTION_SCALE_MIN)
+  .max(CAPTION_SCALE_MAX)
+  .default(CAPTION_SCALE_DEFAULT)
+
 export const renderPropsSchema = z.object({
   scenes: z.array(
     z.object({
@@ -753,6 +776,8 @@ export const renderPropsSchema = z.object({
   captionColor: captionColorSchema.default(CAPTION_COLOR_DEFAULT),
   /** Altura da legenda, fracao da tela a partir do rodape. */
   captionY: captionYSchema,
+  /** Multiplicador do corpo da legenda. Default para props antigas valerem. */
+  captionScale: captionScaleSchema.default(CAPTION_SCALE_DEFAULT),
   /**
    * A fonte das legendas, quando ele escolheu uma das que largou na pasta.
    *
@@ -788,18 +813,21 @@ export const renderPropsSchema = z.object({
 export type RenderProps = z.infer<typeof renderPropsSchema>
 
 /**
- * Um bloco de legenda e uma linha so. No maximo DUAS palavras e doze
+ * Um bloco de legenda e uma linha so. No maximo DUAS palavras e dez
  * caracteres -- mais que isso nao da tempo de ler num short.
  *
  * Eram tres ate 07/09, e ele pediu duas depois de ver rodando: com tres, linhas
  * como "ate quem leu" batiam exatamente nos doze caracteres e passavam rapido
  * demais para o olho pegar as tres.
  *
+ * O teto de caracteres desceu de doze para dez em 10/09. Doze ainda deixava
+ * passar a linha cheia que ele nao consegue ler no tempo que ela fica na tela.
+ *
  * A unica excecao e a palavra que sozinha ja passa do limite: ela fica sozinha
  * na linha, porque quebrar palavra no meio e pior que uma linha comprida.
  */
 export const CAPTION_MAX_WORDS = 2
-export const CAPTION_MAX_CHARS = 12
+export const CAPTION_MAX_CHARS = 10
 
 /**
  * Pontuacao que fecha a linha.

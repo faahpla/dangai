@@ -13,6 +13,7 @@ import {
   captionShadowSchema,
   captionStrokeSchema,
   captionColorSchema,
+  captionScaleSchema,
   captionYSchema,
   END_CARD_SEC_DEFAULT,
   HOOK_SEC_DEFAULT,
@@ -96,6 +97,8 @@ export const projectFileSchema = z.object({
   captionColor: captionColorSchema.default(CAPTION_COLOR_DEFAULT),
   /** Altura da legenda na tela. Idem: projeto antigo abre nos 420px de sempre. */
   captionY: captionYSchema,
+  /** Tamanho da legenda. Projeto antigo abre no tamanho padrao. */
+  captionScale: captionScaleSchema,
   /**
    * A fonte escolhida, pelo NOME do arquivo.
    *

@@ -58,6 +58,7 @@ export function Preview() {
   const captionShadow = useProject((s) => s.captionShadow)
   const captionStroke = useProject((s) => s.captionStroke)
   const captionY = useProject((s) => s.captionY)
+  const captionScale = useProject((s) => s.captionScale)
 
   const hookText = useProject((s) => s.hookText)
   const hookSec = useProject((s) => s.hookSec)
@@ -90,6 +91,7 @@ export function Preview() {
               mark: captionMark,
               shadow: captionShadow,
               stroke: captionStroke,
+              scale: captionScale,
             },
           )
         : {
@@ -104,6 +106,7 @@ export function Preview() {
             captionMark,
             captionShadow,
             captionStroke,
+            captionScale,
           },
     [
       plan,
@@ -128,6 +131,7 @@ export function Preview() {
       captionMark,
       captionShadow,
       captionStroke,
+      captionScale,
       hookText,
       hookSec,
       endText,

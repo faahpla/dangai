@@ -29,6 +29,9 @@ import {
   CAPTION_Y_DEFAULT,
   CAPTION_Y_MAX,
   CAPTION_Y_MIN,
+  CAPTION_SCALE_DEFAULT,
+  CAPTION_SCALE_MAX,
+  CAPTION_SCALE_MIN,
   END_CARD_SEC_DEFAULT,
   HOOK_SEC_DEFAULT,
   CLIP_INTENSITY,
@@ -247,6 +250,8 @@ export interface ProjectState {
   upscale: boolean
   /** Altura da legenda na tela, fracao a partir do rodape. */
   captionY: number
+  /** Multiplicador do corpo da legenda. 1 e o tamanho de sempre. */
+  captionScale: number
   paletteOpen: boolean
 
   /**
@@ -453,6 +458,7 @@ export interface ProjectState {
   removeCurvePreset: (nome: string) => Promise<void>
   toggleUpscale: () => void
   setCaptionY: (y: number) => void
+  setCaptionScale: (scale: number) => void
   setScript: (script: string | null) => Promise<void>
   openScript: (open: boolean) => void
   openCaptions: (open: boolean) => void
@@ -748,6 +754,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   curvePresets: [],
   upscale: false,
   captionY: CAPTION_Y_DEFAULT,
+  captionScale: CAPTION_SCALE_DEFAULT,
   paletteOpen: false,
   libraryOpen: false,
   library: null,
@@ -2136,6 +2143,11 @@ export const useProject = create<ProjectState>((set, get) => ({
   // fora da tela ou para cima do card de fechamento.
   setCaptionY: (y) => set({ captionY: Math.min(Math.max(y, CAPTION_Y_MIN), CAPTION_Y_MAX) }),
 
+  // Preso na faixa pelo mesmo motivo da altura: o valor tambem chega pela
+  // restauracao de projeto, e fora da faixa o ajuste automatico o desfaria.
+  setCaptionScale: (scale) =>
+    set({ captionScale: Math.min(Math.max(scale, CAPTION_SCALE_MIN), CAPTION_SCALE_MAX) }),
+
   openPalette: (open) => set({ paletteOpen: open }),
 
   /*
@@ -2293,7 +2305,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   startRender: async () => {
     const {
       audio, images, plan, sfxEnabled, sfxFiles, captionsEnabled, captions, captionColor,
-      captionY, music, musicGainDb,
+      captionY, captionScale, music, musicGainDb,
     } = get()
     if (!audio || images.length === 0 || !plan) return null
 
@@ -2402,6 +2414,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           mark: get().captionMark,
           shadow: get().captionShadow,
           stroke: get().captionStroke,
+          scale: get().captionScale,
         },
       ),
       audioPath: audio.path,
@@ -2581,6 +2594,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       // A URL fica de fora: ela e desta sessao e nao vale nada amanha.
       sfxManual: state.sfxManual.map(({ url: _fora, ...resto }) => resto),
       captionY: state.captionY,
+      captionScale: state.captionScale,
       sfxEnabled: state.sfxEnabled,
       music: state.music
         ? { path: state.music.path, rel: null, fileName: state.music.fileName }
@@ -2845,6 +2859,7 @@ async function applyProjectFile(
       // Sem URL ainda; `refreshSfxManual` a repoe logo depois de abrir.
       sfxManual: file.sfxManual.map((s) => ({ ...s, url: '' })),
       captionY: file.captionY,
+      captionScale: file.captionScale,
       sfxEnabled: file.sfxEnabled,
 
       // Nada de estado de sessao atravessa a abertura: o render anterior nao e

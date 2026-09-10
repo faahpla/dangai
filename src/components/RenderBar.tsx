@@ -27,6 +27,9 @@ import {
   CAPTION_STROKE_MAX,
   CAPTION_STROKE_MIN,
   CAPTION_COLORS,
+  CAPTION_SCALE_DEFAULT,
+  CAPTION_SCALE_MAX,
+  CAPTION_SCALE_MIN,
   CAPTION_Y_DEFAULT,
   CAPTION_Y_MAX,
   CAPTION_Y_MIN,
@@ -461,6 +464,8 @@ function EstiloControl() {
   const setCaptionColor = useProject((s) => s.setCaptionColor)
   const captionY = useProject((s) => s.captionY)
   const setCaptionY = useProject((s) => s.setCaptionY)
+  const captionScale = useProject((s) => s.captionScale)
+  const setCaptionScale = useProject((s) => s.setCaptionScale)
   const fontes = useProject((s) => s.fontes)
   const captionFont = useProject((s) => s.captionFont)
   const setCaptionFont = useProject((s) => s.setCaptionFont)
@@ -620,6 +625,35 @@ function EstiloControl() {
                 : captionY > 0.45
                   ? 'Perto do meio da tela, onde o card de fechamento aparece.'
                   : 'Fora da area que a interface do TikTok e do Reels cobre.'}
+            </p>
+
+            <div className="my-3 h-px bg-line" />
+
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] uppercase tracking-wide text-ink-3">Tamanho</span>
+              <button
+                type="button"
+                onClick={() => setCaptionScale(CAPTION_SCALE_DEFAULT)}
+                disabled={captionScale === CAPTION_SCALE_DEFAULT}
+                className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
+              >
+                voltar ao padrao
+              </button>
+            </div>
+            <input
+              type="range"
+              aria-label="Tamanho da legenda"
+              min={CAPTION_SCALE_MIN}
+              max={CAPTION_SCALE_MAX}
+              step={0.05}
+              value={captionScale}
+              onChange={(event) => setCaptionScale(Number(event.target.value))}
+              className="dangai-range mt-1.5 w-full"
+            />
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+              {captionScale === CAPTION_SCALE_DEFAULT
+                ? 'Tamanho padrao.'
+                : `${Math.round(captionScale * 100)}% do padrao. A linha comprida encolhe assim mesmo, para nao sair pela borda.`}
             </p>
 
             <div className="my-3 h-px bg-line" />

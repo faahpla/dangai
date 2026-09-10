@@ -56,6 +56,7 @@ export function Video({
   captionMark,
   captionShadow,
   captionStroke,
+  captionScale,
 }: RenderProps) {
   // Gancho e legenda usam a mesma fonte, entao qualquer um dos dois obriga a
   // esperar por ela -- senao o card sai no fallback e so aparece no MP4.
@@ -90,6 +91,7 @@ export function Video({
           mark={captionMark}
           shadow={captionShadow}
           stroke={captionStroke}
+          scale={captionScale}
         />
       )}
       {fontsReady && cards.length > 0 && <Cards cards={cards} />}
