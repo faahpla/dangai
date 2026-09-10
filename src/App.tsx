@@ -120,6 +120,23 @@ export function App() {
           event.preventDefault()
           store.togglePlay()
           break
+        case 'c':
+        case 'C':
+          /*
+           * Corta o bloco na agulha, como em qualquer editor de video.
+           *
+           * SEM Ctrl de proposito: Ctrl+C e copiar, e roubar essa combinacao
+           * dentro de um app que tem roteiro e apelidos na tela seria pior do
+           * que nao ter atalho nenhum.
+           *
+           * Por isso mesmo ele tambem nao dispara com o cursor dentro de um
+           * campo de texto: ali o C e uma letra como qualquer outra.
+           */
+          if (rendering || event.ctrlKey || event.metaKey || event.altKey) return
+          if (editando(event.target)) return
+          event.preventDefault()
+          store.splitSceneAtPlayhead()
+          break
         case 'ArrowLeft':
           if (rendering) return
           event.preventDefault()

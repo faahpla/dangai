@@ -411,6 +411,8 @@ export interface ProjectState {
   applyCurveToAll: (curve: MotionCurve, pontos?: CurvePoints | null) => void
   /** Move a fronteira entre a cena index-1 e a cena index. */
   moveBoundary: (index: number, seconds: number) => void
+  /** Parte em dois o bloco sob a agulha, as duas metades com a mesma imagem. */
+  splitSceneAtPlayhead: () => void
   toggleSfx: () => void
   /** Texto e duracao dos cards de abertura e fechamento. */
   setCard: (qual: 'hook' | 'end', patch: { text?: string; seconds?: number }) => void
@@ -1793,6 +1795,61 @@ export const useProject = create<ProjectState>((set, get) => ({
       if (i === index) return { ...scene, start: clamped }
       return scene
     })
+
+    set({ plan: { ...plan, scenes }, planEdited: true })
+  },
+
+  /**
+   * Parte em dois o bloco que esta sob a agulha.
+   *
+   * A REGRA "UMA IMAGEM, UM BLOCO" CONTINUA DE PE -- ela vale contra o app
+   * repartir sozinho, que foi o que se removeu do plano automatico. Aqui quem
+   * corta e ele, no ponto que ele escolheu: quem aperta C esta pedindo o bloco
+   * a mais e sabe de onde ele veio.
+   *
+   * As duas metades ficam com a MESMA imagem. Serve para dar ritmo e para trocar
+   * o efeito no meio de um print que ficou tempo demais na tela.
+   *
+   * Nao mexe no `sanitize`: ele reconstroi o plano com uma cena por imagem e
+   * desfaria este corte. Como ele so roda quando o plano e refeito do zero, o
+   * corte sobrevive a tudo menos a uma reanalise -- que, essa sim, refaz o
+   * video inteiro e por isso pode mesmo esquecer o corte.
+   */
+  splitSceneAtPlayhead: () => {
+    const { plan, playhead } = get()
+    if (!plan) return
+
+    const index = plan.scenes.findIndex(
+      (scene) => playhead > scene.start && playhead < scene.end,
+    )
+    if (index === -1) return
+
+    const scene = plan.scenes[index]!
+    // As duas metades precisam nascer utilizaveis: cortar rente a borda so
+    // produziria um bloco que ja comeca no piso e nao pode ser ajustado.
+    if (playhead - scene.start < MIN_SCENE_SEC) return
+    if (scene.end - playhead < MIN_SCENE_SEC) return
+
+    const scenes = [
+      ...plan.scenes.slice(0, index),
+      { ...scene, end: playhead },
+      {
+        ...scene,
+        start: playhead,
+        /*
+         * O clipe CONTINUA de onde parou, em vez de rebobinar.
+         *
+         * Um print ignora este campo. Num clipe, herdar o sourceStart do bloco
+         * inteiro faria a segunda metade repetir o mesmo trecho que a primeira
+         * acabou de mostrar -- que e o oposto de cortar.
+         */
+        sourceStart: scene.sourceStart + (playhead - scene.start),
+        // Corte seco entre as metades: uma transicao aqui inventaria um efeito
+        // que ele nao pediu, bem no ponto onde ele mandou cortar.
+        transitionIn: 'cut' as const,
+      },
+      ...plan.scenes.slice(index + 1),
+    ]
 
     set({ plan: { ...plan, scenes }, planEdited: true })
   },
