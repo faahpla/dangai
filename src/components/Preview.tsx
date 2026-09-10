@@ -140,7 +140,7 @@ export function Preview() {
   )
 
   /*
-   * Decodifica as proximas imagens antes de elas entrarem em cena.
+   * Prepara as proximas cenas -- print e clipe -- antes de elas entrarem.
    *
    * Medido: TODA <img> nasce dentro do player com complete=false. O player, ao
    * contrario do render, nao espera imagem nenhuma -- entao no primeiro frame
@@ -151,7 +151,7 @@ export function Preview() {
    * ~11MB; segurar as 46 de um projeto seriam 500MB de bitmap so para evitar um
    * frame preto. Cinco a frente cobrem qualquer corte com folga.
    */
-  const decodificadas = useRef(new Map<string, HTMLImageElement>())
+  const decodificadas = useRef(new Map<string, HTMLImageElement | HTMLVideoElement>())
   const blocoAtual = plan
     ? Math.max(
         plan.scenes.findIndex((scene) => playhead >= scene.start && playhead < scene.end),
@@ -162,26 +162,60 @@ export function Preview() {
   useEffect(() => {
     if (!plan) return
 
-    const janela = plan.scenes
-      .slice(blocoAtual, blocoAtual + 6)
-      .map((scene) => images[scene.imageIndex]?.url)
-      .filter((url): url is string => Boolean(url))
+    /*
+     * O CLIPE TAMBEM PRECISA DISTO, e por muito mais tempo que o print.
+     *
+     * Ate aqui a janela so preparava <img>, e nos projetos feitos de clipes o
+     * preto continuava aparecendo a cada troca de bloco -- um <video> que nasce
+     * na hora ainda tem que baixar, abrir e procurar o quadro certo antes de
+     * pintar qualquer coisa, e ate la o que se ve e o fundo.
+     *
+     * Um print e uma URL so; um clipe precisa tambem do instante em que o bloco
+     * entra, porque e ESSE quadro que tem que estar pronto -- deixar o
+     * decodificador parado no segundo zero de um clipe que comeca aos 4s nao
+     * adianta nada.
+     */
+    const janela = plan.scenes.slice(blocoAtual, blocoAtual + 6).flatMap((scene) => {
+      const asset = images[scene.imageIndex]
+      if (!asset?.url) return []
+      return [{ url: asset.url, video: asset.kind === 'video', de: scene.sourceStart ?? 0 }]
+    })
 
     const cache = decodificadas.current
-    for (const url of janela) {
-      if (cache.has(url)) continue
+    for (const item of janela) {
+      if (cache.has(item.url)) continue
+
+      if (item.video) {
+        const clipe = document.createElement('video')
+        clipe.preload = 'auto'
+        clipe.muted = true
+        clipe.src = item.url
+        // Fora do DOM e mudo: ninguem ve nem ouve isto. So existe para o
+        // decodificador chegar no quadro antes do bloco chegar nele.
+        clipe.currentTime = item.de
+        cache.set(item.url, clipe)
+        continue
+      }
+
       const img = new Image()
-      img.src = url
-      cache.set(url, img)
+      img.src = item.url
+      cache.set(item.url, img)
       // decode() rejeita se a imagem for trocada no meio; nao ha o que fazer
       // alem de deixar o player carregar sozinho, como fazia antes.
       void img.decode().catch(() => undefined)
     }
 
     // Solta o que ficou para tras: manter tudo decodificado estoura a memoria.
-    const vivas = new Set(janela)
-    for (const url of cache.keys()) {
-      if (!vivas.has(url)) cache.delete(url)
+    const vivas = new Set(janela.map((item) => item.url))
+    for (const [url, elemento] of cache) {
+      if (vivas.has(url)) continue
+      // O <video> nao basta soltar da lista: sem largar a fonte, o buffer dele
+      // fica na memoria ate o coletor passar, e um projeto de clipes tem muitos.
+      if (elemento instanceof HTMLVideoElement) {
+        elemento.removeAttribute('src')
+        elemento.load()
+      }
+      cache.delete(url)
     }
   }, [plan, images, blocoAtual])
 

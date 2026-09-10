@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Minus, Plus, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { SFX_GAIN_MAX, SFX_GAIN_MIN } from '@shared/contract'
@@ -130,6 +130,84 @@ export function Timeline() {
     setZoom(alvo)
   }, [])
 
+  /*
+   * As tiras nao dependem do playhead -- mas eram refeitas junto com ele.
+   *
+   * O componente inteiro re-renderiza a cada frame que o video anda, porque e
+   * o playhead que move a agulha. Sem este memo, os 44 blocos com miniatura,
+   * numero e botao de excluir eram reconstruidos trinta vezes por segundo para
+   * a agulha andar um pixel. Agora eles so se refazem quando muda algo que
+   * realmente os descreve.
+   */
+  const tiras = useMemo(
+    () =>
+      scenes.map((scene, index) => {
+        const image = images[scene.imageIndex]
+        if (!image) return null
+
+
+        /*
+         * Div com role, e nao <button>: o X de excluir e um botao de
+         * verdade e botao dentro de botao e HTML invalido -- o Chrome
+         * "conserta" tirando um dos dois de dentro do outro, e o
+         * resultado e um clique que as vezes some.
+         */
+        return (
+          <div
+            key={`${image.id}-${index}`}
+            role="button"
+            tabIndex={isRendering ? -1 : 0}
+            onPointerDown={(event) => {
+              if (isRendering) return
+              event.stopPropagation()
+              selectScene(index)
+            }}
+            style={{ width: `${((scene.end - scene.start) / duration) * 100}%` }}
+            className={[
+              'pointer-events-auto group/bloco relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
+              selectedScene === index ? 'ring-1 ring-inset ring-accent' : '',
+              dropAt === index ? 'ring-1 ring-inset ring-accent' : '',
+            ].join(' ')}
+            title={image.fileName}
+            aria-label={`Bloco ${index + 1}: ${image.fileName}`}
+          >
+            <img
+              src={image.thumbnail}
+              alt=""
+              className="h-full w-full object-cover opacity-70"
+              draggable={false}
+            />
+            <span className="tnum absolute left-1 top-0.5 text-[10px] text-white/70 drop-shadow">
+              {index + 1}
+            </span>
+
+            {/*
+              O Delete no bloco selecionado ja fazia isto, mas ninguem
+              descobre um atalho que a tela nao mostra. Com uma cena so
+              nao aparece: nao ha para onde jogar o tempo dela, e o
+              removeScene recusaria em silencio.
+            */}
+            {!isRendering && scenes.length > 1 && (
+              <button
+                type="button"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  removeScene(index)
+                }}
+                title="Excluir este bloco (o tempo dele vai para o bloco anterior)"
+                aria-label={`Excluir o bloco ${index + 1}`}
+                className="absolute right-0.5 top-0.5 grid size-[15px] place-items-center rounded-sm bg-black/70 text-white/80 opacity-0 transition-opacity duration-150 hover:bg-danger hover:text-white group-hover/bloco:opacity-100 focus-visible:opacity-100"
+              >
+                <X size={10} strokeWidth={2} />
+              </button>
+            )}
+          </div>
+        )
+      }),
+    [scenes, images, duration, selectedScene, dropAt, isRendering, selectScene, removeScene],
+  )
+
   return (
     <section className="flex flex-col gap-3">
       <header className="flex items-center justify-between px-1">
@@ -233,69 +311,7 @@ export function Timeline() {
 
           {duration > 0 && scenes.length > 0 && (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-[38px]">
-              {scenes.map((scene, index) => {
-                const image = images[scene.imageIndex]
-                if (!image) return null
-
-                /*
-                 * Div com role, e nao <button>: o X de excluir e um botao de
-                 * verdade e botao dentro de botao e HTML invalido -- o Chrome
-                 * "conserta" tirando um dos dois de dentro do outro, e o
-                 * resultado e um clique que as vezes some.
-                 */
-                return (
-                  <div
-                    key={`${image.id}-${index}`}
-                    role="button"
-                    tabIndex={isRendering ? -1 : 0}
-                    onPointerDown={(event) => {
-                      if (isRendering) return
-                      event.stopPropagation()
-                      selectScene(index)
-                    }}
-                    style={{ width: `${((scene.end - scene.start) / duration) * 100}%` }}
-                    className={[
-                      'pointer-events-auto group/bloco relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
-                      selectedScene === index ? 'ring-1 ring-inset ring-accent' : '',
-                      dropAt === index ? 'ring-1 ring-inset ring-accent' : '',
-                    ].join(' ')}
-                    title={image.fileName}
-                    aria-label={`Bloco ${index + 1}: ${image.fileName}`}
-                  >
-                    <img
-                      src={image.thumbnail}
-                      alt=""
-                      className="h-full w-full object-cover opacity-70"
-                      draggable={false}
-                    />
-                    <span className="tnum absolute left-1 top-0.5 text-[10px] text-white/70 drop-shadow">
-                      {index + 1}
-                    </span>
-
-                    {/*
-                      O Delete no bloco selecionado ja fazia isto, mas ninguem
-                      descobre um atalho que a tela nao mostra. Com uma cena so
-                      nao aparece: nao ha para onde jogar o tempo dela, e o
-                      removeScene recusaria em silencio.
-                    */}
-                    {!isRendering && scenes.length > 1 && (
-                      <button
-                        type="button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          removeScene(index)
-                        }}
-                        title="Excluir este bloco (o tempo dele vai para o bloco anterior)"
-                        aria-label={`Excluir o bloco ${index + 1}`}
-                        className="absolute right-0.5 top-0.5 grid size-[15px] place-items-center rounded-sm bg-black/70 text-white/80 opacity-0 transition-opacity duration-150 hover:bg-danger hover:text-white group-hover/bloco:opacity-100 focus-visible:opacity-100"
-                      >
-                        <X size={10} strokeWidth={2} />
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
+              {tiras}
             </div>
           )}
 
