@@ -2,6 +2,7 @@ import {
   AbsoluteFill,
   Easing,
   Freeze,
+  getRemotionEnvironment,
   Img,
   OffthreadVideo,
   interpolate,
@@ -27,6 +28,7 @@ export function Scene({
   intensity,
   curve,
   kind,
+  thumbnail,
   sourceDurationInFrames,
   sourceStartFrames,
   abaixo,
@@ -83,7 +85,9 @@ export function Scene({
   const quarto = rotation === 90 || rotation === 270
   const caixa =
     rotation === 0
-      ? { width: '100%', height: '100%' }
+      ? // `relative` so para a cama do preview ter a que se prender. Numa div
+        // que ja ocupa os 100%, nao muda nada do que aparece.
+        { width: '100%', height: '100%', position: 'relative' as const }
       : {
           position: 'absolute' as const,
           top: '50%',
@@ -158,6 +162,29 @@ export function Scene({
   return (
     <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
       <div style={caixa}>
+        {/*
+          A CAMA DA TROCA DE BLOCO -- e so no preview.
+
+          O <video> do clipe nasce na hora em que o bloco entra: carregar,
+          procurar o ponto de entrada e decodificar leva bem mais que um frame,
+          e ate ele pintar quem aparece e o preto deste AbsoluteFill. O render
+          nao sofre disso, porque la o frame vem pronto do compositor.
+
+          A miniatura e a mesma que a linha do tempo ja mostra, entao ja esta em
+          cache e pinta na hora. Ela fica ATRAS do clipe e nao sai: assim que o
+          video tem quadro, ele cobre isto por cima. O olho troca um buraco
+          preto por dois frames de cena em baixa resolucao.
+
+          Fica fora do render de proposito. O MP4 ja sai certo, e por um
+          incomodo que so existe na edicao nao vale pendurar um elemento a mais
+          no caminho do arquivo final.
+        */}
+        {kind === 'video' && thumbnail && !getRemotionEnvironment().isRendering && (
+          // Absoluta, senao ela nao ficaria ATRAS do clipe: os dois sao filhos
+          // da mesma caixa e, no fluxo normal, a cama empurraria o video para
+          // baixo em vez de ficar embaixo dele.
+          <Img src={thumbnail} style={{ ...cobrindo, position: 'absolute', inset: 0 }} />
+        )}
         {kind === 'video' ? (
           /*
            * O clipe acabou antes do bloco: o ultimo frame fica parado ate o bloco

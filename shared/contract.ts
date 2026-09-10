@@ -724,6 +724,22 @@ export const renderPropsSchema = z.object({
        */
       kind: z.enum(['image', 'video']).default('image'),
       /**
+       * A miniatura do clipe, usada SO no preview e so como cama.
+       *
+       * No player, o <video> do clipe nasce na hora da troca de bloco: ele
+       * ainda precisa carregar, procurar o ponto de entrada e decodificar antes
+       * de pintar, e ate la o que aparece e o fundo preto. E o piscar que so
+       * existe no preview -- o render nao tem isso, porque la o frame vem do
+       * compositor, pronto.
+       *
+       * Esta miniatura e a mesma que a linha do tempo ja mostra, entao ela ja
+       * esta em cache e pinta na hora. Fica atras do clipe: enquanto ele nao
+       * vem, o olho ve a cena certa em baixa resolucao em vez de um buraco.
+       *
+       * Com default null para props antigas continuarem validas.
+       */
+      thumbnail: z.string().nullable().default(null),
+      /**
        * Quantos frames o clipe tem de verdade. null em print, e tambem em clipe
        * que cobre o bloco inteiro.
        *

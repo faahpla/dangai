@@ -553,6 +553,8 @@ export function toRenderProps(
       curve: scene.curve,
       curvePoints: scene.curvePoints ?? null,
       kind: image.kind,
+      // So o preview usa: e a cama que evita o preto na troca de bloco.
+      thumbnail: image.thumbnail ?? null,
       sourceDurationInFrames:
         sourceFrames !== null && sourceFrames < durationInFrames ? Math.max(sourceFrames, 1) : null,
       sourceStartFrames: inicioFonte,
