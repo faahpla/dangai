@@ -1869,10 +1869,21 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (index === -1) return
 
     const scene = plan.scenes[index]!
-    // As duas metades precisam nascer utilizaveis: cortar rente a borda so
-    // produziria um bloco que ja comeca no piso e nao pode ser ajustado.
-    if (playhead - scene.start < MIN_SCENE_SEC) return
-    if (scene.end - playhead < MIN_SCENE_SEC) return
+    /*
+     * O CORTE TAMBEM E LIVRE, pelo mesmo motivo do arraste.
+     *
+     * Exigia 0,6s de cada lado, com o argumento de que as metades precisavam
+     * nascer utilizaveis. Mas quem aperta C escolheu o ponto, e o bloco curto
+     * que sai dali pode ser esticado na linha do tempo -- que agora tambem nao
+     * barra ninguem. A regra so atrapalhava quem queria um quadro isolado no
+     * fim de um bloco.
+     *
+     * Fica o limite aritmetico: um frame de cada lado, senao o corte produziria
+     * um bloco de duracao zero, que some do video.
+     */
+    const umFrame = 1 / VIDEO_FPS
+    if (playhead - scene.start < umFrame) return
+    if (scene.end - playhead < umFrame) return
 
     const original = images[scene.imageIndex]
     if (!original) return
