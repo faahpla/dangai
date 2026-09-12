@@ -188,6 +188,42 @@ async function ampliarQuadro(
   return paraQuadroDoRender(await rodarModelo(cru, largura, altura, canais), largura, altura)
 }
 
+/**
+ * Os dois quadros sao o MESMO DESENHO?
+ *
+ * Nao "sao iguais": o H.264 poe ruido proprio em cada quadro, entao dois
+ * quadros do mesmo desenho quase nunca batem byte a byte -- medido na
+ * biblioteca dele, a igualdade exata pegava 0% dos casos onde o desenho nao
+ * mudou.
+ *
+ * O criterio e por PIXEL FORTE, e isso importa: uma boca que mexe num rosto
+ * parado altera pouquissimos pixels, mas altera MUITO neles. Numa media, ou
+ * numa contagem de "pixels que mudaram um pouco", ela desaparece no ruido --
+ * e o quadro seria reusado, congelando a fala. Contando so mudanca acima de
+ * 30, o ruido nao entra e a boca entra.
+ *
+ * A amostragem de 1 em cada 5 bytes existe porque isto roda entre duas
+ * inferencias: comparar 1,9 MB inteiros custaria mais do que o tempo que
+ * economiza em parte dos quadros. Um desenho novo muda muito mais que 1 em 5.
+ */
+function mesmoDesenho(a: Buffer, b: Buffer): boolean {
+  if (a.length !== b.length) return false
+
+  const PASSO = 5
+  const FORTE = 30
+  // 0,02% dos bytes vistos. Acima disso nao e mais ruido de compressao.
+  const limite = Math.max(8, Math.floor(a.length / PASSO / 5000))
+
+  let fortes = 0
+  for (let p = 0; p < a.length; p += PASSO) {
+    if (Math.abs(a[p]! - b[p]!) > FORTE) {
+      fortes += 1
+      if (fortes > limite) return false
+    }
+  }
+  return true
+}
+
 function clamp255(v: number): number {
   const n = Math.round(v * 255)
   return n < 0 ? 0 : n > 255 ? 255 : n
@@ -300,6 +336,30 @@ async function ampliarClipe(
    */
   const TETO = 3
 
+  /*
+   * O DESENHO ANTERIOR, e o que o modelo devolveu para ele.
+   *
+   * Anime e animado "on twos" ou "on threes": o arquivo tem 24 quadros por
+   * segundo, mas o desenho so muda a cada dois ou tres. Medido em clipes da
+   * biblioteca dele: 71%, 82% e 100% dos quadros repetem o desenho anterior.
+   * Sem isto, o modelo amplia o MESMO desenho tres vezes seguidas -- a 164ms
+   * cada, numa 3060.
+   *
+   * Reusar aqui nao congela movimento nenhum: o que se reusa e o resultado de
+   * um desenho que ja era identico. Congelaria se o criterio fosse frouxo, e e
+   * por isso que ele e por PIXEL FORTE e nao por media -- uma boca que mexe
+   * muda poucos pixels e muda muito neles. Na media ela desapareceria.
+   */
+  let anterior: Buffer | null = null
+  /*
+   * Guarda o quadro PRONTO, e nao o que o modelo devolveu.
+   *
+   * Depois da inferencia ainda ha a conversao para o quadro do render: um laco
+   * de sete milhoes de iteracoes mais um resize. Se o desenho e o mesmo, esse
+   * resultado tambem e -- reaproveita-lo poupa as duas etapas, e nao so a GPU.
+   */
+  let anteriorPronto: Promise<Buffer> | null = null
+
   entrada.stdout.on('data', (pedaco: Buffer) => {
     sobra = sobra.length === 0 ? Buffer.from(pedaco) : Buffer.concat([sobra, pedaco])
     while (sobra.length >= bytesPorQuadro) {
@@ -309,15 +369,30 @@ async function ampliarClipe(
       emVoo += 1
       if (emVoo >= TETO) entrada.stdout.pause()
 
-      const inferido = naGpu.then(() =>
-        rodarModelo(quadro, janela.width, janela.height, 3),
-      )
-      naGpu = inferido.catch(() => undefined)
+      const repetido = anterior !== null && anteriorPronto !== null && mesmoDesenho(anterior, quadro)
+
+      let pronto: Promise<Buffer>
+      if (repetido) {
+        pronto = anteriorPronto!
+      } else {
+        /*
+         * `naGpu` segura so a INFERENCIA, e nao a conversao depois dela: assim
+         * o quadro N converte enquanto o N+1 ja esta na placa. Enfileirar a
+         * conversao aqui deixaria a GPU esperando a CPU sem motivo.
+         */
+        const inferido = naGpu.then(() => rodarModelo(quadro, janela.width, janela.height, 3))
+        naGpu = inferido.catch(() => undefined)
+        pronto = inferido.then((dados) =>
+          paraQuadroDoRender(dados, janela.width, janela.height),
+        )
+      }
+
+      anterior = quadro
+      anteriorPronto = pronto
 
       naEscrita = naEscrita.then(async () => {
-        const dados = await inferido
-        const pronto = await paraQuadroDoRender(dados, janela.width, janela.height)
-        if (!saida.stdin.write(pronto)) {
+        const quadroPronto = await pronto
+        if (!saida.stdin.write(quadroPronto)) {
           await new Promise<void>((r) => saida.stdin.once('drain', () => r()))
         }
         feitos += 1
