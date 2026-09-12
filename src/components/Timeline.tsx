@@ -263,11 +263,20 @@ export function Timeline() {
   return (
     <section className="flex flex-col gap-3">
       <header className="flex items-center justify-between px-1">
-        <div className="flex items-baseline gap-3">
+        <div className="flex min-w-0 items-baseline gap-3">
           <span className="tnum text-[15px] font-medium text-ink">{formatTimecode(playhead)}</span>
-          <span className="tnum text-[11px] text-ink-3">
+          <span className="tnum shrink-0 text-[11px] text-ink-3">
             {duration > 0 ? formatTimecode(duration) : '--:--'}
           </span>
+          {/*
+            A LEGENDA DE AGORA, por extenso.
+
+            Na faixa ela cabe em quatro pixels e nao se le. Aqui ha largura de
+            sobra, e o texto responde a outra pergunta: nao "onde ela cai", que
+            e o trabalho da faixa, mas "o que esta escrito na tela neste
+            instante" -- util ao parar a agulha em cima de um corte suspeito.
+          */}
+          <LegendaAtual />
         </div>
 
         <div className="flex items-center gap-3">
@@ -721,30 +730,68 @@ function FaixaSfx({
 }
 
 /**
- * As legendas na linha do tempo, uma barra por bloco de legenda.
+ * As legendas na linha do tempo.
  *
- * Nao e editavel, e de proposito: mesclar e dividir legenda tem tela propria,
- * com o texto grande e o contexto em volta. Aqui o trabalho e outro -- VER onde
- * cada uma cai contra os blocos de imagem. Uma troca de cena no meio de uma
- * frase e o tipo de defeito que nao aparece lendo o roteiro nem olhando a
- * esteira, so na coincidencia das duas coisas.
+ * A PRIMEIRA VERSAO ESCREVIA O TEXTO DENTRO DE CADA BARRA, e foi um fracasso.
+ * Legenda de filme e frase longa e esparsa; a daqui e o oposto -- duas palavras
+ * e dez caracteres, por decisao dele, o que da mais de 150 blocos num audio de
+ * 68s. Sem zoom, cada um mede uns 4 pixels: o texto virava sopa de letras
+ * colada. Palavras dele: "ficou pessimo, nao da pra entender nada".
  *
- * Desligar as legendas apaga a faixa: sem elas no video, ela mentiria.
+ * O que esta faixa precisa responder e uma pergunta de RITMO, nao de leitura:
+ * "a troca de imagem cai no meio da fala?". Isso se ve na forma -- onde cada
+ * legenda comeca e acaba, contra a fronteira dos blocos logo acima. O texto so
+ * aparece quando a barra e larga o bastante para caber de verdade, o que
+ * acontece sozinho conforme ele amplia.
+ *
+ * Quem mostra o texto o tempo todo e o cabecalho, que tem largura de sobra.
  */
 function FaixaLegendas({ duration }: { duration: number }) {
   const captions = useProject((s) => s.captions)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const playhead = useProject((s) => s.playhead)
 
+  const faixaRef = useRef<HTMLDivElement | null>(null)
+  const [largura, setLargura] = useState(0)
+
+  /*
+   * A largura REAL da faixa, que muda com o zoom e com a janela.
+   *
+   * E ela que decide se o texto cabe, e por isso e medida em vez de estimada:
+   * a faixa vive dentro do mesmo rolamento da esteira, e a conta de quanto o
+   * zoom esticou o container nao e responsabilidade de quem desenha barra.
+   */
+  useEffect(() => {
+    const alvo = faixaRef.current
+    if (!alvo) return
+    const medir = (): void => setLargura(alvo.clientWidth)
+    medir()
+    const observer = new ResizeObserver(medir)
+    observer.observe(alvo)
+    return () => observer.disconnect()
+  }, [])
+
   if (!captionsEnabled || captions.length === 0 || duration === 0) return null
 
   return (
-    <div className="relative mt-px h-[18px] w-full overflow-hidden border-t border-line bg-surface">
+    <div
+      ref={faixaRef}
+      className="relative mt-px h-[14px] w-full overflow-hidden border-t border-line bg-surface"
+    >
       {captions.map((bloco, i) => {
         const inicio = bloco.from / VIDEO_FPS
         const fim = (bloco.from + bloco.durationInFrames) / VIDEO_FPS
         const atual = playhead >= inicio && playhead < fim
         const texto = bloco.words.map((w) => w.text).join(' ')
+
+        /*
+         * Sete pixels por caractere na fonte de 9px, com folga para o respiro
+         * dos lados. Abaixo disso a palavra sai cortada no meio, que e pior do
+         * que nao mostrar nada: barra lisa se le como ritmo, letra picotada se
+         * le como defeito.
+         */
+        const larguraDaBarra = ((fim - inicio) / duration) * largura
+        const cabe = larguraDaBarra > texto.length * 7
 
         return (
           <div
@@ -754,20 +801,48 @@ function FaixaLegendas({ duration }: { duration: number }) {
               width: `${((fim - inicio) / duration) * 100}%`,
             }}
             /*
-             * A borda direita e o que separa uma legenda da seguinte quando as
-             * duas se encostam -- e encostam quase sempre, porque a regra de
-             * duas palavras produz blocos curtos e colados.
+             * A borda direita separa uma legenda da seguinte: elas se encostam
+             * quase sempre, e sem o corte a faixa viraria uma barra continua
+             * que nao diz nada sobre onde uma acaba e a outra comeca.
              */
             className={[
-              'absolute inset-y-0 overflow-hidden border-r border-bg px-1 text-[9px] leading-[18px] whitespace-nowrap',
-              atual ? 'bg-accent-dim text-ink' : 'bg-elevated text-ink-3',
+              'absolute inset-y-0 overflow-hidden border-r border-bg',
+              cabe ? 'px-1 text-[9px] leading-[14px] whitespace-nowrap' : '',
+              atual ? 'bg-accent text-white' : 'bg-line-strong text-ink-3',
             ].join(' ')}
             title={texto}
           >
-            {texto}
+            {cabe ? texto : null}
           </div>
         )
       })}
     </div>
+  )
+}
+
+/**
+ * O texto da legenda sob a agulha, no cabecalho.
+ *
+ * Componente proprio para nao arrastar a Timeline inteira a cada frame: ele
+ * assina o playhead, e quem re-renderiza trinta vezes por segundo e so este
+ * pedaco de texto.
+ */
+function LegendaAtual() {
+  const captions = useProject((s) => s.captions)
+  const captionsEnabled = useProject((s) => s.captionsEnabled)
+  const playhead = useProject((s) => s.playhead)
+
+  if (!captionsEnabled || captions.length === 0) return null
+
+  const frame = playhead * VIDEO_FPS
+  const bloco = captions.find(
+    (c) => frame >= c.from && frame < c.from + c.durationInFrames,
+  )
+  if (!bloco) return null
+
+  return (
+    <span className="min-w-0 truncate text-[11px] text-ink-2" title="Legenda neste instante">
+      {bloco.words.map((w) => w.text).join(' ')}
+    </span>
   )
 }
