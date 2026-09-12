@@ -2,7 +2,6 @@ import {
   AbsoluteFill,
   Easing,
   Freeze,
-  getRemotionEnvironment,
   Img,
   OffthreadVideo,
   interpolate,
@@ -28,7 +27,6 @@ export function Scene({
   intensity,
   curve,
   kind,
-  thumbnail,
   camera,
   sourceDurationInFrames,
   sourceStartFrames,
@@ -188,49 +186,18 @@ export function Scene({
    * O Ken Burns fica DENTRO da caixa, e por isso acompanha o giro: num bloco
    * deitado, "pan para a esquerda" continua sendo a esquerda de quem assiste.
    */
+  /*
+   * SEM FUNDO PROPRIO: o preto mora no Video, e a cama do preview fica ENTRE
+   * os dois.
+   *
+   * Com um preto opaco aqui, a cama era tapada por ela mesma -- a Scene se
+   * desenha por cima e o quadro do bloco anterior nunca chegaria ao olho. O
+   * `AbsoluteFill` do Video ja pinta o preto do video todo, entao nada fica
+   * sem fundo por causa disto; o que muda e so quem chega primeiro.
+   */
   return (
-    <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ overflow: 'hidden' }}>
       <div style={caixa}>
-        {/*
-          A CAMA DA TROCA DE BLOCO -- e so no preview.
-
-          O <video> do clipe nasce na hora em que o bloco entra: carregar,
-          procurar o ponto de entrada e decodificar leva bem mais que um frame,
-          e ate ele pintar quem aparece e o preto deste AbsoluteFill. O render
-          nao sofre disso, porque la o frame vem pronto do compositor.
-
-          A miniatura e a mesma que a linha do tempo ja mostra, entao ja esta em
-          cache e pinta na hora. Ela fica ATRAS do clipe e nao sai: assim que o
-          video tem quadro, ele cobre isto por cima. O olho troca um buraco
-          preto por dois frames de cena em baixa resolucao.
-
-          Fica fora do render de proposito. O MP4 ja sai certo, e por um
-          incomodo que so existe na edicao nao vale pendurar um elemento a mais
-          no caminho do arquivo final.
-        */}
-        {/*
-          A CAMA FICA O BLOCO INTEIRO. Ja tentei limitar, e voltou o flash.
-
-          Houve uma versao que a desmontava apos doze quadros, com o argumento
-          de que passado isso ela seria peso morto -- uma camada de 1080x1920
-          embaixo de cada clipe, para o compositor empilhar a cada frame. O
-          argumento partia de um travamento medido em 24 quadros por segundo.
-
-          So que 24 e a taxa CHEIA desta composicao, que roda a 24000/1001: nao
-          havia travamento nenhum para combater, e a economia custou justamente
-          o que a cama existe para resolver. Quando o <video> demora mais de
-          meio segundo para achar o quadro -- e demora, num clipe que comeca
-          longe do inicio do arquivo --, o preto voltava a aparecer.
-
-          O custo real dela e uma camada parada embaixo do video, que o
-          compositor resolve na GPU. Barato perto de um flash a cada troca.
-        */}
-        {kind === 'video' && thumbnail && !getRemotionEnvironment().isRendering && (
-          // Absoluta, senao ela nao ficaria ATRAS do clipe: os dois sao filhos
-          // da mesma caixa e, no fluxo normal, a cama empurraria o video para
-          // baixo em vez de ficar embaixo dele.
-          <Img src={thumbnail} style={{ ...cobrindo, position: 'absolute', inset: 0 }} />
-        )}
         {kind === 'video' ? (
           /*
            * O clipe acabou antes do bloco: o ultimo frame fica parado ate o bloco

@@ -1,5 +1,12 @@
 import { Fragment, useEffect, useState } from 'react'
-import { AbsoluteFill, cancelRender, continueRender, delayRender } from 'remotion'
+import {
+  AbsoluteFill,
+  cancelRender,
+  continueRender,
+  delayRender,
+  getRemotionEnvironment,
+  useCurrentFrame,
+} from 'remotion'
 import { TransitionSeries } from '@remotion/transitions'
 import type { RenderProps } from '@shared/contract'
 import { Scene } from './Scene'
@@ -64,6 +71,23 @@ export function Video({
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      {/*
+        A CAMA DO PREVIEW, por baixo de tudo e SEMPRE montada.
+
+        Ela ja viveu dentro da Scene, e ali nao funcionava tocando -- so
+        parado. Arrastando a agulha o player renderiza um quadro e espera, e
+        tudo tem tempo de pintar; no play ele avanca 24 quadros por segundo, e
+        no quadro em que o bloco entra o React MONTA a cena inteira. Uma <img>
+        recem-criada nao pinta em 41ms nem com o arquivo em cache, entao o
+        preto de tras aparecia mesmo com a cama existindo.
+
+        Aqui ela nunca e montada na hora: e um elemento so, vivo do inicio ao
+        fim do video, que apenas TROCA de src. E isso muda tudo -- ao trocar a
+        fonte de uma imagem que ja esta na tela, o navegador segura o quadro
+        anterior ate o novo decodificar. Nao ha buraco para o preto aparecer.
+      */}
+      <CamaDoPreview scenes={scenes} />
+
       <TransitionSeries>
         {scenes.map((scene, index) => (
           <Fragment key={`${scene.url}-${index}`}>
@@ -96,5 +120,58 @@ export function Video({
       )}
       {fontsReady && cards.length > 0 && <Cards cards={cards} />}
     </AbsoluteFill>
+  )
+}
+
+/**
+ * A miniatura do bloco atual, viva o video inteiro, so trocando de src.
+ *
+ * Existe para o preview e mais nada: no render o frame vem pronto do
+ * compositor, e nao ha instante nenhum em que o quadro esteja vazio.
+ *
+ * Qual bloco esta no ar se descobre somando as duracoes e descontando as
+ * transicoes -- numa TransitionSeries a emenda SOBREPOE os dois vizinhos, e
+ * ignorar isso faria a cama atrasar um pouco mais a cada transicao do video.
+ * O desconto mantem a conta alinhada do primeiro ao ultimo bloco.
+ */
+function CamaDoPreview({ scenes }: { scenes: RenderProps['scenes'] }) {
+  const frame = useCurrentFrame()
+
+  if (getRemotionEnvironment().isRendering) return null
+
+  let inicio = 0
+  let atual: RenderProps['scenes'][number] | undefined
+  for (const scene of scenes) {
+    inicio -= scene.transitionInFrames
+    if (frame < inicio + scene.durationInFrames) {
+      atual = scene
+      break
+    }
+    inicio += scene.durationInFrames
+  }
+
+  const thumb = atual?.thumbnail
+  if (!thumb) return null
+
+  /*
+   * <img> cru, e nao o <Img> do Remotion: o que se quer aqui e justamente o
+   * comportamento nativo de segurar o quadro antigo enquanto o novo carrega.
+   * O <Img> do Remotion existe para GARANTIR que a imagem esteja pronta antes
+   * de desenhar, que e o oposto -- e no player ele nao espera de qualquer
+   * forma.
+   */
+  return (
+    <img
+      src={thumb}
+      alt=""
+      draggable={false}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+      }}
+    />
   )
 }
