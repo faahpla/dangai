@@ -14,7 +14,7 @@
     "icon": "node --experimental-strip-types scripts/make-icon.ts",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
-    "release": "npm run build && electron-builder --publish always"
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
