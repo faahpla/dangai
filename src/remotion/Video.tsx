@@ -69,6 +69,14 @@ export function Video({
   // esperar por ela -- senao o card sai no fallback e so aparece no MP4.
   const fontsReady = useFontsReady(captions.length > 0 || cards.length > 0)
 
+  /*
+   * Trinta quadros sao 1,25s a 23,976: folga para um <video> abrir o arquivo,
+   * procurar o ponto de entrada e decodificar o primeiro quadro. Menos que
+   * isso corre o risco de nao dar tempo justamente nos clipes que comecam
+   * longe do inicio do arquivo, que sao os que mais demoram.
+   */
+  const premount = getRemotionEnvironment().isRendering ? 0 : 30
+
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {/*
@@ -97,7 +105,33 @@ export function Video({
                 timing={timingFor(scene.transitionIn, scene.transitionInFrames)}
               />
             )}
-            <TransitionSeries.Sequence durationInFrames={scene.durationInFrames}>
+            {/*
+              PREMOUNT: a cena nasce ANTES de entrar, e por isso nao pisca.
+
+              Era esta a causa do flash desde o comeco, e as tentativas de
+              cobri-lo por baixo -- cama de miniatura, pre-carga fora do DOM --
+              atacavam o sintoma. O <video> do bloco era criado no quadro exato
+              em que o bloco comecava, e carregar, procurar o ponto e
+              decodificar nao cabe nos 41ms de um quadro. Tocando, dava flash;
+              parado, nao, porque ali o player espera.
+
+              `premountFor` monta a sequencia trinta quadros antes, invisivel e
+              congelada no frame 0: quando chega a hora, o video ja achou o
+              quadro e so precisa aparecer.
+
+              O CAST existe porque o TIPO nao declara a prop, mas a
+              implementacao repassa tudo que nao seja durationInFrames,
+              children, offset, controls e from para a <Sequence> interna --
+              que a suporta. A documentacao do Remotion lista `premountFor`
+              como aceito aqui; os tipos e que ficaram para tras.
+
+              So no preview: no render o frame vem pronto do compositor, nao ha
+              o que esconder, e montar cenas adiantado so custaria memoria.
+            */}
+            <TransitionSeries.Sequence
+              durationInFrames={scene.durationInFrames}
+              {...(premount > 0 ? ({ premountFor: premount } as { premountFor: number }) : {})}
+            >
               <Scene {...scene} />
             </TransitionSeries.Sequence>
           </Fragment>
