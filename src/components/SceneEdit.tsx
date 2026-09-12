@@ -181,6 +181,7 @@ export function SceneEdit() {
             <div className="grid grid-cols-2 gap-2">
               <Camera
                 image={image}
+                sourceStart={scene.sourceStart ?? 0}
                 label="Comeca em"
                 value={scene.camera.from}
                 onChange={(from) =>
@@ -189,6 +190,7 @@ export function SceneEdit() {
               />
               <Camera
                 image={image}
+                sourceStart={scene.sourceStart ?? 0}
                 label="Termina em"
                 value={scene.camera.to}
                 onChange={(to) =>

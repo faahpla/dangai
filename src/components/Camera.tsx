@@ -2,21 +2,58 @@ import { useCallback, useRef } from 'react'
 import { CAMERA_SCALE_MAX, type CameraFrame, type ImageAsset } from '@shared/contract'
 
 /**
+ * A midia do bloco, parada, para enquadrar em cima dela.
+ *
+ * Print e clipe chegam os dois em `image.url`, mas um e imagem e o outro e um
+ * mp4 -- e `<img src="...mp4">` nao desenha nada, so o icone de arquivo
+ * quebrado. Foi o que apareceu na primeira versao disto, num projeto feito
+ * inteiro de clipes: "consigo nem ver oq vou fazer".
+ *
+ * O clipe entra como <video> parado no instante em que o bloco comeca, que e o
+ * quadro que ele esta de fato enquadrando -- o primeiro segundo do arquivo
+ * costuma ser outra coisa.
+ */
+function Midia({
+  image,
+  sourceStart,
+  style,
+}: {
+  image: ImageAsset
+  sourceStart: number
+  style: React.CSSProperties
+}) {
+  if (image.kind === 'video') {
+    return (
+      <video
+        src={image.url}
+        muted
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          event.currentTarget.currentTime = sourceStart
+        }}
+        style={style}
+      />
+    )
+  }
+  return <img src={image.url} alt="" draggable={false} style={style} />
+}
+
+/**
  * O enquadramento de uma das pontas da camera livre.
  *
- * Mostra o quadro 9:16 inteiro e, por cima, o RETANGULO do que vai aparecer
- * naquele instante. Arrastar move; o slider aproxima. E o mesmo gesto do
- * Enquadramento que ele ja usa, com uma diferenca: la a janela recorta uma
- * imagem maior que a tela, aqui ela escolhe um pedaco DENTRO da tela.
+ * Mostra o quadro 9:16 inteiro, escurecido, e por cima o RETANGULO do que vai
+ * aparecer naquele instante -- com a midia em brilho normal dentro dele.
+ * Arrastar move; o slider aproxima.
  *
- * A conta que liga os dois mundos:
+ * A conta que liga o retangulo ao video:
  *
  *   o render aplica `scale(s) translate(x%, y%)`, entao um ponto p da imagem
  *   aparece em s * (p + x/100). Fica visivel quem cai dentro do quadro, ou
  *   seja |s * (p + x/100)| <= 0.5. Isolando p:
  *
- *     largura do retangulo = 1/s
- *     canto esquerdo       = 0.5 - x/100 - 0.5/s
+ *     lado do retangulo = 1/s
+ *     canto esquerdo    = 0.5 - x/100 - 0.5/s
  *
  * Desenhar o retangulo e aplicar essa formula; arrastar e resolve-la ao
  * contrario. Por isso ela mora aqui e em mais lugar nenhum -- duas contas
@@ -24,11 +61,13 @@ import { CAMERA_SCALE_MAX, type CameraFrame, type ImageAsset } from '@shared/con
  */
 export function Camera({
   image,
+  sourceStart,
   value,
   onChange,
   label,
 }: {
   image: ImageAsset
+  sourceStart: number
   value: CameraFrame
   onChange: (frame: CameraFrame) => void
   label: string
@@ -43,8 +82,8 @@ export function Camera({
   /**
    * O quanto a camera pode sair do centro sem deixar entrar borda preta.
    *
-   * Com escala 1 o retangulo ocupa o quadro todo e nao ha folga nenhuma --
-   * por isso o limite e zero ali, e cresce conforme ele aproxima.
+   * Com escala 1 o retangulo ocupa o quadro todo e nao ha folga nenhuma -- por
+   * isso o limite e zero ali, e cresce conforme ele aproxima.
    */
   const folga = 50 * (1 - 1 / value.scale)
   const preso = (n: number): number => Math.min(Math.max(n, -folga), folga)
@@ -56,9 +95,12 @@ export function Camera({
       if (!caixa || !inicio) return
 
       const rect = caixa.getBoundingClientRect()
-      // O arraste anda com a IMAGEM, e o retangulo e a janela: puxar o
-      // retangulo para a direita mostra o que esta a direita, o que significa
-      // deslocar a imagem para a esquerda. Dai o sinal trocado.
+      /*
+       * Sinal trocado de proposito: o que se arrasta e a JANELA, e o numero
+       * guardado desloca a IMAGEM. Puxar a janela para a direita e mostrar o
+       * que esta a direita, o que em transform significa empurrar a imagem
+       * para a esquerda.
+       */
       const dx = ((clientX - inicio.x) / rect.width) * 100
       const dy = ((clientY - inicio.y) / rect.height) * 100
 
@@ -70,6 +112,13 @@ export function Camera({
     },
     [onChange, folga],
   )
+
+  /* A midia ocupando o quadro inteiro. O retangulo repete isto por dentro. */
+  const cobrindo: React.CSSProperties = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+  }
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -90,26 +139,44 @@ export function Camera({
         onPointerCancel={() => {
           arrasto.current = null
         }}
-        className="relative aspect-[9/16] w-full cursor-move overflow-hidden rounded-sm border border-line bg-black"
+        className="relative aspect-[9/16] w-full cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >
-        <img src={image.url} alt="" draggable={false} className="h-full w-full object-cover" />
+        {/* O quadro inteiro, apagado: e a referencia do que fica DE FORA. */}
+        <div className="absolute inset-0 opacity-35">
+          <Midia image={image} sourceStart={sourceStart} style={cobrindo} />
+        </div>
 
-        {/* O que fica de fora escurece: o retangulo se le pelo contraste. */}
-        <div className="pointer-events-none absolute inset-0 bg-black/55" />
+        {/*
+          O miolo, em brilho normal.
+
+          E a MESMA midia desenhada de novo, do tamanho do quadro inteiro, mas
+          recortada pelo retangulo: dentro de uma janela de lado `lado`, uma
+          copia de tamanho `1/lado` deslocada de `-left/lado` mostra exatamente
+          o pedaco certo. Sem isso o retangulo seria so uma moldura vazia, que e
+          onde a primeira versao parou.
+        */}
         <div
           style={{
             left: `${left * 100}%`,
             top: `${top * 100}%`,
             width: `${lado * 100}%`,
             height: `${lado * 100}%`,
-            backgroundImage: `url(${image.url})`,
-            // A janela repete a imagem no tamanho do quadro inteiro, deslocada
-            // para o pedaco certo -- e o que faz o miolo aparecer sem o veu.
-            backgroundSize: `${100 / lado}% ${100 / lado}%`,
-            backgroundPosition: `${(left / (1 - lado || 1)) * 100}% ${(top / (1 - lado || 1)) * 100}%`,
           }}
-          className="pointer-events-none absolute border border-accent shadow-[0_0_0_9999px_rgba(0,0,0,0)]"
-        />
+          className="pointer-events-none absolute overflow-hidden border border-accent"
+        >
+          <Midia
+            image={image}
+            sourceStart={sourceStart}
+            style={{
+              position: 'absolute',
+              left: `${(-left / lado) * 100}%`,
+              top: `${(-top / lado) * 100}%`,
+              width: `${(1 / lado) * 100}%`,
+              height: `${(1 / lado) * 100}%`,
+              objectFit: 'cover',
+            }}
+          />
+        </div>
       </div>
 
       <div className="flex items-center gap-2">
