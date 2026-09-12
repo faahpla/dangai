@@ -481,7 +481,7 @@ export function Timeline() {
           Encostada nos blocos de proposito: e a coincidencia entre as duas
           faixas que se quer ler de relance.
         */}
-        {duration > 0 && <FaixaLegendas duration={duration} />}
+        {duration > 0 && <FaixaLegendas duration={duration} zoom={zoom} />}
 
         {/*
           A FAIXA DE SFX, embaixo da esteira e dentro do mesmo rolamento.
@@ -746,7 +746,7 @@ function FaixaSfx({
  *
  * Quem mostra o texto o tempo todo e o cabecalho, que tem largura de sobra.
  */
-function FaixaLegendas({ duration }: { duration: number }) {
+function FaixaLegendas({ duration, zoom }: { duration: number; zoom: number }) {
   const captions = useProject((s) => s.captions)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const playhead = useProject((s) => s.playhead)
@@ -776,7 +776,17 @@ function FaixaLegendas({ duration }: { duration: number }) {
   return (
     <div
       ref={faixaRef}
-      className="relative mt-px h-[14px] w-full overflow-hidden border-t border-line bg-surface"
+      /*
+       * O MESMO ESTICAMENTO DA ESTEIRA, como a faixa de SFX ja fazia.
+       *
+       * Sem isto a faixa ficava em 100% da janela enquanto os blocos ocupavam
+       * `zoom * 100%`: com zoom em 4,7x as legendas do video inteiro se
+       * espremiam no primeiro quinto da tela, sem relacao nenhuma com o bloco
+       * acima. E a coincidencia entre as duas faixas e o unico motivo desta
+       * existir -- desalinhada, ela so atrapalha.
+       */
+      style={{ width: `${zoom * 100}%` }}
+      className="relative mt-px h-[14px] min-w-full overflow-hidden border-t border-line bg-surface"
     >
       {captions.map((bloco, i) => {
         const inicio = bloco.from / VIDEO_FPS
