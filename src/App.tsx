@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useProject } from '@/store/project'
 import { startAutosave } from '@/store/autosave'
 import { desfazer, refazer, startUndo } from '@/store/undo'
+import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legenda'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
@@ -79,6 +80,14 @@ export function App() {
   // Antes de qualquer coisa mexer no estado, como o autosave: os dois observam
   // o documento e precisam ver a primeira edicao da sessao.
   useEffect(() => startUndo(), [])
+  /*
+   * O estilo de legenda guardado vale como ponto de partida, e dai em diante o
+   * que ele deixar vira o padrao do proximo video. Aplicar ANTES de o
+   * observador comecar evitaria um salvamento redundante, mas a ordem aqui e
+   * indiferente: o guard de carregamento cobre os dois casos.
+   */
+  useEffect(() => startEstiloLegenda(), [])
+  useEffect(() => void aplicarEstiloGuardado(), [])
   useEffect(() => void checkAutosave(), [checkAutosave])
 
   /*

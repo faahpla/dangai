@@ -28,6 +28,21 @@ export interface Settings {
    * em cada um.
    */
   curvePresets: { nome: string; pontos: [number, number, number, number] }[]
+  /**
+   * O estilo de legenda que ele deixou por ultimo.
+   *
+   * Mesmo motivo das curvas: cor, altura, tamanho, fonte e contorno sao gosto
+   * DELE, nao caracteristica de um video. Guardado so no projeto, cada video
+   * novo nascia no padrao de fabrica e obrigava a refazer os mesmos ajustes --
+   * "toda vez ficar alterando e um saco".
+   *
+   * O projeto continua guardando o proprio estilo: abrir um video antigo mostra
+   * o que ELE tinha, e nao o de agora. Isto aqui e so o ponto de partida de
+   * quem comeca do zero.
+   *
+   * `null` ate ele mexer em alguma coisa pela primeira vez.
+   */
+  captionStyle: Record<string, unknown> | null
 }
 
 const DEFAULTS: Settings = {
@@ -36,6 +51,7 @@ const DEFAULTS: Settings = {
   sfxDir: '',
   libraryDir: '',
   curvePresets: [],
+  captionStyle: null,
 }
 
 let filePath: string | null = null
@@ -88,6 +104,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
     sfxDir: settings.sfxDir,
     libraryDir: settings.libraryDir,
     curvePresets: settings.curvePresets,
+    captionStyle: settings.captionStyle,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -105,6 +122,12 @@ function coerce(raw: unknown): Settings {
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
     curvePresets: curvasSalvas(value['curvePresets']),
+    // Conferido do outro lado, pelo schema do contract: aqui so passa adiante
+    // um objeto, e um campo estranho vira o padrao em vez de derrubar o app.
+    captionStyle:
+      typeof value['captionStyle'] === 'object' && value['captionStyle'] !== null
+        ? (value['captionStyle'] as Record<string, unknown>)
+        : null,
   }
 }
 

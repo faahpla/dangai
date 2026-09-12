@@ -181,6 +181,7 @@ export type SceneEffect = (typeof SCENE_EFFECTS)[number]
  * alem disso ja mostra o pixel, e o que era um close vira um borrao -- o
  * mesmo motivo pelo qual o Ken Burns nunca passou de 1.15 de escala.
  */
+
 export const CAMERA_SCALE_MAX = 3
 export const cameraFrameSchema = z.object({
   scale: z.number().min(1).max(CAMERA_SCALE_MAX),
@@ -794,6 +795,30 @@ export const captionScaleSchema = z
   .min(CAPTION_SCALE_MIN)
   .max(CAPTION_SCALE_MAX)
   .default(CAPTION_SCALE_DEFAULT)
+
+/**
+ * O estilo de legenda guardado como PADRAO, fora de qualquer projeto.
+ *
+ * Todo campo e opcional e o schema tem `.catch()` em cada um: este objeto vem
+ * de um JSON no disco que sobrevive a atualizacao do app, entao um valor que
+ * deixou de existir numa versao nova nao pode impedir o resto de ser aplicado.
+ * Um campo estranho cai no padrao dele; os outros continuam valendo.
+ *
+ * A fonte vai pelo NOME do arquivo, como no projeto: a URL e desta sessao e
+ * nao vale amanha.
+ */
+export const captionStyleSchema = z.object({
+  color: captionColorSchema.catch(CAPTION_COLOR_DEFAULT).optional(),
+  y: captionYSchema.catch(CAPTION_Y_DEFAULT).optional(),
+  scale: captionScaleSchema.catch(CAPTION_SCALE_DEFAULT).optional(),
+  fontNome: z.string().catch('').optional(),
+  animation: captionAnimationSchema.catch(CAPTION_ANIMATION_DEFAULT).optional(),
+  animationFrames: captionAnimationFramesSchema.catch(CAPTION_ANIMATION_FRAMES_DEFAULT).optional(),
+  mark: captionMarkSchema.catch(CAPTION_MARK_DEFAULT).optional(),
+  shadow: captionShadowSchema.catch(CAPTION_SHADOW_DEFAULT).optional(),
+  stroke: captionStrokeSchema.catch(CAPTION_STROKE_DEFAULT).optional(),
+})
+export type CaptionStyle = z.infer<typeof captionStyleSchema>
 
 export const renderPropsSchema = z.object({
   scenes: z.array(

@@ -363,6 +363,8 @@ export interface PublicSettings {
   apiKeyHint: string
   /** Curvas de movimento que ele guardou, para reusar em outros videos. */
   curvePresets: { nome: string; pontos: [number, number, number, number] }[]
+  /** O estilo de legenda que ele deixou por ultimo. Ponto de partida do proximo video. */
+  captionStyle: Record<string, unknown> | null
 }
 
 export interface SettingsPatch {
@@ -371,6 +373,7 @@ export interface SettingsPatch {
   sfxDir?: string
   libraryDir?: string
   curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
+  captionStyle?: Record<string, unknown>
 }
 
 /**
