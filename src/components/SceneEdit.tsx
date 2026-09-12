@@ -5,6 +5,7 @@ import {
   MOTION_CURVES,
   ROTATIONS,
   TRANSITIONS_NA_TELA,
+  VIDEO_FPS,
   type CurvePoints,
   type MotionCurve,
   type Transition,
@@ -35,6 +36,7 @@ export function SceneEdit() {
   const plan = useProject((s) => s.plan)
   const index = useProject((s) => s.selectedScene)
   const updateScene = useProject((s) => s.updateScene)
+  const setPlayhead = useProject((s) => s.setPlayhead)
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
   const salvas = useProject((s) => s.curvePresets)
   const carregarCurvas = useProject((s) => s.loadCurvePresets)
@@ -183,6 +185,7 @@ export function SceneEdit() {
                 image={image}
                 sourceStart={scene.sourceStart ?? 0}
                 label="Comeca em"
+                aoMexer={() => setPlayhead(scene.start)}
                 value={scene.camera.from}
                 onChange={(from) =>
                   updateScene(index, { camera: { from, to: scene.camera!.to } })
@@ -192,6 +195,7 @@ export function SceneEdit() {
                 image={image}
                 sourceStart={scene.sourceStart ?? 0}
                 label="Termina em"
+                aoMexer={() => setPlayhead(Math.max(scene.end - 1 / VIDEO_FPS, scene.start))}
                 value={scene.camera.to}
                 onChange={(to) =>
                   updateScene(index, { camera: { from: scene.camera!.from, to } })

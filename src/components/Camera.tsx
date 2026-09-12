@@ -65,12 +65,24 @@ export function Camera({
   value,
   onChange,
   label,
+  aoMexer,
 }: {
   image: ImageAsset
   sourceStart: number
   value: CameraFrame
   onChange: (frame: CameraFrame) => void
   label: string
+  /**
+   * Leva a agulha para o instante que ESTE quadro descreve.
+   *
+   * Sem isto o preview discordava do retangulo, e com razao: "Comeca em" e o
+   * primeiro frame do bloco, mas a agulha costuma estar no meio dele, onde o
+   * enquadramento ja avancou parte do caminho ate a outra ponta. Os dois nao
+   * tinham como concordar, e nada na tela dizia por que.
+   *
+   * O "Trecho do clipe" ja fazia isso a cada arrasto, pelo mesmo motivo.
+   */
+  aoMexer: () => void
 }) {
   const caixaRef = useRef<HTMLDivElement | null>(null)
   const arrasto = useRef<{ x: number; y: number; de: CameraFrame } | null>(null)
@@ -129,6 +141,7 @@ export function Camera({
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId)
           arrasto.current = { x: event.clientX, y: event.clientY, de: value }
+          aoMexer()
         }}
         onPointerMove={(event) => {
           if (arrasto.current) mover(event.clientX, event.clientY)
@@ -141,42 +154,31 @@ export function Camera({
         }}
         className="relative aspect-[9/16] w-full cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >
-        {/* O quadro inteiro, apagado: e a referencia do que fica DE FORA. */}
-        <div className="absolute inset-0 opacity-35">
-          <Midia image={image} sourceStart={sourceStart} style={cobrindo} />
-        </div>
-
         {/*
-          O miolo, em brilho normal.
+          UMA MIDIA SO, e o escurecimento com um furo.
 
-          E a MESMA midia desenhada de novo, do tamanho do quadro inteiro, mas
-          recortada pelo retangulo: dentro de uma janela de lado `lado`, uma
-          copia de tamanho `1/lado` deslocada de `-left/lado` mostra exatamente
-          o pedaco certo. Sem isso o retangulo seria so uma moldura vazia, que e
-          onde a primeira versao parou.
+          A primeira versao desenhava a midia duas vezes -- apagada ao fundo e
+          de novo, recortada, dentro do retangulo. Com clipe isso virava DOIS
+          <video> independentes, cada um procurando o proprio quadro: quando um
+          terminava o seek antes do outro, o miolo mostrava um instante
+          diferente do fundo. Na tela, isso se lia como retangulo cortado e como
+          enquadramento que nao bate com o preview.
+
+          Agora o escuro e uma sombra que se espalha para FORA do retangulo,
+          entao ha uma imagem so embaixo de tudo e nada pode divergir.
         */}
+        <Midia image={image} sourceStart={sourceStart} style={cobrindo} />
+
         <div
           style={{
             left: `${left * 100}%`,
             top: `${top * 100}%`,
             width: `${lado * 100}%`,
             height: `${lado * 100}%`,
+            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
           }}
-          className="pointer-events-none absolute overflow-hidden border border-accent"
-        >
-          <Midia
-            image={image}
-            sourceStart={sourceStart}
-            style={{
-              position: 'absolute',
-              left: `${(-left / lado) * 100}%`,
-              top: `${(-top / lado) * 100}%`,
-              width: `${(1 / lado) * 100}%`,
-              height: `${(1 / lado) * 100}%`,
-              objectFit: 'cover',
-            }}
-          />
-        </div>
+          className="pointer-events-none absolute border border-accent"
+        />
       </div>
 
       <div className="flex items-center gap-2">
@@ -188,6 +190,7 @@ export function Camera({
           value={value.scale}
           aria-label={`Aproximacao -- ${label}`}
           onChange={(event) => {
+            aoMexer()
             const scale = Number(event.target.value)
             // Reaperta o deslocamento na folga NOVA: afastar encolhe a margem,
             // e um x que era valido em 2x poe borda preta em 1.2x.
