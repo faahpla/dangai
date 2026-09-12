@@ -53,14 +53,25 @@ function morre(msg) {
   process.exit(1)
 }
 
-/** `shell: true` porque npx e npm são .cmd no Windows. */
+/**
+ * `shell` SÓ onde é indispensável, e nunca com argumento que tenha espaço.
+ *
+ * `npm` e `npx` são .cmd no Windows e não executam sem shell. Mas com shell o
+ * Node não escapa nada -- ele concatena os argumentos numa linha só, e o
+ * próprio runtime avisa isso. Um `--notes "Dangai 1.26.0"` vira três palavras
+ * soltas, e o `gh` responde `no matches found for '1.26.0'`.
+ *
+ * Foi o que derrubou a primeira execução deste script. `gh` e `git` são .exe:
+ * rodam direto, com os argumentos preservados.
+ */
 function run(cmd, args, opts = {}) {
+  const { quiet, shell, ...resto } = opts
   return execFileSync(cmd, args, {
     cwd: ROOT,
-    stdio: opts.quiet ? 'pipe' : 'inherit',
+    stdio: quiet ? 'pipe' : 'inherit',
     encoding: 'utf8',
-    shell: true,
-    ...opts,
+    shell: shell ?? false,
+    ...resto,
   })
 }
 
@@ -102,8 +113,9 @@ log('tag conferida no remoto')
 // ------------------------------------------------------------------ empacota
 
 log('empacotando (alguns minutos)...')
-run('npm', ['run', 'build'])
-run('npx', ['electron-builder', '--win', '--publish', 'never'])
+// Estes dois precisam de shell (são .cmd), e nenhum argumento tem espaço.
+run('npm', ['run', 'build'], { shell: true })
+run('npx', ['electron-builder', '--win', '--publish', 'never'], { shell: true })
 
 // ------------------------------------------------------------- confere o pacote
 
