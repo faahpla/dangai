@@ -58,27 +58,39 @@ git push origin vX.Y.Z
 npm run release
 ```
 
-**O push vem ANTES do release.** O `npm run release` publica com
-`--publish always`, e o GitHub recusa criar uma release publicada numa tag que
-o remoto não conhece: `Published releases must have a valid tag`. A ordem
-inversa falha depois de gastar todo o tempo de empacotamento.
+**O push vem ANTES do release**, e o script recusa publicar sem isso. A tag vai
+num push próprio porque `--follow-tags` só envia tags **anotadas**, e as deste
+projeto são leves — `git push --follow-tags` a deixaria para trás sem reclamar.
 
-A tag vai num push próprio porque `--follow-tags` só envia tags **anotadas**, e
-as deste projeto são leves — `git push --follow-tags` deixa a tag para trás sem
-reclamar.
-
-`npm run release` monta o instalador e publica direto na release do GitHub.
-Precisa de `GH_TOKEN` no ambiente — `gh auth token` serve.
-
-Confira a release antes de considerar publicada: o electron-builder às vezes
-sobe só o `.blockmap` e deixa a release como rascunho. Sem o `.exe` e o
-`latest.yml`, nenhum app se atualiza.
+`npm run release` empacota e publica pelo `gh`. Precisa do `gh` autenticado.
+Para ensaiar sem publicar:
 
 ```bash
-gh release view vX.Y.Z --json isDraft,assets
-gh release upload vX.Y.Z release/Dangai-X.Y.Z-win-x64.exe release/latest.yml
-gh release edit vX.Y.Z --draft=false
+npm run release -- --dry-run
 ```
+
+Ele confere sozinho, e recusa em vez de publicar errado: tree sujo, tag fora do
+remoto ou apontando para outro commit, `latest.yml` de outra versão, tamanho do
+`.exe` diferente do que o `latest.yml` declara. No fim pergunta ao endpoint
+`releases/latest` o que o **updater** vê — e não o que está na tag.
+
+### Por que não é `electron-builder --publish always`
+
+Porque isso falhou três vezes seguidas, e não por configuração. O
+electron-builder abre **um publisher por artefato**, cada um com a release
+cacheada numa instância própria. Com o `.exe` e o `.blockmap` são duas chamadas
+concorrentes que leem "a release não existe" e criam as duas. Uma ganha, a outra
+recebe `422 already_exists` e **aborta o processo** — levando junto o
+`latest.yml`, que só seria gerado depois.
+
+Foi assim que a v1.24.0 saiu com duas releases na mesma tag (o GitHub elegeu
+como "latest" a que estava quase vazia) e a v1.25.0 saiu sem `latest.yml`.
+
+Uma armadilha que vale conhecer mesmo com o script: **`release/` não é limpo
+entre publicações**. O `latest.yml` da versão anterior sobrevive ali com cara de
+novo, e subi-lo produz uma release completa na aparência que diz aos apps que a
+versão mais recente é a velha — ninguém atualiza, e o sintoma aparece dias
+depois. É a conferência que o script faz antes de qualquer upload.
 
 Os apps instalados percebem sozinhos em algumas horas, ou na próxima abertura.
 
