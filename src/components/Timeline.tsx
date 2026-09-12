@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Minus, Plus, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
-import { SFX_GAIN_MAX, SFX_GAIN_MIN } from '@shared/contract'
+import { SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 import { Waveform } from './Waveform'
 
@@ -65,6 +65,59 @@ export function Timeline() {
     [scenes, timeAt],
   )
 
+  /*
+   * ONDE A ALCA COLA.
+   *
+   * A montagem ja escolhe os cortes olhando `cutCandidates` -- as pausas e as
+   * fronteiras de palavra que o transcribe achou --, e e isso que garante o
+   * criterio de nenhuma troca de imagem cair no meio de uma palavra. No arraste
+   * a mao essa inteligencia sumia: ele mirava no olho, contra um waveform.
+   *
+   * Os inicios de LEGENDA entram junto porque agora estao na tela, logo abaixo
+   * dos blocos. Colar no que se ve e o minimo que se espera.
+   */
+  const transcript = useProject((s) => s.transcript)
+  const captions = useProject((s) => s.captions)
+
+  const alvosDeSnap = useMemo(() => {
+    const alvos = [...(transcript?.cutCandidates ?? [])]
+    for (const bloco of captions) alvos.push(bloco.from / VIDEO_FPS)
+    return alvos.sort((a, b) => a - b)
+  }, [transcript, captions])
+
+  /**
+   * Aproxima o instante do alvo mais perto, se houver um por perto.
+   *
+   * A tolerancia e de DOZE PIXELS, e nao de um tanto de segundos: com zoom em
+   * 4,7x o mesmo intervalo de tempo ocupa cinco vezes mais tela, e uma
+   * tolerancia fixa em segundos grudaria tudo de longe justamente quando ele
+   * ampliou para ser preciso. Em pixels, o ima tem sempre o mesmo tamanho para
+   * o olho -- e ampliar de fato refina a mira.
+   *
+   * `Alt` desliga: e a saida para quando ele quer exatamente o lugar que o ima
+   * esta recusando.
+   */
+  const comSnap = useCallback(
+    (seconds: number, ignorar: boolean): number => {
+      const track = trackRef.current
+      if (ignorar || !track || duration === 0 || alvosDeSnap.length === 0) return seconds
+
+      const tolerancia = (12 / track.clientWidth) * duration
+      let melhor = seconds
+      let distancia = tolerancia
+
+      for (const alvo of alvosDeSnap) {
+        const dist = Math.abs(alvo - seconds)
+        if (dist < distancia) {
+          distancia = dist
+          melhor = alvo
+        }
+      }
+      return melhor
+    },
+    [alvosDeSnap, duration],
+  )
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (isRendering) return
@@ -78,12 +131,12 @@ export function Timeline() {
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (isRendering || event.buttons !== 1) return
       if (dragging !== null) {
-        moveBoundary(dragging, timeAt(event.clientX))
+        moveBoundary(dragging, comSnap(timeAt(event.clientX), event.altKey))
         return
       }
       setPlayhead(timeAt(event.clientX))
     },
-    [isRendering, dragging, moveBoundary, setPlayhead, timeAt],
+    [isRendering, dragging, moveBoundary, setPlayhead, timeAt, comSnap],
   )
 
   const stopDragging = useCallback(() => setDragging(null), [])
@@ -349,7 +402,7 @@ export function Timeline() {
                     setDragging(index)
                   }}
                   onPointerMove={(event) => {
-                    if (dragging === index) moveBoundary(index, timeAt(event.clientX))
+                    if (dragging === index) moveBoundary(index, comSnap(timeAt(event.clientX), event.altKey))
                   }}
                   onPointerUp={stopDragging}
                   onPointerCancel={stopDragging}
@@ -406,6 +459,20 @@ export function Timeline() {
             </div>
           )}
         </div>
+
+        {/*
+          A FAIXA DE LEGENDAS, logo abaixo dos blocos.
+
+          O app inteiro existe para casar roteiro, fala e imagem -- e ate aqui a
+          legenda era a unica das tres que nao aparecia na linha do tempo. Para
+          saber se uma troca de imagem caia no meio de uma frase, so
+          renderizando ou abrindo o editor de legendas, que mostra o texto sem
+          mostrar os blocos.
+
+          Encostada nos blocos de proposito: e a coincidencia entre as duas
+          faixas que se quer ler de relance.
+        */}
+        {duration > 0 && <FaixaLegendas duration={duration} />}
 
         {/*
           A FAIXA DE SFX, embaixo da esteira e dentro do mesmo rolamento.
@@ -649,6 +716,58 @@ function FaixaSfx({
           )}
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * As legendas na linha do tempo, uma barra por bloco de legenda.
+ *
+ * Nao e editavel, e de proposito: mesclar e dividir legenda tem tela propria,
+ * com o texto grande e o contexto em volta. Aqui o trabalho e outro -- VER onde
+ * cada uma cai contra os blocos de imagem. Uma troca de cena no meio de uma
+ * frase e o tipo de defeito que nao aparece lendo o roteiro nem olhando a
+ * esteira, so na coincidencia das duas coisas.
+ *
+ * Desligar as legendas apaga a faixa: sem elas no video, ela mentiria.
+ */
+function FaixaLegendas({ duration }: { duration: number }) {
+  const captions = useProject((s) => s.captions)
+  const captionsEnabled = useProject((s) => s.captionsEnabled)
+  const playhead = useProject((s) => s.playhead)
+
+  if (!captionsEnabled || captions.length === 0 || duration === 0) return null
+
+  return (
+    <div className="relative mt-px h-[18px] w-full overflow-hidden border-t border-line bg-surface">
+      {captions.map((bloco, i) => {
+        const inicio = bloco.from / VIDEO_FPS
+        const fim = (bloco.from + bloco.durationInFrames) / VIDEO_FPS
+        const atual = playhead >= inicio && playhead < fim
+        const texto = bloco.words.map((w) => w.text).join(' ')
+
+        return (
+          <div
+            key={`legenda-${bloco.from}-${i}`}
+            style={{
+              left: `${(inicio / duration) * 100}%`,
+              width: `${((fim - inicio) / duration) * 100}%`,
+            }}
+            /*
+             * A borda direita e o que separa uma legenda da seguinte quando as
+             * duas se encostam -- e encostam quase sempre, porque a regra de
+             * duas palavras produz blocos curtos e colados.
+             */
+            className={[
+              'absolute inset-y-0 overflow-hidden border-r border-bg px-1 text-[9px] leading-[18px] whitespace-nowrap',
+              atual ? 'bg-accent-dim text-ink' : 'bg-elevated text-ink-3',
+            ].join(' ')}
+            title={texto}
+          >
+            {texto}
+          </div>
+        )
+      })}
     </div>
   )
 }
