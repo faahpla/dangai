@@ -209,18 +209,23 @@ export function Scene({
           no caminho do arquivo final.
         */}
         {/*
-          E so nos primeiros quadros: passado isso, ela vira peso morto.
+          A CAMA FICA O BLOCO INTEIRO. Ja tentei limitar, e voltou o flash.
 
-          A cama existe para cobrir a ENTRADA do bloco, enquanto o <video>
-          ainda procura o quadro. Deixa-la montada o bloco inteiro punha uma
-          camada de 1080x1920 embaixo de todo clipe do video, para o compositor
-          empilhar em cada frame -- e o preview ja anda apertado (medido: 24
-          quadros por segundo num bloco comum, 14 num dividido).
+          Houve uma versao que a desmontava apos doze quadros, com o argumento
+          de que passado isso ela seria peso morto -- uma camada de 1080x1920
+          embaixo de cada clipe, para o compositor empilhar a cada frame. O
+          argumento partia de um travamento medido em 24 quadros por segundo.
 
-          Doze quadros sao 0,4s: tempo de sobra para o video pintar, e curto o
-          bastante para nao pesar o resto do bloco.
+          So que 24 e a taxa CHEIA desta composicao, que roda a 24000/1001: nao
+          havia travamento nenhum para combater, e a economia custou justamente
+          o que a cama existe para resolver. Quando o <video> demora mais de
+          meio segundo para achar o quadro -- e demora, num clipe que comeca
+          longe do inicio do arquivo --, o preto voltava a aparecer.
+
+          O custo real dela e uma camada parada embaixo do video, que o
+          compositor resolve na GPU. Barato perto de um flash a cada troca.
         */}
-        {kind === 'video' && thumbnail && frame < 12 && !getRemotionEnvironment().isRendering && (
+        {kind === 'video' && thumbnail && !getRemotionEnvironment().isRendering && (
           // Absoluta, senao ela nao ficaria ATRAS do clipe: os dois sao filhos
           // da mesma caixa e, no fluxo normal, a cama empurraria o video para
           // baixo em vez de ficar embaixo dele.

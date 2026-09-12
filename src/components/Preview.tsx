@@ -363,18 +363,19 @@ function Sincronia({
      * adianta nada.
      */
     /*
-     * A janela do CLIPE e curta, e a do print continua longa.
+     * A janela do CLIPE e um pouco mais curta que a do print.
      *
-     * Um print preparado custa memoria e nada mais: ele decodifica uma vez e
-     * fica quieto. Um clipe preparado e um decodificador de video ABERTO --
-     * seis deles rodando ao mesmo tempo disputam com o player o mesmo hardware
-     * que esta tentando tocar o preview, e a cura fica pior que a doenca num
-     * projeto que e feito de clipes do comeco ao fim.
+     * Um print preparado custa memoria e nada mais: decodifica uma vez e fica
+     * quieto. Um clipe preparado e um decodificador de video ABERTO, e muitos
+     * deles disputam com o player o mesmo hardware.
      *
-     * Dois a frente cobrem a proxima troca, que e o unico momento em que o
-     * preto apareceria.
+     * Ja esteve em dois, o que era apertado demais: junto com a cama limitada,
+     * foi o que trouxe o flash de volta. A razao dada era um travamento de 24
+     * quadros por segundo -- que depois se revelou a taxa CHEIA da composicao.
+     * Quatro cobrem as proximas trocas com folga sem abrir meia duzia de
+     * decodificadores de uma vez.
      */
-    const CLIPES_A_FRENTE = 2
+    const CLIPES_A_FRENTE = 4
     const PRINTS_A_FRENTE = 6
 
     const janela = plan.scenes.slice(blocoAtual, blocoAtual + PRINTS_A_FRENTE).flatMap((scene, i) => {
