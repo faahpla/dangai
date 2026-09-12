@@ -174,6 +174,22 @@ export type SceneEffect = (typeof SCENE_EFFECTS)[number]
  * disto guarda esse valor, e tira-lo faria o arquivo nao abrir mais. Ele nao
  * aparece na tela e vale como esquerda, que era o que ele fazia.
  */
+/**
+ * Um enquadramento de camera: o que se ve do quadro num instante.
+ *
+ * O teto de 3x nao e arbitrario. Uma imagem de anime em 1080x1920 ampliada
+ * alem disso ja mostra o pixel, e o que era um close vira um borrao -- o
+ * mesmo motivo pelo qual o Ken Burns nunca passou de 1.15 de escala.
+ */
+export const CAMERA_SCALE_MAX = 3
+export const cameraFrameSchema = z.object({
+  scale: z.number().min(1).max(CAMERA_SCALE_MAX),
+  /** Deslocamento em % da imagem, a partir do centro. */
+  x: z.number().min(-50).max(50),
+  y: z.number().min(-50).max(50),
+})
+export type CameraFrame = z.infer<typeof cameraFrameSchema>
+
 export const TRANSITIONS = [
   'cut',
   'crossfade',
@@ -500,6 +516,32 @@ export const sceneSchema = z.object({
    */
   curvePoints: curvePointsSchema.nullable().default(null),
   /**
+   * CAMERA LIVRE: o enquadramento no comeco e no fim do bloco.
+   *
+   * Os presets de Ken Burns produzem movimentos que sempre partem ou chegam ao
+   * centro -- um zoom out abre a partir do meio da imagem, e ponto. Isso nao
+   * cobre o caso que ele descreveu: abrir a partir do ROSTO de um personagem
+   * que esta no alto e fora do eixo, e terminar no enquadramento normal.
+   *
+   * Preenchido, manda no lugar de `effect` e `intensity`: o movimento vira a
+   * interpolacao entre os dois quadros, com a curva do bloco no meio. O formato
+   * e o mesmo que `motionFor` ja devolvia, entao o Scene so troca de onde vem o
+   * numero, nao o que faz com ele.
+   *
+   * `scale` 1 e a imagem preenchendo o quadro; acima disso ela e ampliada e se
+   * ve um pedaco. `x` e `y` deslocam em porcento, e sao limitados pela propria
+   * escala -- passar do limite poria borda preta no quadro.
+   *
+   * null e o normal, e mantem os presets mandando.
+   */
+  camera: z
+    .object({
+      from: cameraFrameSchema,
+      to: cameraFrameSchema,
+    })
+    .nullable()
+    .default(null),
+  /**
    * De que ponto do CLIPE este bloco parte, em segundos. 0 = do comeco.
    *
    * O clipe chega cortado do AnCut, mas o bloco quase nunca tem a mesma
@@ -763,6 +805,16 @@ export const renderPropsSchema = z.object({
       curve: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
       /** A curva desenhada a mao; null usa o preset. Default para props antigas valerem. */
       curvePoints: curvePointsSchema.nullable().default(null),
+      /**
+       * Camera livre: os enquadramentos do comeco e do fim.
+       *
+       * Preenchida, manda no lugar de `effect` e `intensity`. Com default para
+       * props antigas continuarem validas.
+       */
+      camera: z
+        .object({ from: cameraFrameSchema, to: cameraFrameSchema })
+        .nullable()
+        .default(null),
       /**
        * Print ou clipe. Com default para props antigas continuarem validas.
        *

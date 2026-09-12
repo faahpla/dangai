@@ -410,6 +410,8 @@ export interface ProjectState {
         // O movimento proprio da metade de baixo, na tela dividida.
         | 'effectB'
         | 'intensityB'
+        // As duas pontas da camera livre.
+        | 'camera'
       >
     >,
   ) => void
@@ -669,6 +671,8 @@ function planoDosBlocos(
     // card da cena.
     sourceStart: 0,
     curvePoints: null,
+    // Camera livre so quando ele desenhar as pontas.
+    camera: null,
     rotation: 0,
     transitionIn: 'cut',
   }))
@@ -1663,6 +1667,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       // ajustou o ritmo do video inteiro nao quer o bloco novo destoando.
       curve: anfitriao.curve,
       curvePoints: null,
+      // Camera livre so quando ele desenhar as pontas.
+      camera: null,
       rotation: 0 as const,
       transitionIn: 'cut' as const,
     }))

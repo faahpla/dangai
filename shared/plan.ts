@@ -91,6 +91,8 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
     curvePoints: null,
+    // Camera livre so quando ele desenhar as pontas.
+    camera: null,
     rotation: 0 as const,
     transitionIn: index === 0 ? ('cut' as const) : ('cut' as const),
   }))
@@ -159,6 +161,8 @@ export function planFromCandidates(
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
     curvePoints: null,
+    // Camera livre so quando ele desenhar as pontas.
+    camera: null,
     rotation: 0 as const,
     transitionIn: 'cut' as const,
   }))
@@ -263,6 +267,8 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
           // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
           sourceStart: 0,
           curvePoints: null,
+          // Camera livre so quando ele desenhar as pontas.
+          camera: null,
     rotation: 0 as const,
     transitionIn: 'cut' as const,
         }
@@ -568,6 +574,8 @@ export function toRenderProps(
       intensity: scene.intensity,
       curve: scene.curve,
       curvePoints: scene.curvePoints ?? null,
+      // Camera livre, quando ele definiu as pontas a mao.
+      camera: scene.camera ?? null,
       kind: image.kind,
       // So o preview usa: e a cama que evita o preto na troca de bloco.
       thumbnail: image.thumbnail ?? null,
@@ -987,6 +995,8 @@ export function planByRhythm(
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
     curvePoints: null,
+    // Camera livre so quando ele desenhar as pontas.
+    camera: null,
     rotation: 0 as const,
     transitionIn: 'cut' as const,
   }))
@@ -1086,6 +1096,8 @@ export function planBySections(
         // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
         sourceStart: 0,
         curvePoints: null,
+        // Camera livre so quando ele desenhar as pontas.
+        camera: null,
     rotation: 0 as const,
     transitionIn: 'cut' as const,
       })

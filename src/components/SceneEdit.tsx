@@ -12,6 +12,7 @@ import {
 import { useProject } from '@/store/project'
 import { Chip, Field, Grupo } from './painel'
 import { Framing } from './Framing'
+import { Camera } from './Camera'
 
 /**
  * Os controles FINOS do bloco, deitados na area do meio.
@@ -142,6 +143,64 @@ export function SceneEdit() {
         na frente e sozinho na linha: e o padrao do clipe, e e o unico jeito de
         deixar um print parado, que antes nao existia.
       */}
+      {/*
+        CAMERA LIVRE: o enquadramento das duas pontas, desenhado a mao.
+
+        Fica antes dos presets porque desliga todos eles -- e o primeiro galho
+        da decisao, nao mais uma opcao no meio. Some na tela dividida: ali cada
+        metade tem quadro proprio, e uma camera so para as duas nao diz nada.
+      */}
+      {!imageB && (
+        <>
+          <Field label="Camera">
+            <Chip
+              active={scene.camera !== null && scene.camera !== undefined}
+              onClick={() =>
+                updateScene(index, {
+                  camera:
+                    scene.camera == null
+                      ? // Nasce como um zoom out simples: e o caso que ele
+                        // descreveu pedindo o recurso, e da para ver o efeito
+                        // antes de arrastar qualquer coisa.
+                        { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 } }
+                      : null,
+                })
+              }
+            >
+              {scene.camera == null ? 'Usar camera livre' : 'Voltar aos efeitos'}
+            </Chip>
+            {scene.camera != null && (
+              <p className="text-[11px] leading-relaxed text-ink-3">
+                Arraste o retangulo para escolher o que aparece, e use o slider para aproximar. O
+                ritmo do movimento continua sendo o do bloco.
+              </p>
+            )}
+          </Field>
+
+          {scene.camera != null && (
+            <div className="grid grid-cols-2 gap-2">
+              <Camera
+                image={image}
+                label="Comeca em"
+                value={scene.camera.from}
+                onChange={(from) =>
+                  updateScene(index, { camera: { from, to: scene.camera!.to } })
+                }
+              />
+              <Camera
+                image={image}
+                label="Termina em"
+                value={scene.camera.to}
+                onChange={(to) =>
+                  updateScene(index, { camera: { from: scene.camera!.from, to } })
+                }
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {scene.camera == null && (
       <Field label={imageB ? 'Efeito da metade de cima' : 'Efeito'}>
         <Chip
           active={scene.effect === 'nenhum'}
@@ -166,9 +225,10 @@ export function SceneEdit() {
           </p>
         )}
       </Field>
+      )}
 
       {/* Intensidade e ritmo so fazem sentido havendo movimento. */}
-      {scene.effect !== 'nenhum' && (
+      {scene.camera == null && scene.effect !== 'nenhum' && (
         <Field label={imageB ? 'Intensidade da metade de cima' : 'Intensidade'}>
           <div className="flex items-center gap-2.5">
             <input

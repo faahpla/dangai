@@ -29,6 +29,7 @@ export function Scene({
   curve,
   kind,
   thumbnail,
+  camera,
   sourceDurationInFrames,
   sourceStartFrames,
   abaixo,
@@ -55,8 +56,27 @@ export function Scene({
    * plano marca 'nenhum' no clipe, e o usuario liga onde quiser. Print tambem
    * pode ficar parado agora, que antes era impossivel.
    */
-  const { scale, x, y } =
-    effect === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(effect, intensity, eased)
+  /*
+   * A CAMERA LIVRE MANDA quando existe.
+   *
+   * Os presets produzem movimentos ancorados no centro -- um zoom out abre a
+   * partir do meio e pronto. Nao cobriam abrir a partir do ROSTO de alguem que
+   * esta no alto e fora do eixo, que foi o que ele pediu. Com as duas pontas
+   * definidas, o movimento e a reta entre elas, e a curva do bloco continua
+   * decidindo o RITMO da passagem, igual a um preset.
+   *
+   * Fica fora da tela dividida: ali cada metade tem quadro proprio, e uma
+   * camera so para as duas nao quer dizer nada.
+   */
+  const { scale, x, y } = camera
+    ? {
+        scale: camera.from.scale + (camera.to.scale - camera.from.scale) * eased,
+        x: camera.from.x + (camera.to.x - camera.from.x) * eased,
+        y: camera.from.y + (camera.to.y - camera.from.y) * eased,
+      }
+    : effect === 'nenhum'
+      ? { scale: 1, x: 0, y: 0 }
+      : motionFor(effect, intensity, eased)
 
   /*
    * O ultimo frame que o clipe realmente tem.
