@@ -152,7 +152,20 @@ export function Camera({
         onPointerCancel={() => {
           arrasto.current = null
         }}
-        className="relative aspect-[9/16] w-full cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
+        /*
+         * A ALTURA manda, e a largura sai dela.
+         *
+         * Com `w-full` o quadro crescia ate 390px de altura e empurrava a
+         * Intensidade e o Ritmo para fora da vista -- e o ritmo e justamente o
+         * que da sentido ao movimento desenhado aqui.
+         *
+         * Limitar pela altura E O UNICO JEITO CERTO: a conta do retangulo
+         * assume 9:16 nos dois eixos, entao um `max-h` por cima de `w-full`
+         * achataria o quadro sem achatar a conta, e o retangulo passaria a
+         * apontar para o lugar errado. Fixando a altura, a largura vem do
+         * aspect e a proporcao se mantem exata.
+         */
+        className="relative mx-auto aspect-[9/16] h-[240px] w-auto cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >
         {/*
           UMA MIDIA SO, e o escurecimento com um furo.

@@ -443,6 +443,13 @@ export function SceneEdit() {
         no proprio bloco, "Saida" escreve no seguinte. Mexer na saida daqui e o
         mesmo que ir ao proximo bloco e mexer na entrada dele.
       */}
+      {/*
+        As duas listas vao em DUAS COLUNAS.
+
+        Empilhadas, Entrada e Saida somavam doze botoes -- a coluna virava uma
+        tira comprida e o resto do painel sumia por baixo dela. Sao seis opcoes
+        curtas; lado a lado elas cabem em tres linhas cada.
+      */}
       <Grupo titulo="Transicao">
         <Field label="Entrada (emenda com o bloco anterior)">
           {index === 0 ? (
@@ -450,7 +457,7 @@ export function SceneEdit() {
               O primeiro bloco nao tem de onde entrar.
             </p>
           ) : (
-            <div className="flex flex-col gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               {TRANSITIONS_NA_TELA.map((transition) => (
                 <Chip
                   key={transition}
@@ -470,7 +477,7 @@ export function SceneEdit() {
               O ultimo bloco nao tem para onde sair.
             </p>
           ) : (
-            <div className="flex flex-col gap-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               {TRANSITIONS_NA_TELA.map((transition) => (
                 <Chip
                   key={transition}
