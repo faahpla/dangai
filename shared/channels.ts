@@ -43,6 +43,7 @@ export const IPC = {
   copyText: 'clipboard:write',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
+  cancelAnalyze: 'plan:cancel',
   revealFile: 'shell:reveal',
   analyze: 'plan:analyze',
   getSettings: 'settings:get',
@@ -541,6 +542,14 @@ export interface DangaiBridge {
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>
   cancelRender(): Promise<IpcResult<null>>
+  /**
+   * Interrompe a leitura da narracao em andamento.
+   *
+   * Existe porque ate 12/09/2026 nao havia saida: com o Whisper preso, a unica
+   * forma de recuperar a maquina era o Gerenciador de Tarefas -- e o app
+   * morria junto, levando o que ainda nao tinha sido salvo.
+   */
+  cancelAnalyze(): Promise<IpcResult<null>>
   revealFile(path: string): Promise<IpcResult<null>>
   analyze(args: AnalyzeArgs): Promise<IpcResult<AnalysisResult>>
   /** Grava o .dangai. Resolve com o caminho usado, ou null se cancelou o dialogo. */

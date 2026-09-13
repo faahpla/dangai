@@ -73,6 +73,7 @@ export function Library() {
   const describeBusy = useProject((s) => s.describeBusy)
   const describeLibrary = useProject((s) => s.describeLibrary)
   const applyBlockClips = useProject((s) => s.applyBlockClips)
+  const cancelAnalyze = useProject((s) => s.cancelAnalyze)
 
   /*
    * Com narracao carregada, marcar cena e marcar cena DE UMA FRASE.
@@ -683,10 +684,26 @@ export function Library() {
       */}
       {trabalhando !== null && (
         <div className="absolute inset-0 z-50 grid place-items-center bg-bg/85">
-          <span className="flex items-center gap-2.5 text-[13px] text-ink">
-            <Loader2 size={16} strokeWidth={1.5} className="animate-spin text-accent" />
-            {trabalhando}
-          </span>
+          <div className="flex flex-col items-center gap-3">
+            <span className="flex items-center gap-2.5 text-[13px] text-ink">
+              <Loader2 size={16} strokeWidth={1.5} className="animate-spin text-accent" />
+              {trabalhando}
+            </span>
+            {/*
+              A saida, e nao so o aviso.
+              A cortina dizia "estou trabalhando" e deixava o usuario sem nada
+              para fazer alem de esperar ou matar o app -- e matar o app levava
+              junto o que ainda nao tinha sido salvo. Cancelar aqui mata o
+              processo la no main e devolve a tela.
+            */}
+            <button
+              type="button"
+              onClick={() => void cancelAnalyze()}
+              className="rounded border border-line px-3 py-1 text-[12px] text-ink-2 transition-colors hover:border-ink-3 hover:text-ink"
+            >
+              Cancelar
+            </button>
+          </div>
         </div>
       )}
 

@@ -59,6 +59,7 @@ import {
   writeAutosave,
 } from './services/project'
 import { cancelRender, RenderCancelled, renderVideo } from './services/render'
+import { encerrarWhisper } from './services/whisper'
 import { analyze } from './services/transcribe'
 import { generateMetadata } from './services/metadata'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
@@ -384,6 +385,17 @@ export function registerIpc(): void {
       broadcast({ progress: 0, stage: 'failed', message })
       throw err
     }
+  })
+
+  /*
+   * Cancelar a leitura e MATAR o whisper-cli, e nao apenas parar de esperar.
+   *
+   * Uma promessa abandonada no renderer deixaria o processo comendo memoria ate
+   * o fim -- que e exatamente o estado do qual o usuario esta tentando sair.
+   */
+  handle<[], null>(IPC.cancelAnalyze, async () => {
+    encerrarWhisper()
+    return null
   })
 
   handle<[], null>(IPC.cancelRender, async () => {

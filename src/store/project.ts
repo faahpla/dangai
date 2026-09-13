@@ -576,6 +576,8 @@ export interface ProjectState {
   /** Resolve com o caminho do MP4, ou null se cancelou ou falhou. */
   startRender: () => Promise<string | null>
   cancelRender: () => Promise<void>
+  /** Interrompe a leitura da narracao e devolve a tela ao usuario. */
+  cancelAnalyze: () => Promise<void>
   /** Poe projetos salvos na fila. */
   enqueue: (paths: readonly string[]) => void
   removeFromQueue: (path: string) => void
@@ -2644,6 +2646,18 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   cancelRender: async () => {
     await window.dangai.cancelRender()
+  },
+
+  cancelAnalyze: async () => {
+    await window.dangai.cancelAnalyze()
+    /*
+     * A tela e devolvida AQUI, e nao quando o main responder.
+     *
+     * Quem cancela quer a tela de volta agora. A leitura interrompida ainda vai
+     * resolver com erro la atras, e a conferencia de que a narracao continua a
+     * mesma cuida de nao deixar nada cair por cima depois.
+     */
+    set({ busy: null, scriptBlocksBusy: null, libraryBusy: null })
   },
 
   applyRenderProgress: (progress) => {

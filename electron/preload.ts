@@ -149,6 +149,7 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.startRender, args) as Promise<IpcResult<string | null>>,
 
   cancelRender: () => ipcRenderer.invoke(IPC.cancelRender) as Promise<IpcResult<null>>,
+  cancelAnalyze: () => ipcRenderer.invoke(IPC.cancelAnalyze) as Promise<IpcResult<null>>,
 
   revealFile: (path) => ipcRenderer.invoke(IPC.revealFile, path) as Promise<IpcResult<null>>,
 

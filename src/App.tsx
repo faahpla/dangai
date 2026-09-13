@@ -113,7 +113,42 @@ export function App() {
         if ((event.key === 'k' || event.key === 'K') && (event.ctrlKey || event.metaKey)) {
           event.preventDefault()
           store.openPalette(false)
+          return
         }
+
+        /*
+         * Salvar NUNCA fica bloqueado.
+         *
+         * Em 12/09/2026 o app ficou preso com o trabalho de uma tarde por
+         * gravar, e nao havia como salvar. Salvar nao mexe na tela, nao pode
+         * dar errado e e exatamente o que se quer poder fazer quando algo
+         * travou -- nao ha motivo para um modal aberto tirar isso da mao do
+         * usuario.
+         */
+        if ((event.key === 's' || event.key === 'S') && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault()
+          void store.saveProject(event.shiftKey)
+          return
+        }
+
+        /*
+         * Esc fecha TUDO, como ultimo recurso.
+         *
+         * Cada modal ja trata o proprio Esc, e com a tela no ar este daqui nao
+         * muda nada. Ele existe para o caso contrario: uma marca de "aberto"
+         * que sobrou no estado sem nada na tela para limpa-la deixa o app
+         * inteiro sem atalho e sem saida -- so restaria fechar na marra, com o
+         * que nao foi salvo junto. Digitando nao vale: ali o Esc e de quem
+         * esta no campo.
+         */
+        if (event.key === 'Escape' && !editando(event.target)) {
+          store.openPalette(false)
+          store.openSettings(false)
+          store.openScript(false)
+          void store.openLibrary(false)
+          return
+        }
+
         return
       }
 
