@@ -95,8 +95,27 @@ if (git('status', '--porcelain')) {
  * ("Published releases must have a valid tag"), e isso só apareceria depois de
  * todo o tempo de empacotamento -- foi assim que a v1.23.0 se perdeu.
  */
-const local = git('rev-parse', TAG)
-const remoto = git('ls-remote', 'origin', `refs/tags/${TAG}`).split('\t')[0]
+/*
+ * Sempre o COMMIT, e nunca o que a ref guarda.
+ *
+ * Tag leve aponta direto para o commit; tag anotada aponta para um objeto
+ * `tag`, que por sua vez aponta para o commit -- e `git rev-parse v1.27.0`
+ * devolve o objeto, um sha que não é igual ao do HEAD. Este script nasceu num
+ * projeto de tags leves e comparava os dois cruamente, então a primeira tag
+ * anotada (as que o `npm version` cria) seria recusada com "não aponta para o
+ * commit atual" estando perfeitamente certa. `^{commit}` desfaz os dois casos.
+ */
+const local = git('rev-parse', `${TAG}^{commit}`)
+
+/*
+ * No remoto o mesmo problema aparece em duas linhas: `refs/tags/X` traz o
+ * objeto da tag e `refs/tags/X^{}` traz o commit já resolvido (só existe para
+ * tag anotada). A última linha é a que vale nos dois casos.
+ */
+const linhas = git('ls-remote', 'origin', `refs/tags/${TAG}`, `refs/tags/${TAG}^{}`)
+  .split('\n')
+  .filter(Boolean)
+const remoto = linhas.at(-1)?.split('\t')[0]
 
 if (!remoto) {
   morre(`a tag ${TAG} não está no GitHub. Envie antes:\n\n    git push origin ${TAG}\n`)
