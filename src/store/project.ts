@@ -737,6 +737,14 @@ function setInterimPlan(set: SetState, imageCount: number, durationSec: number):
   })
 }
 
+/**
+ * A leitura do roteiro em andamento, se houver.
+ *
+ * Fora do estado de proposito: e justamente quando o estado e zerado no meio
+ * de uma leitura que a tranca precisa continuar valendo.
+ */
+let lendoRoteiro: Promise<unknown> | null = null
+
 export const useProject = create<ProjectState>((set, get) => ({
   audio: null,
   images: [],
@@ -1129,8 +1137,20 @@ export const useProject = create<ProjectState>((set, get) => ({
     // pelo mesmo audio para chegar no mesmo texto.
     if (!audio || scriptBlocks || scriptBlocksBusy) return
 
+    /*
+     * O estado sozinho nao tranca, porque ele pode ser zerado POR BAIXO.
+     *
+     * `clearProject` limpa `scriptBlocks` e `scriptBlocksBusy` juntos, e
+     * importar outra narracao faz o mesmo. Acontecendo isso no meio de uma
+     * leitura, a tranca abre com a leitura ainda correndo e o proximo render
+     * pede outra -- e cada pedido subia um Whisper proprio, com o modelo
+     * inteiro na memoria. A promessa viva mora FORA do estado exatamente para
+     * nao ser apagada junto com ele.
+     */
+    if (lendoRoteiro) return
+
     set({ scriptBlocksBusy: 'Ouvindo a narracao...' })
-    const r = await window.dangai.scriptBlocks({
+    const pedido = window.dangai.scriptBlocks({
       audioPath: audio.path,
       subtitlePath,
       script,
@@ -1143,6 +1163,31 @@ export const useProject = create<ProjectState>((set, get) => ({
        */
       transcript,
     })
+
+    lendoRoteiro = pedido
+    let r
+    try {
+      r = await pedido
+    } finally {
+      lendoRoteiro = null
+    }
+
+    /*
+     * A narracao ainda e a MESMA?
+     *
+     * A leitura leva minutos, e nesse tempo o usuario pode ter limpado o
+     * projeto ou solto outro audio. Sem esta conferencia o resultado antigo
+     * cairia por cima -- trechos medidos num audio que nao esta mais ali,
+     * apontando para instantes que nao existem.
+     */
+    if (get().audio !== audio) {
+      // Limpa ao sair: importar outra narracao zera `scriptBlocks` mas NAO o
+      // `scriptBlocksBusy`, e deixar o antigo pendurado fecharia a tranca para
+      // sempre -- a Biblioteca nunca leria o roteiro novo.
+      set({ scriptBlocksBusy: null, busy: null })
+      return
+    }
+
     /*
      * `busy` tambem tem que ser limpo, e nao so o `scriptBlocksBusy`.
      *

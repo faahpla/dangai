@@ -15,7 +15,7 @@ import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureFontes, ensureFontesDir } from './services/fontes'
 import { configureUpscale, configureUpscaleCache } from './services/upscale'
 import { startUpdater } from './services/updater'
-import { configureWhisper } from './services/whisper'
+import { configureWhisper, encerrarWhisper } from './services/whisper'
 import { configureFaces } from './services/faces'
 
 const isDev = !app.isPackaged
@@ -157,6 +157,16 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
+
+/*
+ * O Whisper vai junto ao sair.
+ *
+ * O whisper-cli e filho deste processo, mas o Windows nao o mata junto: em
+ * 12/09/2026 sobraram 24 deles segurando 20,4 GB depois de a janela fechar, e
+ * so o Gerenciador de Tarefas resolveu. Quem cria o processo tem a obrigacao
+ * de leva-lo embora.
+ */
+app.on('before-quit', encerrarWhisper)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
