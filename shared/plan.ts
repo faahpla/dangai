@@ -11,6 +11,7 @@ import {
   CAPTION_Y_DEFAULT,
   CAPTION_CHARS_PER_LINE,
   CAPTION_MAX_CHARS,
+  CAPTION_NAO_FECHA_LINHA,
   CAPTION_MAX_WORDS,
   CAPTION_SCALE_DEFAULT,
   CAPTION_MIN_SEC,
@@ -705,14 +706,37 @@ function buildCards(texto: CardText | null, totalFrames: number): OverlayCard[] 
 }
 
 /**
+ * A palavra se prende a que vem DEPOIS dela?
+ *
+ * Artigo, preposicao, contracao e as conjuncoes que abrem oracao. Compara sem
+ * a pontuacao e sem caixa: "A" no comeco da frase e artigo igual, e "da," com
+ * virgula ja fecha a linha pela regra da pontuacao, antes de chegar aqui.
+ */
+function ehLigante(text: string): boolean {
+  const limpa = text
+    // NFC: um "a" com acento combinante e um "à" sao a mesma palavra, e o
+    // Whisper devolve ora uma forma ora a outra.
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/^[\u00ab"'\u201c\u2018([{]+/u, '')
+    .replace(/[."'\u201d\u2019)\]}\u00bb,!?;:\u2026]+$/u, '')
+  return CAPTION_NAO_FECHA_LINHA.includes(limpa)
+}
+
+/**
  * Agrupa as palavras da transcricao em blocos de legenda.
  *
  * Cada bloco e uma linha: no maximo duas palavras e dez caracteres. Uma
  * palavra que sozinha ja estoura os dez caracteres fica sozinha -- quebrar
- * palavra no meio seria pior que a linha comprida.
+ * palavra no meio seria pior que a linha comprida. Duas palavras NUNCA somam
+ * mais de dez: a excecao e da palavra sozinha, e nao da linha.
  *
  * Um bloco tambem quebra quando ha uma pausa grande entre palavras: ler uma
  * legenda que atravessa um silencio longo desconecta o texto da fala.
+ *
+ * E a linha nao fecha em artigo: quando a palavra que fecharia a dupla se
+ * prende a seguinte, a quebra acontece ANTES dela, para que ela suba junto com
+ * o proprio substantivo.
  */
 export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
   if (!transcript || transcript.words.length === 0) return []
@@ -744,7 +768,7 @@ export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
     current = []
   }
 
-  for (const word of transcript.words) {
+  for (const [indice, word] of transcript.words.entries()) {
     const previous = current.at(-1)
     const gap = previous ? word.start - previous.end : 0
 
@@ -761,7 +785,27 @@ export function buildCaptions(transcript: Transcript | null): CaptionBlock[] {
     // dividir legenda com o fim da anterior.
     const pontuou = previous !== undefined && endsSentence(previous.text)
 
-    if (cheio || largo || pausou || pontuou) flush()
+    /*
+     * A linha nao fecha em artigo.
+     *
+     * Esta palavra fecharia a dupla, mas ela se prende a seguinte -- entao a
+     * quebra vem ANTES dela, e as duas sobem juntas na proxima linha. Sem isto
+     * o agrupamento de dois em dois partia "e a defesa" em "e a" + "defesa",
+     * que e a queixa dele.
+     *
+     * So quando o par REALMENTE cabe: se o substantivo for longo, segurar o
+     * artigo nao resolveria nada e ainda deixaria esta linha com uma palavra a
+     * menos sem motivo.
+     */
+    const proxima = transcript.words[indice + 1]
+    const fecharia = current.length > 0 && current.length + 1 >= CAPTION_MAX_WORDS
+    const prendeNaProxima =
+      fecharia &&
+      ehLigante(word.text) &&
+      proxima !== undefined &&
+      word.text.length + 1 + proxima.text.length <= CAPTION_MAX_CHARS
+
+    if (cheio || largo || pausou || pontuou || prendeNaProxima) flush()
     current.push(word)
   }
   flush()
@@ -806,7 +850,18 @@ function resgatarPiscadas(blocks: CaptionBlock[]): void {
     const anterior = blocks[i - 1]
     const proximo = blocks[i + 1]
 
-    if (anterior && cabeJunto(anterior, bloco)) {
+    /*
+     * Orfao que COMECA em artigo procura o substantivo primeiro.
+     *
+     * O resgate tenta o vizinho de tras porque prender a palavrinha no que veio
+     * antes costuma soar como a fala. Com artigo e o contrario: ele pertence ao
+     * que vem DEPOIS, e puxa-lo para tras e justamente separar o artigo do
+     * substantivo -- o defeito que esta regra existe para evitar.
+     */
+    const puxaParaFrente =
+      ehLigante(bloco.words[0]?.text ?? '') && proximo !== undefined && cabeJunto(bloco, proximo)
+
+    if (!puxaParaFrente && anterior && cabeJunto(anterior, bloco)) {
       anterior.words = [...anterior.words, ...bloco.words]
       anterior.durationInFrames = bloco.from + bloco.durationInFrames - anterior.from
       blocks.splice(i, 1)
@@ -835,8 +890,21 @@ function cabeJunto(a: CaptionBlock, b: CaptionBlock): boolean {
   if (ultima && fechaIdeia(ultima.text)) return false
 
   if (a.words.length + b.words.length > RESGATE_MAX_PALAVRAS) return false
+
+  /*
+   * O TETO AQUI E O MESMO DO AGRUPAMENTO, e nao a largura da linha.
+   *
+   * Ate a v1.27 este resgate media contra os 18 caracteres que cabem antes de a
+   * fonte encolher, e era ele -- nao o agrupamento -- que punha "simplesmente
+   * nao" (16) na tela. A regra de dez nao tem excecao para linha: a excecao e
+   * da PALAVRA que sozinha ja passa. Duas palavras somando mais de dez sao
+   * sempre uma linha que ele nao le no tempo que ela fica no ar.
+   *
+   * Um bloco que fica curto por causa disto nao fica desamparado: quem o
+   * estica e o enforceMinimumDuration, com o silencio em volta.
+   */
   const texto = [...a.words, ...b.words].map((w) => w.text).join(' ')
-  return texto.length <= CAPTION_CHARS_PER_LINE
+  return texto.length <= CAPTION_MAX_CHARS
 }
 
 /** O mesmo criterio do agrupamento: aspas e parenteses nao escondem a pontuacao. */

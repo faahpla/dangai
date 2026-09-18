@@ -1021,6 +1021,35 @@ export const CAPTION_MAX_CHARS = 10
 export const CAPTION_BREAK_AFTER = '.,!?;:…'
 
 /**
+ * Palavras que NAO PODEM FECHAR uma linha: elas se prendem ao que vem depois.
+ *
+ * Artigo separado do substantivo e o que ele apontou -- "e a" numa linha e
+ * "defesa" na seguinte le como duas metades de nada. O olho ja espera o
+ * substantivo quando le o artigo, e a quebra ali custa uma releitura.
+ *
+ * Vale para preposicao e contracao pelo mesmo motivo e com a mesma forca: "de"
+ * sozinho no fim da linha e tao truncado quanto "a". Sao todas palavras que
+ * abrem sintagma, nunca fecham.
+ *
+ * O que NAO entra: adverbio, verbo e substantivo, por menores que sejam. "ja",
+ * "vai", "ele" e "nao" fecham linha sem soar cortados, e tirar a chance de
+ * fechar linha neles so produziria mais linha de uma palavra.
+ */
+export const CAPTION_NAO_FECHA_LINHA: readonly string[] = [
+  // artigos
+  'o', 'a', 'os', 'as', 'um', 'uma', 'uns', 'umas',
+  // preposicoes simples
+  'de', 'em', 'por', 'com', 'sem', 'sob', 'sobre', 'para', 'pra', 'pro',
+  'entre', 'ate', 'até', 'desde', 'apos', 'após', 'contra', 'durante', 'perante',
+  // contracoes de preposicao com artigo
+  'do', 'da', 'dos', 'das', 'dum', 'duma', 'duns', 'dumas',
+  'no', 'na', 'nos', 'nas', 'num', 'numa', 'nuns', 'numas',
+  'ao', 'aos', 'à', 'às', 'pelo', 'pela', 'pelos', 'pelas',
+  // conjuncoes que abrem o que vem depois
+  'e', 'ou', 'nem', 'mas', 'que', 'se', 'como', 'quando',
+]
+
+/**
  * Tempo minimo que uma legenda fica na tela.
  *
  * Com duas palavras por linha as legendas ficam curtas, e as palavrinhas de
