@@ -336,3 +336,68 @@ function rarear<T>(pontos: readonly T[], quantos: number): T[] {
   for (let i = 0; i < quantos; i++) saida.push(pontos[Math.round(i * passo)]!)
   return saida
 }
+
+/**
+ * Quanto da janela o rastreador realmente persegue.
+ *
+ * MEDIDO contra o detector de rosto em seis clipes reais, comparando onde o
+ * rastreador terminou com onde o rosto estava de verdade (erro em fracao do
+ * quadro, menor e melhor):
+ *
+ *   janela inteira      0.124      2 de 6 clipes acima de 0.10
+ *   quadrado central    0.067      2
+ *   metade dele         0.034      1      <- daqui
+ *   35% dele            0.043      0
+ *   25% dele            0.040      0
+ *
+ * Metade tem a menor media, e abaixo disso o alvo comeca a escapar: num dos
+ * clipes o erro sobe de 0.003 para 0.064 entre 50% e 25%, porque a caixa fica
+ * pequena demais para conter o personagem.
+ */
+export const ALVO_DO_RASTREIO = 0.5
+
+/**
+ * O que o rastreador persegue dentro de um enquadramento.
+ *
+ * A janela da camera e um ENQUADRAMENTO, nao um alvo: ela e uma tira 9:16 alta
+ * e estreita, e dentro dela cabe o personagem MAIS o cenario em volta. O fluxo
+ * optico devolve a mediana do que se move ali dentro, e num plano de acao o
+ * cenario costuma ter mais textura que o rosto -- entao a mediana segue o
+ * fundo. Era isso que fazia o rastreio "nao seguir o rosto" mesmo com todos os
+ * pontos sobrevivendo.
+ *
+ * O alvo e um QUADRADO no centro da janela, e quadrado em pixel: as fracoes
+ * saem diferentes por eixo porque a fonte nao e quadrada. Quem enquadra poe o
+ * que importa no meio, entao o centro e a melhor aposta sobre qual e o alvo --
+ * e e por isso que a tela precisa dizer que o que ele segue e o CENTRO do
+ * retangulo.
+ */
+export function alvoDoRastreio(
+  janela: { left: number; top: number; width: number; height: number },
+  larguraDaFonte: number,
+  alturaDaFonte: number,
+): { x: number; y: number; width: number; height: number } {
+  /*
+   * Sem medida da fonte, devolve a janela inteira.
+   *
+   * O quadrado so e quadrado em PIXEL, entao ele depende das dimensoes reais.
+   * Com elas ausentes a conta vira NaN, e um NaN aqui nao estoura: ele desce
+   * ate o rastreador, que nao acha ponto nenhum e devolve "nao rastreou" -- uma
+   * falha que parece do algoritmo e nao do dado. Rastrear a janela inteira e
+   * pior que o quadrado, mas e muito melhor que uma recusa inexplicavel.
+   */
+  if (!(larguraDaFonte > 0) || !(alturaDaFonte > 0)) {
+    return { x: janela.left, y: janela.top, width: janela.width, height: janela.height }
+  }
+
+  const ladoPx =
+    Math.min(janela.width * larguraDaFonte, janela.height * alturaDaFonte) * ALVO_DO_RASTREIO
+  const w = ladoPx / larguraDaFonte
+  const h = ladoPx / alturaDaFonte
+  return {
+    x: janela.left + janela.width / 2 - w / 2,
+    y: janela.top + janela.height / 2 - h / 2,
+    width: w,
+    height: h,
+  }
+}

@@ -59,7 +59,13 @@ import type {
   ScenePlan,
   Transcript,
 } from '@shared/contract'
-import { chavesDoCaminho, enquadrar, fonteDaCamera, janelaDaCamera } from '@shared/camera'
+import {
+  alvoDoRastreio,
+  chavesDoCaminho,
+  enquadrar,
+  fonteDaCamera,
+  janelaDaCamera,
+} from '@shared/camera'
 import {
   buildCaptions,
   imagemDaMetade,
@@ -2759,8 +2765,7 @@ export const useProject = create<ProjectState>((set, get) => ({
      */
     const fonte = fonteDaCamera(image, cena.camera)
     const janela = janelaDaCamera(cena.camera.from, fonte.aspecto)
-    // O rastreador fala em x/y; a janela fala em left/top. Sao a mesma coisa.
-    const alvo = { x: janela.left, y: janela.top, width: janela.width, height: janela.height }
+    const alvo = alvoDoRastreio(janela, image.width, image.height)
 
     const inicio = cena.sourceStart ?? 0
     const duracao = cena.end - cena.start

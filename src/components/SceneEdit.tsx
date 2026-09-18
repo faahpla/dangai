@@ -108,7 +108,7 @@ export function SceneEdit() {
       bloco: index,
       texto:
         ateOnde === null
-          ? 'Nao deu para seguir nada dentro do retangulo. Ele precisa de textura para se agarrar -- ceu liso, parede lisa e desfoque nao dao ponto nenhum. Tente um retangulo mais fechado em cima do alvo.'
+          ? 'Nao deu para seguir nada no centro do retangulo. Ele precisa de textura para se agarrar -- ceu liso, parede lisa e desfoque nao dao ponto nenhum. Tente centralizar melhor o alvo, ou fechar mais o retangulo nele.'
           : ateOnde > 0.95
             ? 'Seguiu o alvo pelo bloco inteiro. Confira no preview e ajuste as chaves se precisar.'
             : `Seguiu ate ${Math.round(ateOnde * 100)}% do bloco e perdeu o alvo. Dali ate o fim a camera segura o ultimo enquadramento.`,
@@ -284,7 +284,7 @@ export function SceneEdit() {
                   {image.kind === 'video' && (
                     <Chip active={false} onClick={() => void rastrearAlvo()}>
                       <Crosshair size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                      Rastrear o retangulo
+                      Rastrear o centro
                     </Chip>
                   )}
                   <Chip active={false} onClick={() => void procurarRosto()}>
@@ -306,7 +306,17 @@ export function SceneEdit() {
                 </div>
                 <p className="text-[11px] leading-relaxed text-ink-3">
                   {(recado?.bloco === index ? recado.texto : null) ??
-                    'Arraste o retangulo para escolher o que aparece, e use o slider para aproximar. O ritmo do movimento continua sendo o do bloco.'}
+                    (image.kind === 'video'
+                      ? /*
+                         * Dizer que o alvo e o CENTRO nao e detalhe.
+                         *
+                         * O retangulo e alto e estreito, e quem poe o rosto na
+                         * parte de cima dele fica com o peito do personagem no
+                         * meio -- e o peito e o que seria seguido. Sem esta
+                         * frase, o rastreio parece simplesmente nao funcionar.
+                         */
+                        'Arraste o retangulo para escolher o que aparece. Rastrear segue o que estiver no CENTRO dele, entao deixe o alvo no meio antes de clicar. O ritmo do movimento continua sendo o do bloco.'
+                      : 'Arraste o retangulo para escolher o que aparece, e use o slider para aproximar. O ritmo do movimento continua sendo o do bloco.')}
                 </p>
               </>
             )}
