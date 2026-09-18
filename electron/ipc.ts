@@ -45,6 +45,7 @@ import {
   type ImportFocus,
   type ImportSection,
 } from './services/assets'
+import { perseguir, type Perseguicao } from './services/tracker'
 import { expandDrop } from './services/folders'
 import { scanLibrary } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
@@ -398,6 +399,11 @@ export function registerIpc(): void {
     [string, readonly number[]],
     ({ centroX: number; centroY: number; area: number } | null)[]
   >(IPC.faceAt, (path, instantes) => rostoNosInstantes(path, instantes))
+
+  handle<
+    [string, number, number, { x: number; y: number; width: number; height: number }],
+    Perseguicao
+  >(IPC.trackBox, (path, inicio, duracao, caixa) => perseguir(path, inicio, duracao, caixa))
 
   handle<[], null>(IPC.cancelAnalyze, async () => {
     encerrarWhisper()

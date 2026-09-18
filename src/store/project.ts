@@ -59,7 +59,7 @@ import type {
   ScenePlan,
   Transcript,
 } from '@shared/contract'
-import { enquadrar, fonteDaCamera } from '@shared/camera'
+import { chavesDoCaminho, enquadrar, fonteDaCamera, janelaDaCamera } from '@shared/camera'
 import {
   buildCaptions,
   imagemDaMetade,
@@ -588,6 +588,14 @@ export interface ProjectState {
    * nem plano aberto.
    */
   seguirRosto: (index: number) => Promise<'ambos' | 'um' | 'nenhum'>
+  /**
+   * Segue o que estiver DENTRO do retangulo inicial ao longo do bloco.
+   *
+   * Devolve ate que fracao do bloco a perseguicao se sustentou, ou null quando
+   * nao houve o que seguir -- o numero importa, porque um caminho que morre na
+   * metade ainda serve para a primeira metade.
+   */
+  rastrear: (index: number) => Promise<number | null>
   /** Poe projetos salvos na fila. */
   enqueue: (paths: readonly string[]) => void
   removeFromQueue: (path: string) => void
@@ -2733,6 +2741,48 @@ export const useProject = create<ProjectState>((set, get) => ({
       },
     })
     return noComeco && noFim ? 'ambos' : 'um'
+  },
+
+  rastrear: async (index) => {
+    const { plan, images } = get()
+    const cena = plan?.scenes[index]
+    const image = cena ? images[cena.imageIndex] : undefined
+    if (!cena?.camera || !image || image.kind !== 'video') return null
+
+    /*
+     * O ALVO E O PROPRIO RETANGULO INICIAL.
+     *
+     * Nao ha uma segunda ferramenta de selecao: ele ja arrasta esse retangulo
+     * para escolher o que aparece, e "o que aparece no comeco" e exatamente o
+     * que ele quer continuar vendo. Uma caixa separada seria um segundo jeito de
+     * dizer a mesma coisa, com a chance de os dois discordarem.
+     */
+    const fonte = fonteDaCamera(image, cena.camera)
+    const janela = janelaDaCamera(cena.camera.from, fonte.aspecto)
+    // O rastreador fala em x/y; a janela fala em left/top. Sao a mesma coisa.
+    const alvo = { x: janela.left, y: janela.top, width: janela.width, height: janela.height }
+
+    const inicio = cena.sourceStart ?? 0
+    const duracao = cena.end - cena.start
+
+    set({ busy: 'Seguindo o alvo...', error: null })
+    const r = await window.dangai.trackBox(image.path, inicio, duracao, alvo)
+    set({ busy: null })
+    if (!r.ok) {
+      set({ error: r.error })
+      return null
+    }
+
+    const caminho = chavesDoCaminho(
+      r.value.caminho,
+      cena.camera.from,
+      cena.camera.to,
+      fonte.aspecto,
+    )
+    if (!caminho) return null
+
+    get().updateScene(index, { camera: { ...cena.camera, ...caminho } })
+    return r.value.ateOnde
   },
 
   cancelAnalyze: async () => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookmarkPlus, ScanFace, Spline, X } from 'lucide-react'
+import { BookmarkPlus, Crosshair, ScanFace, Spline, X } from 'lucide-react'
 import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
@@ -40,6 +40,7 @@ export function SceneEdit() {
   const setPlayhead = useProject((s) => s.setPlayhead)
   const playhead = useProject((s) => s.playhead)
   const seguirRosto = useProject((s) => s.seguirRosto)
+  const rastrear = useProject((s) => s.rastrear)
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
   const salvas = useProject((s) => s.curvePresets)
   const carregarCurvas = useProject((s) => s.loadCurvePresets)
@@ -94,6 +95,27 @@ export function SceneEdit() {
   const total = plan?.scenes.length ?? 0
 
   /*
+   * O recado do rastreador diz ATE ONDE ele chegou, e nao so se rodou.
+   *
+   * A perseguicao para quando perde o alvo em vez de continuar chutando, e um
+   * caminho que morre na metade ainda serve para a primeira metade -- mas so se
+   * o usuario souber onde ele morreu. Sem o numero, um rastreio que cobriu 40%
+   * do bloco e um que cobriu tudo parecem o mesmo resultado na tela.
+   */
+  const rastrearAlvo = async (): Promise<void> => {
+    const ateOnde = await rastrear(index)
+    setRecado({
+      bloco: index,
+      texto:
+        ateOnde === null
+          ? 'Nao deu para seguir nada dentro do retangulo. Ele precisa de textura para se agarrar -- ceu liso, parede lisa e desfoque nao dao ponto nenhum. Tente um retangulo mais fechado em cima do alvo.'
+          : ateOnde > 0.95
+            ? 'Seguiu o alvo pelo bloco inteiro. Confira no preview e ajuste as chaves se precisar.'
+            : `Seguiu ate ${Math.round(ateOnde * 100)}% do bloco e perdeu o alvo. Dali ate o fim a camera segura o ultimo enquadramento.`,
+    })
+  }
+
+  /*
    * O recado do "Seguir o rosto", ate ele mexer em outra coisa.
    *
    * O detector acha ou nao acha, e as duas respostas mudam o que ele deve fazer
@@ -107,10 +129,10 @@ export function SceneEdit() {
     setRecado({
       bloco: index,
       texto:
-      achou === 'ambos'
-        ? 'Rosto encontrado nas duas pontas. Confira e ajuste se precisar.'
-        : achou === 'um'
-          ? 'Rosto encontrado em uma ponta so -- a outra repetiu esse enquadramento. Confira a que ficou errada.'
+        achou === 'ambos'
+          ? 'Rosto encontrado nas duas pontas. Confira e ajuste se precisar.'
+          : achou === 'um'
+            ? 'Rosto encontrado em uma ponta so -- a outra repetiu esse enquadramento. Confira a que ficou errada.'
           : 'Nenhum rosto reconhecido neste bloco. O detector so enxerga rosto de frente, entao perfil, nuca e plano aberto passam batido -- aqui e na mao.',
     })
   }
@@ -226,6 +248,8 @@ export function SceneEdit() {
                           to: { scale: 1, x: 0, y: 0 },
                           // Camera nova ja nasce enquadrando o arquivo inteiro.
                           source: true,
+                          // Sem chaves no meio: uma reta, ate alguem rastrear.
+                          keys: [],
                         }
                       : null,
                 })
@@ -249,10 +273,37 @@ export function SceneEdit() {
                   de mexer em silencio -- enquadramento que muda sozinho e sem
                   aviso e como o video sai errado sem ninguem perceber.
                 */}
-                <Chip active={false} onClick={() => void procurarRosto()}>
-                  <ScanFace size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                  Seguir o rosto
-                </Chip>
+                <div className="flex flex-wrap gap-1.5">
+                  {/*
+                    RASTREAR vem primeiro porque e o que funciona sempre.
+                    Medido nos clipes reais dele, o detector de rosto acha alguma
+                    coisa em 25% deles -- o fluxo optico nao precisa reconhecer
+                    nada, so medir para onde os pixels foram, entao nao tem cena
+                    em que ele se recuse a tentar.
+                  */}
+                  {image.kind === 'video' && (
+                    <Chip active={false} onClick={() => void rastrearAlvo()}>
+                      <Crosshair size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                      Rastrear o retangulo
+                    </Chip>
+                  )}
+                  <Chip active={false} onClick={() => void procurarRosto()}>
+                    <ScanFace size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                    Seguir o rosto
+                  </Chip>
+                  {scene.camera.keys.length > 0 && (
+                    <Chip
+                      active={false}
+                      onClick={() => {
+                        updateScene(index, { camera: { ...scene.camera!, keys: [] } })
+                        setRecado(null)
+                      }}
+                    >
+                      <X size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                      Voltar a linha reta
+                    </Chip>
+                  )}
+                </div>
                 <p className="text-[11px] leading-relaxed text-ink-3">
                   {(recado?.bloco === index ? recado.texto : null) ??
                     'Arraste o retangulo para escolher o que aparece, e use o slider para aproximar. O ritmo do movimento continua sendo o do bloco.'}

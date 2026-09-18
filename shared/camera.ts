@@ -1,4 +1,4 @@
-import { VIDEO_HEIGHT, VIDEO_WIDTH, type CameraFrame } from './contract'
+import { VIDEO_HEIGHT, VIDEO_WIDTH, type CameraFrame, type CameraKey } from './contract'
 
 /**
  * A geometria da camera livre, num lugar so.
@@ -201,4 +201,138 @@ export function estiloDaCamera(
     objectPosition: `${(px * 100).toFixed(5)}% ${(py * 100).toFixed(5)}%`,
     transform: `scale(${frame.scale}) translate(${tx.toFixed(5)}%, ${ty.toFixed(5)}%)`,
   }
+}
+
+/** O caminho da camera: as duas pontas mais as chaves do meio, em ordem. */
+export interface CaminhoDaCamera {
+  from: CameraFrame
+  to: CameraFrame
+  keys?: readonly CameraKey[]
+}
+
+/**
+ * O enquadramento em UM ponto do caminho, com `progresso` de 0 a 1.
+ *
+ * O progresso ja vem com o ritmo do bloco aplicado -- a curva continua mandando
+ * em QUANDO o movimento acontece, e o caminho manda em POR ONDE. Separar os dois
+ * e o que deixa rastrear um personagem e ainda escolher se a camera desacelera
+ * no fim.
+ *
+ * Sem chaves no meio isto e exatamente a reta de sempre, e projeto salvo antes
+ * do rastreador existir sai daqui igual ao que saia antes.
+ */
+export function amostrarCamera(caminho: CaminhoDaCamera, progresso: number): CameraFrame {
+  const meio = (caminho.keys ?? [])
+    .filter((k) => k.t > 0 && k.t < 1)
+    .slice()
+    .sort((a, b) => a.t - b.t)
+
+  if (meio.length === 0) return entre(caminho.from, caminho.to, progresso)
+
+  const pontos: CameraKey[] = [
+    { t: 0, ...caminho.from },
+    ...meio,
+    { t: 1, ...caminho.to },
+  ]
+
+  const p = preso(progresso, 0, 1)
+  for (let i = 1; i < pontos.length; i++) {
+    const b = pontos[i]!
+    if (p > b.t && i < pontos.length - 1) continue
+    const a = pontos[i - 1]!
+    // Chaves empatadas no mesmo `t` nao dividem por zero: vale a de tras.
+    const vao = b.t - a.t
+    return entre(a, b, vao <= 0 ? 1 : (p - a.t) / vao)
+  }
+  return caminho.to
+}
+
+function entre(a: CameraFrame, b: CameraFrame, k: number): CameraFrame {
+  return {
+    scale: a.scale + (b.scale - a.scale) * k,
+    x: a.x + (b.x - a.x) * k,
+    y: a.y + (b.y - a.y) * k,
+  }
+}
+
+/**
+ * Transforma uma perseguicao em chaves de camera.
+ *
+ * Tres coisas acontecem aqui, e nenhuma e cosmetica:
+ *
+ *  - SUAVIZA. O comentario que a importacao ja carregava desde a deteccao de
+ *    rosto vale em dobro aqui: "seguir o rosto quadro a quadro faria a imagem
+ *    deslizar sozinha, que e pior que um recorte fixo levemente errado". A
+ *    medida do fluxo optico treme alguns pixels por quadro mesmo quando acerta,
+ *    e tremor e o que faz enquadramento automatico parecer defeito;
+ *  - RAREIA. Doze chaves por segundo descreveriam o mesmo caminho que uma a
+ *    cada tres quadros, custando quatro vezes mais no arquivo do projeto e
+ *    deixando a lista impossivel de ajustar na mao depois;
+ *  - MANTEM A ESCALA que o usuario escolheu, interpolada entre as duas pontas.
+ *    Ele pediu para seguir alguem, nao para aproximar -- e um zoom que ele tenha
+ *    desenhado continua acontecendo por cima do caminho.
+ */
+export function chavesDoCaminho(
+  pontos: readonly { t: number; centroX: number; centroY: number }[],
+  de: CameraFrame,
+  ate: CameraFrame,
+  aspectoDaFonte: number,
+  maximoDeChaves = 10,
+): { from: CameraFrame; to: CameraFrame; keys: CameraKey[] } | null {
+  if (pontos.length < 2) return null
+
+  const suaves = suavizar(pontos)
+  const escolhidos = rarear(suaves, maximoDeChaves + 2)
+
+  const primeiro = escolhidos[0]!
+  const ultimo = escolhidos.at(-1)!
+  const naEscala = (t: number): number => de.scale + (ate.scale - de.scale) * preso(t, 0, 1)
+
+  const keys: CameraKey[] = []
+  for (const p of escolhidos.slice(1, -1)) {
+    const frame = enquadrar(p.centroX, p.centroY, naEscala(p.t), aspectoDaFonte)
+    keys.push({ t: p.t, ...frame })
+  }
+
+  /*
+   * A perseguicao pode ter parado antes do fim do bloco.
+   *
+   * Ali entra uma chave na posicao onde ela parou: dessa chave ate a ponta final
+   * a camera SEGURA aquele enquadramento, em vez de escorregar em linha reta
+   * para um lugar que ninguem mediu.
+   */
+  if (ultimo.t < 0.999) {
+    const frame = enquadrar(ultimo.centroX, ultimo.centroY, naEscala(ultimo.t), aspectoDaFonte)
+    keys.push({ t: ultimo.t, ...frame })
+  }
+
+  return {
+    from: enquadrar(primeiro.centroX, primeiro.centroY, de.scale, aspectoDaFonte),
+    to: enquadrar(ultimo.centroX, ultimo.centroY, ate.scale, aspectoDaFonte),
+    keys,
+  }
+}
+
+/** Media movel de tres. Tira o tremor sem atrasar o caminho como uma media longa faria. */
+function suavizar<T extends { t: number; centroX: number; centroY: number }>(
+  pontos: readonly T[],
+): { t: number; centroX: number; centroY: number }[] {
+  return pontos.map((p, i) => {
+    const a = pontos[Math.max(i - 1, 0)]!
+    const b = pontos[Math.min(i + 1, pontos.length - 1)]!
+    return {
+      t: p.t,
+      centroX: (a.centroX + p.centroX + b.centroX) / 3,
+      centroY: (a.centroY + p.centroY + b.centroY) / 3,
+    }
+  })
+}
+
+/** Reduz a lista a no maximo `quantos`, sempre guardando a primeira e a ultima. */
+function rarear<T>(pontos: readonly T[], quantos: number): T[] {
+  if (pontos.length <= quantos) return pontos.slice()
+  const passo = (pontos.length - 1) / (quantos - 1)
+  const saida: T[] = []
+  for (let i = 0; i < quantos; i++) saida.push(pontos[Math.round(i * passo)]!)
+  return saida
 }

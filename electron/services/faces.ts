@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import sharp from 'sharp'
 import { RENDER_HEIGHT, RENDER_WIDTH } from '@shared/contract'
+import { carregarOpenCv, type Cv, type CvCascade, type CvRect } from './vision'
 
 /**
  * Onde esta o rosto, para o recorte 9:16 nao cortar a cabeca do personagem.
@@ -76,52 +77,14 @@ export function configureFaces(caminho: string): void {
  * Carga preguicosa: o WASM do OpenCV sao 17 MB e a maioria das sessoes abre um
  * projeto salvo, que ja tem o enquadramento decidido e nunca chama aqui.
  */
-interface Cv {
-  Mat: new (linhas: number, colunas: number, tipo: number) => CvMat
-  RectVector: new () => CvRectVector
-  Size: new (largura: number, altura: number) => unknown
-  CascadeClassifier: new () => CvCascade
-  CV_8UC1: number
-  FS_createDataFile: (
-    pasta: string,
-    nome: string,
-    dados: Buffer,
-    ler: boolean,
-    escrever: boolean,
-    procurar: boolean,
-  ) => void
-}
-interface CvMat {
-  data: Uint8Array
-  delete: () => void
-}
-interface CvRect {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-interface CvRectVector {
-  size: () => number
-  get: (indice: number) => CvRect
-  delete: () => void
-}
-interface CvCascade {
-  load: (nome: string) => boolean
-  empty: () => boolean
-  detectMultiScale: (
-    imagem: CvMat,
-    saida: CvRectVector,
-    escala: number,
-    vizinhos: number,
-    bandeiras: number,
-    minimo: unknown,
-    maximo: unknown,
-  ) => void
-}
-
 let carregando: Promise<{ cv: Cv; cascade: CvCascade } | null> | null = null
 
+/**
+ * O detector, pronto para uso: o OpenCV compartilhado mais o cascade carregado.
+ *
+ * O cascade e desta casa; o OpenCV vem de vision.ts porque a perseguicao por
+ * fluxo optico usa o mesmo modulo de 17 MB.
+ */
 async function motor(): Promise<{ cv: Cv; cascade: CvCascade } | null> {
   if (carregando) return carregando
 
@@ -130,27 +93,12 @@ async function motor(): Promise<{ cv: Cv; cascade: CvCascade } | null> {
       console.error('[faces] cascade nao encontrado em', cascadePath)
       return null
     }
+    const cv = await carregarOpenCv()
+    if (!cv?.CascadeClassifier) {
+      console.error('[faces] opencv carregou sem o modulo de deteccao')
+      return null
+    }
     try {
-      /*
-       * O `?? default` nao e paranoia: o opencv-wasm e CommonJS, e import()
-       * dinamico de CJS entrega os exports embrulhados em `default`. Em
-       * desenvolvimento o Vite faz o interop e `modulo.cv` funciona; no app
-       * empacotado o import e real e `modulo.cv` vem undefined.
-       *
-       * Isso ja custou um build: a deteccao falhava em silencio no instalador,
-       * e todas as imagens saiam centralizadas como antes -- sem erro nenhum na
-       * tela, porque a falha aqui e proposital e silenciosa para o usuario.
-       */
-      const modulo = (await import('opencv-wasm')) as unknown as {
-        cv?: Cv
-        default?: { cv?: Cv }
-      }
-      const cv = modulo.cv ?? modulo.default?.cv
-      if (!cv?.CascadeClassifier) {
-        console.error('[faces] opencv carregou sem o modulo de deteccao')
-        return null
-      }
-
       cv.FS_createDataFile('/', 'anime.xml', readFileSync(cascadePath), true, false, false)
       const cascade = new cv.CascadeClassifier()
       if (!cascade.load('anime.xml') || cascade.empty()) {
@@ -159,10 +107,6 @@ async function motor(): Promise<{ cv: Cv; cascade: CvCascade } | null> {
       }
       return { cv, cascade }
     } catch (err) {
-      // Detector indisponivel nao pode impedir ninguem de importar imagem: sem
-      // ele o app so volta a enquadrar pelo centro, como sempre fez. Mas o
-      // motivo vai para o stderr do main -- silencio total ja me custou um ciclo
-      // inteiro de empacotamento para descobrir o que tinha quebrado.
       console.error('[faces] detector indisponivel:', err)
       return null
     }

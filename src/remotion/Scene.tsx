@@ -9,7 +9,7 @@ import {
   useVideoConfig,
 } from 'remotion'
 import type { RenderProps } from '@shared/contract'
-import { estiloDaCamera } from '@shared/camera'
+import { amostrarCamera, estiloDaCamera } from '@shared/camera'
 
 type SceneProps = RenderProps['scenes'][number]
 
@@ -69,11 +69,15 @@ export function Scene({
    * camera so para as duas nao quer dizer nada.
    */
   const { scale, x, y } = camera
-    ? {
-        scale: camera.from.scale + (camera.to.scale - camera.from.scale) * eased,
-        x: camera.from.x + (camera.to.x - camera.from.x) * eased,
-        y: camera.from.y + (camera.to.y - camera.from.y) * eased,
-      }
+    ? /*
+       * O caminho e amostrado no progresso JA COM O RITMO do bloco.
+       *
+       * A curva manda em QUANDO o movimento acontece e o caminho em POR ONDE --
+       * separar os dois e o que deixa rastrear um personagem e ainda escolher se
+       * a camera desacelera no fim. Sem chaves no meio, isto e a mesma reta de
+       * sempre.
+       */
+      amostrarCamera(camera, eased)
     : effect === 'nenhum'
       ? { scale: 1, x: 0, y: 0 }
       : motionFor(effect, intensity, eased)

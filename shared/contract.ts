@@ -191,6 +191,22 @@ export const cameraFrameSchema = z.object({
 })
 export type CameraFrame = z.infer<typeof cameraFrameSchema>
 
+/**
+ * Uma chave no MEIO do caminho da camera.
+ *
+ * As duas pontas (`from` e `to`) descrevem uma reta, e reta nao segue ninguem:
+ * um personagem que anda para a direita e volta passa por lugares que nenhuma
+ * combinacao de duas chaves alcanca. Cada chave aqui e uma curva a mais que o
+ * caminho pode fazer.
+ *
+ * `t` e a fracao do BLOCO, nao segundo: o bloco muda de duracao quando a
+ * narracao e refeita, e um caminho medido em segundos apontaria para fora dele.
+ */
+export const cameraKeySchema = cameraFrameSchema.extend({
+  t: z.number().min(0).max(1),
+})
+export type CameraKey = z.infer<typeof cameraKeySchema>
+
 export const TRANSITIONS = [
   'cut',
   'crossfade',
@@ -549,6 +565,14 @@ export const sceneSchema = z.object({
        * por baixo mudaria o enquadramento de um video ja pronto.
        */
       source: z.boolean().default(false),
+      /**
+       * As chaves do meio do caminho, em ordem de .
+       *
+       * Vazio e o normal: a camera vai da primeira ponta a segunda em linha
+       * reta, como sempre foi. O rastreador enche esta lista, e ai o caminho
+       * passa a acompanhar o que se mexe em vez de cortar reto por cima dele.
+       */
+      keys: z.array(cameraKeySchema).default([]),
     })
     .nullable()
     .default(null),
@@ -871,6 +895,14 @@ export const renderPropsSchema = z.object({
        * por baixo mudaria o enquadramento de um video ja pronto.
        */
       source: z.boolean().default(false),
+      /**
+       * As chaves do meio do caminho, em ordem de .
+       *
+       * Vazio e o normal: a camera vai da primeira ponta a segunda em linha
+       * reta, como sempre foi. O rastreador enche esta lista, e ai o caminho
+       * passa a acompanhar o que se mexe em vez de cortar reto por cima dele.
+       */
+      keys: z.array(cameraKeySchema).default([]),
         })
         .nullable()
         .default(null),

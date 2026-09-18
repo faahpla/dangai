@@ -45,6 +45,7 @@ export const IPC = {
   cancelRender: 'render:cancel',
   cancelAnalyze: 'plan:cancel',
   faceAt: 'faces:at',
+  trackBox: 'track:box',
   revealFile: 'shell:reveal',
   analyze: 'plan:analyze',
   getSettings: 'settings:get',
@@ -562,6 +563,25 @@ export interface DangaiBridge {
     path: string,
     instantes: readonly number[],
   ): Promise<IpcResult<({ centroX: number; centroY: number; area: number } | null)[]>>
+  /**
+   * Segue uma caixa do clipe ao longo de um trecho, por fluxo optico.
+   *
+   * `caixa` e `centroX`/`centroY` estao em fracao do quadro. `ateOnde` diz ate
+   * que fracao do trecho a perseguicao se sustentou -- ela PARA quando perde o
+   * alvo em vez de continuar chutando, e quem chamou precisa poder dizer isso.
+   */
+  trackBox(
+    path: string,
+    inicio: number,
+    duracao: number,
+    caixa: { x: number; y: number; width: number; height: number },
+  ): Promise<
+    IpcResult<{
+      caminho: { t: number; centroX: number; centroY: number; pontos: number }[]
+      ateOnde: number
+      quadros: number
+    }>
+  >
   revealFile(path: string): Promise<IpcResult<null>>
   analyze(args: AnalyzeArgs): Promise<IpcResult<AnalysisResult>>
   /** Grava o .dangai. Resolve com o caminho usado, ou null se cancelou o dialogo. */
