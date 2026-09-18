@@ -93,7 +93,8 @@ async function motor(): Promise<{ cv: Cv; cascade: CvCascade } | null> {
       console.error('[faces] cascade nao encontrado em', cascadePath)
       return null
     }
-    const cv = await carregarOpenCv()
+    const visao = await carregarOpenCv()
+    const cv = visao?.cv
     if (!cv?.CascadeClassifier) {
       console.error('[faces] opencv carregou sem o modulo de deteccao')
       return null

@@ -88,9 +88,26 @@ export interface Cv {
   ) => void
 }
 
-let carregando: Promise<Cv | null> | null = null
+/**
+ * O `cv` vai EMBRULHADO, e isto nao e estilo.
+ *
+ * O objeto do emscripten tem um `then` proprio -- ele e "thenable". Devolvido
+ * cru de uma funcao async, o motor de promessas o confunde com uma promessa e
+ * chama `cv.then(...)`, que reentra na inicializacao do runtime e nunca sai: a
+ * thread trava girando, e nem o `await` de quem chamou volta a rodar. Foi assim
+ * que um clique em "Seguir o rosto" congelou o app inteiro.
+ *
+ * Dentro de um objeto comum, o `then` deixa de estar na superficie e a promessa
+ * resolve normalmente. O detector antigo escapava disso por acaso, porque
+ * devolvia `{ cv, cascade }` em vez do `cv` sozinho.
+ */
+export interface Visao {
+  cv: Cv
+}
 
-export function carregarOpenCv(): Promise<Cv | null> {
+let carregando: Promise<Visao | null> | null = null
+
+export function carregarOpenCv(): Promise<Visao | null> {
   if (carregando) return carregando
 
   carregando = (async () => {
@@ -114,7 +131,7 @@ export function carregarOpenCv(): Promise<Cv | null> {
         console.error('[visao] opencv carregou sem o modulo de imagem')
         return null
       }
-      return cv
+      return { cv }
     } catch (err) {
       // Visao indisponivel nao pode impedir ninguem de trabalhar: sem ela o app
       // so volta a enquadrar pelo centro e a nao oferecer perseguicao. Mas o

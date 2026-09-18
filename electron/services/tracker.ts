@@ -131,8 +131,9 @@ export async function perseguir(
   duracao: number,
   caixa: { x: number; y: number; width: number; height: number },
 ): Promise<Perseguicao> {
-  const cv = await carregarOpenCv()
-  if (!cv) return { caminho: [], ateOnde: 0, quadros: 0 }
+  const visao = await carregarOpenCv()
+  if (!visao) return { caminho: [], ateOnde: 0, quadros: 0 }
+  const cv = visao.cv
 
   const pasta = join(tmpdir(), `dangai-track-${Date.now()}`)
   try {
