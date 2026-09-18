@@ -790,7 +790,17 @@ export const useProject = create<ProjectState>((set, get) => ({
   metadata: null,
   music: null,
   musicGainDb: MUSIC_GAIN_DB_DEFAULT,
-  sfxEnabled: true,
+  /*
+   * SFX NASCE DESLIGADO, e quem quiser liga.
+   *
+   * Ele entrava sozinho a cada dois cortes, entao um video so ficava pronto
+   * depois de alguem se lembrar de desligar -- e esquecer produz um efeito no
+   * video final, nao a ausencia de um. Som que entra sem ninguem pedir tem que
+   * ser escolha, nao descoberta.
+   *
+   * Projeto ja salvo abre com o que ele guardou: quem ligou continua com o som.
+   */
+  sfxEnabled: false,
   sfxFiles: [],
   update: null,
   appVersion: '',
@@ -2755,6 +2765,10 @@ export const useProject = create<ProjectState>((set, get) => ({
        * nao querem dizer nada nele.
        */
       sfxManual: [],
+      // Volta ao padrao junto com o resto: sem isto, ter ligado o SFX num
+      // projeto o traria ligado para o proximo, que e justamente o som
+      // entrando sem ninguem pedir.
+      sfxEnabled: false,
       music: null,
       musicGainDb: MUSIC_GAIN_DB_DEFAULT,
       hookText: '',
