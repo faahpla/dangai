@@ -41,6 +41,7 @@ import { publish } from './services/media-server'
 import {
   importImages,
   reframeImage,
+  rostoNosInstantes,
   type ImportFocus,
   type ImportSection,
 } from './services/assets'
@@ -393,6 +394,11 @@ export function registerIpc(): void {
    * Uma promessa abandonada no renderer deixaria o processo comendo memoria ate
    * o fim -- que e exatamente o estado do qual o usuario esta tentando sair.
    */
+  handle<
+    [string, readonly number[]],
+    ({ centroX: number; centroY: number; area: number } | null)[]
+  >(IPC.faceAt, (path, instantes) => rostoNosInstantes(path, instantes))
+
   handle<[], null>(IPC.cancelAnalyze, async () => {
     encerrarWhisper()
     return null

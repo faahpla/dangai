@@ -6,7 +6,7 @@ import sharp from 'sharp'
 import { RENDER_HEIGHT, RENDER_WIDTH, type ImageAsset } from '@shared/contract'
 import { classifyFile } from '@shared/channels'
 import { publish } from './media-server'
-import { detectFocus, type FaceFocus } from './faces'
+import { detectFace, detectFocus, type FaceFocus, type RostoNoQuadro } from './faces'
 import {
   configureClips,
   extrairFrames,
@@ -405,4 +405,52 @@ async function rostoNoClipe(path: string, durationSec: number): Promise<FaceFocu
       }
     }
   }
+}
+
+/**
+ * Onde o rosto esta em cada instante pedido do clipe.
+ *
+ * Serve a camera livre: com o rosto no comeco e no fim do bloco, as duas pontas
+ * da camera saem prontas e o movimento acompanha o personagem em vez de ficar
+ * parado enquanto ele atravessa o quadro.
+ *
+ * Devolve UMA entrada por instante, com null onde nao houve rosto confiavel --
+ * e nao uma lista curta. Quem chamou precisa saber QUAL instante falhou: um
+ * rosto achado so no comeco ainda serve para metade do trabalho, e a interface
+ * so consegue dizer isso se a posicao for preservada.
+ *
+ * Print entra pelo mesmo caminho e nao passa por ffmpeg: nele o rosto nao anda,
+ * entao um instante responde por todos.
+ */
+export async function rostoNosInstantes(
+  path: string,
+  instantes: readonly number[],
+): Promise<(RostoNoQuadro | null)[]> {
+  if (!isClip(path)) {
+    const achado = await detectFace(path).catch(() => null)
+    return instantes.map(() => achado)
+  }
+
+  const info = await probeClip(path)
+  if (info.durationSec <= 0) return instantes.map(() => null)
+
+  /*
+   * O extrairFrames fala em FRACAO da duracao, e aqui os instantes sao
+   * segundos. A conversao mora deste lado porque quem sabe a duracao e quem
+   * acabou de sondar o arquivo.
+   */
+  const fracoes = instantes.map((t) =>
+    Math.min(Math.max(t / info.durationSec, 0), 1),
+  )
+
+  const frames = await extrairFrames(path, info.durationSec, fracoes)
+  // extrairFrames pula o instante que nao abre, entao a lista pode vir menor.
+  // Sem os quadros na mesma quantidade nao da para dizer qual e qual.
+  if (frames.length !== instantes.length) return instantes.map(() => null)
+
+  const achados: (RostoNoQuadro | null)[] = []
+  for (const frame of frames) {
+    achados.push(await detectFace(frame).catch(() => null))
+  }
+  return achados
 }

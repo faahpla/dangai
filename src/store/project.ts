@@ -59,6 +59,7 @@ import type {
   ScenePlan,
   Transcript,
 } from '@shared/contract'
+import { enquadrar, fonteDaCamera } from '@shared/camera'
 import {
   buildCaptions,
   imagemDaMetade,
@@ -579,6 +580,14 @@ export interface ProjectState {
   cancelRender: () => Promise<void>
   /** Interrompe a leitura da narracao e devolve a tela ao usuario. */
   cancelAnalyze: () => Promise<void>
+  /**
+   * Aponta as duas pontas da camera para o rosto, no comeco e no fim do bloco.
+   *
+   * Devolve o que conseguiu, para a tela poder dizer -- "nenhum" e um resultado
+   * legitimo e frequente: o detector e frontal e nao dispara em perfil, nuca
+   * nem plano aberto.
+   */
+  seguirRosto: (index: number) => Promise<'ambos' | 'um' | 'nenhum'>
   /** Poe projetos salvos na fila. */
   enqueue: (paths: readonly string[]) => void
   removeFromQueue: (path: string) => void
@@ -2673,6 +2682,57 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   cancelRender: async () => {
     await window.dangai.cancelRender()
+  },
+
+  seguirRosto: async (index) => {
+    const { plan, images } = get()
+    const cena = plan?.scenes[index]
+    const image = cena ? images[cena.imageIndex] : undefined
+    if (!cena?.camera || !image) return 'nenhum'
+
+    /*
+     * Os mesmos dois instantes que os quadros de enquadrar mostram.
+     *
+     * Se aqui fosse outro par, o botao encheria as pontas com um rosto que a
+     * tela nao esta mostrando -- e o usuario veria o retangulo pular para um
+     * lugar sem relacao com a imagem na frente dele.
+     */
+    const inicio = cena.sourceStart ?? 0
+    const fim = inicio + (cena.end - cena.start)
+
+    set({ busy: 'Procurando o rosto...', error: null })
+    const r = await window.dangai.faceAt(image.path, [inicio, fim])
+    set({ busy: null })
+    if (!r.ok) {
+      set({ error: r.error })
+      return 'nenhum'
+    }
+
+    const [noComeco, noFim] = r.value
+    if (!noComeco && !noFim) return 'nenhum'
+
+    /*
+     * O rosto de UMA ponta serve para as duas.
+     *
+     * Achar so no comeco e o caso comum -- o personagem vira de perfil no meio
+     * do corte e o detector para de responder. Repetir o que se achou deixa a
+     * camera parada e certa, em vez de deixar a outra ponta no centro, que e
+     * quase sempre o lugar errado.
+     */
+    const aspecto = fonteDaCamera(image, cena.camera).aspecto
+    const de = noComeco ?? noFim!
+    const ate = noFim ?? noComeco!
+
+    get().updateScene(index, {
+      camera: {
+        ...cena.camera,
+        // A escala de cada ponta e mantida: ela e a aproximacao que ele
+        // escolheu, e mexer nela seria mudar duas coisas num pedido so.
+        from: enquadrar(de.centroX, de.centroY, cena.camera.from.scale, aspecto),
+        to: enquadrar(ate.centroX, ate.centroY, cena.camera.to.scale, aspecto),
+      },
+    })
+    return noComeco && noFim ? 'ambos' : 'um'
   },
 
   cancelAnalyze: async () => {

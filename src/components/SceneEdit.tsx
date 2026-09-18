@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookmarkPlus, Spline, X } from 'lucide-react'
+import { BookmarkPlus, ScanFace, Spline, X } from 'lucide-react'
 import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
@@ -10,6 +10,7 @@ import {
   type MotionCurve,
   type Transition,
 } from '@shared/contract'
+import { fonteDaCamera } from '@shared/camera'
 import { useProject } from '@/store/project'
 import { Chip, Field, Grupo } from './painel'
 import { Framing } from './Framing'
@@ -37,11 +38,22 @@ export function SceneEdit() {
   const index = useProject((s) => s.selectedScene)
   const updateScene = useProject((s) => s.updateScene)
   const setPlayhead = useProject((s) => s.setPlayhead)
+  const playhead = useProject((s) => s.playhead)
+  const seguirRosto = useProject((s) => s.seguirRosto)
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
   const salvas = useProject((s) => s.curvePresets)
   const carregarCurvas = useProject((s) => s.loadCurvePresets)
   const guardarCurva = useProject((s) => s.saveCurvePreset)
   const removerCurva = useProject((s) => s.removeCurvePreset)
+
+  /**
+   * O que o "Seguir o rosto" achou, e EM QUE BLOCO.
+   *
+   * Preso ao bloco de proposito: sem isso o recado de um bloco ficaria na tela
+   * ao selecionar outro, dizendo que o rosto foi encontrado num bloco onde o
+   * botao nem chegou a rodar.
+   */
+  const [recado, setRecado] = useState<{ bloco: number; texto: string } | null>(null)
 
   // As curvas guardadas vivem nas configuracoes, entao vem do main uma vez.
   useEffect(() => void carregarCurvas(), [carregarCurvas])
@@ -80,6 +92,51 @@ export function SceneEdit() {
   const separada = scene.effectB != null || scene.intensityB != null
 
   const total = plan?.scenes.length ?? 0
+
+  /*
+   * O recado do "Seguir o rosto", ate ele mexer em outra coisa.
+   *
+   * O detector acha ou nao acha, e as duas respostas mudam o que ele deve fazer
+   * em seguida: achando nas duas pontas, esta pronto; achando numa, vale
+   * conferir a outra; nao achando nenhuma, o jeito e arrastar na mao. Um botao
+   * que mexe no enquadramento sem dizer o que fez deixaria as tres parecendo a
+   * mesma coisa.
+   */
+  const procurarRosto = async (): Promise<void> => {
+    const achou = await seguirRosto(index)
+    setRecado({
+      bloco: index,
+      texto:
+      achou === 'ambos'
+        ? 'Rosto encontrado nas duas pontas. Confira e ajuste se precisar.'
+        : achou === 'um'
+          ? 'Rosto encontrado em uma ponta so -- a outra repetiu esse enquadramento. Confira a que ficou errada.'
+          : 'Nenhum rosto reconhecido neste bloco. O detector so enxerga rosto de frente, entao perfil, nuca e plano aberto passam batido -- aqui e na mao.',
+    })
+  }
+
+  /*
+   * QUE QUADRO DO CLIPE cada ponta da camera mostra.
+   *
+   * Com a agulha DENTRO deste bloco, as duas mostram o mesmo que o preview --
+   * e o unico jeito de enquadrar olhando a imagem que vai estar ali. Antes as
+   * duas ficavam presas no primeiro quadro do bloco, e andar na timeline para
+   * achar o fim da cena nao mudava nada aqui.
+   *
+   * Com a agulha FORA, cada uma volta a descrever a propria ponta: a de comeco
+   * mostra o primeiro quadro, a de fim mostra o ultimo. Sem agulha por perto,
+   * e o que os rotulos prometem.
+   */
+  const inicioNoClipe = scene.sourceStart ?? 0
+  const duracao = scene.end - scene.start
+  const naAgulha = playhead >= scene.start && playhead < scene.end
+  /** O clipe pode acabar antes do bloco; ali o render congela o ultimo quadro. */
+  const ateOFim = (t: number): number =>
+    image.durationSec === undefined ? t : Math.min(t, Math.max(image.durationSec - 0.05, 0))
+  const instanteComeca = ateOFim(naAgulha ? inicioNoClipe + (playhead - scene.start) : inicioNoClipe)
+  const instanteTermina = ateOFim(
+    naAgulha ? inicioNoClipe + (playhead - scene.start) : inicioNoClipe + duracao,
+  )
 
   // O botao de aplicar em todos so aparece quando ha o que aplicar -- se o
   // video inteiro ja usa esta curva, ele nao faria nada.
@@ -177,19 +234,56 @@ export function SceneEdit() {
               {scene.camera == null ? 'Usar camera livre' : 'Voltar aos efeitos'}
             </Chip>
             {scene.camera != null && (
-              <p className="text-[11px] leading-relaxed text-ink-3">
-                Arraste o retangulo para escolher o que aparece, e use o slider para aproximar. O
-                ritmo do movimento continua sendo o do bloco.
-              </p>
+              <>
+                {/*
+                  SEGUIR O ROSTO: as duas pontas prontas de uma vez.
+
+                  Ele descreveu o caso pedindo um tracker -- "o rosto de um
+                  personagem se move de um lado da tela para o outro, eu nao
+                  quero perder o foco". Com duas chaves, um movimento que so vai
+                  numa direcao e exatamente o que a camera sabe fazer: basta
+                  saber onde o rosto esta no comeco e no fim.
+
+                  Nao e o Smart Reframe: o detector e frontal e perde perfil,
+                  nuca e plano aberto. Por isso o botao DIZ o que achou em vez
+                  de mexer em silencio -- enquadramento que muda sozinho e sem
+                  aviso e como o video sai errado sem ninguem perceber.
+                */}
+                <Chip active={false} onClick={() => void procurarRosto()}>
+                  <ScanFace size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                  Seguir o rosto
+                </Chip>
+                <p className="text-[11px] leading-relaxed text-ink-3">
+                  {(recado?.bloco === index ? recado.texto : null) ??
+                    'Arraste o retangulo para escolher o que aparece, e use o slider para aproximar. O ritmo do movimento continua sendo o do bloco.'}
+                </p>
+              </>
             )}
           </Field>
 
           {scene.camera != null && (
-            <div className="grid grid-cols-2 gap-2">
+            /*
+             * Fonte DEITADA empilha; fonte em pe fica lado a lado.
+             *
+             * Lado a lado, um clipe 16:9 recebia metade da coluna -- uns 127px
+             * de altura -- e enquadrar um rosto olhando isso e adivinhar.
+             * Empilhadas, as duas pontas usam a largura inteira, que e o eixo
+             * onde o movimento acontece justamente num quadro deitado.
+             *
+             * Em pe o problema nao existe: duas colunas cabem, e ver as duas
+             * pontas juntas e o que deixa comparar o comeco com o fim.
+             */
+            <div
+              className={
+                fonteDaCamera(image, scene.camera).aspecto > 1
+                  ? 'flex flex-col gap-3'
+                  : 'grid grid-cols-2 gap-2'
+              }
+            >
               <Camera
                 image={image}
                 camera={scene.camera}
-                sourceStart={scene.sourceStart ?? 0}
+                instante={instanteComeca}
                 label="Comeca em"
                 aoMexer={() => setPlayhead(scene.start)}
                 value={scene.camera.from}
@@ -200,7 +294,7 @@ export function SceneEdit() {
               <Camera
                 image={image}
                 camera={scene.camera}
-                sourceStart={scene.sourceStart ?? 0}
+                instante={instanteTermina}
                 label="Termina em"
                 aoMexer={() => setPlayhead(Math.max(scene.end - 1 / VIDEO_FPS, scene.start))}
                 value={scene.camera.to}

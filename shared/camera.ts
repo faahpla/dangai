@@ -103,6 +103,29 @@ export function folgaDaCamera(
   }
 }
 
+/**
+ * O enquadramento que poe ESTE ponto da fonte no meio do quadro.
+ *
+ * A escala vem de fora e nao e escolhida aqui: ela e a aproximacao que o
+ * usuario ja decidiu, e mexer nela ao seguir um rosto mudaria duas coisas
+ * quando ele pediu uma.
+ *
+ * O resultado passa pela folga, entao um rosto encostado na borda nao arrasta a
+ * janela para fora da fonte -- ela para no limite, com o rosto tao perto do
+ * centro quanto aquele zoom permite.
+ */
+export function enquadrar(
+  centroX: number,
+  centroY: number,
+  scale: number,
+  aspectoDaFonte: number,
+): CameraFrame {
+  return naFolga(
+    { scale, x: (0.5 - centroX) * 100, y: (0.5 - centroY) * 100 },
+    aspectoDaFonte,
+  )
+}
+
 /** Reaperta um enquadramento na folga da propria escala. */
 export function naFolga(frame: CameraFrame, aspectoDaFonte: number): CameraFrame {
   const folga = folgaDaCamera(frame.scale, aspectoDaFonte)

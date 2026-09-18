@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { CAMERA_SCALE_MAX, type CameraFrame, type ImageAsset } from '@shared/contract'
 import { folgaDaCamera, fonteDaCamera, janelaDaCamera } from '@shared/camera'
 
@@ -10,31 +10,53 @@ import { folgaDaCamera, fonteDaCamera, janelaDaCamera } from '@shared/camera'
  * quebrado. Foi o que apareceu na primeira versao disto, num projeto feito
  * inteiro de clipes: "consigo nem ver oq vou fazer".
  *
- * O clipe entra como <video> parado no instante em que o bloco comeca, que e o
- * quadro que ele esta de fato enquadrando -- o primeiro segundo do arquivo
- * costuma ser outra coisa.
+ * O CLIPE ACOMPANHA A AGULHA. Ate a v1.27 ele parava no instante em que o bloco
+ * comeca e ficava la: as duas pontas mostravam o mesmo quadro, e andar na
+ * timeline para ver onde a cena termina nao mudava nada aqui. Enquadrar o fim
+ * de um movimento olhando o comeco dele e enquadrar no escuro -- "nao consigo
+ * ver exatamente onde eu tenho que colocar pois nao acompanho o preview".
  */
 function Midia({
   image,
   url,
-  sourceStart,
+  instante,
   style,
 }: {
   image: ImageAsset
   /** Pode ser o ORIGINAL, e nao o recorte 9:16 -- quem decide e fonteDaCamera. */
   url: string
-  sourceStart: number
+  /** Segundo do CLIPE que este quadro mostra. */
+  instante: number
   style: React.CSSProperties
 }) {
+  const ref = useRef<HTMLVideoElement | null>(null)
+
+  /*
+   * Procurar o quadro so depois que o navegador sabe a duracao.
+   *
+   * Antes dos metadados, atribuir `currentTime` nao faz nada e o pedido se
+   * perde em silencio -- por isso o mesmo ajuste acontece no `onLoadedMetadata`
+   * e aqui, a cada mudanca de instante.
+   */
+  useEffect(() => {
+    const video = ref.current
+    if (!video || video.readyState === 0) return
+    // Um quadro de folga: a agulha anda em passos menores que o frame, e pedir
+    // um seek para o mesmo lugar so faz o decodificador trabalhar a toa.
+    if (Math.abs(video.currentTime - instante) < 0.02) return
+    video.currentTime = instante
+  }, [instante])
+
   if (image.kind === 'video') {
     return (
       <video
+        ref={ref}
         src={url}
         muted
         playsInline
         preload="metadata"
         onLoadedMetadata={(event) => {
-          event.currentTarget.currentTime = sourceStart
+          event.currentTarget.currentTime = instante
         }}
         style={style}
       />
@@ -66,7 +88,7 @@ function Midia({
 export function Camera({
   image,
   camera,
-  sourceStart,
+  instante,
   value,
   onChange,
   label,
@@ -75,7 +97,8 @@ export function Camera({
   image: ImageAsset
   /** A camera inteira, so para saber se ela enquadra o original ou o recorte. */
   camera: { source?: boolean }
-  sourceStart: number
+  /** Segundo do CLIPE que este quadro mostra -- segue a agulha quando ela esta neste bloco. */
+  instante: number
   value: CameraFrame
   onChange: (frame: CameraFrame) => void
   label: string
@@ -168,29 +191,32 @@ export function Camera({
           arrasto.current = null
         }}
         /*
-         * A ALTURA manda, e a largura sai dela.
+         * O ASPECTO VEM DA FONTE, e o quadro cabe nos DOIS limites.
          *
-         * Com `w-full` o quadro crescia ate 390px de altura e empurrava a
-         * Intensidade e o Ritmo para fora da vista -- e o ritmo e justamente o
-         * que da sentido ao movimento desenhado aqui.
+         * A conta do retangulo le esse mesmo aspecto, entao um quadro achatado
+         * por fora com uma conta que segue achando 9:16 e exatamente como o
+         * retangulo passa a apontar para o lugar errado. Por isso a proporcao
+         * nunca e forcada: `aspectRatio` manda, e quem cede e a largura.
          *
-         * Limitar pela altura E O UNICO JEITO CERTO: a conta do retangulo
-         * assume 9:16 nos dois eixos, entao um `max-h` por cima de `w-full`
-         * achataria o quadro sem achatar a conta, e o retangulo passaria a
-         * apontar para o lugar errado. Fixando a altura, a largura vem do
-         * aspect e a proporcao se mantem exata.
+         * Dois tetos, porque cada um resolve um estrago diferente:
+         *
+         *  - ALTURA: com `w-full` puro, uma fonte em pe crescia ate 390px e
+         *    empurrava a Intensidade e o Ritmo para fora da vista -- e o ritmo
+         *    e o que da sentido ao movimento desenhado aqui;
+         *  - LARGURA: uma fonte deitada a 240px de altura mede 427px, e duas
+         *    delas lado a lado estouravam a coluna e passavam por cima do
+         *    painel de Transicao.
+         *
+         * `min(100%, altura x aspecto)` atende os dois sem achatar nada: o
+         * quadro para de crescer no primeiro limite que alcancar. Um `max-h`
+         * por cima de `w-full` nao serviria -- ele cortaria a altura sem tirar
+         * largura, e e ai que a proporcao se perde.
          */
-        /*
-         * O ASPECTO VEM DA FONTE, e nao mais fixo em 9:16.
-         *
-         * A conta do retangulo le esse mesmo aspecto, entao os dois nunca
-         * divergem -- um quadro achatado por fora e uma conta que segue
-         * achando 9:16 e exatamente como o retangulo passa a apontar para o
-         * lugar errado. A altura continua mandando para a Intensidade e o
-         * Ritmo nao sairem da vista.
-         */
-        style={{ aspectRatio: String(fonte.aspecto) }}
-        className="relative mx-auto h-[240px] w-auto cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
+        style={{
+          aspectRatio: String(fonte.aspecto),
+          width: `min(100%, ${Math.round(240 * fonte.aspecto)}px)`,
+        }}
+        className="relative mx-auto cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >
         {/*
           UMA MIDIA SO, e o escurecimento com um furo.
@@ -205,7 +231,7 @@ export function Camera({
           Agora o escuro e uma sombra que se espalha para FORA do retangulo,
           entao ha uma imagem so embaixo de tudo e nada pode divergir.
         */}
-        <Midia image={image} url={fonte.url} sourceStart={sourceStart} style={cobrindo} />
+        <Midia image={image} url={fonte.url} instante={instante} style={cobrindo} />
 
         <div
           style={{

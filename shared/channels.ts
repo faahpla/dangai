@@ -44,6 +44,7 @@ export const IPC = {
   startRender: 'render:start',
   cancelRender: 'render:cancel',
   cancelAnalyze: 'plan:cancel',
+  faceAt: 'faces:at',
   revealFile: 'shell:reveal',
   analyze: 'plan:analyze',
   getSettings: 'settings:get',
@@ -550,6 +551,17 @@ export interface DangaiBridge {
    * morria junto, levando o que ainda nao tinha sido salvo.
    */
   cancelAnalyze(): Promise<IpcResult<null>>
+  /**
+   * Onde o rosto esta, em cada instante pedido de um clipe.
+   *
+   * Uma entrada por instante, com null onde nao houve rosto confiavel -- a
+   * posicao importa, porque achar so no comeco ainda serve para metade do
+   * trabalho e a tela precisa poder dizer isso.
+   */
+  faceAt(
+    path: string,
+    instantes: readonly number[],
+  ): Promise<IpcResult<({ centroX: number; centroY: number; area: number } | null)[]>>
   revealFile(path: string): Promise<IpcResult<null>>
   analyze(args: AnalyzeArgs): Promise<IpcResult<AnalysisResult>>
   /** Grava o .dangai. Resolve com o caminho usado, ou null se cancelou o dialogo. */

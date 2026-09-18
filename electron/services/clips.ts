@@ -286,9 +286,16 @@ export async function extrairFrames(
   const base = hashDe(path)
   const saida: string[] = []
 
-  for (const [i, fracao] of fracoes.entries()) {
-    const alvo = join(cacheDir, `face-${base}-${i}.jpg`)
+  for (const fracao of fracoes) {
     const instante = Math.max(0, Math.min(durationSec * fracao, Math.max(durationSec - 0.05, 0)))
+    /*
+     * O nome carrega o INSTANTE, e nao a posicao na lista.
+     *
+     * Com o indice, duas chamadas diferentes para o mesmo clipe escreviam no
+     * mesmo arquivo -- e desde que a camera pede quadros em instantes
+     * arbitrarios, "o quadro 0" deixou de querer dizer uma coisa so.
+     */
+    const alvo = join(cacheDir, `face-${base}-${Math.round(instante * 1000)}.jpg`)
     try {
       await runFfmpeg([
         '-hide_banner',

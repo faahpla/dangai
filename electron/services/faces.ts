@@ -35,6 +35,23 @@ const MINIMO_PX = 24
 
 const ESCALA = 1.05
 
+/**
+ * Onde o rosto esta, em fracao da imagem.
+ *
+ * E o dado CRU da deteccao, antes de virar enquadramento. O `detectFocus`
+ * calculava isto e jogava fora ao traduzir para focusX/focusY -- que e outro
+ * sistema (onde a janela de recorte para, e nao onde o rosto esta). A camera
+ * livre precisa do centro de verdade, entao ele passou a ser devolvido em vez
+ * de morrer no meio da conta.
+ */
+export interface RostoNoQuadro {
+  /** Centro do rosto, de 0 (esquerda/topo) a 1 (direita/base). */
+  centroX: number
+  centroY: number
+  /** Que fracao da imagem o rosto ocupa. */
+  area: number
+}
+
 export interface FaceFocus {
   focusX: number
   focusY: number
@@ -164,6 +181,19 @@ async function motor(): Promise<{ cv: Cv; cascade: CvCascade } | null> {
  * tem folga, mas numa imagem mais alta que 9:16 o Y passa a mandar.
  */
 export async function detectFocus(caminho: string): Promise<FaceFocus | null> {
+  const rosto = await detectFace(caminho)
+  if (!rosto) return null
+  return focoPara(caminho, rosto.centroX, rosto.centroY, rosto.area)
+}
+
+/**
+ * O maior rosto desta imagem, ou null quando nao ha nenhum confiavel.
+ *
+ * O detector e frontal e deliberadamente conservador (seis vizinhos): ele nao
+ * dispara em perfil, nuca nem plano aberto, e errar aqui e pior que nao achar
+ * -- um rosto inventado move o enquadramento sem o usuario perceber.
+ */
+export async function detectFace(caminho: string): Promise<RostoNoQuadro | null> {
   const m = await motor()
   if (!m) return null
 
@@ -214,7 +244,7 @@ export async function detectFocus(caminho: string): Promise<FaceFocus | null> {
     const centroY = (maior.y + maior.height / 2) / info.height
     const area = (maior.width * maior.height) / (info.width * info.height)
 
-    return focoPara(caminho, centroX, centroY, area)
+    return { centroX, centroY, area }
   } catch {
     return null
   }
