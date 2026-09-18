@@ -539,6 +539,16 @@ export const sceneSchema = z.object({
     .object({
       from: cameraFrameSchema,
       to: cameraFrameSchema,
+      /**
+       * A camera enquadra o arquivo ORIGINAL, e nao o recorte 9:16.
+       *
+       * Ate a v1.27 ela so enxergava o recorte, e os dois tercos laterais de um
+       * clipe 16:9 eram inalcancaveis -- um personagem na ponta direita nao
+       * existia no arquivo que o render abria. Falso nas cameras desenhadas
+       * antes disto: o numero delas vale no quadro recortado, e trocar a fonte
+       * por baixo mudaria o enquadramento de um video ja pronto.
+       */
+      source: z.boolean().default(false),
     })
     .nullable()
     .default(null),
@@ -837,9 +847,30 @@ export const renderPropsSchema = z.object({
        * props antigas continuarem validas.
        */
       camera: z
-        .object({ from: cameraFrameSchema, to: cameraFrameSchema })
+        .object({
+          from: cameraFrameSchema,
+          to: cameraFrameSchema,
+      /**
+       * A camera enquadra o arquivo ORIGINAL, e nao o recorte 9:16.
+       *
+       * Ate a v1.27 ela so enxergava o recorte, e os dois tercos laterais de um
+       * clipe 16:9 eram inalcancaveis -- um personagem na ponta direita nao
+       * existia no arquivo que o render abria. Falso nas cameras desenhadas
+       * antes disto: o numero delas vale no quadro recortado, e trocar a fonte
+       * por baixo mudaria o enquadramento de um video ja pronto.
+       */
+      source: z.boolean().default(false),
+        })
         .nullable()
         .default(null),
+      /**
+       * O aspecto do arquivo que `url` aponta, quando a camera parte do
+       * ORIGINAL. null quer dizer "ja e 9:16", que e o caso de sempre.
+       *
+       * Vai junto porque a conta da camera precisa saber quanta largura sobra
+       * do lado de fora do quadro, e so quem montou o plano tem essa medida.
+       */
+      sourceAspect: z.number().positive().nullable().default(null),
       /**
        * Print ou clipe. Com default para props antigas continuarem validas.
        *

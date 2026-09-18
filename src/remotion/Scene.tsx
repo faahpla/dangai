@@ -9,6 +9,7 @@ import {
   useVideoConfig,
 } from 'remotion'
 import type { RenderProps } from '@shared/contract'
+import { estiloDaCamera } from '@shared/camera'
 
 type SceneProps = RenderProps['scenes'][number]
 
@@ -28,6 +29,7 @@ export function Scene({
   curve,
   kind,
   camera,
+  sourceAspect,
   sourceDurationInFrames,
   sourceStartFrames,
   abaixo,
@@ -131,7 +133,23 @@ export function Scene({
     ...(quarto
       ? { objectPosition: `${(focusX * 100).toFixed(1)}% ${(focusY * 100).toFixed(1)}%` }
       : {}),
-    transform: `scale(${scale}) translate(${x}%, ${y}%)`,
+    /*
+     * A CAMERA LIVRE tem geometria propria, e ela mora em shared/camera.
+     *
+     * O transform sozinho move um quadro que o cover ja cortou no centro, e por
+     * isso a camera esbarrava numa parede: num clipe 16:9 os dois tercos
+     * laterais nao tinham como entrar. Quem alcanca a largura descartada e o
+     * object-position, e quem acerta o resto depois do zoom e o translate --
+     * as duas pecas saem da mesma conta que a tela de enquadrar usa para
+     * desenhar o retangulo, porque duas contas parecidas divergem e ai o
+     * retangulo mente sobre o video.
+     *
+     * Girado de um quarto nao entra: la o object-position ja e do foco, e duas
+     * regras no mesmo eixo nao se somam.
+     */
+    ...(camera && !quarto
+      ? estiloDaCamera({ scale, x, y }, sourceAspect ?? width / height)
+      : { transform: `scale(${scale}) translate(${x}%, ${y}%)` }),
     // A transformacao parte do centro para o zoom nao puxar para um canto.
     transformOrigin: 'center center',
   }

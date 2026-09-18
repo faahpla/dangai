@@ -1,4 +1,5 @@
 import { boundariesFrom, pickCuts } from './rhythm'
+import { fonteDaCamera } from './camera'
 import {
   CAPTION_BREAK_AFTER,
   CAPTION_ANIMATION_DEFAULT,
@@ -560,11 +561,28 @@ export function toRenderProps(
      */
     const quarto = (scene.rotation ?? 0) === 90 || (scene.rotation ?? 0) === 270
 
+    /*
+     * Camera livre sobre o ORIGINAL.
+     *
+     * Fora da tela dividida e do giro de um quarto, que ja escolhem a fonte por
+     * outros motivos e mandam no object-position -- somar a camera neles seria
+     * duas regras disputando o mesmo eixo.
+     */
+    const cameraNaFonte =
+      abaixo === null && !quarto && scene.camera != null
+        ? fonteDaCamera(image, scene.camera)
+        : null
+
     return {
       // Na tela dividida a metade de CIMA tambem parte do original, pelo mesmo
       // motivo da de baixo: recortar duas vezes come o enquadramento.
       url:
-        abaixo === null && !quarto ? image.url : (image.urlSource ?? image.url),
+        cameraNaFonte !== null
+          ? cameraNaFonte.url
+          : abaixo === null && !quarto
+            ? image.url
+            : (image.urlSource ?? image.url),
+      sourceAspect: cameraNaFonte?.aspecto ?? null,
       urlSource: image.urlSource ?? null,
       focusX: image.focusX,
       focusY: image.focusY,

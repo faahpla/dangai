@@ -164,7 +164,12 @@ export function SceneEdit() {
                       ? // Nasce como um zoom out simples: e o caso que ele
                         // descreveu pedindo o recurso, e da para ver o efeito
                         // antes de arrastar qualquer coisa.
-                        { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 } }
+                        {
+                          from: { scale: 1.4, x: 0, y: 0 },
+                          to: { scale: 1, x: 0, y: 0 },
+                          // Camera nova ja nasce enquadrando o arquivo inteiro.
+                          source: true,
+                        }
                       : null,
                 })
               }
@@ -183,22 +188,24 @@ export function SceneEdit() {
             <div className="grid grid-cols-2 gap-2">
               <Camera
                 image={image}
+                camera={scene.camera}
                 sourceStart={scene.sourceStart ?? 0}
                 label="Comeca em"
                 aoMexer={() => setPlayhead(scene.start)}
                 value={scene.camera.from}
                 onChange={(from) =>
-                  updateScene(index, { camera: { from, to: scene.camera!.to } })
+                  updateScene(index, { camera: { ...scene.camera!, from } })
                 }
               />
               <Camera
                 image={image}
+                camera={scene.camera}
                 sourceStart={scene.sourceStart ?? 0}
                 label="Termina em"
                 aoMexer={() => setPlayhead(Math.max(scene.end - 1 / VIDEO_FPS, scene.start))}
                 value={scene.camera.to}
                 onChange={(to) =>
-                  updateScene(index, { camera: { from: scene.camera!.from, to } })
+                  updateScene(index, { camera: { ...scene.camera!, to } })
                 }
               />
             </div>

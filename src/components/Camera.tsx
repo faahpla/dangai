@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react'
 import { CAMERA_SCALE_MAX, type CameraFrame, type ImageAsset } from '@shared/contract'
+import { folgaDaCamera, fonteDaCamera, janelaDaCamera } from '@shared/camera'
 
 /**
  * A midia do bloco, parada, para enquadrar em cima dela.
@@ -15,17 +16,20 @@ import { CAMERA_SCALE_MAX, type CameraFrame, type ImageAsset } from '@shared/con
  */
 function Midia({
   image,
+  url,
   sourceStart,
   style,
 }: {
   image: ImageAsset
+  /** Pode ser o ORIGINAL, e nao o recorte 9:16 -- quem decide e fonteDaCamera. */
+  url: string
   sourceStart: number
   style: React.CSSProperties
 }) {
   if (image.kind === 'video') {
     return (
       <video
-        src={image.url}
+        src={url}
         muted
         playsInline
         preload="metadata"
@@ -36,7 +40,7 @@ function Midia({
       />
     )
   }
-  return <img src={image.url} alt="" draggable={false} style={style} />
+  return <img src={url} alt="" draggable={false} style={style} />
 }
 
 /**
@@ -61,6 +65,7 @@ function Midia({
  */
 export function Camera({
   image,
+  camera,
   sourceStart,
   value,
   onChange,
@@ -68,6 +73,8 @@ export function Camera({
   aoMexer,
 }: {
   image: ImageAsset
+  /** A camera inteira, so para saber se ela enquadra o original ou o recorte. */
+  camera: { source?: boolean }
   sourceStart: number
   value: CameraFrame
   onChange: (frame: CameraFrame) => void
@@ -87,9 +94,16 @@ export function Camera({
   const caixaRef = useRef<HTMLDivElement | null>(null)
   const arrasto = useRef<{ x: number; y: number; de: CameraFrame } | null>(null)
 
-  const lado = 1 / value.scale
-  const left = 0.5 - value.x / 100 - lado / 2
-  const top = 0.5 - value.y / 100 - lado / 2
+  /*
+   * O QUADRO MOSTRADO E A FONTE INTEIRA, e nao mais o recorte 9:16.
+   *
+   * Era ali que estava o limite que ele descreveu: com um personagem na ponta
+   * esquerda e outro na direita de um clipe 16:9, nao havia como ir de um ao
+   * outro porque a tela nunca mostrou nada alem do terco central. Mostrando o
+   * arquivo como ele e, o retangulo passeia pelo quadro todo.
+   */
+  const fonte = fonteDaCamera(image, camera)
+  const janela = janelaDaCamera(value, fonte.aspecto)
 
   /**
    * O quanto a camera pode sair do centro sem deixar entrar borda preta.
@@ -97,8 +111,9 @@ export function Camera({
    * Com escala 1 o retangulo ocupa o quadro todo e nao ha folga nenhuma -- por
    * isso o limite e zero ali, e cresce conforme ele aproxima.
    */
-  const folga = 50 * (1 - 1 / value.scale)
-  const preso = (n: number): number => Math.min(Math.max(n, -folga), folga)
+  const folga = folgaDaCamera(value.scale, fonte.aspecto)
+  const preso = (n: number, limite: number): number =>
+    Math.min(Math.max(n, -limite), limite)
 
   const mover = useCallback(
     (clientX: number, clientY: number) => {
@@ -118,11 +133,11 @@ export function Camera({
 
       onChange({
         scale: inicio.de.scale,
-        x: preso(inicio.de.x - dx),
-        y: preso(inicio.de.y - dy),
+        x: preso(inicio.de.x - dx, folga.x),
+        y: preso(inicio.de.y - dy, folga.y),
       })
     },
-    [onChange, folga],
+    [onChange, folga.x, folga.y],
   )
 
   /* A midia ocupando o quadro inteiro. O retangulo repete isto por dentro. */
@@ -165,7 +180,17 @@ export function Camera({
          * apontar para o lugar errado. Fixando a altura, a largura vem do
          * aspect e a proporcao se mantem exata.
          */
-        className="relative mx-auto aspect-[9/16] h-[240px] w-auto cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
+        /*
+         * O ASPECTO VEM DA FONTE, e nao mais fixo em 9:16.
+         *
+         * A conta do retangulo le esse mesmo aspecto, entao os dois nunca
+         * divergem -- um quadro achatado por fora e uma conta que segue
+         * achando 9:16 e exatamente como o retangulo passa a apontar para o
+         * lugar errado. A altura continua mandando para a Intensidade e o
+         * Ritmo nao sairem da vista.
+         */
+        style={{ aspectRatio: String(fonte.aspecto) }}
+        className="relative mx-auto h-[240px] w-auto cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >
         {/*
           UMA MIDIA SO, e o escurecimento com um furo.
@@ -180,14 +205,14 @@ export function Camera({
           Agora o escuro e uma sombra que se espalha para FORA do retangulo,
           entao ha uma imagem so embaixo de tudo e nada pode divergir.
         */}
-        <Midia image={image} sourceStart={sourceStart} style={cobrindo} />
+        <Midia image={image} url={fonte.url} sourceStart={sourceStart} style={cobrindo} />
 
         <div
           style={{
-            left: `${left * 100}%`,
-            top: `${top * 100}%`,
-            width: `${lado * 100}%`,
-            height: `${lado * 100}%`,
+            left: `${janela.left * 100}%`,
+            top: `${janela.top * 100}%`,
+            width: `${janela.width * 100}%`,
+            height: `${janela.height * 100}%`,
             boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.6)',
           }}
           className="pointer-events-none absolute border border-accent"
@@ -207,11 +232,11 @@ export function Camera({
             const scale = Number(event.target.value)
             // Reaperta o deslocamento na folga NOVA: afastar encolhe a margem,
             // e um x que era valido em 2x poe borda preta em 1.2x.
-            const nova = 50 * (1 - 1 / scale)
+            const nova = folgaDaCamera(scale, fonte.aspecto)
             onChange({
               scale,
-              x: Math.min(Math.max(value.x, -nova), nova),
-              y: Math.min(Math.max(value.y, -nova), nova),
+              x: preso(value.x, nova.x),
+              y: preso(value.y, nova.y),
             })
           }}
           className="dangai-range min-w-0 flex-1"
