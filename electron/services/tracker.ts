@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import sharp from 'sharp'
@@ -141,7 +141,18 @@ export async function perseguir(
     if (quadros.length < 2) return { caminho: [], ateOnde: 0, quadros: quadros.length }
 
     const cinza = async (arquivo: string): Promise<{ mat: CvMat; w: number; h: number }> => {
-      const { data, info } = await sharp(arquivo)
+      /*
+       * O arquivo entra como BUFFER, e nao pelo caminho.
+       *
+       * Lendo pelo caminho, o libvips mantem o arquivo aberto depois de
+       * devolver os pixels -- e no Windows apagar uma pasta com arquivo ainda
+       * aberto e EPERM. A perseguicao ja tinha terminado quando isso estourava:
+       * o usuario via um erro de permissao no lugar do resultado.
+       *
+       * O readFileSync abre, le e fecha. Sao 60 KB por quadro, entao segurar
+       * isso na memoria por um instante nao custa nada.
+       */
+      const { data, info } = await sharp(readFileSync(arquivo))
         .greyscale()
         .raw()
         .toBuffer({ resolveWithObject: true })
@@ -191,7 +202,20 @@ export async function perseguir(
     atual.mat.delete()
     return { caminho, ateOnde, quadros: quadros.length }
   } finally {
-    rmSync(pasta, { recursive: true, force: true })
+    /*
+     * Limpeza NUNCA derruba um trabalho que deu certo.
+     *
+     * A perseguicao ja acabou quando isto roda -- o caminho esta calculado e
+     * pronto para voltar. Deixar uma pasta temporaria que nao apagou virar um
+     * erro na tela e trocar o resultado por uma reclamacao sobre faxina; o
+     * Windows ainda pode estar segurando um handle por um instante, e o proprio
+     * sistema limpa o Temp depois.
+     */
+    try {
+      rmSync(pasta, { recursive: true, force: true })
+    } catch {
+      /* a pasta fica para o Temp do sistema resolver */
+    }
   }
 }
 
