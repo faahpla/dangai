@@ -565,7 +565,8 @@ export function Library() {
       {replaceTarget !== null && (
         <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-accent bg-accent-dim px-5">
           <span className="text-[12px] text-ink">
-            Escolha a cena que entra no bloco {replaceTarget + 1} — um clique substitui
+            Escolha a cena que entra {replaceTarget.metade === 'baixo' ? 'na metade de baixo do' : 'no'}{' '}
+            bloco {replaceTarget.scene + 1} — um clique substitui
           </span>
           <button
             type="button"

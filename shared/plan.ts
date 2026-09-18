@@ -92,6 +92,7 @@ export function planEqualSplit(imageCount: number, durationSec: number): ScenePl
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
+    sourceStartB: 0,
     curvePoints: null,
     // Camera livre so quando ele desenhar as pontas.
     camera: null,
@@ -162,6 +163,7 @@ export function planFromCandidates(
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
+    sourceStartB: 0,
     curvePoints: null,
     // Camera livre so quando ele desenhar as pontas.
     camera: null,
@@ -268,6 +270,7 @@ export function sanitize(plan: ScenePlan, imageCount: number, durationSec: numbe
           curve: MOTION_CURVE_DEFAULT,
           // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
           sourceStart: 0,
+          sourceStartB: 0,
           curvePoints: null,
           // Camera livre so quando ele desenhar as pontas.
           camera: null,
@@ -520,25 +523,40 @@ export function toRenderProps(
      * app ja guarda (o rosto detectado na importacao, ou o que ele arrastou).
      */
     const parceira = scene.imageIndexB === null ? undefined : images[scene.imageIndexB]
-    const fonteDe = (asset: typeof image): { total: number | null; inicio: number } => {
-      const total =
-        asset.kind === 'video' && asset.durationSec !== undefined
-          ? Math.floor(asset.durationSec * VIDEO_FPS)
-          : null
-      return { total, inicio: 0 }
-    }
     const abaixo =
       parceira === undefined
         ? null
         : (() => {
-            const { total } = fonteDe(parceira)
+            /*
+             * O ponto de entrada da de baixo, pela MESMA conta da de cima.
+             *
+             * Ela partia de zero fixo, e o que sobrava do clipe era medido do
+             * comeco do arquivo -- entao um bloco que entrasse no meio de um
+             * clipe curto congelava cedo demais, ou nao congelava quando devia.
+             * Medindo a sobra a partir de onde ela realmente comeca, as duas
+             * metades se comportam igual.
+             */
+            const total =
+              parceira.kind === 'video' && parceira.durationSec !== undefined
+                ? Math.floor(parceira.durationSec * VIDEO_FPS)
+                : null
+            const inicio =
+              total === null
+                ? 0
+                : clamp(
+                    Math.round((scene.sourceStartB ?? 0) * VIDEO_FPS),
+                    0,
+                    Math.max(total - 1, 0),
+                  )
+            const sobra = total === null ? null : total - inicio
             return {
               url: parceira.urlSource ?? parceira.url,
               kind: parceira.kind,
               focusX: parceira.focusX,
               focusY: parceira.focusY,
-              sourceDurationInFrames: total !== null && total < durationInFrames ? Math.max(total, 1) : null,
-              sourceStartFrames: 0,
+              sourceDurationInFrames:
+                sobra !== null && sobra < durationInFrames ? Math.max(sobra, 1) : null,
+              sourceStartFrames: inicio,
               /*
                * `null` na cena quer dizer "segue a de cima", e a conta e feita
                * AQUI -- o Remotion recebe o movimento ja resolvido, sem precisar
@@ -1080,6 +1098,7 @@ export function planByRhythm(
     curve: MOTION_CURVE_DEFAULT,
     // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
     sourceStart: 0,
+    sourceStartB: 0,
     curvePoints: null,
     // Camera livre so quando ele desenhar as pontas.
     camera: null,
@@ -1181,6 +1200,7 @@ export function planBySections(
         curve: MOTION_CURVE_DEFAULT,
         // Todo bloco novo parte do comeco do clipe; mover e escolha dele.
         sourceStart: 0,
+        sourceStartB: 0,
         curvePoints: null,
         // Camera livre so quando ele desenhar as pontas.
         camera: null,
@@ -1213,4 +1233,27 @@ export function planWithoutAI(
     }
   }
   return { plan: planEqualSplit(imageCount, durationSec), origin: 'equal' }
+}
+
+/**
+ * Qual imagem a metade escolhida de um bloco usa.
+ *
+ * Existe porque o indice do BLOCO nao serve como indice da IMAGEM, e isso
+ * deixou de ser verdade no dia em que a tela dividida chegou: um bloco dividido
+ * consome DUAS imagens, e a partir do primeiro par as contas param de bater --
+ * o "Buscar na biblioteca" do bloco 2 trocava a imagem de baixo do bloco 1. O
+ * `pares` ja tinha corrigido o mesmo desencontro na montagem do plano; aqui ele
+ * tinha ficado.
+ *
+ * Quem sabe qual imagem cada metade usa e a propria cena, e e dela que a
+ * resposta sai. null quer dizer "nao ha essa metade neste bloco".
+ */
+export function imagemDaMetade(
+  plan: ScenePlan | null,
+  sceneIndex: number,
+  metade: 'cima' | 'baixo',
+): number | null {
+  const cena = plan?.scenes[sceneIndex]
+  if (!cena) return null
+  return metade === 'baixo' ? cena.imageIndexB : cena.imageIndex
 }

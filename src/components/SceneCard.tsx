@@ -78,6 +78,8 @@ export function SceneCard() {
 
   const scene = index === null ? undefined : plan?.scenes[index]
   const image = scene ? images[scene.imageIndex] : undefined
+  const imageB =
+    scene && scene.imageIndexB !== null ? images[scene.imageIndexB] : undefined
 
   if (index === null || !scene || !image) return null
 
@@ -115,9 +117,14 @@ export function SceneCard() {
 
       <Fita index={index} />
 
-      <PontoDeEntrada index={index} scene={scene} image={image} />
+      <PontoDeEntrada
+        index={index}
+        scene={scene}
+        image={image}
+        label={imageB ? 'Trecho do clipe de cima' : 'Trecho do clipe'}
+      />
 
-      <Field label="Trocar por outra cena">
+      <Field label={imageB ? 'Trocar a cena de cima' : 'Trocar por outra cena'}>
         {/*
           A fita resolve o caso comum -- discordar e pegar outra das seis. Esta
           porta e para o caso MUITO especifico, quando ele sabe exatamente qual
@@ -125,11 +132,48 @@ export function SceneCard() {
           vale para qualquer bloco, inclusive nos projetos que nao vieram da
           montagem automatica.
         */}
-        <Chip active={false} onClick={() => void abrirBiblioteca(index)}>
+        <Chip active={false} onClick={() => void abrirBiblioteca(index, 'cima')}>
           <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
           Buscar na biblioteca
         </Chip>
       </Field>
+
+      {/*
+        A METADE DE BAIXO, com os mesmos controles da de cima.
+
+        Fica logo abaixo dela e nao numa aba separada: as duas cenas estao na
+        tela ao mesmo tempo, e escolher uma olhando a outra e o que o bloco
+        dividido pede. O enquadramento e o movimento das duas ja moram no painel
+        do meio, entao aqui fica o que faltava -- de onde o clipe parte e qual
+        cena e.
+      */}
+      {imageB && (
+        <>
+          <PontoDeEntrada
+            index={index}
+            scene={scene}
+            image={imageB}
+            campo="sourceStartB"
+            label="Trecho do clipe de baixo"
+          />
+
+          <Field label="Trocar a cena de baixo">
+            <Chip active={false} onClick={() => void abrirBiblioteca(index, 'baixo')}>
+              <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+              Buscar na biblioteca
+            </Chip>
+            <p className="flex items-baseline gap-1.5 text-[11px] leading-relaxed text-ink-3">
+              {imageB.kind === 'video' && (
+                <span className="flex items-center gap-1 text-accent">
+                  <Film size={11} strokeWidth={1.5} />
+                  clipe
+                </span>
+              )}
+              <span className="min-w-0 truncate">{imageB.fileName}</span>
+            </p>
+          </Field>
+        </>
+      )}
 
       <Field label="Entra em">
         <span className="tnum text-[13px] text-ink-2">{formatTimecode(scene.start)}</span>
@@ -183,15 +227,24 @@ export function SceneCard() {
  * So aparece em clipe que SOBRA. Print nao tem de onde partir, e clipe que ja
  * cabe justo nao tem para onde correr -- oferecer um controle que nao muda nada
  * e pior que nao oferecer.
+ *
+ * Serve as DUAS metades da tela dividida. Ate a v1.27 a de baixo partia sempre
+ * do zero e nao tinha controle nenhum -- "eu tenho um acesso muito limitado a
+ * cena debaixo". Numa tela dividida as duas dividem a atencao por igual, e nao
+ * ha motivo para uma ter menos controle que a outra.
  */
 function PontoDeEntrada({
   index,
   scene,
   image,
+  campo = 'sourceStart',
+  label = 'Trecho do clipe',
 }: {
   index: number
   scene: Scene
   image: ImageAsset
+  campo?: 'sourceStart' | 'sourceStartB'
+  label?: string
 }) {
   const updateScene = useProject((s) => s.updateScene)
   const setPlayhead = useProject((s) => s.setPlayhead)
@@ -202,10 +255,10 @@ function PontoDeEntrada({
   const sobra = total - bloco
   if (image.kind !== 'video' || sobra <= 0.05) return null
 
-  const inicio = Math.min(scene.sourceStart ?? 0, sobra)
+  const inicio = Math.min(scene[campo] ?? 0, sobra)
 
   return (
-    <Field label="Trecho do clipe">
+    <Field label={label}>
       <div className="flex flex-col gap-1.5">
         {/*
           O QUADRO DAQUELE INSTANTE, enquanto ele arrasta.
@@ -238,7 +291,7 @@ function PontoDeEntrada({
           value={Math.round(inicio * 10)}
           onChange={(event) => {
             const alvo = Number(event.target.value) / 10
-            updateScene(index, { sourceStart: alvo })
+            updateScene(index, { [campo]: alvo })
             if (quadroRef.current) quadroRef.current.currentTime = alvo
             /*
              * Leva o preview para o comeco do bloco a cada arrasto.

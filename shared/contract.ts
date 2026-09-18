@@ -565,6 +565,17 @@ export const sceneSchema = z.object({
    */
   sourceStart: z.number().nonnegative().default(0),
   /**
+   * O mesmo, para a metade DE BAIXO da tela dividida.
+   *
+   * Ate a v1.27 ela partia sempre do zero, sem controle nenhum: a de cima podia
+   * entrar no segundo que interessava e a de baixo mostrava obrigatoriamente o
+   * comeco do arquivo. Numa tela dividida as duas cenas dividem a atencao por
+   * igual, e nao ha motivo para uma ter menos controle que a outra.
+   *
+   * Com default para plano salvo antes disto abrir igual.
+   */
+  sourceStartB: z.number().nonnegative().default(0),
+  /**
    * Quantos graus o bloco gira, no sentido horario. 0 = como o arquivo veio.
    *
    * Com default para plano salvo antes disto abrir igual, e para a IA nao

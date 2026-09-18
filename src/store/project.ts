@@ -61,6 +61,7 @@ import type {
 } from '@shared/contract'
 import {
   buildCaptions,
+  imagemDaMetade,
   MIN_SCENE_SEC,
   planEqualSplit,
   sfxCuesFor,
@@ -323,7 +324,7 @@ export interface ProjectState {
    * exatamente qual cena quer e ela nao esta entre as seis. Ai ele abre a
    * Biblioteca inteira, com busca, e a proxima que clicar entra neste bloco.
    */
-  replaceTarget: number | null
+  replaceTarget: AlvoDaTroca | null
 
   /**
    * O roteiro quebrado em frases, com o tempo de cada uma.
@@ -522,7 +523,7 @@ export interface ProjectState {
   swapCandidate: (blockIndex: number, candidateIndex: number) => Promise<void>
   setAutomountSeries: (series: string | null) => void
   /** Abre a Biblioteca para escolher a cena de um bloco especifico. */
-  openLibraryToReplace: (sceneIndex: number) => Promise<void>
+  openLibraryToReplace: (sceneIndex: number, metade?: MetadeDaCena) => Promise<void>
   /** Troca a cena de um bloco por um caminho vindo da Biblioteca. */
   replaceSceneWith: (path: string) => Promise<void>
   /** Le a narracao e quebra em frases. Chamada quando a Biblioteca abre. */
@@ -672,6 +673,7 @@ function planoDosBlocos(
     // Parte do comeco do clipe. Mover o ponto de entrada e escolha dele, no
     // card da cena.
     sourceStart: 0,
+    sourceStartB: 0,
     curvePoints: null,
     // Camera livre so quando ele desenhar as pontas.
     camera: null,
@@ -746,6 +748,16 @@ function setInterimPlan(set: SetState, imageCount: number, durationSec: number):
  * de uma leitura que a tranca precisa continuar valendo.
  */
 let lendoRoteiro: Promise<unknown> | null = null
+
+/** Qual das duas cenas de um bloco dividido. */
+export type MetadeDaCena = 'cima' | 'baixo'
+
+/** O bloco e a metade que a Biblioteca vai substituir. */
+export interface AlvoDaTroca {
+  scene: number
+  metade: MetadeDaCena
+}
+
 
 export const useProject = create<ProjectState>((set, get) => ({
   audio: null,
@@ -1096,14 +1108,18 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   setAutomountSeries: (series) => set({ automountSeries: series }),
 
-  openLibraryToReplace: async (sceneIndex) => {
-    set({ replaceTarget: sceneIndex })
+  openLibraryToReplace: async (sceneIndex, metade = 'cima') => {
+    set({ replaceTarget: { scene: sceneIndex, metade } })
     await get().openLibrary(true)
   },
 
   replaceSceneWith: async (path) => {
     const { replaceTarget, images, library } = get()
-    if (replaceTarget === null || !images[replaceTarget]) return
+    const alvo =
+      replaceTarget === null
+        ? null
+        : imagemDaMetade(get().plan, replaceTarget.scene, replaceTarget.metade)
+    if (alvo === null || !images[alvo]) return
 
     set({ busy: 'Trocando a cena...', error: null, libraryOpen: false })
     const importada = await window.dangai.importImages([path])
@@ -1122,13 +1138,13 @@ export const useProject = create<ProjectState>((set, get) => ({
      */
     const clip = library?.clips.find((c) => c.path === path)
     set((state) => ({
-      images: state.images.map((img, i) => (i === replaceTarget ? importada.value[0]! : img)),
+      images: state.images.map((img, i) => (i === alvo ? importada.value[0]! : img)),
       automountBlocks: state.automountBlocks
-        ? substituirNaFita(state.automountBlocks, replaceTarget, path, clip)
+        ? substituirNaFita(state.automountBlocks, alvo, path, clip)
         : null,
       busy: null,
       replaceTarget: null,
-      selectedScene: replaceTarget,
+      selectedScene: replaceTarget!.scene,
       projectDirty: true,
     }))
   },
@@ -1710,6 +1726,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       intensityB: null,
       // Comeca no inicio do clipe, como todo bloco novo.
       sourceStart: 0,
+      sourceStartB: 0,
       // Herda a curva do bloco que cedeu o tempo, e nao o padrao: quem ja
       // ajustou o ritmo do video inteiro nao quer o bloco novo destoando.
       curve: anfitriao.curve,
