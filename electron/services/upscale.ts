@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import type { InferenceSession } from 'onnxruntime-node'
@@ -66,8 +66,45 @@ export function upscaleReady(): boolean {
  */
 let cacheDir: string | null = null
 
+/**
+ * A VERSAO DO RESULTADO, que entra no nome do arquivo em cache.
+ *
+ * Mudou o jeito de gerar? Sobe o numero, e todo mundo refaz em vez de reusar um
+ * arquivo produzido pela regra antiga. Sem isto, um conserto no pipeline so
+ * chega a quem nunca tinha renderizado aquele clipe -- e quem mais precisa do
+ * conserto e justamente quem ja tem o arquivo errado guardado.
+ *
+ * v2: ate a v1.30.0 o clipe era decodificado na taxa NATIVA do arquivo e
+ * recodificado declarando 23.976, entao uma fonte de 30fps saia 25% mais longa.
+ * Os arquivos gerados antes disso tem a duracao errada.
+ */
+const VERSAO_DO_UPSCALE = 2
+
 export function configureUpscaleCache(userDataDir: string): void {
   cacheDir = join(userDataDir, 'upscale')
+  limparVersoesVelhas()
+}
+
+/**
+ * Apaga o que sobrou de versoes anteriores do pipeline.
+ *
+ * Sao dezenas de MB por clipe e eles nunca mais serao lidos -- a chave mudou.
+ * Refazer custa tempo de GPU, mas guardar o errado nao adianta nada.
+ *
+ * Nunca lanca: isto roda na subida do app, e uma faxina que falha nao pode
+ * impedir o programa de abrir.
+ */
+function limparVersoesVelhas(): void {
+  if (!cacheDir) return
+  try {
+    if (!existsSync(cacheDir)) return
+    for (const nome of readdirSync(cacheDir)) {
+      if (nome.includes(`-v${VERSAO_DO_UPSCALE}-`)) continue
+      rmSync(join(cacheDir, nome), { force: true })
+    }
+  } catch (err) {
+    console.error('[upscale] nao deu para limpar o cache velho:', err)
+  }
 }
 
 function exigirCache(): string {
@@ -453,7 +490,7 @@ export async function upscaleAssets(
     const ate = limites[asset.id]
     // O limite entra na chave: usar mais do clipe depois exige melhorar de novo.
     const marca =
-      `${Math.round(asset.focusX * 1000)}-${Math.round(asset.focusY * 1000)}` +
+      `v${VERSAO_DO_UPSCALE}-${Math.round(asset.focusX * 1000)}-${Math.round(asset.focusY * 1000)}` +
       (ate === undefined ? '' : `-${Math.round(ate * 10)}`)
     const ext = asset.kind === 'video' ? 'mp4' : 'jpg'
     const destino = join(dir, `${asset.id}-${marca}.${ext}`)
