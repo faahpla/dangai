@@ -27,6 +27,9 @@ export function Timeline() {
   const render = useProject((s) => s.render)
   const setPlayhead = useProject((s) => s.setPlayhead)
   const selectScene = useProject((s) => s.selectScene)
+  const selecionados = useProject((s) => s.selecionados)
+  const estenderSelecao = useProject((s) => s.estenderSelecao)
+  const alternarSelecao = useProject((s) => s.alternarSelecao)
   const removeScene = useProject((s) => s.removeScene)
   const insertImages = useProject((s) => s.insertImages)
   const moveBoundary = useProject((s) => s.moveBoundary)
@@ -238,12 +241,32 @@ export function Timeline() {
             onPointerDown={(event) => {
               if (isRendering) return
               event.stopPropagation()
-              selectScene(index)
+              /*
+               * Os tres gestos de selecao de qualquer editor.
+               *
+               * Shift pega o intervalo, Ctrl liga e desliga um avulso, e o
+               * clique seco recomeca a selecao do zero. Sao os mesmos do
+               * explorador de arquivos, entao ninguem precisa aprender.
+               */
+              if (event.shiftKey) estenderSelecao(index)
+              else if (event.ctrlKey || event.metaKey) alternarSelecao(index)
+              else selectScene(index)
             }}
             style={{ width: `${((scene.end - scene.start) / duration) * 100}%` }}
             className={[
               'pointer-events-auto group/bloco relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
-              selectedScene === index ? 'ring-1 ring-inset ring-accent' : '',
+              /*
+               * A ANCORA tem anel mais grosso que os outros selecionados.
+               *
+               * Com cinco blocos marcados iguais, nada na tela diz qual deles o
+               * painel da direita esta editando -- e o painel edita um so. O
+               * anel de dois pixels e essa resposta.
+               */
+              selecionados.includes(index)
+                ? selectedScene === index
+                  ? 'ring-2 ring-inset ring-accent'
+                  : 'ring-1 ring-inset ring-accent/60'
+                : '',
               dropAt === index ? 'ring-1 ring-inset ring-accent' : '',
             ].join(' ')}
             title={image.fileName}
@@ -283,7 +306,19 @@ export function Timeline() {
           </div>
         )
       }),
-    [scenes, images, duration, selectedScene, dropAt, isRendering, selectScene, removeScene],
+    [
+      scenes,
+      images,
+      duration,
+      selectedScene,
+      selecionados,
+      dropAt,
+      isRendering,
+      selectScene,
+      estenderSelecao,
+      alternarSelecao,
+      removeScene,
+    ],
   )
 
   return (
@@ -307,9 +342,16 @@ export function Timeline() {
 
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-ink-3">
-            {scenes.length > 0
-              ? `${scenes.length} ${scenes.length === 1 ? 'bloco' : 'blocos'}`
-              : 'sem imagens'}
+            {scenes.length === 0
+              ? 'sem imagens'
+              : selecionados.length > 1
+                ? /*
+                   * Com varios marcados, o numero que importa e QUANTOS -- e a
+                   * conta que decide se vale colar ajustes de uma vez. O total
+                   * continua atras dele para nao sumir a escala do video.
+                   */
+                  `${selecionados.length} de ${scenes.length} blocos`
+                : `${scenes.length} ${scenes.length === 1 ? 'bloco' : 'blocos'}`}
           </span>
 
           {duration > 0 && !isRendering && (

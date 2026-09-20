@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookmarkPlus, Crosshair, ScanFace, Spline, X } from 'lucide-react'
+import {
+  BookmarkPlus,
+  ClipboardPaste,
+  Copy,
+  Crosshair,
+  ScanFace,
+  Spline,
+  X,
+} from 'lucide-react'
 import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
@@ -41,6 +49,10 @@ export function SceneEdit() {
   const playhead = useProject((s) => s.playhead)
   const seguirRosto = useProject((s) => s.seguirRosto)
   const rastrear = useProject((s) => s.rastrear)
+  const selecionados = useProject((s) => s.selecionados)
+  const ajustesCopiados = useProject((s) => s.ajustesCopiados)
+  const copiarAjustes = useProject((s) => s.copiarAjustes)
+  const colarAjustes = useProject((s) => s.colarAjustes)
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
   const salvas = useProject((s) => s.curvePresets)
   const carregarCurvas = useProject((s) => s.loadCurvePresets)
@@ -102,6 +114,15 @@ export function SceneEdit() {
   const separada = scene.effectB != null || scene.intensityB != null
 
   const total = plan?.scenes.length ?? 0
+
+  /*
+   * Em quem uma acao em lote manda.
+   *
+   * A selecao quando ha uma, e o bloco aberto quando nao ha. Assim os botoes
+   * dizem sempre a verdade sobre o que vao atingir, e "colar" nunca surpreende
+   * espalhando para um bloco que ele nao marcou.
+   */
+  const alvos = selecionados.length > 0 ? selecionados : [index]
 
   /*
    * O recado do rastreador diz ATE ONDE ele chegou, e nao so se rodou.
@@ -606,12 +627,24 @@ export function SceneEdit() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (espalharArmado === index) {
-                      applyCurveToAll(scene.curve, scene.curvePoints)
-                      setEspalharArmado(null)
-                    } else {
+                    if (espalharArmado !== index) {
                       setEspalharArmado(index)
+                      return
                     }
+                    /*
+                     * Havendo selecao, ela manda -- e o botao de espalhar em
+                     * TODOS deixa de ser o unico jeito de aplicar em varios.
+                     * Era ele que ele acertava sem querer, e quanto menos
+                     * motivo para usa-lo, melhor.
+                     */
+                    if (selecionados.length > 1) {
+                      for (const i of selecionados) {
+                        updateScene(i, { curve: scene.curve, curvePoints: scene.curvePoints })
+                      }
+                    } else {
+                      applyCurveToAll(scene.curve, scene.curvePoints)
+                    }
+                    setEspalharArmado(null)
                   }}
                   onPointerLeave={() => setEspalharArmado(null)}
                   className={
@@ -621,8 +654,12 @@ export function SceneEdit() {
                   }
                 >
                   {espalharArmado === index
-                    ? `Confirmar: trocar a curva dos ${total} blocos`
-                    : `Usar em todos os ${total} blocos`}
+                    ? `Confirmar: trocar a curva de ${alvos.length > 1 ? alvos.length : total} ${
+                        alvos.length > 1 ? 'selecionados' : 'blocos'
+                      }`
+                    : alvos.length > 1
+                      ? `Usar nos ${alvos.length} selecionados`
+                      : `Usar em todos os ${total} blocos`}
                 </button>
               </div>
             )}
@@ -691,6 +728,41 @@ export function SceneEdit() {
               ))}
             </div>
           )}
+        </Field>
+
+        {/*
+          COPIAR E COLAR AJUSTES.
+
+          Mora no fim do painel porque atravessa os tres grupos: o que ele copia
+          e o COMO o bloco se comporta -- movimento, ritmo, giro e transicao --
+          e nao o que cada coluna edita sozinha.
+
+          Fica de fora o que descreve o MATERIAL: qual imagem e, de que ponto do
+          clipe ela parte, e a camera livre. Um caminho de camera e desenhado
+          contra o conteudo daquele clipe -- ainda mais quando saiu do
+          rastreador, que seguiu um alvo especifico -- e colado noutro clipe
+          enquadraria o nada, com cara de defeito.
+        */}
+        <Field label="Ajustes deste bloco">
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={false} onClick={() => copiarAjustes(index)}>
+              <Copy size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+              Copiar
+            </Chip>
+            {ajustesCopiados !== null && (
+              <Chip active={false} onClick={() => colarAjustes(alvos)}>
+                <ClipboardPaste size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                {alvos.length > 1 ? `Colar nos ${alvos.length} selecionados` : 'Colar aqui'}
+              </Chip>
+            )}
+          </div>
+          <p className="text-[11px] leading-relaxed text-ink-3">
+            {ajustesCopiados === null
+              ? 'Copia movimento, ritmo, giro e transicao. O enquadramento e a camera ficam, porque sao daquele clipe.'
+              : selecionados.length > 1
+                ? 'Shift+clique na timeline pega um intervalo; Ctrl+clique liga e desliga um bloco.'
+                : 'Marque varios blocos na timeline com Shift ou Ctrl para colar em todos de uma vez.'}
+          </p>
         </Field>
       </Grupo>
     </div>

@@ -154,6 +154,20 @@ export interface ProjectState {
    * da imagem selecionaria todos os blocos dela de uma vez.
    */
   selectedScene: number | null
+  /**
+   * TODOS os blocos selecionados, incluindo a ancora.
+   *
+   * A ancora (`selectedScene`) continua sendo quem o painel edita: um painel que
+   * tentasse mostrar cinco blocos de uma vez nao mostraria nenhum. Esta lista e
+   * para as acoes em LOTE -- colar ajustes, espalhar a curva -- e e ela que a
+   * timeline destaca.
+   *
+   * Vazia quando nao ha nada selecionado. Toda operacao que mexe na ESTRUTURA
+   * do plano a esvazia: dividir, apagar ou inserir bloco desloca os indices, e
+   * uma selecao velha passaria a apontar para os blocos errados -- colar
+   * ajustes em cima deles seria estragar trabalho sem ninguem ver.
+   */
+  selecionados: number[]
   render: RenderProgress | null
   lastOutput: string | null
   settingsOpen: boolean
@@ -576,6 +590,27 @@ export interface ProjectState {
   /** Confirma o enquadramento: pede o novo recorte ao main e troca a URL. */
   commitImageFocus: (id: string) => Promise<void>
   selectScene: (index: number | null) => void
+  /** Shift+clique: seleciona tudo entre a ancora e este bloco. */
+  estenderSelecao: (index: number) => void
+  /** Ctrl+clique: poe ou tira este bloco da selecao. */
+  alternarSelecao: (index: number) => void
+  /**
+   * Os ajustes copiados de um bloco, prontos para colar em outros.
+   *
+   * Movimento, ritmo, giro e transicao -- o COMO o bloco se comporta. Fica fora
+   * o que descreve o material em si: qual imagem e, de que ponto do clipe ela
+   * parte, e a camera livre.
+   *
+   * A CAMERA nao viaja de proposito. Um caminho de camera e desenhado contra o
+   * conteudo daquele clipe -- e mais ainda quando saiu do rastreador, que seguiu
+   * um alvo especifico. Colado noutro clipe ele enquadraria o nada, com cara de
+   * defeito. Quem quiser o mesmo movimento generico tem os presets.
+   */
+  ajustesCopiados: AjustesDeBloco | null
+  /** Guarda os ajustes deste bloco. */
+  copiarAjustes: (index: number) => void
+  /** Aplica os ajustes guardados nestes blocos. */
+  colarAjustes: (indices: readonly number[]) => void
   /** Seleciona o primeiro bloco que usa esta imagem. */
   selectImage: (id: string | null) => void
   setPlayhead: (seconds: number) => void
@@ -761,6 +796,7 @@ function setInterimPlan(set: SetState, imageCount: number, durationSec: number):
     plan: planEqualSplit(imageCount, durationSec),
     planOrigin: 'equal',
     selectedScene: null,
+    selecionados: [],
   })
 }
 
@@ -802,6 +838,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   playhead: 0,
   playing: false,
   selectedScene: null,
+  selecionados: [],
+  ajustesCopiados: null,
   render: null,
   lastOutput: null,
   settingsOpen: false,
@@ -1135,6 +1173,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       sectionNote: note,
       aiNote: null,
       selectedScene: null,
+      selecionados: [],
       busy: null,
     })
   },
@@ -1178,6 +1217,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       busy: null,
       replaceTarget: null,
       selectedScene: replaceTarget!.scene,
+      selecionados: [],
       projectDirty: true,
     }))
   },
@@ -1565,6 +1605,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       automountBlocks: null,
       libraryOpen: false,
       selectedScene: null,
+      selecionados: [],
       busy: null,
       projectDirty: true,
     })
@@ -1635,6 +1676,9 @@ export const useProject = create<ProjectState>((set, get) => ({
 
       set({
         plan: keepPlan ? state.plan : result.value.plan,
+        // Trocando o plano, a selecao passa a apontar para blocos que nao sao
+        // mais os mesmos -- e colar ajustes neles estragaria trabalho calado.
+        ...(keepPlan ? {} : { selectedScene: null, selecionados: [] }),
         planOrigin: keepPlan ? state.planOrigin : result.value.origin,
         transcript: result.value.transcript,
         captions: state.captionsEdited
@@ -1667,6 +1711,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set((state) => ({
       images: state.images.filter((image) => image.id !== id),
       selectedScene: null,
+      selecionados: [],
     }))
     const { audio, images } = get()
     if (audio && images.length > 0) setInterimPlan(set, images.length, audio.durationSec)
@@ -1794,6 +1839,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       plan: { ...plan, scenes },
       planEdited: true,
       selectedScene: antesDele ? h : h + 1,
+      selecionados: [],
       busy: null,
     })
   },
@@ -1825,6 +1871,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       plan: { ...plan, scenes },
       planEdited: true,
       selectedScene: null,
+      selecionados: [],
     })
   },
 
@@ -2036,6 +2083,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       // A segunda metade fica selecionada: quem corta costuma querer mexer
       // justamente no pedaco novo.
       selectedScene: index + 1,
+      selecionados: [],
     })
   },
 
@@ -2522,17 +2570,103 @@ export const useProject = create<ProjectState>((set, get) => ({
     await get().ingest(paths, parte)
   },
 
-  selectScene: (index) => set({ selectedScene: index }),
+  copiarAjustes: (index) => {
+    const cena = get().plan?.scenes[index]
+    if (!cena) return
+    set({
+      ajustesCopiados: {
+        effect: cena.effect,
+        intensity: cena.intensity,
+        effectB: cena.effectB ?? null,
+        intensityB: cena.intensityB ?? null,
+        curve: cena.curve,
+        curvePoints: cena.curvePoints ?? null,
+        rotation: cena.rotation ?? 0,
+        transitionIn: cena.transitionIn,
+      },
+    })
+  },
+
+  colarAjustes: (indices) => {
+    const { plan, ajustesCopiados } = get()
+    if (!plan || !ajustesCopiados) return
+
+    /*
+     * Filtra contra o plano de AGORA.
+     *
+     * A selecao e esvaziada a cada mudanca de estrutura, mas filtrar aqui custa
+     * uma linha e fecha a porta de vez: colar num indice que nao existe mais
+     * seria estragar um bloco que ninguem escolheu, em silencio.
+     */
+    const alvos = new Set(indices.filter((i) => i >= 0 && i < plan.scenes.length))
+    if (alvos.size === 0) return
+
+    const scenes = plan.scenes.map((cena, i) =>
+      alvos.has(i) ? { ...cena, ...ajustesCopiados } : cena,
+    )
+    set({ plan: { ...plan, scenes }, planEdited: true })
+  },
+
+  selectScene: (index) =>
+    set({ selectedScene: index, selecionados: index === null ? [] : [index] }),
+
+  /**
+   * Shift+clique: o intervalo inteiro entre a ancora e o bloco clicado.
+   *
+   * Sem ancora, vale como um clique simples -- nao ha de onde medir o intervalo,
+   * e recusar o clique deixaria o usuario sem entender por que nada aconteceu.
+   *
+   * A ancora NAO se move: e dela que o proximo Shift+clique mede, e e ela que o
+   * painel edita. Mover a ancora a cada Shift faria o intervalo escorregar a
+   * cada tentativa de corrigi-lo.
+   */
+  estenderSelecao: (index) => {
+    const { selectedScene } = get()
+    if (selectedScene === null) {
+      set({ selectedScene: index, selecionados: [index] })
+      return
+    }
+    const de = Math.min(selectedScene, index)
+    const ate = Math.max(selectedScene, index)
+    const faixa: number[] = []
+    for (let i = de; i <= ate; i++) faixa.push(i)
+    set({ selecionados: faixa })
+  },
+
+  /**
+   * Ctrl+clique: liga ou desliga um bloco, sem mexer no resto.
+   *
+   * Tirando a ancora da selecao, a ancora passa a ser o primeiro que sobrou --
+   * o painel precisa estar editando algo que ainda esta selecionado, senao ele
+   * mostra um bloco que a timeline nao destaca mais.
+   */
+  alternarSelecao: (index) => {
+    const { selecionados, selectedScene } = get()
+    const tinha = selecionados.includes(index)
+    const nova = tinha
+      ? selecionados.filter((i) => i !== index)
+      : [...selecionados, index].sort((a, b) => a - b)
+
+    if (nova.length === 0) {
+      set({ selecionados: [], selectedScene: null })
+      return
+    }
+    const ancora = selectedScene !== null && nova.includes(selectedScene) ? selectedScene : nova[0]!
+    set({ selecionados: nova, selectedScene: ancora })
+  },
 
   selectImage: (id) => {
     const { images, plan } = get()
     const imageIndex = images.findIndex((image) => image.id === id)
     if (imageIndex < 0 || !plan) {
-      set({ selectedScene: null })
+      set({ selectedScene: null, selecionados: [] })
       return
     }
     const scene = plan.scenes.findIndex((item) => item.imageIndex === imageIndex)
-    set({ selectedScene: scene >= 0 ? scene : null })
+    set({
+      selectedScene: scene >= 0 ? scene : null,
+      selecionados: scene >= 0 ? [scene] : [],
+    })
   },
 
   setPlayhead: (seconds) =>
@@ -2851,6 +2985,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       playhead: 0,
       playing: false,
       selectedScene: null,
+      selecionados: [],
       render: null,
       lastOutput: null,
       planEdited: false,
@@ -3217,6 +3352,7 @@ async function applyProjectFile(
       playhead: 0,
       playing: false,
       selectedScene: null,
+      selecionados: [],
       render: null,
       lastOutput: null,
       aiNote: null,
@@ -3243,4 +3379,22 @@ export function formatTimecode(seconds: number): string {
   const secs = Math.floor(safe % 60)
   const centis = Math.floor((safe % 1) * 100)
   return `${minutes}:${String(secs).padStart(2, '0')}.${String(centis).padStart(2, '0')}`
+}
+
+/**
+ * O que viaja num "copiar ajustes".
+ *
+ * So o COMO o bloco se comporta. O que descreve o material -- qual imagem,
+ * de que ponto do clipe ela parte, o enquadramento da camera -- fica onde
+ * esta, porque nao quer dizer nada num clipe diferente.
+ */
+export interface AjustesDeBloco {
+  effect: Scene['effect']
+  intensity: Scene['intensity']
+  effectB: Scene['effectB']
+  intensityB: Scene['intensityB']
+  curve: Scene['curve']
+  curvePoints: Scene['curvePoints']
+  rotation: Scene['rotation']
+  transitionIn: Scene['transitionIn']
 }
