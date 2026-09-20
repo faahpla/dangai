@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { readdirSync } from 'node:fs'
 import { registerIpc } from './ipc'
@@ -44,6 +44,20 @@ function createWindow(): void {
     },
   })
 
+  /*
+   * F12 abre o devtools EM DESENVOLVIMENTO.
+   *
+   * Era a unica coisa do menu do Electron que fazia falta aqui. No app
+   * empacotado ele nao existe: nao ha o que depurar do lado de quem usa.
+   */
+  if (isDev) {
+    window.webContents.on('before-input-event', (_evento, entrada) => {
+      if (entrada.type === 'keyDown' && entrada.key === 'F12') {
+        window.webContents.toggleDevTools()
+      }
+    })
+  }
+
   // Sem flash branco na abertura: mostra apenas quando ha algo para ver.
   window.once('ready-to-show', () => window.show())
 
@@ -62,6 +76,25 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  /*
+   * SEM MENU NENHUM, e nao apenas escondido.
+   *
+   * `autoHideMenuBar` esconde a barra mas o Alt continua revelando ela: no
+   * Windows, apertar Alt joga o foco no menu do Electron -- "quando aperto alt
+   * ta aparecendo as config do electron e ta bugando o zoom". E o Alt e
+   * justamente o atalho de ampliar a timeline, entao os dois brigavam.
+   *
+   * Some junto o resto dos atalhos que vinham de graca e nao sao deste app:
+   * recarregar, abrir o devtools, e o zoom do Chromium no Ctrl+/-/0, que
+   * aumenta a INTERFACE inteira e nao tem nada a ver com ampliar a timeline.
+   */
+  /*
+   * No macOS o menu FICA: la o Ctrl+C e o Ctrl+V de um campo de texto passam
+   * pelos papeis do menu, e tira-lo deixaria o usuario sem copiar e colar. O
+   * Alt tambem nao abre menu nenhum por la, entao nao ha o que consertar.
+   */
+  if (process.platform !== 'darwin') Menu.setApplicationMenu(null)
+
   // Antes da janela: os servicos publicam URLs assim que um arquivo entra.
   await startMediaServer()
 

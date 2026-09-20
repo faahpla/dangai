@@ -275,7 +275,27 @@ async function ampliarClipe(
     '-i', asset.path,
     // Meio segundo de folga: o congelamento do ultimo quadro precisa que ele exista.
     ...(ate === undefined ? [] : ['-t', (ate + 0.5).toFixed(3)]),
-    '-vf', `crop=${janela.width}:${janela.height}:${janela.left}:${janela.top}`,
+    /*
+     * A TAXA DE QUADROS E FORCADA AQUI, e isto nao e detalhe.
+     *
+     * Este lado decodificava na taxa NATIVA do arquivo e o lado de baixo declara
+     * `-r 23.976`. Com uma fonte de 30fps, os 90 quadros de tres segundos viram
+     * 90/23.976 = 3,75s: o clipe estica 25%.
+     *
+     * Medido: fonte 30fps esticava 750ms em 3s, 25fps esticava 130ms, e 24 e
+     * 23.976 saiam exatas -- que e por que o defeito ficou escondido enquanto o
+     * material vinha todo a 23.976.
+     *
+     * O estrago aparece duas vezes no render, e as duas com cara de bug do app:
+     * procurar o segundo X cai num instante ANTERIOR ao pedido, porque o tempo
+     * do arquivo nao e mais o tempo que o app calculou; e o congelamento do
+     * ultimo quadro dispara cedo, porque o app mede a sobra pela duracao
+     * ORIGINAL enquanto o arquivo ficou mais longo.
+     *
+     * O filtro vem antes do crop de proposito: descartar quadro e mais barato
+     * que recortar para descartar depois.
+     */
+    '-vf', `fps=${fps},crop=${janela.width}:${janela.height}:${janela.left}:${janela.top}`,
     '-f', 'rawvideo',
     '-pix_fmt', 'rgb24',
     '-',
