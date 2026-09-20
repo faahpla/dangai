@@ -56,6 +56,15 @@ export function SceneEdit() {
    */
   const [recado, setRecado] = useState<{ bloco: number; texto: string } | null>(null)
 
+  /**
+   * Em que bloco o "usar em todos" esta ARMADO.
+   *
+   * null = desarmado. Guardar o bloco, e nao um booleano, faz a arma cair
+   * sozinha ao trocar de bloco -- ninguem deve chegar num bloco novo com um
+   * clique perigoso ja engatilhado.
+   */
+  const [espalharArmado, setEspalharArmado] = useState<number | null>(null)
+
   // As curvas guardadas vivem nas configuracoes, entao vem do main uma vez.
   useEffect(() => void carregarCurvas(), [carregarCurvas])
 
@@ -581,12 +590,41 @@ export function SceneEdit() {
                 : 'A linha diz quanto do movimento ja aconteceu ao longo do bloco. Plana e pausa, ingreme e disparada.'}
             </p>
             {total > 1 && !mesmaCurvaEmTodas && (
-              <Chip
-                active={false}
-                onClick={() => applyCurveToAll(scene.curve, scene.curvePoints)}
-              >
-                Usar em todos os {total} blocos
-              </Chip>
+              /*
+               * ESPALHAR A CURVA E DISCRETO E EM DOIS PASSOS.
+               *
+               * Era um botao da largura do painel, do lado de controles que se
+               * usam o tempo todo, e ele o acertava sem querer -- um clique
+               * trocando o ritmo dos 52 blocos de uma vez. O estrago e grande e
+               * o uso e raro: quem espalha curva faz isso uma vez por video.
+               *
+               * Entao ele encolheu para um texto no canto, e o primeiro clique
+               * so ARMA. E o mesmo caminho que a Biblioteca ja usa para montar
+               * com trechos vazios: primeiro clique explica, segundo faz.
+               */
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (espalharArmado === index) {
+                      applyCurveToAll(scene.curve, scene.curvePoints)
+                      setEspalharArmado(null)
+                    } else {
+                      setEspalharArmado(index)
+                    }
+                  }}
+                  onPointerLeave={() => setEspalharArmado(null)}
+                  className={
+                    espalharArmado === index
+                      ? 'rounded px-1.5 py-0.5 text-[11px] text-accent underline decoration-dotted underline-offset-2'
+                      : 'rounded px-1.5 py-0.5 text-[11px] text-ink-3 transition-colors hover:text-ink-2'
+                  }
+                >
+                  {espalharArmado === index
+                    ? `Confirmar: trocar a curva dos ${total} blocos`
+                    : `Usar em todos os ${total} blocos`}
+                </button>
+              </div>
             )}
           </Field>
         </>
