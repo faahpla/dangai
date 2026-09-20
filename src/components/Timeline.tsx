@@ -118,13 +118,39 @@ export function Timeline() {
     [alvosDeSnap, duration],
   )
 
+  /**
+   * Leva a agulha ate ali E seleciona o bloco de baixo.
+   *
+   * A agulha em cima de um bloco e o painel mostrando outro era ler uma coisa e
+   * editar outra. Passar a agulha ja e dizer "e deste que estou falando", entao
+   * a selecao segue junto.
+   *
+   * So no ARRASTE A MAO, e nao durante o play: seguindo a reproducao, a selecao
+   * trocaria dezenas de vezes por minuto e o painel de edicao remontaria os
+   * <video> de enquadrar a cada bloco -- movimento na tela que ninguem pediu, em
+   * cima de quem so queria assistir.
+   *
+   * Fora dos blocos (depois do ultimo) a selecao fica como esta: apagar a
+   * escolha dele por arrastar a agulha um pouco alem do fim seria perder
+   * trabalho por acidente.
+   */
+  const levarAgulha = useCallback(
+    (clientX: number): void => {
+      const seconds = timeAt(clientX)
+      setPlayhead(seconds)
+      const sob = scenes.findIndex((scene) => seconds >= scene.start && seconds < scene.end)
+      if (sob !== -1) selectScene(sob)
+    },
+    [scenes, selectScene, setPlayhead, timeAt],
+  )
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (isRendering) return
       event.currentTarget.setPointerCapture(event.pointerId)
-      setPlayhead(timeAt(event.clientX))
+      levarAgulha(event.clientX)
     },
-    [isRendering, setPlayhead, timeAt],
+    [isRendering, levarAgulha],
   )
 
   const handlePointerMove = useCallback(
@@ -134,9 +160,9 @@ export function Timeline() {
         moveBoundary(dragging, comSnap(timeAt(event.clientX), event.altKey))
         return
       }
-      setPlayhead(timeAt(event.clientX))
+      levarAgulha(event.clientX)
     },
-    [isRendering, dragging, moveBoundary, setPlayhead, timeAt, comSnap],
+    [isRendering, dragging, moveBoundary, levarAgulha, timeAt, comSnap],
   )
 
   const stopDragging = useCallback(() => setDragging(null), [])
@@ -319,8 +345,14 @@ export function Timeline() {
         // overflow-x-auto e nao scroll: sem zoom nao aparece barra nenhuma.
         className="overflow-x-auto overflow-y-hidden rounded-md border border-line bg-surface"
         onWheel={(event) => {
-          // Ctrl+roda amplia, como em qualquer editor. Sem Ctrl a roda rola.
-          if (!event.ctrlKey || isRendering) return
+          /*
+           * Ctrl+roda ou ALT+roda ampliam. Sem nenhum dos dois, a roda rola.
+           *
+           * O Alt entrou a pedido dele, e nao briga com o Alt que desliga o
+           * snap: aquele vale durante o ARRASTE de uma alca, e este na RODA.
+           * Sao dois gestos que nao acontecem ao mesmo tempo.
+           */
+          if (!(event.ctrlKey || event.altKey) || isRendering) return
           event.preventDefault()
           zoomAt(zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), event.clientX)
         }}
