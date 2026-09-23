@@ -152,6 +152,8 @@ const bridge: DangaiBridge = {
   cancelAnalyze: () => ipcRenderer.invoke(IPC.cancelAnalyze) as Promise<IpcResult<null>>,
   faceAt: (path, instantes) =>
     ipcRenderer.invoke(IPC.faceAt, path, instantes) as ReturnType<DangaiBridge['faceAt']>,
+  setFormato: (formato) =>
+    ipcRenderer.invoke(IPC.setFormato, formato) as Promise<IpcResult<null>>,
   trackBox: (path, inicio, duracao, caixa) =>
     ipcRenderer.invoke(IPC.trackBox, path, inicio, duracao, caixa) as ReturnType<
       DangaiBridge['trackBox']

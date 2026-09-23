@@ -22,6 +22,8 @@ import {
   PLAN_ORIGINS,
   scenePlanSchema,
   transcriptSchema,
+  FORMATOS,
+  FORMATO_PADRAO,
 } from './contract'
 
 /**
@@ -82,6 +84,15 @@ export type SavedImage = z.infer<typeof savedImageSchema>
 export const projectFileSchema = z.object({
   version: z.number().int().positive(),
   savedAt: z.string(),
+  /**
+   * Vertical ou horizontal. Escolhido ao criar o projeto, e guardado aqui.
+   *
+   * Vem no arquivo e nao nas configuracoes porque e uma propriedade DESTE
+   * video: reabrir um projeto horizontal com o app em modo vertical recortaria
+   * tudo que ja foi enquadrado. Com default para projeto salvo antes disto --
+   * todos eles sao verticais.
+   */
+  formato: z.enum(FORMATOS).default(FORMATO_PADRAO),
   audio: referenceSchema,
   images: z.array(savedImageSchema),
   script: z.string().nullable(),

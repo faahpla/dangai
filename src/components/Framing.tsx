@@ -1,9 +1,18 @@
 import { useCallback, useRef } from 'react'
 import { ScanFace } from 'lucide-react'
-import { VIDEO_HEIGHT, VIDEO_WIDTH, type ImageAsset } from '@shared/contract'
+import { medidasDo, type Formato, type ImageAsset } from '@shared/contract'
 import { useProject } from '@/store/project'
 
-const TARGET_RATIO = VIDEO_WIDTH / VIDEO_HEIGHT
+/**
+ * A proporcao do quadro em que esta imagem vai cair.
+ *
+ * Era constante, e com isso a janela de enquadrar desenhava 9:16 mesmo num
+ * projeto horizontal -- mostrando ao usuario um recorte que o render nao faria.
+ */
+function proporcaoDoQuadro(formato: Formato): number {
+  const { width, height } = medidasDo(formato)
+  return width / height
+}
 
 /**
  * Escolha do enquadramento: a imagem inteira com a janela 9:16 por cima, que se
@@ -16,7 +25,10 @@ const TARGET_RATIO = VIDEO_WIDTH / VIDEO_HEIGHT
 export function Framing({ image }: { image: ImageAsset }) {
   const setImageFocus = useProject((s) => s.setImageFocus)
   const commitImageFocus = useProject((s) => s.commitImageFocus)
+  const formato = useProject((s) => s.formato)
   const boxRef = useRef<HTMLDivElement | null>(null)
+
+  const TARGET_RATIO = proporcaoDoQuadro(formato)
 
   const ratio = image.width / image.height
   // Fracao da imagem que sobra dentro do quadro vertical. Um dos dois eixos e

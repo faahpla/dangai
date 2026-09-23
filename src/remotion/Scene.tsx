@@ -152,7 +152,7 @@ export function Scene({
      * regras no mesmo eixo nao se somam.
      */
     ...(camera && !quarto
-      ? estiloDaCamera({ scale, x, y }, sourceAspect ?? width / height)
+      ? estiloDaCamera({ scale, x, y }, sourceAspect ?? width / height, width / height)
       : { transform: `scale(${scale}) translate(${x}%, ${y}%)` }),
     // A transformacao parte do centro para o zoom nao puxar para um canto.
     transformOrigin: 'center center',

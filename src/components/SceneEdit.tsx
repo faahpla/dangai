@@ -14,6 +14,7 @@ import {
   ROTATIONS,
   TRANSITIONS_NA_TELA,
   VIDEO_FPS,
+  medidasDo,
   type CurvePoints,
   type MotionCurve,
   type Transition,
@@ -49,6 +50,7 @@ export function SceneEdit() {
   const playhead = useProject((s) => s.playhead)
   const seguirRosto = useProject((s) => s.seguirRosto)
   const rastrear = useProject((s) => s.rastrear)
+  const formato = useProject((s) => s.formato)
   const selecionados = useProject((s) => s.selecionados)
   const ajustesCopiados = useProject((s) => s.ajustesCopiados)
   const copiarAjustes = useProject((s) => s.copiarAjustes)
@@ -112,6 +114,12 @@ export function SceneEdit() {
    * diria "separada" para um bloco que na verdade segue a metade de cima.
    */
   const separada = scene.effectB != null || scene.intensityB != null
+
+  /* O quadro deste projeto: a geometria da camera depende dele. */
+  const aspectoDoQuadro = (() => {
+    const q = medidasDo(formato)
+    return q.width / q.height
+  })()
 
   const total = plan?.scenes.length ?? 0
 
@@ -366,7 +374,7 @@ export function SceneEdit() {
              */
             <div
               className={
-                fonteDaCamera(image, scene.camera).aspecto > 1
+                fonteDaCamera(image, scene.camera, aspectoDoQuadro).aspecto > 1
                   ? 'flex flex-col gap-3'
                   : 'grid grid-cols-2 gap-2'
               }

@@ -46,6 +46,8 @@ import {
   type ImportSection,
 } from './services/assets'
 import { perseguir, type Perseguicao } from './services/tracker'
+import { definirFormato } from './services/formato'
+import type { Formato } from '@shared/contract'
 import { expandDrop } from './services/folders'
 import { scanLibrary } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
@@ -399,6 +401,11 @@ export function registerIpc(): void {
     [string, readonly number[]],
     ({ centroX: number; centroY: number; area: number } | null)[]
   >(IPC.faceAt, (path, instantes) => rostoNosInstantes(path, instantes))
+
+  handle<[Formato], null>(IPC.setFormato, async (formato) => {
+    definirFormato(formato)
+    return null
+  })
 
   handle<
     [string, number, number, { x: number; y: number; width: number; height: number }],

@@ -1,7 +1,8 @@
 import {
   CAPTION_CHARS_PER_LINE,
-  RENDER_HEIGHT,
-  RENDER_WIDTH,
+  FORMATO_PADRAO,
+  medidasDo,
+  type Formato,
   type CaptionBlock,
   type ImageAsset,
   type ScenePlan,
@@ -64,6 +65,8 @@ export interface PreflightInput {
   captions: readonly CaptionBlock[]
   captionsEnabled: boolean
   durationSec: number
+  /** O quadro em que estas imagens vao cair. Ausente = o vertical de sempre. */
+  formato?: Formato
 }
 
 export function preflight({
@@ -72,8 +75,13 @@ export function preflight({
   captions,
   captionsEnabled,
   durationSec,
+  formato = FORMATO_PADRAO,
 }: PreflightInput): Aviso[] {
   if (!plan || plan.scenes.length === 0) return []
+
+  // A ampliacao de uma imagem depende do QUADRO: a mesma foto que estica num
+  // 9:16 pode caber folgada num 16:9, e vice-versa.
+  const medidas = medidasDo(formato)
 
   const avisos: Aviso[] = []
 
@@ -93,7 +101,7 @@ export function preflight({
     // A imagem cobre o quadro, entao quem manda e o lado que precisa esticar
     // mais -- exatamente o mesmo calculo que o recorte faz com sharp, e contra
     // o tamanho de RENDER (com a folga do Ken Burns), que e o que de fato sai.
-    const ampliacao = Math.max(RENDER_WIDTH / image.width, RENDER_HEIGHT / image.height)
+    const ampliacao = Math.max(medidas.renderWidth / image.width, medidas.renderHeight / image.height)
     if (ampliacao > AMPLIACAO_MAXIMA) {
       avisos.push({
         tipo: 'imagem-pequena',

@@ -656,8 +656,38 @@ export interface AnalysisResult {
 
 // ---------------------------------------------------------------- render
 
-export const VIDEO_WIDTH = 1080
-export const VIDEO_HEIGHT = 1920
+/**
+ * Os dois formatos de video.
+ *
+ * 'short' e o de sempre: 1080x1920, o 9:16 vertical. 'long' e o horizontal,
+ * 1920x1080 -- escolhido por PROJETO, e nao por sessao, porque reabrir um
+ * projeto horizontal em 9:16 recortaria tudo que ja foi enquadrado.
+ *
+ * As medidas sairam de constantes de modulo para uma funcao de proposito:
+ * enquanto foram constantes, cada arquivo que as importava assumia 9:16 em
+ * silencio. Tirando-as, o compilador aponta todo lugar que precisa saber qual
+ * e o formato -- que e a unica forma de nao esquecer nenhum.
+ */
+export const FORMATOS = ['short', 'long'] as const
+export type Formato = (typeof FORMATOS)[number]
+export const FORMATO_PADRAO: Formato = 'short'
+
+/** O que cada formato mede, e o que o render prepara com a folga do Ken Burns. */
+export function medidasDo(formato: Formato): {
+  width: number
+  height: number
+  renderWidth: number
+  renderHeight: number
+} {
+  const width = formato === 'long' ? 1920 : 1080
+  const height = formato === 'long' ? 1080 : 1920
+  return {
+    width,
+    height,
+    renderWidth: Math.round(width * RENDER_HEADROOM),
+    renderHeight: Math.round(height * RENDER_HEADROOM),
+  }
+}
 
 /**
  * Folga de escala para o Ken Burns. A imagem preparada para o render tem 1.15x
@@ -668,8 +698,7 @@ export const VIDEO_HEIGHT = 1920
  * MESMO numero para dizer a verdade sobre quanto uma imagem sera ampliada.
  */
 export const RENDER_HEADROOM = 1.15
-export const RENDER_WIDTH = Math.round(VIDEO_WIDTH * RENDER_HEADROOM)
-export const RENDER_HEIGHT = Math.round(VIDEO_HEIGHT * RENDER_HEADROOM)
+
 
 /**
  * 23.976 fps, o valor exato de 24000/1001 -- e nao o arredondado 23.976.
@@ -866,6 +895,14 @@ export const captionStyleSchema = z.object({
 export type CaptionStyle = z.infer<typeof captionStyleSchema>
 
 export const renderPropsSchema = z.object({
+  /**
+   * O quadro em que este video e montado.
+   *
+   * Viaja NAS PROPS, e nao num estado do processo: aqui errar significa gravar
+   * o video inteiro no formato errado, e vale carregar o dado junto com o que
+   * ele descreve.
+   */
+  formato: z.enum(FORMATOS).default(FORMATO_PADRAO),
   scenes: z.array(
     z.object({
       url: z.string(),

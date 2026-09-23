@@ -3,7 +3,8 @@ import { mkdirSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import sharp from 'sharp'
-import { RENDER_HEIGHT, RENDER_WIDTH, type ImageAsset } from '@shared/contract'
+import type { ImageAsset } from '@shared/contract'
+import { medidasAtuais } from './formato'
 import { classifyFile } from '@shared/channels'
 import { publish } from './media-server'
 import { detectFace, detectFocus, type FaceFocus, type RostoNoQuadro } from './faces'
@@ -341,18 +342,19 @@ async function makeRenderReady(
 
   // Escala minima que ainda cobre o quadro inteiro -- o mesmo que objectFit
   // cover faria, so que resolvido em pixels antes do render.
-  const scale = Math.max(RENDER_WIDTH / width, RENDER_HEIGHT / height)
-  const scaledWidth = Math.max(Math.ceil(width * scale), RENDER_WIDTH)
-  const scaledHeight = Math.max(Math.ceil(height * scale), RENDER_HEIGHT)
+  const medidas = medidasAtuais()
+  const scale = Math.max(medidas.renderWidth / width, medidas.renderHeight / height)
+  const scaledWidth = Math.max(Math.ceil(width * scale), medidas.renderWidth)
+  const scaledHeight = Math.max(Math.ceil(height * scale), medidas.renderHeight)
 
   await sharp(path)
     .rotate()
     .resize(scaledWidth, scaledHeight, { fit: 'fill' })
     .extract({
-      left: Math.round((scaledWidth - RENDER_WIDTH) * x),
-      top: Math.round((scaledHeight - RENDER_HEIGHT) * y),
-      width: RENDER_WIDTH,
-      height: RENDER_HEIGHT,
+      left: Math.round((scaledWidth - medidas.renderWidth) * x),
+      top: Math.round((scaledHeight - medidas.renderHeight) * y),
+      width: medidas.renderWidth,
+      height: medidas.renderHeight,
     })
     // JPEG de qualidade alta: o Remotion serializa cada frame como JPEG de
     // qualquer forma, entao PNG aqui so custaria tempo de decodificacao.

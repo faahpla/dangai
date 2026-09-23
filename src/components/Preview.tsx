@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
-import { familiaDaFonte, VIDEO_FPS, VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
+import { familiaDaFonte, medidasDo, VIDEO_FPS } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
 import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
@@ -57,6 +57,8 @@ export function Preview() {
   const captionY = useProject((s) => s.captionY)
   const captionScale = useProject((s) => s.captionScale)
 
+  const formato = useProject((s) => s.formato)
+  const quadro = medidasDo(formato)
   const hookText = useProject((s) => s.hookText)
   const hookSec = useProject((s) => s.hookSec)
   const endText = useProject((s) => s.endText)
@@ -90,8 +92,10 @@ export function Preview() {
               stroke: captionStroke,
               scale: captionScale,
             },
+            formato,
           )
         : {
+            formato,
             scenes: [],
             captions: [],
             cards: [],
@@ -147,8 +151,8 @@ export function Preview() {
             inputProps={inputProps}
             durationInFrames={durationInFrames}
             fps={VIDEO_FPS}
-            compositionWidth={VIDEO_WIDTH}
-            compositionHeight={VIDEO_HEIGHT}
+            compositionWidth={quadro.width}
+            compositionHeight={quadro.height}
             style={{ width: '100%', height: '100%' }}
             // Sem controles proprios: a timeline do app e o unico transporte.
             controls={false}
@@ -172,7 +176,7 @@ export function Preview() {
       )}
 
       <span className="tnum pointer-events-none absolute bottom-2 right-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
-        {VIDEO_WIDTH} x {VIDEO_HEIGHT}
+        {quadro.width} x {quadro.height}
       </span>
     </div>
   )

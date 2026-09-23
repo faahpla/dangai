@@ -120,6 +120,15 @@ export function RenderBar() {
   )
   const toggleSfx = useProject((s) => s.toggleSfx)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
+  /*
+   * No horizontal a legenda some da barra.
+   *
+   * As regras dela -- dez caracteres, duas palavras -- foram calibradas para
+   * 1080px de largura; no quadro deitado o mesmo texto vira uma tira minuscula
+   * no meio da tela. Melhor nao oferecer do que oferecer torto. Palavras dele:
+   * "no 16:9 nao precisa das legendas".
+   */
+  const formatoLongo = useProject((s) => s.formato) === 'long'
   const captionCount = useProject((s) => s.captions.length)
   const toggleCaptions = useProject((s) => s.toggleCaptions)
   const script = useProject((s) => s.script)
@@ -187,7 +196,7 @@ export function RenderBar() {
         </button>
       )}
 
-      {captionCount > 0 && !isRendering && (
+      {captionCount > 0 && !isRendering && !formatoLongo && (
         <button
           type="button"
           onClick={toggleCaptions}
@@ -208,7 +217,7 @@ export function RenderBar() {
         </button>
       )}
 
-      {captionCount > 0 && captionsEnabled && !isRendering && <EstiloControl />}
+      {captionCount > 0 && captionsEnabled && !isRendering && !formatoLongo && <EstiloControl />}
 
       {sfxCount > 0 && !isRendering && (
         <button

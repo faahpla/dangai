@@ -15,11 +15,14 @@ import {
   CAPTION_MAX_WORDS,
   CAPTION_SCALE_DEFAULT,
   CAPTION_MIN_SEC,
+  FORMATO_PADRAO,
+  medidasDo,
   KEN_BURNS_EFFECTS,
   MOTION_CURVE_DEFAULT,
   TRANSITION_FRAMES,
   VIDEO_FPS,
   type CaptionBlock,
+  type Formato,
   type CaptionAnimation,
   type CaptionMark,
   type CaptionShadow,
@@ -412,7 +415,18 @@ export function toRenderProps(
     stroke?: number
     scale?: number
   } = {},
+  /**
+   * O formato do projeto. Ele decide o QUADRO, e o quadro decide a geometria da
+   * camera: num 16:9 uma fonte 16:9 preenche exato e nao ha folga para passear,
+   * do mesmo jeito que um 9:16 nao tem folga no quadro vertical.
+   *
+   * Com padrao para os testes de plano, que nao conhecem formato, continuarem
+   * valendo -- e porque 'short' e o que todo projeto salvo antes disto e.
+   */
+  formato: Formato = FORMATO_PADRAO,
 ): RenderProps {
+  const quadro = medidasDo(formato)
+  const aspectoDoQuadro = quadro.width / quadro.height
   const captionFont = legenda.font ?? null
   const captionAnimation = legenda.animation ?? CAPTION_ANIMATION_DEFAULT
   const captionAnimationFrames = legenda.animationFrames ?? CAPTION_ANIMATION_FRAMES_DEFAULT
@@ -425,6 +439,7 @@ export function toRenderProps(
   )
   if (usable.length === 0) {
     return {
+      formato,
       scenes: [],
       captions: [],
       cards: [],
@@ -589,7 +604,7 @@ export function toRenderProps(
      */
     const cameraNaFonte =
       abaixo === null && !quarto && scene.camera != null
-        ? fonteDaCamera(image, scene.camera)
+        ? fonteDaCamera(image, scene.camera, aspectoDoQuadro)
         : null
 
     return {
@@ -626,6 +641,7 @@ export function toRenderProps(
   })
 
   return {
+    formato,
     scenes,
     captions: untieWordStarts(captions),
     cards: buildCards(cardText, bounds.at(-1)!),

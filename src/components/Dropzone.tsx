@@ -1,6 +1,7 @@
 import { motion } from 'motion/react'
-import { History, Library as LibraryIcon, X } from 'lucide-react'
+import { History, Library as LibraryIcon, RectangleHorizontal, RectangleVertical, X } from 'lucide-react'
 import { useProject } from '@/store/project'
+import { FORMATOS, medidasDo, type Formato } from '@shared/contract'
 
 interface DropzoneProps {
   isDragging: boolean
@@ -53,8 +54,64 @@ export function Dropzone({ isDragging }: DropzoneProps) {
         </motion.div>
       </button>
 
+      <EscolhaDeFormato />
       <AbrirBiblioteca />
       <Recuperar />
+    </div>
+  )
+}
+
+/**
+ * Vertical ou horizontal, escolhido antes de soltar o material.
+ *
+ * Fica na TELA VAZIA, e nao numa janela na abertura do app. Uma janela na
+ * abertura pergunta cedo demais: ela apareceria tambem quando ele so quer
+ * reabrir um projeto salvo, e ai a resposta ja esta no arquivo. Aqui a pergunta
+ * so existe enquanto nao ha projeto -- que e exatamente quando ela cabe.
+ *
+ * E some assim que o primeiro arquivo entra. Trocar o formato depois de
+ * importar significaria reenquadrar tudo que ja foi enquadrado, entao a escolha
+ * acontece antes de haver o que perder.
+ */
+function EscolhaDeFormato() {
+  const formato = useProject((s) => s.formato)
+  const definirFormato = useProject((s) => s.definirFormato)
+  const busy = useProject((s) => s.busy)
+
+  if (busy !== null) return null
+
+  const rotulo: Record<Formato, { nome: string; dica: string }> = {
+    short: { nome: 'Short', dica: 'vertical, para Shorts, Reels e TikTok' },
+    long: { nome: 'Long form', dica: 'horizontal, para o YouTube' },
+  }
+
+  return (
+    <div className="pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 gap-1.5">
+      {FORMATOS.map((f) => {
+        const medidas = medidasDo(f)
+        const ativo = formato === f
+        const Icone = f === 'long' ? RectangleHorizontal : RectangleVertical
+        return (
+          <button
+            key={f}
+            type="button"
+            onClick={() => void definirFormato(f)}
+            title={rotulo[f].dica}
+            className={[
+              'pointer-events-auto flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px] transition-colors',
+              ativo
+                ? 'border-accent bg-accent-dim text-ink'
+                : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+            ].join(' ')}
+          >
+            <Icone size={12} strokeWidth={1.5} />
+            {rotulo[f].nome}
+            <span className="tnum text-ink-3">
+              {medidas.width}x{medidas.height}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }

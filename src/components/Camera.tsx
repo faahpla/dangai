@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { CAMERA_SCALE_MAX, type CameraFrame, type ImageAsset } from '@shared/contract'
+import { CAMERA_SCALE_MAX, medidasDo, type CameraFrame, type ImageAsset } from '@shared/contract'
 import { folgaDaCamera, fonteDaCamera, janelaDaCamera } from '@shared/camera'
+import { useProject } from '@/store/project'
 
 /**
  * A midia do bloco, parada, para enquadrar em cima dela.
@@ -114,6 +115,11 @@ export function Camera({
    */
   aoMexer: () => void
 }) {
+  /* O quadro em que este enquadramento vai cair -- vertical ou horizontal. */
+  const formato = useProject((s) => s.formato)
+  const quadro = medidasDo(formato)
+  const aspectoDoQuadro = quadro.width / quadro.height
+
   const caixaRef = useRef<HTMLDivElement | null>(null)
   const arrasto = useRef<{ x: number; y: number; de: CameraFrame } | null>(null)
 
@@ -125,8 +131,8 @@ export function Camera({
    * outro porque a tela nunca mostrou nada alem do terco central. Mostrando o
    * arquivo como ele e, o retangulo passeia pelo quadro todo.
    */
-  const fonte = fonteDaCamera(image, camera)
-  const janela = janelaDaCamera(value, fonte.aspecto)
+  const fonte = fonteDaCamera(image, camera, aspectoDoQuadro)
+  const janela = janelaDaCamera(value, fonte.aspecto, aspectoDoQuadro)
 
   /**
    * O quanto a camera pode sair do centro sem deixar entrar borda preta.
@@ -134,7 +140,7 @@ export function Camera({
    * Com escala 1 o retangulo ocupa o quadro todo e nao ha folga nenhuma -- por
    * isso o limite e zero ali, e cresce conforme ele aproxima.
    */
-  const folga = folgaDaCamera(value.scale, fonte.aspecto)
+  const folga = folgaDaCamera(value.scale, fonte.aspecto, aspectoDoQuadro)
   const preso = (n: number, limite: number): number =>
     Math.min(Math.max(n, -limite), limite)
 
@@ -258,7 +264,7 @@ export function Camera({
             const scale = Number(event.target.value)
             // Reaperta o deslocamento na folga NOVA: afastar encolhe a margem,
             // e um x que era valido em 2x poe borda preta em 1.2x.
-            const nova = folgaDaCamera(scale, fonte.aspecto)
+            const nova = folgaDaCamera(scale, fonte.aspecto, aspectoDoQuadro)
             onChange({
               scale,
               x: preso(value.x, nova.x),

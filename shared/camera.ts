@@ -1,4 +1,4 @@
-import { VIDEO_HEIGHT, VIDEO_WIDTH, type CameraFrame, type CameraKey } from './contract'
+import type { CameraFrame, CameraKey } from './contract'
 
 /**
  * A geometria da camera livre, num lugar so.
@@ -21,8 +21,14 @@ import { VIDEO_HEIGHT, VIDEO_WIDTH, type CameraFrame, type CameraKey } from './c
  * dois caminhos.
  */
 
-const ASPECTO_DO_QUADRO = VIDEO_WIDTH / VIDEO_HEIGHT
-
+/*
+ * O ASPECTO DO QUADRO VEM DE FORA.
+ *
+ * Era uma constante daqui, o que embutia 9:16 em toda esta geometria -- e com o
+ * formato horizontal isso passou a ser uma mentira silenciosa: a conta
+ * continuaria correta e apontaria para o lugar errado. Recebendo o numero, o
+ * mesmo arquivo serve aos dois formatos e quem chama e obrigado a dizer qual e.
+ */
 function preso(valor: number, minimo: number, maximo: number): number {
   return Math.min(Math.max(valor, minimo), maximo)
 }
@@ -34,11 +40,15 @@ function preso(valor: number, minimo: number, maximo: number): number {
  * quadro sobra largura (um 16:9 mostra 31,6% dela), e numa mais ALTA sobra
  * altura. O que sobra e exatamente a folga por onde a camera pode passear.
  */
-export function coberturaDaFonte(aspectoDaFonte: number): { largura: number; altura: number } {
-  const a = Number.isFinite(aspectoDaFonte) && aspectoDaFonte > 0 ? aspectoDaFonte : ASPECTO_DO_QUADRO
+export function coberturaDaFonte(
+  aspectoDaFonte: number,
+  aspectoDoQuadro: number,
+): { largura: number; altura: number } {
+  const q = Number.isFinite(aspectoDoQuadro) && aspectoDoQuadro > 0 ? aspectoDoQuadro : 1
+  const a = Number.isFinite(aspectoDaFonte) && aspectoDaFonte > 0 ? aspectoDaFonte : q
   return {
-    largura: a > ASPECTO_DO_QUADRO ? ASPECTO_DO_QUADRO / a : 1,
-    altura: a < ASPECTO_DO_QUADRO ? a / ASPECTO_DO_QUADRO : 1,
+    largura: a > q ? q / a : 1,
+    altura: a < q ? a / q : 1,
   }
 }
 
@@ -56,11 +66,12 @@ export function coberturaDaFonte(aspectoDaFonte: number): { largura: number; alt
 export function fonteDaCamera(
   image: { url: string; urlSource?: string | null; width: number; height: number },
   camera: { source?: boolean } | null | undefined,
+  aspectoDoQuadro: number,
 ): { url: string; aspecto: number } {
   const noOriginal = camera?.source === true && !!image.urlSource && image.height > 0
   return noOriginal
     ? { url: image.urlSource!, aspecto: image.width / image.height }
-    : { url: image.url, aspecto: ASPECTO_DO_QUADRO }
+    : { url: image.url, aspecto: aspectoDoQuadro }
 }
 
 /**
@@ -73,8 +84,9 @@ export function fonteDaCamera(
 export function janelaDaCamera(
   frame: CameraFrame,
   aspectoDaFonte: number,
+  aspectoDoQuadro: number,
 ): { left: number; top: number; width: number; height: number } {
-  const cobertura = coberturaDaFonte(aspectoDaFonte)
+  const cobertura = coberturaDaFonte(aspectoDaFonte, aspectoDoQuadro)
   const width = cobertura.largura / frame.scale
   const height = cobertura.altura / frame.scale
   return {
@@ -95,8 +107,9 @@ export function janelaDaCamera(
 export function folgaDaCamera(
   scale: number,
   aspectoDaFonte: number,
+  aspectoDoQuadro: number,
 ): { x: number; y: number } {
-  const cobertura = coberturaDaFonte(aspectoDaFonte)
+  const cobertura = coberturaDaFonte(aspectoDaFonte, aspectoDoQuadro)
   return {
     x: 50 * (1 - cobertura.largura / scale),
     y: 50 * (1 - cobertura.altura / scale),
@@ -119,16 +132,22 @@ export function enquadrar(
   centroY: number,
   scale: number,
   aspectoDaFonte: number,
+  aspectoDoQuadro: number,
 ): CameraFrame {
   return naFolga(
     { scale, x: (0.5 - centroX) * 100, y: (0.5 - centroY) * 100 },
     aspectoDaFonte,
+    aspectoDoQuadro,
   )
 }
 
 /** Reaperta um enquadramento na folga da propria escala. */
-export function naFolga(frame: CameraFrame, aspectoDaFonte: number): CameraFrame {
-  const folga = folgaDaCamera(frame.scale, aspectoDaFonte)
+export function naFolga(
+  frame: CameraFrame,
+  aspectoDaFonte: number,
+  aspectoDoQuadro: number,
+): CameraFrame {
+  const folga = folgaDaCamera(frame.scale, aspectoDaFonte, aspectoDoQuadro)
   return {
     scale: frame.scale,
     x: preso(frame.x, -folga.x, folga.x),
@@ -157,8 +176,9 @@ export function naFolga(frame: CameraFrame, aspectoDaFonte: number): CameraFrame
 export function estiloDaCamera(
   frame: CameraFrame,
   aspectoDaFonte: number,
+  aspectoDoQuadro: number,
 ): { objectPosition: string; transform: string } {
-  const cobertura = coberturaDaFonte(aspectoDaFonte)
+  const cobertura = coberturaDaFonte(aspectoDaFonte, aspectoDoQuadro)
 
   // O centro que se quer ver, em fracoes da fonte.
   const cx = 0.5 - frame.x / 100
@@ -277,6 +297,7 @@ export function chavesDoCaminho(
   de: CameraFrame,
   ate: CameraFrame,
   aspectoDaFonte: number,
+  aspectoDoQuadro: number,
   maximoDeChaves = 10,
 ): { from: CameraFrame; to: CameraFrame; keys: CameraKey[] } | null {
   if (pontos.length < 2) return null
@@ -290,7 +311,7 @@ export function chavesDoCaminho(
 
   const keys: CameraKey[] = []
   for (const p of escolhidos.slice(1, -1)) {
-    const frame = enquadrar(p.centroX, p.centroY, naEscala(p.t), aspectoDaFonte)
+    const frame = enquadrar(p.centroX, p.centroY, naEscala(p.t), aspectoDaFonte, aspectoDoQuadro)
     keys.push({ t: p.t, ...frame })
   }
 
@@ -302,13 +323,13 @@ export function chavesDoCaminho(
    * para um lugar que ninguem mediu.
    */
   if (ultimo.t < 0.999) {
-    const frame = enquadrar(ultimo.centroX, ultimo.centroY, naEscala(ultimo.t), aspectoDaFonte)
+    const frame = enquadrar(ultimo.centroX, ultimo.centroY, naEscala(ultimo.t), aspectoDaFonte, aspectoDoQuadro)
     keys.push({ t: ultimo.t, ...frame })
   }
 
   return {
-    from: enquadrar(primeiro.centroX, primeiro.centroY, de.scale, aspectoDaFonte),
-    to: enquadrar(ultimo.centroX, ultimo.centroY, ate.scale, aspectoDaFonte),
+    from: enquadrar(primeiro.centroX, primeiro.centroY, de.scale, aspectoDaFonte, aspectoDoQuadro),
+    to: enquadrar(ultimo.centroX, ultimo.centroY, ate.scale, aspectoDaFonte, aspectoDoQuadro),
     keys,
   }
 }

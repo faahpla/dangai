@@ -42,9 +42,12 @@ import {
   MUSIC_GAIN_DB_DEFAULT,
   MUSIC_GAIN_DB_MAX,
   MUSIC_GAIN_DB_MIN,
+  FORMATO_PADRAO,
+  medidasDo,
 } from '@shared/contract'
 import type {
   AudioAnalysis,
+  Formato,
   CaptionAnimation,
   CaptionColor,
   CaptionMark,
@@ -154,6 +157,13 @@ export interface ProjectState {
    * varios blocos seguidos, os dois deixaram de ser a mesma coisa. Guardar o id
    * da imagem selecionaria todos os blocos dela de uma vez.
    */
+  /**
+   * Vertical ou horizontal, escolhido ao criar o projeto.
+   *
+   * Decide o QUADRO, e o quadro decide quase tudo depois: o recorte das
+   * imagens, a geometria da camera, o tamanho da composicao e se ha legenda.
+   */
+  formato: Formato
   selectedScene: number | null
   /**
    * TODOS os blocos selecionados, incluindo a ancora.
@@ -590,6 +600,13 @@ export interface ProjectState {
   setImageFocus: (id: string, focusX: number, focusY: number) => void
   /** Confirma o enquadramento: pede o novo recorte ao main e troca a URL. */
   commitImageFocus: (id: string) => Promise<void>
+  /**
+   * Troca o formato do projeto e avisa o main.
+   *
+   * O main faz o recorte, o upscale e a deteccao de rosto, e os tres precisam
+   * do quadro. Ele nunca adivinha: quem sabe e a tela, e e ela que conta.
+   */
+  definirFormato: (formato: Formato) => Promise<void>
   selectScene: (index: number | null) => void
   /** Shift+clique: seleciona tudo entre a ancora e este bloco. */
   estenderSelecao: (index: number) => void
@@ -838,6 +855,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   error: null,
   playhead: 0,
   playing: false,
+  formato: FORMATO_PADRAO,
   selectedScene: null,
   selecionados: [],
   ajustesCopiados: null,
@@ -2643,6 +2661,13 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ plan: { ...plan, scenes }, planEdited: true })
   },
 
+  definirFormato: async (formato) => {
+    // Horizontal ja entra sem legenda: e o que ele pediu, e evita gerar um
+    // video com as regras de short num quadro que nao e o delas.
+    set(formato === 'long' ? { formato, captionsEnabled: false } : { formato })
+    await window.dangai.setFormato(formato)
+  },
+
   selectScene: (index) =>
     set({ selectedScene: index, selecionados: index === null ? [] : [index] }),
 
@@ -2828,6 +2853,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           stroke: get().captionStroke,
           scale: get().captionScale,
         },
+        get().formato,
       ),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
@@ -2903,7 +2929,9 @@ export const useProject = create<ProjectState>((set, get) => ({
      * camera parada e certa, em vez de deixar a outra ponta no centro, que e
      * quase sempre o lugar errado.
      */
-    const aspecto = fonteDaCamera(image, cena.camera).aspecto
+    const quadro = medidasDo(get().formato)
+    const aspectoDoQuadro = quadro.width / quadro.height
+    const aspecto = fonteDaCamera(image, cena.camera, aspectoDoQuadro).aspecto
     const de = noComeco ?? noFim!
     const ate = noFim ?? noComeco!
 
@@ -2912,8 +2940,8 @@ export const useProject = create<ProjectState>((set, get) => ({
         ...cena.camera,
         // A escala de cada ponta e mantida: ela e a aproximacao que ele
         // escolheu, e mexer nela seria mudar duas coisas num pedido so.
-        from: enquadrar(de.centroX, de.centroY, cena.camera.from.scale, aspecto),
-        to: enquadrar(ate.centroX, ate.centroY, cena.camera.to.scale, aspecto),
+        from: enquadrar(de.centroX, de.centroY, cena.camera.from.scale, aspecto, aspectoDoQuadro),
+        to: enquadrar(ate.centroX, ate.centroY, cena.camera.to.scale, aspecto, aspectoDoQuadro),
       },
     })
     return noComeco && noFim ? 'ambos' : 'um'
@@ -2933,8 +2961,10 @@ export const useProject = create<ProjectState>((set, get) => ({
      * que ele quer continuar vendo. Uma caixa separada seria um segundo jeito de
      * dizer a mesma coisa, com a chance de os dois discordarem.
      */
-    const fonte = fonteDaCamera(image, cena.camera)
-    const janela = janelaDaCamera(cena.camera.from, fonte.aspecto)
+    const medidasQ = medidasDo(get().formato)
+    const aspectoQ = medidasQ.width / medidasQ.height
+    const fonte = fonteDaCamera(image, cena.camera, aspectoQ)
+    const janela = janelaDaCamera(cena.camera.from, fonte.aspecto, aspectoQ)
     const alvo = alvoDoRastreio(janela, image.width, image.height)
 
     const inicio = cena.sourceStart ?? 0
@@ -2953,6 +2983,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       cena.camera.from,
       cena.camera.to,
       fonte.aspecto,
+      aspectoQ,
     )
     if (!caminho) return null
 
@@ -3054,6 +3085,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Volta ao padrao junto com o resto: sem isto, ter ligado o SFX num
       // projeto o traria ligado para o proximo, que e justamente o som
       // entrando sem ninguem pedir.
+      // Projeto novo comeca no vertical, e a escolha aparece de novo.
+      formato: FORMATO_PADRAO,
       sfxEnabled: false,
       music: null,
       musicGainDb: MUSIC_GAIN_DB_DEFAULT,
@@ -3078,6 +3111,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     return {
       version: PROJECT_FILE_VERSION,
       savedAt: new Date().toISOString(),
+      formato: state.formato,
       audio: { path: state.audio.path, rel: null, fileName: state.audio.fileName },
       images: state.images.map((image) => ({
         path: image.path,
@@ -3302,6 +3336,15 @@ async function applyProjectFile(
   await semSujar(async () => {
     set({ busy: 'Abrindo projeto...', error: null })
 
+    /*
+     * O MAIN PRECISA SABER O FORMATO ANTES das imagens entrarem.
+     *
+     * O recorte acontece la, na importacao: avisar depois faria o projeto
+     * horizontal reabrir com todo o material recortado em 9:16 -- e o usuario
+     * so descobriria olhando o preview.
+     */
+    await window.dangai.setFormato(file.formato)
+
     const audio = await window.dangai.analyzeAudio(file.audio.path)
     if (!audio.ok) {
       set({ error: audio.error, busy: null })
@@ -3356,6 +3399,7 @@ async function applyProjectFile(
       metadata: file.metadata,
       script: file.script,
       subtitlePath: file.subtitle?.path ?? null,
+      formato: file.formato,
       plan: file.plan,
       planOrigin: file.planOrigin,
       planEdited: file.planEdited,

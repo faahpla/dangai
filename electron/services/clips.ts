@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { VIDEO_HEIGHT, VIDEO_WIDTH } from '@shared/contract'
+import { medidasAtuais } from './formato'
 import { ffmpegPath } from './ffmpeg-path'
 
 /**
@@ -187,9 +187,10 @@ export async function makeClipRenderReady(
   const alvo = join(cacheDir, `${id}-${Math.round(x * 1000)}-${Math.round(y * 1000)}.mp4`)
   if (existsSync(alvo)) return alvo
 
+  const medidas = medidasAtuais()
   // A maior janela 9:16 que cabe no clipe, em pixels pares -- o yuv420p exige
   // largura e altura pares, e o ffmpeg falha em vez de arredondar sozinho.
-  const proporcao = VIDEO_WIDTH / VIDEO_HEIGHT
+  const proporcao = medidas.width / medidas.height
   const largura = par(Math.min(info.width, info.height * proporcao), info.width)
   const altura = par(Math.min(info.height, info.width / proporcao), info.height)
 

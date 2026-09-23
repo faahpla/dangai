@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from
 import { join } from 'node:path'
 import sharp from 'sharp'
 import type { InferenceSession } from 'onnxruntime-node'
-import { RENDER_HEIGHT, RENDER_WIDTH, type ImageAsset } from '@shared/contract'
+import type { ImageAsset } from '@shared/contract'
+import { medidasAtuais } from './formato'
 import { ffmpegPath } from './ffmpeg-path'
 
 /**
@@ -139,14 +140,15 @@ export function janelaDaFonte(
   focusX: number,
   focusY: number,
 ): { left: number; top: number; width: number; height: number } {
-  const escala = Math.max(RENDER_WIDTH / largura, RENDER_HEIGHT / altura)
-  const sw = Math.max(Math.ceil(largura * escala), RENDER_WIDTH)
-  const sh = Math.max(Math.ceil(altura * escala), RENDER_HEIGHT)
+  const medidas = medidasAtuais()
+  const escala = Math.max(medidas.renderWidth / largura, medidas.renderHeight / altura)
+  const sw = Math.max(Math.ceil(largura * escala), medidas.renderWidth)
+  const sh = Math.max(Math.ceil(altura * escala), medidas.renderHeight)
 
-  const w = Math.min(largura, Math.max(1, Math.round(RENDER_WIDTH / escala)))
-  const h = Math.min(altura, Math.max(1, Math.round(RENDER_HEIGHT / escala)))
-  const left = Math.round(((sw - RENDER_WIDTH) * focusX) / escala)
-  const top = Math.round(((sh - RENDER_HEIGHT) * focusY) / escala)
+  const w = Math.min(largura, Math.max(1, Math.round(medidas.renderWidth / escala)))
+  const h = Math.min(altura, Math.max(1, Math.round(medidas.renderHeight / escala)))
+  const left = Math.round(((sw - medidas.renderWidth) * focusX) / escala)
+  const top = Math.round(((sh - medidas.renderHeight) * focusY) / escala)
 
   return {
     left: Math.min(Math.max(left, 0), largura - w),
@@ -203,8 +205,9 @@ async function paraQuadroDoRender(
     rgb[i * 3 + 2] = clamp255(dados[2 * planoSaida + i]!)
   }
 
+  const medidas = medidasAtuais()
   return sharp(rgb, { raw: { width: ow, height: oh, channels: 3 } })
-    .resize(RENDER_WIDTH, RENDER_HEIGHT, { fit: 'fill' })
+    .resize(medidas.renderWidth, medidas.renderHeight, { fit: 'fill' })
     .raw()
     .toBuffer()
 }
@@ -268,6 +271,7 @@ function clamp255(v: number): number {
 
 /** Um print: um quadro so, e sai um JPEG como o makeRenderReady faz. */
 async function ampliarPrint(asset: ImageAsset, destino: string): Promise<void> {
+  const medidas = medidasAtuais()
   const janela = janelaDaFonte(asset.width, asset.height, asset.focusX, asset.focusY)
   const { data, info } = await sharp(asset.path)
     .rotate()
@@ -276,7 +280,7 @@ async function ampliarPrint(asset: ImageAsset, destino: string): Promise<void> {
     .toBuffer({ resolveWithObject: true })
 
   const pronto = await ampliarQuadro(data, info.width, info.height, info.channels)
-  await sharp(pronto, { raw: { width: RENDER_WIDTH, height: RENDER_HEIGHT, channels: 3 } })
+  await sharp(pronto, { raw: { width: medidas.renderWidth, height: medidas.renderHeight, channels: 3 } })
     .jpeg({ quality: 92, mozjpeg: true })
     .toFile(destino)
 }
@@ -305,6 +309,7 @@ async function ampliarClipe(
   ate: number | undefined,
   onFrame: (feitos: number) => void,
 ): Promise<void> {
+  const medidas = medidasAtuais()
   const janela = janelaDaFonte(asset.width, asset.height, asset.focusX, asset.focusY)
   const fps = 24000 / 1001
 
@@ -341,7 +346,7 @@ async function ampliarClipe(
     '-y',
     '-f', 'rawvideo',
     '-pix_fmt', 'rgb24',
-    '-s', `${RENDER_WIDTH}x${RENDER_HEIGHT}`,
+    '-s', `${medidas.renderWidth}x${medidas.renderHeight}`,
     '-r', String(fps),
     '-i', '-',
     '-c:v', 'libx264',

@@ -46,6 +46,7 @@ export const IPC = {
   cancelAnalyze: 'plan:cancel',
   faceAt: 'faces:at',
   trackBox: 'track:box',
+  setFormato: 'formato:set',
   revealFile: 'shell:reveal',
   analyze: 'plan:analyze',
   getSettings: 'settings:get',
@@ -570,6 +571,14 @@ export interface DangaiBridge {
    * que fracao do trecho a perseguicao se sustentou -- ela PARA quando perde o
    * alvo em vez de continuar chutando, e quem chamou precisa poder dizer isso.
    */
+  /**
+   * Avisa ao main qual e o formato do projeto aberto.
+   *
+   * O recorte das imagens, a janela do upscale e a geometria do rosto acontecem
+   * la, e todos precisam saber o quadro. Sem isto o main assumiria vertical em
+   * silencio e devolveria recorte 9:16 num projeto horizontal.
+   */
+  setFormato(formato: 'short' | 'long'): Promise<IpcResult<null>>
   trackBox(
     path: string,
     inicio: number,

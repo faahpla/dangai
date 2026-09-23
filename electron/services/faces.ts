@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import sharp from 'sharp'
-import { RENDER_HEIGHT, RENDER_WIDTH } from '@shared/contract'
+import { medidasAtuais } from './formato'
 import { carregarOpenCv, type Cv, type CvCascade, type CvRect } from './vision'
 
 /**
@@ -126,6 +126,7 @@ async function motor(): Promise<{ cv: Cv; cascade: CvCascade } | null> {
  * tem folga, mas numa imagem mais alta que 9:16 o Y passa a mandar.
  */
 export async function detectFocus(caminho: string): Promise<FaceFocus | null> {
+  const medidas = medidasAtuais()
   const rosto = await detectFace(caminho)
   if (!rosto) return null
   return focoPara(caminho, rosto.centroX, rosto.centroY, rosto.area)
@@ -216,16 +217,17 @@ async function focoPara(
   const width = girada ? bruta.height : bruta.width
   const height = girada ? bruta.width : bruta.height
 
-  const escala = Math.max(RENDER_WIDTH / width, RENDER_HEIGHT / height)
-  const largura = Math.max(Math.ceil(width * escala), RENDER_WIDTH)
-  const altura = Math.max(Math.ceil(height * escala), RENDER_HEIGHT)
+  const medidas = medidasAtuais()
+  const escala = Math.max(medidas.renderWidth / width, medidas.renderHeight / height)
+  const largura = Math.max(Math.ceil(width * escala), medidas.renderWidth)
+  const altura = Math.max(Math.ceil(height * escala), medidas.renderHeight)
 
-  const folgaX = largura - RENDER_WIDTH
-  const folgaY = altura - RENDER_HEIGHT
+  const folgaX = largura - medidas.renderWidth
+  const folgaY = altura - medidas.renderHeight
 
   // Eixo sem folga fica no meio: nao ha o que escolher ali.
-  const focusX = folgaX > 0 ? (centroX * largura - RENDER_WIDTH / 2) / folgaX : 0.5
-  const focusY = folgaY > 0 ? (centroY * altura - RENDER_HEIGHT / 2) / folgaY : 0.5
+  const focusX = folgaX > 0 ? (centroX * largura - medidas.renderWidth / 2) / folgaX : 0.5
+  const focusY = folgaY > 0 ? (centroY * altura - medidas.renderHeight / 2) / folgaY : 0.5
 
   return { focusX: clamp01(focusX), focusY: clamp01(focusY), area }
 }

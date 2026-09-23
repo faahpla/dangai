@@ -3,7 +3,6 @@ import {
   activeWordIndex,
   CAPTION_CHARS_PER_LINE,
   CAPTION_COLOR_HEX,
-  VIDEO_HEIGHT,
   type CaptionAnimation,
   type CaptionBlock,
   type CaptionColor,
@@ -106,7 +105,9 @@ function Block({
   stroke: number
   scale: number
 }) {
-  const { fps } = useVideoConfig()
+  // A altura vem da COMPOSICAO: a legenda desce uma fracao do quadro, e o
+  // quadro deixou de ser sempre 1920.
+  const { fps, height } = useVideoConfig()
   // useCurrentFrame dentro da Sequence e relativo a ela; as palavras carregam
   // frames absolutos, entao a comparacao volta para a base absoluta.
   const frame = useCurrentFrame() + block.from
@@ -155,7 +156,7 @@ function Block({
         alignItems: 'center',
         // Distancia do rodape. O padrao mantem os 420px de sempre; ver
         // CAPTION_Y_DEFAULT para por que 420 e nao qualquer outro numero.
-        paddingBottom: y * VIDEO_HEIGHT,
+        paddingBottom: y * height,
         paddingLeft: 80,
         paddingRight: 80,
       }}
