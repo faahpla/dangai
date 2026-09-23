@@ -18,21 +18,6 @@ import { startUpdater } from './services/updater'
 import { configureWhisper, encerrarWhisper } from './services/whisper'
 import { configureFaces } from './services/faces'
 
-/*
- * ABRE E SAI. So serve para provar que este binario consegue rodar.
- *
- * Quem chama e o updater, na versao NOVA, antes de deixar ela tomar o lugar
- * da que funciona. Parece bobo e nao e: em 23/09/2026 o Smart App Control
- * passou a recusar o Dangai.exe recem-compilado nesta maquina -- a 1.32.0 e a
- * 1.33.0 publicadas nao abrem, enquanto a 1.31.0 instalada abre. Sem esta
- * prova, a troca de pastas instalaria um app que o Windows nao executa, e o
- * usuario ficaria sem app nenhum: pior do que nao ter atualizado.
- *
- * Fica na PRIMEIRA linha executavel do main. Se o binario estiver barrado,
- * nem isto roda -- e e justamente o `spawn` falhando que responde a pergunta.
- */
-if (process.argv.includes('--dangai-abre')) app.exit(0)
-
 const isDev = !app.isPackaged
 
 function createWindow(): void {
