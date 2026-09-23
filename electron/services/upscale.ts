@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import sharp from 'sharp'
 import type { InferenceSession } from 'onnxruntime-node'
 import type { ImageAsset } from '@shared/contract'
-import { medidasAtuais } from './formato'
+import { formatoAtual, medidasAtuais } from './formato'
 import { ffmpegPath } from './ffmpeg-path'
 
 /**
@@ -78,8 +78,12 @@ let cacheDir: string | null = null
  * v2: ate a v1.30.0 o clipe era decodificado na taxa NATIVA do arquivo e
  * recodificado declarando 23.976, entao uma fonte de 30fps saia 25% mais longa.
  * Os arquivos gerados antes disso tem a duracao errada.
+ *
+ * v3: a chave ganhou o FORMATO. Os arquivos da v2 nao tem esse pedaco no nome,
+ * entao nunca mais seriam lidos -- e a faxina, que so olha a versao, os
+ * manteria no disco para sempre. Subir o numero e o que os manda embora.
  */
-const VERSAO_DO_UPSCALE = 2
+const VERSAO_DO_UPSCALE = 3
 
 export function configureUpscaleCache(userDataDir: string): void {
   cacheDir = join(userDataDir, 'upscale')
@@ -494,8 +498,16 @@ export async function upscaleAssets(
   for (const [i, asset] of assets.entries()) {
     const ate = limites[asset.id]
     // O limite entra na chave: usar mais do clipe depois exige melhorar de novo.
+    /*
+     * O FORMATO entra na chave.
+     *
+     * O arquivo melhorado sai ja recortado no quadro do projeto: o mesmo clipe
+     * vira 1242x2208 no vertical e 2208x1242 no horizontal. Sem o formato aqui,
+     * abrir um projeto long form depois de ter melhorado o material em short
+     * devolveria o recorte EM PE -- e o render aceitaria calado.
+     */
     const marca =
-      `v${VERSAO_DO_UPSCALE}-${Math.round(asset.focusX * 1000)}-${Math.round(asset.focusY * 1000)}` +
+      `v${VERSAO_DO_UPSCALE}-${formatoAtual()}-${Math.round(asset.focusX * 1000)}-${Math.round(asset.focusY * 1000)}` +
       (ate === undefined ? '' : `-${Math.round(ate * 10)}`)
     const ext = asset.kind === 'video' ? 'mp4' : 'jpg'
     const destino = join(dir, `${asset.id}-${marca}.${ext}`)
