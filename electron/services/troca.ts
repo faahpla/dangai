@@ -178,8 +178,103 @@ export async function prepararPacote(zip: string, version: string): Promise<Paco
    */
   if (readdirSync(staging).length < 10) throw new Error('o pacote veio quase vazio')
 
+  await provarQueAbre(join(staging, 'Dangai.exe'), version)
+
   limpar(zip)
   return { version, staging }
+}
+
+/** Marca um fracasso que NAO adianta tentar de novo: o sistema recusou o app. */
+export class AppBarrado extends Error {}
+
+/**
+ * Roda o app novo uma vez, so para ver se ele ABRE.
+ *
+ * ESTA E A CONFERENCIA QUE FALTAVA, e ela existe por um erro meu. A troca de
+ * pastas foi escrita na premissa de que o Smart App Control barrava apenas o
+ * instalador -- premissa que eu tirei de tres binarios que por acaso abriram,
+ * e que era falsa. Medido em 23/09/2026 na maquina dele:
+ *
+ *   Dangai.exe 1.31.0 (instalado)    ABRE
+ *   Dangai.exe 1.32.0 (publicado)    BARRADO, 3 tentativas
+ *   Dangai.exe 1.33.0 (publicado)    BARRADO, 4 tentativas
+ *
+ * Todos sem assinatura e sem marca de internet: o veredito muda de build para
+ * build e nao da para prever. Sem esta linha, atualizar trocaria um app que
+ * funciona por um que o Windows recusa executar -- e nao ha rollback possivel
+ * depois disso, porque o `move` teria dado certo. O unico jeito de saber e
+ * PERGUNTAR AO WINDOWS, antes, com o app velho ainda inteiro no lugar.
+ */
+function provarQueAbre(exe: string, version: string): Promise<void> {
+  const barrado = new AppBarrado(
+    `o Windows recusou executar o app da versao ${version}. A atualizacao foi cancelada e nada mudou.`,
+  )
+
+  return new Promise<void>((resolve, reject) => {
+    let filho: ReturnType<typeof spawn>
+    try {
+      filho = spawn(exe, ['--dangai-abre'], { stdio: 'ignore', windowsHide: true })
+    } catch {
+      /*
+       * O BLOQUEIO CHEGA SINCRONO, e isto so apareceu rodando.
+       *
+       * `spawn` costuma reportar falha pelo evento `error`, e era so nele que
+       * este codigo escutava. Mas quando a politica barra o arquivo, o
+       * `spawn` ESTOURA na hora, com `spawn UNKNOWN` -- medido contra os
+       * binarios 1.32.9 e 1.33.0 barrados nesta maquina.
+       *
+       * Sem este ramo a promessa ainda seria rejeitada (throw no executor
+       * rejeita), mas com um Error generico: a tela diria "nao consegui
+       * baixar a atualizacao" e mandaria o usuario olhar a internet, que nao
+       * tem nada com isso. Seria a mesma armadilha de mensagem errada que
+       * este arquivo inteiro existe para desfazer.
+       */
+      reject(barrado)
+      return
+    }
+
+    /*
+     * Demorar nao e ser barrado.
+     *
+     * Bloqueio de politica aparece como falha de `spawn`, na hora. Se o
+     * processo nasceu e so esta lento, ele nasceu -- que e tudo o que esta
+     * pergunta queria saber.
+     */
+    const limite = setTimeout(() => {
+      try {
+        filho.kill()
+      } catch {
+        /* ja saiu */
+      }
+      resolve()
+    }, 20_000)
+
+    filho.once('spawn', () => {
+      // Nasceu, que e tudo o que esta pergunta queria saber.
+      clearTimeout(limite)
+      /*
+       * E se ele ficar de pe, derruba.
+       *
+       * Com a flag ele sai sozinho na primeira linha. Sem ela -- versao
+       * antiga demais, pacote de outra origem -- abriria a janela inteira por
+       * cima do trabalho do usuario, so para responder um sim.
+       */
+      setTimeout(() => {
+        try {
+          filho.kill()
+        } catch {
+          /* ja saiu sozinho, que e o esperado */
+        }
+      }, 4000).unref()
+      resolve()
+    })
+    // O mesmo fracasso pelo caminho assincrono, que e como ele chega quando a
+    // recusa acontece um pouco depois da chamada.
+    filho.once('error', () => {
+      clearTimeout(limite)
+      reject(barrado)
+    })
+  })
 }
 
 /**
@@ -198,8 +293,15 @@ export async function prepararPacote(zip: string, version: string): Promise<Paco
  * E SEMPRE TERMINA ABRINDO O APP. Por qualquer caminho: deu certo, nao deu,
  * ou nem comecou. Uma atualizacao que falha e um aborrecimento; uma que falha
  * e deixa a pessoa sem app e outra coisa.
+ *
+ * ESPERA O FILHO NASCER ANTES DE FECHAR, e esta linha custou um teste inteiro
+ * para aparecer. `spawn` volta na hora, mas quem cria o processo de verdade e
+ * o libuv, depois -- e `app.quit()` na linha seguinte derrubava o event loop
+ * antes disso acontecer. O resultado era silencioso e perfeito de enganar: o
+ * .bat ficava escrito no disco, com o PID certo e os caminhos certos, e nunca
+ * era executado. O app fechava e simplesmente nao voltava.
  */
-export function trocarEReabrir(pacote: PacotePronto): void {
+export function trocarEReabrir(pacote: PacotePronto): Promise<void> {
   const instalado = pastaDoApp()
   const antiga = join(pastaDeTroca(), 'anterior')
   const bat = join(pastaDeTroca(), 'trocar.bat')
@@ -250,14 +352,22 @@ export function trocarEReabrir(pacote: PacotePronto): void {
    * O script so faz sentido depois que este processo morre. Preso a ele,
    * morreria junto e a troca nunca aconteceria.
    */
-  const filho = spawn('cmd.exe', ['/c', bat], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  })
-  filho.unref()
+  return new Promise<void>((resolve, reject) => {
+    const filho = spawn('cmd.exe', ['/c', bat], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    })
 
-  app.quit()
+    // `spawn` e o evento que diz que o processo EXISTE. So depois dele fechar
+    // o app e seguro -- ver o comentario grande acima.
+    filho.once('spawn', () => {
+      filho.unref()
+      app.quit()
+      resolve()
+    })
+    filho.once('error', reject)
+  })
 }
 
 /**
@@ -271,5 +381,8 @@ export function trocarEReabrir(pacote: PacotePronto): void {
 export function limparTrocaAntiga(): void {
   const raiz = pastaDeTroca()
   if (!existsSync(raiz)) return
-  for (const nome of ['anterior', 'novo']) limpar(join(raiz, nome))
+  // O .bat entra na lista: ele se apaga sozinho quando roda, entao um que
+  // sobrou e de uma troca que nao aconteceu -- e os caminhos dentro dele sao
+  // de um pacote que esta prestes a sumir nas duas linhas abaixo.
+  for (const nome of ['anterior', 'novo', 'trocar.bat']) limpar(join(raiz, nome))
 }

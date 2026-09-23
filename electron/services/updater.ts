@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import type { UpdateStatus } from '@shared/channels'
 import { IPC, REPO } from '@shared/channels'
 import {
+  AppBarrado,
   baixarPacote,
   limparTrocaAntiga,
   prepararPacote,
@@ -143,6 +144,17 @@ async function prepararTroca(version: string, enviar: Enviar): Promise<void> {
     enviar({ state: 'pronta', version })
   } catch (err) {
     console.error('[updater] preparar', err)
+    /*
+     * "O sistema recusou o app novo" nao e um erro para tentar de novo.
+     *
+     * Ele vira `bloqueada`, que e o estado que leva a release e explica a
+     * saida. Dizer "nao consegui baixar" mandaria o usuario olhar a internet,
+     * que nao tem nada a ver -- o pacote baixou inteiro e foi conferido.
+     */
+    if (err instanceof AppBarrado) {
+      enviar({ state: 'bloqueada', version, message: err.message })
+      return
+    }
     enviar({
       state: 'erro',
       message: err instanceof Error ? err.message : 'Nao consegui baixar a atualizacao.',
@@ -169,7 +181,7 @@ export async function installUpdate(): Promise<void> {
   }
 
   try {
-    trocarEReabrir(pronto)
+    await trocarEReabrir(pronto)
   } catch (err) {
     /*
      * Se ate a troca por script for barrada, ainda ha uma saida -- e ela e a
