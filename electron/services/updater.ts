@@ -32,6 +32,18 @@ let enviarStatus: Enviar | null = null
 let ativo = false
 
 /**
+ * A versao baixada e esperando, e se ele ja mandou instalar.
+ *
+ * Os dois existem para distinguir DUAS falhas que chegam pelo mesmo evento
+ * `error`: "nao consegui verificar" (rede, GitHub fora) e "o sistema nao
+ * deixou instalar o que ja esta baixado". A segunda tem uma saida -- baixar o
+ * pacote em pasta -- e a primeira nao, entao dizer as duas do mesmo jeito
+ * manda o usuario procurar o problema no lugar errado.
+ */
+let prontaPara: string | null = null
+let instalando = false
+
+/**
  * Carrega o electron-updater lidando com o embrulho de CJS.
  *
  * A biblioteca e CommonJS e o processo main sai bundlado como CJS, entao o
@@ -81,6 +93,7 @@ export async function startUpdater(
     enviar({ state: 'baixando', percent: progress.percent / 100 })
   })
   autoUpdater.on('update-downloaded', (info) => {
+    prontaPara = info.version
     enviar({ state: 'pronta', version: info.version })
   })
   autoUpdater.on('update-not-available', () => {
@@ -90,6 +103,20 @@ export async function startUpdater(
     // Falha de atualizacao nunca vira erro na cara do usuario: ele esta editando
     // um video, e o app funciona perfeitamente na versao que ja tem.
     console.error('[updater]', err)
+
+    /*
+     * Erro DEPOIS de mandar instalar e sempre sobre instalar.
+     *
+     * O electron-updater manda tudo pelo mesmo `error`, entao sem esta
+     * distincao o "o Windows barrou o instalador" aparecia como "nao consegui
+     * verificar" -- e mandava procurar problema na internet, que estava
+     * perfeita: o arquivo ja tinha sido baixado e conferido.
+     */
+    if (instalando && prontaPara) {
+      instalando = false
+      enviar({ state: 'bloqueada', version: prontaPara, message: err.message })
+      return
+    }
     enviar({ state: 'erro', message: err.message })
   })
 
@@ -103,10 +130,30 @@ export async function startUpdater(
   setInterval(verificar, INTERVALO_MS)
 }
 
-/** Fecha e instala. So chamado por acao explicita do usuario. */
+/**
+ * Fecha e instala. So chamado por acao explicita do usuario.
+ *
+ * `quitAndInstall` nao devolve o fracasso: quando ele consegue, o app morre
+ * na linha seguinte; quando nao consegue, ele volta em silencio e a falha
+ * chega depois, pelo evento `error`. A marca abaixo e o que liga um ao outro.
+ */
 export async function installUpdate(): Promise<void> {
   const { autoUpdater } = await carregar()
-  autoUpdater.quitAndInstall()
+  instalando = true
+  try {
+    autoUpdater.quitAndInstall()
+  } catch (err) {
+    // Alguns fracassos sao sincronos. Sem este ramo, um deles deixaria a
+    // marca ligada e o proximo erro de rede sairia como "o Windows barrou".
+    instalando = false
+    if (enviarStatus && prontaPara) {
+      enviarStatus({
+        state: 'bloqueada',
+        version: prontaPara,
+        message: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
 }
 
 /**

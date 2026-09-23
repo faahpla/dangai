@@ -78,6 +78,39 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # O PACOTE EM PASTA, para quem o Smart App Control barra.
+      #
+      # O SAC recusa executar binario NOVO e sem assinatura, e o instalador
+      # NSIS e exatamente isso a cada versao: ele barrou a 1.31.0 seis vezes
+      # seguidas na maquina dele, com a versao ja baixada e conferida no
+      # disco. O mesmo SAC deixa o `Dangai.exe` abrir sem reclamar -- medido
+      # antes de escrever isto. O que ele barra e o instalador, nao o app.
+      #
+      # Entao a pasta pronta vai zipada junto. Trocar os arquivos do app nao
+      # executa instalador nenhum, e e o unico caminho de atualizacao que
+      # funciona enquanto o projeto nao tiver certificado.
+      #
+      # ZIPA O CONTEUDO, e nao a pasta: o destino e substituir o que esta em
+      # `AppData\Local\Programs\Dangai`, entao o que sai do zip tem que ser
+      # exatamente aquilo, sem um nivel a mais no meio.
+      #
+      # FICA FORA DO latest.yml de proposito. O updater do Windows so sabe
+      # instalar pelo NSIS, e o latest.yml e o unico arquivo do pacote que,
+      # errado, deixa TODO MUNDO sem atualizacao -- nao e onde se experimenta.
+      - name: pacote em pasta, para quem o instalador e barrado
+        if: ${{ !inputs.dry_run }}
+        shell: pwsh
+        run: |
+          $versao = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $zip = "$PWD/release/Dangai-$versao-win-x64.zip"
+          Push-Location release/win-unpacked
+          7z a -tzip -mx=5 $zip *
+          if ($LASTEXITCODE -ne 0) { throw "7z saiu com $LASTEXITCODE" }
+          Pop-Location
+          gh release upload "v$versao" $zip --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Se quebrar no empacotamento, o que sobrou fica aqui para olhar. Sem
       # isto o runner some e leva o builder-debug.yml junto.
       - name: guardar os restos quando quebra

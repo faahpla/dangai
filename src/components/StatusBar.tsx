@@ -9,8 +9,10 @@ import {
   Pilcrow,
   Download,
   Wand2,
+  ShieldAlert,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
+import { RELEASES_URL } from '@shared/channels'
 import type { PlanOrigin } from '@shared/contract'
 
 interface StatusBarProps {
@@ -139,6 +141,42 @@ function UpdateChip({ appVersion }: { appVersion: string }) {
   const perguntar = (): void => {
     setPerguntou(true)
     void window.dangai.checkUpdate()
+  }
+
+  /*
+   * O Windows barrou o instalador.
+   *
+   * Vem ANTES de "pronta" porque e o mesmo momento visto de outro angulo: a
+   * versao continua baixada e conferida no disco, e insistir no botao de
+   * atualizar so repete o bloqueio -- foi o que aconteceu seis vezes seguidas
+   * antes de isto existir.
+   *
+   * O chip vira LINK em vez de botao porque a saida nao esta mais aqui
+   * dentro: o pacote em pasta da release nao passa por instalador nenhum, e e
+   * a unica forma de atualizar enquanto o app nao for assinado.
+   */
+  if (update?.state === 'bloqueada') {
+    return (
+      <a
+        href={`${RELEASES_URL}/tag/v${update.version}`}
+        target="_blank"
+        rel="noreferrer"
+        title={[
+          `O Windows recusou executar o instalador da ${update.version}.`,
+          update.message,
+          'A versao ja esta baixada e conferida. O que o sistema barra e o instalador,' +
+            ' por ser um executavel novo e sem assinatura -- o app em si ele deixa abrir.',
+          'Para atualizar sem instalador:' +
+            `\n1. baixe Dangai-${update.version}-win-x64.zip nesta release` +
+            '\n2. FECHE o Dangai (o Windows nao substitui arquivo em uso)' +
+            '\n3. extraia por cima de %LOCALAPPDATA%\\Programs\\Dangai',
+        ].join('\n\n')}
+        className="flex shrink-0 items-center gap-1.5 rounded-sm border border-danger px-2 py-0.5 text-[11px] text-danger transition-colors duration-150 hover:bg-danger/10"
+      >
+        <ShieldAlert size={12} strokeWidth={1.5} />
+        Windows barrou a {update.version} — baixar em pasta
+      </a>
+    )
   }
 
   if (update?.state === 'pronta') {

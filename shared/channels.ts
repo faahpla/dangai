@@ -355,7 +355,32 @@ export type UpdateStatus =
   | { state: 'atual' }
   | { state: 'baixando'; version?: string; percent: number }
   | { state: 'pronta'; version: string }
+  /**
+   * Baixou, conferiu, e o WINDOWS nao deixou instalar.
+   *
+   * Separado de `erro` porque e um caso completamente diferente: nao falta
+   * nada e nada quebrou -- o instalador esta no disco, inteiro e com o hash
+   * certo, e o sistema recusou executa-lo. O Smart App Control barra
+   * executavel novo sem assinatura, e o instalador e exatamente isso a cada
+   * versao.
+   *
+   * Existe porque isto ja aconteceu em silencio: ele clicou em "Atualizar"
+   * seis vezes seguidas (23/09/2026, 15:40 as 15:42), o botao voltou a ser o
+   * numero da versao e nenhuma mensagem apareceu em lugar nenhum. A conclusao
+   * dele foi "meu dangai nao ta atualizando", que e o que qualquer um
+   * concluiria.
+   */
+  | { state: 'bloqueada'; version: string; message: string }
   | { state: 'erro'; message: string }
+
+/**
+ * Onde ficam as versoes publicadas.
+ *
+ * Mora aqui, junto do estado da atualizacao, porque so quem mostra o problema
+ * precisa dele: quando o sistema barra o instalador, a saida e baixar o
+ * pacote em pasta da propria release.
+ */
+export const RELEASES_URL = 'https://github.com/faahpla/dangai/releases'
 
 /** O que a interface pode ver das configuracoes. A chave nunca volta inteira. */
 export interface PublicSettings {
