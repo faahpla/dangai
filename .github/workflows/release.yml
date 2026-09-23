@@ -1,0 +1,86 @@
+name: release
+
+# Empacota e publica a partir do GITHUB, e nao da maquina de casa.
+#
+# POR QUE ISTO EXISTE:
+#
+# O NSIS so consegue gerar o desinstalador EXECUTANDO um .exe que ele mesmo
+# acabou de compilar. Esse arquivo nasce sem assinatura e sem reputacao, e o
+# Smart App Control do Windows -- ligado em modo de bloqueio na maquina de casa
+# desde 23/09/2026 -- recusa roda-lo. O Node traduz a recusa como
+# `spawn UNKNOWN`, sem dizer o motivo, e o empacotamento morre sempre no mesmo
+# ponto:
+#
+#     spawn UNKNOWN   failedTask=build
+#       at WineVmManager.execWine
+#       at NsisTarget.computeScriptAndSignUninstaller
+#
+# O log do Windows e que conta a verdade (evento 3077, "Smart App Control
+# Block"): o executavel "did not meet the Enterprise signing level
+# requirements". Assinar resolveria, mas este projeto nao tem certificado.
+# Desligar a politica tambem resolveria, e ela so volta a ligar reinstalando o
+# Windows.
+#
+# O runner do GitHub nao tem essa politica. A build volta a rodar, e de quebra
+# deixa de depender do estado de UMA maquina.
+#
+# QUEM PUBLICA CONTINUA SENDO `scripts/release.mjs`, o mesmo de sempre. As
+# conferencias que ele carrega -- a tag existir no remoto e apontar para este
+# commit, o latest.yml ser desta versao e o tamanho nele bater com o do arquivo
+# -- nasceram de tres publicacoes perdidas e valem aqui como valiam la.
+
+on:
+  push:
+    tags: ['v*']
+
+  # A tag pode ja existir quando este arquivo nasce, e tag empurrada de novo nao
+  # dispara nada. Este gatilho cobre esse caso -- e qualquer republicacao.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag a publicar (ex: v1.31.0)'
+        required: true
+
+# Sem isto o `gh release create` morre com 403 -- e so depois de todo o tempo de
+# empacotamento, que e o pior lugar possivel para descobrir.
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      # A TAG, e nao o branch: o `release.mjs` exige que o HEAD seja o commit da
+      # tag, e o `package.json` que ele le tem que ser o daquele commit.
+      # `fetch-depth: 0` traz as tags junto, que o script resolve com `^{commit}`.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: empacotar e publicar
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Se quebrar no empacotamento, o que sobrou fica aqui para olhar. Sem
+      # isto o runner some e leva o builder-debug.yml junto.
+      - name: guardar os restos quando quebra
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-quebrada
+          path: |
+            release/latest.yml
+            release/builder-debug.yml
+          retention-days: 5
+          if-no-files-found: ignore
