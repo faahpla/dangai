@@ -15,7 +15,8 @@ import { Cards } from './Card'
 import { presentationFor, timingFor } from './Transition'
 
 /**
- * A composicao inteira: 1080x1920 @30fps.
+ * A composicao inteira, no formato do projeto: 1080x1920 no vertical,
+ * 1920x1080 no horizontal. As medidas chegam pelas props -- ver Root.
  *
  * Sem audio aqui de proposito. O Remotion entrega video puro e o FFmpeg cuida
  * da narracao, dos SFX e do loudnorm -- e onde o loudnorm de duas passadas

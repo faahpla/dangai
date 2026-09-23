@@ -8,8 +8,8 @@ import { useProject } from '@/store/project'
 import { Video } from '@/remotion/Video'
 
 /**
- * Preview 9:16 com o @remotion/player -- o MESMO componente Video que o render
- * usa. E o motivo de ter escolhido Remotion: o que aparece aqui e o que sai no
+ * Preview NO FORMATO DO PROJETO, com o @remotion/player -- o MESMO componente
+ * Video que o render usa. E o motivo de ter escolhido Remotion: o que aparece aqui e o que sai no
  * MP4, sem uma simulacao paralela para manter em dia.
  *
  * O plano vem de shared/plan, tambem o mesmo que o main usa no render.
@@ -142,7 +142,24 @@ export function Preview() {
 
 
   return (
-    <div className="relative aspect-[9/16] h-full shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+    /*
+     * A CAIXA TEM O FORMATO DO PROJETO, e o eixo que manda muda com ele.
+     *
+     * No vertical a altura manda e a largura sai do aspecto -- o preview em pe
+     * cabe folgado ao lado dos controles. No horizontal isso se inverteria de
+     * um jeito ruim: um 16:9 com a altura da coluna mediria quase setecentos
+     * pixels de largura e comeria a area de edicao inteira. Ali quem manda e a
+     * largura, presa numa faixa, e a altura sai dela.
+     */
+    <div
+      style={{ aspectRatio: `${quadro.width} / ${quadro.height}` }}
+      className={[
+        'relative shrink-0 overflow-hidden rounded-md border border-line bg-surface',
+        quadro.width > quadro.height
+          ? 'w-[clamp(320px,32vw,560px)] self-start'
+          : 'h-full',
+      ].join(' ')}
+    >
       {images.length > 0 && audio ? (
         <>
           <Player

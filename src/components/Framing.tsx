@@ -63,8 +63,8 @@ export function Framing({ image }: { image: ImageAsset }) {
   if (!adjustable) {
     return (
       <p className="text-[11px] leading-relaxed text-ink-3">
-        {image.kind === 'video' ? 'Este clipe' : 'Esta imagem'} ja e 9:16. Nao sobra nada para
-        enquadrar.
+        {image.kind === 'video' ? 'Este clipe' : 'Esta imagem'} ja tem o formato do video. Nao
+        sobra nada para enquadrar.
       </p>
     )
   }
