@@ -374,13 +374,14 @@ export type UpdateStatus =
   | { state: 'erro'; message: string }
 
 /**
- * Onde ficam as versoes publicadas.
+ * De onde vem as versoes.
  *
- * Mora aqui, junto do estado da atualizacao, porque so quem mostra o problema
- * precisa dele: quando o sistema barra o instalador, a saida e baixar o
- * pacote em pasta da propria release.
+ * Mora aqui, junto do estado da atualizacao, porque os dois lados precisam: o
+ * main monta a URL do pacote para baixar, e a tela monta o link da release
+ * para quando algo der errado.
  */
-export const RELEASES_URL = 'https://github.com/faahpla/dangai/releases'
+export const REPO = 'faahpla/dangai'
+export const RELEASES_URL = `https://github.com/${REPO}/releases`
 
 /** O que a interface pode ver das configuracoes. A chave nunca volta inteira. */
 export interface PublicSettings {

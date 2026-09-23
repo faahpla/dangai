@@ -1,6 +1,13 @@
 import type { BrowserWindow } from 'electron'
 import type { UpdateStatus } from '@shared/channels'
-import { IPC } from '@shared/channels'
+import { IPC, REPO } from '@shared/channels'
+import {
+  baixarPacote,
+  limparTrocaAntiga,
+  prepararPacote,
+  trocarEReabrir,
+  type PacotePronto,
+} from './troca'
 
 /**
  * Atualizacao automatica pelas releases do GitHub.
@@ -32,16 +39,15 @@ let enviarStatus: Enviar | null = null
 let ativo = false
 
 /**
- * A versao baixada e esperando, e se ele ja mandou instalar.
+ * O pacote ja baixado, desempacotado e conferido, esperando a troca.
  *
- * Os dois existem para distinguir DUAS falhas que chegam pelo mesmo evento
- * `error`: "nao consegui verificar" (rede, GitHub fora) e "o sistema nao
- * deixou instalar o que ja esta baixado". A segunda tem uma saida -- baixar o
- * pacote em pasta -- e a primeira nao, entao dizer as duas do mesmo jeito
- * manda o usuario procurar o problema no lugar errado.
+ * Null quer dizer que nao ha o que instalar -- nem que nunca houve versao
+ * nova, mas que nada esta pronto para tomar o lugar da instalacao atual.
  */
-let prontaPara: string | null = null
-let instalando = false
+let pronto: PacotePronto | null = null
+
+/** Impede duas preparacoes simultaneas do mesmo pacote. */
+let preparando = false
 
 /**
  * Carrega o electron-updater lidando com o embrulho de CJS.
@@ -78,23 +84,25 @@ export async function startUpdater(
   // de app-update.yml a cada abertura.
   if (!isPackaged) return
 
+  // Sobras de uma troca anterior somem agora, com o app recem-aberto e nada
+  // em uso.
+  limparTrocaAntiga()
+
   const { autoUpdater } = await carregar()
   ativo = true
 
-  autoUpdater.autoDownload = true
-  // Instalar sozinho ao fechar surpreenderia: a troca acontece quando o usuario
-  // manda, e nao quando ele so quis fechar a janela.
+  /*
+   * O electron-updater so PROCURA. Baixar e instalar sao nossos.
+   *
+   * Deixado ligado, ele baixaria o instalador NSIS de 213 MB para uma etapa
+   * que o Smart App Control recusa executar -- e recusaria de novo a cada
+   * versao. Quem baixa e o `troca.ts`, e o que ele baixa e a pasta pronta.
+   */
+  autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
 
   autoUpdater.on('update-available', (info) => {
-    enviar({ state: 'baixando', version: info.version, percent: 0 })
-  })
-  autoUpdater.on('download-progress', (progress) => {
-    enviar({ state: 'baixando', percent: progress.percent / 100 })
-  })
-  autoUpdater.on('update-downloaded', (info) => {
-    prontaPara = info.version
-    enviar({ state: 'pronta', version: info.version })
+    void prepararTroca(info.version, enviar)
   })
   autoUpdater.on('update-not-available', () => {
     enviar({ state: 'atual' })
@@ -103,20 +111,6 @@ export async function startUpdater(
     // Falha de atualizacao nunca vira erro na cara do usuario: ele esta editando
     // um video, e o app funciona perfeitamente na versao que ja tem.
     console.error('[updater]', err)
-
-    /*
-     * Erro DEPOIS de mandar instalar e sempre sobre instalar.
-     *
-     * O electron-updater manda tudo pelo mesmo `error`, entao sem esta
-     * distincao o "o Windows barrou o instalador" aparecia como "nao consegui
-     * verificar" -- e mandava procurar problema na internet, que estava
-     * perfeita: o arquivo ja tinha sido baixado e conferido.
-     */
-    if (instalando && prontaPara) {
-      instalando = false
-      enviar({ state: 'bloqueada', version: prontaPara, message: err.message })
-      return
-    }
     enviar({ state: 'erro', message: err.message })
   })
 
@@ -131,28 +125,64 @@ export async function startUpdater(
 }
 
 /**
- * Fecha e instala. So chamado por acao explicita do usuario.
+ * Baixa a pasta pronta e deixa tudo conferido, esperando o usuario mandar.
  *
- * `quitAndInstall` nao devolve o fracasso: quando ele consegue, o app morre
- * na linha seguinte; quando nao consegue, ele volta em silencio e a falha
- * chega depois, pelo evento `error`. A marca abaixo e o que liga um ao outro.
+ * Tudo o que pode dar errado acontece AQUI, com o app aberto e podendo
+ * mostrar o problema na tela. Depois da troca o app fecha, e a partir dali um
+ * erro nao tem mais onde aparecer.
+ */
+async function prepararTroca(version: string, enviar: Enviar): Promise<void> {
+  if (preparando || pronto?.version === version) return
+  preparando = true
+  try {
+    enviar({ state: 'baixando', version, percent: 0 })
+    const zip = await baixarPacote(version, REPO, (fracao) =>
+      enviar({ state: 'baixando', version, percent: fracao }),
+    )
+    pronto = await prepararPacote(zip, version)
+    enviar({ state: 'pronta', version })
+  } catch (err) {
+    console.error('[updater] preparar', err)
+    enviar({
+      state: 'erro',
+      message: err instanceof Error ? err.message : 'Nao consegui baixar a atualizacao.',
+    })
+  } finally {
+    preparando = false
+  }
+}
+
+/**
+ * Fecha o app e troca as pastas. So por acao explicita do usuario.
+ *
+ * Nao ha instalador envolvido: o que roda depois daqui e um .bat que espera
+ * este processo morrer, renomeia duas pastas e reabre o app. Ver `troca.ts`
+ * para o porque de nao ser o `quitAndInstall` do electron-updater.
  */
 export async function installUpdate(): Promise<void> {
-  const { autoUpdater } = await carregar()
-  instalando = true
+  if (!pronto) {
+    enviarStatus?.({
+      state: 'erro',
+      message: 'Nao ha atualizacao preparada. Procure de novo.',
+    })
+    return
+  }
+
   try {
-    autoUpdater.quitAndInstall()
+    trocarEReabrir(pronto)
   } catch (err) {
-    // Alguns fracassos sao sincronos. Sem este ramo, um deles deixaria a
-    // marca ligada e o proximo erro de rede sairia como "o Windows barrou".
-    instalando = false
-    if (enviarStatus && prontaPara) {
-      enviarStatus({
-        state: 'bloqueada',
-        version: prontaPara,
-        message: err instanceof Error ? err.message : String(err),
-      })
-    }
+    /*
+     * Se ate a troca por script for barrada, ainda ha uma saida -- e ela e a
+     * mesma que o chip vermelho ensina: baixar o pacote da release e trocar
+     * os arquivos na mao. Por isso o estado e `bloqueada` e nao `erro`: um
+     * manda esperar, o outro manda fazer.
+     */
+    console.error('[updater] trocar', err)
+    enviarStatus?.({
+      state: 'bloqueada',
+      version: pronto.version,
+      message: err instanceof Error ? err.message : String(err),
+    })
   }
 }
 
