@@ -56,7 +56,27 @@ function registrar(child: ReturnType<typeof spawn>): void {
   child.on('close', () => vivos.delete(child))
 }
 
-/** Mata tudo que ainda esta rodando. Chamado ao fechar o app. */
+/**
+ * As transcricoes pendentes, para que cancelar RESOLVA cada uma delas.
+ *
+ * Matar o processo nao basta. Quando nao ha processo para matar -- o cancelar
+ * caiu entre duas etapas, ou durante o download do modelo -- a promessa fica
+ * pendurada para sempre. E como a fila e serial, TODA transcricao seguinte
+ * espera atras dela em silencio: sem processo rodando, sem CPU, e sem mensagem
+ * nova na tela, entao a interface segue mostrando o ultimo aviso para sempre.
+ *
+ * O sintoma disso e cruel justamente por ser silencioso -- parece que o app
+ * travou numa etapa que ja terminou.
+ */
+const pendentes = new Set<(motivo: Error) => void>()
+
+/**
+ * Mata o que estiver rodando E DESTRAVA A FILA.
+ *
+ * Chamado ao fechar o app e pelo botao de cancelar. Depois daqui nao sobra
+ * nada pendurado: nem processo, nem promessa, nem lugar na fila. A proxima
+ * transcricao comeca do zero, e nao atras de um fantasma.
+ */
 export function encerrarWhisper(): void {
   for (const child of vivos) {
     try {
@@ -66,6 +86,15 @@ export function encerrarWhisper(): void {
     }
   }
   vivos.clear()
+
+  const aguardando = [...pendentes]
+  pendentes.clear()
+  for (const desistir of aguardando) desistir(new Error('Transcricao cancelada'))
+
+  // A fila recomeca limpa, e o registro de compartilhamento tambem: uma entrada
+  // que nunca resolve nao pode continuar recebendo caronas.
+  fila = Promise.resolve()
+  emAndamento.clear()
 }
 
 let baseDir: string | null = null
@@ -148,8 +177,21 @@ export function transcribe(
     for (const ouvinte of ouvintes) ouvinte(message)
   }
 
-  const promessa = enfileirar(() =>
-    transcrever(audioPath, model, avisarTodos, vocabulary),
+  const promessa = enfileirar(
+    () =>
+      /*
+       * A tarefa corre contra um DESISTIR.
+       *
+       * Sem isso, cancelar so mata processo -- e uma etapa sem processo nenhum
+       * deixaria esta promessa pendurada, travando a fila inteira atras dela.
+       */
+      new Promise<Transcript | null>((resolve, reject) => {
+        const desistir = (motivo: Error): void => reject(motivo)
+        pendentes.add(desistir)
+        transcrever(audioPath, model, avisarTodos, vocabulary)
+          .then(resolve, reject)
+          .finally(() => pendentes.delete(desistir))
+      }),
   ).finally(() => emAndamento.delete(chave))
 
   emAndamento.set(chave, { promessa, ouvintes })
