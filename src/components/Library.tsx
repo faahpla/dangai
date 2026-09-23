@@ -119,7 +119,11 @@ export function Library() {
   const [personagem, setPersonagem] = useState<string | null>(null)
   const [minSec, setMinSec] = useState(0)
   const [maxSec, setMaxSec] = useState(0)
-  const [escolhidos, setEscolhidos] = useState<string[]>([])
+  // A fila vive no store, e nao aqui: e ela que vai para o .dangai.
+  const escolhidos = useProject((s) => s.escolhidos)
+  const alternarEscolhido = useProject((s) => s.alternarEscolhido)
+  const removerEscolhido = useProject((s) => s.removerEscolhido)
+  const limparEscolhidos = useProject((s) => s.limparEscolhidos)
   const [apelidosAbertos, setApelidosAbertos] = useState(false)
   const [soFavoritos, setSoFavoritos] = useState(false)
 
@@ -175,17 +179,25 @@ export function Library() {
   }, [open, openLibrary, porRoteiro, blocos, activeBlock, blockClips, setActiveBlock])
 
   /*
-   * Fechar zera tudo: escolha e filtros.
+   * Fechar zera os FILTROS. A escolha fica.
    *
    * A tela nao desmonta quando fecha -- ela devolve null e o estado sobreviveria
    * junto. Reabrir com o "ichigo" que o usuario digitou meia hora antes esconde
-   * o acervo inteiro atras de um filtro que ele nao lembra de ter posto, e a
-   * selecao seria pior ainda: cenas entrando no projeto sem ele ter marcado
-   * nesta visita.
+   * o acervo inteiro atras de um filtro que ele nao lembra de ter posto, e por
+   * isso os filtros continuam morrendo aqui.
+   *
+   * A SELECAO DEIXOU DE MORRER. Ela morria pelo medo de "cenas entrando no
+   * projeto sem ele ter marcado nesta visita" -- medo razoavel quando a lista
+   * era invisivel e so dava para desmarcar caçando o cartao na grade. Com a
+   * fita de marcadas embaixo, o que esta escolhido aparece inteiro e sai com
+   * um clique, entao esconder deixou de proteger de alguma coisa.
+   *
+   * E, principalmente, ele pediu o contrario: marcar as cenas de um video leva
+   * a tarde, e perder isso por ter fechado a tela era o custo mais caro do
+   * app. Agora a escolha e do PROJETO -- vai no .dangai e volta com ele.
    */
   useEffect(() => {
     if (open) return
-    setEscolhidos([])
     setApelidosAbertos(false)
     setTexto('')
     setAnime(null)
@@ -363,6 +375,18 @@ export function Library() {
     return fora
   }, [porRoteiro, library, blockClips, activeBlock])
 
+  /**
+   * Id -> clipe, para a fita de marcadas montar sem varrer o acervo por item.
+   *
+   * Sao ~20 mil clipes e a fita redesenha a cada marcacao; um `find` por cena
+   * marcada transformaria um clique numa varredura de centenas de milhares de
+   * comparacoes.
+   */
+  const porIdClip = useMemo(
+    () => new Map((library?.clips ?? []).map((c) => [c.id, c])),
+    [library],
+  )
+
   /*
    * As cenas mais provaveis para o trecho aberto.
    *
@@ -398,9 +422,7 @@ export function Library() {
       if (path) toggleBlockClip(path)
       return
     }
-    setEscolhidos((atual) =>
-      atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id],
-    )
+    alternarEscolhido(id)
   }
 
   /** Ids marcados na frase aberta, para a grade poder numerar os cartoes. */
@@ -429,7 +451,7 @@ export function Library() {
     const caminhos = escolhidos
       .map((id) => porId.get(id))
       .filter((p): p is string => p !== undefined)
-    setEscolhidos([])
+    limparEscolhidos()
     void addFromLibrary(caminhos, parte)
   }
 
@@ -712,6 +734,24 @@ export function Library() {
         <Nicknames series={anime} onClose={() => setApelidosAbertos(false)} />
       )}
 
+      {/*
+        A fita do que esta marcado, logo acima do rodape.
+
+        Em "substituir" ela nao aparece: ali nao ha fila nenhuma -- o proximo
+        clique responde uma pergunta e fecha a tela.
+      */}
+      {replaceTarget === null && (
+        <Marcadas
+          clips={(porRoteiro ? marcadosNaFrase() : escolhidos)
+            .map((id) => porIdClip.get(id))
+            .filter((c): c is LibraryClip => c !== undefined)}
+          rotulo={porRoteiro ? 'Nesta frase' : 'Na fila'}
+          onRemover={(clip) =>
+            porRoteiro ? toggleBlockClip(clip.path) : removerEscolhido(clip.id)
+          }
+        />
+      )}
+
       {replaceTarget !== null ? null : porRoteiro ? (
         <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
           <span className="tnum text-[12px] text-ink-2">
@@ -761,7 +801,7 @@ export function Library() {
             <button
               type="button"
               disabled={escolhidos.length === 0}
-              onClick={() => setEscolhidos([])}
+              onClick={() => limparEscolhidos()}
               className="rounded-sm px-2.5 py-1.5 text-[12px] text-ink-3 hover:text-ink disabled:opacity-40"
             >
               Limpar
@@ -1570,6 +1610,68 @@ function Cartao({
         )}
       </div>
 
+    </div>
+  )
+}
+
+/**
+ * A FITA DO QUE ESTA MARCADO: a ordem inteira, e a saida.
+ *
+ * Desmarcar so existia de um jeito -- achar o cartao na grade e clicar nele de
+ * novo. Entre 20 mil cenas, depois de ter trocado de filtro ou de episodio,
+ * isso e uma busca e nao um clique, e as vezes o cartao nem esta mais na tela.
+ * Palavras dele: "quero a opcao de remover um clipe selecionado, nao so tendo
+ * que clicar manualmente no clipe novamente".
+ *
+ * E ela mostra a ORDEM de uma vez so, que e o que decide o video: a sequencia
+ * em que as cenas entram (sem roteiro) ou como o trecho se reparte entre elas
+ * (com roteiro). O numero ja existia, mas no canto de cartoes espalhados pela
+ * grade -- dava para saber que uma cena era a quarta, nao para ler a fila.
+ */
+function Marcadas({
+  clips,
+  rotulo,
+  onRemover,
+}: {
+  clips: readonly LibraryClip[]
+  rotulo: string
+  onRemover: (clip: LibraryClip) => void
+}) {
+  if (clips.length === 0) return null
+
+  return (
+    <div className="flex shrink-0 items-center gap-3 border-t border-line px-5 py-2">
+      <span className="shrink-0 text-[11px] text-ink-3">
+        {rotulo} <span className="tnum text-ink-2">{clips.length}</span>
+      </span>
+      {/*
+        Rola na horizontal em vez de quebrar linha: o rodape tem altura fixa, e
+        uma fita que cresce para cima comeria a grade a cada cena marcada.
+      */}
+      <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto">
+        {clips.map((clip, i) => (
+          // A chave leva a posicao junto porque a mesma cena pode aparecer
+          // duas vezes no trecho -- duplicar uma cena e um gesto que existe.
+          <div
+            key={`${clip.id}-${i}`}
+            title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s`}
+            className="group relative shrink-0 overflow-hidden rounded-sm border border-line"
+          >
+            <img src={clip.thumbUrl} alt="" className="h-[40px] w-[71px] object-cover" />
+            <span className="tnum absolute left-0 top-0 bg-bg/75 px-1 text-[10px] text-ink">
+              {i + 1}
+            </span>
+            <button
+              type="button"
+              onClick={() => onRemover(clip)}
+              title="Tirar da fila"
+              className="absolute inset-0 grid place-items-center bg-bg/70 opacity-0 transition-opacity duration-150 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <X size={14} strokeWidth={2} className="text-danger" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -76,6 +76,72 @@ const savedImageSchema = referenceSchema.extend({
 export type SavedImage = z.infer<typeof savedImageSchema>
 
 /**
+ * A escolha EM ANDAMENTO na Biblioteca.
+ *
+ * Marcar as cenas de um video e o trabalho mais longo do app -- sao ~39
+ * trechos de roteiro e uma biblioteca de 20 mil clipes -- e ate aqui ele nao
+ * sobrevivia a nada: a lista morava dentro do componente, entao fechar a
+ * Biblioteca, salvar o projeto e reabrir jogavam tudo fora. Pedido dele:
+ * "quando eu salvar enquanto estiver selecionando cenas na biblioteca eu
+ * quero e preciso que salve a ordem que selecionei os clipes".
+ *
+ * A ORDEM E O CONTEUDO. Ela decide em que sequencia as cenas entram no video
+ * (uso sem roteiro) e como o trecho se reparte entre elas (uso com roteiro) --
+ * e no modo teoria ela e a unica informacao que existe, porque a ordem do
+ * argumento nao esta em nenhuma ordenacao do acervo. Guardar o conjunto sem a
+ * ordem seria guardar quase nada.
+ */
+const bibliotecaSchema = z
+  .object({
+    /**
+     * Uso SEM roteiro: ids de clipe, na ordem de clique.
+     *
+     * Id e nao caminho absoluto -- o id da biblioteca e o caminho relativo a
+     * raiz, que continua valendo se ele mover a pasta do acervo inteira.
+     */
+    escolhidos: z.array(z.string()).default([]),
+    /**
+     * As frases do roteiro, como estavam quando ele marcou.
+     *
+     * Sem isto o resto nao quer dizer nada: `porBloco` e indexado por posicao
+     * da frase, e as frases nascem de uma passada do Whisper que nao roda de
+     * novo ao abrir o projeto. Guardadas, os indices continuam apontando para
+     * as mesmas frases; sem elas, apontariam para o vazio.
+     */
+    blocos: z
+      .array(
+        z.object({
+          text: z.string(),
+          start: z.number(),
+          end: z.number(),
+          sentence: z.number().int().nonnegative(),
+        }),
+      )
+      .nullable()
+      .default(null),
+    /** frase -> caminhos das cenas dela, na ordem em que ele marcou. */
+    porBloco: z.record(z.string(), z.array(z.string())).default({}),
+    /** Quanto cada cena marcada pesa dentro do trecho. */
+    pesos: z.record(z.string(), z.array(z.number())).default({}),
+    /** Posicoes unidas com a seguinte, em tela dividida. */
+    unioes: z.record(z.string(), z.array(z.number().int())).default({}),
+    /** Onde ele puxou cada fronteira, em indice de palavra. */
+    cortes: z.record(z.string(), z.array(z.number().int())).default({}),
+    /** Qual frase estava aberta, para ele voltar onde parou. */
+    ativo: z.number().int().nonnegative().nullable().default(null),
+  })
+  .default({
+    escolhidos: [],
+    blocos: null,
+    porBloco: {},
+    pesos: {},
+    unioes: {},
+    cortes: {},
+    ativo: null,
+  })
+export type BibliotecaSalva = z.infer<typeof bibliotecaSchema>
+
+/**
  * Campo novo entra sempre como opcional com padrao.
  *
  * Um projeto salvo hoje precisa continuar abrindo depois de qualquer versao
@@ -162,6 +228,11 @@ export const projectFileSchema = z.object({
   endSec: z.number().default(END_CARD_SEC_DEFAULT),
   /** Textos de publicacao ja gerados. Salvos para nao gastar outra chamada. */
   metadata: metadataSchema.nullable().default(null),
+  /**
+   * A escolha em andamento na Biblioteca. Default vazio: projeto salvo antes
+   * disto reabre sem selecao, que e exatamente como ele foi salvo.
+   */
+  biblioteca: bibliotecaSchema,
 })
 export type ProjectFile = z.infer<typeof projectFileSchema>
 

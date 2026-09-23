@@ -563,6 +563,21 @@ export interface ProjectState {
   setActiveBlock: (index: number | null) => void
   /** Marca ou desmarca uma cena na frase aberta. */
   toggleBlockClip: (path: string) => void
+  /**
+   * As cenas marcadas na Biblioteca SEM roteiro, por id, na ordem de clique.
+   *
+   * Vive aqui e nao dentro do componente porque precisa ser salva: fechar a
+   * Biblioteca ou salvar o projeto no meio da escolha jogava fora um trabalho
+   * que leva a tarde inteira. A ordem e o conteudo -- e ela que decide a
+   * sequencia em que as cenas entram no video.
+   */
+  escolhidos: string[]
+  /** Marca ou desmarca uma cena. Marcar poe no FIM da fila. */
+  alternarEscolhido: (id: string) => void
+  /** Tira uma cena da fila sem precisar acha-la na grade de novo. */
+  removerEscolhido: (id: string) => void
+  /** Esvazia a fila. */
+  limparEscolhidos: () => void
   /** Troca a ordem das cenas dentro de uma frase. */
   reorderBlockClips: (blockIndex: number, paths: readonly string[]) => void
   /** Cicla o peso de uma cena da fita: 1x, 2x, 3x e volta. */
@@ -912,6 +927,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   blockWeights: {},
   blockSplits: {},
   blockCuts: {},
+  escolhidos: [],
   libraryBusy: null,
   libraryError: null,
   nicknames: {},
@@ -1356,8 +1372,49 @@ export const useProject = create<ProjectState>((set, get) => ({
       blockWeights: outrosPesos,
       blockSplits: outrasUnioes,
       blockCuts: outrosCortes,
+      /*
+       * Marcar cena AGORA suja o projeto.
+       *
+       * Nao sujava antes, e estava certo: a marcacao nao ia para o arquivo,
+       * entao nao havia o que salvar. Agora que ela vai, nao sujar seria pior
+       * que o problema original -- ele fecharia o app sem nenhuma pergunta e
+       * perderia a tarde de marcacao achando que nada tinha mudado.
+       */
+      projectDirty: true,
     })
   },
+
+  /*
+   * Marcar poe no FIM da fila, sempre.
+   *
+   * E o que faz a ordem ser a de clique e nao a da grade -- em video de teoria
+   * a ordem e a do argumento, que nenhuma ordenacao do acervo conhece.
+   */
+  alternarEscolhido: (id) =>
+    set((state) => ({
+      escolhidos: state.escolhidos.includes(id)
+        ? state.escolhidos.filter((x) => x !== id)
+        : [...state.escolhidos, id],
+      // Suja o projeto: a fila vai para o arquivo, e fechar sem aviso depois
+      // de marcar quarenta cenas seria perder tudo em silencio.
+      projectDirty: true,
+    })),
+
+  /*
+   * Tirar da fila sem voltar na grade.
+   *
+   * Desmarcar so existia clicando no cartao de novo -- e achar de novo um
+   * cartao entre milhares, depois de ter mudado de filtro, e uma busca. Ele
+   * pediu exatamente isso: "quero a opcao de remover um clipe selecionado, nao
+   * so tendo que clicar manualmente no clipe novamente".
+   */
+  removerEscolhido: (id) =>
+    set((state) => ({
+      escolhidos: state.escolhidos.filter((x) => x !== id),
+      projectDirty: true,
+    })),
+
+  limparEscolhidos: () => set({ escolhidos: [], projectDirty: true }),
 
   reorderBlockClips: (blockIndex, paths) => {
     /*
@@ -3074,6 +3131,9 @@ export const useProject = create<ProjectState>((set, get) => ({
       blockWeights: {},
       blockSplits: {},
       blockCuts: {},
+      // A fila do uso sem roteiro some pelo mesmo motivo: sao cenas escolhidas
+      // para ESTE video, e nada nelas quer dizer algo no proximo.
+      escolhidos: [],
       /*
        * A faixa de SFX tambem esvazia.
        *
@@ -3160,6 +3220,23 @@ export const useProject = create<ProjectState>((set, get) => ({
       endText: state.endText,
       endSec: state.endSec,
       metadata: state.metadata,
+      /*
+       * A ESCOLHA EM ANDAMENTO na Biblioteca.
+       *
+       * As frases vao junto de proposito: `porBloco` e indexado por posicao da
+       * frase, e as frases nascem de uma passada do Whisper que NAO roda de
+       * novo ao abrir o projeto. Salvar os indices sem elas seria salvar
+       * ponteiros para o vazio.
+       */
+      biblioteca: {
+        escolhidos: state.escolhidos,
+        blocos: state.scriptBlocks,
+        porBloco: state.blockClips,
+        pesos: state.blockWeights,
+        unioes: state.blockSplits,
+        cortes: state.blockCuts,
+        ativo: state.activeBlock,
+      },
     }
   },
 
@@ -3436,6 +3513,27 @@ async function applyProjectFile(
       render: null,
       lastOutput: null,
       aiNote: null,
+
+      /*
+       * A ESCOLHA DA BIBLIOTECA VOLTA COMO ESTAVA -- com a ordem.
+       *
+       * E a unica coisa aqui que nao e estado de sessao: as outras linhas
+       * deste bloco zeram de proposito, porque o render anterior e o erro
+       * anterior nao sao deste projeto. A selecao E deste projeto, e e o
+       * trabalho mais longo que ele faz no app.
+       *
+       * As frases voltam do arquivo em vez de serem recalculadas. Recalcular
+       * pediria outra passada do Whisper ao abrir, e -- pior -- uma passada
+       * que devolvesse uma frase a mais ou a menos deslocaria TODAS as
+       * marcacoes em silencio, porque elas sao indexadas por posicao.
+       */
+      escolhidos: file.biblioteca.escolhidos,
+      scriptBlocks: file.biblioteca.blocos,
+      blockClips: file.biblioteca.porBloco,
+      blockWeights: file.biblioteca.pesos,
+      blockSplits: file.biblioteca.unioes,
+      blockCuts: file.biblioteca.cortes,
+      activeBlock: file.biblioteca.ativo,
       // O aviso do roteiro sai da analise, que nao roda de novo aqui. Manter o
       // texto antigo seria afirmar um resultado que esta sessao nao mediu.
       scriptNote: null,

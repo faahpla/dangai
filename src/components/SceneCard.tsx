@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Film, ImagePlus, Library as LibraryIcon, Scissors } from 'lucide-react'
 import { isVisual } from '@shared/channels'
-import { type ImageAsset, type Scene } from '@shared/contract'
+import { VIDEO_FPS, type ImageAsset, type Scene } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 import { Chip, Field } from './painel'
 
@@ -224,9 +224,26 @@ export function SceneCard() {
  * padrao ele ta so no inicio certo?". Antes disso a unica saida era procurar
  * outra cena.
  *
- * So aparece em clipe que SOBRA. Print nao tem de onde partir, e clipe que ja
- * cabe justo nao tem para onde correr -- oferecer um controle que nao muda nada
- * e pior que nao oferecer.
+ * O SLIDER VARRE O CLIPE INTEIRO, e nao so a parte que cabe no bloco.
+ *
+ * Ate aqui ele ia de zero ate `duracao do clipe - duracao do bloco`, para
+ * garantir que o bloco nunca ficasse sem imagem. A intencao era boa e o
+ * resultado, medido no projeto dele (Mushoku S03E13, 37 cenas), era outro:
+ *
+ *   cena 3   bloco 1,03s   clipe 1,31s   o slider alcancava 22% do clipe
+ *   cena 4   bloco 0,84s   clipe 4,50s   alcancava 81%
+ *   cena 1   bloco 1,11s   clipe 0,81s   NAO APARECIA
+ *
+ * Os clipes do AnCut sao curtos -- 0,65s a 4,5s neste episodio -- entao o
+ * quanto do clipe dava para alcancar mudava de cena para cena sem nada
+ * explicar, e em 2 de 12 cenas o controle sumia. Palavras dele: "o slider nao
+ * condiz com o clipe inteiro". Nao condizia mesmo.
+ *
+ * Agora ele alcanca o clipe todo. Passar do ponto em que o bloco deixa de ser
+ * coberto nao quebra nada -- o render ja congela o ultimo frame nesse caso, e
+ * sempre congelou. O que faltava era DIZER: o rodape avisa quantos segundos
+ * congelam, e o aviso aparece tambem quando o clipe ja e mais curto que o
+ * bloco, que antes congelava calado.
  *
  * Serve as DUAS metades da tela dividida. Ate a v1.27 a de baixo partia sempre
  * do zero e nao tinha controle nenhum -- "eu tenho um acesso muito limitado a
@@ -252,10 +269,19 @@ function PontoDeEntrada({
 
   const bloco = scene.end - scene.start
   const total = image.durationSec ?? 0
-  const sobra = total - bloco
-  if (image.kind !== 'video' || sobra <= 0.05) return null
 
-  const inicio = Math.min(scene[campo] ?? 0, sobra)
+  /*
+   * Ate onde o ponto de entrada pode ir: o clipe inteiro menos um frame.
+   *
+   * Um frame, e nao zero: comecar exatamente no fim deixaria o bloco sem
+   * imagem nenhuma para congelar.
+   */
+  const ultimo = Math.max(total - 1 / VIDEO_FPS, 0)
+  if (image.kind !== 'video' || ultimo <= 0.05) return null
+
+  const inicio = Math.min(scene[campo] ?? 0, ultimo)
+  /** Quanto do bloco fica sem clipe, e portanto congelado no ultimo frame. */
+  const congela = Math.max(inicio + bloco - total, 0)
 
   return (
     <Field label={label}>
@@ -287,7 +313,7 @@ function PontoDeEntrada({
         <input
           type="range"
           min={0}
-          max={Math.round(sobra * 10)}
+          max={Math.round(ultimo * 10)}
           value={Math.round(inicio * 10)}
           onChange={(event) => {
             const alvo = Number(event.target.value) / 10
@@ -306,8 +332,16 @@ function PontoDeEntrada({
           aria-label="De que ponto do clipe este bloco comeca"
         />
         <span className="tnum text-[11px] text-ink-2">
-          {inicio.toFixed(1)}s – {(inicio + bloco).toFixed(1)}s
+          {inicio.toFixed(1)}s – {Math.min(inicio + bloco, total).toFixed(1)}s
           <span className="text-ink-3"> de {total.toFixed(1)}s</span>
+          {/*
+            O congelamento sempre existiu; o que nao existia era o aviso.
+            Duas das doze cenas medidas no projeto dele congelavam ~0,3s sem
+            nada na tela dizer -- e descobrir isso exigia renderizar.
+          */}
+          {congela > 0.05 && (
+            <span className="text-accent"> · congela {congela.toFixed(1)}s no fim</span>
+          )}
         </span>
       </div>
     </Field>
