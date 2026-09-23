@@ -1657,16 +1657,31 @@ export const useProject = create<ProjectState>((set, get) => ({
     }
 
     /*
-     * As cenas se costuram: cada uma comeca onde a anterior acabou.
+     * As cenas se costuram, e a EMENDA CAI NO COMECO DA FALA SEGUINTE.
      *
-     * Frase sem cena nenhuma deixaria um VAO -- e vao no plano e tela preta no
-     * video. Costurando, o tempo da frase pulada e absorvido pela cena que vem
-     * antes dela, que so fica um pouco mais longa. O primeiro bloco comeca em
-     * zero e o ultimo fecha com a narracao, pelo mesmo motivo nas pontas.
+     * Vao no plano e tela preta no video, entao alguem tem que ficar com a
+     * pausa entre uma frase e outra. Ate aqui quem ficava era a cena NOVA: ela
+     * comecava onde a anterior tinha acabado, ou seja, no silencio, antes de a
+     * frase dela comecar. Era isso que fazia "o clipe nao iniciar aonde estava
+     * marcado pelo roteiro" -- a Biblioteca prometia a cena casada com a frase,
+     * e o video trocava a imagem antes de a frase comecar.
+     *
+     * MEDIDO no projeto dele (Ram x Lye, 42 trechos, 272 palavras): 1,98s de
+     * pausa somada em 41 emendas, mediana 0,030s, nove emendas acima de 0,10s
+     * e a maior com 0,240s -- quase seis frames de imagem nova em cima do
+     * silencio da frase anterior.
+     *
+     * Agora quem segura a pausa e a cena ANTERIOR, que so fica um pouco mais
+     * longa. A imagem troca quando a fala troca, que e onde o olho espera. O
+     * mesmo vale para frase sem cena nenhuma: o tempo dela inteiro e absorvido
+     * por quem vem antes. As pontas seguem presas ao zero e ao fim da narracao.
      */
     const blocos = spans.map((s, i) => ({
-      start: i === 0 ? 0 : spans[i - 1]!.end,
-      end: i === spans.length - 1 ? Math.max(s.end, audio.durationSec) : s.end,
+      start: i === 0 ? 0 : s.start,
+      end:
+        i === spans.length - 1
+          ? Math.max(s.end, audio.durationSec)
+          : spans[i + 1]!.start,
       text: '',
       characters: [],
       candidates: [],

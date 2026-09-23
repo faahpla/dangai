@@ -271,6 +271,21 @@ function SfxPreview() {
 }
 
 /**
+ * Acima disto so um salto recupera -- travada de verdade, nao deriva.
+ *
+ * Fica ACIMA da tolerancia velha de 0,25s de proposito: ali ela era o unico
+ * mecanismo e deixava passar tudo que fosse menor; aqui ela e a ultima linha,
+ * porque a deriva pequena ja e corrigida pela velocidade.
+ */
+const SALTO_SEC = 0.35
+
+/** Quanto a velocidade pode desviar de 1. Dois por cento nao se ouve numa voz. */
+const DESVIO_MAX = 0.02
+
+/** O quao forte a deriva puxa a velocidade. */
+const GANHO = 0.6
+
+/**
  * Elemento de audio cru, sincronizado com o playhead do store.
  *
  * Serve a narracao e a musica. A musica repete (`loop`) porque a faixa costuma
@@ -292,9 +307,22 @@ function SyncedAudio({
   useEffect(() => {
     const element = audioRef.current
     if (!element) return
-    if (playing) void element.play().catch(() => undefined)
-    else element.pause()
-  }, [playing])
+    if (playing) {
+      /*
+       * COMECAR TOCANDO DE ONDE A AGULHA ESTA, e nao de onde a faixa parou.
+       *
+       * Sem esta linha o play retomava do proprio `currentTime` do elemento,
+       * que a tolerancia abaixo deixava ficar para tras -- entao a narracao
+       * comecava dessincronizada e assim seguia, porque nada dentro da
+       * tolerancia corrigia.
+       */
+      if (!loop) element.currentTime = useProject.getState().playhead
+      void element.play().catch(() => undefined)
+    } else {
+      element.pause()
+      element.playbackRate = 1
+    }
+  }, [playing, loop])
 
   useEffect(() => {
     const element = audioRef.current
@@ -302,20 +330,54 @@ function SyncedAudio({
     element.volume = Math.min(Math.max(volume, 0), 1)
   }, [volume])
 
+  /*
+   * A NARRACAO PERSEGUE A AGULHA. Antes ela so era reposicionada quando passava
+   * de 250ms de diferenca -- seis frames -- e dentro disso ninguem corrigia
+   * nada. Era o bastante para ouvir uma palavra e ver a onda de outra, e
+   * julgar corte por ouvido virava adivinhacao: "o audio no preview as vezes
+   * nao bate com a waveform".
+   *
+   * A tolerancia existia por um motivo real: escrever `currentTime` a cada
+   * frame durante a reproducao pica o som. A saida e nao usar a mesma ferramenta
+   * para os dois casos.
+   *
+   * Com loop ligado o currentTime volta para zero sozinho a cada repeticao, e
+   * comparar com o playhead traria a faixa de volta ao inicio do video --
+   * entao a musica continua fora desta conta.
+   */
   useEffect(() => {
     const element = audioRef.current
-    if (!element) return
-    // Só corrige quando saiu de sincronia de verdade, senao o proprio play
-    // dispara reposicionamento a cada frame.
-    //
-    // Com loop ligado o currentTime volta para zero sozinho a cada repeticao, e
-    // comparar com o playhead traria a faixa de volta ao inicio do video --
-    // entao a musica so e posicionada quando nao repete.
-    if (loop) return
-    if (Math.abs(element.currentTime - playhead) > 0.25) {
-      element.currentTime = playhead
+    if (!element || loop) return
+
+    const deriva = element.currentTime - playhead
+
+    /*
+     * PARADO, a posicao e exata. Nao ha reproducao para picar, e e justamente
+     * aqui que ele arrasta a agulha procurando a palavra -- errar por 200ms
+     * neste momento e errar no unico momento que importa.
+     */
+    if (!playing) {
+      if (Math.abs(deriva) > 0.005) element.currentTime = playhead
+      return
     }
-  }, [playhead, loop])
+
+    // Saiu de vez (travou, o sistema engasgou): so um salto recupera.
+    if (Math.abs(deriva) > SALTO_SEC) {
+      element.currentTime = playhead
+      element.playbackRate = 1
+      return
+    }
+
+    /*
+     * TOCANDO, a correcao e pela VELOCIDADE e nao por salto.
+     *
+     * Dois por cento em cima ou embaixo nao se ouve numa voz -- e um salto, em
+     * compensacao, se ouve sempre. Assim a faixa volta ao lugar sozinha, sem um
+     * clique no meio da narracao.
+     */
+    const ajuste = Math.min(Math.max(-deriva * GANHO, -DESVIO_MAX), DESVIO_MAX)
+    element.playbackRate = 1 + ajuste
+  }, [playhead, playing, loop])
 
   return <audio ref={audioRef} src={url} preload="auto" loop={loop} className="hidden" />
 }
