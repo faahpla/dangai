@@ -97,8 +97,12 @@ jobs:
       # FICA FORA DO latest.yml de proposito. O updater do Windows so sabe
       # instalar pelo NSIS, e o latest.yml e o unico arquivo do pacote que,
       # errado, deixa TODO MUNDO sem atualizacao -- nao e onde se experimenta.
+      #
+      # O ENSAIO MONTA O ZIP e para antes de publicar. So o `gh upload` fica
+      # sem prova, e e a linha que menos pode dar errado -- ja o 7z, o caminho
+      # e o diretorio de trabalho sao justamente o que quebra num runner que
+      # nao e a sua maquina, e isso da para exercitar sem gastar uma release.
       - name: pacote em pasta, para quem o instalador e barrado
-        if: ${{ !inputs.dry_run }}
         shell: pwsh
         run: |
           $versao = (Get-Content package.json -Raw | ConvertFrom-Json).version
@@ -107,6 +111,11 @@ jobs:
           7z a -tzip -mx=5 $zip *
           if ($LASTEXITCODE -ne 0) { throw "7z saiu com $LASTEXITCODE" }
           Pop-Location
+          "{0:N0} MB" -f ((Get-Item $zip).Length / 1MB)
+          if ('${{ inputs.dry_run }}' -eq 'true') {
+            'ensaio -- zip montado, nao publicado'
+            exit 0
+          }
           gh release upload "v$versao" $zip --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
