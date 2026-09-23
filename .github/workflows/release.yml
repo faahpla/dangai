@@ -40,6 +40,12 @@ on:
       tag:
         description: 'Tag a publicar (ex: v1.31.0)'
         required: true
+      # Monta e confere sem publicar nada. Serve para provar o caminho depois de
+      # mexer no workflow, sem gastar uma release de verdade para descobrir.
+      dry_run:
+        description: 'So ensaiar: empacota e confere, sem publicar'
+        type: boolean
+        default: false
 
 # Sem isto o `gh release create` morre com 403 -- e so depois de todo o tempo de
 # empacotamento, que e o pior lugar possivel para descobrir.
@@ -55,12 +61,12 @@ jobs:
       # A TAG, e nao o branch: o `release.mjs` exige que o HEAD seja o commit da
       # tag, e o `package.json` que ele le tem que ser o daquele commit.
       # `fetch-depth: 0` traz as tags junto, que o script resolve com `^{commit}`.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -68,7 +74,7 @@ jobs:
       - run: npm ci
 
       - name: empacotar e publicar
-        run: npm run release
+        run: npm run release ${{ inputs.dry_run && '-- --dry-run' || '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -76,7 +82,7 @@ jobs:
       # isto o runner some e leva o builder-debug.yml junto.
       - name: guardar os restos quando quebra
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-quebrada
           path: |
