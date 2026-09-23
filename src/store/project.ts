@@ -69,6 +69,7 @@ import {
 import {
   buildCaptions,
   imagemDaMetade,
+  reordenarBlocos,
   MIN_SCENE_SEC,
   planEqualSplit,
   sfxCuesFor,
@@ -1699,12 +1700,47 @@ export const useProject = create<ProjectState>((set, get) => ({
     }
   },
 
-  reorderImages: (images) => {
-    set({ images })
-    // A ordem mudou, entao o plano nao vale mais.
-    const { audio } = get()
-    if (audio && images.length > 0) setInterimPlan(set, images.length, audio.durationSec)
-    void get().analyze()
+  /**
+   * Arrastar na tira reordena os BLOCOS, sem refazer o plano.
+   *
+   * Duas coisas erradas moravam aqui, e as duas apareciam no mesmo gesto:
+   *
+   *  - o plano era TROCADO por fatias iguais (`setInterimPlan`). Camera,
+   *    movimento, trecho do clipe, transicao: tudo o que ele tinha ajustado ia
+   *    embora num arraste -- "ele joga para um lugar aleatorio";
+   *  - e cada troca de posicao disparava `analyze()`, que roda transcricao e
+   *    planejamento no main. O `onReorder` do motion avisa a CADA posicao
+   *    trocada, e nao no fim do gesto: arrastar por cinco lugares eram cinco
+   *    analises empilhadas. "Congela tudo".
+   *
+   * A conta mora em shared/plan, onde da para conferi-la sem a interface junto.
+   * Nada e reanalisado: a ordem nova e a verdade, e nao uma sugestao a refazer.
+   */
+  reorderImages: (novas) => {
+    const { images: antes, plan } = get()
+    if (!plan) {
+      set({ images: novas })
+      return
+    }
+
+    const feito = reordenarBlocos(
+      plan,
+      antes.map((img) => img.id),
+      novas.map((img) => img.id),
+    )
+    if (!feito) {
+      // Lista que nao e permutacao da atual: mexe so na tira.
+      set({ images: novas })
+      return
+    }
+
+    set({
+      images: novas,
+      plan: feito.plan,
+      // So conta como edicao quando os blocos REALMENTE andaram: reapontar
+      // referencia nao muda o video, e nao deve impedir uma reanalise futura.
+      ...(feito.moveuBlocos ? { planEdited: true } : {}),
+    })
   },
 
   removeImage: (id) => {

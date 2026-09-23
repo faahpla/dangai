@@ -1257,3 +1257,77 @@ export function imagemDaMetade(
   if (!cena) return null
   return metade === 'baixo' ? cena.imageIndexB : cena.imageIndex
 }
+
+/**
+ * Reordena os BLOCOS quando a tira de imagens e reordenada.
+ *
+ * Mora aqui, e nao no store, porque e conta de plano: e a mesma familia do
+ * `imagemDaMetade`, e daqui da para conferi-la sem arrastar a interface junto.
+ * Uma permutacao trocada de lado e exatamente o defeito que ele descreveu --
+ * "ele joga para um lugar aleatorio" -- e e o tipo de erro que so um teste pega.
+ *
+ * Devolve null quando a lista nova nao e uma permutacao da atual; ai quem
+ * chamou mexe so na tira e nao inventa nada sobre o plano.
+ */
+export function reordenarBlocos(
+  plan: ScenePlan,
+  idsAntes: readonly string[],
+  idsAgora: readonly string[],
+): { plan: ScenePlan; moveuBlocos: boolean } | null {
+  if (idsAntes.length !== idsAgora.length) return null
+
+  /*
+   * A permutacao sai dos IDS, e nao da posicao: as duas listas tem o mesmo
+   * tamanho e e justamente a posicao que mudou.
+   */
+  const onde = new Map(idsAntes.map((id, i) => [id, i]))
+  const origem = idsAgora.map((id) => onde.get(id) ?? -1)
+  if (origem.some((i) => i < 0)) return null
+
+  /*
+   * UM BLOCO POR IMAGEM e o unico caso em que "arrastar a imagem" quer dizer
+   * "mover o bloco". Com tela dividida um bloco consome duas imagens, e ai a
+   * tira e o plano deixam de ser a mesma lista.
+   */
+  const umPorBloco =
+    plan.scenes.length === idsAntes.length &&
+    plan.scenes.every((cena, i) => cena.imageIndex === i && cena.imageIndexB == null)
+
+  if (umPorBloco) {
+    const scenes = plan.scenes.map((lugar, k) => ({
+      ...plan.scenes[origem[k]!]!,
+      imageIndex: k,
+      /*
+       * O TEMPO E DO LUGAR, os ajustes sao do bloco.
+       *
+       * Inicio e fim saem da narracao: descrevem a frase que esta sendo dita
+       * ali, e nao a imagem. Levar o tempo junto embaralharia a duracao das
+       * falas. A transicao de entrada fica pelo mesmo motivo -- ela descreve a
+       * EMENDA com o bloco anterior, que e da juncao e nao do que passa por ela.
+       */
+      start: lugar.start,
+      end: lugar.end,
+      transitionIn: lugar.transitionIn,
+    }))
+    return { plan: { ...plan, scenes }, moveuBlocos: true }
+  }
+
+  /*
+   * Fora do 1-para-1, so as REFERENCIAS sao reapontadas: a tira muda de ordem e
+   * o video continua o mesmo. Nao e o que ele quer ver, mas e melhor que as
+   * duas alternativas -- refazer o plano perde o ajuste dele, e deixar os
+   * indices velhos faria cada bloco mostrar a imagem errada.
+   */
+  const agora = new Map(idsAgora.map((id, k) => [id, k]))
+  const reaponta = (i: number | null | undefined): number | null => {
+    if (i == null) return null
+    const id = idsAntes[i]
+    return id === undefined ? null : (agora.get(id) ?? null)
+  }
+  const scenes = plan.scenes.map((cena) => ({
+    ...cena,
+    imageIndex: reaponta(cena.imageIndex) ?? cena.imageIndex,
+    imageIndexB: reaponta(cena.imageIndexB),
+  }))
+  return { plan: { ...plan, scenes }, moveuBlocos: false }
+}
