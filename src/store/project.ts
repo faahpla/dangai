@@ -2879,16 +2879,29 @@ export const useProject = create<ProjectState>((set, get) => ({
        * entao vale o MAIOR alcance entre os blocos que a usam.
        */
       const limites: Record<string, number> = {}
-      const alcancar = (indice: number, cena: (typeof plan.scenes)[number]): void => {
+      const alcancar = (
+        indice: number,
+        cena: (typeof plan.scenes)[number],
+        /*
+         * A METADE DE BAIXO PARTE DE OUTRO PONTO.
+         *
+         * Ela usa `sourceStartB`, e este calculo usava `sourceStart` para as
+         * duas. Numa tela dividida em que a de baixo entrava mais adiante no
+         * clipe, o arquivo melhorado era cortado antes do trecho que ela toca
+         * -- e o render acabava o video no meio do bloco, congelando o ultimo
+         * quadro sem nada avisar.
+         */
+        inicio: number,
+      ): void => {
         usadas.add(indice)
         const id = images[indice]?.id
         if (!id) return
-        const ate = (cena.sourceStart ?? 0) + (cena.end - cena.start)
+        const ate = inicio + (cena.end - cena.start)
         limites[id] = Math.max(limites[id] ?? 0, ate)
       }
       for (const cena of plan.scenes) {
-        alcancar(cena.imageIndex, cena)
-        if (cena.imageIndexB !== null) alcancar(cena.imageIndexB, cena)
+        alcancar(cena.imageIndex, cena, cena.sourceStart ?? 0)
+        if (cena.imageIndexB !== null) alcancar(cena.imageIndexB, cena, cena.sourceStartB ?? 0)
       }
       const alvos = images.filter((_, i) => usadas.has(i))
       const melhoradas = await window.dangai.upscaleAssets(alvos, limites)

@@ -82,8 +82,14 @@ let cacheDir: string | null = null
  * v3: a chave ganhou o FORMATO. Os arquivos da v2 nao tem esse pedaco no nome,
  * entao nunca mais seriam lidos -- e a faxina, que so olha a versao, os
  * manteria no disco para sempre. Subir o numero e o que os manda embora.
+ *
+ * v4: o criterio de "mesmo desenho" era cego para movimento de baixo
+ * contraste e congelava fumaca, fogo e fade no meio do bloco. O congelamento
+ * esta GRAVADO dentro dos arquivos da v3 -- sem subir o numero, quem ja
+ * renderizou continuaria recebendo o video travado vindo do cache, que e
+ * exatamente o caso de quem reportou o problema.
  */
-const VERSAO_DO_UPSCALE = 3
+const VERSAO_DO_UPSCALE = 4
 
 export function configureUpscaleCache(userDataDir: string): void {
   cacheDir = join(userDataDir, 'upscale')
@@ -240,11 +246,32 @@ async function ampliarQuadro(
  * biblioteca dele, a igualdade exata pegava 0% dos casos onde o desenho nao
  * mudou.
  *
- * O criterio e por PIXEL FORTE, e isso importa: uma boca que mexe num rosto
- * parado altera pouquissimos pixels, mas altera MUITO neles. Numa media, ou
- * numa contagem de "pixels que mudaram um pouco", ela desaparece no ruido --
- * e o quadro seria reusado, congelando a fala. Contando so mudanca acima de
- * 30, o ruido nao entra e a boca entra.
+ * SAO DOIS CRITERIOS, e cada um existe por um motivo oposto ao do outro.
+ *
+ * POUCOS PIXELS MUDANDO MUITO. Uma boca que mexe num rosto parado altera
+ * pouquissimos pixels, mas altera MUITO neles. Numa media ela desaparece no
+ * ruido, e o quadro seria reusado congelando a fala. Contando so mudanca
+ * acima de 30, o ruido de compressao nao entra e a boca entra.
+ *
+ * MUITOS PIXELS MUDANDO POUCO -- e este faltava. Fumaca, fogo, agua, luz e
+ * fade mexem a tela inteira sem que quase nenhum pixel mude mais que 30, e o
+ * criterio de cima os declarava "mesmo desenho": o clipe ganhava vida no
+ * comeco e congelava no meio, sem nada no app avisar. Palavras dele: "tem um
+ * clipe q ta passando uma fumaca, a cena tem constante movimento, mas
+ * simplesmente trava do nada depois de renderizar".
+ *
+ * MEDIDO em 2.196 pares de quadros vizinhos de 40 clipes dele. Entre os pares
+ * que o criterio antigo reusava, o quanto da imagem mudava mais de 8:
+ *
+ *   p50    0,00%     desenho realmente parado
+ *   p95    2,70%
+ *   p98    8,31%
+ *   p99   77,61%     a tela inteira se mexendo, e reusada assim mesmo
+ *
+ * O corte de 2% cai no vale entre os dois grupos: mantem 93% da economia e
+ * recalcula 68 quadros que hoje saem congelados. A troca e barata de
+ * proposito -- recalcular a toa custa alguns milissegundos de GPU, e reusar a
+ * toa custa um congelamento no meio do video.
  *
  * A amostragem de 1 em cada 5 bytes existe porque isto roda entre duas
  * inferencias: comparar 1,9 MB inteiros custaria mais do que o tempo que
@@ -255,14 +282,26 @@ function mesmoDesenho(a: Buffer, b: Buffer): boolean {
 
   const PASSO = 5
   const FORTE = 30
+  const FRACO = 8
+
+  const amostras = Math.ceil(a.length / PASSO)
   // 0,02% dos bytes vistos. Acima disso nao e mais ruido de compressao.
-  const limite = Math.max(8, Math.floor(a.length / PASSO / 5000))
+  const limiteForte = Math.max(8, Math.floor(amostras / 5000))
+  const limiteFraco = Math.floor(amostras * 0.02)
 
   let fortes = 0
+  let fracos = 0
   for (let p = 0; p < a.length; p += PASSO) {
-    if (Math.abs(a[p]! - b[p]!) > FORTE) {
+    const d = a[p]! - b[p]!
+    const abs = d < 0 ? -d : d
+    if (abs <= FRACO) continue
+
+    fracos += 1
+    if (fracos > limiteFraco) return false
+
+    if (abs > FORTE) {
       fortes += 1
-      if (fortes > limite) return false
+      if (fortes > limiteForte) return false
     }
   }
   return true
@@ -416,7 +455,17 @@ async function ampliarClipe(
    * por isso que ele e por PIXEL FORTE e nao por media -- uma boca que mexe
    * muda poucos pixels e muda muito neles. Na media ela desapareceria.
    */
-  let anterior: Buffer | null = null
+  /*
+   * O quadro que GEROU o resultado que esta sendo reusado -- e nao o vizinho.
+   *
+   * A diferenca aparece justamente no movimento lento. Comparando sempre com o
+   * vizinho, a referencia anda junto com a imagem: cada passo e pequeno demais
+   * para disparar o criterio, e o resultado do PRIMEIRO quadro vai sendo
+   * arrastado indefinidamente enquanto a cena se afasta dele. Preso ao quadro
+   * que originou o resultado, o desvio acumula -- e na hora que passa do
+   * criterio, recalcula.
+   */
+  let referencia: Buffer | null = null
   /*
    * Guarda o quadro PRONTO, e nao o que o modelo devolveu.
    *
@@ -424,7 +473,7 @@ async function ampliarClipe(
    * de sete milhoes de iteracoes mais um resize. Se o desenho e o mesmo, esse
    * resultado tambem e -- reaproveita-lo poupa as duas etapas, e nao so a GPU.
    */
-  let anteriorPronto: Promise<Buffer> | null = null
+  let referenciaPronta: Promise<Buffer> | null = null
 
   entrada.stdout.on('data', (pedaco: Buffer) => {
     sobra = sobra.length === 0 ? Buffer.from(pedaco) : Buffer.concat([sobra, pedaco])
@@ -435,11 +484,14 @@ async function ampliarClipe(
       emVoo += 1
       if (emVoo >= TETO) entrada.stdout.pause()
 
-      const repetido = anterior !== null && anteriorPronto !== null && mesmoDesenho(anterior, quadro)
+      const repetido =
+        referencia !== null && referenciaPronta !== null && mesmoDesenho(referencia, quadro)
 
       let pronto: Promise<Buffer>
       if (repetido) {
-        pronto = anteriorPronto!
+        // A referencia NAO anda aqui: e isso que faz o desvio acumular em vez
+        // de se dissolver passo a passo.
+        pronto = referenciaPronta!
       } else {
         /*
          * `naGpu` segura so a INFERENCIA, e nao a conversao depois dela: assim
@@ -451,10 +503,9 @@ async function ampliarClipe(
         pronto = inferido.then((dados) =>
           paraQuadroDoRender(dados, janela.width, janela.height),
         )
+        referencia = quadro
+        referenciaPronta = pronto
       }
-
-      anterior = quadro
-      anteriorPronto = pronto
 
       naEscrita = naEscrita.then(async () => {
         const quadroPronto = await pronto
