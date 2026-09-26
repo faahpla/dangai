@@ -22,6 +22,7 @@ import {
   type SceneDescription,
   type SettingsPatch,
   type StartRenderArgs,
+  type TiraDaCena,
 } from '@shared/channels'
 import type {
   AnalysisResult,
@@ -70,6 +71,7 @@ import { getSettings, getSettingsForRenderer, saveSettings } from './services/se
 import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
 import { caminhoDaFonte, ensureFontesDir, fontesDir, listFontes } from './services/fontes'
 import { upscaleAssets, upscaleReady } from './services/upscale'
+import { tiraDoClipe } from './services/clips'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 
 /**
@@ -183,6 +185,14 @@ export function registerIpc(): void {
       throw new Error(`Essa cena nao esta mais no disco: ${basename(path)}`)
     }
     return publish(path)
+  })
+
+  handle<[string], TiraDaCena>(IPC.libraryClipStrip, async (path) => {
+    if (!existsSync(path)) {
+      throw new Error(`Essa cena nao esta mais no disco: ${basename(path)}`)
+    }
+    const { arquivo, ...resto } = await tiraDoClipe(path)
+    return { ...resto, url: publish(arquivo) }
   })
 
   // ----------------------------------------------------------------- apelidos

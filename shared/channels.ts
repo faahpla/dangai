@@ -68,6 +68,7 @@ export const IPC = {
   scanLibrary: 'library:scan',
   pickLibraryDir: 'library:pick-dir',
   libraryClipUrl: 'library:clip-url',
+  libraryClipStrip: 'library:clip-strip',
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
@@ -157,6 +158,16 @@ export interface DropExpansion {
  * O Dangai so LE essa pasta. Tudo aqui ja existia no disco antes dele: quem
  * corta a cena, acha o personagem e extrai o keyframe e o outro programa.
  */
+/** Uma tira de quadros pronta para o cartao, ja publicada no servidor local. */
+export interface TiraDaCena {
+  url: string
+  quadros: number
+  colunas: number
+  linhas: number
+  /** Largura/altura da fonte. */
+  aspecto: number
+}
+
 export interface LibraryClip {
   /** Caminho relativo a raiz. Estavel entre varreduras. */
   id: string
@@ -480,6 +491,11 @@ export interface DangaiBridge {
   pickLibraryDir(): Promise<IpcResult<string | null>>
   /** Publica um clipe no servidor local, so quando ele vai mesmo ser tocado. */
   libraryClipUrl(path: string): Promise<IpcResult<string>>
+  /**
+   * A tira de quadros que o cartao percorre com o mouse. Gerada uma vez por
+   * clipe e guardada; ver `tiraDoClipe` em electron/services/clips.ts.
+   */
+  libraryClipStrip(path: string): Promise<IpcResult<TiraDaCena>>
   /**
    * Andamento da varredura. So fala quando ha episodio novo para preparar --
    * a primeira varredura de um acervo grande leva perto de um minuto gerando as

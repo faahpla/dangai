@@ -12,7 +12,7 @@ import {
   Tags,
   X,
 } from 'lucide-react'
-import type { LibraryClip } from '@shared/channels'
+import type { LibraryClip, TiraDaCena } from '@shared/channels'
 import { medidasDo } from '@shared/contract'
 import { coberturaDaFonte } from '@shared/camera'
 import { personagensDoBloco, seriesDoRoteiro, sugerirParaBloco } from '@shared/suggest'
@@ -1556,86 +1556,82 @@ function Cartao({
 }) {
   const marcado = ordem > 0
   const formato = useProject((s) => s.formato)
-  const [url, setUrl] = useState<string | null>(null)
   const [dentro, setDentro] = useState(false)
   const timer = useRef<number | null>(null)
 
   /*
-   * O MOUSE E A AGULHA DO CLIPE.
+   * O MOUSE E A AGULHA DO CLIPE -- sobre uma TIRA de quadros, e nao um video.
    *
-   * Antes, parar o mouse em cima tocava o clipe inteiro em loop -- e escolher
-   * uma cena de cinco segundos era esperar cinco segundos, por cartao. Palavras
-   * dele: "eu quero navegar pelo clipe inteiro passando o mouse, em vez de so
-   * deixar o mouse parado e ele passar todos os segundos". Agora a borda
-   * esquerda e o comeco, a direita e o fim, e o quadro segue a mao.
+   * "Eu quero navegar pelo clipe inteiro passando o mouse, em vez de so deixar
+   * o mouse parado e ele passar todos os segundos." A primeira versao fazia
+   * isso com um <video>, atribuindo `currentTime` a cada movimento -- e ficou
+   * "muito lagado e bugado": os clipes do AnCut tem UM quadro-chave so, no
+   * inicio, e cada busca para o meio decodificava tudo desde o quadro zero.
+   * No primeiro hover, com o arquivo ainda chegando, cada busca nova cancelava
+   * a anterior e nenhuma pintava.
+   *
+   * Agora o main decodifica o clipe uma vez, em sequencia, e devolve 24
+   * quadros numa grade (ver `tiraDoClipe`). Percorrer o clipe e so trocar qual
+   * pedaco da imagem aparece: custo zero por movimento. Medido: ~200ms para
+   * montar a tira na primeira vez, menos de 1ms do cache depois.
    */
-  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [tira, setTira] = useState<TiraDaCena | null>(null)
   const [fracao, setFracao] = useState<number | null>(null)
-  const pedida = useRef<number | null>(null)
-  const quadro = useRef<number | null>(null)
+  const pedindo = useRef(false)
 
-  /**
-   * Proporcao real do clipe. A biblioteca nao a guarda; o proprio video a
-   * conta assim que carrega. Ate la vale 16:9, que e o de quase todo anime.
-   */
-  const [aspecto, setAspecto] = useState(16 / 9)
-
-  /*
-   * Um pedido de posicao por quadro de tela, e nao por movimento do mouse.
-   *
-   * O mouse dispara dezenas de eventos por segundo, e cada `currentTime`
-   * atribuido e uma busca no arquivo. Juntando no requestAnimationFrame, vale
-   * sempre o ULTIMO pedido -- o que a mao esta apontando agora.
-   */
-  const aplicar = useCallback(() => {
-    quadro.current = null
-    const video = videoRef.current
-    const f = pedida.current
-    if (!video || f === null || !Number.isFinite(video.duration) || video.duration <= 0) return
-    // Um quadro antes do fim: pedir o instante exato do fim deixa a tela preta.
-    const t = Math.min(f * video.duration, Math.max(video.duration - 0.05, 0))
-    if (Math.abs(video.currentTime - t) > 0.02) video.currentTime = t
+  const apontar = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const caixa = event.currentTarget.getBoundingClientRect()
+    setFracao(Math.min(Math.max((event.clientX - caixa.left) / caixa.width, 0), 1))
   }, [])
-
-  const apontar = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
-      const caixa = event.currentTarget.getBoundingClientRect()
-      const f = Math.min(Math.max((event.clientX - caixa.left) / caixa.width, 0), 1)
-      pedida.current = f
-      setFracao(f)
-      if (quadro.current === null) quadro.current = requestAnimationFrame(aplicar)
-    },
-    [aplicar],
-  )
 
   const entrar = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       setDentro(true)
       apontar(event)
-      // A espera evita publicar clipe a cada cena que o mouse atravessa de
-      // passagem -- so o que o usuario parou para olhar vira pedido de verdade.
+      if (tira || pedindo.current) return
+      /*
+       * Uma espera curta antes de pedir a tira, para nao montar uma para cada
+       * cartao que o mouse atravessa a caminho de outro. Curta porque a tira e
+       * barata -- a espera velha, de 350ms, existia para o video.
+       */
       timer.current = window.setTimeout(() => {
-        void window.dangai.libraryClipUrl(clip.path).then((result) => {
-          if (result.ok) setUrl(result.value)
+        pedindo.current = true
+        void window.dangai.libraryClipStrip(clip.path).then((result) => {
+          if (!result.ok) {
+            // Sem tira o cartao continua com a miniatura -- previa a menos,
+            // mas nada quebra.
+            pedindo.current = false
+            return
+          }
+          /*
+           * A imagem carrega ANTES de aparecer. Trocar a miniatura por uma tira
+           * que ainda nao chegou piscaria o cartao em branco.
+           */
+          const img = new Image()
+          img.onload = () => setTira(result.value)
+          img.onerror = () => {
+            pedindo.current = false
+          }
+          img.src = result.value.url
         })
-      }, 350)
+      }, 120)
     },
-    [clip.path, apontar],
+    [clip.path, apontar, tira],
   )
 
   const sair = useCallback(() => {
     setDentro(false)
     setFracao(null)
-    pedida.current = null
     if (timer.current !== null) window.clearTimeout(timer.current)
-    if (quadro.current !== null) cancelAnimationFrame(quadro.current)
-    quadro.current = null
   }, [])
 
   useEffect(() => () => {
     if (timer.current !== null) window.clearTimeout(timer.current)
-    if (quadro.current !== null) cancelAnimationFrame(quadro.current)
   }, [])
+
+  /** Qual quadro da tira a posicao do mouse aponta. */
+  const quadroDaTira =
+    tira && fracao !== null ? Math.min(tira.quadros - 1, Math.round(fracao * (tira.quadros - 1))) : 0
 
   /*
    * A FATIA QUE SOBRA NO VIDEO, desenhada por cima.
@@ -1648,12 +1644,13 @@ function Cartao({
    *
    * A conta e a mesma do render (`coberturaDaFonte`). O cartao corta a cena em
    * 16:9 para caber na grade, entao a janela e medida contra o que o cartao
-   * MOSTRA, e nao contra o arquivo inteiro. No projeto deitado nada e cortado,
-   * e nao ha janela nenhuma.
+   * MOSTRA, e nao contra o arquivo inteiro. A proporcao da fonte chega com a
+   * tira; ate la vale 16:9, que e a de quase todo anime.
    *
    * O foco aqui e o CENTRO. Ao importar, o app ainda procura o rosto e pode
    * mover o recorte para ele -- entao a previa e o pior caso, nunca o melhor.
    */
+  const aspecto = tira?.aspecto ?? 16 / 9
   const { width: quadroW, height: quadroH } = medidasDo(formato)
   const cobertura = coberturaDaFonte(aspecto, quadroW / quadroH).largura
   const visivel = Math.min(1, 16 / 9 / aspecto)
@@ -1707,21 +1704,16 @@ function Cartao({
           draggable={false}
           className="size-full object-cover"
         />
-        {dentro && url && (
-          <video
-            ref={videoRef}
-            src={url}
-            muted
-            playsInline
-            preload="auto"
-            onLoadedMetadata={(event) => {
-              const v = event.currentTarget
-              if (v.videoWidth > 0 && v.videoHeight > 0) setAspecto(v.videoWidth / v.videoHeight)
-              // O mouse ja estava apontando para algum lugar enquanto o video
-              // carregava; e para la que ele tem que ir, e nao para o zero.
-              aplicar()
+        {dentro && tira && (
+          <span
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage: `url(${tira.url})`,
+              backgroundSize: `${tira.colunas * 100}% ${tira.linhas * 100}%`,
+              // Porcentagem de sprite: p% alinha o ponto p% da imagem ao p% da
+              // caixa, entao coluna/(colunas-1) cai exatamente na celula.
+              backgroundPosition: `${tira.colunas > 1 ? ((quadroDaTira % tira.colunas) / (tira.colunas - 1)) * 100 : 0}% ${tira.linhas > 1 ? (Math.floor(quadroDaTira / tira.colunas) / (tira.linhas - 1)) * 100 : 0}%`,
             }}
-            className="absolute inset-0 size-full object-cover"
           />
         )}
         {mostraJanela && (

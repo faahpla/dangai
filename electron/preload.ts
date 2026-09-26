@@ -18,6 +18,7 @@ import {
   type SceneDescription,
   type SettingsPatch,
   type StartRenderArgs,
+  type TiraDaCena,
   type UpdateStatus,
 } from '@shared/channels'
 import type {
@@ -62,6 +63,8 @@ const bridge: DangaiBridge = {
 
   libraryClipUrl: (path) =>
     ipcRenderer.invoke(IPC.libraryClipUrl, path) as Promise<IpcResult<string>>,
+  libraryClipStrip: (path) =>
+    ipcRenderer.invoke(IPC.libraryClipStrip, path) as Promise<IpcResult<TiraDaCena>>,
 
   onLibraryProgress: (listener) => {
     const handler = (_event: unknown, mensagem: string): void => listener(mensagem)

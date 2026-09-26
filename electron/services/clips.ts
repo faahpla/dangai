@@ -1,6 +1,16 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
+import sharp from 'sharp'
 import { medidasAtuais } from './formato'
 import { ffmpegPath } from './ffmpeg-path'
 
@@ -323,4 +333,161 @@ export async function extrairFrames(
     }
   }
   return saida
+}
+
+// --------------------------------------------------------------- tira de previa
+
+/**
+ * A TIRA DE QUADROS que o cartao da Biblioteca percorre com o mouse.
+ *
+ * O cartao tentou fazer isso com um <video>, atribuindo `currentTime` a cada
+ * movimento do mouse. Nao funciona com estes arquivos: os clipes do AnCut tem
+ * UM UNICO quadro-chave, no inicio -- medido em quatro cenas de Mushoku S03E13,
+ * todas com 1 quadro-chave para 29 a 80 quadros. Cada busca para o meio do
+ * clipe obriga o navegador a decodificar tudo desde o quadro zero, e o mouse
+ * pede dezenas de buscas por segundo. O resultado foi o que ele descreveu:
+ * "muito lagado e bugado, da umas travadas". E no primeiro hover, com o
+ * arquivo ainda chegando, cada busca nova cancelava a anterior antes de ela
+ * terminar -- entao nenhuma chegava a pintar ("quando passo o mouse a
+ * primeira vez ele nao funciona").
+ *
+ * Aqui a decodificacao acontece UMA vez, em sequencia, que e o unico jeito
+ * barato de ler um arquivo desses: o ffmpeg anda do inicio ao fim, amostra
+ * QUADROS quadros espalhados e o sharp os monta numa grade. Depois disso,
+ * percorrer o clipe e so trocar qual pedaco da imagem aparece -- custo zero
+ * por movimento, que e como YouTube e Netflix fazem a previa da barra.
+ */
+const TIRA_VERSAO = 1
+const TIRA_QUADROS = 24
+/** Um pouco acima do cartao (~170px) para nao borrar em tela de alta densidade. */
+const TIRA_W = 256
+const TIRA_H = 144
+const TIRA_COLUNAS = 6
+
+export interface TiraDoClipe {
+  arquivo: string
+  quadros: number
+  colunas: number
+  linhas: number
+  /** Largura/altura da FONTE, para a janela 9:16 ser medida no clipe de verdade. */
+  aspecto: number
+}
+
+/*
+ * Um pedido por clipe de cada vez. O mouse pode sair e voltar no mesmo cartao
+ * antes de a primeira tira ficar pronta, e sem isto seriam dois ffmpeg lendo o
+ * mesmo arquivo para gravar o mesmo resultado.
+ */
+const tirasEmAndamento = new Map<string, Promise<TiraDoClipe>>()
+
+export function tiraDoClipe(path: string): Promise<TiraDoClipe> {
+  const pendente = tirasEmAndamento.get(path)
+  if (pendente) return pendente
+  const pedido = gerarTira(path).finally(() => tirasEmAndamento.delete(path))
+  tirasEmAndamento.set(path, pedido)
+  return pedido
+}
+
+async function gerarTira(path: string): Promise<TiraDoClipe> {
+  mkdirSync(cacheDir, { recursive: true })
+
+  /*
+   * A chave leva tamanho e data junto do caminho, e e SHA-1 e nao o hash de 32
+   * bits das miniaturas. Colisao ali troca uma miniatura; aqui mostraria os
+   * quadros de outra cena inteira enquanto ele escolhe -- e com 20 mil cenas
+   * um hash de 32 bits ja tem chance real de bater duas.
+   */
+  const st = statSync(path)
+  const chave = createHash('sha1')
+    .update(`${path}|${st.size}|${st.mtimeMs}`)
+    .digest('hex')
+    .slice(0, 24)
+  const alvo = join(cacheDir, `tira-v${TIRA_VERSAO}-${chave}.jpg`)
+  const meta = `${alvo}.json`
+
+  if (existsSync(alvo) && existsSync(meta)) {
+    try {
+      const lido = JSON.parse(readFileSync(meta, 'utf8')) as Omit<TiraDoClipe, 'arquivo'>
+      return { ...lido, arquivo: alvo }
+    } catch {
+      /* metadado corrompido: refaz abaixo */
+    }
+  }
+
+  const info = await probeClip(path)
+  const taxa = TIRA_QUADROS / Math.max(info.durationSec, 0.05)
+  const quadros = await quadrosEmSequencia(path, taxa)
+  if (quadros.length === 0) throw new Error('o clipe nao devolveu nenhum quadro')
+
+  const colunas = Math.min(TIRA_COLUNAS, quadros.length)
+  const linhas = Math.ceil(quadros.length / colunas)
+  const parcial = `${alvo}.part.jpg`
+
+  await sharp({
+    create: { width: colunas * TIRA_W, height: linhas * TIRA_H, channels: 3, background: '#000' },
+  })
+    .composite(
+      quadros.map((buffer, i) => ({
+        input: buffer,
+        raw: { width: TIRA_W, height: TIRA_H, channels: 3 as const },
+        left: (i % colunas) * TIRA_W,
+        top: Math.floor(i / colunas) * TIRA_H,
+      })),
+    )
+    .jpeg({ quality: 72 })
+    .toFile(parcial)
+  renameSync(parcial, alvo)
+
+  const saida: Omit<TiraDoClipe, 'arquivo'> = {
+    quadros: quadros.length,
+    colunas,
+    linhas,
+    aspecto: info.width / info.height,
+  }
+  writeFileSync(meta, JSON.stringify(saida))
+  return { ...saida, arquivo: alvo }
+}
+
+/**
+ * Decodifica o clipe do inicio ao fim e devolve os quadros amostrados, crus.
+ *
+ * Cru (rgb24) e nao JPEG no pipe porque quadro cru tem tamanho FIXO: separar um
+ * do outro e contar bytes. E o recorte e o `object-cover` do cartao -- cobre
+ * 16:9 e corta a sobra --, para a tira mostrar exatamente o que a miniatura
+ * mostra, sem distorcer clipe 4:3.
+ */
+function quadrosEmSequencia(path: string, taxa: number): Promise<Buffer[]> {
+  return new Promise((resolve, reject) => {
+    const bytes = TIRA_W * TIRA_H * 3
+    const child = spawn(
+      ffmpegPath,
+      [
+        '-v', 'error',
+        '-i', path,
+        '-an', '-sn',
+        '-vf',
+        `fps=${taxa.toFixed(4)},scale=${TIRA_W}:${TIRA_H}:force_original_aspect_ratio=increase,crop=${TIRA_W}:${TIRA_H}`,
+        '-frames:v', String(TIRA_QUADROS),
+        '-f', 'rawvideo',
+        '-pix_fmt', 'rgb24',
+        '-',
+      ],
+      { windowsHide: true },
+    )
+    const quadros: Buffer[] = []
+    let sobra: Buffer = Buffer.alloc(0)
+    child.stdout.on('data', (pedaco: Buffer) => {
+      sobra = sobra.length === 0 ? Buffer.from(pedaco) : Buffer.concat([sobra, pedaco])
+      while (sobra.length >= bytes) {
+        quadros.push(Buffer.from(sobra.subarray(0, bytes)))
+        sobra = sobra.subarray(bytes)
+      }
+    })
+    child.stderr.resume()
+    child.on('error', reject)
+    child.on('close', (codigo) => {
+      if (codigo === 0 || quadros.length > 0) resolve(quadros)
+      else reject(new Error(`ffmpeg saiu com ${codigo} ao montar a tira`))
+    })
+  })
 }
