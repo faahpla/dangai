@@ -82,6 +82,11 @@ import {
 import type { CaptionBlock } from '@shared/contract'
 import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
 import {
+  juntarComOProximo,
+  separarTrecho as separarPedacos,
+  type MarcacoesDosTrechos,
+} from '@shared/juntar'
+import {
   cabeCortePorPalavra,
   cortesAutomaticos,
   limitesDaFronteira,
@@ -578,6 +583,13 @@ export interface ProjectState {
   removerEscolhido: (id: string) => void
   /** Esvazia a fila. */
   limparEscolhidos: () => void
+  /**
+   * Junta o trecho com o seguinte -- para quando a pontuacao corta curto demais
+   * para caber um clipe. As cenas dos dois somam. Ver @shared/juntar.
+   */
+  juntarTrechos: (blockIndex: number) => void
+  /** Desfaz uma juncao: o trecho volta a ser os pedacos que o formaram. */
+  separarTrecho: (blockIndex: number) => void
   /** Troca a ordem das cenas dentro de uma frase. */
   reorderBlockClips: (blockIndex: number, paths: readonly string[]) => void
   /** Cicla o peso de uma cena da fita: 1x, 2x, 3x e volta. */
@@ -1415,6 +1427,10 @@ export const useProject = create<ProjectState>((set, get) => ({
     })),
 
   limparEscolhidos: () => set({ escolhidos: [], projectDirty: true }),
+
+  juntarTrechos: (blockIndex) => aplicarMarcacoes(set, get, (m) => juntarComOProximo(m, blockIndex)),
+
+  separarTrecho: (blockIndex) => aplicarMarcacoes(set, get, (m) => separarPedacos(m, blockIndex)),
 
   reorderBlockClips: (blockIndex, paths) => {
     /*
@@ -3571,6 +3587,42 @@ async function applyProjectFile(
       projectDirty: sujo,
       hasAutosave: false,
     })
+  })
+}
+
+/**
+ * Aplica uma mudanca de trechos (juntar, separar) as cinco marcacoes de uma vez.
+ *
+ * As cinco andam juntas porque sao indexadas pela mesma coisa -- a posicao do
+ * trecho. Trocar so as cenas e esquecer o peso deixaria um "2x" colado na
+ * frase errada.
+ */
+function aplicarMarcacoes(
+  set: SetState,
+  get: () => ProjectState,
+  mudar: (m: MarcacoesDosTrechos) => MarcacoesDosTrechos | null,
+): void {
+  const s = get()
+  if (!s.scriptBlocks) return
+  const r = mudar({
+    blocos: s.scriptBlocks,
+    porBloco: s.blockClips,
+    pesos: s.blockWeights,
+    unioes: s.blockSplits,
+    cortes: s.blockCuts,
+    ativo: s.activeBlock,
+  })
+  if (!r) return
+  set({
+    scriptBlocks: r.blocos,
+    blockClips: r.porBloco,
+    blockWeights: r.pesos,
+    blockSplits: r.unioes,
+    blockCuts: r.cortes,
+    activeBlock: r.ativo,
+    // Os trechos vao para o .dangai: juntar sem sujar seria perder a juncao
+    // no proximo fechar, sem pergunta nenhuma.
+    projectDirty: true,
   })
 }
 

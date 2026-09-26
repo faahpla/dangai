@@ -296,7 +296,24 @@ export interface AutomountResult {
  * quantas cenas cada frase tem e ele. Palavras dele sobre o gancho -- "nessa
  * parte eu usaria 3 cenas provavelmente".
  */
+/** Um trecho como a pontuacao o cortou, antes de qualquer juncao. */
+export interface PedacoDoTrecho {
+  text: string
+  start: number
+  end: number
+  sentence: number
+}
+
 export interface ScriptBlock {
+  /**
+   * Os trechos originais, quando este e a JUNCAO de dois ou mais.
+   *
+   * Existe para desfazer. A pontuacao corta onde corta, e as vezes corta curto
+   * demais para caber um clipe -- "Veldora," sozinho sao 0,3s. Ele junta com o
+   * vizinho; e se juntou errado, estes pedacos sao o que permite separar de
+   * volta sem reler o roteiro inteiro.
+   */
+  partes?: PedacoDoTrecho[]
   text: string
   start: number
   end: number

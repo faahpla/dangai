@@ -53,6 +53,24 @@ export function seriesDoRoteiro(ctx: ContextoDeSugestao): string[] {
 }
 
 /**
+ * Quem o trecho cita, na ordem de confianca do leitor.
+ *
+ * E a mesma leitura que alimenta as sugestoes -- no contexto do roteiro
+ * inteiro, para "ele" e "ela" arrastarem o nome citado antes. Existe para o
+ * botao de "ver todas" saber em QUAL pasta abrir: a faixa mostra doze cenas,
+ * e quando nenhuma serve o proximo lugar para procurar e o personagem inteiro.
+ */
+export function personagensDoBloco(ctx: ContextoDeSugestao, bloco: number): string[] {
+  if (!ctx.blocks[bloco] || ctx.characters.length === 0) return []
+  const index = buildScriptIndex(ctx.characters, ctx.nicknames)
+  const linhas = readScript(
+    ctx.blocks.map((b) => b.text),
+    index,
+  )
+  return [...new Set(linhas[bloco]?.matches.map((m) => m.character) ?? [])]
+}
+
+/**
  * As cenas mais provaveis para UM trecho.
  *
  * O trecho e lido no contexto do roteiro inteiro, e nao sozinho: o arrasto de

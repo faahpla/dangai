@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Reorder } from 'motion/react'
-import { AlertTriangle, Check, GripVertical, Loader2 } from 'lucide-react'
+import { AlertTriangle, Check, GripVertical, Loader2, Merge, Split } from 'lucide-react'
 import { useProject } from '@/store/project'
 import type { LibraryClip } from '@shared/channels'
 import type { Word } from '@shared/contract'
@@ -52,6 +52,8 @@ export function ScriptColumn() {
   const transcript = useProject((s) => s.transcript)
   const library = useProject((s) => s.library)
   const reordenar = useProject((s) => s.reorderBlockClips)
+  const juntar = useProject((s) => s.juntarTrechos)
+  const separar = useProject((s) => s.separarTrecho)
 
   const lista = useRef<HTMLDivElement>(null)
 
@@ -327,6 +329,47 @@ export function ScriptColumn() {
                   unidas={unioes[i] ?? []}
                   onDividir={(posicao) => toggleBlockSplit(i, posicao)}
                 />
+              )}
+
+              {/*
+                JUNTAR com o proximo, e SEPARAR o que foi juntado.
+
+                A pontuacao corta onde corta, e as vezes corta curto demais:
+                "Veldora," sozinho sao 0,3s, e nao cabe clipe nenhum ali. So no
+                trecho ABERTO, como a fita -- sao ~40 linhas, e dois botoes em
+                cada uma encheriam a coluna de alvos que ele nao esta usando.
+              */}
+              {aberto && (i < blocos.length - 1 || (bloco.partes?.length ?? 0) >= 2) && (
+                <div className="mt-2 flex items-center gap-3">
+                  {i < blocos.length - 1 && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        juntar(i)
+                      }}
+                      title={`Junta com "${blocos[i + 1]!.text}" num trecho so. As cenas dos dois somam.`}
+                      className="flex items-center gap-1 text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink"
+                    >
+                      <Merge size={11} strokeWidth={1.5} />
+                      Juntar com o proximo
+                    </button>
+                  )}
+                  {(bloco.partes?.length ?? 0) >= 2 && (
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        separar(i)
+                      }}
+                      title={`Volta a ser ${bloco.partes!.length} trechos. As cenas ficam no primeiro.`}
+                      className="flex items-center gap-1 text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink"
+                    >
+                      <Split size={11} strokeWidth={1.5} />
+                      Separar
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )

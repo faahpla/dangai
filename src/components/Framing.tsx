@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { ScanFace } from 'lucide-react'
 import { medidasDo, type Formato, type ImageAsset } from '@shared/contract'
 import { useProject } from '@/store/project'
@@ -22,7 +22,21 @@ function proporcaoDoQuadro(formato: Formato): number {
  * sempre pegava o terco central -- que e onde o personagem menos costuma estar
  * num frame de anime.
  */
-export function Framing({ image }: { image: ImageAsset }) {
+/**
+ * Onde este bloco cai na linha do tempo, e de que ponto do clipe ele parte.
+ *
+ * E o que deixa a caixa mostrar o quadro que o preview esta mostrando. Sem
+ * isto ela so tem a miniatura -- que sai do MEIO do clipe e raramente e o
+ * instante em que ele esta enquadrando.
+ */
+export interface TrechoNaTimeline {
+  inicio: number
+  fim: number
+  /** `sourceStart` da metade de cima, `sourceStartB` da de baixo. */
+  entrada: number
+}
+
+export function Framing({ image, trecho }: { image: ImageAsset; trecho?: TrechoNaTimeline }) {
   const setImageFocus = useProject((s) => s.setImageFocus)
   const commitImageFocus = useProject((s) => s.commitImageFocus)
   const formato = useProject((s) => s.formato)
@@ -85,7 +99,23 @@ export function Framing({ image }: { image: ImageAsset }) {
         style={{ aspectRatio: `${image.width} / ${image.height}` }}
         className="relative w-full cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >
-        <img src={image.thumbnail} alt="" className="h-full w-full" draggable={false} />
+        {/*
+          O QUADRO DA AGULHA, e nao a miniatura.
+
+          A miniatura sai do meio do clipe e fica parada. Enquadrar olhando para
+          ela era enquadrar outro instante: no clipe dele o personagem estava
+          do lado direito na miniatura e do esquerdo no quadro que o preview
+          mostrava -- "quero que o negocio pra eu centralizar manualmente
+          acompanhe o preview".
+
+          Usa o arquivo ORIGINAL (`urlSource`), e nao o recortado: a caixa e a
+          fonte inteira com a janela por cima, e o recortado ja e so a janela.
+        */}
+        {image.kind === 'video' && image.urlSource && trecho ? (
+          <QuadroDaAgulha src={image.urlSource} trecho={trecho} />
+        ) : (
+          <img src={image.thumbnail} alt="" className="h-full w-full" draggable={false} />
+        )}
 
         {/* O que fica de fora escurece; o que entra no video fica limpo. */}
         <div
@@ -125,5 +155,64 @@ export function Framing({ image }: { image: ImageAsset }) {
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * Um <video> que anda junto com a agulha, dentro do trecho deste bloco.
+ *
+ * PARADO, o quadro e exato: e parado que ele enquadra, e errar o instante ali
+ * e mostrar outro quadro. TOCANDO, o video toca por conta propria e so e
+ * reposicionado quando se afasta mais de 150ms -- buscar a cada quadro num
+ * arquivo em resolucao cheia engasga, e o que ele precisa ver durante a
+ * reproducao e o movimento, nao o quadro exato.
+ *
+ * Fora do trecho a caixa para na borda dele (o primeiro ou o ultimo quadro que
+ * o bloco usa), porque e so esse pedaco do clipe que o enquadramento afeta.
+ */
+function QuadroDaAgulha({ src, trecho }: { src: string; trecho: TrechoNaTimeline }) {
+  const ref = useRef<HTMLVideoElement | null>(null)
+  const playhead = useProject((s) => s.playhead)
+  const playing = useProject((s) => s.playing)
+
+  const duracao = Math.max(trecho.fim - trecho.inicio, 0)
+  const noTrecho = playhead >= trecho.inicio && playhead < trecho.fim
+  const alvo = trecho.entrada + Math.min(Math.max(playhead - trecho.inicio, 0), duracao)
+
+  // O video pode terminar de carregar depois que a agulha ja se moveu.
+  const alvoAtual = useRef(alvo)
+  alvoAtual.current = alvo
+
+  const posicionar = useCallback((video: HTMLVideoElement, t: number, folga: number) => {
+    // Um quadro antes do fim: pedir o instante exato do fim deixa a tela preta.
+    const limite = Number.isFinite(video.duration) ? Math.max(video.duration - 0.05, 0) : t
+    const destino = Math.min(t, limite)
+    if (Math.abs(video.currentTime - destino) > folga) video.currentTime = destino
+  }, [])
+
+  useEffect(() => {
+    const video = ref.current
+    if (!video) return
+    if (playing && noTrecho) {
+      posicionar(video, alvo, 0.15)
+      if (video.paused) void video.play().catch(() => undefined)
+    } else {
+      if (!video.paused) video.pause()
+      posicionar(video, alvo, 0.01)
+    }
+  }, [alvo, playing, noTrecho, posicionar])
+
+  return (
+    <video
+      ref={ref}
+      src={src}
+      muted
+      playsInline
+      preload="auto"
+      onLoadedMetadata={(event) => posicionar(event.currentTarget, alvoAtual.current, 0.01)}
+      // object-fill, como a <img>: a caixa ja tem a proporcao da fonte, e a
+      // janela rosa e medida contra ela -- qualquer outro encaixe a desalinharia.
+      className="pointer-events-none h-full w-full object-fill"
+    />
   )
 }

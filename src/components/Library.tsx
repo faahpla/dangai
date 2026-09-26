@@ -13,7 +13,9 @@ import {
   X,
 } from 'lucide-react'
 import type { LibraryClip } from '@shared/channels'
-import { seriesDoRoteiro, sugerirParaBloco } from '@shared/suggest'
+import { medidasDo } from '@shared/contract'
+import { coberturaDaFonte } from '@shared/camera'
+import { personagensDoBloco, seriesDoRoteiro, sugerirParaBloco } from '@shared/suggest'
 import type { SelectionCandidate } from '@shared/selection'
 import { TAGS_PT } from '@shared/tags-pt'
 import { useProject } from '@/store/project'
@@ -58,6 +60,7 @@ export function Library() {
   const nicknames = useProject((s) => s.nicknames)
   const audio = useProject((s) => s.audio)
   const blocos = useProject((s) => s.scriptBlocks)
+  const transcript = useProject((s) => s.transcript)
   const activeBlock = useProject((s) => s.activeBlock)
   const setActiveBlock = useProject((s) => s.setActiveBlock)
   const blockClips = useProject((s) => s.blockClips)
@@ -236,12 +239,22 @@ export function Library() {
    * ele custaria mais do que nao escolher. E acontece uma vez so, entao clicar
    * em "Todos" ou em outro episodio vale a partir dali.
    */
+  /*
+   * A TRAVA E A TRANSCRICAO, e nao a lista de trechos.
+   *
+   * Ela era a lista, e a lista passou a mudar sem o roteiro mudar: juntar dois
+   * trechos cria uma lista nova. Com a trava nela, cada juncao re-armava a
+   * pre-selecao e jogava a grade de volta para o anime do roteiro -- no meio
+   * de ele estar olhando outro. A transcricao so muda quando o roteiro ou a
+   * narracao mudam de verdade, que e exatamente quando re-armar faz sentido.
+   */
   useEffect(() => {
-    if (!open || !contexto || preSelecionadoPara.current === contexto.blocks) return
-    preSelecionadoPara.current = contexto.blocks
+    const trava = transcript ?? contexto?.blocks
+    if (!open || !contexto || preSelecionadoPara.current === trava) return
+    preSelecionadoPara.current = trava
     const series = seriesDoRoteiro(contexto)
     if (series.length === 1) setAnime(series[0]!)
-  }, [open, contexto])
+  }, [open, contexto, transcript])
 
   const favoritosSet = useMemo(() => new Set(favorites), [favorites])
 
@@ -403,6 +416,22 @@ export function Library() {
     if (!contexto || activeBlock === null || replaceTarget !== null) return []
     return sugerirParaBloco(contexto, activeBlock, usadasEmOutras)
   }, [contexto, activeBlock, replaceTarget, usadasEmOutras])
+
+  /*
+   * A pasta do personagem que o trecho cita, para o "ver todas".
+   *
+   * O primeiro citado, que e o de maior confianca do leitor. E o anime sai do
+   * proprio acervo: nome de personagem nao colide entre as series dele
+   * (medido: zero colisoes em 96 personagens de 7 series), entao a primeira
+   * cena que o tem diz de onde ele e.
+   */
+  const pastaDoTrecho = useMemo(() => {
+    if (!contexto || !library || activeBlock === null) return null
+    const nome = personagensDoBloco(contexto, activeBlock)[0]
+    if (!nome) return null
+    const doAnime = library.clips.find((c) => c.characters.includes(nome))?.anime
+    return doAnime ? { nome, anime: doAnime } : null
+  }, [contexto, library, activeBlock])
 
   if (!open) return null
 
@@ -679,6 +708,28 @@ export function Library() {
                 favoritos={favoritosSet}
                 onFavoritar={(id) => void toggleFavorite(id)}
                 onEscolher={escolher}
+                /*
+                 * "Ver todas" abre a PASTA INTEIRA do personagem.
+                 *
+                 * Por isso limpa episodio, busca e so-favoritos: qualquer um
+                 * deles faria "todas" virar "algumas", com o motivo escondido
+                 * num filtro que ele nem lembra de ter posto. O resto e o que o
+                 * rail ja faz ao clicar no personagem.
+                 */
+                verTodas={
+                  pastaDoTrecho && personagem !== pastaDoTrecho.nome
+                    ? {
+                        nome: pastaDoTrecho.nome,
+                        abrir: () => {
+                          setAnime(pastaDoTrecho.anime)
+                          setPersonagem(pastaDoTrecho.nome)
+                          setEpisodio(null)
+                          setTexto('')
+                          setSoFavoritos(false)
+                        },
+                      }
+                    : null
+                }
               />
             )}
 
@@ -687,6 +738,7 @@ export function Library() {
             ) : (
               <Grade
                 clips={filtrados}
+                chave={[texto.trim(), anime, episodio, personagem, minSec, maxSec, soFavoritos].join('|')}
                 escolhidos={replaceTarget !== null ? [] : porRoteiro ? marcadosNaFrase() : escolhidos}
                 usadas={usadasEmOutras}
                 favoritos={favoritosSet}
@@ -1257,6 +1309,8 @@ function Filtros({
 
 interface GradeProps {
   clips: readonly LibraryClip[]
+  /** O filtro em uso. Mudar ESTA chave, e nao a lista, e o que volta ao topo. */
+  chave: string
   escolhidos: readonly string[]
   /** Cenas ja marcadas em OUTRA frase do roteiro. Vazio no uso sem roteiro. */
   usadas?: ReadonlySet<string>
@@ -1273,7 +1327,7 @@ interface GradeProps {
  * dezenas, e o espacador de cima e de baixo faz a barra de rolagem continuar
  * dizendo a verdade sobre o tamanho do acervo.
  */
-function Grade({ clips, escolhidos, usadas, favoritos, onFavoritar, onEscolher }: GradeProps) {
+function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEscolher }: GradeProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
   const [altura, setAltura] = useState(0)
@@ -1300,12 +1354,20 @@ function Grade({ clips, escolhidos, usadas, favoritos, onFavoritar, onEscolher }
     return () => observer.disconnect()
   }, [])
 
-  // Filtro novo devolve a rolagem ao topo: continuar no meio de uma lista que
-  // acabou de mudar mostra um pedaco aleatorio do resultado.
+  /*
+   * Filtro novo devolve a rolagem ao topo -- e SO filtro novo.
+   *
+   * Isto escutava a lista, e a lista e recriada por coisas que nao mudam o
+   * que ele esta vendo: sincronizar a biblioteca traz um objeto novo, e
+   * favoritar uma cena cria outro conjunto de favoritos. As duas jogavam a
+   * grade de volta ao topo no meio de uma busca -- "quando sincroniza
+   * biblioteca ou favorita um clipe ele volta ao topo, eu quero que continue
+   * onde eu estava". A chave e o que ELE pediu para ver, e so ela reinicia.
+   */
   useEffect(() => {
     ref.current?.scrollTo({ top: 0 })
     setScroll(0)
-  }, [clips])
+  }, [chave])
 
   const colunas = Math.max(2, Math.floor((largura + GAP) / (ITEM_ALVO + GAP)))
   const itemW = colunas > 0 && largura > 0 ? (largura - GAP * (colunas - 1) - 24) / colunas : 0
@@ -1368,8 +1430,9 @@ function Grade({ clips, escolhidos, usadas, favoritos, onFavoritar, onEscolher }
 /**
  * Uma cena na grade.
  *
- * Passar o mouse toca o clipe no lugar da miniatura. E o que separa "ver uma
- * imagem parada" de "saber se a cena serve": num acervo de anime metade das
+ * Passar o mouse percorre o clipe no lugar da miniatura -- a posicao do mouse
+ * na largura do cartao e a posicao no clipe. E o que separa "ver uma imagem
+ * parada" de "saber se a cena serve": num acervo de anime metade das
  * miniaturas de um mesmo plano sao quase iguais, e o movimento e o que
  * distingue uma da outra.
  */
@@ -1411,12 +1474,19 @@ function Sugestoes({
   favoritos,
   onFavoritar,
   onEscolher,
+  verTodas,
 }: {
   candidatos: readonly SelectionCandidate[]
   escolhidos: readonly string[]
   favoritos: ReadonlySet<string>
   onFavoritar: (id: string) => void
   onEscolher: (id: string) => void
+  /**
+   * A saida quando nenhuma das doze serve. Null quando o trecho nao cita
+   * ninguem, ou quando a grade ja esta na pasta dele -- ai o botao nao faria
+   * nada, e botao que nao faz nada e pior que nenhum.
+   */
+  verTodas: { nome: string; abrir: () => void } | null
 }) {
   const ordens = new Map(escolhidos.map((id, i) => [id, i + 1]))
 
@@ -1436,8 +1506,19 @@ function Sugestoes({
   return (
     <div className="border-b border-line px-3 pb-3 pt-2">
       <div className="mb-1.5 flex items-baseline gap-2">
-        <span className="text-[11px] uppercase tracking-wide text-ink-3">Sugestoes para este trecho</span>
+        <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-3">Sugestoes para este trecho</span>
         {comum && <span className="min-w-0 truncate text-[11px] text-ink-3">· {comum}</span>}
+        {verTodas && (
+          <button
+            type="button"
+            onClick={verTodas.abrir}
+            title={`Abre a pasta inteira de ${verTodas.nome} na grade abaixo`}
+            className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-ink-2 transition-colors duration-150 hover:text-accent"
+          >
+            Ver todas de {verTodas.nome}
+            <ChevronRight size={11} strokeWidth={1.5} />
+          </button>
+        )}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1">
         {candidatos.map((c) => (
@@ -1474,29 +1555,110 @@ function Cartao({
   onClick: () => void
 }) {
   const marcado = ordem > 0
+  const formato = useProject((s) => s.formato)
   const [url, setUrl] = useState<string | null>(null)
   const [dentro, setDentro] = useState(false)
   const timer = useRef<number | null>(null)
 
-  const entrar = useCallback(() => {
-    setDentro(true)
-    // A espera evita publicar clipe a cada cena que o mouse atravessa de
-    // passagem -- so o que o usuario parou para olhar vira pedido de verdade.
-    timer.current = window.setTimeout(() => {
-      void window.dangai.libraryClipUrl(clip.path).then((result) => {
-        if (result.ok) setUrl(result.value)
-      })
-    }, 350)
-  }, [clip.path])
+  /*
+   * O MOUSE E A AGULHA DO CLIPE.
+   *
+   * Antes, parar o mouse em cima tocava o clipe inteiro em loop -- e escolher
+   * uma cena de cinco segundos era esperar cinco segundos, por cartao. Palavras
+   * dele: "eu quero navegar pelo clipe inteiro passando o mouse, em vez de so
+   * deixar o mouse parado e ele passar todos os segundos". Agora a borda
+   * esquerda e o comeco, a direita e o fim, e o quadro segue a mao.
+   */
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const [fracao, setFracao] = useState<number | null>(null)
+  const pedida = useRef<number | null>(null)
+  const quadro = useRef<number | null>(null)
+
+  /**
+   * Proporcao real do clipe. A biblioteca nao a guarda; o proprio video a
+   * conta assim que carrega. Ate la vale 16:9, que e o de quase todo anime.
+   */
+  const [aspecto, setAspecto] = useState(16 / 9)
+
+  /*
+   * Um pedido de posicao por quadro de tela, e nao por movimento do mouse.
+   *
+   * O mouse dispara dezenas de eventos por segundo, e cada `currentTime`
+   * atribuido e uma busca no arquivo. Juntando no requestAnimationFrame, vale
+   * sempre o ULTIMO pedido -- o que a mao esta apontando agora.
+   */
+  const aplicar = useCallback(() => {
+    quadro.current = null
+    const video = videoRef.current
+    const f = pedida.current
+    if (!video || f === null || !Number.isFinite(video.duration) || video.duration <= 0) return
+    // Um quadro antes do fim: pedir o instante exato do fim deixa a tela preta.
+    const t = Math.min(f * video.duration, Math.max(video.duration - 0.05, 0))
+    if (Math.abs(video.currentTime - t) > 0.02) video.currentTime = t
+  }, [])
+
+  const apontar = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      const caixa = event.currentTarget.getBoundingClientRect()
+      const f = Math.min(Math.max((event.clientX - caixa.left) / caixa.width, 0), 1)
+      pedida.current = f
+      setFracao(f)
+      if (quadro.current === null) quadro.current = requestAnimationFrame(aplicar)
+    },
+    [aplicar],
+  )
+
+  const entrar = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      setDentro(true)
+      apontar(event)
+      // A espera evita publicar clipe a cada cena que o mouse atravessa de
+      // passagem -- so o que o usuario parou para olhar vira pedido de verdade.
+      timer.current = window.setTimeout(() => {
+        void window.dangai.libraryClipUrl(clip.path).then((result) => {
+          if (result.ok) setUrl(result.value)
+        })
+      }, 350)
+    },
+    [clip.path, apontar],
+  )
 
   const sair = useCallback(() => {
     setDentro(false)
+    setFracao(null)
+    pedida.current = null
     if (timer.current !== null) window.clearTimeout(timer.current)
+    if (quadro.current !== null) cancelAnimationFrame(quadro.current)
+    quadro.current = null
   }, [])
 
   useEffect(() => () => {
     if (timer.current !== null) window.clearTimeout(timer.current)
+    if (quadro.current !== null) cancelAnimationFrame(quadro.current)
   }, [])
+
+  /*
+   * A FATIA QUE SOBRA NO VIDEO, desenhada por cima.
+   *
+   * "Ao passar o mouse, eu ter um mini preview de como aquela cena ficaria em
+   * 9:16". A cena da biblioteca e deitada e o short e em pe: dois tercos da
+   * largura vao embora. Escurecer o que sai mostra NA HORA se o personagem cabe
+   * -- antes de importar, e sem sair da grade. O que fica escuro ainda aparece,
+   * de proposito: ver o que se perde tambem e informacao.
+   *
+   * A conta e a mesma do render (`coberturaDaFonte`). O cartao corta a cena em
+   * 16:9 para caber na grade, entao a janela e medida contra o que o cartao
+   * MOSTRA, e nao contra o arquivo inteiro. No projeto deitado nada e cortado,
+   * e nao ha janela nenhuma.
+   *
+   * O foco aqui e o CENTRO. Ao importar, o app ainda procura o rosto e pode
+   * mover o recorte para ele -- entao a previa e o pior caso, nunca o melhor.
+   */
+  const { width: quadroW, height: quadroH } = medidasDo(formato)
+  const cobertura = coberturaDaFonte(aspecto, quadroW / quadroH).largura
+  const visivel = Math.min(1, 16 / 9 / aspecto)
+  const janela = cobertura / visivel
+  const mostraJanela = dentro && janela < 0.98
 
   /*
    * <div role="button">, e nao <button>.
@@ -1517,6 +1679,7 @@ function Cartao({
         onClick()
       }}
       onMouseEnter={entrar}
+      onMouseMove={apontar}
       onMouseLeave={sair}
       /*
        * Tudo que e texto vive AQUI, no tooltip, e nao embaixo da miniatura.
@@ -1546,13 +1709,43 @@ function Cartao({
         />
         {dentro && url && (
           <video
+            ref={videoRef}
             src={url}
-            autoPlay
             muted
-            loop
             playsInline
+            preload="auto"
+            onLoadedMetadata={(event) => {
+              const v = event.currentTarget
+              if (v.videoWidth > 0 && v.videoHeight > 0) setAspecto(v.videoWidth / v.videoHeight)
+              // O mouse ja estava apontando para algum lugar enquanto o video
+              // carregava; e para la que ele tem que ir, e nao para o zero.
+              aplicar()
+            }}
             className="absolute inset-0 size-full object-cover"
           />
+        )}
+        {mostraJanela && (
+          <>
+            <span
+              className="pointer-events-none absolute inset-y-0 left-0 bg-black/55"
+              style={{ width: `${((1 - janela) / 2) * 100}%` }}
+            />
+            <span
+              className="pointer-events-none absolute inset-y-0 right-0 bg-black/55"
+              style={{ width: `${((1 - janela) / 2) * 100}%` }}
+            />
+            <span
+              className="pointer-events-none absolute inset-y-0 border-x border-white/70"
+              style={{ left: `${((1 - janela) / 2) * 100}%`, width: `${janela * 100}%` }}
+            />
+          </>
+        )}
+        {/* Onde o mouse esta no clipe. Sem isto, "a borda direita e o fim" e
+            uma regra que ele teria que adivinhar. */}
+        {fracao !== null && (
+          <span className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] bg-black/50">
+            <span className="block h-full bg-accent" style={{ width: `${fracao * 100}%` }} />
+          </span>
         )}
         <span className="tnum absolute bottom-1 right-1 rounded-sm bg-black/70 px-1 py-0.5 text-[10px] text-white">
           {clip.duration.toFixed(1)}s

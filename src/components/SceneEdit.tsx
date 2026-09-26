@@ -218,14 +218,23 @@ export function SceneEdit() {
               -- ainda mais quando as duas cenas sao do mesmo personagem.
             */}
             <Field label="Metade de cima">
-              <Framing image={image} />
+              <Framing
+                image={image}
+                trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
+              />
             </Field>
             <Field label="Metade de baixo">
-              <Framing image={imageB} />
+              <Framing
+                image={imageB}
+                trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStartB ?? 0 }}
+              />
             </Field>
           </>
         ) : (
-          <Framing image={image} />
+          <Framing
+            image={image}
+            trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
+          />
         )}
 
       {/*

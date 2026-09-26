@@ -115,6 +115,21 @@ const bibliotecaSchema = z
           start: z.number(),
           end: z.number(),
           sentence: z.number().int().nonnegative(),
+          /*
+           * Os pedacos de um trecho JUNTADO. Precisa estar aqui por escrito:
+           * o zod descarta campo que o schema nao conhece, e sem esta linha
+           * salvar e reabrir apagaria o "separar" em silencio.
+           */
+          partes: z
+            .array(
+              z.object({
+                text: z.string(),
+                start: z.number(),
+                end: z.number(),
+                sentence: z.number().int().nonnegative(),
+              }),
+            )
+            .optional(),
         }),
       )
       .nullable()
