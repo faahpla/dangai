@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { Reorder } from 'motion/react'
-import { AlertTriangle, Check, GripVertical, Loader2, Merge, Split } from 'lucide-react'
+import { Reorder, useDragControls } from 'motion/react'
+import {
+  AlertTriangle,
+  Check,
+  Copy,
+  GripVertical,
+  Loader2,
+  Merge,
+  Minus,
+  Plus,
+  Rows2,
+  Split,
+  X,
+} from 'lucide-react'
 import { useProject } from '@/store/project'
 import type { LibraryClip } from '@shared/channels'
 import type { Word } from '@shared/contract'
@@ -40,7 +52,8 @@ export function ScriptColumn() {
   const ativo = useProject((s) => s.activeBlock)
   const porBloco = useProject((s) => s.blockClips)
   const pesos = useProject((s) => s.blockWeights)
-  const cycleBlockWeight = useProject((s) => s.cycleBlockWeight)
+  const setBlockWeight = useProject((s) => s.setBlockWeight)
+  const removeBlockClip = useProject((s) => s.removeBlockClip)
   const duplicateBlockClip = useProject((s) => s.duplicateBlockClip)
   const unioes = useProject((s) => s.blockSplits)
   const cortes = useProject((s) => s.blockCuts)
@@ -291,12 +304,19 @@ export function ScriptColumn() {
                     )}
                     <span
                       className="tnum flex items-center gap-1 text-[10px] text-accent"
-                      /* O numero que ensina o ritmo: 4,2s numa cena so grita que
-                         falta cena, sem eu ter que proibir nada. */
-                      title={`${cenas.length} cenas dividindo ${dura.toFixed(1)}s`}
+                      /*
+                       * Quantas cenas, por extenso. Era "4× 0.4s", a mesma notacao
+                       * do "1x" que ninguem entendia -- e errada com peso: dividia
+                       * igual enquanto a fita logo abaixo ja mostrava 0,8s numa das
+                       * quatro. Os segundos de cada uma moram na fita agora.
+                       *
+                       * Com UMA cena os segundos ficam aqui, porque sao o numero que
+                       * ensina o ritmo: 4,2s numa cena so grita que falta cena.
+                       */
+                      title={`${cenas.length} ${cenas.length === 1 ? 'cena' : 'cenas'} dividindo ${dura.toFixed(1)}s`}
                     >
                       <Check size={10} strokeWidth={2} />
-                      {cenas.length}× {cada.toFixed(1)}s
+                      {cenas.length === 1 ? `1 cena · ${dura.toFixed(1)}s` : `${cenas.length} cenas`}
                     </span>
                   </span>
                 )}
@@ -324,7 +344,8 @@ export function ScriptColumn() {
                   pesos={pesosDoBloco}
                   porCaminho={porCaminho}
                   onOrdem={(paths) => reordenar(i, paths)}
-                  onPeso={(posicao) => cycleBlockWeight(i, posicao)}
+                  onPeso={(posicao, peso) => setBlockWeight(i, posicao, peso)}
+                  onRemover={(posicao) => removeBlockClip(i, posicao)}
                   onRepetir={(posicao) => duplicateBlockClip(i, posicao)}
                   unidas={unioes[i] ?? []}
                   onDividir={(posicao) => toggleBlockSplit(i, posicao)}
@@ -530,15 +551,21 @@ function Frase({
 }
 
 /**
- * As cenas de uma frase, na ordem do video, arrastaveis.
+ * As cenas do trecho aberto, uma por LINHA, na ordem do video.
  *
- * A ordem dentro da frase e a do ARGUMENTO dele -- nenhuma ordenacao automatica
- * sabe qual imagem vem primeiro em "comprime uma nuvem carregada bem menor". Ate
- * agora ela era a ordem em que ele calhou de clicar, e errar custava desmarcar e
- * remarcar tudo.
+ * Era uma fileira de miniaturas de 54x30 com quatro controles de 9 pixels
+ * empilhados em cima: numero, peso, repetir e dividir -- e o "+" aparecia duas
+ * vezes com duas funcoes. Palavras dele: "nao tenho como clicar pra remover um
+ * bloco, os botoes de dividir tela nao sao muito visiveis, e o que significa
+ * aquele 1x?". Nao tinha como saber.
  *
- * A borda acesa marca a cena que nao cobre a fatia dela, que e a mesma
- * informacao do aviso la em cima -- mas aqui apontando QUAL delas.
+ * Agora cada cena e uma linha com espaco para dizer o que faz: os SEGUNDOS que
+ * ela ganha (o peso virou menos e mais ao lado deles), repetir, remover. E a
+ * tela dividida e uma acao ENTRE duas linhas, que e o que ela e -- uma relacao
+ * entre duas cenas, e nao uma propriedade de uma.
+ *
+ * A borda acesa ainda marca a cena que nao cobre a fatia dela, agora com o
+ * aviso escrito do lado.
  */
 function Fita({
   caminhos,
@@ -548,6 +575,7 @@ function Fita({
   onOrdem,
   onPeso,
   onRepetir,
+  onRemover,
   unidas,
   onDividir,
 }: {
@@ -558,8 +586,9 @@ function Fita({
   pesos: readonly number[]
   porCaminho: Map<string, LibraryClip>
   onOrdem: (paths: string[]) => void
-  onPeso: (posicao: number) => void
+  onPeso: (posicao: number, peso: number) => void
   onRepetir: (posicao: number) => void
+  onRemover: (posicao: number) => void
   /** Posicoes unidas com a seguinte, em tela dividida. */
   unidas: readonly number[]
   onDividir: (posicao: number) => void
@@ -572,127 +601,278 @@ function Fita({
   const uniao = new Set(unidas)
   const donos = caminhos.map((_, i) => (uniao.has(i - 1) ? i - 1 : i))
   const soma = caminhos.reduce((a, _, i) => (donos[i] === i ? a + (pesos[i] ?? 1) : a), 0)
+  // Com um slot so, o peso nao muda nada -- o trecho inteiro e dele.
+  const slots = donos.filter((d, i) => d === i).length
+
+  /*
+   * A chave de cada linha leva a POSICAO junto do caminho: a mesma cena pode
+   * estar duas vezes na fita, e duas linhas com a mesma chave fazem o React
+   * embaralhar uma com a outra ao arrastar.
+   */
+  const itens = caminhos.map((caminho, i) => `${i}|${caminho}`)
+
   return (
     <Reorder.Group
-      axis="x"
-      values={[...caminhos]}
-      onReorder={onOrdem}
+      axis="y"
+      values={itens}
+      onReorder={(novos) => onOrdem(novos.map((k) => k.slice(k.indexOf('|') + 1)))}
       as="ul"
-      className="mt-2 flex gap-1"
-      // Arrastar nao pode virar troca de frase: o clique da linha ja faz isso.
+      className="mt-2 flex flex-col"
+      // Mexer na fita nao pode virar troca de trecho: o clique da linha do
+      // trecho ja faz isso.
       onClick={(event) => event.stopPropagation()}
     >
       {caminhos.map((caminho, i) => {
-        const clip = porCaminho.get(caminho)
         const dono = donos[i]!
         const peso = pesos[dono] ?? 1
-        const fatia = (duracao * peso) / soma
-        const uneComProxima = uniao.has(i)
-        const eMetadeDeBaixo = dono !== i
-        const congela = clip ? fatia - clip.duration : 0
         return (
-          <Reorder.Item
-            key={caminho}
-            value={caminho}
-            as="li"
-            className="relative cursor-grab active:cursor-grabbing"
-            title={
-              clip
-                ? `Cena ${i + 1} · #${clip.shot} · ${clip.duration.toFixed(1)}s numa fatia de ${fatia.toFixed(1)}s` +
-                  (congela > 0.05 ? ` · congela ${congela.toFixed(1)}s no fim` : '')
-                : `Cena ${i + 1}`
-            }
-          >
-            {clip && (
-              <img
-                src={clip.thumbUrl}
-                alt=""
-                draggable={false}
-                className={[
-                  'h-[30px] w-[54px] rounded-[2px] border object-cover',
-                  congela > 0.05 ? 'border-accent' : 'border-line',
-                ].join(' ')}
-              />
-            )}
-            <span className="tnum absolute left-0 top-0 rounded-br-[2px] bg-black/70 px-1 text-[9px] text-white">
-              {i + 1}
-            </span>
-            {/*
-              O peso da cena, num alvo proprio.
-              Nao no thumbnail inteiro: ele ja e alca de arrastar, e um clique
-              que as vezes reordena e as vezes muda o ritmo seria pior que nao
-              ter o controle. Ciclo curto -- 1x, 2x, 3x -- porque a decisao e
-              "qual dessas importa", nao um numero exato.
-            */}
-            <button
-              type="button"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation()
-                onPeso(i)
-              }}
-              title={`Esta cena pesa ${peso}x — ${fatia.toFixed(1)}s. Clique para mudar.`}
-              className={[
-                'tnum absolute right-0 top-0 rounded-bl-[2px] px-1 text-[9px]',
-                peso > 1 ? 'bg-accent text-white' : 'bg-black/70 text-white/60',
-              ].join(' ')}
-            >
-              {peso}×
-            </button>
-            {/*
-              Repetir a mesma cena, logo depois desta.
-              Aqui e nao no cartao da grade: la o clique ALTERNA, e e assim que
-              ele desmarca. Na fita a ordem esta a vista, entao "de novo, logo
-              depois desta" nao tem ambiguidade.
-            */}
-            <button
-              type="button"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation()
-                onRepetir(i)
-              }}
-              title="Usar esta cena mais uma vez, logo depois"
-              className="absolute bottom-0 left-0 rounded-tr-[2px] bg-black/70 px-1 text-[9px] leading-[13px] text-white/70 hover:text-white"
-            >
-              +
-            </button>
-            {/*
-              Unir esta cena com a proxima em tela dividida.
-              So aparece quando existe uma proxima. O par ocupa um slot so: as
-              duas tocam ao mesmo tempo, uma em cima e uma embaixo, pelo tempo
-              que uma sozinha teria.
-            */}
-            {i < caminhos.length - 1 && !eMetadeDeBaixo && (
-              <button
-                type="button"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onDividir(i)
-                }}
-                title={
-                  uneComProxima
-                    ? 'Separar: cada cena volta a ocupar o quadro inteiro'
-                    : 'Dividir a tela com a proxima cena — esta em cima, a proxima embaixo'
-                }
-                className={[
-                  'absolute -right-[5px] top-1/2 z-10 grid size-[14px] -translate-y-1/2 place-items-center rounded-full text-[9px] leading-none',
-                  uneComProxima ? 'bg-accent text-white' : 'bg-black/70 text-white/60 hover:text-white',
-                ].join(' ')}
-              >
-                {uneComProxima ? '=' : '+'}
-              </button>
-            )}
-            <GripVertical
-              size={10}
-              strokeWidth={1.5}
-              className="absolute bottom-0 right-0 text-white/50"
-            />
-          </Reorder.Item>
+          <LinhaDaFita
+            key={itens[i]}
+            chave={itens[i]!}
+            posicao={i}
+            total={caminhos.length}
+            clip={porCaminho.get(caminho)}
+            fatia={(duracao * peso) / soma}
+            peso={peso}
+            podePesar={slots > 1 && dono === i}
+            emCima={uniao.has(i)}
+            embaixo={dono !== i}
+            onPeso={(novo) => onPeso(i, novo)}
+            onRepetir={() => onRepetir(i)}
+            onRemover={() => onRemover(i)}
+            onDividir={() => onDividir(i)}
+          />
         )
       })}
     </Reorder.Group>
+  )
+}
+
+function LinhaDaFita({
+  chave,
+  posicao,
+  total,
+  clip,
+  fatia,
+  peso,
+  podePesar,
+  emCima,
+  embaixo,
+  onPeso,
+  onRepetir,
+  onRemover,
+  onDividir,
+}: {
+  chave: string
+  posicao: number
+  total: number
+  clip: LibraryClip | undefined
+  /** Os segundos que esta cena ganha no trecho. */
+  fatia: number
+  peso: number
+  /** Menos e mais so aparecem onde mudam alguma coisa. */
+  podePesar: boolean
+  /** Divide a tela com a PROXIMA -- esta fica na metade de cima. */
+  emCima: boolean
+  /** Divide a tela com a ANTERIOR -- esta fica na metade de baixo. */
+  embaixo: boolean
+  onPeso: (peso: number) => void
+  onRepetir: () => void
+  onRemover: () => void
+  onDividir: () => void
+}) {
+  /*
+   * So a ALCA arrasta. Antes a linha inteira era alca, e cada botao dentro dela
+   * precisava de um stopPropagation no pointerdown para nao virar arrasto --
+   * um esquecido, e o botao reordenava a fita em vez de fazer o que dizia.
+   */
+  const controles = useDragControls()
+  const congela = clip ? fatia - clip.duration : 0
+  const unida = emCima || embaixo
+
+  return (
+    <Reorder.Item
+      value={chave}
+      as="li"
+      dragListener={false}
+      dragControls={controles}
+      className="list-none"
+    >
+      <div
+        className={[
+          'flex items-center gap-2 py-1 pr-1',
+          // A tela dividida se ve como UM bloco: as duas linhas com a mesma
+          // borda, e a de cima colada na de baixo.
+          unida ? 'border-l-2 border-accent bg-accent-dim/40 pl-1.5' : 'pl-0',
+        ].join(' ')}
+        title={
+          clip
+            ? `#${clip.shot} · o clipe tem ${clip.duration.toFixed(1)}s e ganha ${fatia.toFixed(1)}s aqui`
+            : undefined
+        }
+      >
+        <button
+          type="button"
+          onPointerDown={(event) => controles.start(event)}
+          aria-label="Arrastar para mudar a ordem"
+          title="Arrastar para mudar a ordem"
+          className="shrink-0 cursor-grab touch-none text-ink-3 hover:text-ink-2 active:cursor-grabbing"
+        >
+          <GripVertical size={13} strokeWidth={1.5} />
+        </button>
+
+        <span className="relative shrink-0">
+          {clip ? (
+            <img
+              src={clip.thumbUrl}
+              alt=""
+              draggable={false}
+              className={[
+                'h-[36px] w-[64px] rounded-[2px] border object-cover',
+                congela > 0.05 ? 'border-accent' : 'border-line',
+              ].join(' ')}
+            />
+          ) : (
+            <span className="block h-[36px] w-[64px] rounded-[2px] border border-line bg-elevated" />
+          )}
+          <span className="tnum absolute left-0 top-0 rounded-br-[2px] bg-black/75 px-1 text-[10px] text-white">
+            {posicao + 1}
+          </span>
+        </span>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/*
+            OS SEGUNDOS, e nao o peso. "1x" nao dizia nada; "0,4s" diz quanto
+            tempo esta cena fica na tela, que e a pergunta que ele faz.
+          */}
+          <span className="flex items-center gap-1">
+            {podePesar && (
+              <PassoDeTempo
+                rotulo="Menos tempo para esta cena"
+                desativado={peso <= 1}
+                onClick={() => onPeso(peso - 1)}
+              >
+                <Minus size={10} strokeWidth={2} />
+              </PassoDeTempo>
+            )}
+            <span className={['tnum text-[12px]', peso > 1 ? 'text-accent' : 'text-ink-2'].join(' ')}>
+              {fatia.toFixed(1)}s
+            </span>
+            {podePesar && (
+              <PassoDeTempo
+                rotulo="Mais tempo para esta cena"
+                desativado={peso >= 3}
+                onClick={() => onPeso(peso + 1)}
+              >
+                <Plus size={10} strokeWidth={2} />
+              </PassoDeTempo>
+            )}
+          </span>
+          {(unida || congela > 0.05) && (
+            <span className="truncate text-[10px] leading-tight">
+              {unida && <span className="text-accent">{emCima ? 'em cima' : 'embaixo'}</span>}
+              {unida && congela > 0.05 && <span className="text-ink-3"> · </span>}
+              {congela > 0.05 && <span className="text-accent">congela {congela.toFixed(1)}s</span>}
+            </span>
+          )}
+        </div>
+
+        <span className="flex shrink-0 items-center gap-0.5">
+          {/*
+            Repetir e um icone de COPIA, e nao mais um "+". O "+" era tambem o
+            de dividir a tela, e dois botoes com o mesmo desenho fazendo coisas
+            diferentes e o tipo de coisa que so se descobre errando.
+          */}
+          <AcaoDaLinha rotulo="Usar esta cena mais uma vez, logo depois" onClick={onRepetir}>
+            <Copy size={12} strokeWidth={1.5} />
+          </AcaoDaLinha>
+          <AcaoDaLinha rotulo="Tirar esta cena do trecho" onClick={onRemover} perigo>
+            <X size={13} strokeWidth={1.75} />
+          </AcaoDaLinha>
+        </span>
+      </div>
+
+      {/*
+        DIVIDIR A TELA mora ENTRE duas linhas, porque e isso que ela e: uma
+        relacao entre esta cena e a proxima. Escrito por extenso, e nao um
+        circulo de 14px pendurado na borda da miniatura.
+
+        Nao aparece embaixo da metade de baixo: uniao encadeada nao existe --
+        tres cenas nao cabem num quadro partido em dois.
+      */}
+      {posicao < total - 1 && !embaixo && (
+        <button
+          type="button"
+          onClick={onDividir}
+          title={
+            emCima
+              ? 'Voltar as duas para a tela inteira, uma depois da outra'
+              : 'As duas tocam juntas: esta na metade de cima, a proxima na de baixo'
+          }
+          className={[
+            'flex w-full items-center gap-1 py-0.5 text-[10px] transition-colors duration-150',
+            emCima
+              ? 'border-l-2 border-accent bg-accent-dim/40 pl-[27px] text-accent hover:text-ink'
+              : 'pl-[21px] text-ink-3 hover:text-ink',
+          ].join(' ')}
+        >
+          <Rows2 size={11} strokeWidth={1.5} />
+          {emCima ? 'Tela dividida · separar' : 'Dividir tela com a proxima'}
+        </button>
+      )}
+    </Reorder.Item>
+  )
+}
+
+function PassoDeTempo({
+  rotulo,
+  desativado,
+  onClick,
+  children,
+}: {
+  rotulo: string
+  desativado: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={desativado}
+      aria-label={rotulo}
+      title={rotulo}
+      className="grid size-[16px] place-items-center rounded-sm border border-line text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink disabled:opacity-30"
+    >
+      {children}
+    </button>
+  )
+}
+
+function AcaoDaLinha({
+  rotulo,
+  onClick,
+  perigo = false,
+  children,
+}: {
+  rotulo: string
+  onClick: () => void
+  perigo?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={rotulo}
+      title={rotulo}
+      className={[
+        'grid size-[22px] place-items-center rounded-sm text-ink-3 transition-colors duration-150 hover:bg-elevated',
+        perigo ? 'hover:text-danger' : 'hover:text-ink',
+      ].join(' ')}
+    >
+      {children}
+    </button>
   )
 }
 

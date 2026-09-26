@@ -84,6 +84,7 @@ import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
 import {
   juntarComOProximo,
   separarTrecho as separarPedacos,
+  tirarDaFita,
   type MarcacoesDosTrechos,
 } from '@shared/juntar'
 import {
@@ -592,8 +593,10 @@ export interface ProjectState {
   separarTrecho: (blockIndex: number) => void
   /** Troca a ordem das cenas dentro de uma frase. */
   reorderBlockClips: (blockIndex: number, paths: readonly string[]) => void
-  /** Cicla o peso de uma cena da fita: 1x, 2x, 3x e volta. */
-  cycleBlockWeight: (blockIndex: number, posicao: number) => void
+  /** Quanto tempo uma cena da fita ganha em relacao as outras: 1, 2 ou 3. */
+  setBlockWeight: (blockIndex: number, posicao: number, peso: number) => void
+  /** Tira UMA cena da fita, pela posicao. Ver `tirarDaFita`. */
+  removeBlockClip: (blockIndex: number, posicao: number) => void
   /** Poe outra copia da cena logo depois dela, no mesmo trecho. */
   duplicateBlockClip: (blockIndex: number, posicao: number) => void
   /** Une esta cena com a proxima em tela dividida, ou desfaz a uniao. */
@@ -1451,6 +1454,9 @@ export const useProject = create<ProjectState>((set, get) => ({
         blockWeights: outros,
         blockSplits: semUniao,
         blockCuts: semCortes,
+        // A ordem vai para o .dangai: reordenar sem sujar seria perder a ordem
+        // nova no proximo fechar, sem pergunta nenhuma.
+        projectDirty: true,
       }
     })
   },
@@ -1516,21 +1522,24 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
   },
 
-  cycleBlockWeight: (blockIndex, posicao) => {
+  setBlockWeight: (blockIndex, posicao, peso) => {
     /*
-     * Um clique na miniatura da fita: 1x, 2x, 3x e volta ao 1x.
+     * Tres niveis, 1x a 3x, escolhidos por menos e mais.
      *
-     * Ciclo curto de proposito. O que ele precisa e dizer "esta aqui e a que
-     * importa"; uma caixa de numero, ou arrastar borda, cobraria precisao que
-     * ele nao tem como ter olhando uma miniatura -- e o ajuste fino ja existe
-     * na linha do tempo, depois de montado.
+     * Era um ciclo num "1x" de 9 pixels, e ele nao tinha como saber o que
+     * aquilo era: "o que significa aquele 1x em cima do bloco?". Agora a fita
+     * mostra os SEGUNDOS que a cena ganha, com menos e mais do lado -- o peso
+     * continua existindo, mas como mecanismo, e nao como a coisa que ele le.
+     *
+     * Continua curto de proposito: a decisao e "esta aqui importa mais", e o
+     * ajuste fino ja existe na linha do tempo, depois de montado.
      */
     set((state) => {
       const quantas = (state.blockClips[blockIndex] ?? []).length
       if (posicao < 0 || posicao >= quantas) return {}
       const atuais = state.blockWeights[blockIndex] ?? []
       const pesos = Array.from({ length: quantas }, (_, i) => atuais[i] ?? 1)
-      pesos[posicao] = (pesos[posicao]! % 3) + 1
+      pesos[posicao] = Math.min(Math.max(Math.round(peso), 1), 3)
       /*
        * Mexer no peso devolve o trecho a divisao proporcional.
        *
@@ -1541,6 +1550,33 @@ export const useProject = create<ProjectState>((set, get) => ({
       const { [blockIndex]: _foraCorte, ...semCortes } = state.blockCuts
       return {
         blockWeights: { ...state.blockWeights, [blockIndex]: pesos },
+        blockCuts: semCortes,
+        projectDirty: true,
+      }
+    })
+  },
+
+  removeBlockClip: (blockIndex, posicao) => {
+    /*
+     * Tirar uma cena direto da fita, e nao so desmarcando o cartao na grade.
+     *
+     * "Eu nao tenho como clicar pra remover um bloco." Desmarcar existia so na
+     * grade da Biblioteca -- achar de novo o cartao entre milhares, depois de
+     * ter trocado de filtro, so para tirar uma cena que esta bem ali na fita.
+     */
+    set((state) => {
+      const r = tirarDaFita(
+        state.blockClips[blockIndex] ?? [],
+        state.blockWeights[blockIndex],
+        state.blockSplits[blockIndex],
+        posicao,
+      )
+      if (!r) return {}
+      const { [blockIndex]: _foraCorte, ...semCortes } = state.blockCuts
+      return {
+        blockClips: { ...state.blockClips, [blockIndex]: r.cenas },
+        blockWeights: { ...state.blockWeights, [blockIndex]: r.pesos },
+        blockSplits: { ...state.blockSplits, [blockIndex]: r.unioes },
         blockCuts: semCortes,
         projectDirty: true,
       }

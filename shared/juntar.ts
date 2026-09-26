@@ -130,3 +130,37 @@ export function separarTrecho(m: MarcacoesDosTrechos, i: number): MarcacoesDosTr
     ativo,
   }
 }
+
+/**
+ * Tira UMA cena da fita de um trecho, pela posicao.
+ *
+ * Pela posicao, e nao pelo caminho: a mesma cena pode estar duas vezes na fita
+ * (repetir e um gesto que existe), e tirar pelo caminho levaria as duas.
+ *
+ * O PESO DAS OUTRAS SOBREVIVE -- so a posicao removida sai, e as de depois
+ * sobem uma. As outras acoes da fita zeram tudo ao mudar o tamanho dela; aqui
+ * nao precisa: tirar uma cena nao muda o que ele disse sobre as que ficaram.
+ *
+ * A TELA DIVIDIDA que envolvia a cena tirada se desfaz -- tanto a dela com a
+ * proxima quanto a da anterior com ela --, e as outras uniões descem junto.
+ * Sem isto, tirar a de cima de um par colaria a de baixo com a cena seguinte,
+ * que e um par que ele nunca pediu.
+ *
+ * As fronteiras puxadas morrem: sao por palavra e por quantidade de cenas, e
+ * a quantidade acabou de mudar.
+ */
+export function tirarDaFita(
+  cenas: readonly string[],
+  pesos: readonly number[] | undefined,
+  unioes: readonly number[] | undefined,
+  posicao: number,
+): { cenas: string[]; pesos: number[]; unioes: number[] } | null {
+  if (posicao < 0 || posicao >= cenas.length) return null
+  return {
+    cenas: cenas.filter((_, i) => i !== posicao),
+    pesos: (pesos ?? []).filter((_, i) => i !== posicao),
+    unioes: (unioes ?? [])
+      .filter((u) => u !== posicao && u !== posicao - 1)
+      .map((u) => (u > posicao ? u - 1 : u)),
+  }
+}
