@@ -18,6 +18,13 @@ import { selectClips, type SelectionCandidate } from './selection'
 /** Quantas sugestoes cabem numa faixa sem virar uma segunda grade. */
 export const SUGESTOES = 12
 
+/**
+ * Quantas o "ver mais" traz. Doze e o que cabe numa faixa sem virar grade; quando
+ * nenhuma das doze serve, o proximo passo e olhar bem mais -- e ainda na ordem
+ * do que o trecho pede, e nao na ordem do disco como a grade de baixo.
+ */
+export const MAIS_SUGESTOES = 60
+
 export interface ContextoDeSugestao {
   blocks: readonly ScriptBlock[]
   clips: readonly LibraryClip[]
@@ -84,6 +91,8 @@ export function sugerirParaBloco(
   ctx: ContextoDeSugestao,
   bloco: number,
   jaUsadas: ReadonlySet<string>,
+  /** Quantas trazer. A faixa mostra SUGESTOES; "ver mais" pede MAIS_SUGESTOES. */
+  quantas: number = SUGESTOES,
 ): SelectionCandidate[] {
   const alvo = ctx.blocks[bloco]
   if (!alvo || ctx.clips.length === 0) return []
@@ -115,7 +124,7 @@ export function sugerirParaBloco(
        * so porque ele voltou para arrumar o trecho 12.
        */
       mode: 'theory',
-      fita: SUGESTOES,
+      fita: quantas,
       descriptions: ctx.descriptions,
       // A serie sai do roteiro inteiro, nao deste trecho: trecho sem nome
       // nenhum liberaria o acervo todo e traria Bleach num video de Re:Zero.

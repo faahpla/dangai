@@ -15,7 +15,13 @@ import {
 import type { LibraryClip, TiraDaCena } from '@shared/channels'
 import { medidasDo } from '@shared/contract'
 import { coberturaDaFonte } from '@shared/camera'
-import { personagensDoBloco, seriesDoRoteiro, sugerirParaBloco } from '@shared/suggest'
+import {
+  MAIS_SUGESTOES,
+  SUGESTOES,
+  personagensDoBloco,
+  seriesDoRoteiro,
+  sugerirParaBloco,
+} from '@shared/suggest'
 import type { SelectionCandidate } from '@shared/selection'
 import { TAGS_PT } from '@shared/tags-pt'
 import { useProject } from '@/store/project'
@@ -129,6 +135,14 @@ export function Library() {
   const limparEscolhidos = useProject((s) => s.limparEscolhidos)
   const [apelidosAbertos, setApelidosAbertos] = useState(false)
   const [soFavoritos, setSoFavoritos] = useState(false)
+  /*
+   * A faixa de sugestoes aberta em grade, com bem mais cenas.
+   *
+   * Fica ligada de um trecho para o outro de proposito: quem abriu para ver
+   * mais num trecho quase sempre quer ver mais no seguinte tambem, e fechar
+   * sozinho a cada troca seria um clique a mais por trecho, trinta vezes.
+   */
+  const [maisSugestoes, setMaisSugestoes] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -211,6 +225,7 @@ export function Library() {
     setMinSec(0)
     setMaxSec(0)
     setSoFavoritos(false)
+    setMaisSugestoes(false)
   }, [open])
 
   /*
@@ -414,23 +429,31 @@ export function Library() {
 
   const sugestoes = useMemo(() => {
     if (!contexto || activeBlock === null || replaceTarget !== null) return []
-    return sugerirParaBloco(contexto, activeBlock, usadasEmOutras)
-  }, [contexto, activeBlock, replaceTarget, usadasEmOutras])
+    return sugerirParaBloco(
+      contexto,
+      activeBlock,
+      usadasEmOutras,
+      maisSugestoes ? MAIS_SUGESTOES : SUGESTOES,
+    )
+  }, [contexto, activeBlock, replaceTarget, usadasEmOutras, maisSugestoes])
 
   /*
-   * A pasta do personagem que o trecho cita, para o "ver todas".
+   * As pastas dos personagens que o trecho cita -- todos, e nao so o primeiro.
    *
-   * O primeiro citado, que e o de maior confianca do leitor. E o anime sai do
-   * proprio acervo: nome de personagem nao colide entre as series dele
-   * (medido: zero colisoes em 96 personagens de 7 series), entao a primeira
-   * cena que o tem diz de onde ele e.
+   * "O LYE ESCREVEU UMA CARTA DE AMOR PRA RAM?!" cita dois, e qualquer um
+   * dos dois pode ser a cena certa. Ate tres, porque um trecho que cita mais
+   * que isso quase nunca e sobre um deles.
+   *
+   * O anime sai do proprio acervo: nome de personagem nao colide entre as
+   * series dele (medido: zero colisoes em 96 personagens de 7 series), entao
+   * a primeira cena que o tem diz de onde ele e.
    */
-  const pastaDoTrecho = useMemo(() => {
-    if (!contexto || !library || activeBlock === null) return null
-    const nome = personagensDoBloco(contexto, activeBlock)[0]
-    if (!nome) return null
-    const doAnime = library.clips.find((c) => c.characters.includes(nome))?.anime
-    return doAnime ? { nome, anime: doAnime } : null
+  const pastasDoTrecho = useMemo(() => {
+    if (!contexto || !library || activeBlock === null) return []
+    return personagensDoBloco(contexto, activeBlock)
+      .slice(0, 3)
+      .map((nome) => ({ nome, anime: library.clips.find((c) => c.characters.includes(nome))?.anime }))
+      .filter((p): p is { nome: string; anime: string } => p.anime !== undefined)
   }, [contexto, library, activeBlock])
 
   if (!open) return null
@@ -708,28 +731,28 @@ export function Library() {
                 favoritos={favoritosSet}
                 onFavoritar={(id) => void toggleFavorite(id)}
                 onEscolher={escolher}
+                expandida={maisSugestoes}
+                onExpandir={() => setMaisSugestoes((v) => !v)}
                 /*
-                 * "Ver todas" abre a PASTA INTEIRA do personagem.
+                 * A pasta abre a PASTA INTEIRA do personagem.
                  *
                  * Por isso limpa episodio, busca e so-favoritos: qualquer um
                  * deles faria "todas" virar "algumas", com o motivo escondido
                  * num filtro que ele nem lembra de ter posto. O resto e o que o
                  * rail ja faz ao clicar no personagem.
                  */
-                verTodas={
-                  pastaDoTrecho && personagem !== pastaDoTrecho.nome
-                    ? {
-                        nome: pastaDoTrecho.nome,
-                        abrir: () => {
-                          setAnime(pastaDoTrecho.anime)
-                          setPersonagem(pastaDoTrecho.nome)
-                          setEpisodio(null)
-                          setTexto('')
-                          setSoFavoritos(false)
-                        },
-                      }
-                    : null
-                }
+                pastas={pastasDoTrecho
+                  .filter((p) => personagem !== p.nome)
+                  .map((p) => ({
+                    nome: p.nome,
+                    abrir: () => {
+                      setAnime(p.anime)
+                      setPersonagem(p.nome)
+                      setEpisodio(null)
+                      setTexto('')
+                      setSoFavoritos(false)
+                    },
+                  }))}
               />
             )}
 
@@ -1474,19 +1497,23 @@ function Sugestoes({
   favoritos,
   onFavoritar,
   onEscolher,
-  verTodas,
+  expandida,
+  onExpandir,
+  pastas,
 }: {
   candidatos: readonly SelectionCandidate[]
   escolhidos: readonly string[]
   favoritos: ReadonlySet<string>
   onFavoritar: (id: string) => void
   onEscolher: (id: string) => void
+  /** Aberta em grade, com MAIS_SUGESTOES cenas em vez das doze da faixa. */
+  expandida: boolean
+  onExpandir: () => void
   /**
-   * A saida quando nenhuma das doze serve. Null quando o trecho nao cita
-   * ninguem, ou quando a grade ja esta na pasta dele -- ai o botao nao faria
-   * nada, e botao que nao faz nada e pior que nenhum.
+   * As pastas dos personagens citados. Some a de quem ja esta aberto na grade:
+   * ali o botao nao faria nada, e botao que nao faz nada e pior que nenhum.
    */
-  verTodas: { nome: string; abrir: () => void } | null
+  pastas: { nome: string; abrir: () => void }[]
 }) {
   const ordens = new Map(escolhidos.map((id, i) => [id, i + 1]))
 
@@ -1503,38 +1530,92 @@ function Sugestoes({
   const [motivo, quantos] = [...contagem].sort((a, b) => b[1] - a[1])[0] ?? ['', 0]
   const comum = quantos >= candidatos.length / 2 ? motivo : ''
 
+  /*
+   * "Ver mais" so aparece quando ha mais para ver. A faixa pede doze; se o
+   * motor devolveu menos, o acervo do trecho acabou ali, e o botao so abriria
+   * a mesma coisa em outro formato.
+   */
+  const temMais = expandida || candidatos.length >= SUGESTOES
+
+  const cartao = (c: SelectionCandidate) => (
+    <Cartao
+      clip={c.clip}
+      ordem={ordens.get(c.clip.id) ?? 0}
+      favorito={favoritos.has(c.clip.id)}
+      onFavoritar={() => onFavoritar(c.clip.id)}
+      onClick={() => onEscolher(c.clip.id)}
+    />
+  )
+
   return (
     <div className="border-b border-line px-3 pb-3 pt-2">
       <div className="mb-1.5 flex items-baseline gap-2">
         <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-3">Sugestoes para este trecho</span>
         {comum && <span className="min-w-0 truncate text-[11px] text-ink-3">· {comum}</span>}
-        {verTodas && (
-          <button
-            type="button"
-            onClick={verTodas.abrir}
-            title={`Abre a pasta inteira de ${verTodas.nome} na grade abaixo`}
-            className="ml-auto flex shrink-0 items-center gap-1 text-[11px] text-ink-2 transition-colors duration-150 hover:text-accent"
-          >
-            Ver todas de {verTodas.nome}
-            <ChevronRight size={11} strokeWidth={1.5} />
-          </button>
-        )}
+        <span className="ml-auto flex shrink-0 items-baseline gap-3">
+          {pastas.map((p) => (
+            <button
+              key={p.nome}
+              type="button"
+              onClick={p.abrir}
+              title={`Abre a pasta inteira de ${p.nome} na grade abaixo`}
+              className="flex items-center gap-0.5 text-[11px] text-ink-3 transition-colors duration-150 hover:text-accent"
+            >
+              Pasta de {nomeCurto(p.nome)}
+              <ChevronRight size={11} strokeWidth={1.5} />
+            </button>
+          ))}
+          {temMais && (
+            <button
+              type="button"
+              onClick={onExpandir}
+              title={
+                expandida
+                  ? 'Voltar para as doze mais provaveis, numa faixa'
+                  : `Mostrar as ${MAIS_SUGESTOES} mais provaveis para este trecho, ainda em ordem`
+              }
+              className="flex items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-[11px] text-ink-2 transition-colors duration-150 hover:border-accent hover:text-ink"
+            >
+              {expandida ? 'Ver menos' : 'Ver mais sugestoes'}
+              {expandida ? (
+                <ChevronDown size={11} strokeWidth={1.5} className="rotate-180" />
+              ) : (
+                <ChevronDown size={11} strokeWidth={1.5} />
+              )}
+            </button>
+          )}
+        </span>
       </div>
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {candidatos.map((c) => (
-          <div key={c.clip.id} className="w-[168px] shrink-0" title={c.reason}>
-            <Cartao
-              clip={c.clip}
-              ordem={ordens.get(c.clip.id) ?? 0}
-              favorito={favoritos.has(c.clip.id)}
-              onFavoritar={() => onFavoritar(c.clip.id)}
-              onClick={() => onEscolher(c.clip.id)}
-            />
-          </div>
-        ))}
-      </div>
+      {/*
+        ABERTA, em grade e com altura presa. Sem o teto, sessenta cartoes
+        empurrariam a grade da biblioteca para fora da tela -- e ela continua
+        sendo o caminho quando nem as sessenta servem.
+      */}
+      {expandida ? (
+        <div className="grid max-h-[46vh] grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2 overflow-y-auto pb-1 pr-1">
+          {candidatos.map((c) => (
+            <div key={c.clip.id} title={c.reason}>
+              {cartao(c)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {candidatos.map((c) => (
+            <div key={c.clip.id} className="w-[168px] shrink-0" title={c.reason}>
+              {cartao(c)}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
+}
+
+/** "Batenakaitos, Lye" -> "Lye". O botao e pequeno, e o nome proprio e o que ele escreve. */
+function nomeCurto(nome: string): string {
+  const virgula = nome.indexOf(',')
+  return virgula >= 0 ? nome.slice(virgula + 1).trim() : nome
 }
 
 function Cartao({

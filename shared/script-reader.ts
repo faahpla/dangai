@@ -41,14 +41,44 @@ export interface ScriptLine {
 }
 
 /**
- * Palavra de nome com menos de 4 letras nao conta.
+ * Palavra de nome com menos de 3 letras nao conta -- e com 3, so fora da lista.
  *
- * Personagem de anime tem nome curto que colide com palavra portuguesa comum --
- * "Rei", "Ura", "Sei". Com 3 letras a regra achava personagem em frase que nao
- * falava de ninguem, e trazer o personagem errado e o unico erro que nao da
- * para consertar olhando o video pronto.
+ * O corte era 4, e derrubou um roteiro inteiro: "O LYE ESCREVEU UMA CARTA DE
+ * AMOR PRA RAM?!". Ram e Lye tem 3 letras, os dois eram descartados antes de
+ * qualquer comparacao, o roteiro nao citava ninguem para o leitor -- e sem
+ * nome nenhum nao havia nem como saber de que anime ele era, entao as
+ * sugestoes vinham do acervo inteiro. Os roteiros de antes eram de Subaru,
+ * Rudeus e Ichigo, e nunca bateram no corte.
+ *
+ * O corte existia por um motivo real: nome curto colide com palavra comum.
+ * MEDIDO nos 11 roteiros dele contra os 119 personagens do acervo: as palavras
+ * de nome com 3 letras sao guy, kon, ley, lye, npc, ram, rem, roy e rui.
+ * Aceitando todas, 33 acertos (ram 13x, lye 10x, rui 6x, rem 3x, roy 1x -- todos
+ * no roteiro do anime certo) contra 1 erro: "npc", que e etiqueta generica do
+ * AnCut e apareceu como palavra num roteiro de outro anime.
+ *
+ * Entao 3 letras valem, MENOS as da lista abaixo: palavras que aparecem em
+ * texto comum e fariam um personagem surgir em frase que nao fala dele. Um
+ * personagem chamado "Ayanami, Rei" continua achado pelo "Ayanami" -- so o
+ * "Rei" sozinho deixa de contar, que e o certo.
  */
-const MIN_FICHA = 4
+const MIN_FICHA = 3
+
+/** Palavras de 3 letras que nunca valem como nome, ja normalizadas. */
+const CURTAS_COMUNS = new Set([
+  // portugues
+  'que', 'nao', 'com', 'uma', 'uns', 'mas', 'por', 'dos', 'das', 'nos', 'nas', 'ele',
+  'ela', 'seu', 'sua', 'sem', 'tem', 'ter', 'foi', 'era', 'sao', 'ser', 'vai', 'ver',
+  'vou', 'mal', 'bem', 'dia', 'vez', 'ano', 'mes', 'rei', 'sei', 'sol', 'lua', 'mar',
+  'paz', 'fim', 'dor', 'cor', 'voz', 'luz', 'par', 'sul', 'mae', 'pai', 'meu', 'teu',
+  'nem', 'ali', 'ate', 'aos', 'via', 'lei', 'fez', 'faz', 'diz', 'deu', 'cai', 'sai',
+  'vem', 'tao', 'boa', 'bom', 'mau', 'tio', 'tia', 'avo', 'rio', 'mil', 'cem', 'dez',
+  'pra', 'pro', 'num', 'sim', 'ola', 'som', 'tom', 'dom', 'rua', 'lar', 'mao', 'uso',
+  'fui', 'amo', 'ama', 'eis', 'oca', 'vil', 'fio', 'ora', 'reu', 'deus',
+  // ingles e jargao que aparece em roteiro de recap
+  'npc', 'rpg', 'pov', 'fps', 'kkk', 'lol', 'the', 'and', 'you', 'man', 'boy', 'god',
+  'war', 'big', 'bad', 'old', 'new', 'one', 'two', 'top', 'end', 'win', 'boss',
+])
 
 /**
  * Pronome que herda quem estava em cena.
@@ -108,6 +138,7 @@ export function buildScriptIndex(
   for (const personagem of characters) {
     for (const ficha of fichas(personagem)) {
       if (ficha.length < MIN_FICHA) continue
+      if (ficha.length === 3 && CURTAS_COMUNS.has(ficha)) continue
       const alvo = candidatos.get(ficha) ?? new Set<string>()
       alvo.add(personagem)
       candidatos.set(ficha, alvo)

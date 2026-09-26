@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 import { basename, join } from 'node:path'
 import sharp from 'sharp'
 import type { LibraryClip, LibraryIndex } from '@shared/channels'
+import { canonizar } from '@shared/nomes'
 
 /**
  * Le a biblioteca de cenas que o AnCut HUB ja produziu.
@@ -201,66 +202,6 @@ function unificarNomes(clips: LibraryClip[]): void {
     for (const nome of clip.characters) vistos.add(mapa.get(nome) ?? nome)
     clip.characters = [...vistos].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   }
-}
-
-/** Sem acento, minusculas, so as palavras, ordenadas: "Tempest, Rimuru" == "Rimuru Tempest". */
-function fichas(nome: string): string[] {
-  return nome
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter(Boolean)
-    .sort()
-}
-
-/** nome cru -> nome escolhido, para uma serie. */
-function canonizar(contagem: ReadonlyMap<string, number>): ReadonlyMap<string, string> {
-  interface Grupo {
-    fichas: string[]
-    nomes: [string, number][]
-  }
-
-  // 1) Mesmas palavras, mesma pessoa. Pega inversao e caixa de uma vez.
-  const grupos = new Map<string, Grupo>()
-  for (const [nome, n] of contagem) {
-    const f = fichas(nome)
-    const chave = f.join(' ')
-    const g = grupos.get(chave) ?? { fichas: f, nomes: [] }
-    g.nomes.push([nome, n])
-    grupos.set(chave, g)
-  }
-
-  /*
-   * 2) Nome curto entra no longo -- mas so quando cabe em UM. "Rudeus" so pode
-   * ser "Greyrat, Rudeus"; ja "Greyrat" sozinho caberia em Rudeus, Paul, Zenith
-   * e Eris, e um palpite ali juntaria a familia inteira numa pessoa so.
-   */
-  const chaves = [...grupos.keys()]
-  const destino = new Map<string, string>()
-  for (const chave of chaves) {
-    const g = grupos.get(chave)!
-    const maiores = chaves.filter((outra) => {
-      if (outra === chave) return false
-      const o = grupos.get(outra)!
-      return g.fichas.length < o.fichas.length && g.fichas.every((f) => o.fichas.includes(f))
-    })
-    if (maiores.length === 1) destino.set(chave, maiores[0]!)
-  }
-
-  // 3) Fica a grafia mais usada: e a que ele reconhece de ver na tela do AnCut.
-  const juntos = new Map<string, [string, number][]>()
-  for (const chave of chaves) {
-    const alvo = destino.get(chave) ?? chave
-    juntos.set(alvo, [...(juntos.get(alvo) ?? []), ...grupos.get(chave)!.nomes])
-  }
-
-  const mapa = new Map<string, string>()
-  for (const nomes of juntos.values()) {
-    const escolhido = nomes.reduce((a, b) => (b[1] > a[1] ? b : a))[0]
-    for (const [nome] of nomes) mapa.set(nome, escolhido)
-  }
-  return mapa
 }
 
 // ---------------------------------------------------------------- leitura crua
