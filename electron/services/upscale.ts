@@ -88,8 +88,13 @@ let cacheDir: string | null = null
  * esta GRAVADO dentro dos arquivos da v3 -- sem subir o numero, quem ja
  * renderizou continuaria recebendo o video travado vindo do cache, que e
  * exatamente o caso de quem reportou o problema.
+ *
+ * v5: os limites do "mesmo desenho" passaram a acompanhar o contraste da cena.
+ * As cenas de baixo contraste (o Hitogami, no plano branco) sairam da v4 com
+ * 80% dos quadros reaproveitados e o movimento travado -- e isso esta gravado
+ * nos arquivos em cache.
  */
-const VERSAO_DO_UPSCALE = 4
+const VERSAO_DO_UPSCALE = 5
 
 export function configureUpscaleCache(userDataDir: string): void {
   cacheDir = join(userDataDir, 'upscale')
@@ -277,12 +282,83 @@ async function ampliarQuadro(
  * inferencias: comparar 1,9 MB inteiros custaria mais do que o tempo que
  * economiza em parte dos quadros. Um desenho novo muda muito mais que 1 em 5.
  */
-function mesmoDesenho(a: Buffer, b: Buffer): boolean {
+/**
+ * O alcance de brilho do quadro: do tom mais escuro ao mais claro que importa
+ * (percentis 5 e 95, para um pixel perdido nao mentir o contraste inteiro).
+ *
+ * Anime comum fica perto de 200. As cenas do Hitogami, lavadas de branco,
+ * ficam entre 18 e 35 -- medido em dez clipes dele.
+ */
+function alcanceDe(quadro: Buffer): number {
+  const histograma = new Uint32Array(256)
+  let n = 0
+  // 1 em cada 15 bytes: e um histograma, nao precisa de todos.
+  for (let p = 0; p < quadro.length; p += 15) {
+    histograma[quadro[p]!]! += 1
+    n += 1
+  }
+  let acumulado = 0
+  let baixo = 0
+  for (let v = 0; v < 256; v++) {
+    acumulado += histograma[v]!
+    if (acumulado >= n * 0.05) {
+      baixo = v
+      break
+    }
+  }
+  acumulado = 0
+  let alto = 255
+  for (let v = 255; v >= 0; v--) {
+    acumulado += histograma[v]!
+    if (acumulado >= n * 0.05) {
+      alto = v
+      break
+    }
+  }
+  return Math.max(alto - baixo, 1)
+}
+
+/*
+ * Abaixo disto uma diferenca e ruido de compressao, qualquer que seja o
+ * contraste da cena. Calibrado junto com os limites relativos: ver o
+ * comentario de `mesmoDesenho`.
+ */
+const RUIDO = 2
+
+function mesmoDesenho(a: Buffer, b: Buffer, alcance: number): boolean {
   if (a.length !== b.length) return false
 
+  /*
+   * OS LIMITES ACOMPANHAM O CONTRASTE DA CENA.
+   *
+   * "Em cenas com cor predominante, quando renderiza o clipe fica todo
+   * travado." O exemplo dele e o Hitogami: silhueta num plano todo branco, e
+   * qualquer movimento dele saia parado depois do render. Os limites de 8 e
+   * 30 foram calibrados em anime comum, com alcance de brilho perto de 200;
+   * no Hitogami o alcance e 18 a 35, e o personagem inteiro se move sem quase
+   * nenhum pixel passar de 8. A regra reaproveitava 80% dos quadros.
+   *
+   * O erro que isso causava so aparece medido CONTRA O CONTRASTE: o quadro
+   * reusado errava ate 2 niveis de brilho, que parece nada -- e num alcance de
+   * 19 e 10% de toda a imagem. Medido em dez clipes do Hitogami e catorze de
+   * anime comum, o pior erro do quadro reusado, em % do contraste da cena:
+   *
+   *                        Hitogami             anime comum
+   *                     reuso  pior erro      reuso  pior erro
+   *   limites fixos      80%     24,5%         43%      1,5%
+   *   relativos, ruido 2  8%      1,4%         40%      1,5%
+   *
+   * O Hitogami passa a ter o MESMO padrao de qualidade que o anime comum ja
+   * tinha, e o anime comum quase nao muda. Ruido 3 deixava 1,8% no Hitogami,
+   * acima do padrao; ruido 1 so tirava economia sem ganhar qualidade.
+   *
+   * O alcance e o do quadro de REFERENCIA, medido uma vez quando ele e
+   * inferido, e nao a cada comparacao.
+   */
+  const k = Math.min(alcance / 200, 1)
+  const FRACO = Math.max(RUIDO, 8 * k)
+  const FORTE = Math.max(RUIDO + 1, 30 * k)
   const PASSO = 5
-  const FORTE = 30
-  const FRACO = 8
 
   const amostras = Math.ceil(a.length / PASSO)
   // 0,02% dos bytes vistos. Acima disso nao e mais ruido de compressao.
@@ -466,6 +542,8 @@ async function ampliarClipe(
    * criterio, recalcula.
    */
   let referencia: Buffer | null = null
+  /** O contraste da referencia, medido uma vez quando ela e inferida. */
+  let alcanceDaReferencia = 200
   /*
    * Guarda o quadro PRONTO, e nao o que o modelo devolveu.
    *
@@ -485,7 +563,9 @@ async function ampliarClipe(
       if (emVoo >= TETO) entrada.stdout.pause()
 
       const repetido =
-        referencia !== null && referenciaPronta !== null && mesmoDesenho(referencia, quadro)
+        referencia !== null &&
+        referenciaPronta !== null &&
+        mesmoDesenho(referencia, quadro, alcanceDaReferencia)
 
       let pronto: Promise<Buffer>
       if (repetido) {
@@ -504,6 +584,7 @@ async function ampliarClipe(
           paraQuadroDoRender(dados, janela.width, janela.height),
         )
         referencia = quadro
+        alcanceDaReferencia = alcanceDe(quadro)
         referenciaPronta = pronto
       }
 
