@@ -35,7 +35,34 @@ const MIME: Readonly<Record<string, string>> = {
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
   '.ogg': 'audio/ogg',
+  // As fontes que ele larga na pasta, para as legendas. Ver FONTES abaixo.
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
 }
+
+/**
+ * FONTE EXIGE CORS, e so fonte.
+ *
+ * A interface do app roda de `file://` (e em dev, do servidor do Vite), e o
+ * render roda num Chrome proprio servido pelo Remotion -- as duas sao OUTRA
+ * origem em relacao a este servidor. Imagem, video e audio carregam de outra
+ * origem sem pedir licenca nenhuma; FONTE NAO: a especificacao exige que o
+ * servidor autorize, e sem isso o navegador recusa o arquivo.
+ *
+ * Foi assim que a fonte escolhida para as legendas nunca aparecia no video:
+ * o FontFace dava NetworkError, o app caia calado na Komika Axis, e o aviso
+ * ia para um console que ninguem ve. Reportado pelo ajk ("tentou adicionar
+ * outra fonte para as legendas e nao altera no video") e confirmado
+ * carregando a fonte do jeito que o app carrega, a partir de `file://`.
+ *
+ * So as fontes ganham a liberacao: e o unico tipo que precisa dela, e o resto
+ * continua sem ser legivel por outra origem. O servidor so escuta 127.0.0.1 e
+ * cada arquivo mora atras de um id sorteado, entao liberar uma fonte que ele
+ * mesmo largou na pasta nao expoe nada que valha proteger.
+ */
+const FONTES = new Set(['.ttf', '.otf', '.woff', '.woff2'])
 
 /** id opaco -> caminho absoluto no disco */
 const published = new Map<string, string>()
@@ -102,7 +129,11 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     return
   }
 
-  const contentType = MIME[extname(path).toLowerCase()] ?? 'application/octet-stream'
+  const extensao = extname(path).toLowerCase()
+  const contentType = MIME[extensao] ?? 'application/octet-stream'
+  const cors: Record<string, string> = FONTES.has(extensao)
+    ? { 'Access-Control-Allow-Origin': '*' }
+    : {}
   const range = req.headers.range
 
   // Range e obrigatorio para o <Audio> conseguir buscar posicao no preview.
@@ -117,6 +148,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     }
 
     res.writeHead(206, {
+      ...cors,
       'Content-Type': contentType,
       'Content-Length': end - start + 1,
       'Content-Range': `bytes ${start}-${end}/${size}`,
@@ -127,6 +159,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
   }
 
   res.writeHead(200, {
+    ...cors,
     'Content-Type': contentType,
     'Content-Length': size,
     'Accept-Ranges': 'bytes',

@@ -1296,23 +1296,44 @@ export function reordenarBlocos(
    * A permutacao sai dos IDS, e nao da posicao: as duas listas tem o mesmo
    * tamanho e e justamente a posicao que mudou.
    */
-  const onde = new Map(idsAntes.map((id, i) => [id, i]))
-  const origem = idsAgora.map((id) => onde.get(id) ?? -1)
-  if (origem.some((i) => i < 0)) return null
+  const agora = new Map(idsAgora.map((id, k) => [id, k]))
+  if (idsAntes.some((id) => !agora.has(id))) return null
+
+  const reaponta = (i: number | null | undefined): number | null => {
+    if (i == null) return null
+    const id = idsAntes[i]
+    return id === undefined ? null : (agora.get(id) ?? null)
+  }
 
   /*
-   * UM BLOCO POR IMAGEM e o unico caso em que "arrastar a imagem" quer dizer
-   * "mover o bloco". Com tela dividida um bloco consome duas imagens, e ai a
-   * tira e o plano deixam de ser a mesma lista.
+   * CADA BLOCO SEGUE A SUA IMAGEM DE CIMA.
+   *
+   * Ate aqui os blocos so andavam quando cada um tinha exatamente uma imagem.
+   * Bastava UMA tela dividida no projeto -- um bloco com duas imagens -- para
+   * a tira e o plano deixarem de ser a mesma lista, e ai arrastar no topo so
+   * reapontava referencias: a tira mudava de ordem e a timeline ficava igual.
+   * Reportado pelo ajk ("quando tenta trocar uma cena de lugar, ele nao altera
+   * na timeline mais"), e o "mais" era justo: antes de a v1.31 tratar o
+   * arrasto, a reordenacao refazia o plano inteiro -- perdendo os ajustes, mas
+   * mexendo na timeline.
+   *
+   * A regra geral e a do caso simples, generalizada: a ordem dos blocos passa
+   * a ser a ordem das imagens DE CIMA deles na tira nova. A de baixo de uma
+   * tela dividida vai junto com o bloco; arrastar so ela muda a tira e nao
+   * separa o par, porque o par e do bloco e nao da tira. Imagem que nenhum
+   * bloco usa tambem so muda a tira. Empate -- a mesma imagem em dois blocos
+   * -- mantem a ordem que ja tinham.
    */
-  const umPorBloco =
-    plan.scenes.length === idsAntes.length &&
-    plan.scenes.every((cena, i) => cena.imageIndex === i && cena.imageIndexB == null)
+  const ordem = plan.scenes
+    .map((cena, i) => ({ cena, i, pos: reaponta(cena.imageIndex) ?? Number.POSITIVE_INFINITY }))
+    .sort((a, b) => a.pos - b.pos || a.i - b.i)
 
-  if (umPorBloco) {
-    const scenes = plan.scenes.map((lugar, k) => ({
-      ...plan.scenes[origem[k]!]!,
-      imageIndex: k,
+  const scenes = ordem.map(({ cena }, k) => {
+    const lugar = plan.scenes[k]!
+    return {
+      ...cena,
+      imageIndex: reaponta(cena.imageIndex) ?? cena.imageIndex,
+      imageIndexB: reaponta(cena.imageIndexB),
       /*
        * O TEMPO E DO LUGAR, os ajustes sao do bloco.
        *
@@ -1324,26 +1345,8 @@ export function reordenarBlocos(
       start: lugar.start,
       end: lugar.end,
       transitionIn: lugar.transitionIn,
-    }))
-    return { plan: { ...plan, scenes }, moveuBlocos: true }
-  }
+    }
+  })
 
-  /*
-   * Fora do 1-para-1, so as REFERENCIAS sao reapontadas: a tira muda de ordem e
-   * o video continua o mesmo. Nao e o que ele quer ver, mas e melhor que as
-   * duas alternativas -- refazer o plano perde o ajuste dele, e deixar os
-   * indices velhos faria cada bloco mostrar a imagem errada.
-   */
-  const agora = new Map(idsAgora.map((id, k) => [id, k]))
-  const reaponta = (i: number | null | undefined): number | null => {
-    if (i == null) return null
-    const id = idsAntes[i]
-    return id === undefined ? null : (agora.get(id) ?? null)
-  }
-  const scenes = plan.scenes.map((cena) => ({
-    ...cena,
-    imageIndex: reaponta(cena.imageIndex) ?? cena.imageIndex,
-    imageIndexB: reaponta(cena.imageIndexB),
-  }))
-  return { plan: { ...plan, scenes }, moveuBlocos: false }
+  return { plan: { ...plan, scenes }, moveuBlocos: ordem.some((o, k) => o.i !== k) }
 }

@@ -2,9 +2,16 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      font-src libera o servidor local (127.0.0.1) como img-src e media-src ja
+      liberavam. Sem isso, a fonte que ele larga na pasta para as legendas era
+      recusada pela propria politica: o preview caia calado na Komika Axis e o
+      aviso ia para um console que ninguem ve. O servidor tambem precisa
+      mandar CORS para arquivo de fonte -- ver electron/services/media-server.ts.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; media-src 'self' blob: http://127.0.0.1:*; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'"
+      content="default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; media-src 'self' blob: http://127.0.0.1:*; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data: http://127.0.0.1:*; script-src 'self'"
     />
     <title>Dangai</title>
   </head>
