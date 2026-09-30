@@ -19,6 +19,7 @@ import {
   type SettingsPatch,
   type StartRenderArgs,
   type TiraDaCena,
+  type LegendasSincronizadas,
   type UpdateStatus,
 } from '@shared/channels'
 import type {
@@ -65,6 +66,8 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.libraryClipUrl, path) as Promise<IpcResult<string>>,
   libraryClipStrip: (path) =>
     ipcRenderer.invoke(IPC.libraryClipStrip, path) as Promise<IpcResult<TiraDaCena>>,
+  sincronizarLegendas: (audioPath, palavras) =>
+    ipcRenderer.invoke(IPC.sincronizarLegendas, audioPath, palavras) as Promise<IpcResult<LegendasSincronizadas>>,
 
   onLibraryProgress: (listener) => {
     const handler = (_event: unknown, mensagem: string): void => listener(mensagem)

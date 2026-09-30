@@ -38,6 +38,8 @@ function estiloAtual(): CaptionStyle {
     mark: s.captionMark,
     shadow: s.captionShadow,
     stroke: s.captionStroke,
+    // As regras do LegendAI tambem sao gosto dele, nao do video.
+    regras: s.captionRules,
   }
 }
 
@@ -52,7 +54,8 @@ function mudou(a: ReturnType<typeof useProject.getState>, b: typeof a): boolean 
     a.captionAnimationFrames !== b.captionAnimationFrames ||
     a.captionMark !== b.captionMark ||
     a.captionShadow !== b.captionShadow ||
-    a.captionStroke !== b.captionStroke
+    a.captionStroke !== b.captionStroke ||
+    a.captionRules !== b.captionRules
   )
 }
 
@@ -107,4 +110,5 @@ export async function aplicarEstiloGuardado(): Promise<void> {
   if (e.mark !== undefined) store.setCaptionMark(e.mark)
   if (e.shadow !== undefined) store.setCaptionShadow(e.shadow)
   if (e.stroke !== undefined) store.setCaptionStroke(e.stroke)
+  if (e.regras !== undefined) store.setCaptionRules(e.regras)
 }

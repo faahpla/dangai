@@ -156,7 +156,7 @@ export async function scriptBlocks(
    */
   const pronta = request.transcript
   if (pronta && pronta.words.length > 0) {
-    const { transcript, scriptNote } = applyScript(request.script, pronta, onProgress)
+    const { transcript, scriptNote } = await applyScript(request.script, pronta, onProgress, request.audioPath)
     if (transcript && transcript.words.length > 0) {
       return { blocks: toPieces(transcript.words), transcript, scriptNote }
     }

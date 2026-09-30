@@ -23,6 +23,7 @@ import {
   type SettingsPatch,
   type StartRenderArgs,
   type TiraDaCena,
+  type LegendasSincronizadas,
 } from '@shared/channels'
 import type {
   AnalysisResult,
@@ -72,6 +73,7 @@ import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
 import { caminhoDaFonte, ensureFontesDir, fontesDir, listFontes } from './services/fontes'
 import { upscaleAssets, upscaleReady } from './services/upscale'
 import { tiraDoClipe } from './services/clips'
+import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 
 /**
@@ -194,6 +196,21 @@ export function registerIpc(): void {
     const { arquivo, ...resto } = await tiraDoClipe(path)
     return { ...resto, url: publish(arquivo) }
   })
+
+  /*
+   * Ressincronizar as legendas de um projeto que ja existe, sem refazer a
+   * analise: so o alinhamento forcado sobre as palavras que ele ja tem. Os
+   * avisos vao pelo mesmo canal da analise, que a barra ja mostra.
+   */
+  handle<[string, string[]], LegendasSincronizadas>(
+    IPC.sincronizarLegendas,
+    async (audioPath, palavras) => {
+      if (!existsSync(audioPath)) throw new Error('A narracao nao esta mais no disco.')
+      const r = await alinharAoAudio(audioPath, palavras, broadcastAnalyze)
+      if (!r) throw new Error('Nao deu para alinhar este texto a narracao.')
+      return { tempos: r.tempos.map(({ start, end }) => ({ start, end })), score: r.score }
+    },
+  )
 
   // ----------------------------------------------------------------- apelidos
 

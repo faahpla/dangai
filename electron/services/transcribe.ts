@@ -1,6 +1,7 @@
 import type { AnalysisResult, ImageAsset, ScenePlan, Transcript } from '@shared/contract'
 import { CLIP_INTENSITY, CLIP_MOTION_CURVE } from '@shared/contract'
 import {
+  cutCandidatesFrom,
   paragraphEnds,
   planBySections,
   planWithoutAI,
@@ -8,6 +9,7 @@ import {
   snapToCandidates,
 } from '@shared/plan'
 import { transcriptFromScript } from '@shared/align'
+import { alinharAoAudio } from './alinhador'
 import { parseSrt } from './srt'
 import { transcribe } from './whisper'
 import { detectSilences } from './silence'
@@ -104,7 +106,7 @@ async function analisar(
     onProgress,
   )
 
-  const { transcript, scriptNote } = applyScript(script, measured, onProgress)
+  const { transcript, scriptNote } = await applyScript(script, measured, onProgress, audioPath)
 
   // -------------------------------------------------- degrau 0: partes do roteiro
   //
@@ -193,11 +195,13 @@ async function analisar(
  * metade), fica com a transcricao original e avisa. Silenciosamente usar um
  * roteiro errado produziria legendas confiantes e completamente fora.
  */
-export function applyScript(
+export async function applyScript(
   script: string | null,
   measured: Transcript | null,
   onProgress: AnalyzeProgress,
-): { transcript: Transcript | null; scriptNote: string | null } {
+  /** O audio, para o alinhamento forcado. Sem ele fica o tempo do Whisper. */
+  audioPath: string | null,
+): Promise<{ transcript: Transcript | null; scriptNote: string | null }> {
   const trimmed = script?.trim()
   if (!trimmed) return { transcript: measured, scriptNote: null }
 
@@ -221,9 +225,78 @@ export function applyScript(
   }
 
   const pct = Math.round((aligned.anchored / aligned.total) * 100)
-  return {
+  const casado = {
     transcript: aligned.transcript,
     scriptNote: `Legendas do roteiro — ${pct}% das palavras com tempo medido.`,
+  }
+  if (!audioPath) return casado
+  /*
+   * Ja alinhada (a Biblioteca reaproveita a transcricao do projeto ao abrir):
+   * casar o roteiro com ela devolve os mesmos tempos, e alinhar de novo so
+   * custaria segundos de GPU para chegar ao mesmo lugar.
+   */
+  if (measured.alinhado) {
+    return {
+      transcript: { ...aligned.transcript, alinhado: true },
+      scriptNote: 'Legendas do roteiro, sincronizadas palavra a palavra com a narracao.',
+    }
+  }
+
+  /*
+   * O CASAMENTO DECIDE O TEXTO, O ALINHAMENTO DECIDE O TEMPO.
+   *
+   * O Whisper continua aqui para duas coisas que so ele faz: dizer se o
+   * roteiro e mesmo deste audio, e servir de reserva. O tempo de cada palavra
+   * passa a vir do alinhamento forcado -- ver @shared/alinhar e ./alinhador.
+   */
+  const refinado = await sincronizar(aligned.transcript, audioPath, onProgress)
+  if (refinado.transcript) return { transcript: refinado.transcript, scriptNote: refinado.nota }
+  return { transcript: aligned.transcript, scriptNote: `${casado.scriptNote} ${refinado.nota}` }
+}
+
+/**
+ * Troca os tempos das palavras pelos do alinhamento forcado.
+ *
+ * Devolve `transcript: null` quando nao deu -- sem internet no primeiro
+ * download, ou roteiro que o modelo nao reconhece no audio --, com a nota do
+ * porque. Nunca derruba a analise: o tempo do Whisper e pior, mas existe.
+ */
+export async function sincronizar(
+  transcript: Transcript,
+  audioPath: string,
+  onProgress: AnalyzeProgress,
+): Promise<{ transcript: Transcript | null; nota: string }> {
+  try {
+    const r = await alinharAoAudio(
+      audioPath,
+      transcript.words.map((w) => w.text),
+      onProgress,
+    )
+    if (!r) return { transcript: null, nota: 'Sincronia fina indisponivel para este roteiro.' }
+    // O mesmo limite do LegendAI: abaixo disto o texto nao e o que se ouve.
+    if (r.score < 0.35) {
+      return {
+        transcript: null,
+        nota: 'A sincronia fina nao reconheceu o roteiro no audio — mantidos os tempos do Whisper.',
+      }
+    }
+    const words = transcript.words.map((w, i) => ({
+      ...w,
+      start: r.tempos[i]!.start,
+      end: Math.max(r.tempos[i]!.end, r.tempos[i]!.start),
+    }))
+    return {
+      transcript: {
+        ...transcript,
+        words,
+        cutCandidates: cutCandidatesFrom(words, transcript.segments),
+        alinhado: true,
+      },
+      nota: 'Legendas do roteiro, sincronizadas palavra a palavra com a narracao.',
+    }
+  } catch (erro) {
+    const motivo = erro instanceof Error ? erro.message : String(erro)
+    return { transcript: null, nota: `Sincronia fina indisponivel (${motivo.slice(0, 80)}).` }
   }
 }
 
@@ -432,5 +505,5 @@ export async function transcriptOnly(
   onProgress: AnalyzeProgress,
 ): Promise<{ transcript: Transcript | null; scriptNote: string | null }> {
   const measured = await getTranscript(audioPath, subtitlePath, vocabulary, onProgress)
-  return applyScript(script, measured, onProgress)
+  return applyScript(script, measured, onProgress, audioPath)
 }

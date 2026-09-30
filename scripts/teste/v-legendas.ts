@@ -116,7 +116,9 @@ console.log('\nresgate da piscada (o caso de 45,44s)')
   })
   const textos = blocos.map((b) => b.words.map((w) => w.text).join(' '))
   conferir('"para" nao fica sozinha', textos.includes('para'), false)
-  conferir('ela vai junto com a anterior', textos.includes('suficiente para'), true)
+  // "suficiente para" passaria dos dez caracteres. E preposicao se prende ao
+  // que ela apresenta -- a regra do LegendAI dele: desce junto com o seguinte.
+  conferir('ela desce junto com o que apresenta', textos.includes('para descobrir'), true)
 
   const curtos = blocos.filter((b) => b.durationInFrames / VIDEO_FPS < 0.22)
   conferir('nenhum bloco pisca', curtos.length, 0)

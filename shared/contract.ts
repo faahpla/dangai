@@ -128,6 +128,13 @@ export const transcriptSchema = z.object({
   text: z.string(),
   /** Instantes bons para cortar, em segundos. Ja ordenados. */
   cutCandidates: z.array(z.number().nonnegative()),
+  /**
+   * Os tempos das palavras vieram do ALINHAMENTO FORCADO (o mesmo modelo do
+   * LegendAI), e nao da estimativa do Whisper. Quem ja tem isto nao precisa
+   * alinhar de novo -- a Biblioteca reaproveita a transcricao ao abrir.
+   * Transcricao salva antes disto existir nao tem o campo.
+   */
+  alinhado: z.boolean().optional(),
 })
 export type Transcript = z.infer<typeof transcriptSchema>
 
@@ -881,7 +888,45 @@ export const captionScaleSchema = z
  * A fonte vai pelo NOME do arquivo, como no projeto: a URL e desta sessao e
  * nao vale amanha.
  */
+/**
+ * As regras de como a narracao vira legenda -- as do LegendAI, como opcoes.
+ *
+ * "Tem opcoes que eu queria ter, que tem no LegendAI." Os padroes sao os que
+ * ele usa LA (settings.json do LegendAI em 30/09/2026), menos palavras por
+ * legenda: essa ele ja tinha escolhido aqui (duas, desde 07/09) e fica.
+ *
+ * O que o LegendAI faz e o Dangai nao fazia, e que pesa na sensacao de
+ * "sincronizado": ADIANTAR um fio (40 ms -- o olho le o texto como "na hora"
+ * quando ele chega um pouco antes do som) e FECHAR OS VAOS curtos entre uma
+ * legenda e a seguinte, em vez de piscar tela vazia no meio da frase.
+ */
+export const regrasDaLegendaSchema = z.object({
+  /** Quantas palavras dividem a mesma legenda (se couberem nos caracteres). */
+  palavras: z.number().int().min(1).max(4),
+  /** Teto de caracteres. Palavra maior que isso fica sozinha, inteira. */
+  caracteres: z.number().int().min(4).max(30),
+  /** Tempo minimo na tela, em segundos. */
+  minimo: z.number().min(0).max(2),
+  /** Tempo maximo na tela, em segundos. */
+  maximo: z.number().min(0.5).max(10),
+  /** Quanto a legenda entra ANTES da palavra, em segundos. */
+  adiantar: z.number().min(0).max(0.3),
+  /** Vao ate este tamanho (s) e fechado: a legenda fica ate a proxima. 0 desliga. */
+  fecharVaos: z.number().min(0).max(2),
+})
+export type RegrasDaLegenda = z.infer<typeof regrasDaLegendaSchema>
+
+export const REGRAS_DA_LEGENDA_PADRAO: RegrasDaLegenda = {
+  palavras: 2,
+  caracteres: 10,
+  minimo: 0.45,
+  maximo: 2,
+  adiantar: 0.04,
+  fecharVaos: 0.5,
+}
+
 export const captionStyleSchema = z.object({
+  regras: regrasDaLegendaSchema.catch(REGRAS_DA_LEGENDA_PADRAO).optional(),
   color: captionColorSchema.catch(CAPTION_COLOR_DEFAULT).optional(),
   y: captionYSchema.catch(CAPTION_Y_DEFAULT).optional(),
   scale: captionScaleSchema.catch(CAPTION_SCALE_DEFAULT).optional(),

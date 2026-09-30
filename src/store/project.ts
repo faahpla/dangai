@@ -12,6 +12,9 @@ import type {
   UpdateStatus,
 } from '@shared/channels'
 import {
+  REGRAS_DA_LEGENDA_PADRAO,
+  regrasDaLegendaSchema,
+  type RegrasDaLegenda,
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_ANIMATION_FRAMES_MAX,
@@ -47,6 +50,7 @@ import {
 } from '@shared/contract'
 import type {
   AudioAnalysis,
+  Word,
   Formato,
   CaptionAnimation,
   CaptionColor,
@@ -71,6 +75,7 @@ import {
 } from '@shared/camera'
 import {
   buildCaptions,
+  cutCandidatesFrom,
   imagemDaMetade,
   reordenarBlocos,
   MIN_SCENE_SEC,
@@ -82,6 +87,7 @@ import {
 import type { CaptionBlock } from '@shared/contract'
 import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
 import { herdarAjustes, reaproveitar } from '@shared/remontar'
+import { retemporizar } from '@shared/legendas'
 import { abrirEspaco, removerCena, repararMetadesDeBaixo } from '@shared/indices'
 import {
   juntarComOProximo,
@@ -238,6 +244,11 @@ export interface ProjectState {
   captionShadow: CaptionShadow
   /** Espessura do contorno preto da legenda. Zero = sem contorno. */
   captionStroke: number
+  /**
+   * Como a narracao vira legenda: palavras e caracteres por linha, duracao,
+   * adiantar e fechar vaos -- as opcoes do LegendAI. Ver @shared/legendas.
+   */
+  captionRules: RegrasDaLegenda
   /**
    * Os SFX que ELE posicionou na faixa da linha do tempo.
    *
@@ -523,7 +534,13 @@ export interface ProjectState {
   splitCaption: (index: number, wordIndex: number) => void
   /** Reescreve o texto de uma palavra sem mexer no tempo. */
   editCaptionWord: (index: number, wordIndex: number, text: string) => void
+  /** Reescreve o texto do bloco inteiro. Mesmo numero de palavras mantem os tempos. */
+  editCaptionText: (index: number, text: string) => void
   resetCaptions: () => void
+  /** Muda as regras e refaz as legendas (as editadas so ganham tempo novo). */
+  setCaptionRules: (patch: Partial<RegrasDaLegenda>) => void
+  /** Mede de novo, pelo alinhamento forcado, onde cada palavra soa. */
+  ressincronizarLegendas: () => Promise<void>
   openPalette: (open: boolean) => void
   /** Abre a biblioteca. A primeira abertura varre sozinha. */
   openLibrary: (open: boolean) => Promise<void>
@@ -846,6 +863,33 @@ function reduzirPicos(peaks: readonly number[], quantos = 40): number[] {
   })
 }
 
+/**
+ * As palavras das legendas, na ordem, cada uma com o tempo MEDIDO.
+ *
+ * As legendas editadas carregam o texto dele, a transcricao carrega os tempos.
+ * Quase sempre as duas tem o mesmo numero de palavras (mesclar e dividir nao
+ * mudam isso), e a correspondencia e uma a uma. Se ele reescreveu um bloco com
+ * mais ou menos palavras, cada palavra da legenda pega a da transcricao na
+ * mesma POSICAO RELATIVA -- aproximado, mas nunca fora do trecho certo por
+ * mais que o bloco reescrito.
+ */
+function palavrasDasLegendas(captions: readonly CaptionBlock[], transcript: Transcript | null): Word[] {
+  const texto = captions.flatMap((b) => b.words.map((w) => w.text))
+  const medidas = transcript?.words ?? []
+  if (medidas.length === 0) {
+    return captions.flatMap((b) =>
+      b.words.map((w) => ({ text: w.text, start: w.from / VIDEO_FPS, end: (w.from + w.durationInFrames) / VIDEO_FPS })),
+    )
+  }
+  return texto.map((t, k) => {
+    const i =
+      texto.length === medidas.length
+        ? k
+        : Math.min(Math.floor((k * medidas.length) / texto.length), medidas.length - 1)
+    return { text: t, start: medidas[i]!.start, end: medidas[i]!.end }
+  })
+}
+
 function setInterimPlan(set: SetState, imageCount: number, durationSec: number): void {
   set({
     plan: planEqualSplit(imageCount, durationSec),
@@ -930,6 +974,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionMark: CAPTION_MARK_DEFAULT,
   captionShadow: CAPTION_SHADOW_DEFAULT,
   captionStroke: CAPTION_STROKE_DEFAULT,
+  captionRules: REGRAS_DA_LEGENDA_PADRAO,
   sfxManual: [],
   curvePresets: [],
   upscale: false,
@@ -1224,7 +1269,7 @@ export const useProject = create<ProjectState>((set, get) => ({
        * decidiu.
        */
       transcript,
-      captions: buildCaptions(transcript),
+      captions: buildCaptions(transcript, get().captionRules),
       captionsEdited: false,
       scriptNote,
       sectionNote: note,
@@ -1394,7 +1439,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       scriptBlocks: r.value.blocks,
       // A transcricao vem junto e fica: as legendas saem dela sem outra passada.
       transcript: r.value.transcript,
-      captions: get().captionsEdited ? get().captions : buildCaptions(r.value.transcript),
+      captions: get().captionsEdited ? get().captions : buildCaptions(r.value.transcript, get().captionRules),
       scriptNote: r.value.scriptNote,
       activeBlock: r.value.blocks.length > 0 ? 0 : null,
       scriptBlocksBusy: null,
@@ -1937,7 +1982,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         transcript: result.value.transcript,
         captions: state.captionsEdited
           ? state.captions
-          : buildCaptions(result.value.transcript),
+          : buildCaptions(result.value.transcript, state.captionRules),
         aiNote: result.value.aiNote,
         scriptNote: result.value.scriptNote,
         sectionNote: result.value.sectionNote,
@@ -2460,8 +2505,101 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
   },
 
+  editCaptionText: (index, text) => {
+    const { captions } = get()
+    const block = captions[index]
+    const tokens = text.trim().split(/\s+/).filter((t) => t.length > 0)
+    if (!block || tokens.length === 0) return
+
+    /*
+     * Mesmo numero de palavras: so o texto muda, cada palavra no seu tempo.
+     * Numero diferente: nao ha como saber qual palavra nova e qual velha, e o
+     * tempo do bloco e repartido pelo tamanho de cada uma -- a mesma conta do
+     * dividir do LegendAI. O bloco nao sai do lugar em nenhum dos casos.
+     */
+    let words: CaptionBlock['words']
+    if (tokens.length === block.words.length) {
+      words = block.words.map((w, i) => ({ ...w, text: tokens[i]! }))
+    } else {
+      const pesos = tokens.map((t) => Math.max(t.length, 1))
+      const soma = pesos.reduce((a, b) => a + b, 0)
+      const fim = block.from + block.durationInFrames
+      let cursor = block.from
+      let acumulado = 0
+      words = tokens.map((t, i) => {
+        acumulado += pesos[i]!
+        const ate = i === tokens.length - 1 ? fim : Math.round(block.from + (block.durationInFrames * acumulado) / soma)
+        const from = Math.min(cursor, fim - 1)
+        const to = Math.max(Math.min(ate, fim), from + 1)
+        cursor = to
+        return { text: t, from, durationInFrames: to - from }
+      })
+    }
+    set({
+      captions: captions.map((item, i) => (i === index ? { ...item, words } : item)),
+      captionsEdited: true,
+    })
+  },
+
   resetCaptions: () => {
-    set({ captions: buildCaptions(get().transcript), captionsEdited: false })
+    set({ captions: buildCaptions(get().transcript, get().captionRules), captionsEdited: false })
+  },
+
+  setCaptionRules: (patch) => {
+    const parsed = regrasDaLegendaSchema.safeParse({ ...get().captionRules, ...patch })
+    if (!parsed.success) return
+    const regras = parsed.data
+    const { transcript, captions, captionsEdited } = get()
+    /*
+     * Legenda editada NAO e refeita: mesclar e dividir sao decisoes dele. Ela
+     * so ganha os tempos pelas regras novas -- adiantar, fechar vaos, duracao.
+     */
+    const novas = !captionsEdited
+      ? buildCaptions(transcript, regras)
+      : retemporizar(captions, palavrasDasLegendas(captions, transcript), regras)
+    set({ captionRules: regras, captions: novas })
+  },
+
+  ressincronizarLegendas: async () => {
+    const { audio, transcript } = get()
+    if (!audio || !transcript || transcript.words.length === 0) return
+    set({ busy: 'Sincronizando as legendas com a narracao...', error: null })
+    const r = await window.dangai.sincronizarLegendas(
+      audio.path,
+      transcript.words.map((w) => w.text),
+    )
+    if (!r.ok) {
+      set({ busy: null, error: `Nao deu para sincronizar: ${r.error}` })
+      return
+    }
+    // O mesmo limite do LegendAI: abaixo disto o texto nao e o que se ouve.
+    if (r.value.score < 0.35) {
+      set({
+        busy: null,
+        error: 'A sincronia nao reconheceu o texto na narracao. Confira se o roteiro e deste audio.',
+      })
+      return
+    }
+    const words = transcript.words.map((w, i) => ({
+      ...w,
+      start: r.value.tempos[i]!.start,
+      end: Math.max(r.value.tempos[i]!.end, r.value.tempos[i]!.start),
+    }))
+    const novo = {
+      ...transcript,
+      words,
+      cutCandidates: cutCandidatesFrom(words, transcript.segments),
+      alinhado: true,
+    }
+    const { captions, captionsEdited, captionRules } = get()
+    set({
+      transcript: novo,
+      captions: captionsEdited
+        ? retemporizar(captions, palavrasDasLegendas(captions, novo), captionRules)
+        : buildCaptions(novo, captionRules),
+      busy: null,
+      projectDirty: true,
+    })
   },
 
   toggleSfx: () => set((state) => ({ sfxEnabled: !state.sfxEnabled })),

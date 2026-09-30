@@ -69,6 +69,7 @@ export const IPC = {
   pickLibraryDir: 'library:pick-dir',
   libraryClipUrl: 'library:clip-url',
   libraryClipStrip: 'library:clip-strip',
+  sincronizarLegendas: 'captions:sync',
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
@@ -159,6 +160,16 @@ export interface DropExpansion {
  * corta a cena, acha o personagem e extrai o keyframe e o outro programa.
  */
 /** Uma tira de quadros pronta para o cartao, ja publicada no servidor local. */
+/**
+ * O tempo de cada palavra, medido pelo alinhamento forcado. Mesma ordem das
+ * palavras pedidas. `score` e a confianca media: abaixo de ~0,35 o texto nao e
+ * o que se ouve neste audio.
+ */
+export interface LegendasSincronizadas {
+  tempos: { start: number; end: number }[]
+  score: number
+}
+
 export interface TiraDaCena {
   url: string
   quadros: number
@@ -496,6 +507,7 @@ export interface DangaiBridge {
    * clipe e guardada; ver `tiraDoClipe` em electron/services/clips.ts.
    */
   libraryClipStrip(path: string): Promise<IpcResult<TiraDaCena>>
+  sincronizarLegendas(audioPath: string, palavras: readonly string[]): Promise<IpcResult<LegendasSincronizadas>>
   /**
    * Andamento da varredura. So fala quando ha episodio novo para preparar --
    * a primeira varredura de um acervo grande leva perto de um minuto gerando as
