@@ -219,7 +219,7 @@ function useCommands(): Command[] {
         label: 'Procurar cenas na biblioteca',
         hint: 'Ctrl+B',
         icon: LibraryIcon,
-        run: () => void store().openLibrary(true),
+        run: () => void store().voltarParaSelecao(),
       },
       {
         id: 'script',

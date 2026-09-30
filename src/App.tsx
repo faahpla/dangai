@@ -246,7 +246,8 @@ export function App() {
         case 'B':
           if (!event.ctrlKey && !event.metaKey) return
           event.preventDefault()
-          if (!rendering) void store.openLibrary(true)
+          // Mesma volta do botao "Selecao": abre no trecho do bloco atual.
+          if (!rendering) void store.voltarParaSelecao()
           break
       }
     }

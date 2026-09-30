@@ -15,6 +15,7 @@ import {
 import type { LibraryClip, TiraDaCena } from '@shared/channels'
 import { medidasDo } from '@shared/contract'
 import { coberturaDaFonte } from '@shared/camera'
+import { blocosQueSaem } from '@shared/remontar'
 import {
   MAIS_SUGESTOES,
   SUGESTOES,
@@ -117,6 +118,16 @@ export function Library() {
    * mesmo que a cena anterior estique.
    */
   const [avisouVazios, setAvisouVazios] = useState(false)
+  /*
+   * Ja avisou que remontar vai TIRAR blocos da timeline?
+   *
+   * Sao os que a selecao nao conhece -- imagem inserida direto na timeline.
+   * Remontar os descarta, e isso nao pode acontecer sem ele ter visto o
+   * numero. Mesmo passo do aviso de trechos vazios: primeiro clique explica,
+   * segundo monta.
+   */
+  const [avisouSaida, setAvisouSaida] = useState(false)
+  const planoAtual = useProject((s) => s.plan)
   /**
    * Episodio escolhido, como "S17E42".
    *
@@ -220,6 +231,7 @@ export function Library() {
     setAnime(null)
     preSelecionadoPara.current = null
     setAvisouVazios(false)
+    setAvisouSaida(false)
     setEpisodio(null)
     setPersonagem(null)
     setMinSec(0)
@@ -423,6 +435,17 @@ export function Library() {
    * frente -- ver no topo o que ele acabou de usar seria convite a repetir.
    */
   /** Trechos sem cena nenhuma. O tempo deles e absorvido pelo anterior. */
+  /** Blocos da timeline que a selecao nao conhece, e que remontar tiraria. */
+  const blocosSaem =
+    porRoteiro && blocos && planoAtual
+      ? blocosQueSaem(
+          blocos.flatMap((_, i) => blockClips[i] ?? []),
+          images,
+          planoAtual,
+        )
+      : 0
+  const remontando = planoAtual !== null && planoAtual.scenes.length > 0
+
   const trechosVazios = blocos
     ? blocos.reduce((n, _, i) => n + ((blockClips[i] ?? []).length === 0 ? 1 : 0), 0)
     : 0
@@ -830,7 +853,12 @@ export function Library() {
       {replaceTarget !== null ? null : porRoteiro ? (
         <footer className="flex h-[52px] shrink-0 items-center justify-between border-t border-line px-5">
           <span className="tnum text-[12px] text-ink-2">
-            {trechosVazios > 0 && avisouVazios ? (
+            {blocosSaem > 0 && avisouSaida ? (
+              <span className="text-accent">
+                {blocosSaem} {blocosSaem === 1 ? 'bloco da timeline nao esta' : 'blocos da timeline nao estao'} na
+                selecao e {blocosSaem === 1 ? 'vai sair' : 'vao sair'}. Os outros mantem os ajustes.
+              </span>
+            ) : trechosVazios > 0 && avisouVazios ? (
               <span className="text-accent">
                 {trechosVazios} {trechosVazios === 1 ? 'trecho esta' : 'trechos estao'} sem cena — o tempo{' '}
                 {trechosVazios === 1 ? 'dele vai' : 'deles vai'} para a cena anterior. Tab pula para{' '}
@@ -851,12 +879,22 @@ export function Library() {
                   setAvisouVazios(true)
                   return
                 }
+                if (blocosSaem > 0 && !avisouSaida) {
+                  setAvisouSaida(true)
+                  return
+                }
                 void applyBlockClips()
               }}
-              title="Cada frase se divide entre as cenas que voce marcou nela"
+              title={
+                remontando
+                  ? 'Refaz o video com esta selecao. Os blocos cuja cena nao mudou mantem os ajustes -- camera, efeito, curva, trecho do clipe e enquadramento.'
+                  : 'Cada frase se divide entre as cenas que voce marcou nela'
+              }
               className="lift rounded-sm border border-accent bg-accent-dim px-3.5 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
             >
-              {trechosVazios > 0 && avisouVazios ? 'Montar assim mesmo' : 'Montar com essas cenas'}
+              {(trechosVazios > 0 && avisouVazios) || (blocosSaem > 0 && avisouSaida)
+                ? `${remontando ? 'Remontar' : 'Montar'} assim mesmo`
+                : `${remontando ? 'Remontar' : 'Montar'} com essas cenas`}
             </button>
           </div>
         </footer>

@@ -81,6 +81,7 @@ import {
 } from '@shared/plan'
 import type { CaptionBlock } from '@shared/contract'
 import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
+import { herdarAjustes, reaproveitar } from '@shared/remontar'
 import {
   juntarComOProximo,
   separarTrecho as separarPedacos,
@@ -567,6 +568,11 @@ export interface ProjectState {
   /** Le a narracao e quebra em frases. Chamada quando a Biblioteca abre. */
   loadScriptBlocks: () => Promise<void>
   setActiveBlock: (index: number | null) => void
+  /**
+   * Volta a Biblioteca, no trecho do bloco atual, para consertar a selecao e
+   * remontar. A remontagem preserva os ajustes dos blocos cuja cena nao mudou.
+   */
+  voltarParaSelecao: () => Promise<void>
   /** Marca ou desmarca uma cena na frase aberta. */
   toggleBlockClip: (path: string) => void
   /**
@@ -1259,8 +1265,41 @@ export const useProject = create<ProjectState>((set, get) => ({
      * levou a esta cena.
      */
     const clip = library?.clips.find((c) => c.path === path)
+
+    /*
+     * A TROCA VALE PARA A SELECAO TAMBEM.
+     *
+     * Sem isto, voltar a selecao e remontar desfaria a troca em silencio: a
+     * selecao continuaria com a cena velha, e a remontagem a traria de volta.
+     * O trecho e o que contem o bloco -- e, se a mesma cena estiver em mais de
+     * um, o mais perto no tempo.
+     */
+    const caminhoVelho = images[alvo]!.path
+    const cenaTrocada = get().plan?.scenes[replaceTarget!.scene]
+    const { scriptBlocks, blockClips } = get()
+    let selecao = blockClips
+    if (scriptBlocks && cenaTrocada) {
+      let melhor = -1
+      let distancia = Number.POSITIVE_INFINITY
+      for (const [chave, fita] of Object.entries(blockClips)) {
+        const bloco = scriptBlocks[Number(chave)]
+        if (!bloco || !fita.includes(caminhoVelho)) continue
+        const d = Math.abs(bloco.start - cenaTrocada.start)
+        if (d < distancia) {
+          distancia = d
+          melhor = Number(chave)
+        }
+      }
+      if (melhor >= 0) {
+        const fita = [...blockClips[melhor]!]
+        fita[fita.indexOf(caminhoVelho)] = path
+        selecao = { ...blockClips, [melhor]: fita }
+      }
+    }
+
     set((state) => ({
       images: state.images.map((img, i) => (i === alvo ? importada.value[0]! : img)),
+      blockClips: selecao,
       automountBlocks: state.automountBlocks
         ? substituirNaFita(state.automountBlocks, alvo, path, clip)
         : null,
@@ -1356,6 +1395,28 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   setActiveBlock: (index) => set({ activeBlock: index }),
+
+  voltarParaSelecao: async () => {
+    /*
+     * Abre a Biblioteca JA NO TRECHO do bloco em que ele esta.
+     *
+     * Ele volta porque alguma cena deu errado, e quase sempre esta parado em
+     * cima dela na timeline. Abrir no primeiro trecho o faria procurar de novo,
+     * entre ~40, a frase que ele ja estava olhando.
+     */
+    const { plan, selectedScene, playhead, scriptBlocks } = get()
+    const cena = selectedScene === null ? null : plan?.scenes[selectedScene]
+    const instante = cena ? cena.start + 0.01 : playhead
+    if (scriptBlocks && scriptBlocks.length > 0) {
+      let trecho = 0
+      for (const [i, bloco] of scriptBlocks.entries()) {
+        if (bloco.start <= instante) trecho = i
+        else break
+      }
+      set({ activeBlock: trecho })
+    }
+    await get().openLibrary(true)
+  },
 
   toggleBlockClip: (path) => {
     const { activeBlock, blockClips } = get()
@@ -1701,12 +1762,36 @@ export const useProject = create<ProjectState>((set, get) => ({
       return
     }
 
-    set({ busy: `Trazendo ${caminhos.length} cenas...`, libraryError: null })
-    const importadas = await window.dangai.importImages(caminhos)
-    if (!importadas.ok) {
-      set({ busy: null, error: importadas.error })
-      return
+    /*
+     * REAPROVEITA os clipes que ja estao no projeto, e so importa os novos.
+     *
+     * Remontar reimportava tudo: o enquadramento que ele arrastou voltava ao
+     * rosto detectado, o cache do upscale era pago de novo, e o bloco novo nao
+     * tinha como saber qual velho ele era. Com o mesmo asset de volta, as tres
+     * coisas se resolvem -- ver @shared/remontar.
+     */
+    const { images: imagensVelhas, plan: planoVelho } = get()
+    const reusadas = reaproveitar(caminhos, imagensVelhas)
+    const faltam = caminhos.filter((_, i) => reusadas[i] === null)
+
+    set({
+      busy:
+        faltam.length === 0
+          ? 'Remontando...'
+          : `Trazendo ${faltam.length} ${faltam.length === 1 ? 'cena' : 'cenas'}...`,
+      libraryError: null,
+    })
+    let novas: ImageAsset[] = []
+    if (faltam.length > 0) {
+      const importadas = await window.dangai.importImages(faltam)
+      if (!importadas.ok) {
+        set({ busy: null, error: importadas.error })
+        return
+      }
+      novas = importadas.value
     }
+    let proxima = 0
+    const imagens = reusadas.map((img) => img ?? novas[proxima++]!)
 
     /*
      * As cenas se costuram, e a EMENDA CAI NO COMECO DA FALA SEGUINTE.
@@ -1739,9 +1824,21 @@ export const useProject = create<ProjectState>((set, get) => ({
       candidates: [],
     }))
 
+    /*
+     * Cada bloco herda os ajustes do bloco que ja mostrava o MESMO clipe:
+     * camera, efeito, curva, trecho do clipe, giro. Voltar a selecao para
+     * consertar UMA cena nao pode custar o trabalho feito em todas as outras.
+     */
+    const { plan } = herdarAjustes(
+      planoDosBlocos(blocos, audio.durationSec, pares),
+      imagens,
+      planoVelho,
+      imagensVelhas,
+    )
+
     set({
-      images: importadas.value,
-      plan: planoDosBlocos(blocos, audio.durationSec, pares),
+      images: imagens,
+      plan,
       planOrigin: 'auto',
       // O plano saiu das frases dele; reanalisar o trocaria por distribuicao.
       planEdited: true,

@@ -15,6 +15,7 @@ import {
   Hash,
   House,
   Sparkle,
+  Library as LibraryIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProject } from '@/store/project'
@@ -133,6 +134,11 @@ export function RenderBar() {
   const toggleCaptions = useProject((s) => s.toggleCaptions)
   const script = useProject((s) => s.script)
   const openScript = useProject((s) => s.openScript)
+  const voltarParaSelecao = useProject((s) => s.voltarParaSelecao)
+  // So existe selecao para voltar quando o video saiu da Biblioteca por roteiro.
+  const temSelecao = useProject(
+    (s) => s.scriptBlocks !== null && Object.values(s.blockClips).some((c) => c.length > 0),
+  )
   const captionsOpen = useProject((s) => s.captionsOpen)
   const openCaptions = useProject((s) => s.openCaptions)
   const togglePlay = useProject((s) => s.togglePlay)
@@ -176,6 +182,25 @@ export function RenderBar() {
         >
           <FileText size={12} strokeWidth={1.5} />
           Roteiro
+        </button>
+      )}
+
+      {/*
+        VOLTAR A SELECAO, ao lado do roteiro: os dois sao de onde o video veio.
+
+        Existia so pelo Ctrl+B e pela paleta -- e ninguem procura uma volta que
+        nao ve. "Tem como adicionar uma funcao de voltar pra selecao na
+        biblioteca? Assim consigo ajustar coisas que dao errado."
+      */}
+      {!isRendering && temSelecao && (
+        <button
+          type="button"
+          onClick={() => void voltarParaSelecao()}
+          title="Voltar a selecao na biblioteca, no trecho deste bloco (Ctrl+B). Ao remontar, os blocos cuja cena nao mudou mantem os ajustes."
+          className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
+        >
+          <LibraryIcon size={12} strokeWidth={1.5} />
+          Selecao
         </button>
       )}
 
