@@ -82,6 +82,7 @@ import {
 import type { CaptionBlock } from '@shared/contract'
 import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
 import { herdarAjustes, reaproveitar } from '@shared/remontar'
+import { abrirEspaco, removerCena, repararMetadesDeBaixo } from '@shared/indices'
 import {
   juntarComOProximo,
   separarTrecho as separarPedacos,
@@ -1284,7 +1285,14 @@ export const useProject = create<ProjectState>((set, get) => ({
       for (const [chave, fita] of Object.entries(blockClips)) {
         const bloco = scriptBlocks[Number(chave)]
         if (!bloco || !fita.includes(caminhoVelho)) continue
-        const d = Math.abs(bloco.start - cenaTrocada.start)
+        /*
+         * A frase que CONTEM o bloco ganha de qualquer outra. So "a mais perto
+         * pelo comeco" errava quando o mesmo clipe estava tambem na frase
+         * seguinte: o segundo bloco de uma frase comeca mais perto da proxima
+         * frase do que da propria, e a troca ia parar na fita errada.
+         */
+        const contem = cenaTrocada.start >= bloco.start - 0.01 && cenaTrocada.start < bloco.end
+        const d = contem ? -1 : Math.abs(bloco.start - cenaTrocada.start)
         if (d < distancia) {
           distancia = d
           melhor = Number(chave)
@@ -1912,7 +1920,13 @@ export const useProject = create<ProjectState>((set, get) => ({
        * ainda servir: se o numero de imagens mudou, as cenas editadas nao
        * correspondem mais a nada e o plano novo e o unico correto.
        */
-      const keepPlan = state.planEdited && state.plan?.scenes.length === images.length
+      /*
+       * "Ainda serve" conta as IMAGENS que o plano usa, e nao as cenas: tela
+       * dividida usa duas num bloco so. Comparar cenas com imagens jogava fora
+       * todo plano com tela dividida na primeira reanalise.
+       */
+      const usadas = state.plan?.scenes.reduce((n, c) => n + (c.imageIndexB === null ? 1 : 2), 0)
+      const keepPlan = state.planEdited && usadas === images.length
 
       set({
         plan: keepPlan ? state.plan : result.value.plan,
@@ -2090,10 +2104,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       transitionIn: 'cut' as const,
     }))
 
-    const reindexar = (scene: Scene): Scene => ({
-      ...scene,
-      imageIndex: scene.imageIndex >= at ? scene.imageIndex + n : scene.imageIndex,
-    })
+    // Os dois indices andam -- ver @shared/indices.
+    const reindexar = (scene: Scene): Scene => abrirEspaco(scene, at, n)
 
     const scenes = antesDele
       ? [
@@ -2125,25 +2137,15 @@ export const useProject = create<ProjectState>((set, get) => ({
    */
   removeScene: (index) => {
     const { plan, images } = get()
-    const scene = plan?.scenes[index]
-    if (!plan || !scene || plan.scenes.length < 2) return
-
-    const scenes = plan.scenes
-      .filter((_, i) => i !== index)
-      .map((other) => ({
-        ...other,
-        // Reindexa: todo indice acima do removido desce um.
-        imageIndex: other.imageIndex > scene.imageIndex ? other.imageIndex - 1 : other.imageIndex,
-      }))
-
-    const previous = scenes[index - 1]
-    const next = scenes[index]
-    if (previous) previous.end = scene.end
-    else if (next) next.start = scene.start
+    if (!plan) return
+    // Tela dividida leva as duas imagens, e os dois indices de todo mundo
+    // descem -- ver @shared/indices.
+    const feito = removerCena(plan, images, index)
+    if (!feito) return
 
     set({
-      images: images.filter((_, i) => i !== scene.imageIndex),
-      plan: { ...plan, scenes },
+      images: feito.images,
+      plan: feito.plan,
       planEdited: true,
       selectedScene: null,
       selecionados: [],
@@ -2312,22 +2314,27 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     const original = images[scene.imageIndex]
     if (!original) return
+    const originalB = scene.imageIndexB === null ? undefined : images[scene.imageIndexB]
 
-    // A copia entra logo DEPOIS da original: na fita da Biblioteca as imagens
-    // aparecem na ordem dos blocos, e mandar a copia para o fim da lista poria
-    // na tela uma ordem que nao existe na linha do tempo.
-    const at = scene.imageIndex + 1
-    const copia = { ...original, id: `${original.id}+corte${Math.round(playhead * 1000)}` }
-
-    /** Todo indice a partir do ponto de insercao anda uma casa. */
-    const reindexar = (alvo: Scene): Scene => ({
-      ...alvo,
-      imageIndex: alvo.imageIndex >= at ? alvo.imageIndex + 1 : alvo.imageIndex,
-      imageIndexB:
-        alvo.imageIndexB !== null && alvo.imageIndexB >= at
-          ? alvo.imageIndexB + 1
-          : alvo.imageIndexB,
-    })
+    /*
+     * Tela dividida ganha copia das DUAS metades.
+     *
+     * Copiar so a de cima deixava as duas metades do corte com a mesma imagem
+     * de baixo -- e trocar a de baixo de uma trocava a da outra, o mesmo
+     * defeito que a copia existe para evitar.
+     *
+     * As copias entram logo DEPOIS da original: na fita da Biblioteca as
+     * imagens aparecem na ordem dos blocos, e mandar a copia para o fim da
+     * lista poria na tela uma ordem que nao existe na linha do tempo.
+     */
+    const sufixo = `+corte${Math.round(playhead * 1000)}`
+    const copias = [
+      { ...original, id: `${original.id}${sufixo}` },
+      ...(originalB ? [{ ...originalB, id: `${originalB.id}${sufixo}` }] : []),
+    ]
+    const at = Math.max(scene.imageIndex, scene.imageIndexB ?? -1) + 1
+    const reindexar = (alvo: Scene): Scene => abrirEspaco(alvo, at, copias.length)
+    const andou = playhead - scene.start
 
     const scenes = [
       ...plan.scenes.slice(0, index).map(reindexar),
@@ -2335,15 +2342,18 @@ export const useProject = create<ProjectState>((set, get) => ({
       {
         ...reindexar(scene),
         imageIndex: at,
+        imageIndexB: originalB ? at + 1 : null,
         start: playhead,
         /*
          * O clipe CONTINUA de onde parou, em vez de rebobinar.
          *
          * Um print ignora este campo. Num clipe, herdar o sourceStart do bloco
          * inteiro faria a segunda metade repetir o mesmo trecho que a primeira
-         * acabou de mostrar -- que e o oposto de cortar.
+         * acabou de mostrar -- que e o oposto de cortar. Vale para as duas
+         * metades da tela dividida.
          */
-        sourceStart: scene.sourceStart + (playhead - scene.start),
+        sourceStart: scene.sourceStart + andou,
+        sourceStartB: (scene.sourceStartB ?? 0) + andou,
         // Corte seco entre as metades: uma transicao aqui inventaria um efeito
         // que ele nao pediu, bem no ponto onde ele mandou cortar.
         transitionIn: 'cut' as const,
@@ -2352,7 +2362,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     ]
 
     set({
-      images: [...images.slice(0, at), copia, ...images.slice(at)],
+      images: [...images.slice(0, at), ...copias, ...images.slice(at)],
       plan: { ...plan, scenes },
       planEdited: true,
       // A segunda metade fica selecionada: quem corta costuma querer mexer
@@ -3654,7 +3664,9 @@ async function applyProjectFile(
       script: file.script,
       subtitlePath: file.subtitle?.path ?? null,
       formato: file.formato,
-      plan: file.plan,
+      // Conserta a metade de baixo que versoes anteriores desalinharam --
+      // ver @shared/indices.
+      plan: file.plan ? repararMetadesDeBaixo(file.plan, images.value.length).plan : file.plan,
       planOrigin: file.planOrigin,
       planEdited: file.planEdited,
       transcript: file.transcript,
