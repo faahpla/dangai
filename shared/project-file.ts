@@ -72,6 +72,8 @@ const savedImageSchema = referenceSchema.extend({
    */
   section: z.number().int().nonnegative().nullable().default(null),
   sectionName: z.string().optional(),
+  /** Clipe tocando de tras para frente. A copia invertida e refeita (ou achada no cache) ao abrir. */
+  invertido: z.boolean().default(false),
 })
 export type SavedImage = z.infer<typeof savedImageSchema>
 

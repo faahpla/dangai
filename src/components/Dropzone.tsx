@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { History, Library as LibraryIcon, RectangleHorizontal, RectangleVertical, X } from 'lucide-react'
+import { History, Library as LibraryIcon, RectangleHorizontal, RectangleVertical, Sparkles, X } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { FORMATOS, medidasDo, type Formato } from '@shared/contract'
 
@@ -55,7 +55,10 @@ export function Dropzone({ isDragging }: DropzoneProps) {
       </button>
 
       <EscolhaDeFormato />
-      <AbrirBiblioteca />
+      <div className="absolute right-6 top-6 flex items-center gap-2">
+        <MelhorarVideoPronto />
+        <AbrirBiblioteca />
+      </div>
       <Recuperar />
     </div>
   )
@@ -135,7 +138,7 @@ function AbrirBiblioteca() {
       type="button"
       onClick={() => void openLibrary(true)}
       title="Procurar cenas na biblioteca (Ctrl+B)"
-      className="absolute right-6 top-6 flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
+      className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
     >
       <LibraryIcon size={13} strokeWidth={1.5} className="text-accent" />
       Biblioteca
@@ -180,5 +183,34 @@ function Recuperar() {
         <X size={13} strokeWidth={1.5} />
       </button>
     </div>
+  )
+}
+
+/**
+ * Upscale de um MP4 que ja esta pronto, fora de qualquer projeto.
+ *
+ * "Deixar importar video pronto em mp4 pra dar upscale." Fica na tela vazia
+ * porque nao depende de projeto: escolhe o arquivo, e o melhorado sai ao lado
+ * dele com "-upscale" no nome. O andamento e o cancelar ficam na barra de
+ * baixo, como o de toda tarefa longa.
+ */
+function MelhorarVideoPronto() {
+  const melhorar = useProject((s) => s.melhorarVideoPronto)
+  const rodando = useProject((s) => s.videoPronto !== null)
+  const busy = useProject((s) => s.busy)
+
+  if (busy !== null) return null
+
+  return (
+    <button
+      type="button"
+      onClick={() => void melhorar()}
+      disabled={rodando}
+      title="Escolhe um MP4 pronto e passa pelo upscale. Sai ao lado, com o dobro da resolucao."
+      className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink disabled:opacity-40"
+    >
+      <Sparkles size={13} strokeWidth={1.5} className="text-accent" />
+      Upscale de video pronto
+    </button>
   )
 }

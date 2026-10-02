@@ -573,6 +573,7 @@ export function toRenderProps(
                */
               effect: scene.effectB ?? scene.effect,
               intensity: scene.intensityB ?? scene.intensity,
+              escala: scene.escalaB ?? 1,
             }
           })()
 
@@ -629,6 +630,7 @@ export function toRenderProps(
         sourceFrames !== null && sourceFrames < durationInFrames ? Math.max(sourceFrames, 1) : null,
       sourceStartFrames: inicioFonte,
       rotation: scene.rotation ?? 0,
+      escala: scene.escala ?? 1,
       transitionIn: scene.transitionIn,
       transitionInFrames: incoming,
     }

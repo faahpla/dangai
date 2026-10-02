@@ -123,8 +123,24 @@ const bridge: DangaiBridge = {
 
   upscaleAssets: (assets, limites) =>
     ipcRenderer.invoke(IPC.upscaleAssets, assets, limites) as Promise<
-      IpcResult<Record<string, string>>
+      IpcResult<Record<string, string> | null>
     >,
+
+  upscaleVideoPronto: () =>
+    ipcRenderer.invoke(IPC.upscaleVideoPronto) as Promise<IpcResult<string | null>>,
+
+  cancelarUpscale: () => ipcRenderer.invoke(IPC.cancelarUpscale) as Promise<IpcResult<null>>,
+
+  onVideoProntoProgress: (listener) => {
+    const handler = (_event: unknown, p: { feitos: number; total: number; nome: string }): void => listener(p)
+    ipcRenderer.on(IPC.videoProntoProgress, handler)
+    return () => {
+      ipcRenderer.off(IPC.videoProntoProgress, handler)
+    }
+  },
+
+  inverterClipe: (asset, invertido) =>
+    ipcRenderer.invoke(IPC.inverterClipe, asset, invertido) as Promise<IpcResult<ImageAsset>>,
 
   appVersion: () => ipcRenderer.invoke(IPC.appVersion) as Promise<IpcResult<string>>,
 

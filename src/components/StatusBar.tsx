@@ -40,6 +40,9 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const openSettings = useProject((s) => s.openSettings)
   const openScript = useProject((s) => s.openScript)
   const appVersion = useProject((s) => s.appVersion)
+  const videoPronto = useProject((s) => s.videoPronto)
+  const videoProntoSaida = useProject((s) => s.videoProntoSaida)
+  const cancelarVideoPronto = useProject((s) => s.cancelarVideoPronto)
 
   // So o nome do arquivo: o caminho inteiro e ruido, e o botao "Abrir pasta"
   // esta a um clique de distancia.
@@ -52,7 +55,27 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   return (
     <footer className="flex h-[38px] shrink-0 items-center justify-between gap-4 border-t border-line px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {busy ? (
+        {videoPronto ? (
+          /*
+            O upscale de video pronto leva MINUTOS -- cada quadro passa pelo
+            modelo. Por isso a barra diz quanto falta e tem o Cancelar a mao,
+            que mata o processo na hora e apaga o arquivo pela metade.
+          */
+          <span className="flex min-w-0 items-center gap-2 text-[11px] text-ink-2">
+            <Loader2 size={12} strokeWidth={1.5} className="shrink-0 animate-spin text-accent" />
+            <span className="truncate">
+              Upscale de {videoPronto.nome} · {Math.min(99, Math.floor((videoPronto.feitos / Math.max(videoPronto.total, 1)) * 100))}%
+              <span className="tnum text-ink-3"> ({videoPronto.feitos} de {videoPronto.total} quadros)</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => void cancelarVideoPronto()}
+              className="shrink-0 rounded-sm border border-line bg-elevated px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink"
+            >
+              Cancelar
+            </button>
+          </span>
+        ) : busy ? (
           <span className="flex items-center gap-2 text-[11px] text-ink-2">
             <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" />
             {busy}
@@ -66,6 +89,17 @@ export function StatusBar({ isDragging }: StatusBarProps) {
           >
             {error}
           </button>
+        ) : videoProntoSaida ? (
+          <span className="flex min-w-0 items-center gap-2 text-[11px] text-ink-2">
+            <span className="truncate">Upscale pronto · {videoProntoSaida.split(/[\\/]/).pop()}</span>
+            <button
+              type="button"
+              onClick={() => void window.dangai.revealFile(videoProntoSaida)}
+              className="shrink-0 rounded-sm border border-line bg-elevated px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink"
+            >
+              Abrir pasta
+            </button>
+          </span>
         ) : (
           <span className="truncate text-[11px] text-ink-3">{idleMessage}</span>
         )}

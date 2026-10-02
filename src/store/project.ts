@@ -249,6 +249,10 @@ export interface ProjectState {
    * adiantar e fechar vaos -- as opcoes do LegendAI. Ver @shared/legendas.
    */
   captionRules: RegrasDaLegenda
+  /** O upscale de um MP4 pronto em andamento. null = nenhum. */
+  videoPronto: { feitos: number; total: number; nome: string } | null
+  /** O ultimo MP4 pronto melhorado, para a barra oferecer abrir a pasta. */
+  videoProntoSaida: string | null
   /**
    * Os SFX que ELE posicionou na faixa da linha do tempo.
    *
@@ -464,9 +468,18 @@ export interface ProjectState {
         | 'intensityB'
         // As duas pontas da camera livre.
         | 'camera'
+        // O zoom fixo ("Scale") de cada metade.
+        | 'escala'
+        | 'escalaB'
       >
     >,
   ) => void
+  /** Liga ou desliga o tocar de tras para frente do clipe de uma metade do bloco. */
+  inverterClipe: (sceneIndex: number, metade: 'cima' | 'baixo') => Promise<void>
+  /** Escolhe um MP4 pronto e passa pelo upscale, fora de qualquer projeto. */
+  melhorarVideoPronto: () => Promise<void>
+  cancelarVideoPronto: () => Promise<void>
+  setVideoProntoProgresso: (p: { feitos: number; total: number; nome: string }) => void
   /** Joga a curva de uma cena em todas as outras. */
   /**
    * Joga o ritmo de uma cena em todas. `pontos` leva junto a curva desenhada --
@@ -975,6 +988,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionShadow: CAPTION_SHADOW_DEFAULT,
   captionStroke: CAPTION_STROKE_DEFAULT,
   captionRules: REGRAS_DA_LEGENDA_PADRAO,
+  videoPronto: null,
+  videoProntoSaida: null,
   sfxManual: [],
   curvePresets: [],
   upscale: false,
@@ -2221,8 +2236,9 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (!image) return
 
     const result = await window.dangai.reframeImage({
-      id: image.id,
-      path: image.path,
+      // Invertido: recorta a copia invertida, na chave dela no cache.
+      id: image.invertido ? `${image.id}-inv` : image.id,
+      path: image.invertido && image.caminhoInvertido ? image.caminhoInvertido : image.path,
       focusX: image.focusX,
       focusY: image.focusY,
     })
@@ -2250,6 +2266,69 @@ export const useProject = create<ProjectState>((set, get) => ({
     const scenes = plan.scenes.map((scene, i) => (i === index ? { ...scene, ...patch } : scene))
     set({ plan: { ...plan, scenes }, planEdited: true })
   },
+
+  inverterClipe: async (sceneIndex, metade) => {
+    const { plan, images } = get()
+    const cena = plan?.scenes[sceneIndex]
+    const alvo = imagemDaMetade(plan, sceneIndex, metade)
+    const asset = alvo === null ? undefined : images[alvo]
+    if (!cena || !asset || asset.kind !== 'video') return
+
+    const invertido = !asset.invertido
+    set({ busy: invertido ? 'Invertendo o clipe...' : 'Desinvertendo o clipe...', error: null })
+    const r = await window.dangai.inverterClipe(asset, invertido)
+    if (!r.ok) {
+      set({ busy: null, error: r.error })
+      return
+    }
+
+    /*
+     * O MESMO TRECHO, tocando ao contrario.
+     *
+     * O bloco mostrava [s, s+d] do clipe. No arquivo invertido esses quadros
+     * moram em [D-s-d, D-s] -- entao o ponto de entrada vira D-s-d, e o bloco
+     * continua mostrando o momento que ele tinha escolhido, so que de tras
+     * para frente. Vale nos dois sentidos: inverter de novo volta para s.
+     */
+    const total = asset.durationSec ?? 0
+    const d = cena.end - cena.start
+    const campo = metade === 'baixo' ? 'sourceStartB' : 'sourceStart'
+    const s0 = (metade === 'baixo' ? cena.sourceStartB : cena.sourceStart) ?? 0
+    const novoInicio = Math.max(0, total - s0 - d)
+
+    const atual = get()
+    set({
+      images: atual.images.map((img, i) => (i === alvo ? r.value : img)),
+      plan: atual.plan
+        ? {
+            ...atual.plan,
+            scenes: atual.plan.scenes.map((c, i) => (i === sceneIndex ? { ...c, [campo]: novoInicio } : c)),
+          }
+        : atual.plan,
+      planEdited: true,
+      busy: null,
+      projectDirty: true,
+    })
+  },
+
+  melhorarVideoPronto: async () => {
+    if (get().videoPronto) return
+    set({ error: null, videoProntoSaida: null })
+    const r = await window.dangai.upscaleVideoPronto()
+    set({ videoPronto: null })
+    if (!r.ok) {
+      set({ error: `O upscale do video falhou: ${r.error}` })
+      return
+    }
+    // null: fechou o dialogo ou cancelou. Nada a dizer.
+    if (r.value) set({ videoProntoSaida: r.value })
+  },
+
+  cancelarVideoPronto: async () => {
+    await window.dangai.cancelarUpscale()
+  },
+
+  setVideoProntoProgresso: (p) => set({ videoPronto: p }),
 
   /**
    * A mesma curva em todas as cenas.
@@ -3200,13 +3279,22 @@ export const useProject = create<ProjectState>((set, get) => ({
         alcancar(cena.imageIndex, cena, cena.sourceStart ?? 0)
         if (cena.imageIndexB !== null) alcancar(cena.imageIndexB, cena, cena.sourceStartB ?? 0)
       }
-      const alvos = images.filter((_, i) => usadas.has(i))
+      const alvos = images
+        .filter((_, i) => usadas.has(i))
+        // Invertido melhora a COPIA invertida: e ela que a cena toca.
+        .map((img) => (img.invertido && img.caminhoInvertido ? { ...img, path: img.caminhoInvertido } : img))
       const melhoradas = await window.dangai.upscaleAssets(alvos, limites)
-      if (melhoradas.ok) {
+      // Cancelado no meio: o render para aqui, sem seguir sem o upscale.
+      if (melhoradas.ok && melhoradas.value === null) {
+        set({ render: null })
+        return null
+      }
+      if (melhoradas.ok && melhoradas.value) {
+        const mapa = melhoradas.value
         imagens = images.map((img) =>
-          melhoradas.value[img.id] ? { ...img, url: melhoradas.value[img.id]! } : img,
+          mapa[img.id] ? { ...img, url: mapa[img.id]! } : img,
         )
-      } else {
+      } else if (!melhoradas.ok) {
         set({ error: `O upscale falhou (${melhoradas.error}); renderizando sem ele.` })
       }
     }
@@ -3507,6 +3595,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         focusAuto: image.focusAuto,
         section: image.section,
         sectionName: image.sectionName,
+        invertido: image.invertido === true,
       })),
       script: state.script,
       subtitle: state.subtitlePath
@@ -3774,6 +3863,19 @@ async function applyProjectFile(
     if (!images.ok) {
       set({ error: images.error, busy: null })
       return
+    }
+
+    /*
+     * Clipe invertido volta invertido. A copia invertida mora num cache por
+     * arquivo, entao reabrir acha a que ja existe; so o recorte 9:16 e refeito.
+     * Clipe que nao da para inverter mais (sumiu do disco) volta para frente,
+     * em vez de impedir o projeto de abrir.
+     */
+    for (const [i, salva] of file.images.entries()) {
+      const asset = images.value[i]
+      if (!salva.invertido || !asset || asset.kind !== 'video') continue
+      const r = await window.dangai.inverterClipe(asset, true)
+      if (r.ok) images.value[i] = r.value
     }
 
     /*

@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, extname } from 'node:path'
 import {
   AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
@@ -71,7 +71,14 @@ import { generateMetadata } from './services/metadata'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
 import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
 import { caminhoDaFonte, ensureFontesDir, fontesDir, listFontes } from './services/fontes'
-import { upscaleAssets, upscaleReady } from './services/upscale'
+import {
+  ampliarVideoPronto,
+  cancelarUpscale,
+  UpscaleCancelado,
+  upscaleAssets,
+  upscaleReady,
+} from './services/upscale'
+import { inverterAsset } from './services/assets'
 import { tiraDoClipe } from './services/clips'
 import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
@@ -307,13 +314,15 @@ export function registerIpc(): void {
    * Melhorar as cenas leva MINUTOS, entao o andamento vai pelo mesmo canal do
    * render -- e la que o olho dele ja esta quando aperta Renderizar.
    */
-  handle<[ImageAsset[], Record<string, number>], Record<string, string>>(
+  handle<[ImageAsset[], Record<string, number>], Record<string, string> | null>(
     IPC.upscaleAssets,
     async (assets, limites) => {
     if (!upscaleReady()) {
       throw new Error('O modelo de upscale nao veio com esta instalacao do app.')
     }
-    const mapa = await upscaleAssets(assets, limites, (feitos, total, nome) => {
+    let mapa: Record<string, string>
+    try {
+      mapa = await upscaleAssets(assets, limites, (feitos, total, nome) => {
       broadcast({
         /*
          * A fracao e das CENAS, e nao metade da barra.
@@ -337,6 +346,14 @@ export function registerIpc(): void {
           : 'Cenas melhoradas.',
       })
     })
+    } catch (erro) {
+      // Cancelar nao e falha: o render para, sem mensagem vermelha.
+      if (erro instanceof UpscaleCancelado) {
+        broadcast({ progress: 0, stage: 'cancelled' })
+        return null
+      }
+      throw erro
+    }
     // O render le por URL do servidor local, como todo o resto.
     return Object.fromEntries(Object.entries(mapa).map(([id, caminho]) => [id, publish(caminho)]))
     },
@@ -445,8 +462,59 @@ export function registerIpc(): void {
   })
 
   handle<[], null>(IPC.cancelRender, async () => {
+    // O render COMECA pelo upscale: cancelar nessa fase tem que parar ele.
+    cancelarUpscale()
     cancelRender()
     return null
+  })
+
+  handle<[], null>(IPC.cancelarUpscale, async () => {
+    cancelarUpscale()
+    return null
+  })
+
+  /*
+   * Um MP4 pronto, fora de projeto. O dialogo mora aqui pelo mesmo motivo do
+   * da musica: o caminho escolhido nunca precisa passar pela interface. Sai ao
+   * lado do original, com "-upscale" no nome, sem sobrescrever nada.
+   */
+  handle<[], string | null>(IPC.upscaleVideoPronto, async () => {
+    if (!upscaleReady()) {
+      throw new Error('O modelo de upscale nao veio com esta instalacao do app.')
+    }
+    const escolha = await dialog.showOpenDialog({
+      title: 'Escolher o video para melhorar',
+      properties: ['openFile'],
+      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'mkv', 'webm', 'm4v'] }],
+    })
+    const entrada = escolha.canceled ? undefined : escolha.filePaths[0]
+    if (!entrada) return null
+
+    const base = entrada.slice(0, entrada.length - extname(entrada).length)
+    let destino = `${base}-upscale.mp4`
+    for (let n = 2; existsSync(destino); n++) destino = `${base}-upscale-${n}.mp4`
+
+    const nome = basename(entrada)
+    const avisar = (feitos: number, total: number): void => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC.videoProntoProgress, { feitos, total, nome })
+      }
+    }
+    avisar(0, 1)
+    try {
+      await ampliarVideoPronto(entrada, destino, avisar)
+    } catch (erro) {
+      if (erro instanceof UpscaleCancelado) return null
+      throw erro
+    }
+    return destino
+  })
+
+  handle<[ImageAsset, boolean], ImageAsset>(IPC.inverterClipe, async (asset, invertido) => {
+    if (!existsSync(asset.path)) {
+      throw new Error(`Esse clipe nao esta mais no disco: ${basename(asset.path)}`)
+    }
+    return inverterAsset(asset, invertido)
   })
 
   handle<[string], null>(IPC.revealFile, async (path) => {

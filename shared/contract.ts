@@ -89,6 +89,14 @@ export const imageAssetSchema = z.object({
    * bloco. Quando termina, o ultimo frame congela ate o bloco fechar.
    */
   durationSec: z.number().positive().optional(),
+  /**
+   * O clipe toca de tras para frente. A cena usa uma COPIA invertida gerada
+   * pelo main (ver electron/services/inverter); `path` continua sendo o
+   * original, que e por onde a Biblioteca e a remontagem reconhecem o clipe.
+   */
+  invertido: z.boolean().optional(),
+  /** O arquivo invertido, quando `invertido`. E dele que o upscale e o reenquadrar partem. */
+  caminhoInvertido: z.string().optional(),
 })
 export type ImageAsset = z.infer<typeof imageAssetSchema>
 
@@ -607,6 +615,20 @@ export const sceneSchema = z.object({
    */
   sourceStartB: z.number().nonnegative().default(0),
   /**
+   * Zoom FIXO do bloco, como o "Scale" dos editores: 1 = como o enquadramento
+   * deixou, 2 = o dobro. Nao anda com o tempo -- quem anda e o Ken Burns ou a
+   * camera livre, e este multiplica o que eles fizerem.
+   *
+   * "Uma funcao onde eu posso dar zoom no clipe todo, como o Scale dos
+   * editores, pra eu nao precisar ficar dando zoom pela camera livre e
+   * animando." O centro do zoom e o enquadramento que ele ja arrasta.
+   *
+   * Com default para plano salvo antes disto abrir igual.
+   */
+  escala: z.number().min(1).max(4).optional(),
+  /** O mesmo, para a metade de baixo da tela dividida. */
+  escalaB: z.number().min(1).max(4).optional(),
+  /**
    * Quantos graus o bloco gira, no sentido horario. 0 = como o arquivo veio.
    *
    * Com default para plano salvo antes disto abrir igual, e para a IA nao
@@ -1038,6 +1060,8 @@ export const renderPropsSchema = z.object({
       sourceStartFrames: z.number().int().nonnegative().default(0),
       /** Graus de giro do bloco. Com default para props antigas continuarem validas. */
       rotation: rotationSchema.default(0),
+      /** Zoom fixo do bloco (o "Scale"). Com default para props antigas continuarem validas. */
+      escala: z.number().min(1).max(4).default(1),
       /**
        * A metade de BAIXO, quando o bloco e tela dividida. null = tela cheia.
        *
@@ -1064,6 +1088,7 @@ export const renderPropsSchema = z.object({
            */
           effect: z.enum(SCENE_EFFECTS).default('nenhum'),
           intensity: z.number().min(0.02).max(0.2).default(0.12),
+          escala: z.number().min(1).max(4).default(1),
         })
         .nullable()
         .default(null),

@@ -37,6 +37,7 @@ export function Scene({
   focusY,
   rotation,
   curvePoints,
+  escala,
 }: SceneProps) {
   const frame = useCurrentFrame()
   const { width, height } = useVideoConfig()
@@ -185,6 +186,7 @@ export function Scene({
           intensity={intensity}
           curve={curve}
           curvePoints={curvePoints}
+          escala={escala}
         />
         <Metade
           url={abaixo.url}
@@ -197,6 +199,7 @@ export function Scene({
           // Ja resolvido pelo plano: aqui nao existe "segue a de cima".
           effect={abaixo.effect}
           intensity={abaixo.intensity}
+          escala={abaixo.escala}
           curve={curve}
           curvePoints={curvePoints}
         />
@@ -219,6 +222,22 @@ export function Scene({
    */
   return (
     <AbsoluteFill style={{ overflow: 'hidden' }}>
+      {/*
+        O ZOOM FIXO do bloco ("Scale"), por fora de tudo.
+
+        Uma camada so, envolvendo a caixa: assim ele multiplica o que estiver
+        la dentro -- Ken Burns, camera livre, giro -- sem precisar entrar na
+        conta de nenhum. Parte do centro do quadro, que e onde o enquadramento
+        pos o que importa; e como so amplia (>= 1), nunca abre tarja.
+      */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          transform: escala > 1 ? `scale(${escala})` : undefined,
+          transformOrigin: 'center center',
+        }}
+      >
       <div style={caixa}>
         {kind === 'video' ? (
           /*
@@ -259,6 +278,7 @@ export function Scene({
         ) : (
           <Img src={url} style={cobrindo} />
         )}
+      </div>
       </div>
     </AbsoluteFill>
   )
@@ -351,6 +371,7 @@ function Metade({
   intensity,
   curve,
   curvePoints,
+  escala,
 }: {
   url: string
   kind: 'image' | 'video'
@@ -363,6 +384,7 @@ function Metade({
   intensity: number
   curve: SceneProps['curve']
   curvePoints: SceneProps['curvePoints']
+  escala: number
 }) {
   const frame = useCurrentFrame()
   const ultimoFrame = Math.max((sourceDurationInFrames ?? durationInFrames) - 1, 0)
@@ -396,7 +418,8 @@ function Metade({
     // O cover ja preencheu a metade, entao ampliar daqui nunca abre tarja --
     // o mesmo motivo pelo qual o Ken Burns de tela cheia parte de uma escala
     // ja ampliada.
-    transform: `scale(${scale}) translate(${x}%, ${y}%)`,
+    // O zoom fixo da metade multiplica o movimento, a partir do mesmo centro.
+    transform: `scale(${scale * escala}) translate(${x}%, ${y}%)`,
     transformOrigin: 'center center',
   }
 

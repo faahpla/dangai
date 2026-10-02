@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import sharp from 'sharp'
@@ -43,6 +43,36 @@ let sessao: InferenceSession | null = null
 
 export function configureUpscale(dir: string): void {
   modeloDir = dir
+}
+
+/**
+ * Cancelar no meio.
+ *
+ * "Uma opcao de poder cancelar o upscale enquanto ele ocorre." O botao
+ * Cancelar do render ja aparecia durante o upscale, mas so avisava o Remotion
+ * -- que nessa fase ainda nem comecou. O upscale seguia ate a ultima cena.
+ * Agora o cancelar mata os ffmpeg vivos, o laco desiste, e quem chamou recebe
+ * UpscaleCancelado.
+ */
+const vivos = new Set<ChildProcess>()
+let cancelado = false
+
+export class UpscaleCancelado extends Error {
+  constructor() {
+    super('Upscale cancelado')
+    this.name = 'UpscaleCancelado'
+  }
+}
+
+export function cancelarUpscale(): void {
+  cancelado = true
+  for (const filho of vivos) {
+    try {
+      filho.kill()
+    } catch {
+      /* ja saiu */
+    }
+  }
 }
 
 export function modeloPath(): string {
@@ -432,7 +462,7 @@ async function ampliarClipe(
   const janela = janelaDaFonte(asset.width, asset.height, asset.focusX, asset.focusY)
   const fps = 24000 / 1001
 
-  const entrada = spawn(ffmpegPath, [
+  const argsEntrada = [
     '-i', asset.path,
     // Meio segundo de folga: o congelamento do ultimo quadro precisa que ele exista.
     ...(ate === undefined ? [] : ['-t', (ate + 0.5).toFixed(3)]),
@@ -460,8 +490,8 @@ async function ampliarClipe(
     '-f', 'rawvideo',
     '-pix_fmt', 'rgb24',
     '-',
-  ])
-  const saida = spawn(ffmpegPath, [
+  ]
+  const argsSaida = [
     '-y',
     '-f', 'rawvideo',
     '-pix_fmt', 'rgb24',
@@ -473,12 +503,42 @@ async function ampliarClipe(
     '-crf', '17',
     '-pix_fmt', 'yuv420p',
     destino,
-  ])
+  ]
+
+  await processarQuadros(argsEntrada, argsSaida, janela.width, janela.height, (dados) =>
+    paraQuadroDoRender(dados, janela.width, janela.height), onFrame)
+}
+
+/**
+ * O laco de quadro a quadro: um ffmpeg cospe pixel cru, o modelo amplia, o
+ * `converter` leva ao tamanho final, e outro ffmpeg codifica.
+ *
+ * Serve ao clipe do render e ao video pronto. Os dois processos ficam
+ * registrados em `vivos`: e o que deixa o Cancelar mata-los no meio.
+ */
+async function processarQuadros(
+  argsEntrada: string[],
+  argsSaida: string[],
+  largura: number,
+  altura: number,
+  converter: (dados: Float32Array) => Promise<Buffer>,
+  onFrame: (feitos: number) => void,
+): Promise<void> {
+  if (cancelado) throw new UpscaleCancelado()
+  const entrada = spawn(ffmpegPath, argsEntrada, { windowsHide: true })
+  const saida = spawn(ffmpegPath, argsSaida, { windowsHide: true })
+  for (const filho of [entrada, saida]) {
+    vivos.add(filho)
+    filho.on('close', () => vivos.delete(filho))
+  }
+  // Morto pelo Cancelar, o ffmpeg de saida fecha a escrita no meio: engolir o
+  // EPIPE aqui evita um erro solto que derrubaria o processo principal.
+  saida.stdin.on('error', () => {})
 
   entrada.stderr.resume()
   saida.stderr.resume()
 
-  const bytesPorQuadro = janela.width * janela.height * 3
+  const bytesPorQuadro = largura * altura * 3
   let sobra: Buffer = Buffer.alloc(0)
   let feitos = 0
 
@@ -504,6 +564,7 @@ async function ampliarClipe(
     saida.on('error', reject)
     saida.on('close', (codigo) => {
       if (codigo === 0) resolve()
+      else if (cancelado) reject(new UpscaleCancelado())
       else reject(new Error(`ffmpeg saiu com ${codigo} ao gravar o clipe melhorado`))
     })
   })
@@ -578,11 +639,9 @@ async function ampliarClipe(
          * o quadro N converte enquanto o N+1 ja esta na placa. Enfileirar a
          * conversao aqui deixaria a GPU esperando a CPU sem motivo.
          */
-        const inferido = naGpu.then(() => rodarModelo(quadro, janela.width, janela.height, 3))
+        const inferido = naGpu.then(() => rodarModelo(quadro, largura, altura, 3))
         naGpu = inferido.catch(() => undefined)
-        pronto = inferido.then((dados) =>
-          paraQuadroDoRender(dados, janela.width, janela.height),
-        )
+        pronto = inferido.then(converter)
         referencia = quadro
         alcanceDaReferencia = alcanceDe(quadro)
         referenciaPronta = pronto
@@ -606,6 +665,7 @@ async function ampliarClipe(
   })
 
   await terminou
+  if (cancelado) throw new UpscaleCancelado()
 }
 
 /**
@@ -626,8 +686,10 @@ export async function upscaleAssets(
 ): Promise<Record<string, string>> {
   const dir = exigirCache()
   const feitos: Record<string, string> = {}
+  cancelado = false
 
   for (const [i, asset] of assets.entries()) {
+    if (cancelado) throw new UpscaleCancelado()
     const ate = limites[asset.id]
     // O limite entra na chave: usar mais do clipe depois exige melhorar de novo.
     /*
@@ -640,17 +702,26 @@ export async function upscaleAssets(
      */
     const marca =
       `v${VERSAO_DO_UPSCALE}-${formatoAtual()}-${Math.round(asset.focusX * 1000)}-${Math.round(asset.focusY * 1000)}` +
-      (ate === undefined ? '' : `-${Math.round(ate * 10)}`)
+      (ate === undefined ? '' : `-${Math.round(ate * 10)}`) +
+      // O invertido e outro arquivo: sem isto, inverter depois de melhorar
+      // devolveria do cache o clipe ainda tocando para frente.
+      (asset.invertido ? '-inv' : '')
     const ext = asset.kind === 'video' ? 'mp4' : 'jpg'
     const destino = join(dir, `${asset.id}-${marca}.${ext}`)
 
     if (!existsSync(destino)) {
       const parcial = `${destino}.part.${ext}`
       onProgress(i, assets.length, asset.fileName)
-      if (asset.kind === 'video') {
-        await ampliarClipe(asset, parcial, ate, () => onProgress(i, assets.length, asset.fileName))
-      } else {
-        await ampliarPrint(asset, parcial)
+      try {
+        if (asset.kind === 'video') {
+          await ampliarClipe(asset, parcial, ate, () => onProgress(i, assets.length, asset.fileName))
+        } else {
+          await ampliarPrint(asset, parcial)
+        }
+      } catch (erro) {
+        // Pela metade nao serve para nada -- e no proximo render pareceria pronto.
+        rmSync(parcial, { force: true })
+        throw erro
       }
       renameSync(parcial, destino)
     }
@@ -659,4 +730,124 @@ export async function upscaleAssets(
 
   onProgress(assets.length, assets.length, '')
   return feitos
+}
+
+// ------------------------------------------------------------- video pronto
+
+/**
+ * Um MP4 JA PRONTO, inteiro, pelo mesmo modelo.
+ *
+ * "Deixar importar video pronto em mp4 pra dar upscale." Fora de qualquer
+ * projeto: entra o arquivo, sai `nome-upscale.mp4` ao lado, com o audio
+ * original copiado sem mexer.
+ *
+ * O TAMANHO: o video sai com o DOBRO da resolucao (1080x1920 vira 2160x3840),
+ * limitado a 3840 no lado maior. O modelo amplia 4x, entao ele recebe o quadro
+ * reduzido a metade -- a mesma ordem do upscale do render, em que o quadro
+ * final nasce de uma reducao e nao de um aumento. Num 1080x1920 o modelo ve
+ * 540x960, quase o mesmo tamanho da tira que ele ja amplia em cada clipe
+ * (608x1080), entao memoria e velocidade sao as que ja se conhecem.
+ */
+export async function ampliarVideoPronto(
+  entrada: string,
+  destino: string,
+  onProgress: (feitos: number, total: number) => void,
+): Promise<void> {
+  const info = await sondarVideo(entrada)
+  const fator = Math.min(2, 3840 / Math.max(info.width, info.height))
+  const par = (n: number): number => Math.max(2, Math.round(n / 2) * 2)
+  const saidaW = par(info.width * fator)
+  const saidaH = par(info.height * fator)
+  // O que o modelo recebe: um quarto da saida, em pares.
+  const inW = par(saidaW / ESCALA)
+  const inH = par(saidaH / ESCALA)
+  const total = Math.max(1, Math.round(info.durationSec * info.fps))
+
+  cancelado = false
+  const parcial = `${destino}.part.mp4`
+  try {
+    await processarQuadros(
+      [
+        '-hide_banner', '-loglevel', 'error', '-i', entrada,
+        '-vf', `scale=${inW}:${inH}:flags=area`,
+        '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-',
+      ],
+      [
+        '-y', '-hide_banner', '-loglevel', 'error',
+        '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', `${saidaW}x${saidaH}`, '-r', info.fpsTexto, '-i', '-',
+        // O audio vem do ARQUIVO original, copiado: nada nele precisa mudar.
+        '-i', entrada, '-map', '0:v', '-map', '1:a?',
+        '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-pix_fmt', 'yuv420p',
+        '-c:a', 'copy', '-shortest', '-movflags', '+faststart',
+        parcial,
+      ],
+      inW,
+      inH,
+      (dados) => paraTamanho(dados, inW, inH, saidaW, saidaH),
+      (feitos) => onProgress(feitos, total),
+    )
+    renameSync(parcial, destino)
+  } catch (erro) {
+    rmSync(parcial, { force: true })
+    throw erro
+  }
+}
+
+/** Do que o modelo devolveu para um tamanho qualquer -- o irmao do paraQuadroDoRender. */
+async function paraTamanho(
+  dados: Float32Array,
+  largura: number,
+  altura: number,
+  destW: number,
+  destH: number,
+): Promise<Buffer> {
+  const ow = largura * ESCALA
+  const oh = altura * ESCALA
+  const plano = ow * oh
+  const rgb = Buffer.allocUnsafe(plano * 3)
+  for (let i = 0; i < plano; i++) {
+    rgb[i * 3] = clamp255(dados[i]!)
+    rgb[i * 3 + 1] = clamp255(dados[plano + i]!)
+    rgb[i * 3 + 2] = clamp255(dados[2 * plano + i]!)
+  }
+  if (ow === destW && oh === destH) return rgb
+  return sharp(rgb, { raw: { width: ow, height: oh, channels: 3 } })
+    .resize(destW, destH, { fit: 'fill' })
+    .raw()
+    .toBuffer()
+}
+
+/**
+ * Medidas, duracao e taxa de quadros, lidas do cabecalho que o ffmpeg imprime.
+ *
+ * A taxa volta EXATA quando e uma das NTSC: o ffmpeg escreve "23.98 fps", e
+ * declarar 23.98 no lugar de 24000/1001 deslizaria o video contra o audio ao
+ * longo de minutos.
+ */
+async function sondarVideo(
+  path: string,
+): Promise<{ width: number; height: number; durationSec: number; fps: number; fpsTexto: string }> {
+  const texto = await new Promise<string>((resolve, reject) => {
+    const child = spawn(ffmpegPath, ['-hide_banner', '-i', path], { windowsHide: true })
+    let stderr = ''
+    child.stderr.on('data', (c: Buffer) => (stderr += c.toString()))
+    child.on('error', reject)
+    child.on('close', () => resolve(stderr))
+  })
+  const video = texto.split('\n').find((l) => /Stream .*Video:/.test(l)) ?? ''
+  const dim = /,\s(\d{2,5})x(\d{2,5})[\s,]/.exec(video)
+  const dur = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(texto)
+  const fps = /([\d.]+)\s+fps/.exec(video)
+  if (!dim || !dur) throw new Error('Nao deu para ler esse video. Ele e um MP4 de verdade?')
+  const bruto = fps ? Number(fps[1]) : 24000 / 1001
+  const ntsc: Record<string, string> = { '23.98': '24000/1001', '29.97': '30000/1001', '59.94': '60000/1001', '47.95': '48000/1001' }
+  const fpsTexto = ntsc[bruto.toFixed(2)] ?? String(bruto)
+  const [n, d] = fpsTexto.split('/').map(Number)
+  return {
+    width: Number(dim[1]),
+    height: Number(dim[2]),
+    durationSec: Number(dur[1]) * 3600 + Number(dur[2]) * 60 + Number(dur[3]),
+    fps: d ? n! / d : n!,
+    fpsTexto,
+  }
 }

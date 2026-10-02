@@ -18,6 +18,7 @@ import {
   Undo2,
   Redo2,
   type LucideIcon,
+  Sparkles,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { desfazer, podeDesfazer, podeRefazer, refazer } from '@/store/undo'
@@ -227,6 +228,13 @@ function useCommands(): Command[] {
         hint: script ? 'carregado' : 'legendas sem erro de escrita',
         icon: FileText,
         run: () => store().openScript(true),
+      },
+      {
+        id: 'upscale-video-pronto',
+        label: 'Upscale de um video pronto (MP4)',
+        hint: 'sai ao lado, com -upscale no nome',
+        icon: Sparkles,
+        run: () => void store().melhorarVideoPronto(),
       },
       {
         id: 'edit-captions',

@@ -34,6 +34,10 @@ export const IPC = {
   listSfx: 'sfx:list',
   listFontes: 'fontes:list',
   upscaleAssets: 'upscale:assets',
+  upscaleVideoPronto: 'upscale:video-pronto',
+  videoProntoProgress: 'upscale:video-pronto-progress',
+  cancelarUpscale: 'upscale:cancel',
+  inverterClipe: 'assets:inverter',
   openFontesDir: 'fontes:open',
   openSfxDir: 'sfx:open',
   pickFiles: 'dialog:pick-files',
@@ -596,7 +600,18 @@ export interface DangaiBridge {
     assets: readonly ImageAsset[],
     /** Ate que segundo de cada clipe o video chega, por id do asset. */
     limites: Readonly<Record<string, number>>,
-  ): Promise<IpcResult<Record<string, string>>>
+    /** null = cancelado no meio pelo usuario. */
+  ): Promise<IpcResult<Record<string, string> | null>>
+  /**
+   * Escolhe um MP4 pronto e o passa inteiro pelo upscale. Devolve o caminho do
+   * arquivo novo; null se ele fechou o dialogo ou cancelou no meio.
+   */
+  upscaleVideoPronto(): Promise<IpcResult<string | null>>
+  /** Interrompe o upscale que estiver rodando, do render ou do video pronto. */
+  cancelarUpscale(): Promise<IpcResult<null>>
+  onVideoProntoProgress(listener: (p: { feitos: number; total: number; nome: string }) => void): () => void
+  /** Liga ou desliga o tocar de tras para frente de um clipe. Devolve o asset novo. */
+  inverterClipe(asset: ImageAsset, invertido: boolean): Promise<IpcResult<ImageAsset>>
   /** Versao instalada, para a interface mostrar. */
   appVersion(): Promise<IpcResult<string>>
   /** Fecha e instala a atualizacao ja baixada. */

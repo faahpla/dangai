@@ -229,12 +229,23 @@ export function SceneEdit() {
                 trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStartB ?? 0 }}
               />
             </Field>
+            <Field label="Zoom da metade de cima">
+              <ZoomFixo valor={scene.escala ?? 1} onChange={(v) => updateScene(index, { escala: v })} />
+            </Field>
+            <Field label="Zoom da metade de baixo">
+              <ZoomFixo valor={scene.escalaB ?? 1} onChange={(v) => updateScene(index, { escalaB: v })} />
+            </Field>
           </>
         ) : (
-          <Framing
-            image={image}
-            trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
-          />
+          <>
+            <Framing
+              image={image}
+              trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
+            />
+            <Field label="Zoom">
+              <ZoomFixo valor={scene.escala ?? 1} onChange={(v) => updateScene(index, { escala: v })} />
+            </Field>
+          </>
         )}
 
       {/*
@@ -985,4 +996,31 @@ const TRANSITION_LABEL: Readonly<Record<Transition, string>> = {
   'whip-pan-right': 'Whip-pan p/ direita',
   // Fora da tela: so chega de projeto salvo antes de o par existir.
   'whip-pan': 'Whip-pan p/ esquerda',
+}
+
+/**
+ * O "Scale" dos editores: um zoom FIXO no bloco inteiro.
+ *
+ * "Pra eu nao precisar ficar dando zoom pela camera livre e animando, apenas
+ * conseguir dar zoom em uma parte de forma facil, sem ser constante." Nao anda
+ * com o tempo; o centro e o enquadramento acima. 100% e como estava; o duplo
+ * clique no controle volta para 100%.
+ */
+function ZoomFixo({ valor, onChange }: { valor: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <input
+        type="range"
+        min={1}
+        max={3}
+        step={0.05}
+        value={valor}
+        onChange={(event) => onChange(Number(event.target.value))}
+        onDoubleClick={() => onChange(1)}
+        title="Duplo clique volta para 100%"
+        className="dangai-range min-w-0 flex-1"
+      />
+      <span className="tnum w-10 shrink-0 text-right text-[11px] text-ink-3">{Math.round(valor * 100)}%</span>
+    </div>
+  )
 }

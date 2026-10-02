@@ -7,6 +7,7 @@ import type { ImageAsset } from '@shared/contract'
 import { medidasAtuais } from './formato'
 import { classifyFile } from '@shared/channels'
 import { publish } from './media-server'
+import { clipeInvertido } from './inverter'
 import { detectFace, detectFocus, type FaceFocus, type RostoNoQuadro } from './faces'
 import {
   configureClips,
@@ -455,4 +456,32 @@ export async function rostoNosInstantes(
     achados.push(await detectFace(frame).catch(() => null))
   }
   return achados
+}
+
+/**
+ * Liga ou desliga o "tocar de tras para frente" de um clipe ja importado.
+ *
+ * Refaz o recorte 9:16 a partir da copia invertida (ou do original, ao
+ * desligar). O recorte invertido ganha chave propria no cache -- `id-inv` --
+ * porque o cache e por id e enquadramento, e sem isto o original e o invertido
+ * de um mesmo clipe se devolveriam um ao outro.
+ */
+export async function inverterAsset(asset: ImageAsset, invertido: boolean): Promise<ImageAsset> {
+  if (asset.kind !== 'video') throw new Error('So clipe pode tocar invertido.')
+  const fonte = invertido ? await clipeInvertido(asset.path) : asset.path
+  const render = await makeClipRenderReady(
+    fonte,
+    invertido ? `${asset.id}-inv` : asset.id,
+    asset.focusX,
+    asset.focusY,
+    await probeClip(fonte),
+  )
+  const { caminhoInvertido: _velho, ...resto } = asset
+  return {
+    ...resto,
+    invertido,
+    ...(invertido ? { caminhoInvertido: fonte } : {}),
+    url: publish(render),
+    urlSource: publish(fonte),
+  }
 }

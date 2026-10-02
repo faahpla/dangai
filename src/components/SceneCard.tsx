@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { Film, ImagePlus, Library as LibraryIcon, Scissors } from 'lucide-react'
+import { Film, ImagePlus, Library as LibraryIcon, RefreshCcw, Scissors } from 'lucide-react'
 import { isVisual } from '@shared/channels'
 import { VIDEO_FPS, type ImageAsset, type Scene } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
@@ -124,6 +124,8 @@ export function SceneCard() {
         label={imageB ? 'Trecho do clipe de cima' : 'Trecho do clipe'}
       />
 
+      {image.kind === 'video' && <Inverter index={index} metade="cima" invertido={image.invertido === true} />}
+
       <Field label={imageB ? 'Trocar a cena de cima' : 'Trocar por outra cena'}>
         {/*
           A fita resolve o caso comum -- discordar e pegar outra das seis. Esta
@@ -156,6 +158,10 @@ export function SceneCard() {
             campo="sourceStartB"
             label="Trecho do clipe de baixo"
           />
+
+          {imageB.kind === 'video' && (
+            <Inverter index={index} metade="baixo" invertido={imageB.invertido === true} />
+          )}
 
           <Field label="Trocar a cena de baixo">
             <Chip active={false} onClick={() => void abrirBiblioteca(index, 'baixo')}>
@@ -345,5 +351,32 @@ function PontoDeEntrada({
         </span>
       </div>
     </Field>
+  )
+}
+
+/**
+ * Tocar o clipe de tras para frente.
+ *
+ * "Uma opcao onde eu clico e ele faz um reverse do clipe para eu poder usar
+ * invertido." Um clique liga, outro desliga. O bloco continua mostrando o
+ * mesmo momento do clipe, so que ao contrario -- o ponto de entrada acompanha.
+ */
+function Inverter({
+  index,
+  metade,
+  invertido,
+}: {
+  index: number
+  metade: 'cima' | 'baixo'
+  invertido: boolean
+}) {
+  const inverterClipe = useProject((s) => s.inverterClipe)
+  const busy = useProject((s) => s.busy)
+  return (
+    <Chip active={invertido} onClick={() => busy === null && void inverterClipe(index, metade)}>
+      <RefreshCcw size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+      {invertido ? 'Tocando invertido' : 'Inverter clipe'}
+      {metade === 'baixo' ? ' (baixo)' : ''}
+    </Chip>
   )
 }

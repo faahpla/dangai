@@ -69,6 +69,10 @@ export function App() {
   // Andamento da analise: Whisper e a chamada da IA levam tempo e nenhum
   // carregamento pode ficar sem sinal visivel.
   useEffect(() => window.dangai.onAnalyzeProgress((message) => setBusy(message)), [setBusy])
+  useEffect(
+    () => window.dangai.onVideoProntoProgress((p) => useProject.getState().setVideoProntoProgresso(p)),
+    [],
+  )
 
   // A primeira varredura da biblioteca gera as miniaturas locais e leva perto de
   // um minuto. Sem este sinal, um minuto parado parece travamento.
