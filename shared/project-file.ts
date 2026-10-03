@@ -245,6 +245,10 @@ export const projectFileSchema = z.object({
   trilhas: z.array(trechoDeAudioSchema).default([]),
   /** A faixa de video (sobreposicoes). Default para projeto antigo abrir igual. */
   sobreposicoes: z.array(sobreposicaoSchema).default([]),
+  /** As faixas mutadas (o "M"). Default para projeto antigo abrir igual. */
+  faixasMudas: z
+    .object({ video: z.array(z.number().int().nonnegative()), audio: z.array(z.number().int().nonnegative()) })
+    .default({ video: [], audio: [] }),
   /** Cama de musica. Com default para projeto salvo antes dela existir abrir igual. */
   music: referenceSchema.nullable().default(null),
   musicGainDb: z.number().default(MUSIC_GAIN_DB_DEFAULT),

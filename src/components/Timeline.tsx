@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Film, Minus, Music, Plus, Volume2, X } from 'lucide-react'
+import { Magnet, Minus, Plus, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
+import { CABECALHO, Cabecalho, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, type Ima } from './Faixas'
 
 /**
  * O elemento assinatura. Uma faixa horizontal unica: waveform em cinza ao
@@ -35,6 +36,16 @@ export function Timeline() {
   const insertImages = useProject((s) => s.insertImages)
   const moveBoundary = useProject((s) => s.moveBoundary)
   const scenes = useProject((s) => s.plan)?.scenes ?? []
+  const addSobreposicoesAt = useProject((s) => s.addSobreposicoesAt)
+  const moveSobreposicao = useProject((s) => s.moveSobreposicao)
+  const cortarInicioDaSobreposicao = useProject((s) => s.cortarInicioDaSobreposicao)
+  const cortarFimDaSobreposicao = useProject((s) => s.cortarFimDaSobreposicao)
+  const removeSobreposicao = useProject((s) => s.removeSobreposicao)
+  const addTrilhasAt = useProject((s) => s.addTrilhasAt)
+  const moveTrilha = useProject((s) => s.moveTrilha)
+  const cortarInicioDaTrilha = useProject((s) => s.cortarInicioDaTrilha)
+  const cortarFimDaTrilha = useProject((s) => s.cortarFimDaTrilha)
+  const removeTrilha = useProject((s) => s.removeTrilha)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const trackRef = useRef<HTMLDivElement | null>(null)
@@ -48,6 +59,58 @@ export function Timeline() {
   const duration = audio?.durationSec ?? 0
   const progress = duration > 0 ? playhead / duration : 0
   const isRendering = render !== null
+
+  /*
+   * A LARGURA DO CONTEUDO, em px: a da janela menos o cabecalho das faixas,
+   * vezes o zoom. Medida, e nao em porcento, porque o cabecalho fixo a
+   * esquerda tira uma fatia que o porcento nao sabe descontar.
+   */
+  const [larguraVisivel, setLarguraVisivel] = useState(800)
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const medir = (): void => setLarguraVisivel(Math.max(scroll.clientWidth - CABECALHO, 100))
+    medir()
+    const observer = new ResizeObserver(medir)
+    observer.observe(scroll)
+    return () => observer.disconnect()
+  }, [])
+  const largura = larguraVisivel * zoom
+
+  /*
+   * O IMA, como o do DaVinci: arrastar e cortar clipe gruda nos CORTES DOS
+   * BLOCOS, na agulha e nas bordas dos outros clipes. Ligado por padrao, e a
+   * escolha fica lembrada nesta maquina.
+   */
+  const [imaLigado, setImaLigado] = useState(() => {
+    try {
+      return localStorage.getItem('dangai.ima') !== 'nao'
+    } catch {
+      return true
+    }
+  })
+  const [linhaDoIma, setLinhaDoIma] = useState<number | null>(null)
+  const trilhas = useProject((s) => s.trilhas)
+  const sobreposicoes = useProject((s) => s.sobreposicoes)
+  const sfxManual = useProject((s) => s.sfxManual)
+  const ima: Ima = useMemo(
+    () => ({
+      ligado: imaLigado,
+      tolerancia: duration > 0 ? (10 / Math.max(largura, 1)) * duration : 0,
+      alvos: (ignorar) => {
+        const alvos = [0, playhead, ...scenes.map((c) => c.start)]
+        for (const t of trilhas) if (t.id !== ignorar) alvos.push(t.at, t.at + duracaoDoTrecho(t))
+        for (const o of sobreposicoes) {
+          if (o.id !== ignorar) alvos.push(o.at, o.at + (o.usarSec ?? o.durationSec - o.inicioSec))
+        }
+        for (const som of sfxManual) if (som.id !== ignorar) alvos.push(som.at)
+        return alvos
+      },
+      mostrar: setLinhaDoIma,
+    }),
+    [imaLigado, duration, largura, playhead, scenes, trilhas, sobreposicoes, sfxManual],
+  )
+
 
   const timeAt = useCallback(
     (clientX: number): number => {
@@ -181,7 +244,7 @@ export function Timeline() {
     const track = trackRef.current
     if (!scroll || !track || zoom === 1 || duration === 0) return
 
-    const x = progress * track.clientWidth
+    const x = CABECALHO + progress * track.clientWidth
     const margem = scroll.clientWidth * 0.15
     if (x < scroll.scrollLeft + margem || x > scroll.scrollLeft + scroll.clientWidth - margem) {
       // Atribuicao direta, e nao scrollTo com behavior 'smooth': medido neste
@@ -202,10 +265,10 @@ export function Timeline() {
       const ancora = clientX ?? scroll.getBoundingClientRect().left + scroll.clientWidth / 2
       const dentro = ancora - track.getBoundingClientRect().left
       const fracao = dentro / track.clientWidth
-      const larguraNova = scroll.clientWidth * alvo
+      const larguraNova = (scroll.clientWidth - CABECALHO) * alvo
 
       requestAnimationFrame(() => {
-        scroll.scrollLeft = fracao * larguraNova - (ancora - scroll.getBoundingClientRect().left)
+        scroll.scrollLeft = CABECALHO + fracao * larguraNova - (ancora - scroll.getBoundingClientRect().left)
       })
     }
 
@@ -356,6 +419,33 @@ export function Timeline() {
           </span>
 
           {duration > 0 && !isRendering && (
+            <button
+              type="button"
+              onClick={() => {
+                const novo = !imaLigado
+                setImaLigado(novo)
+                try {
+                  localStorage.setItem('dangai.ima', novo ? 'sim' : 'nao')
+                } catch {
+                  /* sem armazenamento: vale so nesta sessao */
+                }
+              }}
+              aria-pressed={imaLigado}
+              title={
+                imaLigado
+                  ? 'Ima ligado: os clipes grudam nos cortes dos blocos, na agulha e nos outros clipes'
+                  : 'Ima desligado: os clipes andam livres'
+              }
+              className={[
+                'grid size-[24px] place-items-center rounded-sm border',
+                imaLigado ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
+              ].join(' ')}
+            >
+              <Magnet size={13} strokeWidth={1.75} />
+            </button>
+          )}
+
+          {duration > 0 && !isRendering && (
             <div className="flex items-center gap-1">
               <button
                 type="button"
@@ -385,8 +475,9 @@ export function Timeline() {
 
       <div
         ref={scrollRef}
-        // overflow-x-auto e nao scroll: sem zoom nao aparece barra nenhuma.
-        className="overflow-x-auto overflow-y-hidden rounded-md border border-line bg-surface"
+        // Rola nos dois eixos: na horizontal com o zoom, na vertical quando as
+        // faixas passam do teto -- as cenas ficam presas no topo.
+        className="relative max-h-[44vh] overflow-auto rounded-md border border-line bg-surface"
         onWheel={(event) => {
           /*
            * Ctrl+roda ou ALT+roda ampliam. Sem nenhum dos dois, a roda rola.
@@ -400,6 +491,12 @@ export function Timeline() {
           zoomAt(zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), event.clientX)
         }}
       >
+        <div className="sticky top-0 z-40" style={{ width: CABECALHO + largura }}>
+        <Linha
+          largura={largura}
+          altura={104}
+          cabecalho={<Cabecalho nome="Cenas" detalhe={audio ? 'narracao' : undefined} />}
+        >
         <div
           ref={trackRef}
           onPointerDown={handlePointerDown}
@@ -426,12 +523,12 @@ export function Timeline() {
             event.stopPropagation()
             void insertImages(paths, timeAt(event.clientX))
           }}
-          style={{ width: `${zoom * 100}%` }}
+          style={{ width: '100%' }}
           className={[
             // overflow-hidden aqui, e nao no pai: as alcas de arraste e o ponto
             // da agulha passam alguns pixels da borda, e sem clipar isso a
             // faixa ganhava barra de rolagem mesmo sem zoom nenhum.
-            'group relative h-[104px] min-w-full overflow-hidden',
+            'group relative h-[104px] overflow-hidden',
             isRendering ? 'cursor-default' : 'cursor-ew-resize',
           ].join(' ')}
         >
@@ -543,6 +640,7 @@ export function Timeline() {
             </div>
           )}
         </div>
+        </Linha>
 
         {/*
           A FAIXA DE LEGENDAS, logo abaixo dos blocos.
@@ -556,21 +654,90 @@ export function Timeline() {
           Encostada nos blocos de proposito: e a coincidencia entre as duas
           faixas que se quer ler de relance.
         */}
-        {duration > 0 && <FaixaLegendas duration={duration} zoom={zoom} />}
+        {duration > 0 && (
+          <Linha largura={largura} altura={16} cabecalho={<Cabecalho nome="Legendas" />}>
+            <FaixaLegendas duration={duration} zoom={zoom} />
+          </Linha>
+        )}
+        </div>
 
         {/*
-          A FAIXA DE SFX, embaixo da esteira e dentro do mesmo rolamento.
-          Fica aqui e nao num painel para o som ser posicionado OLHANDO a onda
-          da narracao -- e contra a fala que se decide onde um whoosh entra.
+          AS FAIXAS, no jeito do DaVinci: video em cima (V2 sobre V1), SFX, e
+          as de audio embaixo. Ver Faixas.tsx.
         */}
         {duration > 0 && !isRendering && (
-          <FaixasDeVideo duration={duration} zoom={zoom} timeAt={timeAt} />
+          <>
+            <GrupoDeFaixas
+              tipo="video"
+              faixasMinimas={2}
+              altura={40}
+              largura={largura}
+              duration={duration}
+              timeAt={timeAt}
+              ima={ima}
+              clipes={sobreposicoes.map((o) => ({
+                id: o.id,
+                faixa: o.faixa,
+                at: o.at,
+                toca: o.usarSec ?? o.durationSec - o.inicioSec,
+                nome: o.fileName,
+                imagem: o.tipo === 'image' ? o.url : undefined,
+              }))}
+              aceita={(p) => {
+                const t = classifyFile(p)
+                return t === 'video' || t === 'image'
+              }}
+              onSoltar={(paths, at, faixa) => void addSobreposicoesAt(paths, at, faixa)}
+              onMover={moveSobreposicao}
+              onCortarInicio={cortarInicioDaSobreposicao}
+              onCortarFim={cortarFimDaSobreposicao}
+              onRemover={removeSobreposicao}
+              controles={(id) => <ControlesDaSobreposicao id={id} />}
+            />
+            <Linha
+              largura={largura}
+              altura={30}
+              cabecalho={<Cabecalho nome="SFX" detalhe={sfxManual.length === 0 ? 'automaticos' : `${sfxManual.length} sons`} />}
+            >
+              <FaixaSfx duration={duration} zoom={zoom} timeAt={timeAt} ima={ima} />
+            </Linha>
+            <GrupoDeFaixas
+              tipo="audio"
+              faixasMinimas={3}
+              altura={52}
+              largura={largura}
+              duration={duration}
+              timeAt={timeAt}
+              ima={ima}
+              clipes={trilhas.map((t) => ({
+                id: t.id,
+                faixa: t.faixa,
+                at: t.at,
+                toca: duracaoDoTrecho(t),
+                nome: t.fileName,
+                peaks: t.peaks,
+                arquivoSec: t.durationSec,
+                inicioSec: t.inicioSec,
+                fadeInSec: t.fadeInSec,
+                fadeOutSec: t.fadeOutSec,
+              }))}
+              aceita={(p) => classifyFile(p) === 'audio'}
+              onSoltar={(paths, at, faixa) => void addTrilhasAt(paths, at, faixa)}
+              onMover={moveTrilha}
+              onCortarInicio={cortarInicioDaTrilha}
+              onCortarFim={cortarFimDaTrilha}
+              onRemover={removeTrilha}
+              controles={(id) => <ControlesDaTrilha id={id} />}
+            />
+          </>
         )}
-        {duration > 0 && !isRendering && (
-          <FaixaSfx duration={duration} zoom={zoom} timeAt={timeAt} />
-        )}
-        {duration > 0 && !isRendering && (
-          <FaixasDeAudio duration={duration} zoom={zoom} timeAt={timeAt} />
+
+        {/* Onde o ima grudou: uma linha de cima a baixo. */}
+        {linhaDoIma !== null && duration > 0 && (
+          <div
+            className="pointer-events-none absolute top-0 z-50 w-px bg-[#ffd60a]"
+            style={{ left: CABECALHO + (linhaDoIma / duration) * largura, height: '100%' }}
+          />
         )}
       </div>
     </section>
@@ -586,12 +753,13 @@ export function Timeline() {
  */
 function FaixaSfx({
   duration,
-  zoom,
   timeAt,
+  ima,
 }: {
   duration: number
   zoom: number
   timeAt: (clientX: number) => number
+  ima: Ima
 }) {
   const sfxManual = useProject((s) => s.sfxManual)
   const sfxEnabled = useProject((s) => s.sfxEnabled)
@@ -627,7 +795,12 @@ function FaixaSfx({
       }}
       onPointerMove={(event) => {
         // Desconta onde ele pegou: o som anda com o cursor, nao pula para ele.
-        if (arrastando) moveSfx(arrastando.id, timeAt(event.clientX) - arrastando.pega)
+        // O SFX tambem gruda no ima: o comeco do som no corte do bloco.
+        if (arrastando) {
+          const { t, grudou } = alinhar(timeAt(event.clientX) - arrastando.pega, ima, arrastando.id)
+          ima.mostrar(grudou ? t : null)
+          moveSfx(arrastando.id, t)
+        }
         if (cortandoId) {
           const som = sfxManual.find((s) => s.id === cortandoId)
           if (som) trimSfx(cortandoId, timeAt(event.clientX) - som.at)
@@ -636,14 +809,16 @@ function FaixaSfx({
       onPointerUp={() => {
         setArrastando(null)
         setCortandoId(null)
+        ima.mostrar(null)
       }}
       onPointerLeave={() => {
         setArrastando(null)
         setCortandoId(null)
+        ima.mostrar(null)
       }}
-      style={{ width: `${zoom * 100}%` }}
+      style={{ width: '100%' }}
       className={[
-        'relative h-[30px] min-w-full border-t border-line',
+        'relative h-full',
         sobre ? 'bg-accent-dim' : 'bg-surface',
       ].join(' ')}
     >
@@ -864,8 +1039,8 @@ function FaixaLegendas({ duration, zoom }: { duration: number; zoom: number }) {
        * acima. E a coincidencia entre as duas faixas e o unico motivo desta
        * existir -- desalinhada, ela so atrapalha.
        */
-      style={{ width: `${zoom * 100}%` }}
-      className="relative mt-px h-[14px] min-w-full overflow-hidden border-t border-line bg-surface"
+      style={{ width: '100%' }}
+      className="relative h-full overflow-hidden bg-surface"
     >
       {captions.map((bloco, i) => {
         const inicio = bloco.from / VIDEO_FPS
@@ -936,540 +1111,41 @@ function LegendaAtual() {
   )
 }
 
-/** Altura de cada faixa de audio, em px. */
-const ALTURA_DA_FAIXA = 30
 
-/**
- * AS FAIXAS DE AUDIO: musica e o que mais ele quiser por baixo da narracao.
- *
- * "Quero adicionar track audio, para eu add minhas musicas no video." Cada
- * faixa aceita arquivo solto do Explorer ou arrastado das Power Bins. O trecho
- * anda no tempo E entre faixas (arrastando para cima ou para baixo), corta
- * pelas duas pontas -- a da esquerda escolhe de que ponto do arquivo ele parte
- * --, e o trecho escolhido abre volume e fades no canto da faixa.
- *
- * Sempre sobra uma faixa vazia embaixo: e onde se solta a proxima musica sem
- * disputar espaco com as que ja estao la.
- */
-function FaixasDeAudio({
-  duration,
-  zoom,
-  timeAt,
-}: {
-  duration: number
-  zoom: number
-  timeAt: (clientX: number) => number
-}) {
-  const trilhas = useProject((s) => s.trilhas)
-  const addTrilhasAt = useProject((s) => s.addTrilhasAt)
-  const moveTrilha = useProject((s) => s.moveTrilha)
-  const cortarFim = useProject((s) => s.cortarFimDaTrilha)
-  const cortarInicio = useProject((s) => s.cortarInicioDaTrilha)
+/** Volume e fades do trecho de audio escolhido. */
+function ControlesDaTrilha({ id }: { id: string }) {
+  const t = useProject((s) => s.trilhas.find((x) => x.id === id))
   const ajustar = useProject((s) => s.ajustarTrilha)
-  const remover = useProject((s) => s.removeTrilha)
-
-  const caixa = useRef<HTMLDivElement | null>(null)
-  const [gesto, setGesto] = useState<
-    | { tipo: 'mover'; id: string; pega: number }
-    | { tipo: 'fim'; id: string }
-    | { tipo: 'inicio'; id: string }
-    | null
-  >(null)
-  const [selecionado, setSelecionado] = useState<string | null>(null)
-  const [sobre, setSobre] = useState<number | null>(null)
-
-  const faixas = Math.max(...trilhas.map((t) => t.faixa + 1), 0) + 1
-  const escolhido = trilhas.find((t) => t.id === selecionado) ?? null
-
-  /** Em que faixa esta este ponto da tela. */
-  const faixaEm = (clientY: number): number => {
-    const r = caixa.current?.getBoundingClientRect()
-    if (!r) return 0
-    return Math.min(Math.max(Math.floor((clientY - r.top) / ALTURA_DA_FAIXA), 0), faixas - 1)
-  }
-
+  if (!t) return null
   return (
-    <div
-      ref={caixa}
-      style={{ width: `${zoom * 100}%`, height: faixas * ALTURA_DA_FAIXA }}
-      className="relative min-w-full"
-      onDragOver={(event) => {
-        event.preventDefault()
-        setSobre(faixaEm(event.clientY))
-      }}
-      onDragLeave={() => setSobre(null)}
-      onDrop={(event) => {
-        setSobre(null)
-        const paths = caminhosDoArraste(event).filter((p) => classifyFile(p) === 'audio')
-        if (paths.length === 0) return
-        // Sem isto o drop sobe ate a janela e o audio viraria narracao nova.
-        event.preventDefault()
-        event.stopPropagation()
-        void addTrilhasAt(paths, timeAt(event.clientX), faixaEm(event.clientY))
-      }}
-      onPointerMove={(event) => {
-        if (!gesto) return
-        const t = trilhas.find((x) => x.id === gesto.id)
-        if (!t) return
-        if (gesto.tipo === 'mover') moveTrilha(t.id, timeAt(event.clientX) - gesto.pega, faixaEm(event.clientY))
-        if (gesto.tipo === 'fim') cortarFim(t.id, timeAt(event.clientX) - t.at)
-        if (gesto.tipo === 'inicio') cortarInicio(t.id, timeAt(event.clientX))
-      }}
-      onPointerUp={() => setGesto(null)}
-      onPointerLeave={() => setGesto(null)}
-    >
-      {Array.from({ length: faixas }, (_, f) => (
-        <div
-          key={f}
-          style={{ top: f * ALTURA_DA_FAIXA, height: ALTURA_DA_FAIXA }}
-          className={['absolute inset-x-0 border-t border-line', sobre === f ? 'bg-accent-dim' : 'bg-surface'].join(' ')}
-        >
-          {!trilhas.some((t) => t.faixa === f) && (
-            <span className="pointer-events-none absolute inset-0 flex items-center gap-1.5 px-2 text-[10px] text-ink-3">
-              <Music size={10} strokeWidth={1.5} />
-              {f === 0
-                ? 'Faixa de audio: solte uma musica aqui (do Explorer ou das Bins).'
-                : 'Solte aqui para uma faixa nova.'}
-            </span>
-          )}
-        </div>
-      ))}
-
-      {trilhas.map((t) => {
-        const toca = duracaoDoTrecho(t)
-        const esquerda = (t.at / duration) * 100
-        const largura = (toca / duration) * 100
-        const ativo = gesto?.id === t.id || selecionado === t.id
-        // A onda e do arquivo inteiro; aparece so o pedaco que toca.
-        const ondaLargura = (t.durationSec / Math.max(toca, 0.01)) * 100
-        const ondaDesloca = (t.inicioSec / Math.max(toca, 0.01)) * 100
-        return (
-          <div
-            key={t.id}
-            data-trilha={t.id}
-            onPointerDown={(event) => {
-              event.stopPropagation()
-              event.currentTarget.setPointerCapture(event.pointerId)
-              setGesto({ tipo: 'mover', id: t.id, pega: timeAt(event.clientX) - t.at })
-              setSelecionado(t.id)
-            }}
-            style={{
-              left: `${esquerda}%`,
-              width: `${largura}%`,
-              top: t.faixa * ALTURA_DA_FAIXA + 3,
-              height: ALTURA_DA_FAIXA - 6,
-            }}
-            title={`${t.fileName} — entra em ${t.at.toFixed(2)}s, toca ${toca.toFixed(2)}s (a partir de ${t.inicioSec.toFixed(2)}s do arquivo), ${t.gainDb} dB`}
-            className={[
-              'group/trilha absolute cursor-grab overflow-hidden rounded-sm border',
-              ativo ? 'border-accent bg-accent-dim' : 'border-line-strong bg-elevated',
-            ].join(' ')}
-          >
-            {t.peaks.length > 0 && (
-              <div
-                className="pointer-events-none absolute inset-y-0 opacity-70"
-                style={{ left: `${-ondaDesloca}%`, width: `${ondaLargura}%` }}
-              >
-                <Waveform peaks={t.peaks} className="block h-full w-full" />
-              </div>
-            )}
-            {/* Os fades desenhados: a rampa de entrada e a de saida. */}
-            {t.fadeInSec > 0 && (
-              <span
-                className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-black/60 to-transparent"
-                style={{ width: `${Math.min(t.fadeInSec / toca, 0.5) * 100}%` }}
-              />
-            )}
-            {t.fadeOutSec > 0 && (
-              <span
-                className="pointer-events-none absolute inset-y-0 right-0 bg-gradient-to-l from-black/60 to-transparent"
-                style={{ width: `${Math.min(t.fadeOutSec / toca, 0.5) * 100}%` }}
-              />
-            )}
-            <span className="pointer-events-none absolute left-1 top-0.5 max-w-full truncate text-[9px] text-ink drop-shadow">
-              {t.fileName}
-            </span>
-
-            {/* As duas alcas de corte. Dois cliques devolvem o arquivo inteiro. */}
-            <span
-              data-alca="inicio"
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                event.currentTarget.setPointerCapture(event.pointerId)
-                setGesto({ tipo: 'inicio', id: t.id })
-                setSelecionado(t.id)
-              }}
-              onDoubleClick={(event) => {
-                event.stopPropagation()
-                cortarInicio(t.id, t.at - t.inicioSec)
-              }}
-              title="Puxe para escolher de que ponto a musica entra"
-              className="absolute inset-y-0 left-0 w-[7px] cursor-col-resize opacity-0 group-hover/trilha:opacity-100"
-            >
-              <span className="absolute inset-y-1 left-[2px] w-[2px] rounded-full bg-accent" />
-            </span>
-            <span
-              data-alca="fim"
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                event.currentTarget.setPointerCapture(event.pointerId)
-                setGesto({ tipo: 'fim', id: t.id })
-                setSelecionado(t.id)
-              }}
-              onDoubleClick={(event) => {
-                event.stopPropagation()
-                cortarFim(t.id, null)
-              }}
-              title="Puxe para cortar o fim; dois cliques devolvem ate o fim do arquivo"
-              className="absolute inset-y-0 right-0 w-[7px] cursor-col-resize opacity-0 group-hover/trilha:opacity-100"
-            >
-              <span className="absolute inset-y-1 right-[2px] w-[2px] rounded-full bg-accent" />
-            </span>
-            <button
-              type="button"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => {
-                remover(t.id)
-                if (selecionado === t.id) setSelecionado(null)
-              }}
-              aria-label={`Tirar ${t.fileName}`}
-              className="absolute right-2 top-0.5 z-10 grid size-[13px] place-items-center rounded-full border border-line bg-surface text-ink-3 opacity-0 hover:text-danger group-hover/trilha:opacity-100"
-            >
-              <X size={8} strokeWidth={2.5} />
-            </button>
-          </div>
-        )
-      })}
-
-      {/*
-        VOLUME E FADES do trecho escolhido, no canto da faixa dele -- sem painel
-        a parte, para comparar com a fala sem tirar o olho da linha do tempo.
-      */}
-      {escolhido && (
-        <div
-          style={{ top: escolhido.faixa * ALTURA_DA_FAIXA + 3 }}
-          className="absolute right-1 z-20 flex items-center gap-2 rounded-sm border border-line bg-surface px-1.5 py-0.5"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <span className="max-w-[90px] truncate text-[10px] text-ink-3">{escolhido.fileName}</span>
-          <ControleDaTrilha
-            rotulo="Volume"
-            valor={escolhido.gainDb}
-            min={-40}
-            max={12}
-            passo={1}
-            texto={`${escolhido.gainDb > 0 ? '+' : ''}${escolhido.gainDb} dB`}
-            onChange={(v) => ajustar(escolhido.id, { gainDb: v })}
-          />
-          <ControleDaTrilha
-            rotulo="Fade de entrada"
-            valor={escolhido.fadeInSec}
-            min={0}
-            max={5}
-            passo={0.1}
-            texto={`${escolhido.fadeInSec.toFixed(1)}s`}
-            onChange={(v) => ajustar(escolhido.id, { fadeInSec: v })}
-          />
-          <ControleDaTrilha
-            rotulo="Fade de saida"
-            valor={escolhido.fadeOutSec}
-            min={0}
-            max={5}
-            passo={0.1}
-            texto={`${escolhido.fadeOutSec.toFixed(1)}s`}
-            onChange={(v) => ajustar(escolhido.id, { fadeOutSec: v })}
-          />
-          <button
-            type="button"
-            onClick={() => setSelecionado(null)}
-            aria-label="Fechar os controles da trilha"
-            className="text-ink-3 hover:text-ink"
-          >
-            <X size={9} strokeWidth={2} />
-          </button>
-        </div>
-      )}
-    </div>
+    <>
+      <span className="max-w-[90px] truncate text-[10px] text-ink-3">{t.fileName}</span>
+      <ControleDoClipe rotulo="vol" titulo="Volume" valor={t.gainDb} min={-40} max={12} passo={1} padrao={-20}
+        texto={`${t.gainDb > 0 ? '+' : ''}${t.gainDb} dB`} onChange={(v) => ajustar(id, { gainDb: v })} />
+      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={5} passo={0.1} padrao={0.5}
+        texto={`${t.fadeInSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
+      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={t.fadeOutSec} min={0} max={5} passo={0.1} padrao={1}
+        texto={`${t.fadeOutSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
+    </>
   )
 }
 
-function ControleDaTrilha({
-  rotulo,
-  valor,
-  min,
-  max,
-  passo,
-  texto,
-  onChange,
-}: {
-  rotulo: string
-  valor: number
-  min: number
-  max: number
-  passo: number
-  texto: string
-  onChange: (v: number) => void
-}) {
-  return (
-    <label className="flex items-center gap-1" title={rotulo}>
-      <span className="text-[9px] uppercase tracking-wide text-ink-3">
-        {rotulo === 'Volume' ? 'vol' : rotulo === 'Fade de entrada' ? 'entra' : 'sai'}
-      </span>
-      <input
-        type="range"
-        aria-label={rotulo}
-        min={min}
-        max={max}
-        step={passo}
-        value={valor}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="dangai-range w-[60px]"
-      />
-      <span className="tnum w-[38px] text-right text-[10px] text-ink-2">{texto}</span>
-    </label>
-  )
-}
-
-/**
- * A FAIXA DE VIDEO: setas, circulos, emoji animado -- os .mov com fundo vazado
- * que ele faz no editor, e PNG.
- *
- * "Track de video tambem seria interessante, pra poder adicionar meus .mov."
- * Mesmo gesto das faixas de audio: solta do Explorer ou das Bins, arrasta no
- * tempo e entre faixas, corta pelas duas pontas. O trecho escolhido abre
- * posicao, escala e opacidade -- o resultado aparece no preview na hora. A
- * faixa de numero maior fica por cima no video.
- */
-function FaixasDeVideo({
-  duration,
-  zoom,
-  timeAt,
-}: {
-  duration: number
-  zoom: number
-  timeAt: (clientX: number) => number
-}) {
-  const itens = useProject((s) => s.sobreposicoes)
-  const adicionar = useProject((s) => s.addSobreposicoesAt)
-  const mover = useProject((s) => s.moveSobreposicao)
-  const cortarFim = useProject((s) => s.cortarFimDaSobreposicao)
-  const cortarInicio = useProject((s) => s.cortarInicioDaSobreposicao)
+/** Posicao, escala e opacidade da sobreposicao escolhida. */
+function ControlesDaSobreposicao({ id }: { id: string }) {
+  const o = useProject((s) => s.sobreposicoes.find((x) => x.id === id))
   const ajustar = useProject((s) => s.ajustarSobreposicao)
-  const remover = useProject((s) => s.removeSobreposicao)
-
-  const caixa = useRef<HTMLDivElement | null>(null)
-  const [gesto, setGesto] = useState<
-    | { tipo: 'mover'; id: string; pega: number }
-    | { tipo: 'fim'; id: string }
-    | { tipo: 'inicio'; id: string }
-    | null
-  >(null)
-  const [selecionado, setSelecionado] = useState<string | null>(null)
-  const [sobre, setSobre] = useState<number | null>(null)
-
-  const faixas = Math.max(...itens.map((o) => o.faixa + 1), 0) + 1
-  const escolhido = itens.find((o) => o.id === selecionado) ?? null
-
-  // Na tela, a faixa de CIMA e a de numero maior -- a que fica por cima no video.
-  const linhaDa = (faixa: number): number => faixas - 1 - faixa
-  const faixaEm = (clientY: number): number => {
-    const r = caixa.current?.getBoundingClientRect()
-    if (!r) return 0
-    const linha = Math.min(Math.max(Math.floor((clientY - r.top) / ALTURA_DA_FAIXA), 0), faixas - 1)
-    return faixas - 1 - linha
-  }
-
+  if (!o) return null
   return (
-    <div
-      ref={caixa}
-      style={{ width: `${zoom * 100}%`, height: faixas * ALTURA_DA_FAIXA }}
-      className="relative min-w-full"
-      onDragOver={(event) => {
-        event.preventDefault()
-        setSobre(faixaEm(event.clientY))
-      }}
-      onDragLeave={() => setSobre(null)}
-      onDrop={(event) => {
-        setSobre(null)
-        const paths = caminhosDoArraste(event).filter((p) => {
-          const t = classifyFile(p)
-          return t === 'video' || t === 'image'
-        })
-        if (paths.length === 0) return
-        // Sem isto o drop sobe ate a janela e viraria material novo do video.
-        event.preventDefault()
-        event.stopPropagation()
-        void adicionar(paths, timeAt(event.clientX), faixaEm(event.clientY))
-      }}
-      onPointerMove={(event) => {
-        if (!gesto) return
-        const o = itens.find((x) => x.id === gesto.id)
-        if (!o) return
-        if (gesto.tipo === 'mover') mover(o.id, timeAt(event.clientX) - gesto.pega, faixaEm(event.clientY))
-        if (gesto.tipo === 'fim') cortarFim(o.id, timeAt(event.clientX) - o.at)
-        if (gesto.tipo === 'inicio') cortarInicio(o.id, timeAt(event.clientX))
-      }}
-      onPointerUp={() => setGesto(null)}
-      onPointerLeave={() => setGesto(null)}
-    >
-      {Array.from({ length: faixas }, (_, f) => (
-        <div
-          key={f}
-          style={{ top: linhaDa(f) * ALTURA_DA_FAIXA, height: ALTURA_DA_FAIXA }}
-          className={['absolute inset-x-0 border-t border-line', sobre === f ? 'bg-accent-dim' : 'bg-surface'].join(' ')}
-        >
-          {!itens.some((o) => o.faixa === f) && (
-            <span className="pointer-events-none absolute inset-0 flex items-center gap-1.5 px-2 text-[10px] text-ink-3">
-              <Film size={10} strokeWidth={1.5} />
-              {f === 0
-                ? 'Faixa de video: solte um .mov, .webm ou PNG aqui (setas, circulos...).'
-                : 'Solte aqui para uma faixa de video nova, por cima das outras.'}
-            </span>
-          )}
-        </div>
-      ))}
-
-      {itens.map((o) => {
-        const toca = o.usarSec ?? o.durationSec - o.inicioSec
-        const ativo = gesto?.id === o.id || selecionado === o.id
-        return (
-          <div
-            key={o.id}
-            data-sobreposicao={o.id}
-            onPointerDown={(event) => {
-              event.stopPropagation()
-              event.currentTarget.setPointerCapture(event.pointerId)
-              setGesto({ tipo: 'mover', id: o.id, pega: timeAt(event.clientX) - o.at })
-              setSelecionado(o.id)
-            }}
-            style={{
-              left: `${(o.at / duration) * 100}%`,
-              width: `${(toca / duration) * 100}%`,
-              top: linhaDa(o.faixa) * ALTURA_DA_FAIXA + 3,
-              height: ALTURA_DA_FAIXA - 6,
-            }}
-            title={`${o.fileName} — entra em ${o.at.toFixed(2)}s, fica ${toca.toFixed(2)}s`}
-            className={[
-              'group/sobre absolute cursor-grab overflow-hidden rounded-sm border',
-              ativo ? 'border-accent bg-accent-dim' : 'border-line-strong bg-elevated',
-            ].join(' ')}
-          >
-            {o.tipo === 'image' && o.url && (
-              <img src={o.url} alt="" draggable={false} className="pointer-events-none absolute inset-y-0 left-0 h-full opacity-60" />
-            )}
-            <span className="pointer-events-none absolute left-1 top-0.5 flex max-w-full items-center gap-1 truncate text-[9px] text-ink drop-shadow">
-              <Film size={9} strokeWidth={1.5} />
-              {o.fileName}
-            </span>
-            <span
-              data-alca="inicio"
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                event.currentTarget.setPointerCapture(event.pointerId)
-                setGesto({ tipo: 'inicio', id: o.id })
-                setSelecionado(o.id)
-              }}
-              title="Puxe para mudar onde entra"
-              className="absolute inset-y-0 left-0 w-[7px] cursor-col-resize opacity-0 group-hover/sobre:opacity-100"
-            >
-              <span className="absolute inset-y-1 left-[2px] w-[2px] rounded-full bg-accent" />
-            </span>
-            <span
-              data-alca="fim"
-              onPointerDown={(event) => {
-                event.stopPropagation()
-                event.currentTarget.setPointerCapture(event.pointerId)
-                setGesto({ tipo: 'fim', id: o.id })
-                setSelecionado(o.id)
-              }}
-              onDoubleClick={(event) => {
-                event.stopPropagation()
-                cortarFim(o.id, null)
-              }}
-              title="Puxe para mudar quanto fica na tela"
-              className="absolute inset-y-0 right-0 w-[7px] cursor-col-resize opacity-0 group-hover/sobre:opacity-100"
-            >
-              <span className="absolute inset-y-1 right-[2px] w-[2px] rounded-full bg-accent" />
-            </span>
-            <button
-              type="button"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={() => {
-                remover(o.id)
-                if (selecionado === o.id) setSelecionado(null)
-              }}
-              aria-label={`Tirar ${o.fileName}`}
-              className="absolute right-2 top-0.5 z-10 grid size-[13px] place-items-center rounded-full border border-line bg-surface text-ink-3 opacity-0 hover:text-danger group-hover/sobre:opacity-100"
-            >
-              <X size={8} strokeWidth={2.5} />
-            </button>
-          </div>
-        )
-      })}
-
-      {escolhido && (
-        <div
-          style={{ top: linhaDa(escolhido.faixa) * ALTURA_DA_FAIXA + 3 }}
-          className="absolute right-1 z-20 flex items-center gap-2 rounded-sm border border-line bg-surface px-1.5 py-0.5"
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <span className="max-w-[80px] truncate text-[10px] text-ink-3">{escolhido.fileName}</span>
-          <ControleDaSobreposicao rotulo="x" titulo="Posicao horizontal" valor={escolhido.x} min={-60} max={60} passo={1}
-            texto={`${Math.round(escolhido.x)}%`} onChange={(v) => ajustar(escolhido.id, { x: v })} />
-          <ControleDaSobreposicao rotulo="y" titulo="Posicao vertical" valor={escolhido.y} min={-60} max={60} passo={1}
-            texto={`${Math.round(escolhido.y)}%`} onChange={(v) => ajustar(escolhido.id, { y: v })} />
-          <ControleDaSobreposicao rotulo="tam" titulo="Escala" valor={escolhido.escala} min={0.1} max={3} passo={0.05}
-            texto={`${Math.round(escolhido.escala * 100)}%`} onChange={(v) => ajustar(escolhido.id, { escala: v })} />
-          <ControleDaSobreposicao rotulo="opac" titulo="Opacidade" valor={escolhido.opacidade} min={0} max={1} passo={0.05}
-            texto={`${Math.round(escolhido.opacidade * 100)}%`} onChange={(v) => ajustar(escolhido.id, { opacidade: v })} />
-          <button
-            type="button"
-            onClick={() => setSelecionado(null)}
-            aria-label="Fechar os controles da sobreposicao"
-            className="text-ink-3 hover:text-ink"
-          >
-            <X size={9} strokeWidth={2} />
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ControleDaSobreposicao({
-  rotulo,
-  titulo,
-  valor,
-  min,
-  max,
-  passo,
-  texto,
-  onChange,
-}: {
-  rotulo: string
-  titulo: string
-  valor: number
-  min: number
-  max: number
-  passo: number
-  texto: string
-  onChange: (v: number) => void
-}) {
-  return (
-    <label className="flex items-center gap-1" title={titulo}>
-      <span className="text-[9px] uppercase tracking-wide text-ink-3">{rotulo}</span>
-      <input
-        type="range"
-        aria-label={titulo}
-        min={min}
-        max={max}
-        step={passo}
-        value={valor}
-        onChange={(event) => onChange(Number(event.target.value))}
-        onDoubleClick={() => onChange(titulo === 'Escala' || titulo === 'Opacidade' ? 1 : 0)}
-        className="dangai-range w-[56px]"
-      />
-      <span className="tnum w-[32px] text-right text-[10px] text-ink-2">{texto}</span>
-    </label>
+    <>
+      <span className="max-w-[80px] truncate text-[10px] text-ink-3">{o.fileName}</span>
+      <ControleDoClipe rotulo="x" titulo="Posicao horizontal" valor={o.x} min={-60} max={60} passo={1} padrao={0}
+        texto={`${Math.round(o.x)}%`} onChange={(v) => ajustar(id, { x: v })} />
+      <ControleDoClipe rotulo="y" titulo="Posicao vertical" valor={o.y} min={-60} max={60} passo={1} padrao={0}
+        texto={`${Math.round(o.y)}%`} onChange={(v) => ajustar(id, { y: v })} />
+      <ControleDoClipe rotulo="tam" titulo="Escala" valor={o.escala} min={0.1} max={3} passo={0.05} padrao={1}
+        texto={`${Math.round(o.escala * 100)}%`} onChange={(v) => ajustar(id, { escala: v })} />
+      <ControleDoClipe rotulo="opac" titulo="Opacidade" valor={o.opacidade} min={0} max={1} passo={0.05} padrao={1}
+        texto={`${Math.round(o.opacidade * 100)}%`} onChange={(v) => ajustar(id, { opacidade: v })} />
+    </>
   )
 }

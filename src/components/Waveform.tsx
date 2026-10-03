@@ -3,13 +3,15 @@ import { useEffect, useRef } from 'react'
 interface WaveformProps {
   peaks: readonly number[]
   className?: string
+  /** Cor das barras. Padrao: o branco translucido da narracao. */
+  cor?: string
 }
 
 /**
  * Waveform em canvas, desenhado em cinza ao fundo da timeline. Canvas e nao SVG
  * porque sao ~2000 barras redesenhadas a cada resize.
  */
-export function Waveform({ peaks, className }: WaveformProps) {
+export function Waveform({ peaks, className, cor = 'rgba(255, 255, 255, 0.16)' }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function Waveform({ peaks, className }: WaveformProps) {
       const stride = barWidth + gap
       const barCount = Math.max(Math.floor(cssWidth / stride), 1)
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.16)'
+      ctx.fillStyle = cor
 
       for (let i = 0; i < barCount; i++) {
         // Reamostra os picos para o numero de barras que cabem na largura atual.
@@ -68,7 +70,7 @@ export function Waveform({ peaks, className }: WaveformProps) {
     const observer = new ResizeObserver(draw)
     observer.observe(parent)
     return () => observer.disconnect()
-  }, [peaks])
+  }, [peaks, cor])
 
   return <canvas ref={canvasRef} className={className} aria-hidden="true" />
 }

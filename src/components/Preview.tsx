@@ -65,6 +65,7 @@ export function Preview() {
   const endText = useProject((s) => s.endText)
   const endSec = useProject((s) => s.endSec)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
+  const faixasMudas = useProject((s) => s.faixasMudas)
 
   const inputProps = useMemo(
     () =>
@@ -96,7 +97,7 @@ export function Preview() {
               scale: captionScale,
             },
             formato,
-            sobreposicoes,
+            sobreposicoes.filter((o) => !faixasMudas.video.includes(o.faixa)),
           )
         : {
             formato,
@@ -145,6 +146,7 @@ export function Preview() {
       endText,
       endSec,
       sobreposicoes,
+      faixasMudas,
     ],
   )
 
@@ -584,6 +586,7 @@ function Sincronia({
  */
 function TrilhasPreview() {
   const trilhas = useProject((s) => s.trilhas)
+  const mudas = useProject((s) => s.faixasMudas.audio)
   const playing = useProject((s) => s.playing)
   const playhead = useProject((s) => s.playhead)
   const elementos = useRef(new Map<string, HTMLAudioElement>())
@@ -594,7 +597,7 @@ function TrilhasPreview() {
       if (!el) continue
       const toca = duracaoDoTrecho(t)
       const dentro = playhead >= t.at && playhead < t.at + toca
-      if (!playing || !dentro) {
+      if (!playing || !dentro || mudas.includes(t.faixa)) {
         if (!el.paused) el.pause()
         continue
       }
@@ -615,7 +618,7 @@ function TrilhasPreview() {
         el.currentTime = alvo
       }
     }
-  }, [trilhas, playing, playhead])
+  }, [trilhas, playing, playhead, mudas])
 
   return (
     <>

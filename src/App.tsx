@@ -187,6 +187,9 @@ export function App() {
           if (rendering || event.ctrlKey || event.metaKey || event.altKey) return
           if (editando(event.target)) return
           event.preventDefault()
+          // Com um clipe de faixa escolhido sob a agulha, o C corta ELE -- como
+          // a lamina do editor. Sem clipe escolhido, corta o bloco.
+          if (store.cortarClipeNaAgulha()) break
           store.splitSceneAtPlayhead()
           break
         case 'ArrowLeft':

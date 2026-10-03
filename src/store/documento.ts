@@ -38,6 +38,7 @@ export const CAMPOS = [
   'sfxManual',
   'trilhas',
   'sobreposicoes',
+  'faixasMudas',
   'sfxEnabled',
   'music',
   'musicGainDb',

@@ -291,6 +291,13 @@ export interface ProjectState {
    * sobreposicaoSchema. A URL e do arquivo preparado pelo main, reposta ao abrir.
    */
   sobreposicoes: (SobreposicaoSalva & { url: string })[]
+  /**
+   * As faixas MUTADAS, como o "M" do DaVinci: o que esta nelas some do preview
+   * e do render, sem sair do projeto.
+   */
+  faixasMudas: { video: number[]; audio: number[] }
+  /** O clipe de faixa escolhido -- e nele que o C corta, em vez de no bloco. */
+  clipeSelecionado: { tipo: 'video' | 'audio'; id: string } | null
   sfxManual: {
     id: string
     path: string
@@ -573,6 +580,13 @@ export interface ProjectState {
   ) => void
   removeSobreposicao: (id: string) => void
   refreshSobreposicoes: () => Promise<void>
+  alternarMudo: (tipo: 'video' | 'audio', faixa: number) => void
+  selecionarClipe: (clipe: { tipo: 'video' | 'audio'; id: string } | null) => void
+  /**
+   * O C sobre um clipe de faixa: parte o clipe escolhido em dois, na agulha.
+   * false quando nao ha clipe escolhido sob a agulha -- ai o C corta o bloco.
+   */
+  cortarClipeNaAgulha: () => boolean
   /** Arrasta um som ja posto para outro instante. */
   moveSfx: (id: string, seconds: number) => void
   /** Corta o som: quanto dele toca. null devolve o arquivo inteiro. */
@@ -1050,6 +1064,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   sfxManual: [],
   trilhas: [],
   sobreposicoes: [],
+  faixasMudas: { video: [], audio: [] },
+  clipeSelecionado: null,
   curvePresets: [],
   upscale: false,
   captionY: CAPTION_Y_DEFAULT,
@@ -3101,6 +3117,71 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ sobreposicoes: repostos })
   },
 
+  alternarMudo: (tipo, faixa) =>
+    set((state) => {
+      const atuais = state.faixasMudas[tipo]
+      const proximos = atuais.includes(faixa) ? atuais.filter((f) => f !== faixa) : [...atuais, faixa]
+      return { faixasMudas: { ...state.faixasMudas, [tipo]: proximos }, projectDirty: true }
+    }),
+
+  selecionarClipe: (clipe) => set({ clipeSelecionado: clipe }),
+
+  cortarClipeNaAgulha: () => {
+    const { clipeSelecionado, playhead } = get()
+    if (!clipeSelecionado) return false
+    const novoId = (id: string): string => `${id}-c${Math.round(playhead * 1000)}`
+
+    /*
+     * O CORTE DE EDITOR: a primeira metade fica com o comeco, a segunda
+     * continua do ponto exato do arquivo onde a primeira parou -- nada repete,
+     * nada pula. O fade de saida fica so na segunda, e o de entrada so na
+     * primeira: a emenda no meio e seca, como num editor.
+     */
+    if (clipeSelecionado.tipo === 'audio') {
+      const t = get().trilhas.find((x) => x.id === clipeSelecionado.id)
+      if (!t) return false
+      const toca = duracaoDoTrecho(t)
+      const local = playhead - t.at
+      if (local <= 0.05 || local >= toca - 0.05) return false
+      const primeira = { ...t, usarSec: local, fadeOutSec: 0 }
+      const segunda = {
+        ...t,
+        id: novoId(t.id),
+        at: playhead,
+        inicioSec: t.inicioSec + local,
+        usarSec: toca - local,
+        fadeInSec: 0,
+      }
+      set((state) => ({
+        trilhas: state.trilhas.flatMap((x) => (x.id === t.id ? [primeira, segunda] : [x])),
+        clipeSelecionado: { tipo: 'audio', id: segunda.id },
+        projectDirty: true,
+      }))
+      return true
+    }
+
+    const o = get().sobreposicoes.find((x) => x.id === clipeSelecionado.id)
+    if (!o) return false
+    const toca = o.usarSec ?? o.durationSec - o.inicioSec
+    const local = playhead - o.at
+    if (local <= 0.05 || local >= toca - 0.05) return false
+    const primeira = { ...o, usarSec: local }
+    const segunda = {
+      ...o,
+      id: novoId(o.id),
+      at: playhead,
+      // Imagem nao tem "ponto do arquivo": as duas metades sao a mesma imagem.
+      inicioSec: o.tipo === 'image' ? 0 : o.inicioSec + local,
+      usarSec: toca - local,
+    }
+    set((state) => ({
+      sobreposicoes: state.sobreposicoes.flatMap((x) => (x.id === o.id ? [primeira, segunda] : [x])),
+      clipeSelecionado: { tipo: 'video', id: segunda.id },
+      projectDirty: true,
+    }))
+    return true
+  },
+
   refreshSfxManual: async () => {
     const atuais = get().sfxManual
     if (atuais.length === 0) return
@@ -3375,7 +3456,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   selectScene: (index) =>
-    set({ selectedScene: index, selecionados: index === null ? [] : [index] }),
+    // Escolher um BLOCO tira a escolha de clipe: o C volta a cortar o bloco.
+    set({ selectedScene: index, selecionados: index === null ? [] : [index], clipeSelecionado: null }),
 
   /**
    * Shift+clique: o intervalo inteiro entre a ancora e o bloco clicado.
@@ -3583,7 +3665,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           scale: get().captionScale,
         },
         get().formato,
-        get().sobreposicoes,
+        get().sobreposicoes.filter((o) => !get().faixasMudas.video.includes(o.faixa)),
       ),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
@@ -3605,7 +3687,9 @@ export const useProject = create<ProjectState>((set, get) => ({
             }))
           : sfxCuesFor(plan.scenes, sfxFiles),
       music: music ? { path: music.path, gainDb: musicGainDb } : null,
-      trilhas: get().trilhas.map((t) => ({
+      trilhas: get()
+        .trilhas.filter((t) => !get().faixasMudas.audio.includes(t.faixa))
+        .map((t) => ({
         path: t.path,
         at: t.at,
         inicioSec: t.inicioSec,
@@ -3826,6 +3910,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       sfxManual: [],
       trilhas: [],
       sobreposicoes: [],
+      faixasMudas: { video: [], audio: [] },
+      clipeSelecionado: null,
       // Volta ao padrao junto com o resto: sem isto, ter ligado o SFX num
       // projeto o traria ligado para o proximo, que e justamente o som
       // entrando sem ninguem pedir.
@@ -3896,6 +3982,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       sfxManual: state.sfxManual.map(({ url: _fora, ...resto }) => resto),
       trilhas: state.trilhas.map(({ url: _fora, ...resto }) => resto),
       sobreposicoes: state.sobreposicoes.map(({ url: _fora, ...resto }) => resto),
+      faixasMudas: state.faixasMudas,
       captionY: state.captionY,
       captionScale: state.captionScale,
       sfxEnabled: state.sfxEnabled,
@@ -4210,6 +4297,7 @@ async function applyProjectFile(
       sfxManual: file.sfxManual.map((s) => ({ ...s, url: '' })),
       trilhas: file.trilhas.map((t) => ({ ...t, url: '' })),
       sobreposicoes: file.sobreposicoes.map((o) => ({ ...o, url: '' })),
+      faixasMudas: file.faixasMudas,
       captionY: file.captionY,
       captionScale: file.captionScale,
       sfxEnabled: file.sfxEnabled,
