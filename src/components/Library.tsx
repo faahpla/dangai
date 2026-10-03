@@ -747,6 +747,15 @@ export function Library() {
               inteira continua logo abaixo, com todos os filtros de sempre. E
               e sugestao mesmo -- nada entra no video sem ele clicar.
             */}
+            {anime !== null && (
+              <PersonagensDoAnime
+                clips={soFavoritos ? library.clips.filter((c) => favoritosSet.has(c.id)) : library.clips}
+                anime={anime}
+                episodio={episodio}
+                personagem={personagem}
+                onPersonagem={setPersonagem}
+              />
+            )}
             {sugestoes.length > 0 && (
               <Sugestoes
                 candidatos={sugestoes}
@@ -1151,6 +1160,14 @@ function Rail({
         )
       })}
 
+      {/*
+        Com um anime aberto, os personagens viram BOTOES em cima das sugestoes
+        (ver PersonagensDoAnime) -- "melhor do que aquela lista enorme la
+        embaixo que ate se mistura com outros animes". A lista por serie fica
+        so para o "Todos", onde ela e o unico jeito de achar alguem.
+      */}
+      {anime === null && (
+        <>
       <div className="my-3 h-px bg-line" />
 
       <Titulo>Personagem</Titulo>
@@ -1204,6 +1221,8 @@ function Rail({
           </div>
         )
       })}
+        </>
+      )}
 
       <p className="mt-3 px-1.5 text-[10px] leading-relaxed text-ink-3">
         {semRosto.toLocaleString('pt-BR')} cenas sem personagem identificado — cenario, planos
@@ -1211,6 +1230,69 @@ function Rail({
         (&ldquo;floresta&rdquo;, &ldquo;noite&rdquo;).
       </p>
     </nav>
+  )
+}
+
+/**
+ * Os personagens do anime aberto, como BOTOES, em cima das sugestoes.
+ *
+ * So os DESTE anime -- e, com um episodio escolhido, so os que aparecem nele
+ * --, do que mais aparece para o que menos. Clicar filtra a grade; clicar de
+ * novo solta.
+ */
+function PersonagensDoAnime({
+  clips,
+  anime,
+  episodio,
+  personagem,
+  onPersonagem,
+}: {
+  clips: readonly LibraryClip[]
+  anime: string
+  episodio: string | null
+  personagem: string | null
+  onPersonagem: (nome: string | null) => void
+}) {
+  const nomes = useMemo(() => {
+    const conta = new Map<string, number>()
+    for (const clip of clips) {
+      if (clip.anime !== anime) continue
+      if (episodio && chaveEpisodio(clip) !== episodio) continue
+      for (const nome of clip.characters) conta.set(nome, (conta.get(nome) ?? 0) + 1)
+    }
+    return [...conta.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))
+  }, [clips, anime, episodio])
+
+  if (nomes.length === 0) return null
+
+  const botao = (ativo: boolean): string =>
+    [
+      'flex h-6 items-center gap-1.5 rounded-sm border px-2 text-[11px] transition-colors duration-150',
+      ativo ? 'border-accent bg-accent-dim text-ink' : 'border-line bg-elevated text-ink-2 hover:text-ink',
+    ].join(' ')
+
+  return (
+    <div className="flex shrink-0 items-start gap-2 border-b border-line px-3 py-2">
+      <span className="shrink-0 pt-1 text-[11px] uppercase tracking-wide text-ink-3">
+        {episodio ? `Personagens do ${episodio}` : 'Personagens'}
+      </span>
+      <div className="flex max-h-[52px] min-w-0 flex-1 flex-wrap gap-1 overflow-y-auto">
+        <button type="button" onClick={() => onPersonagem(null)} className={botao(personagem === null)}>
+          Todos
+        </button>
+        {nomes.map(([nome, n]) => (
+          <button
+            key={nome}
+            type="button"
+            onClick={() => onPersonagem(personagem === nome ? null : nome)}
+            className={botao(personagem === nome)}
+          >
+            {nome}
+            <span className="tnum text-[10px] text-ink-3">{n.toLocaleString('pt-BR')}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

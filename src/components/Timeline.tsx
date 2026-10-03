@@ -3,6 +3,8 @@ import { Magnet, Minus, Plus, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
+import { useIma } from '@/store/layout'
+import { dicaDoAtalho } from '@/store/atalhos'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
 import { CABECALHO, Cabecalho, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, type Ima } from './Faixas'
@@ -82,13 +84,8 @@ export function Timeline() {
    * BLOCOS, na agulha e nas bordas dos outros clipes. Ligado por padrao, e a
    * escolha fica lembrada nesta maquina.
    */
-  const [imaLigado, setImaLigado] = useState(() => {
-    try {
-      return localStorage.getItem('dangai.ima') !== 'nao'
-    } catch {
-      return true
-    }
-  })
+  const imaLigado = useIma((s) => s.ligado)
+  const alternarIma = useIma((s) => s.alternar)
   const [linhaDoIma, setLinhaDoIma] = useState<number | null>(null)
   const trilhas = useProject((s) => s.trilhas)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
@@ -201,14 +198,40 @@ export function Timeline() {
    * escolha dele por arrastar a agulha um pouco alem do fim seria perder
    * trabalho por acidente.
    */
+  /*
+   * A AGULHA TAMBEM GRUDA. "Deixa a agulha com snap tambem." Com o ima ligado,
+   * ela cola nos cortes dos blocos, no comeco das legendas e nas bordas dos
+   * clipes das faixas -- a mesma tolerancia de 10 px dos clipes. Alt solta.
+   */
+  const alvosDaAgulha = useMemo(() => {
+    const alvos = [0, duration, ...scenes.map((c) => c.start)]
+    for (const bloco of captions) alvos.push(bloco.from / VIDEO_FPS)
+    for (const t of trilhas) alvos.push(t.at, t.at + duracaoDoTrecho(t))
+    for (const o of sobreposicoes) alvos.push(o.at, o.at + (o.usarSec ?? o.durationSec - o.inicioSec))
+    return alvos
+  }, [duration, scenes, captions, trilhas, sobreposicoes])
+
   const levarAgulha = useCallback(
-    (clientX: number): void => {
-      const seconds = timeAt(clientX)
+    (clientX: number, livre = false): void => {
+      let seconds = timeAt(clientX)
+      if (imaLigado && !livre) {
+        let dist = ima.tolerancia
+        let melhor: number | null = null
+        for (const alvo of alvosDaAgulha) {
+          const d = Math.abs(alvo - seconds)
+          if (d < dist) {
+            dist = d
+            melhor = alvo
+          }
+        }
+        if (melhor !== null) seconds = melhor
+        setLinhaDoIma(melhor)
+      }
       setPlayhead(seconds)
       const sob = scenes.findIndex((scene) => seconds >= scene.start && seconds < scene.end)
       if (sob !== -1) selectScene(sob)
     },
-    [scenes, selectScene, setPlayhead, timeAt],
+    [scenes, selectScene, setPlayhead, timeAt, imaLigado, ima.tolerancia, alvosDaAgulha],
   )
 
   /*
@@ -220,9 +243,10 @@ export function Timeline() {
   const arrastarAgulha = useCallback(
     (event: React.PointerEvent) => {
       if (isRendering) return
-      levarAgulha(event.clientX)
-      const mover = (e: PointerEvent): void => levarAgulha(e.clientX)
+      levarAgulha(event.clientX, event.altKey)
+      const mover = (e: PointerEvent): void => levarAgulha(e.clientX, e.altKey)
       const fim = (): void => {
+        setLinhaDoIma(null)
         window.removeEventListener('pointermove', mover)
         window.removeEventListener('pointerup', fim)
       }
@@ -236,7 +260,7 @@ export function Timeline() {
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (isRendering) return
       event.currentTarget.setPointerCapture(event.pointerId)
-      levarAgulha(event.clientX)
+      levarAgulha(event.clientX, event.altKey)
     },
     [isRendering, levarAgulha],
   )
@@ -248,12 +272,15 @@ export function Timeline() {
         moveBoundary(dragging, comSnap(timeAt(event.clientX), event.altKey))
         return
       }
-      levarAgulha(event.clientX)
+      levarAgulha(event.clientX, event.altKey)
     },
     [isRendering, dragging, moveBoundary, levarAgulha, timeAt, comSnap],
   )
 
-  const stopDragging = useCallback(() => setDragging(null), [])
+  const stopDragging = useCallback(() => {
+    setDragging(null)
+    setLinhaDoIma(null)
+  }, [])
 
   /*
    * Com zoom, a agulha sai da vista enquanto o video toca. Trazer a faixa junto
@@ -450,20 +477,12 @@ export function Timeline() {
           {duration > 0 && !isRendering && (
             <button
               type="button"
-              onClick={() => {
-                const novo = !imaLigado
-                setImaLigado(novo)
-                try {
-                  localStorage.setItem('dangai.ima', novo ? 'sim' : 'nao')
-                } catch {
-                  /* sem armazenamento: vale so nesta sessao */
-                }
-              }}
+              onClick={alternarIma}
               aria-pressed={imaLigado}
               title={
                 imaLigado
-                  ? 'Ima ligado: os clipes grudam nos cortes dos blocos, na agulha e nos outros clipes'
-                  : 'Ima desligado: os clipes andam livres'
+                  ? `Ima ligado: clipes e agulha grudam nos cortes dos blocos, nas legendas e nas bordas dos clipes. Alt solta.${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
+                  : `Ima desligado: clipes e agulha andam livres${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
               }
               className={[
                 'grid size-[24px] place-items-center rounded-sm border',
@@ -1177,6 +1196,8 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
         texto={`${Math.round(o.y)}%`} onChange={(v) => ajustar(id, { y: v })} />
       <ControleDoClipe rotulo="tam" titulo="Escala" valor={o.escala} min={0.1} max={3} passo={0.05} padrao={1}
         texto={`${Math.round(o.escala * 100)}%`} onChange={(v) => ajustar(id, { escala: v })} />
+      <ControleDoClipe rotulo="rot" titulo="Rotacao" valor={o.rotacao} min={-180} max={180} passo={1} padrao={0}
+        texto={`${Math.round(o.rotacao)}°`} onChange={(v) => ajustar(id, { rotacao: v })} />
       <ControleDoClipe rotulo="opac" titulo="Opacidade" valor={o.opacidade} min={0} max={1} passo={0.05} padrao={1}
         texto={`${Math.round(o.opacidade * 100)}%`} onChange={(v) => ajustar(id, { opacidade: v })} />
     </>

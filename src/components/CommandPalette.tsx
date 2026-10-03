@@ -20,6 +20,7 @@ import {
   type LucideIcon,
   Sparkles,
 } from 'lucide-react'
+import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { desfazer, podeDesfazer, podeRefazer, refazer } from '@/store/undo'
 
@@ -181,7 +182,7 @@ function useCommands(): Command[] {
       {
         id: 'render',
         label: rendering ? 'Cancelar render' : 'Renderizar',
-        hint: 'Ctrl R',
+        hint: dicaDoAtalho('renderizar') ?? '',
         icon: Film,
         disabled: !pronto,
         run: () => (rendering ? void store().cancelRender() : void store().startRender()),
@@ -189,7 +190,7 @@ function useCommands(): Command[] {
       {
         id: 'play',
         label: playing ? 'Pausar' : 'Reproduzir',
-        hint: 'Espaco',
+        hint: dicaDoAtalho('tocar') ?? '',
         icon: playing ? Pause : Play,
         disabled: !pronto || rendering,
         run: () => store().togglePlay(),
@@ -202,7 +203,7 @@ function useCommands(): Command[] {
       {
         id: 'undo',
         label: 'Desfazer',
-        hint: 'Ctrl+Z',
+        hint: dicaDoAtalho('desfazer') ?? '',
         icon: Undo2,
         disabled: !podeDesfazer(),
         run: () => void desfazer(),
@@ -210,7 +211,7 @@ function useCommands(): Command[] {
       {
         id: 'redo',
         label: 'Refazer',
-        hint: 'Ctrl+Shift+Z',
+        hint: dicaDoAtalho('refazer') ?? '',
         icon: Redo2,
         disabled: !podeRefazer(),
         run: () => void refazer(),
@@ -218,7 +219,7 @@ function useCommands(): Command[] {
       {
         id: 'library',
         label: 'Procurar cenas na biblioteca',
-        hint: 'Ctrl+B',
+        hint: dicaDoAtalho('selecao') ?? '',
         icon: LibraryIcon,
         run: () => void store().voltarParaSelecao(),
       },

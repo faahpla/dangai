@@ -75,6 +75,8 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.escolherPasta, titulo) as Promise<IpcResult<string | null>>,
   listarPasta: (pasta) =>
     ipcRenderer.invoke(IPC.listarPasta, pasta) as Promise<IpcResult<ArquivoDaBin[]>>,
+  existemArquivos: (paths) =>
+    ipcRenderer.invoke(IPC.existemArquivos, paths) as Promise<IpcResult<boolean[]>>,
   sincronizarLegendas: (audioPath, palavras) =>
     ipcRenderer.invoke(IPC.sincronizarLegendas, audioPath, palavras) as Promise<IpcResult<LegendasSincronizadas>>,
 

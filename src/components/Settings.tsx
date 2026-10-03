@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { FolderOpen, X } from 'lucide-react'
-import type { PublicSettings } from '@shared/channels'
-import { useProject } from '@/store/project'
+import { useEffect, useState } from "react";
+import { FolderOpen, X } from "lucide-react";
+import type { PublicSettings } from "@shared/channels";
+import { useProject } from "@/store/project";
+import { Atalhos } from "./Atalhos";
 
 /**
  * Um campo que importa: a chave da API. O resto e escolha rara.
@@ -10,66 +11,69 @@ import { useProject } from '@/store/project'
  * caracteres, o suficiente para reconhecer qual chave esta salva.
  */
 export function Settings() {
-  const open = useProject((s) => s.settingsOpen)
-  const openSettings = useProject((s) => s.openSettings)
-  const analyze = useProject((s) => s.analyze)
-  const sfxFiles = useProject((s) => s.sfxFiles)
-  const refreshSfx = useProject((s) => s.refreshSfx)
+  const open = useProject((s) => s.settingsOpen);
+  const openSettings = useProject((s) => s.openSettings);
+  const analyze = useProject((s) => s.analyze);
+  const sfxFiles = useProject((s) => s.sfxFiles);
+  const refreshSfx = useProject((s) => s.refreshSfx);
 
-  const [settings, setSettings] = useState<PublicSettings | null>(null)
-  const [keyInput, setKeyInput] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [settings, setSettings] = useState<PublicSettings | null>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [aba, setAba] = useState<"geral" | "atalhos">("geral");
 
   useEffect(() => {
-    if (!open) return
-    setKeyInput('')
+    if (!open) return;
+    setKeyInput("");
     void window.dangai.getSettings().then((result) => {
-      if (result.ok) setSettings(result.value)
-    })
-    void refreshSfx()
-  }, [open, refreshSfx])
+      if (result.ok) setSettings(result.value);
+    });
+    void refreshSfx();
+  }, [open, refreshSfx]);
 
   useEffect(() => {
-    if (!open) return
+    if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        openSettings(false)
+      if (event.key === "Escape") {
+        event.preventDefault();
+        openSettings(false);
       }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, openSettings])
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, openSettings]);
 
-  if (!open) return null
+  if (!open) return null;
 
-  const save = async (patch: Parameters<typeof window.dangai.saveSettings>[0]) => {
-    setSaving(true)
-    const result = await window.dangai.saveSettings(patch)
-    if (result.ok) setSettings(result.value)
-    setSaving(false)
-    return result.ok
-  }
+  const save = async (
+    patch: Parameters<typeof window.dangai.saveSettings>[0],
+  ) => {
+    setSaving(true);
+    const result = await window.dangai.saveSettings(patch);
+    if (result.ok) setSettings(result.value);
+    setSaving(false);
+    return result.ok;
+  };
 
   // A pasta e gravada no main junto com o dialogo -- ele ja sabe o caminho
   // escolhido, e devolve-lo so para o renderer regravar seria dar duas chances
   // de as duas versoes discordarem.
   const escolherBiblioteca = async () => {
-    const result = await window.dangai.pickLibraryDir()
-    if (!result.ok || !result.value) return
-    const atual = await window.dangai.getSettings()
-    if (atual.ok) setSettings(atual.value)
-  }
+    const result = await window.dangai.pickLibraryDir();
+    if (!result.ok || !result.value) return;
+    const atual = await window.dangai.getSettings();
+    if (atual.ok) setSettings(atual.value);
+  };
 
   const saveKey = async () => {
-    const trimmed = keyInput.trim()
-    if (trimmed.length === 0) return
+    const trimmed = keyInput.trim();
+    if (trimmed.length === 0) return;
     if (await save({ anthropicApiKey: trimmed })) {
-      setKeyInput('')
+      setKeyInput("");
       // Com chave nova, refaz o plano: o usuario acabou de habilitar a IA.
-      void analyze()
+      void analyze();
     }
-  }
+  };
 
   return (
     <div
@@ -78,10 +82,31 @@ export function Settings() {
     >
       <div
         onPointerDown={(event) => event.stopPropagation()}
-        className="glass enter w-full max-w-[440px] rounded-lg p-5"
+        className={[
+          "glass enter flex max-h-[88vh] w-full flex-col rounded-lg p-5",
+          aba === "atalhos" ? "max-w-[560px]" : "max-w-[440px]",
+        ].join(" ")}
       >
-        <header className="mb-5 flex items-center justify-between">
+        <header className="mb-4 flex shrink-0 items-center gap-3">
           <h2 className="text-[15px] font-semibold text-ink">Configuracoes</h2>
+          <div className="flex gap-0.5 rounded-sm border border-line bg-elevated p-0.5">
+            {(["geral", "atalhos"] as const).map((qual) => (
+              <button
+                key={qual}
+                type="button"
+                onClick={() => setAba(qual)}
+                className={[
+                  "rounded-[3px] px-2.5 py-0.5 text-[11px]",
+                  aba === qual
+                    ? "bg-accent-dim text-ink ring-1 ring-inset ring-accent"
+                    : "text-ink-3 hover:text-ink-2",
+                ].join(" ")}
+              >
+                {qual === "geral" ? "Geral" : "Atalhos de teclado"}
+              </button>
+            ))}
+          </div>
+          <span className="flex-1" />
           <button
             type="button"
             onClick={() => openSettings(false)}
@@ -92,103 +117,120 @@ export function Settings() {
           </button>
         </header>
 
-        <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
-          Chave da API da Anthropic
-        </label>
-        <div className="flex gap-2">
-          <input
-            type="password"
-            value={keyInput}
-            onChange={(event) => setKeyInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void saveKey()
-              event.stopPropagation()
-            }}
-            placeholder={settings?.hasApiKey ? settings.apiKeyHint : 'sk-ant-...'}
-            spellCheck={false}
-            autoComplete="off"
-            className="min-w-0 flex-1 select-text rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => void saveKey()}
-            disabled={saving || keyInput.trim().length === 0}
-            className="lift shrink-0 rounded-sm border border-line bg-elevated px-3 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
-          >
-            Salvar
-          </button>
+        <div className="min-h-0 overflow-y-auto pr-1">
+          {aba === "atalhos" ? (
+            <Atalhos />
+          ) : (
+            <>
+              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+                Chave da API da Anthropic
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={keyInput}
+                  onChange={(event) => setKeyInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void saveKey();
+                    event.stopPropagation();
+                  }}
+                  placeholder={
+                    settings?.hasApiKey ? settings.apiKeyHint : "sk-ant-..."
+                  }
+                  spellCheck={false}
+                  autoComplete="off"
+                  className="min-w-0 flex-1 select-text rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void saveKey()}
+                  disabled={saving || keyInput.trim().length === 0}
+                  className="lift shrink-0 rounded-sm border border-line bg-elevated px-3 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
+                >
+                  Salvar
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                Fica so nesta maquina. Sem ela, as cenas sao distribuidas pelas
+                pausas da narracao.
+              </p>
+
+              <div className="my-5 h-px bg-line" />
+
+              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+                Modelo do Whisper
+              </label>
+              <div className="flex gap-1.5">
+                {(["base", "small", "medium"] as const).map((model) => (
+                  <button
+                    key={model}
+                    type="button"
+                    onClick={() => void save({ whisperModel: model })}
+                    className={[
+                      "lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]",
+                      settings?.whisperModel === model
+                        ? "border-accent bg-accent-dim text-ink"
+                        : "border-line bg-elevated text-ink-2",
+                    ].join(" ")}
+                  >
+                    {model}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                Baixado uma vez na primeira transcricao. Maior transcreve melhor
+                e mais devagar.
+              </p>
+
+              <div className="my-5 h-px bg-line" />
+
+              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+                Sons de transicao
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  void window.dangai.openSfxDir();
+                  // A pasta abre fora do app; quando ele voltar, a lista ja esta certa.
+                  void refreshSfx();
+                }}
+                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
+              >
+                <FolderOpen size={13} strokeWidth={1.5} />
+                Abrir a pasta de SFX
+                <span className="tnum ml-auto text-[11px] text-ink-3">
+                  {sfxFiles.length} {sfxFiles.length === 1 ? "som" : "sons"}
+                </span>
+              </button>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                Solte os seus .mp3 ou .wav ai dentro. Eles entram em rodizio,
+                uma transicao sim e outra nao — som em todo corte vira ruido de
+                fundo.
+              </p>
+
+              <div className="my-5 h-px bg-line" />
+
+              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+                Biblioteca de cenas
+              </label>
+              <button
+                type="button"
+                onClick={() => void escolherBiblioteca()}
+                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
+              >
+                <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {settings?.libraryDir || "Escolher a pasta..."}
+                </span>
+              </button>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                A pasta onde o AnCut grava as cenas. O Dangai so le: nunca
+                renomeia, move nem apaga nada ai dentro. Ctrl+B abre a busca.
+              </p>
+            </>
+          )}
         </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-          Fica so nesta maquina. Sem ela, as cenas sao distribuidas pelas pausas da narracao.
-        </p>
-
-        <div className="my-5 h-px bg-line" />
-
-        <label className="mb-1.5 block text-[11px] font-medium text-ink-2">Modelo do Whisper</label>
-        <div className="flex gap-1.5">
-          {(['base', 'small', 'medium'] as const).map((model) => (
-            <button
-              key={model}
-              type="button"
-              onClick={() => void save({ whisperModel: model })}
-              className={[
-                'lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]',
-                settings?.whisperModel === model
-                  ? 'border-accent bg-accent-dim text-ink'
-                  : 'border-line bg-elevated text-ink-2',
-              ].join(' ')}
-            >
-              {model}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-          Baixado uma vez na primeira transcricao. Maior transcreve melhor e mais devagar.
-        </p>
-
-        <div className="my-5 h-px bg-line" />
-
-        <label className="mb-1.5 block text-[11px] font-medium text-ink-2">Sons de transicao</label>
-        <button
-          type="button"
-          onClick={() => {
-            void window.dangai.openSfxDir()
-            // A pasta abre fora do app; quando ele voltar, a lista ja esta certa.
-            void refreshSfx()
-          }}
-          className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
-        >
-          <FolderOpen size={13} strokeWidth={1.5} />
-          Abrir a pasta de SFX
-          <span className="tnum ml-auto text-[11px] text-ink-3">
-            {sfxFiles.length} {sfxFiles.length === 1 ? 'som' : 'sons'}
-          </span>
-        </button>
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-          Solte os seus .mp3 ou .wav ai dentro. Eles entram em rodizio, uma transicao sim e outra
-          nao — som em todo corte vira ruido de fundo.
-        </p>
-
-        <div className="my-5 h-px bg-line" />
-
-        <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
-          Biblioteca de cenas
-        </label>
-        <button
-          type="button"
-          onClick={() => void escolherBiblioteca()}
-          className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
-        >
-          <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
-          <span className="min-w-0 flex-1 truncate">
-            {settings?.libraryDir || 'Escolher a pasta...'}
-          </span>
-        </button>
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-          A pasta onde o AnCut grava as cenas. O Dangai so le: nunca renomeia, move nem apaga nada
-          ai dentro. Ctrl+B abre a busca.
-        </p>
       </div>
     </div>
-  )
+  );
 }

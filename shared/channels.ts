@@ -77,6 +77,7 @@ export const IPC = {
   escolherPasta: 'dialog:pasta',
   prepararSobreposicao: 'timeline:sobreposicao',
   listarPasta: 'bins:listar-pasta',
+  existemArquivos: 'arquivos:existem',
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
@@ -464,6 +465,10 @@ export interface PublicSettings {
   bins: Record<string, unknown>[]
   /** Curvas da entrada da legenda guardadas. Conferidas pelo curvaGuardadaSchema. */
   curvasDeEntrada: Record<string, unknown>[]
+  /** Os atalhos que ele configurou: acao -> combinacoes. null = os de fabrica. */
+  atalhos: Record<string, unknown> | null
+  /** Os projetos abertos ou salvos por ultimo, o mais novo primeiro. */
+  recentes: Record<string, unknown>[]
 }
 
 export interface SettingsPatch {
@@ -476,6 +481,8 @@ export interface SettingsPatch {
   captionPresets?: Record<string, unknown>[]
   bins?: Record<string, unknown>[]
   curvasDeEntrada?: Record<string, unknown>[]
+  atalhos?: Record<string, unknown> | null
+  recentes?: Record<string, unknown>[]
 }
 
 /**
@@ -552,6 +559,8 @@ export interface DangaiBridge {
   escolherPasta(titulo: string): Promise<IpcResult<string | null>>
   /** Os arquivos de midia (audio, video, imagem) de uma pasta e das subpastas. */
   listarPasta(pasta: string): Promise<IpcResult<ArquivoDaBin[]>>
+  /** Quais destes caminhos ainda existem no disco. */
+  existemArquivos(paths: readonly string[]): Promise<IpcResult<boolean[]>>
   /**
    * Andamento da varredura. So fala quando ha episodio novo para preparar --
    * a primeira varredura de um acervo grande leva perto de um minuto gerando as

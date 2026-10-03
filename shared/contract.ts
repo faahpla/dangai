@@ -1137,6 +1137,17 @@ export const sobreposicaoSchema = z.object({
   opacidade: z.number().min(0).max(1).default(1),
   /** Aspecto do arquivo, para a miniatura da faixa. */
   aspecto: z.number().positive().default(16 / 9),
+  /** Giro em graus, em volta do centro. */
+  rotacao: z.number().min(-180).max(180).default(0),
+  /*
+   * O MOVIMENTO dos blocos, agora tambem no clipe da faixa: "quero poder ativar
+   * as opcoes de movimento que temos no clipe". Mesmo efeito, intensidade e
+   * ritmo; com default, projeto antigo abre parado como estava.
+   */
+  efeito: z.enum(SCENE_EFFECTS).default('nenhum'),
+  intensidade: z.number().min(0.02).max(0.6).default(0.1),
+  curva: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
+  pontosDaCurva: curvePointsSchema.nullable().default(null),
 })
 export type SobreposicaoSalva = z.infer<typeof sobreposicaoSchema>
 
@@ -1336,6 +1347,11 @@ export const renderPropsSchema = z.object({
         opacidade: z.number().min(0).max(1),
         /** Faixa: a de numero maior fica por cima. */
         faixa: z.number().int().nonnegative(),
+        rotacao: z.number().default(0),
+        efeito: z.enum(SCENE_EFFECTS).default('nenhum'),
+        intensidade: z.number().default(0.1),
+        curva: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
+        pontosDaCurva: curvePointsSchema.nullable().default(null),
       }),
     )
     .default([]),

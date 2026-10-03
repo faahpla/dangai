@@ -242,6 +242,10 @@ export function registerIpc(): void {
    * tres niveis e 3 mil arquivos. Pasta de SFX costuma ser organizada em
    * subpastas (whoosh/, impacto/...), e a bin mostra tudo de uma vez.
    */
+  handle<[string[]], boolean[]>(IPC.existemArquivos, async (paths) =>
+    paths.map((p) => typeof p === 'string' && existsSync(p)),
+  )
+
   handle<[string], ArquivoDaBin[]>(IPC.listarPasta, async (pasta) => {
     if (!existsSync(pasta)) throw new Error('Essa pasta nao existe mais.')
     const achados: ArquivoDaBin[] = []

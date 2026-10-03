@@ -581,7 +581,12 @@ export interface ProjectState {
   cortarInicioDaSobreposicao: (id: string, at: number) => void
   ajustarSobreposicao: (
     id: string,
-    patch: Partial<Pick<SobreposicaoSalva, 'x' | 'y' | 'escala' | 'opacidade'>>,
+    patch: Partial<
+      Pick<
+        SobreposicaoSalva,
+        'x' | 'y' | 'escala' | 'opacidade' | 'rotacao' | 'efeito' | 'intensidade' | 'curva' | 'pontosDaCurva'
+      >
+    >,
   ) => void
   removeSobreposicao: (id: string) => void
   refreshSobreposicoes: () => Promise<void>
@@ -3068,6 +3073,11 @@ export const useProject = create<ProjectState>((set, get) => ({
         escala: 1,
         opacidade: 1,
         aspecto: r.value.aspecto,
+        rotacao: 0,
+        efeito: 'nenhum' as const,
+        intensidade: 0.1,
+        curva: MOTION_CURVE_DEFAULT,
+        pontosDaCurva: null,
         url: r.value.url,
       }
       cursor += imagem ? 3 : r.value.durationSec

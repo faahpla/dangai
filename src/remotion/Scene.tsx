@@ -299,7 +299,7 @@ export function Scene({
  * A curva desenhada a mao entra por cima dos quatro presets, com a mesma
  * restricao: e uma cubica, e os pontos de controle vivem dentro de 0..1.
  */
-function easingFor(
+export function easingFor(
   curve: SceneProps['curve'],
   pontos: SceneProps['curvePoints'],
 ): ((t: number) => number) | undefined {
@@ -331,7 +331,7 @@ interface Motion {
   y: number
 }
 
-function motionFor(
+export function motionFor(
   effect: Exclude<SceneProps['effect'], 'nenhum'>,
   intensity: number,
   t: number,

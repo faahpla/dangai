@@ -6,7 +6,9 @@ import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legend
 import { carregarBins } from '@/store/bins'
 import { Bins } from '@/components/Bins'
 import { Divisor } from '@/components/Divisor'
-import { LAYOUT_PADRAO, useLayout } from '@/store/layout'
+import { LAYOUT_PADRAO, useIma, useLayout } from '@/store/layout'
+import { useRecentes } from '@/store/recentes'
+import { acaoDoCombo, comboDoEvento, ehTeclaSolta, useAtalhos } from '@/store/atalhos'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
@@ -14,6 +16,7 @@ import { ImageStrip } from '@/components/ImageStrip'
 import { Automount } from '@/components/Automount'
 import { SceneCard } from '@/components/SceneCard'
 import { SceneEdit } from '@/components/SceneEdit'
+import { SobreposicaoEdit } from '@/components/SobreposicaoEdit'
 import { Preview } from '@/components/Preview'
 import { RenderBar } from '@/components/RenderBar'
 import { StatusBar } from '@/components/StatusBar'
@@ -38,13 +41,14 @@ function editando(alvo: EventTarget | null): boolean {
 export function App() {
   const isDragging = useFileDrop()
   const phase = useProject((s) => s.phase())
-  const removeScene = useProject((s) => s.removeScene)
-  const selectedScene = useProject((s) => s.selectedScene)
   const applyRenderProgress = useProject((s) => s.applyRenderProgress)
   const setBusy = useProject((s) => s.setBusy)
   const captionsOpen = useProject((s) => s.captionsOpen)
   const binsOpen = useProject((s) => s.binsOpen)
   const temBloco = useProject((s) => s.selectedScene !== null && s.plan !== null)
+  // O clipe da faixa de video escolhido: o inspetor dele toma o lugar dos
+  // controles do bloco enquanto estiver escolhido.
+  const clipeDeVideo = useProject((s) => (s.clipeSelecionado?.tipo === 'video' ? s.clipeSelecionado.id : null))
   const layout = useLayout()
   const refreshSfx = useProject((s) => s.refreshSfx)
   const refreshFontes = useProject((s) => s.refreshFontes)
@@ -107,6 +111,11 @@ export function App() {
    * esta aberto sem gastar espaco da interface. O ponto antes do nome e a
    * convencao de "tem coisa nao salva" que todo editor usa.
    */
+  // Todo projeto aberto ou salvo num caminho entra nos recentes da tela inicial.
+  useEffect(() => {
+    if (projectPath) void useRecentes.getState().lembrar(projectPath)
+  }, [projectPath])
+
   useEffect(() => {
     const nome = projectPath?.split(/[\\/]/).pop()?.replace(/\.dangai$/i, '') ?? null
     document.title = nome
@@ -114,15 +123,23 @@ export function App() {
       : `${projectDirty ? '• ' : ''}Dangai`
   }, [projectPath, projectDirty])
 
+  useEffect(() => void useAtalhos.getState().carregar(), [])
+
   useEffect(() => {
+    /*
+     * OS ATALHOS SAO DELE: cada tecla e procurada no mapa de @/store/atalhos,
+     * que ele troca nas configuracoes. Aqui so mora o que cada ACAO faz.
+     */
     const onKeyDown = (event: KeyboardEvent) => {
       const store = useProject.getState()
       const rendering = store.phase() === 'rendering'
+      const combo = comboDoEvento(event)
+      const acao = combo ? acaoDoCombo(combo) : null
 
       // A paleta e os modais tratam o proprio teclado; enquanto abertos, os
       // atalhos globais ficam quietos para nao disparar por baixo.
       if (store.paletteOpen || store.settingsOpen || store.scriptOpen || store.libraryOpen) {
-        if ((event.key === 'k' || event.key === 'K') && (event.ctrlKey || event.metaKey)) {
+        if (acao === 'paleta') {
           event.preventDefault()
           store.openPalette(false)
           return
@@ -137,9 +154,9 @@ export function App() {
          * travou -- nao ha motivo para um modal aberto tirar isso da mao do
          * usuario.
          */
-        if ((event.key === 's' || event.key === 'S') && (event.ctrlKey || event.metaKey)) {
+        if (acao === 'salvar' || acao === 'salvarComo') {
           event.preventDefault()
-          void store.saveProject(event.shiftKey)
+          void store.saveProject(acao === 'salvarComo')
           return
         }
 
@@ -164,111 +181,132 @@ export function App() {
         return
       }
 
-      switch (event.key) {
-        case 'k':
-        case 'K':
-          if (!event.ctrlKey && !event.metaKey) return
-          event.preventDefault()
-          store.openPalette(true)
-          break
-        case ' ':
-          if (rendering) return
-          event.preventDefault()
+      if (!acao || !combo) return
+
+      /*
+       * Digitando num campo, tecla solta e LETRA -- o C, o X e o espaco sao do
+       * texto. E o Ctrl+Z e do campo: desfazer o projeto inteiro porque a
+       * pessoa errou uma letra seria um susto. Salvar continua valendo.
+       */
+      if (editando(event.target)) {
+        if (ehTeclaSolta(combo)) return
+        if (acao === 'desfazer' || acao === 'refazer') return
+      }
+
+      /*
+       * Durante o render nada que mexa no projeto: o video sendo gerado usa o
+       * estado de agora, e mudar no meio produziria um MP4 que nao corresponde
+       * nem ao antes nem ao depois.
+       */
+      const mexeNoProjeto: readonly string[] = [
+        'tocar', 'quadroAnterior', 'quadroSeguinte', 'corteAnterior', 'corteSeguinte', 'inicio', 'fim',
+        'cortar', 'excluir', 'desfazer', 'refazer', 'abrir', 'selecao',
+      ]
+      if (rendering && mexeNoProjeto.includes(acao)) return
+
+      event.preventDefault()
+      const scenes = store.plan?.scenes ?? []
+      const irPara = (t: number): void => {
+        store.setPlayhead(Math.max(0, t))
+        const sob = scenes.findIndex((c) => t >= c.start && t < c.end)
+        if (sob !== -1) store.selectScene(sob)
+      }
+
+      switch (acao) {
+        case 'tocar':
           store.togglePlay()
           break
-        case 'c':
-        case 'C':
-          /*
-           * Corta o bloco na agulha, como em qualquer editor de video.
-           *
-           * SEM Ctrl de proposito: Ctrl+C e copiar, e roubar essa combinacao
-           * dentro de um app que tem roteiro e apelidos na tela seria pior do
-           * que nao ter atalho nenhum.
-           *
-           * Por isso mesmo ele tambem nao dispara com o cursor dentro de um
-           * campo de texto: ali o C e uma letra como qualquer outra.
-           */
-          if (rendering || event.ctrlKey || event.metaKey || event.altKey) return
-          if (editando(event.target)) return
-          event.preventDefault()
-          // Com um clipe de faixa escolhido sob a agulha, o C corta ELE -- como
-          // a lamina do editor. Sem clipe escolhido, corta o bloco.
+        case 'quadroAnterior':
+          store.setPlayhead(store.playhead - 1 / VIDEO_FPS)
+          break
+        case 'quadroSeguinte':
+          store.setPlayhead(store.playhead + 1 / VIDEO_FPS)
+          break
+        case 'corteAnterior': {
+          // Um pouco de folga: parado EM um corte, o anterior e o de antes dele.
+          const antes = scenes.map((c) => c.start).filter((t) => t < store.playhead - 0.01)
+          irPara(antes.length > 0 ? antes[antes.length - 1]! : 0)
+          break
+        }
+        case 'corteSeguinte': {
+          const depois = scenes.map((c) => c.start).find((t) => t > store.playhead + 0.01)
+          irPara(depois ?? scenes[scenes.length - 1]?.end ?? store.playhead)
+          break
+        }
+        case 'inicio':
+          irPara(0)
+          break
+        case 'fim':
+          store.setPlayhead(scenes[scenes.length - 1]?.end ?? store.audio?.durationSec ?? 0)
+          break
+        case 'cortar':
+          // Com um clipe de faixa escolhido sob a agulha, corta ELE -- como a
+          // lamina do editor. Sem clipe escolhido, corta o bloco.
           if (store.cortarClipeNaAgulha()) break
           store.splitSceneAtPlayhead()
           break
-        case 'ArrowLeft':
-          if (rendering) return
-          event.preventDefault()
-          store.setPlayhead(store.playhead - 1 / VIDEO_FPS)
-          break
-        case 'ArrowRight':
-          if (rendering) return
-          event.preventDefault()
-          store.setPlayhead(store.playhead + 1 / VIDEO_FPS)
-          break
-        case 'Delete':
-        case 'Backspace':
-          if (rendering || selectedScene === null) return
-          event.preventDefault()
-          removeScene(selectedScene)
-          break
-        case 'r':
-          if (!event.ctrlKey && !event.metaKey) return
-          event.preventDefault()
-          if (!rendering) void store.startRender()
-          break
-        case 's':
-        case 'S':
-          if (!event.ctrlKey && !event.metaKey) return
-          event.preventDefault()
-          // Shift force o dialogo: e o "salvar como" de qualquer editor.
-          void store.saveProject(event.shiftKey)
-          break
-        case 'o':
-        case 'O':
-          if (!event.ctrlKey && !event.metaKey) return
-          event.preventDefault()
-          if (!rendering) void store.openProject()
-          break
-        /*
-         * Ctrl+Z desfaz, Ctrl+Shift+Z e Ctrl+Y refazem.
-         *
-         * Fica fora durante o render: o video sendo gerado usa o estado de
-         * agora, e mudar o projeto no meio produziria um MP4 que nao
-         * corresponde nem ao antes nem ao depois.
-         */
-        case 'z':
-        case 'Z':
-        case 'y':
-        case 'Y': {
-          if (!event.ctrlKey && !event.metaKey) return
-          // Digitando num campo, o Ctrl+Z e do campo. Desfazer o projeto
-          // inteiro porque a pessoa errou uma letra seria um susto.
-          if (editando(event.target)) return
-          event.preventDefault()
-          if (rendering) return
-          const chaveY = event.key === 'y' || event.key === 'Y'
-          if (chaveY || event.shiftKey) refazer()
-          else desfazer()
+        case 'excluir': {
+          /*
+           * "O X para excluir o que eu tiver selecionado": o clipe de faixa
+           * escolhido, se houver; senao os blocos marcados na timeline (do
+           * ultimo para o primeiro, para os indices nao andarem no meio).
+           */
+          const clipe = store.clipeSelecionado
+          if (clipe) {
+            if (clipe.tipo === 'audio') store.removeTrilha(clipe.id)
+            else store.removeSobreposicao(clipe.id)
+            store.selecionarClipe(null)
+            break
+          }
+          const alvos =
+            store.selecionados.length > 1
+              ? store.selecionados
+              : store.selectedScene !== null
+                ? [store.selectedScene]
+                : []
+          for (const i of [...alvos].sort((a, b) => b - a)) store.removeScene(i)
           break
         }
-        case ',':
-          if (!event.ctrlKey && !event.metaKey) return
-          event.preventDefault()
-          store.openSettings(!store.settingsOpen)
+        case 'ima':
+          useIma.getState().alternar()
           break
-        case 'b':
-        case 'B':
-          if (!event.ctrlKey && !event.metaKey) return
-          event.preventDefault()
+        case 'desfazer':
+          desfazer()
+          break
+        case 'refazer':
+          refazer()
+          break
+        case 'salvar':
+        case 'salvarComo':
+          void store.saveProject(acao === 'salvarComo')
+          break
+        case 'abrir':
+          void store.openProject()
+          break
+        case 'renderizar':
+          if (!rendering) void store.startRender()
+          break
+        case 'paleta':
+          store.openPalette(true)
+          break
+        case 'selecao':
           // Mesma volta do botao "Selecao": abre no trecho do bloco atual.
-          if (!rendering) void store.voltarParaSelecao()
+          void store.voltarParaSelecao()
+          break
+        case 'legendas':
+          store.openCaptions(!store.captionsOpen)
+          break
+        case 'bins':
+          store.openBins(!store.binsOpen)
+          break
+        case 'configuracoes':
+          store.openSettings(!store.settingsOpen)
           break
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedScene, removeScene])
+  }, [])
 
   return (
     <div className="flex h-full flex-col bg-bg">
@@ -319,7 +357,15 @@ export function App() {
                 A area do meio REVEZA, e nao acumula: legendas, bins ou os
                 controles do bloco.
               */}
-              {captionsOpen ? <CaptionEditor /> : binsOpen ? <Bins /> : <SceneEdit />}
+              {captionsOpen ? (
+                <CaptionEditor />
+              ) : binsOpen ? (
+                <Bins />
+              ) : clipeDeVideo ? (
+                <SobreposicaoEdit id={clipeDeVideo} />
+              ) : (
+                <SceneEdit />
+              )}
             </div>
             {!layout.previewAoLado && (
               <div className="ml-6 flex min-h-0 shrink-0">

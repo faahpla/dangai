@@ -65,10 +65,6 @@ export function SceneEdit() {
   const copiarAjustes = useProject((s) => s.copiarAjustes)
   const colarAjustes = useProject((s) => s.colarAjustes)
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
-  const salvas = useProject((s) => s.curvePresets)
-  const carregarCurvas = useProject((s) => s.loadCurvePresets)
-  const guardarCurva = useProject((s) => s.saveCurvePreset)
-  const removerCurva = useProject((s) => s.removeCurvePreset)
 
   /**
    * O que o "Seguir o rosto" achou, e EM QUE BLOCO.
@@ -87,9 +83,6 @@ export function SceneEdit() {
    * clique perigoso ja engatilhado.
    */
   const [espalharArmado, setEspalharArmado] = useState<number | null>(null)
-
-  // As curvas guardadas vivem nas configuracoes, entao vem do main uma vez.
-  useEffect(() => void carregarCurvas(), [carregarCurvas])
 
   const scene = index === null ? undefined : plan?.scenes[index]
   const image = scene ? images[scene.imageIndex] : undefined
@@ -214,17 +207,7 @@ export function SceneEdit() {
     ) ?? true
 
   /* Os efeitos com icone: as sete escolhas cabem numa linha so. */
-  const efeitos: Segmento<Scene['effect']>[] = [
-    {
-      valor: 'nenhum',
-      rotulo: <Ban size={12} strokeWidth={1.5} />,
-      title: image.kind === 'video' ? 'Nenhum (so o movimento do clipe)' : 'Nenhum (parada)',
-    },
-    ...KEN_BURNS_EFFECTS.map((effect) => {
-      const Icone = EFFECT_ICON[effect]
-      return { valor: effect, rotulo: <Icone size={12} strokeWidth={1.5} />, title: EFFECT_LABEL[effect] }
-    }),
-  ]
+  const efeitos = opcoesDeEfeito(image.kind === 'video')
   const avisoDoClipe = 'Este clipe ja se move: movimento por cima pede pouca intensidade. Confira no preview.'
 
   /*
@@ -553,81 +536,11 @@ export function SceneEdit() {
                 baixo faria o clique seguinte em "Curva" ressuscitar algo que
                 ele largou.
               */}
-              <Linha label="Ritmo">
-                <Segmentos
-                  opcoes={[
-                    ...MOTION_CURVES.map((curve) => ({
-                      valor: curve as MotionCurve | 'desenho',
-                      rotulo: CURVE_LABEL[curve],
-                      title: CURVE_HINT[curve],
-                    })),
-                    {
-                      valor: 'desenho' as const,
-                      rotulo: (
-                        <>
-                          <Spline size={11} strokeWidth={1.5} />
-                          Curva
-                        </>
-                      ),
-                      title: 'Desenhar a curva do ritmo a mao',
-                    },
-                  ]}
-                  ativo={(c) =>
-                    c === 'desenho' ? scene.curvePoints !== null : scene.curvePoints === null && scene.curve === c
-                  }
-                  onChange={(c) =>
-                    updateScene(
-                      index,
-                      c === 'desenho'
-                        ? { curvePoints: scene.curvePoints === null ? CURVE_AS_BEZIER[scene.curve] : null }
-                        : { curve: c, curvePoints: null },
-                    )
-                  }
-                />
-              </Linha>
-
-              {scene.curvePoints !== null && (
-                /*
-                 * O GRAFICO AO LADO DOS ATALHOS, e nao embaixo deles: empilhados
-                 * eram quatro linhas de botoes antes do desenho aparecer.
-                 */
-                <div className="flex gap-2.5">
-                  <GraficoDeCurva
-                    pontos={scene.curvePoints}
-                    onChange={(pontos) => updateScene(index, { curvePoints: pontos })}
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex flex-wrap gap-1">
-                      {CURVAS_PRONTAS.map((preset) => (
-                        <Botaozinho
-                          key={preset.nome}
-                          active={mesmaCurva(scene.curvePoints, preset.pontos)}
-                          onClick={() => updateScene(index, { curvePoints: preset.pontos })}
-                        >
-                          {preset.nome}
-                        </Botaozinho>
-                      ))}
-                      {/* As dele, guardadas nas configuracoes e validas em todo video. */}
-                      {salvas.map((preset) => (
-                        <CurvaSalva
-                          key={preset.nome}
-                          nome={preset.nome}
-                          ativa={mesmaCurva(scene.curvePoints, preset.pontos)}
-                          onUsar={() => updateScene(index, { curvePoints: preset.pontos })}
-                          onEsquecer={() => void removerCurva(preset.nome)}
-                        />
-                      ))}
-                      <Botaozinho onClick={() => void guardarCurva(scene.curvePoints!)} title="Guardar esta curva">
-                        <BookmarkPlus size={11} strokeWidth={1.5} />
-                        Salvar
-                      </Botaozinho>
-                    </div>
-                    <p className="text-[10px] leading-snug text-ink-3">
-                      Quanto do movimento ja aconteceu ao longo do bloco. Plana e pausa, ingreme e disparada.
-                    </p>
-                  </div>
-                </div>
-              )}
+              <ControleDeRitmo
+                curve={scene.curve}
+                curvePoints={scene.curvePoints}
+                onChange={(patch) => updateScene(index, patch)}
+              />
 
               {total > 1 && !mesmaCurvaEmTodas && (
                 /*
@@ -675,6 +588,118 @@ export function SceneEdit() {
         </Grupo>
       </div>
     </div>
+  )
+}
+
+/** Os efeitos com icone: as sete escolhas cabem numa linha so. */
+export function opcoesDeEfeito(video: boolean): Segmento<Scene['effect']>[] {
+  return [
+    {
+      valor: 'nenhum',
+      rotulo: <Ban size={12} strokeWidth={1.5} />,
+      title: video ? 'Nenhum (so o movimento do clipe)' : 'Nenhum (parada)',
+    },
+    ...KEN_BURNS_EFFECTS.map((effect) => {
+      const Icone = EFFECT_ICON[effect]
+      return { valor: effect, rotulo: <Icone size={12} strokeWidth={1.5} />, title: EFFECT_LABEL[effect] }
+    }),
+  ]
+}
+
+/**
+ * O RITMO do movimento: os quatro prontos e a curva desenhada a mao, com os
+ * atalhos de curva ao lado do grafico. Serve ao bloco e ao clipe da faixa.
+ *
+ * Escolher um preset apaga o desenho -- guardar o desenho por baixo faria o
+ * clique seguinte em "Curva" ressuscitar algo que ele largou.
+ */
+export function ControleDeRitmo({
+  curve,
+  curvePoints,
+  onChange,
+}: {
+  curve: MotionCurve
+  curvePoints: CurvePoints | null
+  onChange: (patch: { curve?: MotionCurve; curvePoints: CurvePoints | null }) => void
+}) {
+  const salvas = useProject((s) => s.curvePresets)
+  const carregarCurvas = useProject((s) => s.loadCurvePresets)
+  const guardarCurva = useProject((s) => s.saveCurvePreset)
+  const removerCurva = useProject((s) => s.removeCurvePreset)
+  useEffect(() => void carregarCurvas(), [carregarCurvas])
+
+  return (
+    <>
+      <Linha label="Ritmo">
+        <Segmentos
+          opcoes={[
+            ...MOTION_CURVES.map((c) => ({
+              valor: c as MotionCurve | 'desenho',
+              rotulo: CURVE_LABEL[c],
+              title: CURVE_HINT[c],
+            })),
+            {
+              valor: 'desenho' as const,
+              rotulo: (
+                <>
+                  <Spline size={11} strokeWidth={1.5} />
+                  Curva
+                </>
+              ),
+              title: 'Desenhar a curva do ritmo a mao',
+            },
+          ]}
+          ativo={(c) => (c === 'desenho' ? curvePoints !== null : curvePoints === null && curve === c)}
+          onChange={(c) =>
+            onChange(
+              c === 'desenho'
+                ? { curvePoints: curvePoints === null ? CURVE_AS_BEZIER[curve] : null }
+                : { curve: c, curvePoints: null },
+            )
+          }
+        />
+      </Linha>
+
+      {curvePoints !== null && (
+        /*
+         * O GRAFICO AO LADO DOS ATALHOS, e nao embaixo deles: empilhados eram
+         * quatro linhas de botoes antes do desenho aparecer.
+         */
+        <div className="flex gap-2.5">
+          <GraficoDeCurva pontos={curvePoints} onChange={(pontos) => onChange({ curvePoints: pontos })} />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex flex-wrap gap-1">
+              {CURVAS_PRONTAS.map((preset) => (
+                <Botaozinho
+                  key={preset.nome}
+                  active={mesmaCurva(curvePoints, preset.pontos)}
+                  onClick={() => onChange({ curvePoints: preset.pontos })}
+                >
+                  {preset.nome}
+                </Botaozinho>
+              ))}
+              {/* As dele, guardadas nas configuracoes e validas em todo video. */}
+              {salvas.map((preset) => (
+                <CurvaSalva
+                  key={preset.nome}
+                  nome={preset.nome}
+                  ativa={mesmaCurva(curvePoints, preset.pontos)}
+                  onUsar={() => onChange({ curvePoints: preset.pontos })}
+                  onEsquecer={() => void removerCurva(preset.nome)}
+                />
+              ))}
+              <Botaozinho onClick={() => void guardarCurva(curvePoints)} title="Guardar esta curva">
+                <BookmarkPlus size={11} strokeWidth={1.5} />
+                Salvar
+              </Botaozinho>
+            </div>
+            <p className="text-[10px] leading-snug text-ink-3">
+              Quanto do movimento ja aconteceu ao longo do tempo. Plana e pausa, ingreme e disparada.
+            </p>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

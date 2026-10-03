@@ -52,3 +52,28 @@ export const useLayout = create<Layout & { mudar: (patch: Partial<Layout>) => vo
     restaurar: () => get().mudar(LAYOUT_PADRAO),
   }),
 )
+
+/*
+ * O IMA da linha do tempo, ligado ou nao. Mora fora da Timeline porque agora
+ * um atalho (N, como no DaVinci) liga e desliga, e o atalho vive no App.
+ */
+function lerIma(): boolean {
+  try {
+    return localStorage.getItem('dangai.ima') !== 'nao'
+  } catch {
+    return true
+  }
+}
+
+export const useIma = create<{ ligado: boolean; alternar: () => void }>((set, get) => ({
+  ligado: lerIma(),
+  alternar: () => {
+    const novo = !get().ligado
+    set({ ligado: novo })
+    try {
+      localStorage.setItem('dangai.ima', novo ? 'sim' : 'nao')
+    } catch {
+      /* vale so nesta sessao */
+    }
+  },
+}))

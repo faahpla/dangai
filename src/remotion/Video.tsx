@@ -6,13 +6,14 @@ import {
   delayRender,
   getRemotionEnvironment,
   Img,
+  interpolate,
   OffthreadVideo,
   Sequence,
   useCurrentFrame,
 } from 'remotion'
 import { TransitionSeries } from '@remotion/transitions'
 import type { RenderProps } from '@shared/contract'
-import { Scene } from './Scene'
+import { Scene, easingFor, motionFor } from './Scene'
 import { Captions } from './Captions'
 import { Cards } from './Card'
 import { presentationFor, timingFor } from './Transition'
@@ -235,32 +236,55 @@ function CamaDoPreview({ scenes }: { scenes: RenderProps['scenes'] }) {
 function Sobreposicoes({ itens }: { itens: RenderProps['sobreposicoes'] }) {
   if (itens.length === 0) return null
   const ordenadas = [...itens].sort((a, b) => a.faixa - b.faixa)
-  const cobre = { width: '100%', height: '100%', objectFit: 'contain' as const }
   return (
     <>
       {ordenadas.map((o, i) => (
         <Sequence key={`${o.url}-${o.from}-${i}`} from={o.from} durationInFrames={o.durationInFrames} layout="none">
-          <AbsoluteFill
-            style={{
-              transform: `translate(${o.x}%, ${o.y}%) scale(${o.escala})`,
-              transformOrigin: 'center center',
-              opacity: o.opacidade,
-            }}
-          >
-            {o.tipo === 'video' ? (
-              <OffthreadVideo
-                src={o.url}
-                muted
-                transparent
-                trimBefore={o.inicioFrames > 0 ? o.inicioFrames : undefined}
-                style={cobre}
-              />
-            ) : (
-              <Img src={o.url} style={cobre} />
-            )}
-          </AbsoluteFill>
+          <Sobreposicao o={o} />
         </Sequence>
       ))}
     </>
+  )
+}
+
+/**
+ * Um clipe da faixa de video: posicao, escala, GIRO e opacidade fixos, e por
+ * dentro deles o MESMO movimento dos blocos (zoom e pan, no ritmo escolhido).
+ * O quadro conta a partir do comeco do clipe, entao o movimento atravessa o
+ * clipe inteiro, como num bloco.
+ */
+function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
+  const frame = useCurrentFrame()
+  const t = interpolate(frame, [0, Math.max(o.durationInFrames - 1, 1)], [0, 1], {
+    easing: easingFor(o.curva, o.pontosDaCurva),
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  })
+  const m = o.efeito === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(o.efeito, o.intensidade, t)
+  const cobre = { width: '100%', height: '100%', objectFit: 'contain' as const }
+  return (
+    <AbsoluteFill
+      style={{
+        transform: `translate(${o.x}%, ${o.y}%) rotate(${o.rotacao}deg) scale(${o.escala})`,
+        transformOrigin: 'center center',
+        opacity: o.opacidade,
+      }}
+    >
+      <AbsoluteFill
+        style={{ transform: `translate(${m.x}%, ${m.y}%) scale(${m.scale})`, transformOrigin: 'center center' }}
+      >
+        {o.tipo === 'video' ? (
+          <OffthreadVideo
+            src={o.url}
+            muted
+            transparent
+            trimBefore={o.inicioFrames > 0 ? o.inicioFrames : undefined}
+            style={cobre}
+          />
+        ) : (
+          <Img src={o.url} style={cobre} />
+        )}
+      </AbsoluteFill>
+    </AbsoluteFill>
   )
 }

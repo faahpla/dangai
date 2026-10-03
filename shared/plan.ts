@@ -444,6 +444,11 @@ export function toRenderProps(
         escala: o.escala,
         opacidade: o.opacidade,
         faixa: o.faixa,
+        rotacao: o.rotacao ?? 0,
+        efeito: o.efeito ?? 'nenhum',
+        intensidade: o.intensidade ?? 0.1,
+        curva: o.curva ?? MOTION_CURVE_DEFAULT,
+        pontosDaCurva: o.pontosDaCurva ?? null,
       }
     })
   const quadro = medidasDo(formato)

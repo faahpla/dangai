@@ -52,6 +52,10 @@ export interface Settings {
   bins: Record<string, unknown>[]
   /** Curvas da entrada da legenda que ele desenhou e guardou. */
   curvasDeEntrada: Record<string, unknown>[]
+  /** Atalhos de teclado configurados. Conferidos no renderer; null = os de fabrica. */
+  atalhos: Record<string, unknown> | null
+  /** Projetos recentes, o mais novo primeiro. Conferidos no renderer. */
+  recentes: Record<string, unknown>[]
 }
 
 const DEFAULTS: Settings = {
@@ -64,6 +68,8 @@ const DEFAULTS: Settings = {
   bins: [],
   curvasDeEntrada: [],
   captionStyle: null,
+  atalhos: null,
+  recentes: [],
 }
 
 let filePath: string | null = null
@@ -120,6 +126,8 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
     captionPresets: settings.captionPresets,
     bins: settings.bins,
     curvasDeEntrada: settings.curvasDeEntrada,
+    atalhos: settings.atalhos,
+    recentes: settings.recentes,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -157,6 +165,15 @@ function coerce(raw: unknown): Settings {
       ? (value['curvasDeEntrada'] as unknown[]).filter(
           (x): x is Record<string, unknown> => typeof x === 'object' && x !== null,
         )
+      : [],
+    atalhos:
+      typeof value['atalhos'] === 'object' && value['atalhos'] !== null && !Array.isArray(value['atalhos'])
+        ? (value['atalhos'] as Record<string, unknown>)
+        : null,
+    recentes: Array.isArray(value['recentes'])
+      ? (value['recentes'] as unknown[])
+          .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
+          .slice(0, 12)
       : [],
   }
 }
