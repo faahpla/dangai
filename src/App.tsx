@@ -5,6 +5,8 @@ import { desfazer, refazer, startUndo } from '@/store/undo'
 import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legenda'
 import { carregarBins } from '@/store/bins'
 import { Bins } from '@/components/Bins'
+import { Divisor } from '@/components/Divisor'
+import { LAYOUT_PADRAO, useLayout } from '@/store/layout'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
@@ -42,6 +44,8 @@ export function App() {
   const setBusy = useProject((s) => s.setBusy)
   const captionsOpen = useProject((s) => s.captionsOpen)
   const binsOpen = useProject((s) => s.binsOpen)
+  const temBloco = useProject((s) => s.selectedScene !== null && s.plan !== null)
+  const layout = useLayout()
   const refreshSfx = useProject((s) => s.refreshSfx)
   const refreshFontes = useProject((s) => s.refreshFontes)
   const setUpdate = useProject((s) => s.setUpdate)
@@ -278,38 +282,67 @@ export function App() {
           <Dropzone isDragging={isDragging} />
         </main>
       ) : (
-        <main className="enter flex min-h-0 flex-1 flex-col gap-5 p-6">
+        <main className="enter flex min-h-0 flex-1 flex-col px-6 pt-6 pb-3">
           {/*
-            A ORDEM E: controles do bloco, area que reveza, preview.
-
-            O preview morava na esquerda, que e onde o olho cai primeiro. Mas
-            quem edita passa o dia nos controles, e o preview e para CONFERIR --
-            ele se olha depois de mexer, nao antes. Pedido dele, e a ordem que
-            todo editor de video usa.
+            O LAYOUT E DELE, como no Premiere: as divisorias se arrastam (a
+            altura da linha do tempo e a largura da coluna do bloco), e o
+            preview mora ao lado do bloco -- "coloca ele do lado direito de
+            'Bloco', onde eu posso configurar o trecho do clipe" -- ou na
+            direita, pelo botao Layout. Ver @/store/layout.
           */}
-          <div className="flex min-h-0 flex-1 gap-6">
-            <SceneCard />
+          <div className="flex min-h-0 flex-1">
+            {temBloco && (
+              <>
+                <div className="flex min-h-0 shrink-0" style={{ width: layout.larguraDoBloco }}>
+                  <SceneCard />
+                </div>
+                <Divisor
+                  eixo="x"
+                  valor={layout.larguraDoBloco}
+                  min={200}
+                  max={420}
+                  onChange={(v) => layout.mudar({ larguraDoBloco: v })}
+                  onPadrao={() => layout.mudar({ larguraDoBloco: LAYOUT_PADRAO.larguraDoBloco })}
+                  titulo="Largura da coluna do bloco"
+                />
+              </>
+            )}
+            {layout.previewAoLado && (
+              <div className="mr-4 flex min-h-0 shrink-0">
+                <Preview />
+              </div>
+            )}
             <div className="flex min-w-0 flex-1 flex-col gap-4">
               <ImageStrip />
               <Automount />
               {/*
-                A area do meio REVEZA, e nao acumula.
-                O editor de legendas ja morava aqui -- com o preview do lado, da
-                para ver o efeito de cada mesclagem sem trocar de contexto. Fora
-                dele, o espaco ficava vazio enquanto os controles do bloco se
-                espremiam numa coluna de 228px com rolagem. Ideia dele: "essa
-                area ai so usamos para edicao de legenda... entao acredito que de
-                pra revezar ne?".
-                A legenda tem prioridade: quando ele abre o editor e porque e
-                nele que quer mexer.
+                A area do meio REVEZA, e nao acumula: legendas, bins ou os
+                controles do bloco.
               */}
               {captionsOpen ? <CaptionEditor /> : binsOpen ? <Bins /> : <SceneEdit />}
             </div>
-            <Preview />
+            {!layout.previewAoLado && (
+              <div className="ml-6 flex min-h-0 shrink-0">
+                <Preview />
+              </div>
+            )}
           </div>
 
-          <RenderBar />
-          <Timeline />
+          <Divisor
+            eixo="y"
+            valor={layout.alturaDeBaixo}
+            min={190}
+            max={Math.max(260, Math.round(window.innerHeight * 0.75))}
+            sinal={-1}
+            onChange={(v) => layout.mudar({ alturaDeBaixo: v })}
+            onPadrao={() => layout.mudar({ alturaDeBaixo: LAYOUT_PADRAO.alturaDeBaixo })}
+            titulo="Altura da linha do tempo"
+          />
+
+          <div className="flex min-h-0 shrink-0 flex-col gap-3" style={{ height: layout.alturaDeBaixo }}>
+            <RenderBar />
+            <Timeline />
+          </div>
         </main>
       )}
 

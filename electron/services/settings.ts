@@ -50,6 +50,8 @@ export interface Settings {
   captionPresets: Record<string, unknown>[]
   /** As Power Bins: colecoes de arquivos que ele arrasta para a linha do tempo. */
   bins: Record<string, unknown>[]
+  /** Curvas da entrada da legenda que ele desenhou e guardou. */
+  curvasDeEntrada: Record<string, unknown>[]
 }
 
 const DEFAULTS: Settings = {
@@ -60,6 +62,7 @@ const DEFAULTS: Settings = {
   curvePresets: [],
   captionPresets: [],
   bins: [],
+  curvasDeEntrada: [],
   captionStyle: null,
 }
 
@@ -116,6 +119,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
     captionStyle: settings.captionStyle,
     captionPresets: settings.captionPresets,
     bins: settings.bins,
+    curvasDeEntrada: settings.curvasDeEntrada,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -146,6 +150,11 @@ function coerce(raw: unknown): Settings {
       : [],
     bins: Array.isArray(value['bins'])
       ? (value['bins'] as unknown[]).filter(
+          (x): x is Record<string, unknown> => typeof x === 'object' && x !== null,
+        )
+      : [],
+    curvasDeEntrada: Array.isArray(value['curvasDeEntrada'])
+      ? (value['curvasDeEntrada'] as unknown[]).filter(
           (x): x is Record<string, unknown> => typeof x === 'object' && x !== null,
         )
       : [],

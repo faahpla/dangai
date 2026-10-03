@@ -127,16 +127,16 @@ function agrupar(palavras: readonly Word[], r: RegrasDaLegenda): Grupo[] {
     const pontuou = anterior !== undefined && fechaIdeia(anterior.text)
 
     /*
-     * A linha nao fecha em artigo.
+     * A linha nao fecha em artigo -- QUANDO O PAR CABE.
      *
      * Esta palavra fecharia a linha, mas ela se prende a seguinte -- entao a
      * quebra vem ANTES dela, e ela sobe junto com o que apresenta.
      *
-     * MESMO QUE O PAR PASSE DO TETO. Ate a v1.44 o artigo so descia quando o
-     * par cabia nos dez caracteres, e sobravam "devorar a", "vira uma" e
-     * "passar a" na narracao do Lye. No LegendAI dele a regra do portugues
-     * vence o limite -- e a mesma excecao da palavra longa demais: linha
-     * comprida e menos ruim que artigo pendurado.
+     * O TETO DE CARACTERES NAO SE QUEBRA POR ISTO. Na v1.45 o artigo descia
+     * mesmo passando do teto, e saiu "DESDE RECEM-NASCIDO," -- 19 caracteres
+     * com o limite em 10. Palavras dele: "a excecao do limite serve apenas para
+     * palavras individuais que sao naturalmente maiores, e para palavras
+     * compostas". Nao cabendo, cada uma fica na sua linha.
      */
     const proxima = palavras[i + 1]
     const fecharia = atual.length > 0 && atual.length + 1 >= r.palavras
@@ -145,14 +145,15 @@ function agrupar(palavras: readonly Word[], r: RegrasDaLegenda): Grupo[] {
       ehLigante(word.text) &&
       !fechaIdeia(word.text) &&
       proxima !== undefined &&
-      proxima.start - word.end <= PAUSA_QUE_QUEBRA
+      proxima.start - word.end <= PAUSA_QUE_QUEBRA &&
+      word.text.length + 1 + proxima.text.length <= r.caracteres
 
     if (cheio || largo || pausou || pontuou || prendeNaProxima) fechar()
     atual.push(word)
   }
   fechar()
 
-  absorverLigantesSozinhas(grupos)
+  absorverLigantesSozinhas(grupos, r.caracteres)
   return grupos
 }
 
@@ -160,15 +161,19 @@ function agrupar(palavras: readonly Word[], r: RegrasDaLegenda): Grupo[] {
  * Artigo sozinho numa legenda desce para a legenda do substantivo.
  *
  * Com uma palavra por legenda o agrupamento acima nao tem como segurar o
- * artigo -- a linha ja fecha em uma. E a regra do LegendAI dele: grupo feito
- * so de ligantes se junta ao SEGUINTE ("dos | guardas" vira "dos guardas"),
- * mesmo passando do teto, porque artigo solto e pior que linha comprida. So
- * no fim do texto, sem seguinte, ele recua para o anterior.
+ * artigo -- a linha ja fecha em uma. Grupo feito so de ligantes se junta ao
+ * SEGUINTE ("dos | guardas" vira "dos guardas"). So no fim do texto, sem
+ * seguinte, ele recua para o anterior.
+ *
+ * SO SE COUBER no teto de caracteres -- a mesma regra de cima: "desde" e
+ * "recem-nascido," ficam cada um na sua linha, porque juntos dariam 19.
  *
  * Nao atravessa pontuacao nem pausa: "de," fecha a propria linha pela regra da
  * pontuacao, e o que vem depois de uma pausa longa ja e outra fala.
  */
-function absorverLigantesSozinhas(grupos: Grupo[]): void {
+function absorverLigantesSozinhas(grupos: Grupo[], caracteres: number): void {
+  const cabe = (a: Grupo, b: Grupo): boolean =>
+    [...a.words, ...b.words].map((w) => w.text).join(' ').length <= caracteres
   let i = 0
   while (i < grupos.length) {
     const g = grupos[i]!
@@ -179,14 +184,14 @@ function absorverLigantesSozinhas(grupos: Grupo[]): void {
       continue
     }
     const seguinte = grupos[i + 1]
-    if (seguinte && seguinte.start - g.end <= PAUSA_QUE_QUEBRA) {
+    if (seguinte && seguinte.start - g.end <= PAUSA_QUE_QUEBRA && cabe(g, seguinte)) {
       seguinte.words = [...g.words, ...seguinte.words]
       seguinte.start = g.start
       grupos.splice(i, 1)
       continue // o grupo unido pode, ele mesmo, ser so de ligantes
     }
     const anterior = grupos[i - 1]
-    if (!seguinte && anterior && !fechaIdeia(anterior.words.at(-1)!.text)) {
+    if (!seguinte && anterior && !fechaIdeia(anterior.words.at(-1)!.text) && cabe(anterior, g)) {
       anterior.words = [...anterior.words, ...g.words]
       anterior.end = g.end
       grupos.splice(i, 1)

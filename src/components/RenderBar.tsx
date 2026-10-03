@@ -2,6 +2,7 @@ import {
   Play,
   Pause,
   FolderOpen,
+  LayoutPanelLeft,
   Volume2,
   VolumeX,
   Captions,
@@ -20,6 +21,8 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { aplicarPreset, removerPreset, salvarPreset } from '@/store/estilo-legenda'
 import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
+import { BotaoDeTransicao } from './BotaoDeTransicao'
+import { useLayout } from '@/store/layout'
 import { useProject } from '@/store/project'
 import {
   familiaDaFonte,
@@ -267,28 +270,9 @@ export function RenderBar() {
 
       {captionCount > 0 && captionsEnabled && !isRendering && !formatoLongo && <EstiloControl />}
 
-      {sfxCount > 0 && !isRendering && (
-        <button
-          type="button"
-          onClick={toggleSfx}
-          title={sfxEnabled ? `${sfxCount} SFX no video` : 'SFX mutados'}
-          className={[
-            'lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px]',
-            sfxEnabled ? 'text-ink-2 hover:text-ink' : 'text-ink-3',
-          ].join(' ')}
-        >
-          {sfxEnabled ? (
-            <Volume2 size={12} strokeWidth={1.5} />
-          ) : (
-            <VolumeX size={12} strokeWidth={1.5} />
-          )}
-          <span className="tnum">{sfxCount} SFX</span>
-        </button>
-      )}
+      {!isRendering && <BotaoDeTransicao />}
+      {!isRendering && <BotaoDeLayout />}
 
-
-
-      {!isRendering && <MusicControl />}
 
       {!isRendering && <Preflight />}
 
@@ -1320,6 +1304,60 @@ function PresetsDeEstilo() {
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * O LAYOUT: onde mora o preview, e voltar tudo ao padrao. As divisorias em si
+ * se arrastam direto na tela; aqui fica o que nao e arraste.
+ */
+function BotaoDeLayout() {
+  const previewAoLado = useLayout((s) => s.previewAoLado)
+  const mudar = useLayout((s) => s.mudar)
+  const restaurar = useLayout((s) => s.restaurar)
+  const [aberto, setAberto] = useState(false)
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        title="Onde fica o preview, e voltar o layout ao padrao"
+        className={[
+          'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
+          aberto ? 'border-line-strong bg-elevated text-ink' : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+        ].join(' ')}
+      >
+        <LayoutPanelLeft size={12} strokeWidth={1.5} />
+        Layout
+      </button>
+      {aberto && (
+        <>
+          <div className="fixed inset-0 z-40" onPointerDown={() => setAberto(false)} />
+          <div className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 flex w-[260px] flex-col gap-1 rounded-md p-2">
+            <Opcao ativo={previewAoLado} onClick={() => mudar({ previewAoLado: true })}>
+              Preview ao lado do bloco
+            </Opcao>
+            <Opcao ativo={!previewAoLado} onClick={() => mudar({ previewAoLado: false })}>
+              Preview na direita
+            </Opcao>
+            <button
+              type="button"
+              onClick={() => {
+                restaurar()
+                setAberto(false)
+              }}
+              className="mt-1 rounded-sm px-2 py-1 text-left text-[11px] text-ink-3 hover:text-ink-2"
+            >
+              Voltar o layout ao padrao
+            </button>
+            <p className="px-2 text-[10px] leading-relaxed text-ink-3">
+              Arraste as divisorias para mudar a altura da linha do tempo e a largura da coluna do bloco.
+              Dois cliques numa divisoria voltam aquele tamanho ao padrao.
+            </p>
+          </div>
+        </>
+      )}
     </div>
   )
 }

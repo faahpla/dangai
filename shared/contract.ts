@@ -495,6 +495,13 @@ export function escalaDaEntrada(curva: CurvaDaEntrada, t: number): number {
   )
 }
 
+/** Uma curva da entrada guardada com nome: "deixa eu desenhar uma propria e salvar um preset". */
+export const curvaGuardadaSchema = z.object({
+  nome: z.string().trim().min(1).max(30),
+  curva: curvaDaEntradaSchema,
+})
+export type CurvaGuardada = z.infer<typeof curvaGuardadaSchema>
+
 export const CAPTION_ANIMATIONS = ['nenhuma', 'elastica'] as const
 export const captionAnimationSchema = z.enum(CAPTION_ANIMATIONS)
 export type CaptionAnimation = z.infer<typeof captionAnimationSchema>

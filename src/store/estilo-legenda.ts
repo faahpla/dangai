@@ -1,4 +1,12 @@
-import { captionPresetSchema, captionStyleSchema, type CaptionPreset, type CaptionStyle } from '@shared/contract'
+import {
+  captionPresetSchema,
+  captionStyleSchema,
+  curvaGuardadaSchema,
+  type CaptionPreset,
+  type CaptionStyle,
+  type CurvaDaEntrada,
+  type CurvaGuardada,
+} from '@shared/contract'
 import { useProject } from './project'
 import { estaCarregando } from './quiet'
 
@@ -105,6 +113,10 @@ export async function aplicarEstiloGuardado(): Promise<void> {
       const ok = captionPresetSchema.safeParse(p)
       return ok.success ? [ok.data] : []
     }),
+    curvasDeEntrada: (r.value.curvasDeEntrada ?? []).flatMap((c) => {
+      const ok = curvaGuardadaSchema.safeParse(c)
+      return ok.success ? [ok.data] : []
+    }),
   })
 
   if (!r.value.captionStyle) return
@@ -158,4 +170,21 @@ export function aplicarPreset(nome: string): void {
 
 export function removerPreset(nome: string): void {
   gravarPresets(useProject.getState().captionPresets.filter((p) => p.nome !== nome))
+}
+
+function gravarCurvas(lista: CurvaGuardada[]): void {
+  useProject.setState({ curvasDeEntrada: lista })
+  void window.dangai.saveSettings({ curvasDeEntrada: lista })
+}
+
+/** Guarda a curva da entrada com um nome. O mesmo nome substitui. */
+export function salvarCurvaDeEntrada(nome: string, curva: CurvaDaEntrada): void {
+  const limpo = nome.trim().slice(0, 30)
+  if (!limpo) return
+  const outras = useProject.getState().curvasDeEntrada.filter((c) => c.nome !== limpo)
+  gravarCurvas([...outras, { nome: limpo, curva }])
+}
+
+export function removerCurvaDeEntrada(nome: string): void {
+  gravarCurvas(useProject.getState().curvasDeEntrada.filter((c) => c.nome !== nome))
 }

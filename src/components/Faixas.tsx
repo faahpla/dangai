@@ -208,7 +208,7 @@ export function GrupoDeFaixas({
   onCortarInicio,
   onCortarFim,
   onRemover,
-  controles,
+  onAgulha,
 }: {
   tipo: 'video' | 'audio'
   clipes: readonly ClipeDaFaixa[]
@@ -224,7 +224,8 @@ export function GrupoDeFaixas({
   onCortarInicio: (id: string, at: number) => void
   onCortarFim: (id: string, toca: number | null) => void
   onRemover: (id: string) => void
-  controles: (id: string) => React.ReactNode
+  /** Clicar e arrastar no vazio de uma faixa leva a agulha, como no editor. */
+  onAgulha: (event: React.PointerEvent) => void
 }) {
   const selecionado = useProject((s) => (s.clipeSelecionado?.tipo === tipo ? s.clipeSelecionado.id : null))
   const selecionar = useProject((s) => s.selecionarClipe)
@@ -388,8 +389,11 @@ export function GrupoDeFaixas({
                 onSoltar(paths, alinhar(timeAt(event.clientX), ima, null).t, faixa)
               }}
               onPointerDown={(event) => {
-                // Clicar no vazio da faixa tira a selecao, como no editor.
-                if (event.target === event.currentTarget) selecionar(null)
+                // Clicar no vazio da faixa tira a selecao e leva a agulha, como
+                // no editor -- a agulha nao mora so na faixa das cenas.
+                if (event.target !== event.currentTarget) return
+                selecionar(null)
+                onAgulha(event)
               }}
             >
               {daFaixa.map((c) => (
@@ -416,23 +420,7 @@ export function GrupoDeFaixas({
                 />
               ))}
             </div>
-              {selecionado && daFaixa.some((c) => c.id === selecionado) && (
-              <div
-                className="absolute right-1 top-1 z-20 flex items-center gap-2 rounded-sm border border-line bg-surface/95 px-1.5 py-0.5"
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                {controles(selecionado)}
-                <button
-                  type="button"
-                  onClick={() => selecionar(null)}
-                  aria-label="Fechar os controles do clipe"
-                  className="text-ink-3 hover:text-ink"
-                >
-                  <X size={9} strokeWidth={2} />
-                </button>
-              </div>
-            )}
-          </Linha>
+            </Linha>
         )
       })}
     </>

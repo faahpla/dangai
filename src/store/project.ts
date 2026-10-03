@@ -20,6 +20,7 @@ import {
   duracaoDoTrecho,
   type RegrasDaLegenda,
   type CaptionPreset,
+  type CurvaGuardada,
   type Bin,
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
@@ -49,6 +50,8 @@ import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVE_DEFAULT,
   MUSIC_GAIN_DB_DEFAULT,
+  MUSIC_FADE_IN_SEC,
+  MUSIC_FADE_OUT_SEC,
   MUSIC_GAIN_DB_MAX,
   MUSIC_GAIN_DB_MIN,
   FORMATO_PADRAO,
@@ -261,6 +264,8 @@ export interface ProjectState {
   captionRules: RegrasDaLegenda
   /** Os estilos de legenda guardados com nome. Moram nas configuracoes. */
   captionPresets: CaptionPreset[]
+  /** As curvas da entrada guardadas com nome. Moram nas configuracoes. */
+  curvasDeEntrada: CurvaGuardada[]
   /** As Power Bins. Moram nas configuracoes; ver @/store/bins. */
   bins: Bin[]
   /** O painel das bins no lugar do painel do bloco. */
@@ -580,6 +585,17 @@ export interface ProjectState {
   ) => void
   removeSobreposicao: (id: string) => void
   refreshSobreposicoes: () => Promise<void>
+  /**
+   * Leva o sistema ANTIGO de som para as faixas de audio: os SFX postos a mao
+   * e a cama de musica viram clipes. Roda ao abrir o projeto.
+   */
+  migrarSonsAntigos: () => Promise<void>
+  /**
+   * Refaz as legendas que ele NAO editou, pelas regras de agora. O projeto
+   * guarda as legendas prontas; sem isto, uma regra corrigida (como o teto de
+   * caracteres) so valeria para projeto novo.
+   */
+  refazerLegendasNaoEditadas: () => void
   alternarMudo: (tipo: 'video' | 'audio', faixa: number) => void
   selecionarClipe: (clipe: { tipo: 'video' | 'audio'; id: string } | null) => void
   /**
@@ -1056,6 +1072,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionStroke: CAPTION_STROKE_DEFAULT,
   captionRules: REGRAS_DA_LEGENDA_PADRAO,
   captionPresets: [],
+  curvasDeEntrada: [],
   bins: [],
   binsOpen: false,
   openBins: (open) => set(open ? { binsOpen: true, captionsOpen: false } : { binsOpen: false }),
@@ -3182,6 +3199,100 @@ export const useProject = create<ProjectState>((set, get) => ({
     return true
   },
 
+  refazerLegendasNaoEditadas: () => {
+    const { captionsEdited, transcript, captionRules } = get()
+    if (captionsEdited || !transcript || transcript.words.length === 0) return
+    set({ captions: buildCaptions(transcript, captionRules) })
+  },
+
+  migrarSonsAntigos: async () => {
+    const { sfxManual, music, musicGainDb, audio, trilhas } = get()
+    if (sfxManual.length === 0 && !music) return
+
+    /*
+     * "Pode tirar essa track de SFX e deixar so as de audio, que eu vou usar
+     * os SFX por la. Os botoes de SFX e Musica pode tirar tambem, esse sistema
+     * vai ser inutil a partir de agora."
+     *
+     * Tirar so a tela deixaria os projetos antigos com SFX e musica que nada
+     * mostra e nada desliga. Entao o que eles tinham vira CLIPE, nas faixas de
+     * audio, no mesmo volume: o SFX era mixado a -12 dB mais o ajuste dele, e
+     * a cama de musica, no ganho dela, com os mesmos fades.
+     */
+    const novas: typeof trilhas = []
+    let proximaFaixa = Math.max(...trilhas.map((t) => t.faixa + 1), 0)
+    const ocupado = new Map<number, { at: number; fim: number }[]>()
+    const caber = (at: number, fim: number, primeira: number): number => {
+      for (let f = primeira; ; f++) {
+        const lista = ocupado.get(f) ?? []
+        if (lista.every((o) => fim <= o.at || at >= o.fim)) {
+          lista.push({ at, fim })
+          ocupado.set(f, lista)
+          return f
+        }
+      }
+    }
+
+    const faixaDosSfx = proximaFaixa
+    for (const som of [...sfxManual].sort((a, b) => a.at - b.at)) {
+      const toca = som.usarSec ?? som.durationSec
+      const faixa = caber(som.at, som.at + toca, faixaDosSfx)
+      novas.push({
+        id: `sfx-${som.id}`,
+        path: som.path,
+        fileName: som.fileName,
+        faixa,
+        at: som.at,
+        durationSec: som.durationSec,
+        inicioSec: 0,
+        usarSec: som.usarSec,
+        gainDb: Math.round(-12 + som.gainDb),
+        fadeInSec: 0,
+        fadeOutSec: som.usarSec !== null ? 0.03 : 0,
+        peaks: som.peaks,
+        url: som.url,
+      })
+    }
+    proximaFaixa = Math.max(proximaFaixa, ...novas.map((t) => t.faixa + 1))
+
+    if (music && audio) {
+      const r = await window.dangai.analyzeAudio(music.path)
+      if (r.ok && r.value.durationSec > 0) {
+        // A cama repetia a musica ate o fim: vira um clipe por volta.
+        const total = audio.durationSec
+        let at = 0
+        let volta = 0
+        while (at < total - 0.05) {
+          const toca = Math.min(r.value.durationSec, total - at)
+          novas.push({
+            id: `musica-${Date.now()}-${volta}`,
+            path: music.path,
+            fileName: r.value.fileName,
+            faixa: proximaFaixa,
+            at,
+            durationSec: r.value.durationSec,
+            inicioSec: 0,
+            usarSec: toca < r.value.durationSec ? toca : null,
+            gainDb: Math.round(musicGainDb),
+            fadeInSec: at === 0 ? MUSIC_FADE_IN_SEC : 0,
+            fadeOutSec: at + toca >= total - 0.05 ? MUSIC_FADE_OUT_SEC : 0,
+            peaks: reduzirPicos(r.value.peaks, 120),
+            url: r.value.url,
+          })
+          at += toca
+          volta += 1
+        }
+      }
+    }
+
+    set((state) => ({
+      trilhas: [...state.trilhas, ...novas],
+      sfxManual: [],
+      music: null,
+      projectDirty: true,
+    }))
+  },
+
   refreshSfxManual: async () => {
     const atuais = get().sfxManual
     if (atuais.length === 0) return
@@ -3676,17 +3787,13 @@ export const useProject = create<ProjectState>((set, get) => ({
        * Os postos a mao mandam. So quando nao ha nenhum e que o rodizio
        * automatico entra -- ver o comentario de `sfxManual` no estado.
        */
-      sfxCues: !sfxEnabled
-        ? []
-        : get().sfxManual.length > 0
-          ? get().sfxManual.map((s) => ({
-              at: s.at,
-              sound: s.path,
-              gainDb: s.gainDb,
-              durationSec: s.usarSec,
-            }))
-          : sfxCuesFor(plan.scenes, sfxFiles),
-      music: music ? { path: music.path, gainDb: musicGainDb } : null,
+      /*
+       * O rodizio automatico de SFX e a cama de musica sairam: o som do video e
+       * o das faixas de audio. Projeto antigo ja chega aqui migrado -- ver
+       * migrarSonsAntigos.
+       */
+      sfxCues: [],
+      music: null,
       trilhas: get()
         .trilhas.filter((t) => !get().faixasMudas.audio.includes(t.faixa))
         .map((t) => ({
@@ -4048,12 +4155,14 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (result.value === null) return
 
     await applyProjectFile(set, result.value.file, result.value.path, false)
+    get().refazerLegendasNaoEditadas()
     // O projeto guarda so o NOME da fonte; e esta leitura que reencontra a URL
     // dela na pasta -- ou derruba a escolha, se o arquivo nao estiver mais la.
     await get().refreshFontes()
     await get().refreshSfxManual()
     await get().refreshTrilhas()
     await get().refreshSobreposicoes()
+    await get().migrarSonsAntigos()
   },
 
   checkAutosave: async () => {
@@ -4076,11 +4185,13 @@ export const useProject = create<ProjectState>((set, get) => ({
     // save de verdade. Marcar limpo faria o app dizer que nao ha nada a gravar
     // justamente sobre o trabalho que quase se perdeu.
     await applyProjectFile(set, result.value.file, result.value.path, true)
+    get().refazerLegendasNaoEditadas()
     // Mesmo motivo do openProject: a fonte volta pelo nome e precisa da URL.
     await get().refreshFontes()
     await get().refreshSfxManual()
     await get().refreshTrilhas()
     await get().refreshSobreposicoes()
+    await get().migrarSonsAntigos()
   },
 
   discardAutosave: async () => {

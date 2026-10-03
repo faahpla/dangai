@@ -115,13 +115,33 @@ console.log('\nresgate da piscada (o caso de 45,44s)')
     cutCandidates: [],
   })
   const textos = blocos.map((b) => b.words.map((w) => w.text).join(' '))
-  conferir('"para" nao fica sozinha', textos.includes('para'), false)
-  // "suficiente para" passaria dos dez caracteres. E preposicao se prende ao
-  // que ela apresenta -- a regra do LegendAI dele: desce junto com o seguinte.
-  conferir('ela desce junto com o que apresenta', textos.includes('para descobrir'), true)
+  // "suficiente para" e "para descobrir" passam dos dez caracteres. O teto
+  // nao se quebra por preposicao: "para" fica na propria linha, curta mesmo.
+  const passa = blocos.filter((b) => b.words.length > 1 && b.words.map((w) => w.text).join(' ').length > 10)
+  conferir('nenhuma linha de duas palavras passa de dez caracteres', passa.length, 0)
+  conferir('"para" fica sozinha, porque nao cabe com nenhuma vizinha', textos.includes('para'), true)
+}
 
-  const curtos = blocos.filter((b) => b.durationInFrames / VIDEO_FPS < 0.22)
-  conferir('nenhum bloco pisca', curtos.length, 0)
+console.log('\no exemplo dele: "desde recem-nascido," com uma palavra por linha')
+{
+  const blocos = buildCaptions(
+    {
+      source: 'script',
+      words: [
+        { text: 'DESDE', start: 0, end: 0.3 },
+        { text: 'RECÉM-NASCIDO,', start: 0.3, end: 1.0 },
+        { text: 'A', start: 1.1, end: 1.15 },
+        { text: 'LILIA', start: 1.15, end: 1.5 },
+      ],
+      segments: [],
+      text: '',
+      cutCandidates: [],
+    },
+    { palavras: 1, caracteres: 10, minimo: 0.45, maximo: 2, adiantar: 0.04, fecharVaos: 0.5 },
+  )
+  const textos = blocos.map((b) => b.words.map((w) => w.text).join(' '))
+  conferir('"desde" numa linha, "recem-nascido," na outra', textos.slice(0, 2), ['DESDE', 'RECÉM-NASCIDO,'])
+  conferir('artigo que cabe continua descendo junto ("a lilia")', textos.includes('A LILIA'), true)
 }
 
 console.log('\nos limites do resgate')

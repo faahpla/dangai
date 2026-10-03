@@ -105,7 +105,7 @@ export function SceneCard() {
   }
 
   return (
-    <aside className="enter flex w-[228px] shrink-0 flex-col gap-5 overflow-y-auto">
+    <aside className="enter flex w-full min-w-0 flex-col gap-5 overflow-y-auto pr-1">
       <header className="flex items-baseline justify-between">
         <span className="text-[13px] font-medium text-ink">
           Bloco {index + 1} <span className="text-ink-3">de {total}</span>

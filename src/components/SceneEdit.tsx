@@ -210,7 +210,17 @@ export function SceneEdit() {
     ) ?? true
 
   return (
-    <div className="enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,0.8fr)] items-start gap-3 overflow-y-auto">
+    /*
+     * DUAS COLUNAS, CADA UMA ROLANDO SOZINHA.
+     *
+     * Eram tres, rolando juntas: com a linha do tempo maior, chegar na curva do
+     * movimento era rolar o painel inteiro, e o grafico nem cabia. "Eu tenho
+     * que ficar scrollando muito pra chegar onde eu quero." A transicao virou
+     * botao na barra; os ajustes (copiar/colar) foram para baixo do
+     * enquadramento; e o movimento ganhou a coluna dele, com rolagem propria.
+     */
+    <div className="enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-3">
+      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
       <Grupo titulo="Enquadramento">
         {imageB ? (
           <>
@@ -275,6 +285,44 @@ export function SceneEdit() {
       )}
       </Grupo>
 
+      <Grupo titulo="Ajustes">
+        {/*
+          COPIAR E COLAR AJUSTES.
+
+          Mora no fim do painel porque atravessa os tres grupos: o que ele copia
+          e o COMO o bloco se comporta -- movimento, ritmo, giro e transicao --
+          e nao o que cada coluna edita sozinha.
+
+          Fica de fora o que descreve o MATERIAL: qual imagem e, de que ponto do
+          clipe ela parte, e a camera livre. Um caminho de camera e desenhado
+          contra o conteudo daquele clipe -- ainda mais quando saiu do
+          rastreador, que seguiu um alvo especifico -- e colado noutro clipe
+          enquadraria o nada, com cara de defeito.
+        */}
+        <Field label="Ajustes deste bloco">
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={false} onClick={() => copiarAjustes(index)}>
+              <Copy size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+              Copiar
+            </Chip>
+            {ajustesCopiados !== null && (
+              <Chip active={false} onClick={() => colarAjustes(alvos)}>
+                <ClipboardPaste size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                {alvos.length > 1 ? `Colar nos ${alvos.length} selecionados` : 'Colar aqui'}
+              </Chip>
+            )}
+          </div>
+          <p className="text-[11px] leading-relaxed text-ink-3">
+            {ajustesCopiados === null
+              ? 'Copia movimento, ritmo, giro e transicao. O enquadramento e a camera ficam, porque sao daquele clipe.'
+              : selecionados.length > 1
+                ? 'Shift+clique na timeline pega um intervalo; Ctrl+clique liga e desliga um bloco.'
+                : 'Marque varios blocos na timeline com Shift ou Ctrl para colar em todos de uma vez.'}
+          </p>
+        </Field>
+      </Grupo>
+      </div>
+      <div className="min-h-0 overflow-y-auto pr-1">
       <Grupo titulo="Movimento">
       {/*
         Clipe tambem escolhe movimento agora.
@@ -723,84 +771,7 @@ export function SceneEdit() {
         tira comprida e o resto do painel sumia por baixo dela. Sao seis opcoes
         curtas; lado a lado elas cabem em tres linhas cada.
       */}
-      <Grupo titulo="Transicao">
-        <Field label="Entrada (emenda com o bloco anterior)">
-          {index === 0 ? (
-            <p className="text-[11px] leading-relaxed text-ink-3">
-              O primeiro bloco nao tem de onde entrar.
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-1.5">
-              {TRANSITIONS_NA_TELA.map((transition) => (
-                <Chip
-                  key={transition}
-                  active={scene.transitionIn === transition}
-                  onClick={() => updateScene(index, { transitionIn: transition })}
-                >
-                  {TRANSITION_LABEL[transition]}
-                </Chip>
-              ))}
-            </div>
-          )}
-        </Field>
-
-        <Field label="Saida (emenda com o proximo bloco)">
-          {proxima === undefined ? (
-            <p className="text-[11px] leading-relaxed text-ink-3">
-              O ultimo bloco nao tem para onde sair.
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-1.5">
-              {TRANSITIONS_NA_TELA.map((transition) => (
-                <Chip
-                  key={transition}
-                  active={proxima.transitionIn === transition}
-                  // Escreve no bloco SEGUINTE: e a entrada dele que descreve
-                  // esta emenda.
-                  onClick={() => updateScene(index + 1, { transitionIn: transition })}
-                >
-                  {TRANSITION_LABEL[transition]}
-                </Chip>
-              ))}
-            </div>
-          )}
-        </Field>
-
-        {/*
-          COPIAR E COLAR AJUSTES.
-
-          Mora no fim do painel porque atravessa os tres grupos: o que ele copia
-          e o COMO o bloco se comporta -- movimento, ritmo, giro e transicao --
-          e nao o que cada coluna edita sozinha.
-
-          Fica de fora o que descreve o MATERIAL: qual imagem e, de que ponto do
-          clipe ela parte, e a camera livre. Um caminho de camera e desenhado
-          contra o conteudo daquele clipe -- ainda mais quando saiu do
-          rastreador, que seguiu um alvo especifico -- e colado noutro clipe
-          enquadraria o nada, com cara de defeito.
-        */}
-        <Field label="Ajustes deste bloco">
-          <div className="flex flex-wrap gap-1.5">
-            <Chip active={false} onClick={() => copiarAjustes(index)}>
-              <Copy size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-              Copiar
-            </Chip>
-            {ajustesCopiados !== null && (
-              <Chip active={false} onClick={() => colarAjustes(alvos)}>
-                <ClipboardPaste size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                {alvos.length > 1 ? `Colar nos ${alvos.length} selecionados` : 'Colar aqui'}
-              </Chip>
-            )}
-          </div>
-          <p className="text-[11px] leading-relaxed text-ink-3">
-            {ajustesCopiados === null
-              ? 'Copia movimento, ritmo, giro e transicao. O enquadramento e a camera ficam, porque sao daquele clipe.'
-              : selecionados.length > 1
-                ? 'Shift+clique na timeline pega um intervalo; Ctrl+clique liga e desliga um bloco.'
-                : 'Marque varios blocos na timeline com Shift ou Ctrl para colar em todos de uma vez.'}
-          </p>
-        </Field>
-      </Grupo>
+      </div>
     </div>
   )
 }
@@ -880,7 +851,7 @@ function GraficoDeCurva({
       <svg
         ref={area}
         viewBox={`${-FOLGA} ${-FOLGA} ${100 + FOLGA * 2} ${100 + FOLGA * 2}`}
-        className="w-full touch-none rounded-sm bg-elevated"
+        className="mx-auto w-full max-w-[200px] touch-none rounded-sm bg-elevated"
         onPointerMove={(event) => arrastando !== null && mover(event, arrastando)}
         onPointerUp={() => setArrastando(null)}
         onPointerLeave={() => setArrastando(null)}

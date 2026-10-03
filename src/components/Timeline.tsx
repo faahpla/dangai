@@ -211,6 +211,27 @@ export function Timeline() {
     [scenes, selectScene, setPlayhead, timeAt],
   )
 
+  /*
+   * A AGULHA EM QUALQUER FAIXA. "Eu quero que a agulha funcione na timeline
+   * inteira, e nao apenas nos blocos." Clicar no vazio de qualquer faixa leva a
+   * agulha ate ali, e arrastar a leva junto -- ouvido na janela, para o gesto
+   * nao morrer ao passar por cima de um clipe.
+   */
+  const arrastarAgulha = useCallback(
+    (event: React.PointerEvent) => {
+      if (isRendering) return
+      levarAgulha(event.clientX)
+      const mover = (e: PointerEvent): void => levarAgulha(e.clientX)
+      const fim = (): void => {
+        window.removeEventListener('pointermove', mover)
+        window.removeEventListener('pointerup', fim)
+      }
+      window.addEventListener('pointermove', mover)
+      window.addEventListener('pointerup', fim)
+    },
+    [isRendering, levarAgulha],
+  )
+
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (isRendering) return
@@ -386,7 +407,7 @@ export function Timeline() {
   )
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex min-h-0 flex-1 flex-col gap-3">
       <header className="flex items-center justify-between px-1">
         <div className="flex min-w-0 items-baseline gap-3">
           <span className="tnum text-[15px] font-medium text-ink">{formatTimecode(playhead)}</span>
@@ -403,6 +424,14 @@ export function Timeline() {
           */}
           <LegendaAtual />
         </div>
+
+        {/*
+          OS CONTROLES DO CLIPE ESCOLHIDO moram na barra, e nao dentro da faixa:
+          "quando eu der zoom eu quero que essas configuracoes de volume
+          acompanhem o zoom e fiquem visiveis". Aqui eles ficam sempre a vista,
+          com qualquer zoom e qualquer rolagem.
+        */}
+        <ControlesDoEscolhido />
 
         <div className="flex items-center gap-3">
           <span className="text-[11px] text-ink-3">
@@ -477,7 +506,7 @@ export function Timeline() {
         ref={scrollRef}
         // Rola nos dois eixos: na horizontal com o zoom, na vertical quando as
         // faixas passam do teto -- as cenas ficam presas no topo.
-        className="relative max-h-[44vh] overflow-auto rounded-md border border-line bg-surface"
+        className="relative min-h-0 flex-1 overflow-auto rounded-md border border-line bg-surface"
         onWheel={(event) => {
           /*
            * Ctrl+roda ou ALT+roda ampliam. Sem nenhum dos dois, a roda rola.
@@ -491,6 +520,7 @@ export function Timeline() {
           zoomAt(zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), event.clientX)
         }}
       >
+        <div className="relative" style={{ width: CABECALHO + largura }}>
         <div className="sticky top-0 z-40" style={{ width: CABECALHO + largura }}>
         <Linha
           largura={largura}
@@ -656,7 +686,9 @@ export function Timeline() {
         */}
         {duration > 0 && (
           <Linha largura={largura} altura={16} cabecalho={<Cabecalho nome="Legendas" />}>
-            <FaixaLegendas duration={duration} zoom={zoom} />
+            <div className="h-full" onPointerDown={arrastarAgulha}>
+              <FaixaLegendas duration={duration} zoom={zoom} />
+            </div>
           </Linha>
         )}
         </div>
@@ -692,15 +724,8 @@ export function Timeline() {
               onCortarInicio={cortarInicioDaSobreposicao}
               onCortarFim={cortarFimDaSobreposicao}
               onRemover={removeSobreposicao}
-              controles={(id) => <ControlesDaSobreposicao id={id} />}
+              onAgulha={arrastarAgulha}
             />
-            <Linha
-              largura={largura}
-              altura={30}
-              cabecalho={<Cabecalho nome="SFX" detalhe={sfxManual.length === 0 ? 'automaticos' : `${sfxManual.length} sons`} />}
-            >
-              <FaixaSfx duration={duration} zoom={zoom} timeAt={timeAt} ima={ima} />
-            </Linha>
             <GrupoDeFaixas
               tipo="audio"
               faixasMinimas={3}
@@ -727,18 +752,26 @@ export function Timeline() {
               onCortarInicio={cortarInicioDaTrilha}
               onCortarFim={cortarFimDaTrilha}
               onRemover={removeTrilha}
-              controles={(id) => <ControlesDaTrilha id={id} />}
+              onAgulha={arrastarAgulha}
             />
           </>
         )}
 
+        {/* A agulha, de cima a baixo, por todas as faixas. */}
+        {duration > 0 && !isRendering && (
+          <div
+            className="pointer-events-none absolute inset-y-0 z-30 w-px bg-accent"
+            style={{ left: CABECALHO + progress * largura }}
+          />
+        )}
         {/* Onde o ima grudou: uma linha de cima a baixo. */}
         {linhaDoIma !== null && duration > 0 && (
           <div
-            className="pointer-events-none absolute top-0 z-50 w-px bg-[#ffd60a]"
-            style={{ left: CABECALHO + (linhaDoIma / duration) * largura, height: '100%' }}
+            className="pointer-events-none absolute inset-y-0 z-50 w-px bg-[#ffd60a]"
+            style={{ left: CABECALHO + (linhaDoIma / duration) * largura }}
           />
         )}
+        </div>
       </div>
     </section>
   )
@@ -1147,5 +1180,29 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
       <ControleDoClipe rotulo="opac" titulo="Opacidade" valor={o.opacidade} min={0} max={1} passo={0.05} padrao={1}
         texto={`${Math.round(o.opacidade * 100)}%`} onChange={(v) => ajustar(id, { opacidade: v })} />
     </>
+  )
+}
+
+/** O painel do clipe escolhido, na barra da linha do tempo. */
+function ControlesDoEscolhido() {
+  const escolhido = useProject((s) => s.clipeSelecionado)
+  const selecionar = useProject((s) => s.selecionarClipe)
+  if (!escolhido) return null
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-sm border border-line bg-surface px-2 py-0.5">
+      {escolhido.tipo === 'audio' ? (
+        <ControlesDaTrilha id={escolhido.id} />
+      ) : (
+        <ControlesDaSobreposicao id={escolhido.id} />
+      )}
+      <button
+        type="button"
+        onClick={() => selecionar(null)}
+        aria-label="Fechar os controles do clipe"
+        className="text-ink-3 hover:text-ink"
+      >
+        <X size={9} strokeWidth={2} />
+      </button>
+    </div>
   )
 }

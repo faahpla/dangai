@@ -462,6 +462,8 @@ export interface PublicSettings {
   captionPresets: Record<string, unknown>[]
   /** As Power Bins. Conferidas pelo binSchema. */
   bins: Record<string, unknown>[]
+  /** Curvas da entrada da legenda guardadas. Conferidas pelo curvaGuardadaSchema. */
+  curvasDeEntrada: Record<string, unknown>[]
 }
 
 export interface SettingsPatch {
@@ -473,6 +475,7 @@ export interface SettingsPatch {
   captionStyle?: Record<string, unknown>
   captionPresets?: Record<string, unknown>[]
   bins?: Record<string, unknown>[]
+  curvasDeEntrada?: Record<string, unknown>[]
 }
 
 /**
