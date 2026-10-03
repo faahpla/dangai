@@ -53,6 +53,23 @@ export interface RenderRequest {
   sfxDir: string
   /** Cama de musica por baixo de tudo. null quando o usuario nao escolheu nenhuma. */
   music: MusicBed | null
+  /** Os trechos das faixas de audio da linha do tempo. Vazio = nenhum. */
+  trilhas?: readonly TrechoParaMixar[]
+}
+
+/** Um trecho de faixa de audio, ja resolvido para o mix. */
+export interface TrechoParaMixar {
+  path: string
+  /** Onde entra no video, em segundos. */
+  at: number
+  /** De que ponto do arquivo parte. */
+  inicioSec: number
+  /** Quanto toca. */
+  duracaoSec: number
+  /** dB sobre o arquivo (absoluto). */
+  gainDb: number
+  fadeInSec: number
+  fadeOutSec: number
 }
 
 export interface MusicBed {
@@ -165,6 +182,7 @@ export async function renderVideo(
       outputPath,
       resolveSfx(request),
       resolveMusic(request),
+      (request.trilhas ?? []).filter((t) => t.duracaoSec > 0.01 && existsSync(t.path)),
       request.durationInFrames / VIDEO_FPS,
     )
 
@@ -415,6 +433,7 @@ async function muxWithNormalizedAudio(
   outputPath: string,
   sfx: readonly ResolvedCue[],
   music: MusicBed | null,
+  trilhas: readonly TrechoParaMixar[],
   durationSec: number,
 ): Promise<void> {
   const measured = await measureLoudness(audioPath)
@@ -457,6 +476,10 @@ async function muxWithNormalizedAudio(
   // deixar o final em silencio. O atrim logo abaixo corta no lugar certo, entao
   // o loop infinito nunca chega a segurar o encerramento do ffmpeg.
   if (music) inputs.push('-stream_loop', '-1', '-i', music.path)
+  // Cada trecho le SO o pedaco que toca: -ss e -t antes do -i limitam a leitura.
+  for (const t of trilhas) {
+    inputs.push('-ss', t.inicioSec.toFixed(3), '-t', t.duracaoSec.toFixed(3), '-i', t.path)
+  }
 
   // Os SFX entram por cima da narracao em -12dB, para o nivel de referencia do
   // video continuar sendo a voz, que e o que importa.
@@ -506,6 +529,32 @@ async function muxWithNormalizedAudio(
     )
     labels.push('[mus]')
   }
+
+  /*
+   * AS FAIXAS DE AUDIO: cada trecho com o proprio volume e fades, no instante
+   * dele. O fade de saida e medido no PEDACO que toca, entao cortar o trecho
+   * leva o fade junto para o novo fim -- musica cortada a seco soa truncada.
+   */
+  const primeiraTrilha = sfx.length + 2 + (music ? 1 : 0)
+  trilhas.forEach((t, k) => {
+    const ms = Math.round(t.at * 1000)
+    const entrada = Math.min(t.fadeInSec, t.duracaoSec / 2)
+    const saida = Math.min(t.fadeOutSec, t.duracaoSec / 2)
+    const fades = [
+      entrada > 0 ? `afade=t=in:st=0:d=${entrada.toFixed(3)}` : null,
+      saida > 0 ? `afade=t=out:st=${(t.duracaoSec - saida).toFixed(3)}:d=${saida.toFixed(3)}` : null,
+    ].filter(Boolean)
+    chain.push(
+      [
+        `[${primeiraTrilha + k}:a]aformat=channel_layouts=stereo`,
+        'asetpts=PTS-STARTPTS',
+        ...fades,
+        `volume=${(10 ** (t.gainDb / 20)).toFixed(5)}`,
+        `adelay=${ms}|${ms}[t${k}]`,
+      ].join(','),
+    )
+    labels.push(`[t${k}]`)
+  })
 
   // normalize=0: sem isso o amix divide o volume pelo numero de entradas e a
   // narracao afunda a cada SFX adicionado.

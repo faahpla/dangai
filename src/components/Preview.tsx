@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
-import { familiaDaFonte, medidasDo, VIDEO_FPS } from '@shared/contract'
+import { duracaoDoTrecho, familiaDaFonte, medidasDo, VIDEO_FPS } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
 import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
@@ -64,6 +64,7 @@ export function Preview() {
   const hookSec = useProject((s) => s.hookSec)
   const endText = useProject((s) => s.endText)
   const endSec = useProject((s) => s.endSec)
+  const sobreposicoes = useProject((s) => s.sobreposicoes)
 
   const inputProps = useMemo(
     () =>
@@ -95,6 +96,7 @@ export function Preview() {
               scale: captionScale,
             },
             formato,
+            sobreposicoes,
           )
         : {
             formato,
@@ -111,6 +113,7 @@ export function Preview() {
             captionShadow,
             captionStroke,
             captionScale,
+            sobreposicoes: [],
           },
     [
       plan,
@@ -141,6 +144,7 @@ export function Preview() {
       hookSec,
       endText,
       endSec,
+      sobreposicoes,
     ],
   )
 
@@ -188,6 +192,7 @@ export function Preview() {
           <SyncedAudio url={audio.url} />
           {music && <SyncedAudio url={music.url} volume={musicVolume} loop />}
           <SfxPreview />
+          <TrilhasPreview />
           <Sincronia player={player} plan={plan} images={images} />
         </>
       ) : (
@@ -567,4 +572,67 @@ function Sincronia({
   }, [player, setPlayhead, setPlaying])
 
   return null
+}
+
+/**
+ * As faixas de audio tocando no preview, cada trecho no instante dele.
+ *
+ * Diferente do SFX, que e um disparo, a musica ACOMPANHA a agulha: pular para
+ * o meio de um trecho tem que tocar daquele ponto, e nao do comeco. Cada
+ * trecho e um <audio> que segue o tempo do preview -- dentro do trecho ele toca
+ * no ponto certo do arquivo (com os fades e o volume), fora dele fica calado.
+ */
+function TrilhasPreview() {
+  const trilhas = useProject((s) => s.trilhas)
+  const playing = useProject((s) => s.playing)
+  const playhead = useProject((s) => s.playhead)
+  const elementos = useRef(new Map<string, HTMLAudioElement>())
+
+  useEffect(() => {
+    for (const t of trilhas) {
+      const el = elementos.current.get(t.id)
+      if (!el) continue
+      const toca = duracaoDoTrecho(t)
+      const dentro = playhead >= t.at && playhead < t.at + toca
+      if (!playing || !dentro) {
+        if (!el.paused) el.pause()
+        continue
+      }
+      const local = playhead - t.at
+      const alvo = t.inicioSec + local
+      // O mesmo envelope do render: rampa de entrada, rampa de saida.
+      const entrada = Math.min(t.fadeInSec, toca / 2)
+      const saida = Math.min(t.fadeOutSec, toca / 2)
+      let envelope = 1
+      if (entrada > 0 && local < entrada) envelope = local / entrada
+      if (saida > 0 && local > toca - saida) envelope = Math.min(envelope, (toca - local) / saida)
+      // O <audio> nao passa de 1: ganho positivo so se ouve no MP4.
+      el.volume = Math.min(1, Math.max(0, 10 ** (t.gainDb / 20) * envelope))
+      if (el.paused) {
+        el.currentTime = alvo
+        void el.play().catch(() => undefined)
+      } else if (Math.abs(el.currentTime - alvo) > 0.3) {
+        el.currentTime = alvo
+      }
+    }
+  }, [trilhas, playing, playhead])
+
+  return (
+    <>
+      {trilhas.map((t) =>
+        t.url ? (
+          <audio
+            key={t.id}
+            ref={(el) => {
+              if (el) elementos.current.set(t.id, el)
+              else elementos.current.delete(t.id)
+            }}
+            src={t.url}
+            preload="auto"
+            className="hidden"
+          />
+        ) : null,
+      )}
+    </>
+  )
 }

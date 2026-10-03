@@ -1081,6 +1081,58 @@ export const captionPresetSchema = z.object({
 })
 export type CaptionPreset = z.infer<typeof captionPresetSchema>
 
+/**
+ * Uma POWER BIN: uma colecao de arquivos que ele arrasta para a linha do tempo.
+ *
+ * "Uma funcao tipo as Power Bins do DaVinci, nessas bins eu colocaria todos os
+ * meus SFX, e seria mais facil de fazer o drag and drop onde eu quero." Mora
+ * nas configuracoes, e nao no projeto: e o acervo DELE, que serve a todo video.
+ *
+ * Uma bin junta arquivos soltos (`arquivos`) e, se quiser, uma PASTA inteira
+ * (`pasta`), que e relida ao abrir -- largar um som novo na pasta ja o poe na
+ * bin, sem passo nenhum.
+ */
+export const binSchema = z.object({
+  id: z.string(),
+  nome: z.string().trim().min(1).max(40),
+  pasta: z.string().nullable().default(null),
+  arquivos: z.array(z.string()).default([]),
+})
+export type Bin = z.infer<typeof binSchema>
+
+/**
+ * Uma SOBREPOSICAO na faixa de video: o .mov com fundo transparente que ele
+ * faz no editor (seta, circulo, emoji animado), ou uma imagem PNG.
+ *
+ * "Track de video tambem, pra poder adicionar meus .mov que eu faco no editor,
+ * coisas pra auxiliar no visual, tipo setas." Fica POR CIMA das cenas e por
+ * baixo das legendas. `x` e `y` deslocam do centro em porcento do quadro,
+ * `escala` 1 e o tamanho em que o arquivo cobre o quadro (contain).
+ *
+ * O arquivo que toca e uma copia preparada pelo main (ver
+ * electron/services/sobreposicao): .mov vira WebM VP9 com transparencia, que e
+ * o que o preview e o render sabem desenhar com fundo vazado.
+ */
+export const sobreposicaoSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  fileName: z.string(),
+  tipo: z.enum(['video', 'image']),
+  faixa: z.number().int().nonnegative(),
+  at: z.number().nonnegative(),
+  /** Duracao do arquivo. Imagem nao tem: vale `usarSec`. */
+  durationSec: z.number().positive(),
+  inicioSec: z.number().nonnegative().default(0),
+  usarSec: z.number().positive().nullable().default(null),
+  x: z.number().min(-100).max(100).default(0),
+  y: z.number().min(-100).max(100).default(0),
+  escala: z.number().min(0.05).max(4).default(1),
+  opacidade: z.number().min(0).max(1).default(1),
+  /** Aspecto do arquivo, para a miniatura da faixa. */
+  aspecto: z.number().positive().default(16 / 9),
+})
+export type SobreposicaoSalva = z.infer<typeof sobreposicaoSchema>
+
 export const renderPropsSchema = z.object({
   /**
    * O quadro em que este video e montado.
@@ -1259,6 +1311,27 @@ export const renderPropsSchema = z.object({
   ),
   /** A curva da entrada elastica. Com default = a mola de antes, para props antigas. */
   captionAnimationCurve: curvaDaEntradaSchema.default(CURVA_DA_ENTRADA_PADRAO),
+  /**
+   * As sobreposicoes da faixa de video, ja em quadros e com a URL que toca.
+   * Por cima das cenas, por baixo das legendas. Default para props antigas.
+   */
+  sobreposicoes: z
+    .array(
+      z.object({
+        url: z.string(),
+        tipo: z.enum(['video', 'image']),
+        from: z.number().int().nonnegative(),
+        durationInFrames: z.number().int().positive(),
+        inicioFrames: z.number().int().nonnegative(),
+        x: z.number(),
+        y: z.number(),
+        escala: z.number().positive(),
+        opacidade: z.number().min(0).max(1),
+        /** Faixa: a de numero maior fica por cima. */
+        faixa: z.number().int().nonnegative(),
+      }),
+    )
+    .default([]),
   /** Cor so na palavra dita, ou na legenda inteira. */
   captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
@@ -1361,6 +1434,44 @@ export const CAPTION_CHARS_PER_LINE = 18
  * para dar errado.
  */
 export const MUSIC_GAIN_DB_DEFAULT = -20
+
+/**
+ * Um trecho numa FAIXA DE AUDIO da linha do tempo -- musica, ambiente, o que
+ * ele quiser por por baixo da narracao, onde quiser.
+ *
+ * "Quero adicionar track audio, para eu add minhas musicas no video." A cama
+ * de musica de antes (uma faixa so, em loop, o video inteiro) continua; isto e
+ * o resto: varios trechos, varias faixas, cada um com o seu pedaco do arquivo,
+ * o seu volume e os seus fades.
+ *
+ * O volume aqui e ABSOLUTO (dB sobre o arquivo), e nao relativo ao nivel dos
+ * SFX: musica e outra coisa, e nasce em -20 dB, o mesmo da cama de musica.
+ */
+export const trechoDeAudioSchema = z.object({
+  id: z.string(),
+  path: z.string(),
+  fileName: z.string(),
+  /** Faixa, de 0 em diante. Faixas sao criadas conforme ele usa. */
+  faixa: z.number().int().nonnegative(),
+  /** Onde o trecho entra no video, em segundos. */
+  at: z.number().nonnegative(),
+  /** Duracao do ARQUIVO inteiro. */
+  durationSec: z.number().positive(),
+  /** De que ponto do arquivo o trecho parte. */
+  inicioSec: z.number().nonnegative().default(0),
+  /** Quanto toca, em segundos. null = ate o fim do arquivo. */
+  usarSec: z.number().positive().nullable().default(null),
+  gainDb: z.number().min(-40).max(12).default(MUSIC_GAIN_DB_DEFAULT),
+  fadeInSec: z.number().min(0).max(10).default(0.5),
+  fadeOutSec: z.number().min(0).max(10).default(1),
+  peaks: z.array(z.number().min(0).max(1)).default([]),
+})
+export type TrechoDeAudioSalvo = z.infer<typeof trechoDeAudioSchema>
+
+/** Quanto o trecho toca de fato: o pedaco escolhido, ou ate o fim do arquivo. */
+export function duracaoDoTrecho(t: { durationSec: number; inicioSec: number; usarSec: number | null }): number {
+  return Math.max(0, t.usarSec ?? t.durationSec - t.inicioSec)
+}
 export const MUSIC_GAIN_DB_MIN = -34
 export const MUSIC_GAIN_DB_MAX = -6
 

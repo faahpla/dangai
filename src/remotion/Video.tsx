@@ -5,6 +5,9 @@ import {
   continueRender,
   delayRender,
   getRemotionEnvironment,
+  Img,
+  OffthreadVideo,
+  Sequence,
   useCurrentFrame,
 } from 'remotion'
 import { TransitionSeries } from '@remotion/transitions'
@@ -62,6 +65,7 @@ export function Video({
   captionAnimation,
   captionAnimationFrames,
   captionAnimationCurve,
+  sobreposicoes,
   captionMark,
   captionShadow,
   captionStroke,
@@ -140,6 +144,12 @@ export function Video({
         ))}
       </TransitionSeries>
 
+      {/*
+        A FAIXA DE VIDEO: por cima das cenas, por baixo das legendas -- a seta
+        aponta para a cena, e a legenda continua legivel por cima de tudo.
+      */}
+      <Sobreposicoes itens={sobreposicoes} />
+
       {fontsReady && captions.length > 0 && (
         <Captions
           blocks={captions}
@@ -210,5 +220,47 @@ function CamaDoPreview({ scenes }: { scenes: RenderProps['scenes'] }) {
         objectFit: 'cover',
       }}
     />
+  )
+}
+
+/**
+ * As sobreposicoes da faixa de video. A faixa de numero maior fica por cima,
+ * como nos editores.
+ *
+ * O arquivo cobre o quadro com `contain` -- um .mov exportado no tamanho do
+ * video cai exatamente no lugar em que foi desenhado -- e depois anda e
+ * escala pelos controles da faixa. `transparent` faz o render extrair o quadro
+ * com o canal alfa: sem ele o fundo vazado viraria preto.
+ */
+function Sobreposicoes({ itens }: { itens: RenderProps['sobreposicoes'] }) {
+  if (itens.length === 0) return null
+  const ordenadas = [...itens].sort((a, b) => a.faixa - b.faixa)
+  const cobre = { width: '100%', height: '100%', objectFit: 'contain' as const }
+  return (
+    <>
+      {ordenadas.map((o, i) => (
+        <Sequence key={`${o.url}-${o.from}-${i}`} from={o.from} durationInFrames={o.durationInFrames} layout="none">
+          <AbsoluteFill
+            style={{
+              transform: `translate(${o.x}%, ${o.y}%) scale(${o.escala})`,
+              transformOrigin: 'center center',
+              opacity: o.opacidade,
+            }}
+          >
+            {o.tipo === 'video' ? (
+              <OffthreadVideo
+                src={o.url}
+                muted
+                transparent
+                trimBefore={o.inicioFrames > 0 ? o.inicioFrames : undefined}
+                style={cobre}
+              />
+            ) : (
+              <Img src={o.url} style={cobre} />
+            )}
+          </AbsoluteFill>
+        </Sequence>
+      ))}
+    </>
   )
 }

@@ -144,6 +144,8 @@ export function RenderBar() {
     (s) => s.scriptBlocks !== null && Object.values(s.blockClips).some((c) => c.length > 0),
   )
   const captionsOpen = useProject((s) => s.captionsOpen)
+  const binsOpen = useProject((s) => s.binsOpen)
+  const openBins = useProject((s) => s.openBins)
   const openCaptions = useProject((s) => s.openCaptions)
   const togglePlay = useProject((s) => s.togglePlay)
   const upscale = useProject((s) => s.upscale)
@@ -222,6 +224,23 @@ export function RenderBar() {
         >
           <Pencil size={12} strokeWidth={1.5} />
           Editar
+        </button>
+      )}
+
+      {!isRendering && (
+        <button
+          type="button"
+          onClick={() => openBins(!binsOpen)}
+          title="Power Bins: seus SFX, musicas e .mov, para arrastar na linha do tempo"
+          className={[
+            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
+            binsOpen
+              ? 'border-line-strong bg-elevated text-ink'
+              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
+          ].join(' ')}
+        >
+          <FolderOpen size={12} strokeWidth={1.5} />
+          Bins
         </button>
       )}
 

@@ -1,10 +1,11 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
-import { basename, extname } from 'node:path'
+import { existsSync, readdirSync } from 'node:fs'
+import { basename, extname, join } from 'node:path'
 import {
   AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   IPC,
   type AnalyzeArgs,
   type AutomountRequest,
@@ -24,6 +25,8 @@ import {
   type StartRenderArgs,
   type TiraDaCena,
   type LegendasSincronizadas,
+  type ArquivoDaBin,
+  classifyFile,
 } from '@shared/channels'
 import type {
   AnalysisResult,
@@ -79,6 +82,7 @@ import {
   upscaleReady,
 } from './services/upscale'
 import { inverterAsset } from './services/assets'
+import { prepararSobreposicao } from './services/sobreposicao'
 import { tiraDoClipe } from './services/clips'
 import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
@@ -218,6 +222,52 @@ export function registerIpc(): void {
       return { tempos: r.tempos.map(({ start, end }) => ({ start, end })), score: r.score }
     },
   )
+
+  handle<
+    [string],
+    { url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }
+  >(IPC.prepararSobreposicao, async (path) => {
+    if (!existsSync(path)) throw new Error(`Esse arquivo nao esta mais no disco: ${basename(path)}`)
+    const pronta = await prepararSobreposicao(path)
+    return { url: publish(pronta.arquivo), tipo: pronta.tipo, durationSec: pronta.durationSec, aspecto: pronta.aspecto }
+  })
+
+  handle<[string], string | null>(IPC.escolherPasta, async (titulo) => {
+    const r = await dialog.showOpenDialog({ title: titulo, properties: ['openDirectory'] })
+    return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0]!
+  })
+
+  /*
+   * A pasta de uma Power Bin: os arquivos de midia dela e das subpastas, ate
+   * tres niveis e 3 mil arquivos. Pasta de SFX costuma ser organizada em
+   * subpastas (whoosh/, impacto/...), e a bin mostra tudo de uma vez.
+   */
+  handle<[string], ArquivoDaBin[]>(IPC.listarPasta, async (pasta) => {
+    if (!existsSync(pasta)) throw new Error('Essa pasta nao existe mais.')
+    const achados: ArquivoDaBin[] = []
+    const andar = (dir: string, nivel: number): void => {
+      if (nivel > 3 || achados.length >= 3000) return
+      let itens: import('node:fs').Dirent[]
+      try {
+        itens = readdirSync(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const item of itens) {
+        if (achados.length >= 3000) return
+        const caminho = join(dir, item.name)
+        if (item.isDirectory()) andar(caminho, nivel + 1)
+        else {
+          const tipo = classifyFile(caminho)
+          if (tipo === 'audio' || tipo === 'video' || tipo === 'image') {
+            achados.push({ path: caminho, nome: item.name, tipo })
+          }
+        }
+      }
+    }
+    andar(pasta, 0)
+    return achados.sort((a, b) => a.path.localeCompare(b.path, 'pt-BR', { numeric: true }))
+  })
 
   // ----------------------------------------------------------------- apelidos
 
@@ -381,6 +431,8 @@ export function registerIpc(): void {
           extensions: [
             ...AUDIO_EXTENSIONS,
             ...IMAGE_EXTENSIONS,
+            // Clipes e os .mov de sobreposicao -- as Power Bins usam este dialogo.
+            ...VIDEO_EXTENSIONS,
             'srt',
             'txt',
             'md',
@@ -392,6 +444,7 @@ export function registerIpc(): void {
         { name: 'Roteiro', extensions: ['txt', 'md'] },
         { name: 'Audio', extensions: [...AUDIO_EXTENSIONS] },
         { name: 'Imagens', extensions: [...IMAGE_EXTENSIONS] },
+        { name: 'Videos', extensions: [...VIDEO_EXTENSIONS] },
       ],
     })
     return result.canceled ? [] : result.filePaths

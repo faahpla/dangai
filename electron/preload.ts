@@ -20,6 +20,7 @@ import {
   type StartRenderArgs,
   type TiraDaCena,
   type LegendasSincronizadas,
+  type ArquivoDaBin,
   type UpdateStatus,
 } from '@shared/channels'
 import type {
@@ -66,6 +67,14 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.libraryClipUrl, path) as Promise<IpcResult<string>>,
   libraryClipStrip: (path) =>
     ipcRenderer.invoke(IPC.libraryClipStrip, path) as Promise<IpcResult<TiraDaCena>>,
+  prepararSobreposicao: (path) =>
+    ipcRenderer.invoke(IPC.prepararSobreposicao, path) as Promise<
+      IpcResult<{ url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }>
+    >,
+  escolherPasta: (titulo) =>
+    ipcRenderer.invoke(IPC.escolherPasta, titulo) as Promise<IpcResult<string | null>>,
+  listarPasta: (pasta) =>
+    ipcRenderer.invoke(IPC.listarPasta, pasta) as Promise<IpcResult<ArquivoDaBin[]>>,
   sincronizarLegendas: (audioPath, palavras) =>
     ipcRenderer.invoke(IPC.sincronizarLegendas, audioPath, palavras) as Promise<IpcResult<LegendasSincronizadas>>,
 

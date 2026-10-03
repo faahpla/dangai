@@ -3,6 +3,8 @@ import { useProject } from '@/store/project'
 import { startAutosave } from '@/store/autosave'
 import { desfazer, refazer, startUndo } from '@/store/undo'
 import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legenda'
+import { carregarBins } from '@/store/bins'
+import { Bins } from '@/components/Bins'
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
@@ -39,6 +41,7 @@ export function App() {
   const applyRenderProgress = useProject((s) => s.applyRenderProgress)
   const setBusy = useProject((s) => s.setBusy)
   const captionsOpen = useProject((s) => s.captionsOpen)
+  const binsOpen = useProject((s) => s.binsOpen)
   const refreshSfx = useProject((s) => s.refreshSfx)
   const refreshFontes = useProject((s) => s.refreshFontes)
   const setUpdate = useProject((s) => s.setUpdate)
@@ -92,6 +95,7 @@ export function App() {
    */
   useEffect(() => startEstiloLegenda(), [])
   useEffect(() => void aplicarEstiloGuardado(), [])
+  useEffect(() => void carregarBins(), [])
   useEffect(() => void checkAutosave(), [checkAutosave])
 
   /*
@@ -296,7 +300,7 @@ export function App() {
                 A legenda tem prioridade: quando ele abre o editor e porque e
                 nele que quer mexer.
               */}
-              {captionsOpen ? <CaptionEditor /> : <SceneEdit />}
+              {captionsOpen ? <CaptionEditor /> : binsOpen ? <Bins /> : <SceneEdit />}
             </div>
             <Preview />
           </div>

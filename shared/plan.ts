@@ -5,6 +5,7 @@ import {
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CURVA_DA_ENTRADA_PADRAO,
   type CurvaDaEntrada,
+  type SobreposicaoSalva,
   CAPTION_MARK_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
   CAPTION_STROKE_DEFAULT,
@@ -421,7 +422,30 @@ export function toRenderProps(
    * valendo -- e porque 'short' e o que todo projeto salvo antes disto e.
    */
   formato: Formato = FORMATO_PADRAO,
+  /** A faixa de video: as sobreposicoes, com a URL do arquivo preparado. */
+  sobreposicoesDoProjeto: readonly (SobreposicaoSalva & { url: string })[] = [],
 ): RenderProps {
+  /*
+   * As sobreposicoes em quadros. Sem URL (projeto recem-aberto, arquivo ainda
+   * sendo preparado) fica de fora em vez de quebrar o video.
+   */
+  const sobreposicoes = sobreposicoesDoProjeto
+    .filter((o) => o.url)
+    .map((o) => {
+      const toca = Math.max(o.usarSec ?? o.durationSec - o.inicioSec, 0.05)
+      return {
+        url: o.url,
+        tipo: o.tipo,
+        from: Math.max(0, Math.round(o.at * VIDEO_FPS)),
+        durationInFrames: Math.max(1, Math.round(toca * VIDEO_FPS)),
+        inicioFrames: Math.max(0, Math.round(o.inicioSec * VIDEO_FPS)),
+        x: o.x,
+        y: o.y,
+        escala: o.escala,
+        opacidade: o.opacidade,
+        faixa: o.faixa,
+      }
+    })
   const quadro = medidasDo(formato)
   const aspectoDoQuadro = quadro.width / quadro.height
   const captionFont = legenda.font ?? null
@@ -447,6 +471,7 @@ export function toRenderProps(
       captionAnimation,
       captionAnimationFrames,
       captionAnimationCurve,
+      sobreposicoes,
       captionMark,
       captionShadow,
       captionStroke,
@@ -660,6 +685,7 @@ export function toRenderProps(
     captionAnimation,
     captionAnimationFrames,
     captionAnimationCurve,
+    sobreposicoes,
     captionMark,
     captionShadow,
     captionStroke,

@@ -74,6 +74,9 @@ export const IPC = {
   libraryClipUrl: 'library:clip-url',
   libraryClipStrip: 'library:clip-strip',
   sincronizarLegendas: 'captions:sync',
+  escolherPasta: 'dialog:pasta',
+  prepararSobreposicao: 'timeline:sobreposicao',
+  listarPasta: 'bins:listar-pasta',
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
@@ -134,6 +137,16 @@ export interface StartRenderArgs {
   }[]
   /** Cama de musica, quando ha uma escolhida. */
   music: { path: string; gainDb: number } | null
+  /** Os trechos das faixas de audio, ja com o pedaco que toca. */
+  trilhas?: readonly {
+    path: string
+    at: number
+    inicioSec: number
+    duracaoSec: number
+    gainDb: number
+    fadeInSec: number
+    fadeOutSec: number
+  }[]
 }
 
 /** Uma faixa de musica escolhida pelo usuario. */
@@ -172,6 +185,13 @@ export interface DropExpansion {
 export interface LegendasSincronizadas {
   tempos: { start: number; end: number }[]
   score: number
+}
+
+/** Um arquivo de midia, como as Power Bins o listam. */
+export interface ArquivoDaBin {
+  path: string
+  nome: string
+  tipo: 'audio' | 'video' | 'image'
 }
 
 export interface TiraDaCena {
@@ -518,6 +538,17 @@ export interface DangaiBridge {
    */
   libraryClipStrip(path: string): Promise<IpcResult<TiraDaCena>>
   sincronizarLegendas(audioPath: string, palavras: readonly string[]): Promise<IpcResult<LegendasSincronizadas>>
+  /**
+   * Prepara um arquivo para a faixa de video: devolve a URL que toca (o .mov
+   * vira WebM com transparencia), o tipo, a duracao e o aspecto.
+   */
+  prepararSobreposicao(path: string): Promise<
+    IpcResult<{ url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }>
+  >
+  /** Dialogo de escolher pasta. null = fechou sem escolher. */
+  escolherPasta(titulo: string): Promise<IpcResult<string | null>>
+  /** Os arquivos de midia (audio, video, imagem) de uma pasta e das subpastas. */
+  listarPasta(pasta: string): Promise<IpcResult<ArquivoDaBin[]>>
   /**
    * Andamento da varredura. So fala quando ha episodio novo para preparar --
    * a primeira varredura de um acervo grande leva perto de um minuto gerando as

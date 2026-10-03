@@ -21,6 +21,8 @@ import {
   HOOK_SEC_DEFAULT,
   metadataSchema,
   MUSIC_GAIN_DB_DEFAULT,
+  trechoDeAudioSchema,
+  sobreposicaoSchema,
   PLAN_ORIGINS,
   scenePlanSchema,
   transcriptSchema,
@@ -239,6 +241,10 @@ export const projectFileSchema = z.object({
     )
     .default([]),
   sfxEnabled: z.boolean(),
+  /** As faixas de audio (musica e afins). Default para projeto antigo abrir igual. */
+  trilhas: z.array(trechoDeAudioSchema).default([]),
+  /** A faixa de video (sobreposicoes). Default para projeto antigo abrir igual. */
+  sobreposicoes: z.array(sobreposicaoSchema).default([]),
   /** Cama de musica. Com default para projeto salvo antes dela existir abrir igual. */
   music: referenceSchema.nullable().default(null),
   musicGainDb: z.number().default(MUSIC_GAIN_DB_DEFAULT),

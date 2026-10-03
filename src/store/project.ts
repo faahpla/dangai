@@ -17,8 +17,10 @@ import {
   type CurvaDaEntrada,
   REGRAS_DA_LEGENDA_PADRAO,
   regrasDaLegendaSchema,
+  duracaoDoTrecho,
   type RegrasDaLegenda,
   type CaptionPreset,
+  type Bin,
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_ANIMATION_FRAMES_MAX,
@@ -54,6 +56,8 @@ import {
 } from '@shared/contract'
 import type {
   AudioAnalysis,
+  TrechoDeAudioSalvo,
+  SobreposicaoSalva,
   Word,
   Formato,
   CaptionAnimation,
@@ -257,6 +261,11 @@ export interface ProjectState {
   captionRules: RegrasDaLegenda
   /** Os estilos de legenda guardados com nome. Moram nas configuracoes. */
   captionPresets: CaptionPreset[]
+  /** As Power Bins. Moram nas configuracoes; ver @/store/bins. */
+  bins: Bin[]
+  /** O painel das bins no lugar do painel do bloco. */
+  binsOpen: boolean
+  openBins: (open: boolean) => void
   /** O upscale de um MP4 pronto em andamento. null = nenhum. */
   videoPronto: { feitos: number; total: number; nome: string } | null
   /** O ultimo MP4 pronto melhorado, para a barra oferecer abrir a pasta. */
@@ -272,6 +281,16 @@ export interface ProjectState {
    * Guarda o CAMINHO e nao o nome: ele arrasta de onde quiser, sem precisar
    * mover o arquivo para a pasta do app.
    */
+  /**
+   * Os trechos das FAIXAS DE AUDIO (musica e afins), cada um na faixa dele.
+   * Ver trechoDeAudioSchema. A URL e do servidor local, reposta ao abrir.
+   */
+  trilhas: (TrechoDeAudioSalvo & { url: string })[]
+  /**
+   * A FAIXA DE VIDEO: setas, circulos, .mov com fundo vazado, PNG. Ver
+   * sobreposicaoSchema. A URL e do arquivo preparado pelo main, reposta ao abrir.
+   */
+  sobreposicoes: (SobreposicaoSalva & { url: string })[]
   sfxManual: {
     id: string
     path: string
@@ -532,6 +551,28 @@ export interface ProjectState {
   addSfxAt: (paths: readonly string[], seconds: number) => Promise<void>
   /** Reencontra as URLs dos sons ao abrir um projeto. */
   refreshSfxManual: () => Promise<void>
+  /** Poe arquivos de audio numa faixa, a partir de `seconds`. */
+  addTrilhasAt: (paths: readonly string[], seconds: number, faixa: number) => Promise<void>
+  /** Move o trecho no tempo e, se pedir, para outra faixa. */
+  moveTrilha: (id: string, at: number, faixa?: number) => void
+  /** Corta pelo FIM: quanto toca, em segundos. null devolve ate o fim do arquivo. */
+  cortarFimDaTrilha: (id: string, toca: number | null) => void
+  /** Corta pelo COMECO: o trecho passa a entrar em `at`, comendo o inicio do arquivo. */
+  cortarInicioDaTrilha: (id: string, at: number) => void
+  ajustarTrilha: (id: string, patch: Partial<Pick<TrechoDeAudioSalvo, 'gainDb' | 'fadeInSec' | 'fadeOutSec'>>) => void
+  removeTrilha: (id: string) => void
+  refreshTrilhas: () => Promise<void>
+  /** Poe arquivos (video ou imagem) numa faixa de video, a partir de `seconds`. */
+  addSobreposicoesAt: (paths: readonly string[], seconds: number, faixa: number) => Promise<void>
+  moveSobreposicao: (id: string, at: number, faixa?: number) => void
+  cortarFimDaSobreposicao: (id: string, toca: number | null) => void
+  cortarInicioDaSobreposicao: (id: string, at: number) => void
+  ajustarSobreposicao: (
+    id: string,
+    patch: Partial<Pick<SobreposicaoSalva, 'x' | 'y' | 'escala' | 'opacidade'>>,
+  ) => void
+  removeSobreposicao: (id: string) => void
+  refreshSobreposicoes: () => Promise<void>
   /** Arrasta um som ja posto para outro instante. */
   moveSfx: (id: string, seconds: number) => void
   /** Corta o som: quanto dele toca. null devolve o arquivo inteiro. */
@@ -1001,9 +1042,14 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionStroke: CAPTION_STROKE_DEFAULT,
   captionRules: REGRAS_DA_LEGENDA_PADRAO,
   captionPresets: [],
+  bins: [],
+  binsOpen: false,
+  openBins: (open) => set(open ? { binsOpen: true, captionsOpen: false } : { binsOpen: false }),
   videoPronto: null,
   videoProntoSaida: null,
   sfxManual: [],
+  trilhas: [],
+  sobreposicoes: [],
   curvePresets: [],
   upscale: false,
   captionY: CAPTION_Y_DEFAULT,
@@ -2519,7 +2565,7 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   openScript: (open) => set({ scriptOpen: open }),
 
-  openCaptions: (open) => set({ captionsOpen: open }),
+  openCaptions: (open) => set(open ? { captionsOpen: true, binsOpen: false } : { captionsOpen: false }),
 
   /**
    * Junta blocos vizinhos. O bloco resultante vai do inicio do primeiro ao fim
@@ -2868,6 +2914,191 @@ export const useProject = create<ProjectState>((set, get) => ({
         projectDirty: true,
       }))
     }
+  },
+
+  addTrilhasAt: async (paths, seconds, faixa) => {
+    const audios = paths.filter((p) => classifyFile(p) === 'audio')
+    let cursor = Math.max(0, seconds)
+    for (const [i, path] of audios.entries()) {
+      const r = await window.dangai.analyzeAudio(path)
+      if (!r.ok) {
+        set({ error: r.error })
+        continue
+      }
+      const trecho = {
+        id: `trilha-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+        path,
+        fileName: r.value.fileName,
+        faixa,
+        at: cursor,
+        durationSec: r.value.durationSec,
+        inicioSec: 0,
+        usarSec: null,
+        gainDb: MUSIC_GAIN_DB_DEFAULT,
+        fadeInSec: 0.5,
+        fadeOutSec: 1,
+        peaks: reduzirPicos(r.value.peaks, 120),
+        url: r.value.url,
+      }
+      // Soltar varios de uma vez enfileira na mesma faixa, um depois do outro.
+      cursor += r.value.durationSec
+      set((state) => ({ trilhas: [...state.trilhas, trecho], projectDirty: true }))
+    }
+  },
+
+  moveTrilha: (id, at, faixa) =>
+    set((state) => ({
+      trilhas: state.trilhas.map((t) =>
+        t.id === id ? { ...t, at: Math.max(0, at), faixa: faixa === undefined ? t.faixa : Math.max(0, faixa) } : t,
+      ),
+      projectDirty: true,
+    })),
+
+  cortarFimDaTrilha: (id, toca) =>
+    set((state) => ({
+      trilhas: state.trilhas.map((t) => {
+        if (t.id !== id) return t
+        if (toca === null) return { ...t, usarSec: null }
+        const max = t.durationSec - t.inicioSec
+        return { ...t, usarSec: Math.min(Math.max(toca, 0.1), max) }
+      }),
+      projectDirty: true,
+    })),
+
+  cortarInicioDaTrilha: (id, at) =>
+    set((state) => ({
+      trilhas: state.trilhas.map((t) => {
+        if (t.id !== id) return t
+        /*
+         * Puxar a borda ESQUERDA: o fim fica onde estava, e o trecho passa a
+         * entrar mais tarde (comendo o comeco do arquivo) ou mais cedo
+         * (devolvendo o que tinha sido comido). Nao volta antes do comeco do
+         * arquivo nem passa do proprio fim.
+         */
+        const fim = t.at + duracaoDoTrecho(t)
+        const novoAt = Math.min(Math.max(at, t.at - t.inicioSec, 0), fim - 0.1)
+        const delta = novoAt - t.at
+        return { ...t, at: novoAt, inicioSec: t.inicioSec + delta, usarSec: fim - novoAt }
+      }),
+      projectDirty: true,
+    })),
+
+  ajustarTrilha: (id, patch) =>
+    set((state) => ({
+      trilhas: state.trilhas.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+      projectDirty: true,
+    })),
+
+  removeTrilha: (id) =>
+    set((state) => ({ trilhas: state.trilhas.filter((t) => t.id !== id), projectDirty: true })),
+
+  refreshTrilhas: async () => {
+    const atuais = get().trilhas
+    if (atuais.length === 0) return
+    const repostos = await Promise.all(
+      atuais.map(async (t) => {
+        const r = await window.dangai.analyzeAudio(t.path)
+        return r.ok ? { ...t, url: r.value.url } : t
+      }),
+    )
+    set({ trilhas: repostos })
+  },
+
+  addSobreposicoesAt: async (paths, seconds, faixa) => {
+    const visuais = paths.filter((p) => {
+      const t = classifyFile(p)
+      return t === 'video' || t === 'image'
+    })
+    let cursor = Math.max(0, seconds)
+    for (const [i, path] of visuais.entries()) {
+      set({ busy: 'Preparando o video para a faixa...' })
+      const r = await window.dangai.prepararSobreposicao(path)
+      set({ busy: null })
+      if (!r.ok) {
+        set({ error: r.error })
+        continue
+      }
+      const imagem = r.value.tipo === 'image'
+      const nova = {
+        id: `sobre-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+        path,
+        fileName: path.split(/[\\/]/).pop() ?? path,
+        tipo: r.value.tipo,
+        faixa,
+        at: cursor,
+        durationSec: r.value.durationSec,
+        inicioSec: 0,
+        // Imagem nasce com 3 s na tela; video, inteiro.
+        usarSec: imagem ? 3 : null,
+        x: 0,
+        y: 0,
+        escala: 1,
+        opacidade: 1,
+        aspecto: r.value.aspecto,
+        url: r.value.url,
+      }
+      cursor += imagem ? 3 : r.value.durationSec
+      set((state) => ({ sobreposicoes: [...state.sobreposicoes, nova], projectDirty: true }))
+    }
+  },
+
+  moveSobreposicao: (id, at, faixa) =>
+    set((state) => ({
+      sobreposicoes: state.sobreposicoes.map((o) =>
+        o.id === id ? { ...o, at: Math.max(0, at), faixa: faixa === undefined ? o.faixa : Math.max(0, faixa) } : o,
+      ),
+      projectDirty: true,
+    })),
+
+  cortarFimDaSobreposicao: (id, toca) =>
+    set((state) => ({
+      sobreposicoes: state.sobreposicoes.map((o) => {
+        if (o.id !== id) return o
+        if (toca === null) return { ...o, usarSec: o.tipo === 'image' ? 3 : null }
+        return { ...o, usarSec: Math.min(Math.max(toca, 0.1), o.durationSec - o.inicioSec) }
+      }),
+      projectDirty: true,
+    })),
+
+  cortarInicioDaSobreposicao: (id, at) =>
+    set((state) => ({
+      sobreposicoes: state.sobreposicoes.map((o) => {
+        if (o.id !== id) return o
+        const toca = o.usarSec ?? o.durationSec - o.inicioSec
+        const fim = o.at + toca
+        // Imagem nao tem "comeco do arquivo": a borda esquerda so move a entrada.
+        const piso = o.tipo === 'image' ? 0 : Math.max(o.at - o.inicioSec, 0)
+        const novoAt = Math.min(Math.max(at, piso), fim - 0.1)
+        const delta = novoAt - o.at
+        return {
+          ...o,
+          at: novoAt,
+          inicioSec: o.tipo === 'image' ? 0 : o.inicioSec + delta,
+          usarSec: fim - novoAt,
+        }
+      }),
+      projectDirty: true,
+    })),
+
+  ajustarSobreposicao: (id, patch) =>
+    set((state) => ({
+      sobreposicoes: state.sobreposicoes.map((o) => (o.id === id ? { ...o, ...patch } : o)),
+      projectDirty: true,
+    })),
+
+  removeSobreposicao: (id) =>
+    set((state) => ({ sobreposicoes: state.sobreposicoes.filter((o) => o.id !== id), projectDirty: true })),
+
+  refreshSobreposicoes: async () => {
+    const atuais = get().sobreposicoes
+    if (atuais.length === 0) return
+    const repostos = await Promise.all(
+      atuais.map(async (o) => {
+        const r = await window.dangai.prepararSobreposicao(o.path)
+        return r.ok ? { ...o, url: r.value.url } : o
+      }),
+    )
+    set({ sobreposicoes: repostos })
   },
 
   refreshSfxManual: async () => {
@@ -3352,6 +3583,7 @@ export const useProject = create<ProjectState>((set, get) => ({
           scale: get().captionScale,
         },
         get().formato,
+        get().sobreposicoes,
       ),
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
@@ -3373,6 +3605,15 @@ export const useProject = create<ProjectState>((set, get) => ({
             }))
           : sfxCuesFor(plan.scenes, sfxFiles),
       music: music ? { path: music.path, gainDb: musicGainDb } : null,
+      trilhas: get().trilhas.map((t) => ({
+        path: t.path,
+        at: t.at,
+        inicioSec: t.inicioSec,
+        duracaoSec: duracaoDoTrecho(t),
+        gainDb: t.gainDb,
+        fadeInSec: t.fadeInSec,
+        fadeOutSec: t.fadeOutSec,
+      })),
     })
 
     if (!result.ok) {
@@ -3583,6 +3824,8 @@ export const useProject = create<ProjectState>((set, get) => ({
        * nao querem dizer nada nele.
        */
       sfxManual: [],
+      trilhas: [],
+      sobreposicoes: [],
       // Volta ao padrao junto com o resto: sem isto, ter ligado o SFX num
       // projeto o traria ligado para o proximo, que e justamente o som
       // entrando sem ninguem pedir.
@@ -3651,6 +3894,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       captionStroke: state.captionStroke,
       // A URL fica de fora: ela e desta sessao e nao vale nada amanha.
       sfxManual: state.sfxManual.map(({ url: _fora, ...resto }) => resto),
+      trilhas: state.trilhas.map(({ url: _fora, ...resto }) => resto),
+      sobreposicoes: state.sobreposicoes.map(({ url: _fora, ...resto }) => resto),
       captionY: state.captionY,
       captionScale: state.captionScale,
       sfxEnabled: state.sfxEnabled,
@@ -3720,6 +3965,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     // dela na pasta -- ou derruba a escolha, se o arquivo nao estiver mais la.
     await get().refreshFontes()
     await get().refreshSfxManual()
+    await get().refreshTrilhas()
+    await get().refreshSobreposicoes()
   },
 
   checkAutosave: async () => {
@@ -3745,6 +3992,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     // Mesmo motivo do openProject: a fonte volta pelo nome e precisa da URL.
     await get().refreshFontes()
     await get().refreshSfxManual()
+    await get().refreshTrilhas()
+    await get().refreshSobreposicoes()
   },
 
   discardAutosave: async () => {
@@ -3959,6 +4208,8 @@ async function applyProjectFile(
       captionStroke: file.captionStroke,
       // Sem URL ainda; `refreshSfxManual` a repoe logo depois de abrir.
       sfxManual: file.sfxManual.map((s) => ({ ...s, url: '' })),
+      trilhas: file.trilhas.map((t) => ({ ...t, url: '' })),
+      sobreposicoes: file.sobreposicoes.map((o) => ({ ...o, url: '' })),
       captionY: file.captionY,
       captionScale: file.captionScale,
       sfxEnabled: file.sfxEnabled,

@@ -34,6 +34,7 @@ const FALLBACK_PROPS: RenderProps = {
   captionAnimation: CAPTION_ANIMATION_DEFAULT,
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
   captionAnimationCurve: CURVA_DA_ENTRADA_PADRAO,
+  sobreposicoes: [],
   captionMark: CAPTION_MARK_DEFAULT,
   captionShadow: CAPTION_SHADOW_DEFAULT,
   captionStroke: CAPTION_STROKE_DEFAULT,

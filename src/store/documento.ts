@@ -36,6 +36,8 @@ export const CAMPOS = [
   'captionScale',
   'captionAnimationCurve',
   'sfxManual',
+  'trilhas',
+  'sobreposicoes',
   'sfxEnabled',
   'music',
   'musicGainDb',

@@ -13,6 +13,7 @@ import { configureDescribe } from './services/describe'
 import { configureTagger } from './services/tagger'
 import { configureAlinhador } from './services/alinhador'
 import { configureInverter } from './services/inverter'
+import { configureSobreposicao } from './services/sobreposicao'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureFontes, ensureFontesDir } from './services/fontes'
 import { configureUpscale, configureUpscaleCache } from './services/upscale'
@@ -136,6 +137,7 @@ app.whenReady().then(async () => {
   configureTagger(userData)
   configureAlinhador(userData)
   configureInverter(userData)
+  configureSobreposicao(userData)
   configureDescribe(userData)
 
   // Os SFX moram no userData para o usuario poder trocar os arquivos: a pasta
