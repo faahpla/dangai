@@ -36,7 +36,20 @@ export interface TrechoNaTimeline {
   entrada: number
 }
 
-export function Framing({ image, trecho }: { image: ImageAsset; trecho?: TrechoNaTimeline }) {
+export function Framing({
+  image,
+  trecho,
+  alturaMax = 180,
+}: {
+  image: ImageAsset
+  trecho?: TrechoNaTimeline
+  /**
+   * A caixa nunca passa desta altura. Na largura da coluna, um clipe deitado
+   * dava uns 230px e um print em pe passava de 600 -- o painel inteiro so para
+   * mirar um retangulo.
+   */
+  alturaMax?: number
+}) {
   const setImageFocus = useProject((s) => s.setImageFocus)
   const commitImageFocus = useProject((s) => s.commitImageFocus)
   const formato = useProject((s) => s.formato)
@@ -84,7 +97,7 @@ export function Framing({ image, trecho }: { image: ImageAsset; trecho?: TrechoN
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1">
       <div
         ref={boxRef}
         onPointerDown={(event) => {
@@ -96,8 +109,11 @@ export function Framing({ image, trecho }: { image: ImageAsset; trecho?: TrechoN
         }}
         onPointerUp={() => void commitImageFocus(image.id)}
         onPointerCancel={() => void commitImageFocus(image.id)}
-        style={{ aspectRatio: `${image.width} / ${image.height}` }}
-        className="relative w-full cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
+        style={{
+          aspectRatio: `${image.width} / ${image.height}`,
+          width: `min(100%, ${Math.round((alturaMax * image.width) / image.height)}px)`,
+        }}
+        className="relative mx-auto cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >
         {/*
           O QUADRO DA AGULHA, e nao a miniatura.

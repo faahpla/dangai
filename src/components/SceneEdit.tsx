@@ -1,29 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Ban,
   BookmarkPlus,
   ClipboardPaste,
   Copy,
   Crosshair,
   ScanFace,
   Spline,
+  Video,
   X,
+  ZoomIn,
+  ZoomOut,
+  type LucideIcon,
 } from 'lucide-react'
 import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVES,
   ROTATIONS,
-  TRANSITIONS_NA_TELA,
   VIDEO_FPS,
   medidasDo,
   type CurvePoints,
   type ImageAsset,
   type Scene,
   type MotionCurve,
-  type Transition,
 } from '@shared/contract'
 import { fonteDaCamera } from '@shared/camera'
 import { useProject } from '@/store/project'
-import { Chip, Field, Grupo } from './painel'
+import { Botaozinho, Deslizante, Grupo, Linha, Segmentos, type Segmento } from './painel'
 import { Framing } from './Framing'
 import { Camera } from './Camera'
 
@@ -97,9 +104,6 @@ export function SceneEdit() {
    * era impossivel. Palavras dele: "so consigo mexer na primeira".
    */
   const imageB = scene.imageIndexB === null ? undefined : images[scene.imageIndexB]
-
-  /** O bloco seguinte: e a `transitionIn` DELE que descreve a saida deste. */
-  const proxima = plan?.scenes[index + 1]
 
   /*
    * O que a metade de baixo esta fazendo AGORA.
@@ -209,568 +213,466 @@ export function SceneEdit() {
         JSON.stringify(s.curvePoints ?? null) === JSON.stringify(scene.curvePoints ?? null),
     ) ?? true
 
+  /* Os efeitos com icone: as sete escolhas cabem numa linha so. */
+  const efeitos: Segmento<Scene['effect']>[] = [
+    {
+      valor: 'nenhum',
+      rotulo: <Ban size={12} strokeWidth={1.5} />,
+      title: image.kind === 'video' ? 'Nenhum (so o movimento do clipe)' : 'Nenhum (parada)',
+    },
+    ...KEN_BURNS_EFFECTS.map((effect) => {
+      const Icone = EFFECT_ICON[effect]
+      return { valor: effect, rotulo: <Icone size={12} strokeWidth={1.5} />, title: EFFECT_LABEL[effect] }
+    }),
+  ]
+  const avisoDoClipe = 'Este clipe ja se move: movimento por cima pede pouca intensidade. Confira no preview.'
+
+  /*
+   * O ritmo aparece sempre que ALGO se move: um efeito em qualquer metade, ou
+   * uma camera livre -- a camera anda no ritmo do bloco, e antes o ritmo sumia
+   * com ela ligada se o efeito tivesse ficado em "nenhum".
+   */
+  const temMovimento =
+    scene.effect !== 'nenhum' ||
+    scene.camera != null ||
+    (imageB !== undefined && (efeitoB !== 'nenhum' || scene.cameraB != null))
+
   return (
     /*
-     * DUAS COLUNAS, CADA UMA ROLANDO SOZINHA.
+     * DUAS COLUNAS, CADA UMA ROLANDO SOZINHA, e cada controle numa LINHA.
      *
-     * Eram tres, rolando juntas: com a linha do tempo maior, chegar na curva do
-     * movimento era rolar o painel inteiro, e o grafico nem cabia. "Eu tenho
-     * que ficar scrollando muito pra chegar onde eu quero." A transicao virou
-     * botao na barra; os ajustes (copiar/colar) foram para baixo do
-     * enquadramento; e o movimento ganhou a coluna dele, com rolagem propria.
+     * "Ainda acho que a hierarquia desses botoes ta ocupando muito espaco na
+     * tela desnecessariamente." Cada escolha era um botao da largura da coluna,
+     * com rotulo numa linha e explicacao em outra: o Movimento passava de uma
+     * tela. Agora e rotulo na esquerda, seletor colado na direita (os efeitos
+     * viraram icones) e as explicacoes moram no tooltip.
      */
     <div className="enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-3">
-      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-      <Grupo titulo="Enquadramento">
-        {imageB ? (
-          <>
-            {/*
-              Duas janelas, uma por metade. O rotulo diz qual e qual: sao dois
-              enquadramentos parecidos empilhados, e sem nome eles se confundem
-              -- ainda mais quando as duas cenas sao do mesmo personagem.
-            */}
-            <Field label="Metade de cima">
+      <div className="flex min-h-0 flex-col gap-2 overflow-y-auto pr-1">
+        <Grupo titulo="Enquadramento">
+          {imageB ? (
+            <>
+              {/*
+                Duas janelas, uma por metade, LADO A LADO e com nome: sao dois
+                enquadramentos parecidos, e sem rotulo eles se confundem.
+              */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="text-[10px] text-ink-3">Metade de cima</span>
+                  <Framing
+                    image={image}
+                    alturaMax={130}
+                    trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
+                  />
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="text-[10px] text-ink-3">Metade de baixo</span>
+                  <Framing
+                    image={imageB}
+                    alturaMax={130}
+                    trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStartB ?? 0 }}
+                  />
+                </div>
+              </div>
+              <Linha label="Zoom cima" title="Zoom fixo da metade de cima">
+                <Deslizante
+                  valor={scene.escala ?? 1}
+                  min={1}
+                  max={3}
+                  step={0.05}
+                  padrao={1}
+                  texto={`${Math.round((scene.escala ?? 1) * 100)}%`}
+                  onChange={(v) => updateScene(index, { escala: v })}
+                />
+              </Linha>
+              <Linha label="Zoom baixo" title="Zoom fixo da metade de baixo">
+                <Deslizante
+                  valor={scene.escalaB ?? 1}
+                  min={1}
+                  max={3}
+                  step={0.05}
+                  padrao={1}
+                  texto={`${Math.round((scene.escalaB ?? 1) * 100)}%`}
+                  onChange={(v) => updateScene(index, { escalaB: v })}
+                />
+              </Linha>
+            </>
+          ) : (
+            <>
               <Framing
                 image={image}
                 trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
               />
-            </Field>
-            <Field label="Metade de baixo">
-              <Framing
-                image={imageB}
-                trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStartB ?? 0 }}
-              />
-            </Field>
-            <Field label="Zoom da metade de cima">
-              <ZoomFixo valor={scene.escala ?? 1} onChange={(v) => updateScene(index, { escala: v })} />
-            </Field>
-            <Field label="Zoom da metade de baixo">
-              <ZoomFixo valor={scene.escalaB ?? 1} onChange={(v) => updateScene(index, { escalaB: v })} />
-            </Field>
-          </>
-        ) : (
-          <>
-            <Framing
-              image={image}
-              trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
-            />
-            <Field label="Zoom">
-              <ZoomFixo valor={scene.escala ?? 1} onChange={(v) => updateScene(index, { escala: v })} />
-            </Field>
-          </>
-        )}
-
-      {/*
-        Girar existe para o material que chega deitado -- clipe gravado de lado,
-        print girado, quadro de manga. Sao os quatro angulos retos: o corte
-        continua preenchendo em todos, entao girar nunca abre tarja preta.
-
-        Fora da tela dividida de proposito: ali sao duas cenas dividindo o
-        quadro, e girar uma das metades gira a moldura junto.
-      */}
-      {scene.imageIndexB === null && (
-        <Field label="Girar">
-          <div className="grid grid-cols-4 gap-1.5">
-            {ROTATIONS.map((graus) => (
-              <Chip
-                key={graus}
-                active={(scene.rotation ?? 0) === graus}
-                onClick={() => updateScene(index, { rotation: graus })}
-              >
-                {ROTATION_LABEL[graus]}
-              </Chip>
-            ))}
-          </div>
-        </Field>
-      )}
-      </Grupo>
-
-      <Grupo titulo="Ajustes">
-        {/*
-          COPIAR E COLAR AJUSTES.
-
-          Mora no fim do painel porque atravessa os tres grupos: o que ele copia
-          e o COMO o bloco se comporta -- movimento, ritmo, giro e transicao --
-          e nao o que cada coluna edita sozinha.
-
-          Fica de fora o que descreve o MATERIAL: qual imagem e, de que ponto do
-          clipe ela parte, e a camera livre. Um caminho de camera e desenhado
-          contra o conteudo daquele clipe -- ainda mais quando saiu do
-          rastreador, que seguiu um alvo especifico -- e colado noutro clipe
-          enquadraria o nada, com cara de defeito.
-        */}
-        <Field label="Ajustes deste bloco">
-          <div className="flex flex-wrap gap-1.5">
-            <Chip active={false} onClick={() => copiarAjustes(index)}>
-              <Copy size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-              Copiar
-            </Chip>
-            {ajustesCopiados !== null && (
-              <Chip active={false} onClick={() => colarAjustes(alvos)}>
-                <ClipboardPaste size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                {alvos.length > 1 ? `Colar nos ${alvos.length} selecionados` : 'Colar aqui'}
-              </Chip>
-            )}
-          </div>
-          <p className="text-[11px] leading-relaxed text-ink-3">
-            {ajustesCopiados === null
-              ? 'Copia movimento, ritmo, giro e transicao. O enquadramento e a camera ficam, porque sao daquele clipe.'
-              : selecionados.length > 1
-                ? 'Shift+clique na timeline pega um intervalo; Ctrl+clique liga e desliga um bloco.'
-                : 'Marque varios blocos na timeline com Shift ou Ctrl para colar em todos de uma vez.'}
-          </p>
-        </Field>
-      </Grupo>
-      </div>
-      <div className="min-h-0 overflow-y-auto pr-1">
-      <Grupo titulo="Movimento">
-      {/*
-        Clipe tambem escolhe movimento agora.
-
-        Ele so COMECA em "nenhum", porque ja se move sozinho e mover de novo
-        costuma dar enjoo -- mas a decisao passou a ser do bloco. "Nenhum" fica
-        na frente e sozinho na linha: e o padrao do clipe, e e o unico jeito de
-        deixar um print parado, que antes nao existia.
-      */}
-      {/*
-        CAMERA LIVRE: o enquadramento das duas pontas, desenhado a mao.
-
-        Fica antes dos presets porque desliga todos eles -- e o primeiro galho
-        da decisao, nao mais uma opcao no meio. Some na tela dividida: ali cada
-        metade tem quadro proprio, e uma camera so para as duas nao diz nada.
-      */}
-      {imageB && (
-        <>
-          <CameraDaMetade index={index} scene={scene} image={image} metade="cima" />
-          <CameraDaMetade index={index} scene={scene} image={imageB} metade="baixo" />
-        </>
-      )}
-      {!imageB && (
-        <>
-          <Field label="Camera">
-            <Chip
-              active={scene.camera !== null && scene.camera !== undefined}
-              onClick={() =>
-                updateScene(index, {
-                  camera:
-                    scene.camera == null
-                      ? // Nasce como um zoom out simples: e o caso que ele
-                        // descreveu pedindo o recurso, e da para ver o efeito
-                        // antes de arrastar qualquer coisa.
-                        {
-                          from: { scale: 1.4, x: 0, y: 0 },
-                          to: { scale: 1, x: 0, y: 0 },
-                          // Camera nova ja nasce enquadrando o arquivo inteiro.
-                          source: true,
-                          // Sem chaves no meio: uma reta, ate alguem rastrear.
-                          keys: [],
-                        }
-                      : null,
-                })
-              }
-            >
-              {scene.camera == null ? 'Usar camera livre' : 'Voltar aos efeitos'}
-            </Chip>
-            {scene.camera != null && (
-              <>
-                {/*
-                  SEGUIR O ROSTO: as duas pontas prontas de uma vez.
-
-                  Ele descreveu o caso pedindo um tracker -- "o rosto de um
-                  personagem se move de um lado da tela para o outro, eu nao
-                  quero perder o foco". Com duas chaves, um movimento que so vai
-                  numa direcao e exatamente o que a camera sabe fazer: basta
-                  saber onde o rosto esta no comeco e no fim.
-
-                  Nao e o Smart Reframe: o detector e frontal e perde perfil,
-                  nuca e plano aberto. Por isso o botao DIZ o que achou em vez
-                  de mexer em silencio -- enquadramento que muda sozinho e sem
-                  aviso e como o video sai errado sem ninguem perceber.
-                */}
-                <div className="flex flex-wrap gap-1.5">
-                  {/*
-                    RASTREAR vem primeiro porque e o que funciona sempre.
-                    Medido nos clipes reais dele, o detector de rosto acha alguma
-                    coisa em 25% deles -- o fluxo optico nao precisa reconhecer
-                    nada, so medir para onde os pixels foram, entao nao tem cena
-                    em que ele se recuse a tentar.
-                  */}
-                  {image.kind === 'video' && (
-                    <Chip active={false} onClick={() => void rastrearAlvo()}>
-                      <Crosshair size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                      Rastrear o centro
-                    </Chip>
-                  )}
-                  <Chip active={false} onClick={() => void procurarRosto()}>
-                    <ScanFace size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                    Seguir o rosto
-                  </Chip>
-                  {scene.camera.keys.length > 0 && (
-                    <Chip
-                      active={false}
-                      onClick={() => {
-                        updateScene(index, { camera: { ...scene.camera!, keys: [] } })
-                        setRecado(null)
-                      }}
-                    >
-                      <X size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                      Voltar a linha reta
-                    </Chip>
-                  )}
-                </div>
-                <p className="text-[11px] leading-relaxed text-ink-3">
-                  {(recado?.bloco === index ? recado.texto : null) ??
-                    (image.kind === 'video'
-                      ? /*
-                         * Dizer que o alvo e o CENTRO nao e detalhe.
-                         *
-                         * O retangulo e alto e estreito, e quem poe o rosto na
-                         * parte de cima dele fica com o peito do personagem no
-                         * meio -- e o peito e o que seria seguido. Sem esta
-                         * frase, o rastreio parece simplesmente nao funcionar.
-                         */
-                        'Arraste o retangulo para escolher o que aparece. Rastrear segue o que estiver no CENTRO dele, entao deixe o alvo no meio antes de clicar. O ritmo do movimento continua sendo o do bloco.'
-                      : 'Arraste o retangulo para escolher o que aparece, e use o slider para aproximar. O ritmo do movimento continua sendo o do bloco.')}
-                </p>
-              </>
-            )}
-          </Field>
-
-          {scene.camera != null && (
-            /*
-             * Fonte DEITADA empilha; fonte em pe fica lado a lado.
-             *
-             * Lado a lado, um clipe 16:9 recebia metade da coluna -- uns 127px
-             * de altura -- e enquadrar um rosto olhando isso e adivinhar.
-             * Empilhadas, as duas pontas usam a largura inteira, que e o eixo
-             * onde o movimento acontece justamente num quadro deitado.
-             *
-             * Em pe o problema nao existe: duas colunas cabem, e ver as duas
-             * pontas juntas e o que deixa comparar o comeco com o fim.
-             */
-            <div
-              className={
-                fonteDaCamera(image, scene.camera, aspectoDoQuadro).aspecto > 1
-                  ? 'flex flex-col gap-3'
-                  : 'grid grid-cols-2 gap-2'
-              }
-            >
-              <Camera
-                image={image}
-                camera={scene.camera}
-                instante={instanteComeca}
-                label="Comeca em"
-                aoMexer={() => setPlayhead(scene.start)}
-                value={scene.camera.from}
-                onChange={(from) =>
-                  updateScene(index, { camera: { ...scene.camera!, from } })
-                }
-              />
-              <Camera
-                image={image}
-                camera={scene.camera}
-                instante={instanteTermina}
-                label="Termina em"
-                aoMexer={() => setPlayhead(Math.max(scene.end - 1 / VIDEO_FPS, scene.start))}
-                value={scene.camera.to}
-                onChange={(to) =>
-                  updateScene(index, { camera: { ...scene.camera!, to } })
-                }
-              />
-            </div>
-          )}
-        </>
-      )}
-
-      {scene.camera == null && (
-      <Field label={imageB ? 'Efeito da metade de cima' : 'Efeito'}>
-        <Chip
-          active={scene.effect === 'nenhum'}
-          onClick={() => updateScene(index, { effect: 'nenhum' })}
-        >
-          {image.kind === 'video' ? 'Nenhum (so o do clipe)' : 'Nenhum'}
-        </Chip>
-        <div className="grid grid-cols-2 gap-1.5">
-          {KEN_BURNS_EFFECTS.map((effect) => (
-            <Chip
-              key={effect}
-              active={scene.effect === effect}
-              onClick={() => updateScene(index, { effect })}
-            >
-              {EFFECT_LABEL[effect]}
-            </Chip>
-          ))}
-        </div>
-        {image.kind === 'video' && scene.effect !== 'nenhum' && (
-          <p className="text-[11px] leading-relaxed text-ink-3">
-            Movimento por cima de um clipe que ja se move. Use pouco, e confira no preview.
-          </p>
-        )}
-      </Field>
-      )}
-
-      {/* Intensidade e ritmo so fazem sentido havendo movimento. */}
-      {scene.camera == null && scene.effect !== 'nenhum' && (
-        <Field label={imageB ? 'Intensidade da metade de cima' : 'Intensidade'}>
-          <div className="flex items-center gap-2.5">
-            <input
-              type="range"
-              min={0.04}
-              max={0.15}
-              step={0.01}
-              value={scene.intensity}
-              onChange={(event) => updateScene(index, { intensity: Number(event.target.value) })}
-              className="dangai-range min-w-0 flex-1"
-            />
-            <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
-              {Math.round(scene.intensity * 100)}%
-            </span>
-          </div>
-        </Field>
-      )}
-
-      {/*
-        A METADE DE BAIXO VEM AQUI, e nao no fim do painel.
-
-        Ela estava depois da intensidade, do ritmo e dos presets de curva -- ou
-        seja, fora da vista numa coluna que rola. Ele mexeu no efeito, viu as
-        duas metades andarem juntas e concluiu que o controle nao existia:
-        "se eu coloco movimento pan esq ele faz nas duas". O controle existia;
-        estava enterrado.
-
-        Agora as duas metades ficam uma embaixo da outra, na mesma ordem do
-        Enquadramento -- cima, depois baixo -- e o que e do BLOCO (o ritmo) vem
-        depois das duas.
-      */}
-      {imageB && (
-        <>
-          <Field label="Efeito da metade de baixo">
-            <Chip
-              active={!separada}
-              // Volta os dois campos para null de uma vez: "igual" e a ausencia
-              // de escolha, e nao uma copia dos valores de cima -- copiados,
-              // eles parariam de acompanhar a de cima na proxima mudanca.
-              onClick={() => updateScene(index, { effectB: null, intensityB: null })}
-            >
-              Igual a de cima
-            </Chip>
-            <Chip
-              active={separada && efeitoB === 'nenhum'}
-              onClick={() => updateScene(index, { effectB: 'nenhum' })}
-            >
-              {imageB.kind === 'video' ? 'Parada (so o do clipe)' : 'Parada'}
-            </Chip>
-            <div className="grid grid-cols-2 gap-1.5">
-              {KEN_BURNS_EFFECTS.map((effect) => (
-                <Chip
-                  key={effect}
-                  active={separada && efeitoB === effect}
-                  onClick={() => updateScene(index, { effectB: effect })}
-                >
-                  {EFFECT_LABEL[effect]}
-                </Chip>
-              ))}
-            </div>
-          </Field>
-
-          {efeitoB !== 'nenhum' && (
-            <Field label="Intensidade da metade de baixo">
-              <div className="flex items-center gap-2.5">
-                <input
-                  type="range"
-                  min={0.04}
-                  max={0.15}
-                  step={0.01}
-                  value={intensidadeB}
-                  onChange={(event) =>
-                    updateScene(index, { intensityB: Number(event.target.value) })
-                  }
-                  className="dangai-range min-w-0 flex-1"
+              {/*
+                O "Scale" dos editores: zoom FIXO no bloco inteiro, centrado no
+                enquadramento acima. Duplo clique volta para 100%.
+              */}
+              <Linha label="Zoom" title="Zoom fixo no bloco inteiro. Duplo clique volta para 100%.">
+                <Deslizante
+                  valor={scene.escala ?? 1}
+                  min={1}
+                  max={3}
+                  step={0.05}
+                  padrao={1}
+                  texto={`${Math.round((scene.escala ?? 1) * 100)}%`}
+                  onChange={(v) => updateScene(index, { escala: v })}
                 />
-                <span className="tnum w-8 shrink-0 text-right text-[11px] text-ink-3">
-                  {Math.round(intensidadeB * 100)}%
-                </span>
-              </div>
-            </Field>
+              </Linha>
+              {/*
+                Girar existe para o material que chega deitado. Sao os quatro
+                angulos retos: o corte continua preenchendo, sem tarja preta.
+                Fora da tela dividida, onde girar uma metade giraria a moldura.
+              */}
+              <Linha label="Girar">
+                <Segmentos
+                  opcoes={ROTATIONS.map((graus) => ({ valor: graus, rotulo: ROTATION_LABEL[graus] }))}
+                  ativo={(graus) => (scene.rotation ?? 0) === graus}
+                  onChange={(graus) => updateScene(index, { rotation: graus })}
+                />
+              </Linha>
+            </>
           )}
-        </>
-      )}
+        </Grupo>
 
-      {scene.effect !== 'nenhum' && (
-        <>
-          {/* O ritmo e do BLOCO: vale para as duas metades, e por isso vem depois. */}
-          <Field label="Ritmo do movimento">
-            <div className="grid grid-cols-2 gap-1.5">
-              {MOTION_CURVES.map((curve) => (
-                <Chip
-                  key={curve}
-                  active={scene.curvePoints === null && scene.curve === curve}
-                  // Escolher um preset apaga o desenho: sao dois jeitos de dizer
-                  // a mesma coisa, e guardar o desenho por baixo faria o clique
-                  // seguinte no "Desenhar" ressuscitar algo que ele largou.
-                  onClick={() => updateScene(index, { curve, curvePoints: null })}
+        {/*
+          COPIAR E COLAR AJUSTES: o COMO o bloco se comporta -- movimento,
+          ritmo, giro e transicao. Fica de fora o que descreve o MATERIAL
+          (imagem, ponto de entrada, camera livre): um caminho de camera e
+          desenhado contra aquele clipe, e colado noutro enquadraria o nada.
+        */}
+        <Grupo
+          titulo="Ajustes"
+          acao={
+            <>
+              <Botaozinho
+                onClick={() => copiarAjustes(index)}
+                title="Copia movimento, ritmo, giro e transicao. O enquadramento e a camera ficam, porque sao daquele clipe."
+              >
+                <Copy size={11} strokeWidth={1.5} />
+                Copiar
+              </Botaozinho>
+              {ajustesCopiados !== null && (
+                <Botaozinho
+                  onClick={() => colarAjustes(alvos)}
+                  title="Marque varios blocos na timeline com Shift ou Ctrl para colar em todos de uma vez."
                 >
-                  {CURVE_LABEL[curve]}
-                </Chip>
-              ))}
-            </div>
+                  <ClipboardPaste size={11} strokeWidth={1.5} />
+                  {alvos.length > 1 ? `Colar nos ${alvos.length}` : 'Colar'}
+                </Botaozinho>
+              )}
+            </>
+          }
+        />
+      </div>
 
-            {/*
-              A curva na mao, pedido dele: "liberdade de mexer no movimento de
-              cada imagem". Fica atras de um clique de proposito -- os quatro
-              presets resolvem quase tudo e continuam sendo o que a montagem
-              entrega pronta; o grafico e a saida para o bloco onde nenhum serve.
-            */}
-            <Chip
-              active={scene.curvePoints !== null}
-              onClick={() =>
-                updateScene(index, {
-                  curvePoints: scene.curvePoints === null ? CURVE_AS_BEZIER[scene.curve] : null,
-                })
-              }
-            >
-              <Spline size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-              Desenhar a curva
-            </Chip>
+      <div className="min-h-0 overflow-y-auto pr-1">
+        <Grupo
+          titulo="Movimento"
+          acao={
+            /*
+             * CAMERA LIVRE no canto do titulo: ela desliga os efeitos, entao e
+             * o primeiro galho da decisao, e nao mais uma opcao no meio. Na
+             * tela dividida cada metade tem a sua, dentro da propria secao.
+             */
+            !imageB && (
+              <Botaozinho
+                active={scene.camera != null}
+                title="Desenhar a mao o enquadramento do comeco e do fim do bloco"
+                onClick={() =>
+                  updateScene(index, {
+                    camera:
+                      scene.camera == null
+                        ? // Nasce como um zoom out simples, enquadrando o
+                          // arquivo inteiro: da para ver o efeito antes de
+                          // arrastar qualquer coisa.
+                          { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
+                        : null,
+                  })
+                }
+              >
+                <Video size={11} strokeWidth={1.5} />
+                Camera livre
+              </Botaozinho>
+            )
+          }
+        >
+          {!imageB && scene.camera != null && (
+            <>
+              {/*
+                RASTREAR vem primeiro porque funciona sempre: o fluxo optico so
+                mede para onde os pixels foram. O detector de rosto e frontal e
+                perde perfil e nuca -- por isso os dois DIZEM o que acharam.
+              */}
+              <div className="flex flex-wrap items-center gap-1">
+                {image.kind === 'video' && (
+                  <Botaozinho
+                    onClick={() => void rastrearAlvo()}
+                    title="Segue o que estiver no CENTRO do retangulo. Deixe o alvo no meio antes de clicar."
+                  >
+                    <Crosshair size={11} strokeWidth={1.5} />
+                    Rastrear o centro
+                  </Botaozinho>
+                )}
+                <Botaozinho onClick={() => void procurarRosto()} title="Acha o rosto nas duas pontas do bloco">
+                  <ScanFace size={11} strokeWidth={1.5} />
+                  Seguir o rosto
+                </Botaozinho>
+                {scene.camera.keys.length > 0 && (
+                  <Botaozinho
+                    onClick={() => {
+                      updateScene(index, { camera: { ...scene.camera!, keys: [] } })
+                      setRecado(null)
+                    }}
+                    title="Apaga as chaves do meio: a camera volta a ir reto de uma ponta a outra"
+                  >
+                    <X size={11} strokeWidth={1.5} />
+                    Linha reta
+                  </Botaozinho>
+                )}
+              </div>
+              <p className="text-[10px] leading-snug text-ink-3">
+                {(recado?.bloco === index ? recado.texto : null) ??
+                  /*
+                   * Dizer que o alvo e o CENTRO nao e detalhe: quem poe o rosto
+                   * no alto do retangulo fica com o peito no meio, e e o peito
+                   * que seria seguido.
+                   */
+                  (image.kind === 'video'
+                    ? 'Arraste o retangulo. Rastrear segue o que estiver no CENTRO dele.'
+                    : 'Arraste o retangulo para escolher o que aparece; o slider aproxima.')}
+              </p>
+              {/*
+                Fonte DEITADA empilha (as duas pontas usam a largura inteira, o
+                eixo onde o movimento acontece); fonte em pe fica lado a lado.
+              */}
+              <div
+                className={
+                  fonteDaCamera(image, scene.camera, aspectoDoQuadro).aspecto > 1
+                    ? 'flex flex-col gap-2'
+                    : 'grid grid-cols-2 gap-2'
+                }
+              >
+                <Camera
+                  image={image}
+                  camera={scene.camera}
+                  instante={instanteComeca}
+                  label="Comeca em"
+                  aoMexer={() => setPlayhead(scene.start)}
+                  value={scene.camera.from}
+                  onChange={(from) => updateScene(index, { camera: { ...scene.camera!, from } })}
+                />
+                <Camera
+                  image={image}
+                  camera={scene.camera}
+                  instante={instanteTermina}
+                  label="Termina em"
+                  aoMexer={() => setPlayhead(Math.max(scene.end - 1 / VIDEO_FPS, scene.start))}
+                  value={scene.camera.to}
+                  onChange={(to) => updateScene(index, { camera: { ...scene.camera!, to } })}
+                />
+              </div>
+            </>
+          )}
 
-            {scene.curvePoints !== null && (
-              <>
-                {/*
-                  Quatro ritmos prontos, para nao ter que desenhar do zero toda
-                  vez. Sao os que aparecem em recap: sair voando e assentar,
-                  segurar e disparar, chegar freando, e o pulinho de mola.
-                */}
-                <div className="grid grid-cols-2 gap-1.5">
-                  {CURVAS_PRONTAS.map((preset) => (
-                    <Chip
-                      key={preset.nome}
-                      active={mesmaCurva(scene.curvePoints, preset.pontos)}
-                      onClick={() => updateScene(index, { curvePoints: preset.pontos })}
-                    >
-                      {preset.nome}
-                    </Chip>
-                  ))}
-                </div>
+          {/*
+            Na tela dividida, cada metade e uma secao com nome, cima e depois
+            baixo -- a mesma ordem do Enquadramento. Sem o nome ele concluiu que
+            o controle da de baixo nao existia: "se eu coloco pan esq ele faz
+            nas duas".
+          */}
+          {imageB && <Subtitulo>Metade de cima</Subtitulo>}
+          {imageB && <CameraDaMetade index={index} scene={scene} image={image} metade="cima" />}
 
-                {/* As dele, guardadas nas configuracoes e validas em todo video. */}
-                {salvas.length > 0 && (
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {salvas.map((preset) => (
-                      <div key={preset.nome} className="relative">
-                        <Chip
+          {scene.camera == null && (
+            <Linha label="Efeito" title={image.kind === 'video' ? avisoDoClipe : undefined}>
+              <Segmentos
+                opcoes={efeitos}
+                ativo={(e) => scene.effect === e}
+                onChange={(effect) => updateScene(index, { effect })}
+              />
+            </Linha>
+          )}
+          {scene.camera == null && scene.effect !== 'nenhum' && (
+            <Linha label="Intensidade">
+              <Deslizante
+                valor={scene.intensity}
+                min={0.04}
+                max={0.15}
+                step={0.01}
+                texto={`${Math.round(scene.intensity * 100)}%`}
+                onChange={(v) => updateScene(index, { intensity: v })}
+              />
+            </Linha>
+          )}
+
+          {imageB && (
+            <>
+              <Subtitulo>Metade de baixo</Subtitulo>
+              <CameraDaMetade index={index} scene={scene} image={imageB} metade="baixo" />
+              {scene.cameraB == null && (
+                <Linha label="Efeito" title={imageB.kind === 'video' ? avisoDoClipe : undefined}>
+                  <Segmentos
+                    opcoes={[
+                      // "Igual" volta os dois campos para null: e a AUSENCIA de
+                      // escolha, e nao uma copia -- copiados, eles parariam de
+                      // acompanhar a de cima na proxima mudanca.
+                      { valor: 'igual' as const, rotulo: 'Igual', title: 'Igual a metade de cima' },
+                      ...efeitos,
+                    ]}
+                    ativo={(e) => (e === 'igual' ? !separada : separada && efeitoB === e)}
+                    onChange={(e) =>
+                      updateScene(
+                        index,
+                        e === 'igual' ? { effectB: null, intensityB: null } : { effectB: e },
+                      )
+                    }
+                  />
+                </Linha>
+              )}
+              {scene.cameraB == null && efeitoB !== 'nenhum' && (
+                <Linha label="Intensidade">
+                  <Deslizante
+                    valor={intensidadeB}
+                    min={0.04}
+                    max={0.15}
+                    step={0.01}
+                    texto={`${Math.round(intensidadeB * 100)}%`}
+                    onChange={(v) => updateScene(index, { intensityB: v })}
+                  />
+                </Linha>
+              )}
+              <Subtitulo>O bloco</Subtitulo>
+            </>
+          )}
+
+          {temMovimento && (
+            <>
+              {/*
+                O ritmo e do BLOCO: vale para as duas metades e para a camera.
+                Escolher um preset apaga o desenho -- guardar o desenho por
+                baixo faria o clique seguinte em "Curva" ressuscitar algo que
+                ele largou.
+              */}
+              <Linha label="Ritmo">
+                <Segmentos
+                  opcoes={[
+                    ...MOTION_CURVES.map((curve) => ({
+                      valor: curve as MotionCurve | 'desenho',
+                      rotulo: CURVE_LABEL[curve],
+                      title: CURVE_HINT[curve],
+                    })),
+                    {
+                      valor: 'desenho' as const,
+                      rotulo: (
+                        <>
+                          <Spline size={11} strokeWidth={1.5} />
+                          Curva
+                        </>
+                      ),
+                      title: 'Desenhar a curva do ritmo a mao',
+                    },
+                  ]}
+                  ativo={(c) =>
+                    c === 'desenho' ? scene.curvePoints !== null : scene.curvePoints === null && scene.curve === c
+                  }
+                  onChange={(c) =>
+                    updateScene(
+                      index,
+                      c === 'desenho'
+                        ? { curvePoints: scene.curvePoints === null ? CURVE_AS_BEZIER[scene.curve] : null }
+                        : { curve: c, curvePoints: null },
+                    )
+                  }
+                />
+              </Linha>
+
+              {scene.curvePoints !== null && (
+                /*
+                 * O GRAFICO AO LADO DOS ATALHOS, e nao embaixo deles: empilhados
+                 * eram quatro linhas de botoes antes do desenho aparecer.
+                 */
+                <div className="flex gap-2.5">
+                  <GraficoDeCurva
+                    pontos={scene.curvePoints}
+                    onChange={(pontos) => updateScene(index, { curvePoints: pontos })}
+                  />
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex flex-wrap gap-1">
+                      {CURVAS_PRONTAS.map((preset) => (
+                        <Botaozinho
+                          key={preset.nome}
                           active={mesmaCurva(scene.curvePoints, preset.pontos)}
                           onClick={() => updateScene(index, { curvePoints: preset.pontos })}
                         >
-                          <span className="block truncate pr-3">{preset.nome}</span>
-                        </Chip>
-                        <button
-                          type="button"
-                          onClick={() => void removerCurva(preset.nome)}
-                          title={`Esquecer "${preset.nome}"`}
-                          aria-label={`Esquecer ${preset.nome}`}
-                          className="absolute right-1 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:text-danger"
-                        >
-                          <X size={10} strokeWidth={2} />
-                        </button>
-                      </div>
-                    ))}
+                          {preset.nome}
+                        </Botaozinho>
+                      ))}
+                      {/* As dele, guardadas nas configuracoes e validas em todo video. */}
+                      {salvas.map((preset) => (
+                        <CurvaSalva
+                          key={preset.nome}
+                          nome={preset.nome}
+                          ativa={mesmaCurva(scene.curvePoints, preset.pontos)}
+                          onUsar={() => updateScene(index, { curvePoints: preset.pontos })}
+                          onEsquecer={() => void removerCurva(preset.nome)}
+                        />
+                      ))}
+                      <Botaozinho onClick={() => void guardarCurva(scene.curvePoints!)} title="Guardar esta curva">
+                        <BookmarkPlus size={11} strokeWidth={1.5} />
+                        Salvar
+                      </Botaozinho>
+                    </div>
+                    <p className="text-[10px] leading-snug text-ink-3">
+                      Quanto do movimento ja aconteceu ao longo do bloco. Plana e pausa, ingreme e disparada.
+                    </p>
                   </div>
-                )}
+                </div>
+              )}
 
-                <GraficoDeCurva
-                  pontos={scene.curvePoints}
-                  onChange={(pontos) => updateScene(index, { curvePoints: pontos })}
-                />
-
-                <Chip active={false} onClick={() => void guardarCurva(scene.curvePoints!)}>
-                  <BookmarkPlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                  Salvar esta curva
-                </Chip>
-              </>
-            )}
-
-            <p className="text-[11px] leading-relaxed text-ink-3">
-              {scene.curvePoints === null
-                ? CURVE_HINT[scene.curve]
-                : 'A linha diz quanto do movimento ja aconteceu ao longo do bloco. Plana e pausa, ingreme e disparada.'}
-            </p>
-            {total > 1 && !mesmaCurvaEmTodas && (
-              /*
-               * ESPALHAR A CURVA E DISCRETO E EM DOIS PASSOS.
-               *
-               * Era um botao da largura do painel, do lado de controles que se
-               * usam o tempo todo, e ele o acertava sem querer -- um clique
-               * trocando o ritmo dos 52 blocos de uma vez. O estrago e grande e
-               * o uso e raro: quem espalha curva faz isso uma vez por video.
-               *
-               * Entao ele encolheu para um texto no canto, e o primeiro clique
-               * so ARMA. E o mesmo caminho que a Biblioteca ja usa para montar
-               * com trechos vazios: primeiro clique explica, segundo faz.
-               */
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (espalharArmado !== index) {
-                      setEspalharArmado(index)
-                      return
-                    }
-                    /*
-                     * Havendo selecao, ela manda -- e o botao de espalhar em
-                     * TODOS deixa de ser o unico jeito de aplicar em varios.
-                     * Era ele que ele acertava sem querer, e quanto menos
-                     * motivo para usa-lo, melhor.
-                     */
-                    if (selecionados.length > 1) {
-                      for (const i of selecionados) {
-                        updateScene(i, { curve: scene.curve, curvePoints: scene.curvePoints })
+              {total > 1 && !mesmaCurvaEmTodas && (
+                /*
+                 * ESPALHAR A CURVA E DISCRETO E EM DOIS PASSOS: era um botao
+                 * largo que ele acertava sem querer, trocando o ritmo dos 52
+                 * blocos de uma vez. O primeiro clique so ARMA.
+                 */
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (espalharArmado !== index) {
+                        setEspalharArmado(index)
+                        return
                       }
-                    } else {
-                      applyCurveToAll(scene.curve, scene.curvePoints)
+                      // Havendo selecao, ela manda.
+                      if (selecionados.length > 1) {
+                        for (const i of selecionados) {
+                          updateScene(i, { curve: scene.curve, curvePoints: scene.curvePoints })
+                        }
+                      } else {
+                        applyCurveToAll(scene.curve, scene.curvePoints)
+                      }
+                      setEspalharArmado(null)
+                    }}
+                    onPointerLeave={() => setEspalharArmado(null)}
+                    className={
+                      espalharArmado === index
+                        ? 'rounded px-1.5 py-0.5 text-[10px] text-accent underline decoration-dotted underline-offset-2'
+                        : 'rounded px-1.5 py-0.5 text-[10px] text-ink-3 transition-colors hover:text-ink-2'
                     }
-                    setEspalharArmado(null)
-                  }}
-                  onPointerLeave={() => setEspalharArmado(null)}
-                  className={
-                    espalharArmado === index
-                      ? 'rounded px-1.5 py-0.5 text-[11px] text-accent underline decoration-dotted underline-offset-2'
-                      : 'rounded px-1.5 py-0.5 text-[11px] text-ink-3 transition-colors hover:text-ink-2'
-                  }
-                >
-                  {espalharArmado === index
-                    ? `Confirmar: trocar a curva de ${alvos.length > 1 ? alvos.length : total} ${
-                        alvos.length > 1 ? 'selecionados' : 'blocos'
-                      }`
-                    : alvos.length > 1
-                      ? `Usar nos ${alvos.length} selecionados`
-                      : `Usar em todos os ${total} blocos`}
-                </button>
-              </div>
-            )}
-          </Field>
-        </>
-      )}
-
-      </Grupo>
-
-      {/*
-        UMA EMENDA, DOIS PONTOS DE ACESSO.
-
-        A transicao mora ENTRE dois blocos: a saida deste e a entrada do
-        proximo sao o mesmo crossfade acontecendo uma vez. Por isso nao ha dois
-        campos -- haveria como os dois lados discordarem, e alguem teria que
-        perder em silencio.
-        O que existe e o mesmo dado alcancavel dos dois lados: "Entrada" escreve
-        no proprio bloco, "Saida" escreve no seguinte. Mexer na saida daqui e o
-        mesmo que ir ao proximo bloco e mexer na entrada dele.
-      */}
-      {/*
-        As duas listas vao em DUAS COLUNAS.
-
-        Empilhadas, Entrada e Saida somavam doze botoes -- a coluna virava uma
-        tira comprida e o resto do painel sumia por baixo dela. Sao seis opcoes
-        curtas; lado a lado elas cabem em tres linhas cada.
-      */}
+                  >
+                    {espalharArmado === index
+                      ? `Confirmar: trocar o ritmo de ${alvos.length > 1 ? alvos.length : total} ${
+                          alvos.length > 1 ? 'selecionados' : 'blocos'
+                        }`
+                      : alvos.length > 1
+                        ? `Usar este ritmo nos ${alvos.length} selecionados`
+                        : `Usar este ritmo em todos os ${total} blocos`}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </Grupo>
       </div>
     </div>
   )
@@ -847,11 +749,11 @@ function GraficoDeCurva({
   const py = (v: number): number => 100 - v * 100
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex w-[132px] shrink-0 flex-col gap-0.5">
       <svg
         ref={area}
         viewBox={`${-FOLGA} ${-FOLGA} ${100 + FOLGA * 2} ${100 + FOLGA * 2}`}
-        className="mx-auto w-full max-w-[200px] touch-none rounded-sm bg-elevated"
+        className="w-full touch-none rounded-sm bg-elevated"
         onPointerMove={(event) => arrastando !== null && mover(event, arrastando)}
         onPointerUp={() => setArrastando(null)}
         onPointerLeave={() => setArrastando(null)}
@@ -923,10 +825,19 @@ function presa(v: number): number {
  * que se pensa em "gira para o outro lado", e nao em "gira tres quartos".
  */
 const ROTATION_LABEL: Record<(typeof ROTATIONS)[number], string> = {
-  0: 'Nao',
+  0: '0°',
   90: '90°',
   180: '180°',
   270: '-90°',
+}
+
+const EFFECT_ICON: Readonly<Record<(typeof KEN_BURNS_EFFECTS)[number], LucideIcon>> = {
+  'zoom-in': ZoomIn,
+  'zoom-out': ZoomOut,
+  'pan-left': ArrowLeft,
+  'pan-right': ArrowRight,
+  'pan-up': ArrowUp,
+  'pan-down': ArrowDown,
 }
 
 const EFFECT_LABEL: Readonly<Record<(typeof KEN_BURNS_EFFECTS)[number], string>> = {
@@ -956,52 +867,6 @@ const CURVE_HINT: Readonly<Record<MotionCurve, string>> = {
   linear: 'Mesma velocidade do inicio ao fim. Num movimento lento, fica menos travado que o suave.',
   'ease-out': 'Parte rapido e pousa. Bom para revelacao.',
   'ease-in': 'Parte devagar e acelera. Cria tensao entrando no corte.',
-}
-
-/*
- * O nome diz PARA ONDE A IMAGEM VAI, e nao de onde ela vem.
- *
- * "Slide esquerda" ja era isso por dentro -- o bloco novo entra pela direita e
- * tudo escorrega para a esquerda --, mas o rotulo dava para ler dos dois
- * jeitos, e quem le "esquerda" tende a esperar a cena chegando desse lado.
- * "Desliza p/ esquerda" fecha a duvida sem mudar nada do que o efeito faz.
- */
-const TRANSITION_LABEL: Readonly<Record<Transition, string>> = {
-  cut: 'Corte seco',
-  crossfade: 'Crossfade',
-  'slide-left': 'Desliza p/ esquerda',
-  'slide-right': 'Desliza p/ direita',
-  'whip-pan-left': 'Whip-pan p/ esquerda',
-  'whip-pan-right': 'Whip-pan p/ direita',
-  // Fora da tela: so chega de projeto salvo antes de o par existir.
-  'whip-pan': 'Whip-pan p/ esquerda',
-}
-
-/**
- * O "Scale" dos editores: um zoom FIXO no bloco inteiro.
- *
- * "Pra eu nao precisar ficar dando zoom pela camera livre e animando, apenas
- * conseguir dar zoom em uma parte de forma facil, sem ser constante." Nao anda
- * com o tempo; o centro e o enquadramento acima. 100% e como estava; o duplo
- * clique no controle volta para 100%.
- */
-function ZoomFixo({ valor, onChange }: { valor: number; onChange: (v: number) => void }) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <input
-        type="range"
-        min={1}
-        max={3}
-        step={0.05}
-        value={valor}
-        onChange={(event) => onChange(Number(event.target.value))}
-        onDoubleClick={() => onChange(1)}
-        title="Duplo clique volta para 100%"
-        className="dangai-range min-w-0 flex-1"
-      />
-      <span className="tnum w-10 shrink-0 text-right text-[11px] text-ink-3">{Math.round(valor * 100)}%</span>
-    </div>
-  )
 }
 
 /**
@@ -1043,19 +908,22 @@ function CameraDaMetade({
   const termina = ateOFim(naAgulha ? inicio + (playhead - scene.start) : inicio + duracao)
 
   return (
-    <Field label={`Camera da metade de ${metade}`}>
-      <Chip
-        active={cam != null}
-        onClick={() =>
-          gravar(
-            cam == null
-              ? { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
-              : null,
-          )
-        }
-      >
-        {cam == null ? 'Usar camera livre' : 'Voltar ao enquadramento'}
-      </Chip>
+    <>
+      <Linha label="Camera" title="Desenhar a mao o enquadramento do comeco e do fim desta metade">
+        <Botaozinho
+          active={cam != null}
+          onClick={() =>
+            gravar(
+              cam == null
+                ? { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
+                : null,
+            )
+          }
+        >
+          <Video size={11} strokeWidth={1.5} />
+          {cam == null ? 'Camera livre' : 'Camera livre ligada'}
+        </Botaozinho>
+      </Linha>
       {cam != null && (
         <div className="grid grid-cols-2 gap-2">
           <Camera
@@ -1080,6 +948,54 @@ function CameraDaMetade({
           />
         </div>
       )}
-    </Field>
+    </>
+  )
+}
+
+/** O nome de uma secao dentro do grupo -- as metades da tela dividida. */
+function Subtitulo({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      <span className="text-[10px] font-medium text-ink-2">{children}</span>
+      <span className="h-px flex-1 bg-line" />
+    </div>
+  )
+}
+
+/**
+ * Uma curva guardada: usar e esquecer no mesmo botao, sem botao dentro de
+ * botao -- sao dois, colados.
+ */
+function CurvaSalva({
+  nome,
+  ativa,
+  onUsar,
+  onEsquecer,
+}: {
+  nome: string
+  ativa: boolean
+  onUsar: () => void
+  onEsquecer: () => void
+}) {
+  return (
+    <div
+      className={[
+        'flex h-6 max-w-[140px] items-center rounded-sm border text-[11px]',
+        ativa ? 'border-accent bg-accent-dim text-ink' : 'border-line bg-elevated text-ink-2',
+      ].join(' ')}
+    >
+      <button type="button" onClick={onUsar} className="min-w-0 truncate pl-2 pr-1 hover:text-ink">
+        {nome}
+      </button>
+      <button
+        type="button"
+        onClick={onEsquecer}
+        title={`Esquecer "${nome}"`}
+        aria-label={`Esquecer ${nome}`}
+        className="grid h-full w-5 shrink-0 place-items-center text-ink-3 hover:text-danger"
+      >
+        <X size={10} strokeWidth={2} />
+      </button>
+    </div>
   )
 }
