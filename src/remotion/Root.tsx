@@ -2,6 +2,7 @@ import { Composition } from 'remotion'
 import {
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
+  CURVA_DA_ENTRADA_PADRAO,
   CAPTION_MARK_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
   CAPTION_STROKE_DEFAULT,
@@ -32,6 +33,7 @@ const FALLBACK_PROPS: RenderProps = {
   captionFont: null,
   captionAnimation: CAPTION_ANIMATION_DEFAULT,
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
+  captionAnimationCurve: CURVA_DA_ENTRADA_PADRAO,
   captionMark: CAPTION_MARK_DEFAULT,
   captionShadow: CAPTION_SHADOW_DEFAULT,
   captionStroke: CAPTION_STROKE_DEFAULT,

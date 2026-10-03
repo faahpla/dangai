@@ -94,6 +94,7 @@ export function Camera({
   onChange,
   label,
   aoMexer,
+  aspectoDoQuadro: aspectoPedido,
 }: {
   image: ImageAsset
   /** A camera inteira, so para saber se ela enquadra o original ou o recorte. */
@@ -114,11 +115,16 @@ export function Camera({
    * O "Trecho do clipe" ja fazia isso a cada arrasto, pelo mesmo motivo.
    */
   aoMexer: () => void
+  /**
+   * O quadro que esta camera preenche, quando nao e o do video inteiro. Na tela
+   * dividida cada metade e um quadro proprio (1080x960).
+   */
+  aspectoDoQuadro?: number
 }) {
   /* O quadro em que este enquadramento vai cair -- vertical ou horizontal. */
   const formato = useProject((s) => s.formato)
   const quadro = medidasDo(formato)
-  const aspectoDoQuadro = quadro.width / quadro.height
+  const aspectoDoQuadro = aspectoPedido ?? quadro.width / quadro.height
 
   const caixaRef = useRef<HTMLDivElement | null>(null)
   const arrasto = useRef<{ x: number; y: number; de: CameraFrame } | null>(null)

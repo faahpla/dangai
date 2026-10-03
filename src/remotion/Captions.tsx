@@ -1,8 +1,10 @@
-import { AbsoluteFill, Sequence, spring, useCurrentFrame, useVideoConfig } from 'remotion'
+import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig } from 'remotion'
 import {
   activeWordIndex,
   CAPTION_CHARS_PER_LINE,
-  CAPTION_COLOR_HEX,
+  corDaLegenda,
+  escalaDaEntrada,
+  type CurvaDaEntrada,
   type CaptionAnimation,
   type CaptionBlock,
   type CaptionColor,
@@ -31,6 +33,7 @@ export function Captions({
   font,
   animation,
   animationFrames,
+  animationCurve,
   mark,
   shadow,
   stroke,
@@ -44,6 +47,7 @@ export function Captions({
   font: { family: string; url: string } | null
   animation: CaptionAnimation
   animationFrames: number
+  animationCurve: CurvaDaEntrada
   mark: CaptionMark
   shadow: CaptionShadow
   stroke: number
@@ -71,6 +75,7 @@ export function Captions({
             stack={stack}
             animation={animation}
             animationFrames={animationFrames}
+            animationCurve={animationCurve}
             mark={mark}
             shadow={shadow}
             stroke={stroke}
@@ -89,6 +94,7 @@ function Block({
   stack,
   animation,
   animationFrames,
+  animationCurve,
   mark,
   shadow,
   stroke,
@@ -100,6 +106,7 @@ function Block({
   stack: string
   animation: CaptionAnimation
   animationFrames: number
+  animationCurve: CurvaDaEntrada
   mark: CaptionMark
   shadow: CaptionShadow
   stroke: number
@@ -134,20 +141,14 @@ function Block({
    * por dentro, e hook dentro de condicao quebra na hora em que ele liga ou
    * desliga a opcao no meio do preview -- o React conta hooks entre renders.
    */
-  const mola = spring({
-    // Relativo ao bloco: `frame` la em cima ja virou absoluto somando block.from.
-    frame: frame - block.from,
-    fps,
-    config: { damping: 9, mass: 0.5, stiffness: 130 },
-    /*
-     * `durationInFrames` estica ou comprime a curva INTEIRA sem mudar o formato
-     * dela: o repique continua sendo o mesmo repique, so mais rapido ou mais
-     * lento. Mexer no stiffness em vez disso mudaria o quanto ela passa do
-     * ponto, e ai a velocidade e a intensidade viravam um controle so.
-     */
-    durationInFrames: animationFrames,
-  })
-  const escala = animation === 'elastica' ? 0.6 + 0.4 * mola : 1
+  /*
+   * A CURVA e dele agora: "quero mais controle sobre essa animacao elastica,
+   * um grafico de curvas configuravel". A curva padrao e a mola de antes
+   * amostrada (no maximo 0,6% de diferenca), entao quem nunca mexeu ve a
+   * mesma entrada.
+   */
+  const progresso = Math.min(Math.max((frame - block.from) / Math.max(animationFrames, 1), 0), 1)
+  const escala = animation === 'elastica' ? escalaDaEntrada(animationCurve, progresso) : 1
 
   return (
     <AbsoluteFill
@@ -213,7 +214,7 @@ function Block({
              */
             style={{
               color:
-                mark === 'tudo' || index === marcada ? CAPTION_COLOR_HEX[color] : '#FFFFFF',
+                mark === 'tudo' || index === marcada ? corDaLegenda(color) : '#FFFFFF',
             }}
           >
             {word.text}

@@ -3,6 +3,8 @@ import { fonteDaCamera } from './camera'
 import {
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
+  CURVA_DA_ENTRADA_PADRAO,
+  type CurvaDaEntrada,
   CAPTION_MARK_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
   CAPTION_STROKE_DEFAULT,
@@ -404,6 +406,7 @@ export function toRenderProps(
     font?: { family: string; url: string } | null
     animation?: CaptionAnimation
     animationFrames?: number
+    animationCurve?: CurvaDaEntrada
     mark?: CaptionMark
     shadow?: CaptionShadow
     stroke?: number
@@ -424,6 +427,7 @@ export function toRenderProps(
   const captionFont = legenda.font ?? null
   const captionAnimation = legenda.animation ?? CAPTION_ANIMATION_DEFAULT
   const captionAnimationFrames = legenda.animationFrames ?? CAPTION_ANIMATION_FRAMES_DEFAULT
+  const captionAnimationCurve = legenda.animationCurve ?? CURVA_DA_ENTRADA_PADRAO
   const captionMark = legenda.mark ?? CAPTION_MARK_DEFAULT
   const captionShadow = legenda.shadow ?? CAPTION_SHADOW_DEFAULT
   const captionStroke = legenda.stroke ?? CAPTION_STROKE_DEFAULT
@@ -442,6 +446,7 @@ export function toRenderProps(
       captionFont,
       captionAnimation,
       captionAnimationFrames,
+      captionAnimationCurve,
       captionMark,
       captionShadow,
       captionStroke,
@@ -574,6 +579,10 @@ export function toRenderProps(
               effect: scene.effectB ?? scene.effect,
               intensity: scene.intensityB ?? scene.intensity,
               escala: scene.escalaB ?? 1,
+              // A camera de baixo enquadra o ORIGINAL desta metade -- a mesma
+              // fonte que ela ja usa --, entao a conta precisa do aspecto dele.
+              camera: scene.cameraB ?? null,
+              aspecto: parceira.height > 0 ? parceira.width / parceira.height : null,
             }
           })()
 
@@ -611,7 +620,11 @@ export function toRenderProps(
           : abaixo === null && !quarto
             ? image.url
             : (image.urlSource ?? image.url),
-      sourceAspect: cameraNaFonte?.aspecto ?? null,
+      sourceAspect:
+        cameraNaFonte?.aspecto ??
+        // Na tela dividida a metade de cima tambem parte do original: a camera
+        // dela precisa do aspecto dele.
+        (abaixo !== null && scene.camera != null && image.height > 0 ? image.width / image.height : null),
       urlSource: image.urlSource ?? null,
       focusX: image.focusX,
       focusY: image.focusY,
@@ -646,6 +659,7 @@ export function toRenderProps(
     captionFont,
     captionAnimation,
     captionAnimationFrames,
+    captionAnimationCurve,
     captionMark,
     captionShadow,
     captionStroke,

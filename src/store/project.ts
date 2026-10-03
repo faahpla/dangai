@@ -12,9 +12,13 @@ import type {
   UpdateStatus,
 } from '@shared/channels'
 import {
+  CURVA_DA_ENTRADA_PADRAO,
+  curvaDaEntradaSchema,
+  type CurvaDaEntrada,
   REGRAS_DA_LEGENDA_PADRAO,
   regrasDaLegendaSchema,
   type RegrasDaLegenda,
+  type CaptionPreset,
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_ANIMATION_FRAMES_MAX,
@@ -238,6 +242,8 @@ export interface ProjectState {
   captionAnimation: CaptionAnimation
   /** Quantos frames a entrada elastica leva. Menos = mais rapida. */
   captionAnimationFrames: number
+  /** A curva da entrada elastica (escala ao longo da entrada). Ver CURVA_DA_ENTRADA_PADRAO. */
+  captionAnimationCurve: CurvaDaEntrada
   /** Cor so na palavra dita ('palavra', o padrao) ou na legenda toda ('tudo'). */
   captionMark: CaptionMark
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
@@ -249,6 +255,8 @@ export interface ProjectState {
    * adiantar e fechar vaos -- as opcoes do LegendAI. Ver @shared/legendas.
    */
   captionRules: RegrasDaLegenda
+  /** Os estilos de legenda guardados com nome. Moram nas configuracoes. */
+  captionPresets: CaptionPreset[]
   /** O upscale de um MP4 pronto em andamento. null = nenhum. */
   videoPronto: { feitos: number; total: number; nome: string } | null
   /** O ultimo MP4 pronto melhorado, para a barra oferecer abrir a pasta. */
@@ -471,6 +479,8 @@ export interface ProjectState {
         // O zoom fixo ("Scale") de cada metade.
         | 'escala'
         | 'escalaB'
+        // A camera livre da metade de baixo da tela dividida.
+        | 'cameraB'
       >
     >,
   ) => void
@@ -513,6 +523,7 @@ export interface ProjectState {
   openFontesDir: () => Promise<void>
   setCaptionAnimation: (animation: CaptionAnimation) => void
   setCaptionAnimationFrames: (frames: number) => void
+  setCaptionAnimationCurve: (curva: CurvaDaEntrada) => void
   setCaptionMark: (mark: CaptionMark) => void
   /** Ajusta um dos tres numeros da sombra. */
   setCaptionShadow: (patch: Partial<CaptionShadow>) => void
@@ -984,10 +995,12 @@ export const useProject = create<ProjectState>((set, get) => ({
   fontes: [],
   captionAnimation: CAPTION_ANIMATION_DEFAULT,
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
+  captionAnimationCurve: CURVA_DA_ENTRADA_PADRAO,
   captionMark: CAPTION_MARK_DEFAULT,
   captionShadow: CAPTION_SHADOW_DEFAULT,
   captionStroke: CAPTION_STROKE_DEFAULT,
   captionRules: REGRAS_DA_LEGENDA_PADRAO,
+  captionPresets: [],
   videoPronto: null,
   videoProntoSaida: null,
   sfxManual: [],
@@ -2794,6 +2807,20 @@ export const useProject = create<ProjectState>((set, get) => ({
       ),
     }),
 
+  setCaptionAnimationCurve: (curva) => {
+    /*
+     * Ordenada, presa as pontas e conferida pelo schema: o primeiro ponto fica
+     * em t = 0 e o ultimo em t = 1 com escala 1 -- a entrada sempre termina no
+     * tamanho da legenda, por mais que ele arraste.
+     */
+    const pts = [...curva].sort((a, b) => a.t - b.t)
+    if (pts.length < 2) return
+    pts[0] = { ...pts[0]!, t: 0 }
+    pts[pts.length - 1] = { t: 1, v: 1 }
+    const ok = curvaDaEntradaSchema.safeParse(pts)
+    if (ok.success) set({ captionAnimationCurve: ok.data })
+  },
+
   setCaptionMark: (mark) => set({ captionMark: mark }),
 
   setCaptionShadow: (patch) =>
@@ -3318,6 +3345,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         : null,
           animation: get().captionAnimation,
           animationFrames: get().captionAnimationFrames,
+          animationCurve: get().captionAnimationCurve,
           mark: get().captionMark,
           shadow: get().captionShadow,
           stroke: get().captionStroke,
@@ -3617,6 +3645,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       captionFont: state.captionFont?.nome ?? '',
       captionAnimation: state.captionAnimation,
       captionAnimationFrames: state.captionAnimationFrames,
+      captionAnimationCurve: state.captionAnimationCurve,
       captionMark: state.captionMark,
       captionShadow: state.captionShadow,
       captionStroke: state.captionStroke,
@@ -3924,6 +3953,7 @@ async function applyProjectFile(
       captionFont: file.captionFont ? { nome: file.captionFont, url: '' } : null,
       captionAnimation: file.captionAnimation,
       captionAnimationFrames: file.captionAnimationFrames,
+      captionAnimationCurve: file.captionAnimationCurve,
       captionMark: file.captionMark,
       captionShadow: file.captionShadow,
       captionStroke: file.captionStroke,

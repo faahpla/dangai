@@ -16,6 +16,8 @@ import {
   VIDEO_FPS,
   medidasDo,
   type CurvePoints,
+  type ImageAsset,
+  type Scene,
   type MotionCurve,
   type Transition,
 } from '@shared/contract'
@@ -289,6 +291,12 @@ export function SceneEdit() {
         da decisao, nao mais uma opcao no meio. Some na tela dividida: ali cada
         metade tem quadro proprio, e uma camera so para as duas nao diz nada.
       */}
+      {imageB && (
+        <>
+          <CameraDaMetade index={index} scene={scene} image={image} metade="cima" />
+          <CameraDaMetade index={index} scene={scene} image={imageB} metade="baixo" />
+        </>
+      )}
       {!imageB && (
         <>
           <Field label="Camera">
@@ -1022,5 +1030,85 @@ function ZoomFixo({ valor, onChange }: { valor: number; onChange: (v: number) =>
       />
       <span className="tnum w-10 shrink-0 text-right text-[11px] text-ink-3">{Math.round(valor * 100)}%</span>
     </div>
+  )
+}
+
+/**
+ * A camera livre de UMA metade da tela dividida.
+ *
+ * "Opcao de camera livre na tela dividida." Cada metade e um quadro proprio --
+ * 1080x960 --, e a camera dela enquadra o arquivo ORIGINAL, que e a fonte que
+ * a metade ja usa. Ligada, manda no lugar do foco e do efeito daquela metade;
+ * a curva (o ritmo) continua sendo a do bloco.
+ */
+function CameraDaMetade({
+  index,
+  scene,
+  image,
+  metade,
+}: {
+  index: number
+  scene: Scene
+  image: ImageAsset
+  metade: 'cima' | 'baixo'
+}) {
+  const updateScene = useProject((s) => s.updateScene)
+  const setPlayhead = useProject((s) => s.setPlayhead)
+  const playhead = useProject((s) => s.playhead)
+  const formato = useProject((s) => s.formato)
+  const q = medidasDo(formato)
+  const aspectoDaMetade = q.width / (q.height / 2)
+
+  const cam = metade === 'cima' ? scene.camera : scene.cameraB
+  const gravar = (c: Scene['camera']): void =>
+    updateScene(index, metade === 'cima' ? { camera: c } : { cameraB: c })
+
+  const inicio = (metade === 'cima' ? scene.sourceStart : scene.sourceStartB) ?? 0
+  const duracao = scene.end - scene.start
+  const naAgulha = playhead >= scene.start && playhead < scene.end
+  const ateOFim = (t: number): number =>
+    image.durationSec === undefined ? t : Math.min(t, Math.max(image.durationSec - 0.05, 0))
+  const comeca = ateOFim(naAgulha ? inicio + (playhead - scene.start) : inicio)
+  const termina = ateOFim(naAgulha ? inicio + (playhead - scene.start) : inicio + duracao)
+
+  return (
+    <Field label={`Camera da metade de ${metade}`}>
+      <Chip
+        active={cam != null}
+        onClick={() =>
+          gravar(
+            cam == null
+              ? { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
+              : null,
+          )
+        }
+      >
+        {cam == null ? 'Usar camera livre' : 'Voltar ao enquadramento'}
+      </Chip>
+      {cam != null && (
+        <div className="grid grid-cols-2 gap-2">
+          <Camera
+            image={image}
+            camera={{ source: true }}
+            instante={comeca}
+            label="Comeca em"
+            aspectoDoQuadro={aspectoDaMetade}
+            aoMexer={() => setPlayhead(scene.start)}
+            value={cam.from}
+            onChange={(from) => gravar({ ...cam, from })}
+          />
+          <Camera
+            image={image}
+            camera={{ source: true }}
+            instante={termina}
+            label="Termina em"
+            aspectoDoQuadro={aspectoDaMetade}
+            aoMexer={() => setPlayhead(Math.max(scene.end - 1 / VIDEO_FPS, scene.start))}
+            value={cam.to}
+            onChange={(to) => gravar({ ...cam, to })}
+          />
+        </div>
+      )}
+    </Field>
   )
 }

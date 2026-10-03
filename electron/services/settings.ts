@@ -43,6 +43,13 @@ export interface Settings {
    * `null` ate ele mexer em alguma coisa pela primeira vez.
    */
   captionStyle: Record<string, unknown> | null
+  /**
+   * Estilos de legenda que ele guardou com nome. Conferidos do outro lado, pelo
+   * schema do contract -- aqui so atravessam como objetos.
+   */
+  captionPresets: Record<string, unknown>[]
+  /** As Power Bins: colecoes de arquivos que ele arrasta para a linha do tempo. */
+  bins: Record<string, unknown>[]
 }
 
 const DEFAULTS: Settings = {
@@ -51,6 +58,8 @@ const DEFAULTS: Settings = {
   sfxDir: '',
   libraryDir: '',
   curvePresets: [],
+  captionPresets: [],
+  bins: [],
   captionStyle: null,
 }
 
@@ -105,6 +114,8 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
     libraryDir: settings.libraryDir,
     curvePresets: settings.curvePresets,
     captionStyle: settings.captionStyle,
+    captionPresets: settings.captionPresets,
+    bins: settings.bins,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -128,6 +139,16 @@ function coerce(raw: unknown): Settings {
       typeof value['captionStyle'] === 'object' && value['captionStyle'] !== null
         ? (value['captionStyle'] as Record<string, unknown>)
         : null,
+    captionPresets: Array.isArray(value['captionPresets'])
+      ? (value['captionPresets'] as unknown[]).filter(
+          (x): x is Record<string, unknown> => typeof x === 'object' && x !== null,
+        )
+      : [],
+    bins: Array.isArray(value['bins'])
+      ? (value['bins'] as unknown[]).filter(
+          (x): x is Record<string, unknown> => typeof x === 'object' && x !== null,
+        )
+      : [],
   }
 }
 

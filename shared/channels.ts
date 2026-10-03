@@ -438,6 +438,10 @@ export interface PublicSettings {
   curvePresets: { nome: string; pontos: [number, number, number, number] }[]
   /** O estilo de legenda que ele deixou por ultimo. Ponto de partida do proximo video. */
   captionStyle: Record<string, unknown> | null
+  /** Estilos de legenda guardados com nome. Conferidos pelo captionPresetSchema. */
+  captionPresets: Record<string, unknown>[]
+  /** As Power Bins. Conferidas pelo binSchema. */
+  bins: Record<string, unknown>[]
 }
 
 export interface SettingsPatch {
@@ -447,6 +451,8 @@ export interface SettingsPatch {
   libraryDir?: string
   curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
   captionStyle?: Record<string, unknown>
+  captionPresets?: Record<string, unknown>[]
+  bins?: Record<string, unknown>[]
 }
 
 /**

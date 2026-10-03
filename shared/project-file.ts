@@ -8,6 +8,8 @@ import {
   CAPTION_STROKE_DEFAULT,
   CAPTION_COLOR_DEFAULT,
   captionAnimationFramesSchema,
+  curvaDaEntradaSchema,
+  CURVA_DA_ENTRADA_PADRAO,
   captionAnimationSchema,
   captionMarkSchema,
   captionShadowSchema,
@@ -213,6 +215,8 @@ export const projectFileSchema = z.object({
   captionShadow: captionShadowSchema.default(CAPTION_SHADOW_DEFAULT),
   /** Espessura do contorno. Default para projeto salvo antes dela existir. */
   captionStroke: captionStrokeSchema.default(CAPTION_STROKE_DEFAULT),
+  /** A curva da entrada elastica. Com default = a mola de antes, para projeto antigo abrir igual. */
+  captionAnimationCurve: curvaDaEntradaSchema.default(CURVA_DA_ENTRADA_PADRAO),
   /**
    * Os SFX postos a mao na faixa. Default vazio para projeto antigo abrir com
    * o rodizio automatico, que era o unico jeito ate aqui.

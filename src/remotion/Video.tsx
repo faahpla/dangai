@@ -61,6 +61,7 @@ export function Video({
   captionFont,
   captionAnimation,
   captionAnimationFrames,
+  captionAnimationCurve,
   captionMark,
   captionShadow,
   captionStroke,
@@ -147,6 +148,7 @@ export function Video({
           font={captionFont}
           animation={captionAnimation}
           animationFrames={captionAnimationFrames}
+          animationCurve={captionAnimationCurve}
           mark={captionMark}
           shadow={captionShadow}
           stroke={captionStroke}

@@ -1,4 +1,4 @@
-import { captionStyleSchema, type CaptionStyle } from '@shared/contract'
+import { captionPresetSchema, captionStyleSchema, type CaptionPreset, type CaptionStyle } from '@shared/contract'
 import { useProject } from './project'
 import { estaCarregando } from './quiet'
 
@@ -24,7 +24,7 @@ const ESPERA_MS = 600
 
 let timer: ReturnType<typeof setTimeout> | null = null
 
-function estiloAtual(): CaptionStyle {
+export function estiloAtual(): CaptionStyle {
   const s = useProject.getState()
   return {
     color: s.captionColor,
@@ -40,6 +40,7 @@ function estiloAtual(): CaptionStyle {
     stroke: s.captionStroke,
     // As regras do LegendAI tambem sao gosto dele, nao do video.
     regras: s.captionRules,
+    animationCurve: s.captionAnimationCurve,
   }
 }
 
@@ -55,7 +56,8 @@ function mudou(a: ReturnType<typeof useProject.getState>, b: typeof a): boolean 
     a.captionMark !== b.captionMark ||
     a.captionShadow !== b.captionShadow ||
     a.captionStroke !== b.captionStroke ||
-    a.captionRules !== b.captionRules
+    a.captionRules !== b.captionRules ||
+    a.captionAnimationCurve !== b.captionAnimationCurve
   )
 }
 
@@ -94,21 +96,66 @@ export function startEstiloLegenda(): () => void {
  */
 export async function aplicarEstiloGuardado(): Promise<void> {
   const r = await window.dangai.getSettings()
-  if (!r.ok || !r.value.captionStyle) return
+  if (!r.ok) return
 
+  // Os estilos com nome chegam na mesma leitura -- e ANTES do retorno abaixo:
+  // quem nunca mexeu no estilo pode ter presets do mesmo jeito.
+  useProject.setState({
+    captionPresets: (r.value.captionPresets ?? []).flatMap((p) => {
+      const ok = captionPresetSchema.safeParse(p)
+      return ok.success ? [ok.data] : []
+    }),
+  })
+
+  if (!r.value.captionStyle) return
   const parsed = captionStyleSchema.safeParse(r.value.captionStyle)
   if (!parsed.success) return
+  aplicarEstilo(parsed.data, false)
+}
 
-  const e = parsed.data
+/**
+ * Poe um estilo inteiro na legenda.
+ *
+ * `comFonte` false na abertura do app: la a fonte precisa da URL que o
+ * refreshFontes resolve lendo a pasta. Aplicando um preset com a pasta ja lida,
+ * a fonte vai junto, pelo nome.
+ */
+export function aplicarEstilo(e: CaptionStyle, comFonte: boolean): void {
   const store = useProject.getState()
-
   if (e.color !== undefined) store.setCaptionColor(e.color)
   if (e.y !== undefined) store.setCaptionY(e.y)
   if (e.scale !== undefined) store.setCaptionScale(e.scale)
   if (e.animation !== undefined) store.setCaptionAnimation(e.animation)
   if (e.animationFrames !== undefined) store.setCaptionAnimationFrames(e.animationFrames)
+  if (e.animationCurve !== undefined) store.setCaptionAnimationCurve(e.animationCurve)
   if (e.mark !== undefined) store.setCaptionMark(e.mark)
   if (e.shadow !== undefined) store.setCaptionShadow(e.shadow)
   if (e.stroke !== undefined) store.setCaptionStroke(e.stroke)
   if (e.regras !== undefined) store.setCaptionRules(e.regras)
+  if (comFonte && e.fontNome !== undefined) {
+    const existe = store.fontes.some((f) => f.nome === e.fontNome)
+    store.setCaptionFont(e.fontNome && existe ? e.fontNome : null)
+  }
+}
+
+function gravarPresets(lista: CaptionPreset[]): void {
+  useProject.setState({ captionPresets: lista })
+  void window.dangai.saveSettings({ captionPresets: lista })
+}
+
+/** Guarda o estilo de agora com um nome. O mesmo nome substitui o antigo. */
+export function salvarPreset(nome: string): void {
+  const limpo = nome.trim().slice(0, 40)
+  if (!limpo) return
+  const outros = useProject.getState().captionPresets.filter((p) => p.nome !== limpo)
+  gravarPresets([...outros, { nome: limpo, estilo: estiloAtual() }])
+}
+
+export function aplicarPreset(nome: string): void {
+  const p = useProject.getState().captionPresets.find((x) => x.nome === nome)
+  if (p) aplicarEstilo(p.estilo, true)
+}
+
+export function removerPreset(nome: string): void {
+  gravarPresets(useProject.getState().captionPresets.filter((p) => p.nome !== nome))
 }

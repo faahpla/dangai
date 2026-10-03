@@ -18,12 +18,16 @@ import {
   Library as LibraryIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { aplicarPreset, removerPreset, salvarPreset } from '@/store/estilo-legenda'
+import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
 import { useProject } from '@/store/project'
 import {
   familiaDaFonte,
   CAPTION_ANIMATION_FRAMES_MAX,
   CAPTION_ANIMATION_FRAMES_MIN,
   CAPTION_COLOR_HEX,
+  corDaLegenda,
+  CAPTION_COLOR_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
   CAPTION_STROKE_MAX,
   CAPTION_STROKE_MIN,
@@ -509,6 +513,8 @@ function EstiloControl() {
   const setCaptionAnimation = useProject((s) => s.setCaptionAnimation)
   const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
   const setCaptionAnimationFrames = useProject((s) => s.setCaptionAnimationFrames)
+  const captionAnimationCurve = useProject((s) => s.captionAnimationCurve)
+  const setCaptionAnimationCurve = useProject((s) => s.setCaptionAnimationCurve)
   const captionMark = useProject((s) => s.captionMark)
   const setCaptionMark = useProject((s) => s.setCaptionMark)
   const sombra = useProject((s) => s.captionShadow)
@@ -559,7 +565,7 @@ function EstiloControl() {
       >
         <span
           className="size-3 rounded-full"
-          style={{ backgroundColor: CAPTION_COLOR_HEX[captionColor] }}
+          style={{ backgroundColor: corDaLegenda(captionColor) }}
         />
         Estilo
       </button>
@@ -592,6 +598,7 @@ function EstiloControl() {
             style={alturaMax === null ? undefined : { maxHeight: `${alturaMax}px` }}
             className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 grid w-[520px] grid-cols-2 gap-x-4 overflow-y-auto rounded-md p-3"
           >
+            <PresetsDeEstilo />
             <div>
             <span className="text-[10px] uppercase tracking-wide text-ink-3">
               {captionMark === 'tudo' ? 'Cor do texto' : 'Cor da palavra'}
@@ -617,6 +624,7 @@ function EstiloControl() {
                 </button>
               ))}
             </div>
+            <CorLivre />
 
             <div className="mt-2 flex flex-col gap-1">
               <Opcao
@@ -834,6 +842,8 @@ function EstiloControl() {
                   }
                   className="dangai-range mt-1.5 w-full"
                 />
+                <span className="mt-3 block text-[10px] uppercase tracking-wide text-ink-3">Curva da entrada</span>
+                <CurvaDaEntradaEditor curva={captionAnimationCurve} onChange={setCaptionAnimationCurve} />
               </>
             )}
             </div>
@@ -1173,6 +1183,124 @@ function MusicControl() {
       >
         <X size={11} strokeWidth={1.5} />
       </button>
+    </div>
+  )
+}
+
+/**
+ * Qualquer cor, pelo codigo hexadecimal ou pelo seletor do sistema.
+ *
+ * "Opcao de hexadecimal nas cores das legendas." O campo so aplica quando o
+ * codigo esta completo (#RRGGBB): digitar "#FF" no meio do caminho nao pode
+ * pintar a legenda de uma cor que ele nao pediu.
+ */
+function CorLivre() {
+  const captionColor = useProject((s) => s.captionColor)
+  const setCaptionColor = useProject((s) => s.setCaptionColor)
+  const hex = corDaLegenda(captionColor)
+  const [texto, setTexto] = useState(hex)
+  useEffect(() => setTexto(hex), [hex])
+  const aplicar = (valor: string): void => {
+    const limpo = valor.trim().startsWith('#') ? valor.trim() : `#${valor.trim()}`
+    if (/^#[0-9a-fA-F]{6}$/.test(limpo)) setCaptionColor(limpo.toUpperCase())
+  }
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <input
+        type="color"
+        aria-label="Escolher qualquer cor"
+        value={hex}
+        onChange={(e) => setCaptionColor(e.target.value.toUpperCase())}
+        className="h-7 w-9 cursor-pointer rounded-sm border border-line bg-transparent p-0.5"
+      />
+      <input
+        type="text"
+        aria-label="Cor em hexadecimal"
+        value={texto}
+        maxLength={7}
+        spellCheck={false}
+        onChange={(e) => {
+          setTexto(e.target.value)
+          aplicar(e.target.value)
+        }}
+        onBlur={() => setTexto(hex)}
+        className="tnum w-24 rounded-sm border border-line bg-elevated px-2 py-1 text-[11px] uppercase text-ink focus:border-accent focus:outline-none"
+      />
+    </div>
+  )
+}
+
+/**
+ * Os estilos com nome, no topo do painel.
+ *
+ * "Poder salvar preset de estilo." Um clique aplica; "Salvar o estilo atual"
+ * guarda tudo que este painel controla -- cor, altura, tamanho, contorno,
+ * sombra, fonte, entrada e a curva dela, e as regras da legenda. Guardar com um
+ * nome que ja existe substitui.
+ */
+function PresetsDeEstilo() {
+  const presets = useProject((s) => s.captionPresets)
+  const [nomeando, setNomeando] = useState(false)
+  const [nome, setNome] = useState('')
+  const salvar = (): void => {
+    if (nome.trim()) salvarPreset(nome)
+    setNomeando(false)
+    setNome('')
+  }
+  return (
+    <div className="col-span-2 mb-3 border-b border-line pb-3">
+      <span className="text-[10px] uppercase tracking-wide text-ink-3">Presets de estilo</span>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        {presets.map((p) => (
+          <span key={p.nome} className="group/preset flex items-center rounded-sm border border-line bg-elevated">
+            <button
+              type="button"
+              onClick={() => aplicarPreset(p.nome)}
+              title="Aplicar este estilo"
+              className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-ink-2 hover:text-ink"
+            >
+              <span
+                className="size-2.5 rounded-full"
+                style={{ backgroundColor: corDaLegenda(p.estilo.color ?? CAPTION_COLOR_DEFAULT) }}
+              />
+              {p.nome}
+            </button>
+            <button
+              type="button"
+              onClick={() => removerPreset(p.nome)}
+              aria-label={`Apagar o preset ${p.nome}`}
+              title="Apagar"
+              className="px-1.5 py-1 text-[11px] text-ink-3 opacity-0 hover:text-danger group-hover/preset:opacity-100"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        {nomeando ? (
+          <input
+            autoFocus
+            value={nome}
+            maxLength={40}
+            placeholder="Nome do estilo"
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter') salvar()
+              if (e.key === 'Escape') setNomeando(false)
+            }}
+            onBlur={salvar}
+            className="w-36 rounded-sm border border-accent bg-elevated px-2 py-1 text-[11px] text-ink focus:outline-none"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setNomeando(true)}
+            className="rounded-sm border border-dashed border-line px-2 py-1 text-[11px] text-ink-3 hover:text-ink-2"
+          >
+            + Salvar o estilo atual
+          </button>
+        )}
+      </div>
     </div>
   )
 }

@@ -187,6 +187,8 @@ export function Scene({
           curve={curve}
           curvePoints={curvePoints}
           escala={escala}
+          camera={camera}
+          aspecto={sourceAspect}
         />
         <Metade
           url={abaixo.url}
@@ -200,6 +202,8 @@ export function Scene({
           effect={abaixo.effect}
           intensity={abaixo.intensity}
           escala={abaixo.escala}
+          camera={abaixo.camera}
+          aspecto={abaixo.aspecto}
           curve={curve}
           curvePoints={curvePoints}
         />
@@ -372,6 +376,8 @@ function Metade({
   curve,
   curvePoints,
   escala,
+  camera,
+  aspecto,
 }: {
   url: string
   kind: 'image' | 'video'
@@ -385,8 +391,13 @@ function Metade({
   curve: SceneProps['curve']
   curvePoints: SceneProps['curvePoints']
   escala: number
+  /** Camera livre desta metade, no espaco do arquivo original. */
+  camera: SceneProps['camera']
+  /** Aspecto do arquivo original desta metade. */
+  aspecto: number | null
 }) {
   const frame = useCurrentFrame()
+  const { width, height } = useVideoConfig()
   const ultimoFrame = Math.max((sourceDurationInFrames ?? durationInFrames) - 1, 0)
   const congelando = sourceDurationInFrames !== null && frame > ultimoFrame
 
@@ -410,16 +421,29 @@ function Metade({
   const { scale, x, y } =
     effect === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(effect, intensity, eased)
 
+  /*
+   * CAMERA LIVRE NA METADE: a mesma geometria da tela cheia, com o QUADRO da
+   * metade (1080x960) no lugar do quadro inteiro. "Opcao de camera livre na
+   * tela dividida." Ela manda no lugar do foco e do efeito, como na tela cheia.
+   */
+  const aspectoDaMetade = width / (height / 2)
+  const estiloCamera = camera
+    ? estiloDaCamera(amostrarCamera(camera, eased), aspecto ?? aspectoDaMetade, aspectoDaMetade)
+    : null
+
   const preenchendo = {
     width: '100%',
     height: '100%',
     objectFit: 'cover' as const,
-    objectPosition: `${(focusX * 100).toFixed(1)}% ${(focusY * 100).toFixed(1)}%`,
+    objectPosition:
+      estiloCamera?.objectPosition ?? `${(focusX * 100).toFixed(1)}% ${(focusY * 100).toFixed(1)}%`,
     // O cover ja preencheu a metade, entao ampliar daqui nunca abre tarja --
     // o mesmo motivo pelo qual o Ken Burns de tela cheia parte de uma escala
     // ja ampliada.
     // O zoom fixo da metade multiplica o movimento, a partir do mesmo centro.
-    transform: `scale(${scale * escala}) translate(${x}%, ${y}%)`,
+    transform: estiloCamera
+      ? `scale(${escala}) ${estiloCamera.transform}`
+      : `scale(${scale * escala}) translate(${x}%, ${y}%)`,
     transformOrigin: 'center center',
   }
 

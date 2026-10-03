@@ -51,6 +51,7 @@ export function Preview() {
   const captionFont = useProject((s) => s.captionFont)
   const captionAnimation = useProject((s) => s.captionAnimation)
   const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
+  const captionAnimationCurve = useProject((s) => s.captionAnimationCurve)
   const captionMark = useProject((s) => s.captionMark)
   const captionShadow = useProject((s) => s.captionShadow)
   const captionStroke = useProject((s) => s.captionStroke)
@@ -87,6 +88,7 @@ export function Preview() {
                 : null,
               animation: captionAnimation,
               animationFrames: captionAnimationFrames,
+              animationCurve: captionAnimationCurve,
               mark: captionMark,
               shadow: captionShadow,
               stroke: captionStroke,
@@ -104,6 +106,7 @@ export function Preview() {
             captionFont: null,
             captionAnimation,
             captionAnimationFrames,
+            captionAnimationCurve,
             captionMark,
             captionShadow,
             captionStroke,
@@ -129,6 +132,7 @@ export function Preview() {
       captionFont,
       captionAnimation,
       captionAnimationFrames,
+      captionAnimationCurve,
       captionMark,
       captionShadow,
       captionStroke,

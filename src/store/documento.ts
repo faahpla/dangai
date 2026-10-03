@@ -31,6 +31,10 @@ export const CAMPOS = [
   'captionMark',
   'captionShadow',
   'captionStroke',
+  // O tamanho estava fora desta lista: mudar so o tamanho nao disparava o
+  // autosave nem entrava no desfazer.
+  'captionScale',
+  'captionAnimationCurve',
   'sfxManual',
   'sfxEnabled',
   'music',

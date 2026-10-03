@@ -396,7 +396,7 @@ export const CAPTION_MARK_DEFAULT: CaptionMark = 'palavra'
  * por ele depois de ver rodando.
  */
 export const CAPTION_ANIMATION_FRAMES_MIN = 3
-export const CAPTION_ANIMATION_FRAMES_MAX = 16
+export const CAPTION_ANIMATION_FRAMES_MAX = 30
 export const CAPTION_ANIMATION_FRAMES_DEFAULT = 6
 export const captionAnimationFramesSchema = z
   .number()
@@ -414,6 +414,85 @@ export const captionAnimationFramesSchema = z
  */
 export function familiaDaFonte(nomeDoArquivo: string): string {
   return nomeDoArquivo.replace(/\.[^.]+$/, '')
+}
+
+/**
+ * A curva da entrada elastica: a ESCALA da legenda ao longo da entrada.
+ *
+ * "Quero ter mais controle sobre essa animacao elastica, um grafico de curvas
+ * configuravel." Cada ponto e (t, escala): t vai de 0 (a legenda aparece) a 1
+ * (fim da entrada), e a escala 1 e o tamanho normal. O primeiro ponto fica em
+ * t = 0 e o ultimo em t = 1 com escala 1 -- a entrada sempre termina no
+ * tamanho da legenda.
+ *
+ * Interpolada em cubica MONOTONICA: picos e vales caem exatamente nos pontos
+ * que ele arrastou, e a curva nunca passa deles por conta propria.
+ */
+export const pontoDaEntradaSchema = z.object({
+  t: z.number().min(0).max(1),
+  v: z.number().min(0).max(2),
+})
+export const curvaDaEntradaSchema = z.array(pontoDaEntradaSchema).min(2).max(10)
+export type CurvaDaEntrada = z.infer<typeof curvaDaEntradaSchema>
+
+/**
+ * O padrao e a mola de antes, amostrada: spring(damping 9, massa 0,5, rigidez
+ * 130) indo de 0,6 a 1, com o pico de 1,048 a 40% da entrada. Medido: no maximo
+ * 0,6% de diferenca para a mola em qualquer quadro -- quem nunca mexeu na curva
+ * continua vendo a mesma entrada.
+ */
+export const CURVA_DA_ENTRADA_PADRAO: CurvaDaEntrada = [
+  { t: 0, v: 0.6 },
+  { t: 0.05, v: 0.637 },
+  { t: 0.15, v: 0.816 },
+  { t: 0.25, v: 0.973 },
+  { t: 0.4, v: 1.048 },
+  { t: 0.6, v: 1.012 },
+  { t: 0.8, v: 0.994 },
+  { t: 1, v: 1 },
+]
+
+/** A escala no instante t (0..1) da entrada. */
+export function escalaDaEntrada(curva: CurvaDaEntrada, t: number): number {
+  const pts = [...curva].sort((a, b) => a.t - b.t)
+  if (t <= pts[0]!.t) return pts[0]!.v
+  if (t >= pts.at(-1)!.t) return pts.at(-1)!.v
+  const n = pts.length
+  // Fritsch-Carlson: inclinacoes que nao criam extremos entre os pontos.
+  const d: number[] = []
+  for (let i = 0; i < n - 1; i++) d.push((pts[i + 1]!.v - pts[i]!.v) / Math.max(pts[i + 1]!.t - pts[i]!.t, 1e-9))
+  const m: number[] = [d[0]!]
+  for (let i = 1; i < n - 1; i++) m.push(d[i - 1]! * d[i]! <= 0 ? 0 : (d[i - 1]! + d[i]!) / 2)
+  m.push(d[n - 2]!)
+  for (let i = 0; i < n - 1; i++) {
+    if (d[i] === 0) {
+      m[i] = 0
+      m[i + 1] = 0
+      continue
+    }
+    const a = m[i]! / d[i]!
+    const b = m[i + 1]! / d[i]!
+    const h = a * a + b * b
+    if (h > 9) {
+      const k = 3 / Math.sqrt(h)
+      m[i] = k * a * d[i]!
+      m[i + 1] = k * b * d[i]!
+    }
+  }
+  let i = 0
+  while (t > pts[i + 1]!.t) i++
+  const p0 = pts[i]!
+  const p1 = pts[i + 1]!
+  const h = p1.t - p0.t
+  const s = (t - p0.t) / h
+  const s2 = s * s
+  const s3 = s2 * s
+  return (
+    (2 * s3 - 3 * s2 + 1) * p0.v +
+    (s3 - 2 * s2 + s) * h * m[i]! +
+    (-2 * s3 + 3 * s2) * p1.v +
+    (s3 - s2) * h * m[i + 1]!
+  )
 }
 
 export const CAPTION_ANIMATIONS = ['nenhuma', 'elastica'] as const
@@ -497,6 +576,31 @@ export const CLIP_MOTION_CURVE: MotionCurve = 'linear'
  */
 export const CLIP_INTENSITY = 0.1
 
+/** O caminho da camera livre: duas pontas e as chaves do meio. */
+export const caminhoDaCameraSchema = z.object({
+      from: cameraFrameSchema,
+      to: cameraFrameSchema,
+      /**
+       * A camera enquadra o arquivo ORIGINAL, e nao o recorte 9:16.
+       *
+       * Ate a v1.27 ela so enxergava o recorte, e os dois tercos laterais de um
+       * clipe 16:9 eram inalcancaveis -- um personagem na ponta direita nao
+       * existia no arquivo que o render abria. Falso nas cameras desenhadas
+       * antes disto: o numero delas vale no quadro recortado, e trocar a fonte
+       * por baixo mudaria o enquadramento de um video ja pronto.
+       */
+      source: z.boolean().default(false),
+      /**
+       * As chaves do meio do caminho, em ordem de .
+       *
+       * Vazio e o normal: a camera vai da primeira ponta a segunda em linha
+       * reta, como sempre foi. O rastreador enche esta lista, e ai o caminho
+       * passa a acompanhar o que se mexe em vez de cortar reto por cima dele.
+       */
+      keys: z.array(cameraKeySchema).default([]),
+    })
+export type CaminhoDaCameraSalvo = z.infer<typeof caminhoDaCameraSchema>
+
 export const sceneSchema = z.object({
   /** Indice na lista de imagens do usuario. */
   imageIndex: z.number().int().nonnegative(),
@@ -566,31 +670,15 @@ export const sceneSchema = z.object({
    *
    * null e o normal, e mantem os presets mandando.
    */
-  camera: z
-    .object({
-      from: cameraFrameSchema,
-      to: cameraFrameSchema,
-      /**
-       * A camera enquadra o arquivo ORIGINAL, e nao o recorte 9:16.
-       *
-       * Ate a v1.27 ela so enxergava o recorte, e os dois tercos laterais de um
-       * clipe 16:9 eram inalcancaveis -- um personagem na ponta direita nao
-       * existia no arquivo que o render abria. Falso nas cameras desenhadas
-       * antes disto: o numero delas vale no quadro recortado, e trocar a fonte
-       * por baixo mudaria o enquadramento de um video ja pronto.
-       */
-      source: z.boolean().default(false),
-      /**
-       * As chaves do meio do caminho, em ordem de .
-       *
-       * Vazio e o normal: a camera vai da primeira ponta a segunda em linha
-       * reta, como sempre foi. O rastreador enche esta lista, e ai o caminho
-       * passa a acompanhar o que se mexe em vez de cortar reto por cima dele.
-       */
-      keys: z.array(cameraKeySchema).default([]),
-    })
-    .nullable()
-    .default(null),
+  camera: caminhoDaCameraSchema.nullable().default(null),
+  /**
+   * A camera livre da metade de BAIXO da tela dividida. Na divisao, `camera`
+   * vale para a metade de cima.
+   *
+   * "Opcao de camera livre na tela dividida." Cada metade e um quadro proprio
+   * (1080x960), e enquadra o arquivo original com o aspecto dela.
+   */
+  cameraB: caminhoDaCameraSchema.nullable().optional(),
   /**
    * De que ponto do CLIPE este bloco parte, em segundos. 0 = do comeco.
    *
@@ -827,10 +915,27 @@ export const END_CARD_SEC_DEFAULT = 3
  * justamente no frame em que deveria chamar atencao.
  */
 export const CAPTION_COLORS = ['rosa', 'amarelo', 'verde', 'vermelho', 'azul', 'branco'] as const
-export const captionColorSchema = z.enum(CAPTION_COLORS)
+/**
+ * Uma das seis prontas, ou QUALQUER cor em hexadecimal (#RRGGBB).
+ *
+ * "Opcao de hexadecimal nas cores das legendas." As seis continuam valendo
+ * pelo nome -- projeto e preset antigos abrem igual --, e a cor livre entra
+ * como o proprio codigo.
+ */
+export const captionColorSchema = z.union([
+  z.enum(CAPTION_COLORS),
+  z.string().regex(/^#[0-9a-fA-F]{6}$/),
+])
 export type CaptionColor = z.infer<typeof captionColorSchema>
 
-export const CAPTION_COLOR_HEX: Record<CaptionColor, string> = {
+/** O hexadecimal de verdade de uma cor de legenda, pronta ou livre. */
+export function corDaLegenda(cor: CaptionColor): string {
+  return cor.startsWith('#')
+    ? cor.toUpperCase()
+    : CAPTION_COLOR_HEX[cor as (typeof CAPTION_COLORS)[number]]
+}
+
+export const CAPTION_COLOR_HEX: Record<(typeof CAPTION_COLORS)[number], string> = {
   rosa: '#FF3D81',
   amarelo: '#FFD60A',
   verde: '#34E06A',
@@ -955,11 +1060,26 @@ export const captionStyleSchema = z.object({
   fontNome: z.string().catch('').optional(),
   animation: captionAnimationSchema.catch(CAPTION_ANIMATION_DEFAULT).optional(),
   animationFrames: captionAnimationFramesSchema.catch(CAPTION_ANIMATION_FRAMES_DEFAULT).optional(),
+  animationCurve: curvaDaEntradaSchema.catch(CURVA_DA_ENTRADA_PADRAO).optional(),
   mark: captionMarkSchema.catch(CAPTION_MARK_DEFAULT).optional(),
   shadow: captionShadowSchema.catch(CAPTION_SHADOW_DEFAULT).optional(),
   stroke: captionStrokeSchema.catch(CAPTION_STROKE_DEFAULT).optional(),
 })
 export type CaptionStyle = z.infer<typeof captionStyleSchema>
+
+/**
+ * Um estilo de legenda guardado com NOME.
+ *
+ * "Poder salvar preset de estilo." O ultimo estilo ja virava o padrao do
+ * proximo video; isto e o passo seguinte -- varios estilos, cada um com nome,
+ * a um clique. Usa o mesmo captionStyleSchema, com .catch em cada campo: um
+ * preset guardado numa versao antiga abre com o que ainda servir.
+ */
+export const captionPresetSchema = z.object({
+  nome: z.string().trim().min(1).max(40),
+  estilo: captionStyleSchema,
+})
+export type CaptionPreset = z.infer<typeof captionPresetSchema>
 
 export const renderPropsSchema = z.object({
   /**
@@ -1089,6 +1209,10 @@ export const renderPropsSchema = z.object({
           effect: z.enum(SCENE_EFFECTS).default('nenhum'),
           intensity: z.number().min(0.02).max(0.2).default(0.12),
           escala: z.number().min(1).max(4).default(1),
+          /** Camera livre desta metade. Preenchida, manda no lugar do efeito. */
+          camera: caminhoDaCameraSchema.nullable().default(null),
+          /** Aspecto do arquivo desta metade -- a conta da camera precisa dele. */
+          aspecto: z.number().positive().nullable().default(null),
         })
         .nullable()
         .default(null),
@@ -1133,6 +1257,8 @@ export const renderPropsSchema = z.object({
   captionAnimationFrames: captionAnimationFramesSchema.default(
     CAPTION_ANIMATION_FRAMES_DEFAULT,
   ),
+  /** A curva da entrada elastica. Com default = a mola de antes, para props antigas. */
+  captionAnimationCurve: curvaDaEntradaSchema.default(CURVA_DA_ENTRADA_PADRAO),
   /** Cor so na palavra dita, ou na legenda inteira. */
   captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
