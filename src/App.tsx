@@ -184,6 +184,17 @@ export function App() {
       if (!acao || !combo) return
 
       /*
+       * COPIAR E COLAR CLIPE DE FAIXA. Num campo de texto, ou sem clipe
+       * escolhido, o Ctrl+C e o Ctrl+V continuam sendo do texto -- o evento
+       * segue adiante sem preventDefault.
+       */
+      if (acao === 'copiar' || acao === 'colar') {
+        if (editando(event.target) || rendering) return
+        if (acao === 'copiar' ? store.copiarClipe() : store.colarClipe()) event.preventDefault()
+        return
+      }
+
+      /*
        * Digitando num campo, tecla solta e LETRA -- o C, o X e o espaco sao do
        * texto. E o Ctrl+Z e do campo: desfazer o projeto inteiro porque a
        * pessoa errou uma letra seria um susto. Salvar continua valendo.

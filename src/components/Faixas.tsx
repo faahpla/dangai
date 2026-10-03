@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
@@ -130,19 +130,33 @@ export function Cabecalho({
   mudo,
   onMudo,
   extra,
+  onRemover,
 }: {
   nome: string
   detalhe?: string
   mudo?: boolean
   onMudo?: () => void
   extra?: React.ReactNode
+  /** Tira a faixa inteira. Aparece so com o mouse em cima do cabecalho. */
+  onRemover?: () => void
 }) {
   return (
-    <div className="flex w-full items-center gap-1">
+    <div className="group/cab flex w-full items-center gap-1">
       <div className="min-w-0 flex-1 leading-tight">
         <div className="truncate text-[11px] font-semibold text-ink">{nome}</div>
         {detalhe && <div className="truncate text-[9px] text-ink-3">{detalhe}</div>}
       </div>
+      {onRemover && (
+        <button
+          type="button"
+          onClick={onRemover}
+          title="Excluir esta faixa e os clipes dela (Ctrl+Z traz de volta)"
+          aria-label={`Excluir a faixa ${nome}`}
+          className="hidden size-[18px] shrink-0 place-items-center rounded-[3px] border border-line text-ink-3 hover:border-danger hover:text-danger group-hover/cab:grid"
+        >
+          <Trash2 size={10} strokeWidth={1.75} />
+        </button>
+      )}
       {extra}
       {onMudo && (
         <button
@@ -178,6 +192,8 @@ export interface ClipeDaFaixa {
   fadeOutSec?: number
   /** Miniatura (imagem). */
   imagem?: string
+  /** Camada de ajuste: roxa, sem miniatura. */
+  ajuste?: boolean
 }
 
 const formatarDuracao = (s: number): string => {
@@ -231,6 +247,8 @@ export function GrupoDeFaixas({
   const selecionar = useProject((s) => s.selecionarClipe)
   const mudas = useProject((s) => s.faixasMudas[tipo])
   const alternarMudo = useProject((s) => s.alternarMudo)
+  const duplicarClipe = useProject((s) => s.duplicarClipe)
+  const removerFaixa = useProject((s) => s.removerFaixa)
 
   const [extras, setExtras] = useState(0)
   const [sobre, setSobre] = useState<number | null>(null)
@@ -243,7 +261,21 @@ export function GrupoDeFaixas({
   const linhas = useRef(new Map<number, HTMLDivElement>())
 
   const usadas = Math.max(...clipes.map((c) => c.faixa + 1), 0)
-  const total = Math.max(faixasMinimas, usadas) + extras
+  // `extras` pode ficar negativo: excluir faixa desce abaixo do numero inicial.
+  const total = Math.max(1, usadas, faixasMinimas + extras)
+
+  /*
+   * EXCLUIR A FAIXA: os clipes dela saem e as de cima descem uma -- como no
+   * editor. Fica pelo menos uma faixa de cada tipo.
+   */
+  const excluirFaixa = (faixa: number): void => {
+    const depois = Math.max(
+      0,
+      ...clipes.filter((c) => c.faixa !== faixa).map((c) => (c.faixa > faixa ? c.faixa : c.faixa + 1)),
+    )
+    removerFaixa(tipo, faixa)
+    setExtras(Math.max(total - 1, depois, 1) - faixasMinimas)
+  }
   // Video: a faixa de numero maior fica EM CIMA (e por cima no video), como no
   // editor. Audio: A1 em cima.
   const ordem = Array.from({ length: total }, (_, i) => (tipo === 'video' ? total - 1 - i : i))
@@ -354,6 +386,7 @@ export function GrupoDeFaixas({
                 detalhe={daFaixa.length === 0 ? 'vazia' : `${daFaixa.length} ${daFaixa.length === 1 ? 'clipe' : 'clipes'}`}
                 mudo={muda}
                 onMudo={() => alternarMudo(tipo, faixa)}
+                onRemover={total > 1 ? () => excluirFaixa(faixa) : undefined}
                 extra={
                   // O "+" mora no cabecalho da ultima faixa da lista.
                   i === ordem.length - 1 ? (
@@ -405,6 +438,11 @@ export function GrupoDeFaixas({
                   escolhido={selecionado === c.id}
                   onPegar={(event, parte) => {
                     event.stopPropagation()
+                    /*
+                     * ALT + ARRASTAR DUPLICA, como no editor: a copia fica no
+                     * lugar e o que anda e o clipe pego.
+                     */
+                    if (parte === 'corpo' && event.altKey) duplicarClipe(tipo, c.id)
                     selecionar({ tipo, id: c.id })
                     gesto.current =
                       parte === 'corpo'
@@ -458,7 +496,11 @@ function Clipe({
       title={`${c.nome} — entra em ${c.at.toFixed(2)}s, ${formatarDuracao(c.toca)}`}
       className={[
         'group/clipe absolute inset-y-[3px] cursor-grab overflow-hidden rounded-[3px] border',
-        audio ? 'border-[#4f9a74] bg-[#2b5a43]' : 'border-[#5b7fb8] bg-[#2c4670]',
+        audio
+          ? 'border-[#4f9a74] bg-[#2b5a43]'
+          : c.ajuste
+            ? 'border-[#9a7bd6] bg-[#43356b]'
+            : 'border-[#5b7fb8] bg-[#2c4670]',
         escolhido ? 'ring-2 ring-accent' : '',
       ].join(' ')}
     >
@@ -469,6 +511,13 @@ function Clipe({
         >
           <Waveform peaks={c.peaks} cor="rgba(170, 235, 195, 0.75)" className="block h-full w-full" />
         </div>
+      )}
+      {c.ajuste && (
+        <SlidersHorizontal
+          size={12}
+          strokeWidth={1.75}
+          className="pointer-events-none absolute left-1.5 top-1.5 text-white/70"
+        />
       )}
       {!audio && c.imagem && (
         <img

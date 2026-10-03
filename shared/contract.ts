@@ -1120,11 +1120,60 @@ export type Bin = z.infer<typeof binSchema>
  * electron/services/sobreposicao): .mov vira WebM VP9 com transparencia, que e
  * o que o preview e o render sabem desenhar com fundo vazado.
  */
+/*
+ * A CAMADA DE AJUSTE: a "adjustment layer" dos editores. Um clipe na faixa de
+ * video que nao tem arquivo -- ele corrige a cor de tudo que esta EMBAIXO dele
+ * (as cenas e as faixas de video de numero menor), no trecho que ocupa.
+ *
+ * Os numeros vao de -1 a 1 com 0 = nada, exceto a exposicao (em stops) e a
+ * nitidez (0 a 1). As curvas sao pontos de 0 a 1 por canal; a reta de (0,0) a
+ * (1,1) e a curva que nao mexe em nada.
+ */
+export const pontoDeCurvaDeCorSchema = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })
+export type PontoDeCurvaDeCor = z.infer<typeof pontoDeCurvaDeCorSchema>
+export const CURVA_DE_COR_RETA: readonly PontoDeCurvaDeCor[] = [
+  { x: 0, y: 0 },
+  { x: 1, y: 1 },
+]
+const curvaDeCorSchema = z
+  .array(pontoDeCurvaDeCorSchema)
+  .min(2)
+  .max(16)
+  .default(() => CURVA_DE_COR_RETA.map((p) => ({ ...p })))
+const umLado = z.number().min(-1).max(1).default(0)
+export const ajusteDeCorSchema = z.object({
+  exposicao: z.number().min(-3).max(3).default(0),
+  brilho: umLado,
+  contraste: umLado,
+  realces: umLado,
+  sombras: umLado,
+  brancos: umLado,
+  pretos: umLado,
+  temperatura: umLado,
+  tint: umLado,
+  saturacao: umLado,
+  vibrance: umLado,
+  nitidez: z.number().min(0).max(1).default(0),
+  curvas: z
+    .object({ mestre: curvaDeCorSchema, r: curvaDeCorSchema, g: curvaDeCorSchema, b: curvaDeCorSchema })
+    .default(() => ({
+      mestre: CURVA_DE_COR_RETA.map((p) => ({ ...p })),
+      r: CURVA_DE_COR_RETA.map((p) => ({ ...p })),
+      g: CURVA_DE_COR_RETA.map((p) => ({ ...p })),
+      b: CURVA_DE_COR_RETA.map((p) => ({ ...p })),
+    })),
+  /** Quanto do ajuste vale: 1 = inteiro, 0 = nada (mistura com o original). */
+  intensidade: z.number().min(0).max(1).default(1),
+})
+export type AjusteDeCor = z.infer<typeof ajusteDeCorSchema>
+export const AJUSTE_DE_COR_PADRAO: AjusteDeCor = ajusteDeCorSchema.parse({})
+
 export const sobreposicaoSchema = z.object({
   id: z.string(),
   path: z.string(),
   fileName: z.string(),
-  tipo: z.enum(['video', 'image']),
+  /** 'ajuste' = camada de ajuste: sem arquivo, so o `cor`. */
+  tipo: z.enum(['video', 'image', 'ajuste']),
   faixa: z.number().int().nonnegative(),
   at: z.number().nonnegative(),
   /** Duracao do arquivo. Imagem nao tem: vale `usarSec`. */
@@ -1148,6 +1197,8 @@ export const sobreposicaoSchema = z.object({
   intensidade: z.number().min(0.02).max(0.6).default(0.1),
   curva: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
   pontosDaCurva: curvePointsSchema.nullable().default(null),
+  /** So na camada de ajuste. */
+  cor: ajusteDeCorSchema.optional(),
 })
 export type SobreposicaoSalva = z.infer<typeof sobreposicaoSchema>
 
@@ -1337,7 +1388,7 @@ export const renderPropsSchema = z.object({
     .array(
       z.object({
         url: z.string(),
-        tipo: z.enum(['video', 'image']),
+        tipo: z.enum(['video', 'image', 'ajuste']),
         from: z.number().int().nonnegative(),
         durationInFrames: z.number().int().positive(),
         inicioFrames: z.number().int().nonnegative(),
@@ -1352,6 +1403,7 @@ export const renderPropsSchema = z.object({
         intensidade: z.number().default(0.1),
         curva: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
         pontosDaCurva: curvePointsSchema.nullable().default(null),
+        cor: ajusteDeCorSchema.optional(),
       }),
     )
     .default([]),

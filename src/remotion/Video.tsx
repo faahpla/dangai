@@ -14,6 +14,7 @@ import {
 import { TransitionSeries } from '@remotion/transitions'
 import type { RenderProps } from '@shared/contract'
 import { Scene, easingFor, motionFor } from './Scene'
+import { CamadaDeAjuste } from './Ajuste'
 import { Captions } from './Captions'
 import { Cards } from './Card'
 import { presentationFor, timingFor } from './Transition'
@@ -101,6 +102,8 @@ export function Video({
         fonte de uma imagem que ja esta na tela, o navegador segura o quadro
         anterior ate o novo decodificar. Nao ha buraco para o preto aparecer.
       */}
+      <Pilha itens={sobreposicoes}>
+        <>
       <CamaDoPreview scenes={scenes} />
 
       <TransitionSeries>
@@ -144,12 +147,9 @@ export function Video({
           </Fragment>
         ))}
       </TransitionSeries>
+        </>
+      </Pilha>
 
-      {/*
-        A FAIXA DE VIDEO: por cima das cenas, por baixo das legendas -- a seta
-        aponta para a cena, e a legenda continua legivel por cima de tudo.
-      */}
-      <Sobreposicoes itens={sobreposicoes} />
 
       {fontsReady && captions.length > 0 && (
         <Captions
@@ -233,18 +233,33 @@ function CamaDoPreview({ scenes }: { scenes: RenderProps['scenes'] }) {
  * escala pelos controles da faixa. `transparent` faz o render extrair o quadro
  * com o canal alfa: sem ele o fundo vazado viraria preto.
  */
-function Sobreposicoes({ itens }: { itens: RenderProps['sobreposicoes'] }) {
-  if (itens.length === 0) return null
+/**
+ * A FAIXA DE VIDEO por cima das cenas, por baixo das legendas -- a seta aponta
+ * para a cena, e a legenda continua legivel por cima de tudo.
+ *
+ * Montada como PILHA, da faixa de baixo para a de cima: cada clipe comum entra
+ * por cima do que ja ha, e cada CAMADA DE AJUSTE embrulha tudo o que ja ha --
+ * por isso ela corrige as cenas e as faixas de baixo, e nao as de cima.
+ */
+function Pilha({ itens, children }: { itens: RenderProps['sobreposicoes']; children: React.ReactNode }) {
   const ordenadas = [...itens].sort((a, b) => a.faixa - b.faixa)
-  return (
-    <>
-      {ordenadas.map((o, i) => (
-        <Sequence key={`${o.url}-${o.from}-${i}`} from={o.from} durationInFrames={o.durationInFrames} layout="none">
-          <Sobreposicao o={o} />
-        </Sequence>
-      ))}
-    </>
-  )
+  let pilha: React.ReactNode = children
+  for (const [i, o] of ordenadas.entries()) {
+    pilha =
+      o.tipo === 'ajuste' ? (
+        <CamadaDeAjuste key={`ajuste-${i}`} from={o.from} durationInFrames={o.durationInFrames} cor={o.cor}>
+          {pilha}
+        </CamadaDeAjuste>
+      ) : (
+        <Fragment key={`camada-${i}`}>
+          {pilha}
+          <Sequence from={o.from} durationInFrames={o.durationInFrames} layout="none">
+            <Sobreposicao o={o} />
+          </Sequence>
+        </Fragment>
+      )
+  }
+  return <>{pilha}</>
 }
 
 /**

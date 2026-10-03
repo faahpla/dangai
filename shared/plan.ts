@@ -16,6 +16,7 @@ import {
   medidasDo,
   KEN_BURNS_EFFECTS,
   MOTION_CURVE_DEFAULT,
+  AJUSTE_DE_COR_PADRAO,
   TRANSITION_FRAMES,
   VIDEO_FPS,
   type CaptionBlock,
@@ -430,7 +431,7 @@ export function toRenderProps(
    * sendo preparado) fica de fora em vez de quebrar o video.
    */
   const sobreposicoes = sobreposicoesDoProjeto
-    .filter((o) => o.url)
+    .filter((o) => o.url || o.tipo === 'ajuste')
     .map((o) => {
       const toca = Math.max(o.usarSec ?? o.durationSec - o.inicioSec, 0.05)
       return {
@@ -449,6 +450,7 @@ export function toRenderProps(
         intensidade: o.intensidade ?? 0.1,
         curva: o.curva ?? MOTION_CURVE_DEFAULT,
         pontosDaCurva: o.pontosDaCurva ?? null,
+        ...(o.tipo === 'ajuste' ? { cor: o.cor ?? AJUSTE_DE_COR_PADRAO } : {}),
       }
     })
   const quadro = medidasDo(formato)

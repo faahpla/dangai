@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Magnet, Minus, Plus, Volume2, X } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Magnet, Minus, Plus, SlidersHorizontal, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
-import { SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
+import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 import { useIma } from '@/store/layout'
 import { dicaDoAtalho } from '@/store/atalhos'
@@ -290,7 +290,9 @@ export function Timeline() {
   useEffect(() => {
     const scroll = scrollRef.current
     const track = trackRef.current
-    if (!scroll || !track || zoom === 1 || duration === 0) return
+    // So TOCANDO: parado, quem manda na vista e ele. Seguir a agulha tambem no
+    // zoom fazia a vista pular para ela no meio do Alt+roda, longe do cursor.
+    if (!scroll || !track || zoom === 1 || duration === 0 || !useProject.getState().playing) return
 
     const x = CABECALHO + progress * track.clientWidth
     const margem = scroll.clientWidth * 0.15
@@ -301,27 +303,78 @@ export function Timeline() {
       // que corre, e o que se quer de qualquer forma.
       scroll.scrollLeft = Math.max(x - scroll.clientWidth / 2, 0)
     }
-  }, [progress, zoom, duration])
+  }, [progress, duration])
 
-  /** Amplia mantendo sob o cursor o mesmo instante que estava la. */
+  /*
+   * O ZOOM ANCORADO NO CURSOR, sem tremer.
+   *
+   * "Quando eu seguro Alt e uso scroll pra dar zoom ele ta meio lagado e
+   * bugado." Eram tres coisas: o rolar da vista era acertado num
+   * requestAnimationFrame que podia rodar ANTES de o React desenhar a largura
+   * nova (o navegador cortava o scrollLeft e a vista pulava); cada evento da
+   * roda partia do zoom do ultimo render, e nao do ultimo pedido; e o efeito de
+   * seguir a agulha puxava a vista para ela. Agora o zoom pedido mora numa ref,
+   * a roda junta os eventos de um quadro num pedido so, e o scrollLeft e
+   * acertado num layout effect -- depois da largura nova e antes de pintar.
+   */
+  const zoomPedido = useRef(1)
+  const ancoraDoZoom = useRef<{ fracao: number; x: number } | null>(null)
   const zoomAt = useCallback((next: number, clientX?: number) => {
     const scroll = scrollRef.current
     const track = trackRef.current
     const alvo = Math.min(Math.max(next, 1), MAX_ZOOM)
-
+    // No teto ou no chao nada muda, e uma ancora guardada ficaria velha.
+    if (Math.abs(alvo - zoomPedido.current) < 1e-6) return
     if (scroll && track) {
-      const ancora = clientX ?? scroll.getBoundingClientRect().left + scroll.clientWidth / 2
-      const dentro = ancora - track.getBoundingClientRect().left
-      const fracao = dentro / track.clientWidth
-      const larguraNova = (scroll.clientWidth - CABECALHO) * alvo
-
-      requestAnimationFrame(() => {
-        scroll.scrollLeft = CABECALHO + fracao * larguraNova - (ancora - scroll.getBoundingClientRect().left)
-      })
+      const ancora = clientX ?? scroll.getBoundingClientRect().left + CABECALHO + (scroll.clientWidth - CABECALHO) / 2
+      const r = track.getBoundingClientRect()
+      ancoraDoZoom.current = {
+        fracao: Math.min(Math.max((ancora - r.left) / r.width, 0), 1),
+        // clientLeft desconta a borda: sem ele, cada passo da roda errava 1 px,
+        // e o erro crescia junto com o zoom.
+        x: ancora - scroll.getBoundingClientRect().left - scroll.clientLeft,
+      }
     }
-
+    zoomPedido.current = alvo
     setZoom(alvo)
   }, [])
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    const a = ancoraDoZoom.current
+    ancoraDoZoom.current = null
+    if (!scroll || !a) return
+    scroll.scrollLeft = Math.max(0, CABECALHO + a.fracao * largura - a.x)
+  }, [largura])
+
+  // A roda nativa, NAO passiva: so assim o preventDefault segura o rolar
+  // (e o zoom da pagina no Ctrl) do navegador. Um pedido por quadro.
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    let fator = 1
+    let x = 0
+    let quadro = 0
+    const onWheel = (event: WheelEvent): void => {
+      if (!(event.ctrlKey || event.altKey) || useProject.getState().render !== null) return
+      event.preventDefault()
+      const delta = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY
+      fator *= Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.0015)
+      x = event.clientX
+      if (quadro) return
+      quadro = requestAnimationFrame(() => {
+        quadro = 0
+        const f = fator
+        fator = 1
+        zoomAt(zoomPedido.current * f, x)
+      })
+    }
+    scroll.addEventListener('wheel', onWheel, { passive: false })
+    return () => {
+      scroll.removeEventListener('wheel', onWheel)
+      if (quadro) cancelAnimationFrame(quadro)
+    }
+  }, [zoomAt])
 
   /*
    * As tiras nao dependem do playhead -- mas eram refeitas junto com ele.
@@ -474,6 +527,7 @@ export function Timeline() {
                 : `${scenes.length} ${scenes.length === 1 ? 'bloco' : 'blocos'}`}
           </span>
 
+          {duration > 0 && !isRendering && <BotaoDeAjuste />}
           {duration > 0 && !isRendering && (
             <button
               type="button"
@@ -526,21 +580,53 @@ export function Timeline() {
         // Rola nos dois eixos: na horizontal com o zoom, na vertical quando as
         // faixas passam do teto -- as cenas ficam presas no topo.
         className="relative min-h-0 flex-1 overflow-auto rounded-md border border-line bg-surface"
-        onWheel={(event) => {
-          /*
-           * Ctrl+roda ou ALT+roda ampliam. Sem nenhum dos dois, a roda rola.
-           *
-           * O Alt entrou a pedido dele, e nao briga com o Alt que desliga o
-           * snap: aquele vale durante o ARRASTE de uma alca, e este na RODA.
-           * Sao dois gestos que nao acontecem ao mesmo tempo.
-           */
-          if (!(event.ctrlKey || event.altKey) || isRendering) return
-          event.preventDefault()
-          zoomAt(zoom * (event.deltaY < 0 ? 1.15 : 1 / 1.15), event.clientX)
-        }}
+        /*
+         * Ctrl+roda ou ALT+roda ampliam (ouvido la em cima, numa roda nao
+         * passiva). Sem nenhum dos dois, a roda rola.
+         */
       >
         <div className="relative" style={{ width: CABECALHO + largura }}>
-        <div className="sticky top-0 z-40" style={{ width: CABECALHO + largura }}>
+        {/*
+          Sem fixar no topo: com as faixas de video em cima das cenas, o bloco
+          fixo passava de 200 px e cobria as faixas de audio numa linha do tempo
+          baixa. Tudo rola junto, como no editor.
+        */}
+        <div style={{ width: CABECALHO + largura }}>
+        {/*
+          AS FAIXAS DE VIDEO EM CIMA DAS CENAS, as de audio embaixo: "assim e
+          melhor pra mexer no workflow". E a ordem do que se ve -- a faixa de
+          cima cobre a de baixo, e as cenas sao o fundo de tudo.
+        */}
+        {duration > 0 && !isRendering && (
+            <GrupoDeFaixas
+              tipo="video"
+              faixasMinimas={2}
+              altura={40}
+              largura={largura}
+              duration={duration}
+              timeAt={timeAt}
+              ima={ima}
+              clipes={sobreposicoes.map((o) => ({
+                id: o.id,
+                faixa: o.faixa,
+                at: o.at,
+                toca: o.usarSec ?? o.durationSec - o.inicioSec,
+                nome: o.fileName,
+                imagem: o.tipo === 'image' ? o.url : undefined,
+                ajuste: o.tipo === 'ajuste',
+              }))}
+              aceita={(p) => {
+                const t = classifyFile(p)
+                return t === 'video' || t === 'image'
+              }}
+              onSoltar={(paths, at, faixa) => void addSobreposicoesAt(paths, at, faixa)}
+              onMover={moveSobreposicao}
+              onCortarInicio={cortarInicioDaSobreposicao}
+              onCortarFim={cortarFimDaSobreposicao}
+              onRemover={removeSobreposicao}
+              onAgulha={arrastarAgulha}
+            />
+        )}
         <Linha
           largura={largura}
           altura={104}
@@ -719,33 +805,6 @@ export function Timeline() {
         {duration > 0 && !isRendering && (
           <>
             <GrupoDeFaixas
-              tipo="video"
-              faixasMinimas={2}
-              altura={40}
-              largura={largura}
-              duration={duration}
-              timeAt={timeAt}
-              ima={ima}
-              clipes={sobreposicoes.map((o) => ({
-                id: o.id,
-                faixa: o.faixa,
-                at: o.at,
-                toca: o.usarSec ?? o.durationSec - o.inicioSec,
-                nome: o.fileName,
-                imagem: o.tipo === 'image' ? o.url : undefined,
-              }))}
-              aceita={(p) => {
-                const t = classifyFile(p)
-                return t === 'video' || t === 'image'
-              }}
-              onSoltar={(paths, at, faixa) => void addSobreposicoesAt(paths, at, faixa)}
-              onMover={moveSobreposicao}
-              onCortarInicio={cortarInicioDaSobreposicao}
-              onCortarFim={cortarFimDaSobreposicao}
-              onRemover={removeSobreposicao}
-              onAgulha={arrastarAgulha}
-            />
-            <GrupoDeFaixas
               tipo="audio"
               faixasMinimas={3}
               altura={52}
@@ -779,7 +838,7 @@ export function Timeline() {
         {/* A agulha, de cima a baixo, por todas as faixas. */}
         {duration > 0 && !isRendering && (
           <div
-            className="pointer-events-none absolute inset-y-0 z-30 w-px bg-accent"
+            className="pointer-events-none absolute inset-y-0 z-[45] w-px bg-accent"
             style={{ left: CABECALHO + progress * largura }}
           />
         )}
@@ -1172,8 +1231,25 @@ function ControlesDaTrilha({ id }: { id: string }) {
   return (
     <>
       <span className="max-w-[90px] truncate text-[10px] text-ink-3">{t.fileName}</span>
-      <ControleDoClipe rotulo="vol" titulo="Volume" valor={t.gainDb} min={-40} max={12} passo={1} padrao={-20}
+      <ControleDoClipe rotulo="vol" titulo="Volume" valor={t.gainDb} min={-40} max={12} passo={1} padrao={0}
         texto={`${t.gainDb > 0 ? '+' : ''}${t.gainDb} dB`} onChange={(v) => ajustar(id, { gainDb: v })} />
+      {/* Os volumes de sempre num clique; o slider continua para o resto. */}
+      <div className="flex items-center gap-0.5">
+        {[-3, -5, -10, -15, -20, -25].map((db) => (
+          <button
+            key={db}
+            type="button"
+            onClick={() => ajustar(id, { gainDb: db })}
+            title={`Volume em ${db} dB`}
+            className={[
+              'tnum h-[18px] rounded-[3px] border px-1 text-[10px]',
+              t.gainDb === db ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
+            ].join(' ')}
+          >
+            {db}
+          </button>
+        ))}
+      </div>
       <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={5} passo={0.1} padrao={0.5}
         texto={`${t.fadeInSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
       <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={t.fadeOutSec} min={0} max={5} passo={0.1} padrao={1}
@@ -1187,6 +1263,17 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
   const o = useProject((s) => s.sobreposicoes.find((x) => x.id === id))
   const ajustar = useProject((s) => s.ajustarSobreposicao)
   if (!o) return null
+  if (o.tipo === 'ajuste') {
+    const cor = o.cor ?? AJUSTE_DE_COR_PADRAO
+    return (
+      <>
+        <span className="max-w-[110px] truncate text-[10px] text-ink-3">Camada de ajuste</span>
+        <ControleDoClipe rotulo="intens" titulo="Quanto do ajuste vale" valor={cor.intensidade} min={0} max={1}
+          passo={0.05} padrao={1} texto={`${Math.round(cor.intensidade * 100)}%`}
+          onChange={(v) => ajustar(id, { cor: { ...cor, intensidade: v } })} />
+      </>
+    )
+  }
   return (
     <>
       <span className="max-w-[80px] truncate text-[10px] text-ink-3">{o.fileName}</span>
@@ -1225,5 +1312,38 @@ function ControlesDoEscolhido() {
         <X size={9} strokeWidth={2} />
       </button>
     </div>
+  )
+}
+
+/**
+ * A CAMADA DE AJUSTE, no clique: entra na agulha, cobrindo o bloco dela, na
+ * faixa de video mais baixa que estiver livre ali -- e de la ela corrige tudo o
+ * que estiver embaixo. Arrastar para outra faixa muda o que ela pega.
+ */
+function BotaoDeAjuste() {
+  const add = useProject((s) => s.addCamadaDeAjuste)
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const { sobreposicoes, playhead, plan } = useProject.getState()
+        const bloco = plan?.scenes.find((c) => playhead >= c.start && playhead < c.end)
+        const at = bloco ? bloco.start : playhead
+        const fim = bloco ? bloco.end : playhead + 5
+        let faixa = 0
+        while (
+          sobreposicoes.some(
+            (o) => o.faixa === faixa && at < o.at + (o.usarSec ?? o.durationSec - o.inicioSec) - 1e-6 && fim > o.at + 1e-6,
+          )
+        )
+          faixa += 1
+        add(faixa)
+      }}
+      title="Camada de ajuste: correcao de cor (curvas, exposicao, contraste, saturacao...) de tudo o que estiver embaixo dela"
+      className="flex h-[24px] items-center gap-1.5 rounded-sm border border-line px-2 text-[11px] text-ink-3 hover:text-ink"
+    >
+      <SlidersHorizontal size={12} strokeWidth={1.5} />
+      Ajuste
+    </button>
   )
 }

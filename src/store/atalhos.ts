@@ -26,6 +26,8 @@ export const ACOES = [
   { id: 'cortar', nome: 'Cortar na agulha (bloco ou clipe escolhido)', grupo: 'Edicao', padrao: ['C'] },
   { id: 'excluir', nome: 'Excluir o que estiver selecionado', grupo: 'Edicao', padrao: ['X', 'Delete', 'Backspace'] },
   { id: 'ima', nome: 'Ligar / desligar o ima', grupo: 'Edicao', padrao: ['N'] },
+  { id: 'copiar', nome: 'Copiar o clipe escolhido (faixa)', grupo: 'Edicao', padrao: ['Ctrl+C'] },
+  { id: 'colar', nome: 'Colar o clipe na agulha', grupo: 'Edicao', padrao: ['Ctrl+V'] },
   { id: 'desfazer', nome: 'Desfazer', grupo: 'Edicao', padrao: ['Ctrl+Z'] },
   { id: 'refazer', nome: 'Refazer', grupo: 'Edicao', padrao: ['Ctrl+Shift+Z', 'Ctrl+Y'] },
   { id: 'salvar', nome: 'Salvar', grupo: 'Projeto', padrao: ['Ctrl+S'] },

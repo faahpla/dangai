@@ -2,6 +2,7 @@ import { RotateCcw, X } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
 import { ControleDeRitmo, opcoesDeEfeito } from './SceneEdit'
+import { AjusteEdit } from './AjusteEdit'
 
 /**
  * O INSPETOR do clipe escolhido na faixa de video -- seta, imagem, .mov.
@@ -17,6 +18,7 @@ export function SobreposicaoEdit({ id }: { id: string }) {
   const ajustar = useProject((s) => s.ajustarSobreposicao)
   const selecionar = useProject((s) => s.selecionarClipe)
   if (!o) return null
+  if (o.tipo === 'ajuste') return <AjusteEdit id={id} />
 
   const toca = o.usarSec ?? o.durationSec - o.inicioSec
 

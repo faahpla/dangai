@@ -49,6 +49,7 @@ import {
   CLIP_MOTION_CURVE,
   KEN_BURNS_EFFECTS,
   MOTION_CURVE_DEFAULT,
+  AJUSTE_DE_COR_PADRAO,
   MUSIC_GAIN_DB_DEFAULT,
   MUSIC_FADE_IN_SEC,
   MUSIC_FADE_OUT_SEC,
@@ -584,7 +585,7 @@ export interface ProjectState {
     patch: Partial<
       Pick<
         SobreposicaoSalva,
-        'x' | 'y' | 'escala' | 'opacidade' | 'rotacao' | 'efeito' | 'intensidade' | 'curva' | 'pontosDaCurva'
+        'x' | 'y' | 'escala' | 'opacidade' | 'rotacao' | 'efeito' | 'intensidade' | 'curva' | 'pontosDaCurva' | 'cor'
       >
     >,
   ) => void
@@ -603,6 +604,17 @@ export interface ProjectState {
   refazerLegendasNaoEditadas: () => void
   alternarMudo: (tipo: 'video' | 'audio', faixa: number) => void
   selecionarClipe: (clipe: { tipo: 'video' | 'audio'; id: string } | null) => void
+  /** Uma copia do clipe no mesmo lugar e na mesma faixa (o Alt+arrastar). Devolve o id novo. */
+  duplicarClipe: (tipo: 'video' | 'audio', id: string) => string | null
+  /** O clipe copiado pelo Ctrl+C, para o Ctrl+V. */
+  clipeCopiado: { tipo: 'video' | 'audio'; id: string } | null
+  copiarClipe: () => boolean
+  /** Cola o clipe copiado na agulha: na faixa dele se couber, senao na primeira livre. */
+  colarClipe: () => boolean
+  /** Tira a faixa: os clipes dela saem e as de cima descem uma. */
+  removerFaixa: (tipo: 'video' | 'audio', faixa: number) => void
+  /** Uma camada de ajuste (cor) na faixa de video, na agulha. */
+  addCamadaDeAjuste: (faixa: number) => void
   /**
    * O C sobre um clipe de faixa: parte o clipe escolhido em dois, na agulha.
    * false quando nao ha clipe escolhido sob a agulha -- ai o C corta o bloco.
@@ -2972,7 +2984,9 @@ export const useProject = create<ProjectState>((set, get) => ({
         durationSec: r.value.durationSec,
         inicioSec: 0,
         usarSec: null,
-        gainDb: MUSIC_GAIN_DB_DEFAULT,
+        // Entra em 0 dB, como o arquivo veio: "todo audio importado ta vindo
+        // -20 dB". O volume de musica de fundo e um dos atalhos do controle.
+        gainDb: 0,
         fadeInSec: 0.5,
         fadeOutSec: 1,
         peaks: reduzirPicos(r.value.peaks, 120),
@@ -3097,7 +3111,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set((state) => ({
       sobreposicoes: state.sobreposicoes.map((o) => {
         if (o.id !== id) return o
-        if (toca === null) return { ...o, usarSec: o.tipo === 'image' ? 3 : null }
+        if (toca === null) return { ...o, usarSec: o.tipo === 'video' ? null : 3 }
         return { ...o, usarSec: Math.min(Math.max(toca, 0.1), o.durationSec - o.inicioSec) }
       }),
       projectDirty: true,
@@ -3110,13 +3124,13 @@ export const useProject = create<ProjectState>((set, get) => ({
         const toca = o.usarSec ?? o.durationSec - o.inicioSec
         const fim = o.at + toca
         // Imagem nao tem "comeco do arquivo": a borda esquerda so move a entrada.
-        const piso = o.tipo === 'image' ? 0 : Math.max(o.at - o.inicioSec, 0)
+        const piso = o.tipo !== 'video' ? 0 : Math.max(o.at - o.inicioSec, 0)
         const novoAt = Math.min(Math.max(at, piso), fim - 0.1)
         const delta = novoAt - o.at
         return {
           ...o,
           at: novoAt,
-          inicioSec: o.tipo === 'image' ? 0 : o.inicioSec + delta,
+          inicioSec: o.tipo !== 'video' ? 0 : o.inicioSec + delta,
           usarSec: fim - novoAt,
         }
       }),
@@ -3137,6 +3151,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (atuais.length === 0) return
     const repostos = await Promise.all(
       atuais.map(async (o) => {
+        // A camada de ajuste nao tem arquivo: e so um filtro sobre o que esta embaixo.
+        if (o.tipo === 'ajuste') return o
         const r = await window.dangai.prepararSobreposicao(o.path)
         return r.ok ? { ...o, url: r.value.url } : o
       }),
@@ -3152,6 +3168,110 @@ export const useProject = create<ProjectState>((set, get) => ({
     }),
 
   selecionarClipe: (clipe) => set({ clipeSelecionado: clipe }),
+
+  duplicarClipe: (tipo, id) => {
+    const novoId = `${id.replace(/-d\d+$/, '')}-d${Date.now()}`
+    if (tipo === 'audio') {
+      const t = get().trilhas.find((x) => x.id === id)
+      if (!t) return null
+      set((state) => ({ trilhas: [...state.trilhas, { ...t, id: novoId }], projectDirty: true }))
+    } else {
+      const o = get().sobreposicoes.find((x) => x.id === id)
+      if (!o) return null
+      set((state) => ({ sobreposicoes: [...state.sobreposicoes, { ...o, id: novoId }], projectDirty: true }))
+    }
+    return novoId
+  },
+
+  clipeCopiado: null,
+
+  copiarClipe: () => {
+    const c = get().clipeSelecionado
+    if (!c) return false
+    set({ clipeCopiado: c })
+    return true
+  },
+
+  colarClipe: () => {
+    const { clipeCopiado: c, playhead, trilhas, sobreposicoes } = get()
+    if (!c) return false
+    const lista: readonly { id: string; faixa: number; at: number; fim: number }[] =
+      c.tipo === 'audio'
+        ? trilhas.map((t) => ({ id: t.id, faixa: t.faixa, at: t.at, fim: t.at + duracaoDoTrecho(t) }))
+        : sobreposicoes.map((o) => ({ id: o.id, faixa: o.faixa, at: o.at, fim: o.at + (o.usarSec ?? o.durationSec - o.inicioSec) }))
+    const original = lista.find((x) => x.id === c.id)
+    if (!original) return false
+    const dur = original.fim - original.at
+    const at = Math.max(0, playhead)
+    const livre = (faixa: number): boolean =>
+      lista.every((x) => x.faixa !== faixa || at + dur <= x.at + 1e-6 || at >= x.fim - 1e-6)
+    // A faixa dele primeiro; senao as de cima; senao uma nova, acima de todas.
+    const maior = Math.max(...lista.map((x) => x.faixa))
+    let faixa = original.faixa
+    while (!livre(faixa) && faixa <= maior) faixa += 1
+    const novoId = get().duplicarClipe(c.tipo, c.id)
+    if (!novoId) return false
+    if (c.tipo === 'audio') get().moveTrilha(novoId, at, faixa)
+    else get().moveSobreposicao(novoId, at, faixa)
+    set({ clipeSelecionado: { tipo: c.tipo, id: novoId } })
+    return true
+  },
+
+  removerFaixa: (tipo, faixa) =>
+    set((state) => {
+      const desce = <T extends { faixa: number }>(lista: readonly T[]): T[] =>
+        lista.filter((x) => x.faixa !== faixa).map((x) => (x.faixa > faixa ? { ...x, faixa: x.faixa - 1 } : x))
+      const mudas = state.faixasMudas[tipo].filter((f) => f !== faixa).map((f) => (f > faixa ? f - 1 : f))
+      const sumiu =
+        state.clipeSelecionado?.tipo === tipo &&
+        (tipo === 'audio' ? state.trilhas : state.sobreposicoes).some(
+          (x) => x.id === state.clipeSelecionado?.id && x.faixa === faixa,
+        )
+      return {
+        ...(tipo === 'audio' ? { trilhas: desce(state.trilhas) } : { sobreposicoes: desce(state.sobreposicoes) }),
+        faixasMudas: { ...state.faixasMudas, [tipo]: mudas },
+        clipeSelecionado: sumiu ? null : state.clipeSelecionado,
+        projectDirty: true,
+      }
+    }),
+
+  addCamadaDeAjuste: (faixa) => {
+    const { playhead, plan, audio } = get()
+    // Nasce cobrindo o bloco da agulha -- o caso de "corrigir esta cena" --, ou
+    // 5 s quando a agulha nao esta sobre bloco nenhum.
+    const bloco = plan?.scenes.find((c) => playhead >= c.start && playhead < c.end)
+    const at = bloco ? bloco.start : Math.max(0, playhead)
+    const fimDoVideo = audio?.durationSec ?? at + 5
+    const dur = Math.max(0.2, Math.min(bloco ? bloco.end - bloco.start : 5, fimDoVideo - at))
+    const nova = {
+      id: `ajuste-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      path: '',
+      fileName: 'Camada de ajuste',
+      tipo: 'ajuste' as const,
+      faixa,
+      at,
+      durationSec: 3600,
+      inicioSec: 0,
+      usarSec: dur,
+      x: 0,
+      y: 0,
+      escala: 1,
+      opacidade: 1,
+      aspecto: 16 / 9,
+      rotacao: 0,
+      efeito: 'nenhum' as const,
+      intensidade: 0.1,
+      curva: MOTION_CURVE_DEFAULT,
+      pontosDaCurva: null,
+      cor: AJUSTE_DE_COR_PADRAO,
+      url: '',
+    }
+    set((state) => ({
+      sobreposicoes: [...state.sobreposicoes, nova],
+      clipeSelecionado: { tipo: 'video', id: nova.id },
+      projectDirty: true,
+    }))
+  },
 
   cortarClipeNaAgulha: () => {
     const { clipeSelecionado, playhead } = get()
@@ -3198,7 +3318,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       id: novoId(o.id),
       at: playhead,
       // Imagem nao tem "ponto do arquivo": as duas metades sao a mesma imagem.
-      inicioSec: o.tipo === 'image' ? 0 : o.inicioSec + local,
+      inicioSec: o.tipo !== 'video' ? 0 : o.inicioSec + local,
       usarSec: toca - local,
     }
     set((state) => ({
