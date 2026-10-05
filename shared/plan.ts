@@ -434,11 +434,22 @@ export function toRenderProps(
     .filter((o) => o.url || o.tipo === 'ajuste')
     .map((o) => {
       const toca = Math.max(o.usarSec ?? o.durationSec - o.inicioSec, 0.05)
+      const from = Math.max(0, Math.round(o.at * VIDEO_FPS))
+      let ate = Math.round((o.at + toca) * VIDEO_FPS)
+      /*
+       * ATE O ULTIMO QUADRO. O video tem ceil(duracao x 24) quadros, e um clipe
+       * que termina no fim da narracao arredondava para um quadro antes --
+       * "o ultimo frame fica sem a minha CC". Terminando a menos de um quadro
+       * do fim, o clipe vai ate o fim do video.
+       */
+      if (durationSec !== undefined && o.at + toca >= durationSec - 1 / VIDEO_FPS) {
+        ate = Math.max(ate, Math.ceil(durationSec * VIDEO_FPS))
+      }
       return {
         url: o.url,
         tipo: o.tipo,
-        from: Math.max(0, Math.round(o.at * VIDEO_FPS)),
-        durationInFrames: Math.max(1, Math.round(toca * VIDEO_FPS)),
+        from,
+        durationInFrames: Math.max(1, ate - from),
         inicioFrames: Math.max(0, Math.round(o.inicioSec * VIDEO_FPS)),
         x: o.x,
         y: o.y,

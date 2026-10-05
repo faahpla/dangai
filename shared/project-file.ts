@@ -249,6 +249,8 @@ export const projectFileSchema = z.object({
   faixasMudas: z
     .object({ video: z.array(z.number().int().nonnegative()), audio: z.array(z.number().int().nonnegative()) })
     .default({ video: [], audio: [] }),
+  /** A faixa de cenas trancada: cortes e blocos nao mudam pela linha do tempo. */
+  cenasTrancadas: z.boolean().default(false),
   /** Cama de musica. Com default para projeto salvo antes dela existir abrir igual. */
   music: referenceSchema.nullable().default(null),
   musicGainDb: z.number().default(MUSIC_GAIN_DB_DEFAULT),

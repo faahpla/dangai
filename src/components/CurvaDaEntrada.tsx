@@ -50,6 +50,39 @@ const PRONTAS: { nome: string; curva: CurvaDaEntrada }[] = [
       { t: 1, v: 1 },
     ],
   },
+  /*
+   * EASY EASE, o do After Effects: cubic-bezier(0.33, 0, 0.67, 1) -- sai
+   * devagar, acelera no meio e pousa devagar, sem passar do tamanho. Amostrado
+   * em nove pontos; a cubica monotona entre eles reproduz a bezier.
+   */
+  {
+    nome: 'Easy Ease',
+    curva: [
+      { t: 0, v: 0.6 },
+      { t: 0.12, v: 0.616 },
+      { t: 0.25, v: 0.663 },
+      { t: 0.38, v: 0.73 },
+      { t: 0.5, v: 0.8 },
+      { t: 0.62, v: 0.87 },
+      { t: 0.75, v: 0.937 },
+      { t: 0.88, v: 0.984 },
+      { t: 1, v: 1 },
+    ],
+  },
+  {
+    nome: 'Easy Ease do zero',
+    curva: [
+      { t: 0, v: 0 },
+      { t: 0.12, v: 0.04 },
+      { t: 0.25, v: 0.157 },
+      { t: 0.38, v: 0.324 },
+      { t: 0.5, v: 0.5 },
+      { t: 0.62, v: 0.676 },
+      { t: 0.75, v: 0.843 },
+      { t: 0.88, v: 0.96 },
+      { t: 1, v: 1 },
+    ],
+  },
   {
     nome: 'Suave',
     curva: [

@@ -302,6 +302,13 @@ export interface ProjectState {
    * e do render, sem sair do projeto.
    */
   faixasMudas: { video: number[]; audio: number[] }
+  /**
+   * A FAIXA DE CENAS TRANCADA, como o cadeado do editor: arrastar cortes,
+   * cortar no C, excluir e inserir bloco pela linha do tempo ficam parados.
+   * Selecionar, levar a agulha e editar o bloco continuam.
+   */
+  cenasTrancadas: boolean
+  alternarTrancaDasCenas: () => void
   /** O clipe de faixa escolhido -- e nele que o C corta, em vez de no bloco. */
   clipeSelecionado: { tipo: 'video' | 'audio'; id: string } | null
   /**
@@ -1142,6 +1149,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   trilhas: [],
   sobreposicoes: [],
   faixasMudas: { video: [], audio: [] },
+  cenasTrancadas: false,
   clipeSelecionado: null,
   outrosClipes: [],
   curvePresets: [],
@@ -2227,7 +2235,19 @@ export const useProject = create<ProjectState>((set, get) => ({
    * tempo: inserir uma imagem no minuto tres nao pode empurrar tudo que ja
    * estava ajustado antes dela.
    */
+  alternarTrancaDasCenas: () =>
+    set((state) => ({
+      cenasTrancadas: !state.cenasTrancadas,
+      // O aviso de "trancada" sai junto com a tranca.
+      error: state.error?.startsWith('A faixa de cenas esta trancada') ? null : state.error,
+      projectDirty: true,
+    })),
+
   insertImages: async (paths, seconds) => {
+    if (get().cenasTrancadas) {
+      set({ error: 'A faixa de cenas esta trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
+      return
+    }
     if (paths.length === 0) return
 
     set({ busy: `Lendo ${paths.length} ${paths.length === 1 ? 'imagem' : 'imagens'}...`, error: null })
@@ -2349,6 +2369,10 @@ export const useProject = create<ProjectState>((set, get) => ({
    * o vizinho, senao sobraria um buraco preto no meio do video.
    */
   removeScene: (index) => {
+    if (get().cenasTrancadas) {
+      set({ error: 'A faixa de cenas esta trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
+      return
+    }
     const { plan, images } = get()
     if (!plan) return
     // Tela dividida leva as duas imagens, e os dois indices de todo mundo
@@ -2510,6 +2534,7 @@ export const useProject = create<ProjectState>((set, get) => ({
    * inteiro.
    */
   moveBoundary: (index, seconds) => {
+    if (get().cenasTrancadas) return
     const { plan } = get()
     if (!plan || index <= 0 || index >= plan.scenes.length) return
 
@@ -2564,6 +2589,10 @@ export const useProject = create<ProjectState>((set, get) => ({
    * ao `sanitize`, que reconstroi o plano contando uma cena por imagem.
    */
   splitSceneAtPlayhead: () => {
+    if (get().cenasTrancadas) {
+      set({ error: 'A faixa de cenas esta trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
+      return
+    }
     const { plan, playhead, images } = get()
     if (!plan) return
 
@@ -4247,6 +4276,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       trilhas: [],
       sobreposicoes: [],
       faixasMudas: { video: [], audio: [] },
+      cenasTrancadas: false,
       clipeSelecionado: null,
       outrosClipes: [],
       // Volta ao padrao junto com o resto: sem isto, ter ligado o SFX num
@@ -4320,6 +4350,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       trilhas: state.trilhas.map(({ url: _fora, ...resto }) => resto),
       sobreposicoes: state.sobreposicoes.map(({ url: _fora, ...resto }) => resto),
       faixasMudas: state.faixasMudas,
+      cenasTrancadas: state.cenasTrancadas,
       captionY: state.captionY,
       captionScale: state.captionScale,
       sfxEnabled: state.sfxEnabled,
@@ -4639,6 +4670,7 @@ async function applyProjectFile(
       trilhas: file.trilhas.map((t) => ({ ...t, url: '' })),
       sobreposicoes: file.sobreposicoes.map((o) => ({ ...o, url: '' })),
       faixasMudas: file.faixasMudas,
+      cenasTrancadas: file.cenasTrancadas ?? false,
       captionY: file.captionY,
       captionScale: file.captionScale,
       sfxEnabled: file.sfxEnabled,

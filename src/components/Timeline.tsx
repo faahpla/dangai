@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
+import { Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { clipesEscolhidos, idsEscolhidos, useProject, formatTimecode } from '@/store/project'
@@ -90,13 +90,16 @@ export function Timeline() {
   const [linhaDoIma, setLinhaDoIma] = useState<number | null>(null)
   const trilhas = useProject((s) => s.trilhas)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
+  const cenasTrancadas = useProject((s) => s.cenasTrancadas)
+  const alternarTrancaDasCenas = useProject((s) => s.alternarTrancaDasCenas)
   const sfxManual = useProject((s) => s.sfxManual)
   const ima: Ima = useMemo(
     () => ({
       ligado: imaLigado,
       tolerancia: duration > 0 ? (10 / Math.max(largura, 1)) * duration : 0,
       alvos: (ignorar) => {
-        const alvos = [0, playhead, ...scenes.map((c) => c.start)]
+        // O fim do video tambem: e onde a camada de ajuste costuma terminar.
+        const alvos = [0, duration, playhead, ...scenes.map((c) => c.start)]
         for (const t of trilhas) if (t.id !== ignorar) alvos.push(t.at, t.at + duracaoDoTrecho(t))
         for (const o of sobreposicoes) {
           if (o.id !== ignorar) alvos.push(o.at, o.at + (o.usarSec ?? o.durationSec - o.inicioSec))
@@ -563,7 +566,7 @@ export function Timeline() {
               nao aparece: nao ha para onde jogar o tempo dela, e o
               removeScene recusaria em silencio.
             */}
-            {!isRendering && scenes.length > 1 && (
+            {!isRendering && !cenasTrancadas && scenes.length > 1 && (
               <button
                 type="button"
                 onPointerDown={(event) => event.stopPropagation()}
@@ -593,6 +596,7 @@ export function Timeline() {
       estenderSelecao,
       alternarSelecao,
       removeScene,
+      cenasTrancadas,
     ],
   )
 
@@ -746,7 +750,31 @@ export function Timeline() {
         <Linha
           largura={largura}
           altura={104}
-          cabecalho={<Cabecalho nome="Cenas" detalhe={audio ? 'narracao' : undefined} />}
+          cabecalho={
+            <Cabecalho
+              nome="Cenas"
+              detalhe={cenasTrancadas ? 'trancada' : audio ? 'narracao' : undefined}
+              extra={
+                <button
+                  type="button"
+                  onClick={alternarTrancaDasCenas}
+                  aria-pressed={cenasTrancadas}
+                  aria-label={cenasTrancadas ? 'Destrancar a faixa de cenas' : 'Trancar a faixa de cenas'}
+                  title={
+                    cenasTrancadas
+                      ? 'Faixa trancada: os cortes nao se mexem, o C nao corta bloco e nada entra ou sai por aqui. Clique para destrancar.'
+                      : 'Trancar a faixa de cenas: protege os cortes enquanto voce mexe nas outras faixas'
+                  }
+                  className={[
+                    'grid size-[18px] shrink-0 place-items-center rounded-[3px] border',
+                    cenasTrancadas ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
+                  ].join(' ')}
+                >
+                  {cenasTrancadas ? <Lock size={10} strokeWidth={2} /> : <LockOpen size={10} strokeWidth={2} />}
+                </button>
+              }
+            />
+          }
         >
         <div
           ref={trackRef}
@@ -812,6 +840,7 @@ export function Timeline() {
             clique maior que o tracinho visivel -- 2px e impossivel de pegar.
           */}
           {!isRendering &&
+            !cenasTrancadas &&
             duration > 0 &&
             scenes.slice(1).map((scene, i) => {
               const index = i + 1
@@ -958,7 +987,9 @@ export function Timeline() {
         {/* A agulha, de cima a baixo, por todas as faixas. */}
         {duration > 0 && !isRendering && (
           <div
-            className="pointer-events-none absolute inset-y-0 z-[45] w-px bg-accent"
+            // Abaixo dos cabecalhos (z-30): com zoom, a agulha passava POR CIMA
+            // da coluna V1/A1 quando ficava atras dela.
+            className="pointer-events-none absolute inset-y-0 z-[25] w-px bg-accent"
             style={{ left: CABECALHO + progress * largura }}
           />
         )}
@@ -977,7 +1008,7 @@ export function Timeline() {
         {/* Onde o ima grudou: uma linha de cima a baixo. */}
         {linhaDoIma !== null && duration > 0 && (
           <div
-            className="pointer-events-none absolute inset-y-0 z-50 w-px bg-[#ffd60a]"
+            className="pointer-events-none absolute inset-y-0 z-[26] w-px bg-[#ffd60a]"
             style={{ left: CABECALHO + (linhaDoIma / duration) * largura }}
           />
         )}

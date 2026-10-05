@@ -293,8 +293,19 @@ const SALTO_SEC = 0.35
 /** Quanto a velocidade pode desviar de 1. Dois por cento nao se ouve numa voz. */
 const DESVIO_MAX = 0.02
 
-/** O quao forte a deriva puxa a velocidade. */
-const GANHO = 0.6
+/**
+ * A ZONA MORTA da correcao, com histerese.
+ *
+ * A agulha anda em quadros (1/24 s) e o audio anda continuo, entao a deriva
+ * medida treme uns 40 ms o tempo todo -- e a correcao proporcional mexia na
+ * velocidade a CADA quadro. Com a velocidade diferente de 1, o Chrome liga o
+ * esticador de tempo (que preserva o tom), e ligado sem parar ele deixa a voz
+ * chiada e com "glitch de leve". Agora a velocidade fica em 1 exato ate a
+ * deriva passar de ENTRA_SEC, corrige com o desvio fixo, e volta a 1 quando
+ * cai abaixo de SAI_SEC.
+ */
+const ENTRA_SEC = 0.06
+const SAI_SEC = 0.015
 
 /**
  * Elemento de audio cru, sincronizado com o playhead do store.
@@ -314,6 +325,7 @@ function SyncedAudio({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playing = useProject((s) => s.playing)
   const playhead = useProject((s) => s.playhead)
+  const corrigindo = useRef(false)
 
   useEffect(() => {
     const element = audioRef.current
@@ -386,8 +398,10 @@ function SyncedAudio({
      * compensacao, se ouve sempre. Assim a faixa volta ao lugar sozinha, sem um
      * clique no meio da narracao.
      */
-    const ajuste = Math.min(Math.max(-deriva * GANHO, -DESVIO_MAX), DESVIO_MAX)
-    element.playbackRate = 1 + ajuste
+    if (Math.abs(deriva) > ENTRA_SEC) corrigindo.current = true
+    else if (Math.abs(deriva) < SAI_SEC) corrigindo.current = false
+    const rate = corrigindo.current ? (deriva > 0 ? 1 - DESVIO_MAX : 1 + DESVIO_MAX) : 1
+    if (element.playbackRate !== rate) element.playbackRate = rate
   }, [playhead, playing, loop])
 
   return <audio ref={audioRef} src={url} preload="auto" loop={loop} className="hidden" />
@@ -577,6 +591,24 @@ function Sincronia({
 }
 
 /**
+ * O volume de um trecho no instante `local` (segundos desde o comeco dele): o
+ * ganho em dB e as rampas de fade, o mesmo envelope do render. O <audio> nao
+ * passa de 1 -- ganho positivo so se ouve no MP4.
+ */
+function volumeDoTrecho(
+  t: { gainDb: number; fadeInSec: number; fadeOutSec: number; durationSec: number; inicioSec: number; usarSec: number | null },
+  local: number,
+): number {
+  const toca = duracaoDoTrecho(t)
+  const entrada = Math.min(t.fadeInSec, toca / 2)
+  const saida = Math.min(t.fadeOutSec, toca / 2)
+  let envelope = 1
+  if (entrada > 0 && local < entrada) envelope = Math.max(0, local / entrada)
+  if (saida > 0 && local > toca - saida) envelope = Math.min(envelope, Math.max(0, (toca - local) / saida))
+  return Math.min(1, Math.max(0, 10 ** (t.gainDb / 20) * envelope))
+}
+
+/**
  * As faixas de audio tocando no preview, cada trecho no instante dele.
  *
  * Diferente do SFX, que e um disparo, a musica ACOMPANHA a agulha: pular para
@@ -591,6 +623,17 @@ function TrilhasPreview() {
   const playhead = useProject((s) => s.playhead)
   const elementos = useRef(new Map<string, HTMLAudioElement>())
 
+  /*
+   * QUEM TOCA E QUANDO segue a agulha; o volume segue o relogio do audio.
+   *
+   * "Em alguns momentos o audio fica meio chiado, ou da uns glitch de leve."
+   * Eram duas coisas: o volume era escrito por dois lados -- pela agulha e por
+   * um relogio -- com valores um pouco diferentes durante o fade, e o volume
+   * ficava pulando entre eles (o chiado). E qualquer descompasso acima de
+   * 0,3 s virava um SALTO no audio (o glitch). Agora so o relogio escreve o
+   * volume, e descompasso pequeno se corrige acelerando ou freando o audio uns
+   * 4% -- inaudivel --, deixando o salto para quando o player realmente trava.
+   */
   useEffect(() => {
     for (const t of trilhas) {
       const el = elementos.current.get(t.id)
@@ -599,36 +642,35 @@ function TrilhasPreview() {
       const dentro = playhead >= t.at && playhead < t.at + toca
       if (!playing || !dentro || mudas.includes(t.faixa)) {
         if (!el.paused) el.pause()
+        el.playbackRate = 1
         continue
       }
-      const local = playhead - t.at
-      const alvo = t.inicioSec + local
-      // O mesmo envelope do render: rampa de entrada, rampa de saida.
-      const entrada = Math.min(t.fadeInSec, toca / 2)
-      const saida = Math.min(t.fadeOutSec, toca / 2)
-      let envelope = 1
-      if (entrada > 0 && local < entrada) envelope = local / entrada
-      if (saida > 0 && local > toca - saida) envelope = Math.min(envelope, (toca - local) / saida)
-      // O <audio> nao passa de 1: ganho positivo so se ouve no MP4.
-      el.volume = Math.min(1, Math.max(0, 10 ** (t.gainDb / 20) * envelope))
+      const alvo = t.inicioSec + (playhead - t.at)
       if (el.paused) {
         el.currentTime = alvo
+        el.playbackRate = 1
+        el.volume = volumeDoTrecho(t, playhead - t.at)
         void el.play().catch(() => undefined)
-      } else if (Math.abs(el.currentTime - alvo) > 0.3) {
+        continue
+      }
+      const atraso = el.currentTime - alvo
+      if (Math.abs(atraso) > 0.5) {
         el.currentTime = alvo
+        el.playbackRate = 1
+      } else if (Math.abs(atraso) > ENTRA_SEC) {
+        // Mesma zona morta da narracao: velocidade em 1 exato quase sempre.
+        const rate = atraso > 0 ? 0.97 : 1.03
+        if (el.playbackRate !== rate) el.playbackRate = rate
+      } else if (Math.abs(atraso) < SAI_SEC && el.playbackRate !== 1) {
+        el.playbackRate = 1
       }
     }
   }, [trilhas, playing, playhead, mudas])
 
   /*
-   * O VOLUME SEGUE O RELOGIO DO PROPRIO <audio>, e nao a agulha.
-   *
-   * "Se eu coloco um audio no primeiro frame, nao escuto no preview; se pulo 1
-   * frame, escuto." Tocando do frame 0, o fade de entrada comeca em volume 0, e
-   * o volume so era recalculado quando a agulha andava -- no frame 0 o player
-   * ainda esta carregando o video e demora a anunciar os quadros, e o som
-   * seguia mudo. Agora, tocando, o envelope e refeito a cada 40 ms pelo tempo
-   * do proprio audio.
+   * O VOLUME, pelo tempo do proprio <audio>, a cada 40 ms. Tocando do frame 0,
+   * o fade de entrada comeca em 0 e a agulha demora a andar enquanto o player
+   * carrega -- seguindo a agulha, o som ficava mudo.
    */
   useEffect(() => {
     if (!playing) return
@@ -636,14 +678,10 @@ function TrilhasPreview() {
       for (const t of trilhas) {
         const el = elementos.current.get(t.id)
         if (!el || el.paused || mudas.includes(t.faixa)) continue
-        const toca = duracaoDoTrecho(t)
-        const local = el.currentTime - t.inicioSec
-        const entrada = Math.min(t.fadeInSec, toca / 2)
-        const saida = Math.min(t.fadeOutSec, toca / 2)
-        let envelope = 1
-        if (entrada > 0 && local < entrada) envelope = Math.max(0, local / entrada)
-        if (saida > 0 && local > toca - saida) envelope = Math.min(envelope, Math.max(0, (toca - local) / saida))
-        el.volume = Math.min(1, Math.max(0, 10 ** (t.gainDb / 20) * envelope))
+        const v = volumeDoTrecho(t, el.currentTime - t.inicioSec)
+        // Escrever o mesmo valor de novo nao custa, mas escrever um quase igual
+        // a cada 40 ms e o que fazia o volume tremer.
+        if (Math.abs(el.volume - v) > 0.003) el.volume = v
       }
     }, 40)
     return () => window.clearInterval(id)

@@ -228,11 +228,15 @@ export function Library() {
     if (open) return
     setApelidosAbertos(false)
     setTexto('')
-    setAnime(null)
-    preSelecionadoPara.current = null
+    /*
+     * O ANIME E O EPISODIO FICAM. "Sempre que clicar em Selecao de novo,
+     * quero que ja abra com a pasta do anime selecionada -- vale o mesmo para
+     * trocar de cena na biblioteca." Fechar e abrir de novo volta na mesma
+     * pasta; e a pre-selecao pelo roteiro nao re-arma ao fechar (so quando o
+     * roteiro muda), senao ela passaria por cima da escolha dele.
+     */
     setAvisouVazios(false)
     setAvisouSaida(false)
-    setEpisodio(null)
     setPersonagem(null)
     setMinSec(0)
     setMaxSec(0)

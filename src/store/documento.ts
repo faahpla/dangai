@@ -39,6 +39,7 @@ export const CAMPOS = [
   'trilhas',
   'sobreposicoes',
   'faixasMudas',
+  'cenasTrancadas',
   'sfxEnabled',
   'music',
   'musicGainDb',
