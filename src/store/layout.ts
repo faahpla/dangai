@@ -77,3 +77,19 @@ export const useIma = create<{ ligado: boolean; alternar: () => void }>((set, ge
     }
   },
 }))
+
+/*
+ * A FERRAMENTA da linha do tempo, como no DaVinci: com a de AGULHA, clicar e
+ * arrastar no vazio de uma faixa leva a agulha; com a de SELECAO (tecla V),
+ * abre um laco que escolhe os clipes que tocar. Nas cenas a agulha vale sempre.
+ */
+export type Ferramenta = 'agulha' | 'selecao'
+export const useFerramenta = create<{
+  ferramenta: Ferramenta
+  definir: (f: Ferramenta) => void
+  alternar: () => void
+}>((set, get) => ({
+  ferramenta: 'agulha',
+  definir: (ferramenta) => set({ ferramenta }),
+  alternar: () => set({ ferramenta: get().ferramenta === 'selecao' ? 'agulha' : 'selecao' }),
+}))

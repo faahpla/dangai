@@ -12,7 +12,7 @@ import {
   useCurrentFrame,
 } from 'remotion'
 import { TransitionSeries } from '@remotion/transitions'
-import type { RenderProps } from '@shared/contract'
+import { rampaDoFade, type RenderProps } from '@shared/contract'
 import { Scene, easingFor, motionFor } from './Scene'
 import { CamadaDeAjuste } from './Ajuste'
 import { Captions } from './Captions'
@@ -247,7 +247,14 @@ function Pilha({ itens, children }: { itens: RenderProps['sobreposicoes']; child
   for (const [i, o] of ordenadas.entries()) {
     pilha =
       o.tipo === 'ajuste' ? (
-        <CamadaDeAjuste key={`ajuste-${i}`} from={o.from} durationInFrames={o.durationInFrames} cor={o.cor}>
+        <CamadaDeAjuste
+          key={`ajuste-${i}`}
+          from={o.from}
+          durationInFrames={o.durationInFrames}
+          fadeInFrames={o.fadeInFrames}
+          fadeOutFrames={o.fadeOutFrames}
+          cor={o.cor}
+        >
           {pilha}
         </CamadaDeAjuste>
       ) : (
@@ -277,12 +284,13 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
   })
   const m = o.efeito === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(o.efeito, o.intensidade, t)
   const cobre = { width: '100%', height: '100%', objectFit: 'contain' as const }
+  const fade = rampaDoFade(frame, o.durationInFrames, o.fadeInFrames, o.fadeOutFrames)
   return (
     <AbsoluteFill
       style={{
-        transform: `translate(${o.x}%, ${o.y}%) rotate(${o.rotacao}deg) scale(${o.escala})`,
+        transform: `translate(${o.x}%, ${o.y}%) rotate(${o.rotacao}deg) scale(${o.escala})${o.espelhar ? ' scaleX(-1)' : ''}`,
         transformOrigin: 'center center',
-        opacity: o.opacidade,
+        opacity: o.opacidade * fade,
       }}
     >
       <AbsoluteFill

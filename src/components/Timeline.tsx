@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Magnet, Minus, Plus, SlidersHorizontal, Volume2, X } from 'lucide-react'
+import { Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
-import { useProject, formatTimecode } from '@/store/project'
-import { useIma } from '@/store/layout'
+import { clipesEscolhidos, idsEscolhidos, useProject, formatTimecode } from '@/store/project'
+import { useFerramenta, useIma } from '@/store/layout'
+import { useShallow } from 'zustand/react/shallow'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
@@ -255,6 +256,115 @@ export function Timeline() {
     },
     [isRendering, levarAgulha],
   )
+
+  /*
+   * O CLIQUE NO VAZIO DE UMA FAIXA depende da ferramenta. Agulha: tira a
+   * selecao e leva a agulha. Selecao (V): abre o LACO -- "clicar numa area da
+   * timeline vazia e arrastar para selecionar a quantidade de coisas que eu
+   * quiser". Shift soma ao que ja estava escolhido.
+   */
+  const ferramenta = useFerramenta((s) => s.ferramenta)
+  const conteudoRef = useRef<HTMLDivElement | null>(null)
+  const [laco, setLaco] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const selecionarClipe = useProject((s) => s.selecionarClipe)
+  const ajustarSobreposicao = useProject((s) => s.ajustarSobreposicao)
+  const ajustarTrilha = useProject((s) => s.ajustarTrilha)
+  const definirSelecaoDeClipes = useProject((s) => s.definirSelecaoDeClipes)
+  const aoClicarNoVazio = useCallback(
+    (event: React.PointerEvent) => {
+      if (ferramenta !== 'selecao') {
+        selecionarClipe(null)
+        arrastarAgulha(event)
+        return
+      }
+      const conteudo = conteudoRef.current
+      if (!conteudo) return
+      const antes = event.shiftKey ? clipesEscolhidos(useProject.getState()) : []
+      const x0 = event.clientX
+      const y0 = event.clientY
+      const local = (x: number, y: number): { x: number; y: number } => {
+        const r = conteudo.getBoundingClientRect()
+        return { x: x - r.left, y: y - r.top }
+      }
+      const a = local(x0, y0)
+      let andou = false
+      const mover = (e: PointerEvent): void => {
+        if (!andou && Math.hypot(e.clientX - x0, e.clientY - y0) < 4) return
+        andou = true
+        const b = local(e.clientX, e.clientY)
+        setLaco({ x0: a.x, y0: a.y, x1: b.x, y1: b.y })
+        const esq = Math.min(x0, e.clientX)
+        const dir = Math.max(x0, e.clientX)
+        const cima = Math.min(y0, e.clientY)
+        const baixo = Math.max(y0, e.clientY)
+        const pegos: { tipo: 'video' | 'audio'; id: string }[] = [...antes]
+        for (const el of conteudo.querySelectorAll<HTMLElement>('[data-clipe]')) {
+          const r = el.getBoundingClientRect()
+          if (r.right < esq || r.left > dir || r.bottom < cima || r.top > baixo) continue
+          const tipo = el.dataset['tipo'] === 'audio' ? 'audio' : 'video'
+          const id = el.dataset['clipe'] ?? ''
+          if (!pegos.some((p) => p.tipo === tipo && p.id === id)) pegos.push({ tipo, id })
+        }
+        definirSelecaoDeClipes(pegos)
+      }
+      const fim = (): void => {
+        window.removeEventListener('pointermove', mover)
+        window.removeEventListener('pointerup', fim)
+        setLaco(null)
+        // Clique sem arrastar: so limpa a selecao, como no editor.
+        if (!andou && !event.shiftKey) definirSelecaoDeClipes([])
+      }
+      window.addEventListener('pointermove', mover)
+      window.addEventListener('pointerup', fim)
+    },
+    [ferramenta, selecionarClipe, arrastarAgulha, definirSelecaoDeClipes],
+  )
+
+  /*
+   * O BOTAO DO MEIO ARRASTA A VISTA, como no DaVinci: "clico nele, seguro e
+   * arrasto pra onde eu quero". Ouvido no proprio container e parando ali: o
+   * clique do meio nao chega aos clipes nem a agulha, e o auto-scroll do
+   * navegador (aquela bolinha) nao aparece.
+   */
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const onDown = (e: PointerEvent): void => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      e.stopPropagation()
+      const x0 = e.clientX
+      const y0 = e.clientY
+      const sl = scroll.scrollLeft
+      const st = scroll.scrollTop
+      scroll.setPointerCapture(e.pointerId)
+      scroll.style.cursor = 'grabbing'
+      const mover = (m: PointerEvent): void => {
+        scroll.scrollLeft = sl - (m.clientX - x0)
+        scroll.scrollTop = st - (m.clientY - y0)
+      }
+      const fim = (): void => {
+        scroll.style.cursor = ''
+        scroll.removeEventListener('pointermove', mover)
+        scroll.removeEventListener('pointerup', fim)
+        scroll.removeEventListener('pointercancel', fim)
+      }
+      scroll.addEventListener('pointermove', mover)
+      scroll.addEventListener('pointerup', fim)
+      scroll.addEventListener('pointercancel', fim)
+    }
+    const semAutoScroll = (e: MouseEvent): void => {
+      if (e.button === 1) e.preventDefault()
+    }
+    scroll.addEventListener('pointerdown', onDown)
+    scroll.addEventListener('mousedown', semAutoScroll)
+    scroll.addEventListener('auxclick', semAutoScroll)
+    return () => {
+      scroll.removeEventListener('pointerdown', onDown)
+      scroll.removeEventListener('mousedown', semAutoScroll)
+      scroll.removeEventListener('auxclick', semAutoScroll)
+    }
+  }, [])
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -527,6 +637,7 @@ export function Timeline() {
                 : `${scenes.length} ${scenes.length === 1 ? 'bloco' : 'blocos'}`}
           </span>
 
+          {duration > 0 && !isRendering && <BotaoDaFerramenta />}
           {duration > 0 && !isRendering && <BotaoDeAjuste />}
           {duration > 0 && !isRendering && (
             <button
@@ -585,7 +696,7 @@ export function Timeline() {
          * passiva). Sem nenhum dos dois, a roda rola.
          */
       >
-        <div className="relative" style={{ width: CABECALHO + largura }}>
+        <div ref={conteudoRef} className="relative" style={{ width: CABECALHO + largura }}>
         {/*
           Sem fixar no topo: com as faixas de video em cima das cenas, o bloco
           fixo passava de 200 px e cobria as faixas de audio numa linha do tempo
@@ -614,6 +725,8 @@ export function Timeline() {
                 nome: o.fileName,
                 imagem: o.tipo === 'image' ? o.url : undefined,
                 ajuste: o.tipo === 'ajuste',
+                fadeInSec: o.fadeInSec ?? 0,
+                fadeOutSec: o.fadeOutSec ?? 0,
               }))}
               aceita={(p) => {
                 const t = classifyFile(p)
@@ -624,7 +737,10 @@ export function Timeline() {
               onCortarInicio={cortarInicioDaSobreposicao}
               onCortarFim={cortarFimDaSobreposicao}
               onRemover={removeSobreposicao}
-              onAgulha={arrastarAgulha}
+              onVazio={aoClicarNoVazio}
+              onFade={(id, qual, seg) =>
+                ajustarSobreposicao(id, qual === 'entra' ? { fadeInSec: Math.min(seg, 10) } : { fadeOutSec: Math.min(seg, 10) })
+              }
             />
         )}
         <Linha
@@ -819,6 +935,7 @@ export function Timeline() {
                 toca: duracaoDoTrecho(t),
                 nome: t.fileName,
                 peaks: t.peaks,
+                rms: t.rms,
                 arquivoSec: t.durationSec,
                 inicioSec: t.inicioSec,
                 fadeInSec: t.fadeInSec,
@@ -830,7 +947,10 @@ export function Timeline() {
               onCortarInicio={cortarInicioDaTrilha}
               onCortarFim={cortarFimDaTrilha}
               onRemover={removeTrilha}
-              onAgulha={arrastarAgulha}
+              onVazio={aoClicarNoVazio}
+              onFade={(id, qual, seg) =>
+                ajustarTrilha(id, qual === 'entra' ? { fadeInSec: Math.min(seg, 10) } : { fadeOutSec: Math.min(seg, 10) })
+              }
             />
           </>
         )}
@@ -840,6 +960,18 @@ export function Timeline() {
           <div
             className="pointer-events-none absolute inset-y-0 z-[45] w-px bg-accent"
             style={{ left: CABECALHO + progress * largura }}
+          />
+        )}
+        {/* O laco da ferramenta de selecao. */}
+        {laco && (
+          <div
+            className="pointer-events-none absolute z-50 border border-accent bg-accent/10"
+            style={{
+              left: Math.min(laco.x0, laco.x1),
+              top: Math.min(laco.y0, laco.y1),
+              width: Math.abs(laco.x1 - laco.x0),
+              height: Math.abs(laco.y1 - laco.y0),
+            }}
           />
         )}
         {/* Onde o ima grudou: uma linha de cima a baixo. */}
@@ -1226,11 +1358,19 @@ function LegendaAtual() {
 /** Volume e fades do trecho de audio escolhido. */
 function ControlesDaTrilha({ id }: { id: string }) {
   const t = useProject((s) => s.trilhas.find((x) => x.id === id))
-  const ajustar = useProject((s) => s.ajustarTrilha)
+  const ajustarUm = useProject((s) => s.ajustarTrilha)
+  // Com varios escolhidos, o controle vale para TODOS: "selecionar 2 ou mais
+  // audios para configura-los juntos (volume e etc.)". Mostra o valor do principal.
+  const alvos = useProject(useShallow((s) => idsEscolhidos(s, 'audio')))
+  const ajustar = (_id: string, patch: Parameters<typeof ajustarUm>[1]): void => {
+    for (const alvo of alvos.length > 0 ? alvos : [id]) ajustarUm(alvo, patch)
+  }
   if (!t) return null
   return (
     <>
-      <span className="max-w-[90px] truncate text-[10px] text-ink-3">{t.fileName}</span>
+      <span className="max-w-[90px] truncate text-[10px] text-ink-3">
+        {alvos.length > 1 ? `${alvos.length} audios` : t.fileName}
+      </span>
       <ControleDoClipe rotulo="vol" titulo="Volume" valor={t.gainDb} min={-40} max={12} passo={1} padrao={0}
         texto={`${t.gainDb > 0 ? '+' : ''}${t.gainDb} dB`} onChange={(v) => ajustar(id, { gainDb: v })} />
       {/* Os volumes de sempre num clique; o slider continua para o resto. */}
@@ -1261,22 +1401,48 @@ function ControlesDaTrilha({ id }: { id: string }) {
 /** Posicao, escala e opacidade da sobreposicao escolhida. */
 function ControlesDaSobreposicao({ id }: { id: string }) {
   const o = useProject((s) => s.sobreposicoes.find((x) => x.id === id))
-  const ajustar = useProject((s) => s.ajustarSobreposicao)
+  const ajustarUm = useProject((s) => s.ajustarSobreposicao)
+  const sobreposicoes = useProject((s) => s.sobreposicoes)
+  const escolhidos = useProject(useShallow((s) => idsEscolhidos(s, 'video')))
   if (!o) return null
+  // Os alvos sao os escolhidos do MESMO tipo do principal: mexer na posicao
+  // de uma seta nao deve empurrar uma camada de ajuste junto.
+  const alvos = escolhidos.filter((x) => (sobreposicoes.find((y) => y.id === x)?.tipo === 'ajuste') === (o.tipo === 'ajuste'))
+  const ajustar = (_id: string, patch: Parameters<typeof ajustarUm>[1]): void => {
+    for (const alvo of alvos.length > 0 ? alvos : [id]) ajustarUm(alvo, patch)
+  }
+  const fades = (
+    <>
+      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={o.fadeInSec ?? 0} min={0} max={5} passo={0.1} padrao={0}
+        texto={`${(o.fadeInSec ?? 0).toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
+      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={o.fadeOutSec ?? 0} min={0} max={5} passo={0.1} padrao={0}
+        texto={`${(o.fadeOutSec ?? 0).toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
+    </>
+  )
   if (o.tipo === 'ajuste') {
     const cor = o.cor ?? AJUSTE_DE_COR_PADRAO
     return (
       <>
-        <span className="max-w-[110px] truncate text-[10px] text-ink-3">Camada de ajuste</span>
+        <span className="max-w-[110px] truncate text-[10px] text-ink-3">
+          {alvos.length > 1 ? `${alvos.length} camadas` : 'Camada de ajuste'}
+        </span>
         <ControleDoClipe rotulo="intens" titulo="Quanto do ajuste vale" valor={cor.intensidade} min={0} max={1}
           passo={0.05} padrao={1} texto={`${Math.round(cor.intensidade * 100)}%`}
-          onChange={(v) => ajustar(id, { cor: { ...cor, intensidade: v } })} />
+          onChange={(v) => {
+            for (const alvo of alvos.length > 0 ? alvos : [id]) {
+              const c = sobreposicoes.find((y) => y.id === alvo)?.cor ?? AJUSTE_DE_COR_PADRAO
+              ajustarUm(alvo, { cor: { ...c, intensidade: v } })
+            }
+          }} />
+        {fades}
       </>
     )
   }
   return (
     <>
-      <span className="max-w-[80px] truncate text-[10px] text-ink-3">{o.fileName}</span>
+      <span className="max-w-[80px] truncate text-[10px] text-ink-3">
+        {alvos.length > 1 ? `${alvos.length} clipes` : o.fileName}
+      </span>
       <ControleDoClipe rotulo="x" titulo="Posicao horizontal" valor={o.x} min={-60} max={60} passo={1} padrao={0}
         texto={`${Math.round(o.x)}%`} onChange={(v) => ajustar(id, { x: v })} />
       <ControleDoClipe rotulo="y" titulo="Posicao vertical" valor={o.y} min={-60} max={60} passo={1} padrao={0}
@@ -1287,6 +1453,7 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
         texto={`${Math.round(o.rotacao)}°`} onChange={(v) => ajustar(id, { rotacao: v })} />
       <ControleDoClipe rotulo="opac" titulo="Opacidade" valor={o.opacidade} min={0} max={1} passo={0.05} padrao={1}
         texto={`${Math.round(o.opacidade * 100)}%`} onChange={(v) => ajustar(id, { opacidade: v })} />
+      {fades}
     </>
   )
 }
@@ -1344,6 +1511,36 @@ function BotaoDeAjuste() {
     >
       <SlidersHorizontal size={12} strokeWidth={1.5} />
       Ajuste
+    </button>
+  )
+}
+
+/**
+ * A FERRAMENTA DE SELECAO (V), como no DaVinci: ligada, clicar e arrastar no
+ * vazio das faixas abre um laco que escolhe os clipes que tocar. Desligada, o
+ * mesmo gesto leva a agulha.
+ */
+function BotaoDaFerramenta() {
+  const ferramenta = useFerramenta((s) => s.ferramenta)
+  const alternar = useFerramenta((s) => s.alternar)
+  const dica = dicaDoAtalho('ferramentaSelecao')
+  return (
+    <button
+      type="button"
+      onClick={alternar}
+      aria-pressed={ferramenta === 'selecao'}
+      title={
+        ferramenta === 'selecao'
+          ? `Ferramenta de selecao: arraste no vazio das faixas para escolher varios clipes${dica ? ` (${dica})` : ''}`
+          : `Ferramenta de selecao${dica ? ` (${dica})` : ''}: arrastar no vazio escolhe varios clipes`
+      }
+      className={[
+        'flex h-[24px] items-center gap-1.5 rounded-sm border px-2 text-[11px]',
+        ferramenta === 'selecao' ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
+      ].join(' ')}
+    >
+      <SquareDashedMousePointer size={12} strokeWidth={1.5} />
+      Selecao
     </button>
   )
 }

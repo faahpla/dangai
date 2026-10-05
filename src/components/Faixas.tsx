@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import { useProject } from '@/store/project'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
@@ -185,6 +186,8 @@ export interface ClipeDaFaixa {
   nome: string
   /** Picos do arquivo inteiro, para a onda. */
   peaks?: readonly number[]
+  /** RMS do arquivo inteiro, nos mesmos buckets. */
+  rms?: readonly number[]
   /** Duracao do arquivo e de onde o trecho parte, para mostrar o pedaco certo da onda. */
   arquivoSec?: number
   inicioSec?: number
@@ -224,7 +227,8 @@ export function GrupoDeFaixas({
   onCortarInicio,
   onCortarFim,
   onRemover,
-  onAgulha,
+  onVazio,
+  onFade,
 }: {
   tipo: 'video' | 'audio'
   clipes: readonly ClipeDaFaixa[]
@@ -240,11 +244,22 @@ export function GrupoDeFaixas({
   onCortarInicio: (id: string, at: number) => void
   onCortarFim: (id: string, toca: number | null) => void
   onRemover: (id: string) => void
-  /** Clicar e arrastar no vazio de uma faixa leva a agulha, como no editor. */
-  onAgulha: (event: React.PointerEvent) => void
+  /**
+   * Clique no vazio de uma faixa. Quem decide o que ele faz e a linha do
+   * tempo: com a ferramenta de agulha, leva a agulha; com a de selecao, abre o
+   * laco.
+   */
+  onVazio: (event: React.PointerEvent) => void
+  /** Puxar a alca de fade de um clipe: quantos segundos de entrada ou saida. */
+  onFade: (id: string, qual: 'entra' | 'sai', segundos: number) => void
 }) {
-  const selecionado = useProject((s) => (s.clipeSelecionado?.tipo === tipo ? s.clipeSelecionado.id : null))
+  const principal = useProject((s) => (s.clipeSelecionado?.tipo === tipo ? s.clipeSelecionado.id : null))
+  const juntos = useProject(
+    useShallow((s) => s.outrosClipes.filter((c) => c.tipo === tipo).map((c) => c.id)),
+  )
   const selecionar = useProject((s) => s.selecionarClipe)
+  const alternarNaSelecao = useProject((s) => s.alternarClipeNaSelecao)
+  const definirSelecao = useProject((s) => s.definirSelecaoDeClipes)
   const mudas = useProject((s) => s.faixasMudas[tipo])
   const alternarMudo = useProject((s) => s.alternarMudo)
   const duplicarClipe = useProject((s) => s.duplicarClipe)
@@ -253,7 +268,16 @@ export function GrupoDeFaixas({
   const [extras, setExtras] = useState(0)
   const [sobre, setSobre] = useState<number | null>(null)
   const gesto = useRef<
-    | { tipo: 'mover'; id: string; pega: number }
+    | {
+        tipo: 'mover'
+        id: string
+        pega: number
+        /** Onde o clipe pego estava ao comecar. */
+        at0: number
+        faixa0: number
+        /** Os outros escolhidos deste tipo, que andam junto. */
+        grupo: { id: string; at: number; faixa: number; toca: number }[]
+      }
     | { tipo: 'inicio'; id: string }
     | { tipo: 'fim'; id: string }
     | null
@@ -308,6 +332,30 @@ export function GrupoDeFaixas({
     if (g.tipo === 'mover') {
       const { at, linha } = alinharTrecho(Math.max(0, timeAt(event.clientX) - g.pega), c.toca, ima, c.id)
       const alvo = faixaEm(event.clientY)
+      /*
+       * VARIOS ESCOLHIDOS ANDAM JUNTOS, mantendo a distancia entre eles. O
+       * grupo so anda se TODOS couberem; senao tenta sem trocar de faixa, e
+       * senao fica onde esta.
+       */
+      if (g.grupo.length > 0) {
+        const dt = at - g.at0
+        const df = alvo - g.faixa0
+        const membros = [{ id: c.id, at: g.at0, faixa: g.faixa0, toca: c.toca }, ...g.grupo]
+        const ids = new Set(membros.map((m) => m.id))
+        const fixos = clipes.filter((x) => !ids.has(x.id))
+        const cabe = (dtx: number, dfx: number): boolean =>
+          membros.every((m) => {
+            const na = m.at + dtx
+            const nf = m.faixa + dfx
+            if (na < -1e-6 || nf < 0) return false
+            return fixos.every((o) => o.faixa !== nf || na + m.toca <= o.at + 1e-6 || na >= o.at + o.toca - 1e-6)
+          })
+        const dfOk = cabe(dt, df) ? df : cabe(dt, 0) ? 0 : null
+        if (dfOk === null) return
+        ima.mostrar(linha)
+        for (const m of membros) onMover(m.id, Math.max(0, m.at + dt), m.faixa + dfOk)
+        return
+      }
       let faixa = alvo
       let lugar = encaixar(at, c.toca, vizinhos(c.id, alvo))
       if (lugar === null) {
@@ -406,7 +454,10 @@ export function GrupoDeFaixas({
           >
             <div
               data-faixa={`${tipo}-${faixa}`}
-              className={['absolute inset-0', muda ? 'opacity-40' : ''].join(' ')}
+              // overflow-hidden: um clipe mais longo que o video (a musica de
+              // 2:30 num video de 1:12) e cortado no fim da linha do tempo, em
+              // vez de alargar a rolagem e empurrar a vista para fora das cenas.
+              className={['absolute inset-0 overflow-hidden', muda ? 'opacity-40' : ''].join(' ')}
               onDragOver={(event) => {
                 event.preventDefault()
                 setSobre(faixa)
@@ -422,11 +473,9 @@ export function GrupoDeFaixas({
                 onSoltar(paths, alinhar(timeAt(event.clientX), ima, null).t, faixa)
               }}
               onPointerDown={(event) => {
-                // Clicar no vazio da faixa tira a selecao e leva a agulha, como
-                // no editor -- a agulha nao mora so na faixa das cenas.
-                if (event.target !== event.currentTarget) return
-                selecionar(null)
-                onAgulha(event)
+                // So o botao esquerdo: o do meio e de arrastar a vista.
+                if (event.button !== 0 || event.target !== event.currentTarget) return
+                onVazio(event)
               }}
             >
               {daFaixa.map((c) => (
@@ -435,25 +484,53 @@ export function GrupoDeFaixas({
                   tipo={tipo}
                   clipe={c}
                   duration={duration}
-                  escolhido={selecionado === c.id}
+                  escolhido={principal === c.id ? 'principal' : juntos.includes(c.id) ? 'junto' : null}
                   onPegar={(event, parte) => {
+                    if (event.button !== 0) return
                     event.stopPropagation()
+                    // Ctrl ou Shift: liga e desliga o clipe na selecao, como no editor.
+                    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                      alternarNaSelecao({ tipo, id: c.id })
+                      return
+                    }
                     /*
                      * ALT + ARRASTAR DUPLICA, como no editor: a copia fica no
                      * lugar e o que anda e o clipe pego.
                      */
                     if (parte === 'corpo' && event.altKey) duplicarClipe(tipo, c.id)
-                    selecionar({ tipo, id: c.id })
+                    const naSelecao = principal === c.id || juntos.includes(c.id)
+                    const outros = naSelecao && parte === 'corpo' ? juntos.concat(principal ? [principal] : []).filter((id) => id !== c.id) : []
+                    if (!naSelecao) selecionar({ tipo, id: c.id })
+                    else {
+                      // Pegar um dos escolhidos o torna o principal, sem desfazer o grupo.
+                      const todos = useProject.getState().outrosClipes.filter((x) => !(x.tipo === tipo && x.id === c.id))
+                      const atual = useProject.getState().clipeSelecionado
+                      definirSelecao([
+                        { tipo, id: c.id },
+                        ...(atual && !(atual.tipo === tipo && atual.id === c.id) ? [atual] : []),
+                        ...todos,
+                      ])
+                    }
                     gesto.current =
                       parte === 'corpo'
-                        ? { tipo: 'mover', id: c.id, pega: timeAt(event.clientX) - c.at }
+                        ? {
+                            tipo: 'mover',
+                            id: c.id,
+                            pega: timeAt(event.clientX) - c.at,
+                            at0: c.at,
+                            faixa0: c.faixa,
+                            grupo: clipes
+                              .filter((x) => outros.includes(x.id))
+                              .map((x) => ({ id: x.id, at: x.at, faixa: x.faixa, toca: x.toca })),
+                          }
                         : { tipo: parte, id: c.id }
                     comecarGesto()
                   }}
+                  onFade={(qual, segundos) => onFade(c.id, qual, segundos)}
                   onRestaurarFim={() => onCortarFim(c.id, null)}
                   onRemover={() => {
                     onRemover(c.id)
-                    if (selecionado === c.id) selecionar(null)
+                    if (principal === c.id) selecionar(null)
                   }}
                 />
               ))}
@@ -472,25 +549,40 @@ function Clipe({
   duration,
   escolhido,
   onPegar,
+  onFade,
   onRestaurarFim,
   onRemover,
 }: {
   tipo: 'video' | 'audio'
   clipe: ClipeDaFaixa
   duration: number
-  escolhido: boolean
+  /** O principal (o que o inspetor mostra) ou um dos que vao junto. */
+  escolhido: 'principal' | 'junto' | null
   onPegar: (event: React.PointerEvent<HTMLElement>, parte: 'corpo' | 'inicio' | 'fim') => void
+  onFade: (qual: 'entra' | 'sai', segundos: number) => void
   onRestaurarFim: () => void
   onRemover: () => void
 }) {
   const audio = tipo === 'audio'
   const arquivo = c.arquivoSec ?? c.toca
-  // A onda e do arquivo inteiro; aparece so o pedaco que toca.
-  const ondaLargura = (arquivo / Math.max(c.toca, 0.01)) * 100
-  const ondaDesloca = ((c.inicioSec ?? 0) / Math.max(c.toca, 0.01)) * 100
+  /*
+   * A onda e do arquivo inteiro, mas so o PEDACO QUE TOCA vai para o canvas.
+   * Antes o canvas tinha a largura da musica inteira e era deslocado para a
+   * esquerda: numa musica longa cortada curta, com zoom, ele passava do teto
+   * de largura do Chrome e a onda saia quebrada.
+   */
+  const fatia = (v: readonly number[] | undefined): number[] => {
+    if (!v || v.length === 0) return []
+    const de = Math.floor(((c.inicioSec ?? 0) / Math.max(arquivo, 0.01)) * v.length)
+    const ate = Math.ceil((((c.inicioSec ?? 0) + c.toca) / Math.max(arquivo, 0.01)) * v.length)
+    return v.slice(Math.max(0, de), Math.min(v.length, Math.max(ate, de + 1)))
+  }
+  const picos = useMemo(() => fatia(c.peaks), [c.peaks, c.inicioSec, c.toca, arquivo])
+  const rms = useMemo(() => fatia(c.rms), [c.rms, c.inicioSec, c.toca, arquivo])
   return (
     <div
       data-clipe={c.id}
+      data-tipo={tipo}
       onPointerDown={(event) => onPegar(event, 'corpo')}
       style={{ left: `${(c.at / duration) * 100}%`, width: `${(c.toca / duration) * 100}%` }}
       title={`${c.nome} — entra em ${c.at.toFixed(2)}s, ${formatarDuracao(c.toca)}`}
@@ -501,15 +593,18 @@ function Clipe({
           : c.ajuste
             ? 'border-[#9a7bd6] bg-[#43356b]'
             : 'border-[#5b7fb8] bg-[#2c4670]',
-        escolhido ? 'ring-2 ring-accent' : '',
+        escolhido === 'principal' ? 'ring-2 ring-accent' : escolhido === 'junto' ? 'ring-2 ring-accent/60' : '',
       ].join(' ')}
     >
-      {audio && c.peaks && c.peaks.length > 0 && (
-        <div
-          className="pointer-events-none absolute top-0 bottom-[13px]"
-          style={{ left: `${-ondaDesloca}%`, width: `${ondaLargura}%` }}
-        >
-          <Waveform peaks={c.peaks} cor="rgba(170, 235, 195, 0.75)" className="block h-full w-full" />
+      {audio && picos.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 bottom-[13px]">
+          <Waveform
+            peaks={picos}
+            rms={rms}
+            cor="rgba(170, 235, 195, 0.38)"
+            corRms="rgba(205, 250, 220, 0.85)"
+            className="block h-full w-full"
+          />
         </div>
       )}
       {c.ajuste && (
@@ -546,6 +641,50 @@ function Clipe({
         <span className="tnum shrink-0 text-white/60">{formatarDuracao(c.toca)}</span>
       </span>
 
+      {/*
+        AS ALCAS DE FADE, no canto de cima, como no DaVinci: puxar para dentro
+        do clipe aumenta o fade. Aparecem com o mouse em cima ou com o clipe
+        escolhido.
+      */}
+      {(['entra', 'sai'] as const).map((qual) => {
+        const seg = (qual === 'entra' ? c.fadeInSec : c.fadeOutSec) ?? 0
+        const pos = `${Math.min(seg / Math.max(c.toca, 0.01), 0.5) * 100}%`
+        return (
+          <span
+            key={qual}
+            data-alca={`fade-${qual}`}
+            title={`Fade de ${qual === 'entra' ? 'entrada' : 'saida'}: ${seg.toFixed(2)}s -- arraste; dois cliques zeram`}
+            onPointerDown={(event) => {
+              if (event.button !== 0) return
+              event.stopPropagation()
+              const clipe = event.currentTarget.closest('[data-clipe]')
+              if (!clipe) return
+              event.currentTarget.setPointerCapture(event.pointerId)
+              const mover = (e: PointerEvent): void => {
+                const r = clipe.getBoundingClientRect()
+                const fracao = qual === 'entra' ? (e.clientX - r.left) / r.width : (r.right - e.clientX) / r.width
+                onFade(qual, Math.round(Math.min(Math.max(fracao, 0), 0.5) * c.toca * 100) / 100)
+              }
+              const soltar = (): void => {
+                window.removeEventListener('pointermove', mover)
+                window.removeEventListener('pointerup', soltar)
+              }
+              window.addEventListener('pointermove', mover)
+              window.addEventListener('pointerup', soltar)
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation()
+              onFade(qual, 0)
+            }}
+            style={qual === 'entra' ? { left: pos } : { right: pos }}
+            className={[
+              'absolute top-0 z-20 size-[9px] cursor-ew-resize rounded-[2px] border border-black/60 bg-white',
+              qual === 'entra' ? '-ml-[4px]' : '-mr-[4px]',
+              escolhido ? 'opacity-90' : 'opacity-0 group-hover/clipe:opacity-90',
+            ].join(' ')}
+          />
+        )
+      })}
       <span
         data-alca="inicio"
         onPointerDown={(event) => onPegar(event, 'inicio')}

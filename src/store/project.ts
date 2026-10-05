@@ -304,6 +304,12 @@ export interface ProjectState {
   faixasMudas: { video: number[]; audio: number[] }
   /** O clipe de faixa escolhido -- e nele que o C corta, em vez de no bloco. */
   clipeSelecionado: { tipo: 'video' | 'audio'; id: string } | null
+  /**
+   * Os OUTROS clipes escolhidos junto com o principal (Ctrl+clique, ou o laco
+   * da ferramenta de selecao). O principal e o que o inspetor mostra; os
+   * controles valem para todos do mesmo tipo.
+   */
+  outrosClipes: { tipo: 'video' | 'audio'; id: string }[]
   sfxManual: {
     id: string
     path: string
@@ -513,6 +519,9 @@ export interface ProjectState {
         | 'escalaB'
         // A camera livre da metade de baixo da tela dividida.
         | 'cameraB'
+        // O flip horizontal de cada metade.
+        | 'espelhar'
+        | 'espelharB'
       >
     >,
   ) => void
@@ -582,12 +591,7 @@ export interface ProjectState {
   cortarInicioDaSobreposicao: (id: string, at: number) => void
   ajustarSobreposicao: (
     id: string,
-    patch: Partial<
-      Pick<
-        SobreposicaoSalva,
-        'x' | 'y' | 'escala' | 'opacidade' | 'rotacao' | 'efeito' | 'intensidade' | 'curva' | 'pontosDaCurva' | 'cor'
-      >
-    >,
+    patch: Partial<Omit<SobreposicaoSalva, 'id' | 'path' | 'tipo'>>,
   ) => void
   removeSobreposicao: (id: string) => void
   refreshSobreposicoes: () => Promise<void>
@@ -607,7 +611,13 @@ export interface ProjectState {
   /** Uma copia do clipe no mesmo lugar e na mesma faixa (o Alt+arrastar). Devolve o id novo. */
   duplicarClipe: (tipo: 'video' | 'audio', id: string) => string | null
   /** O clipe copiado pelo Ctrl+C, para o Ctrl+V. */
-  clipeCopiado: { tipo: 'video' | 'audio'; id: string } | null
+  clipeCopiado: { tipo: 'video' | 'audio'; id: string }[] | null
+  /** Liga ou desliga um clipe na selecao (Ctrl/Shift+clique). */
+  alternarClipeNaSelecao: (clipe: { tipo: 'video' | 'audio'; id: string }) => void
+  /** A selecao inteira de uma vez (o laco). O primeiro vira o principal. */
+  definirSelecaoDeClipes: (clipes: readonly { tipo: 'video' | 'audio'; id: string }[]) => void
+  /** Tira da linha do tempo todos os clipes escolhidos. */
+  removerClipesEscolhidos: () => boolean
   copiarClipe: () => boolean
   /** Cola o clipe copiado na agulha: na faixa dele se couber, senao na primeira livre. */
   colarClipe: () => boolean
@@ -963,6 +973,39 @@ function substituirNaFita(
  * tem algumas dezenas -- guardar o resto so engordaria o arquivo do projeto
  * sem mudar um pixel na tela.
  */
+/** A selecao inteira de clipes de faixa: o principal primeiro. */
+export function clipesEscolhidos(state: {
+  clipeSelecionado: { tipo: 'video' | 'audio'; id: string } | null
+  outrosClipes: readonly { tipo: 'video' | 'audio'; id: string }[]
+}): { tipo: 'video' | 'audio'; id: string }[] {
+  return state.clipeSelecionado ? [state.clipeSelecionado, ...state.outrosClipes] : []
+}
+
+/** Os ids escolhidos de um tipo -- os alvos de um controle que vale para todos. */
+export function idsEscolhidos(
+  state: Parameters<typeof clipesEscolhidos>[0],
+  tipo: 'video' | 'audio',
+): string[] {
+  return clipesEscolhidos(state)
+    .filter((c) => c.tipo === tipo)
+    .map((c) => c.id)
+}
+
+/**
+ * A onda de um trecho de audio das faixas: 1000 buckets, com tres casas.
+ *
+ * Eram 120 para a musica inteira -- numa faixa de 2:30, uma barra a cada 1,2s,
+ * e esticada no clipe virava um pente de dentes iguais. Mil da uns 150 ms numa
+ * musica longa, e com tres casas o projeto salvo nao incha.
+ */
+function ondaDoTrecho(a: { peaks: readonly number[]; rms?: readonly number[] }): { peaks: number[]; rms: number[] } {
+  const casas = (v: number): number => Math.round(v * 1000) / 1000
+  return {
+    peaks: reduzirPicos(a.peaks, 1000).map(casas),
+    rms: a.rms && a.rms.length > 0 ? reduzirPicos(a.rms, 1000).map(casas) : [],
+  }
+}
+
 function reduzirPicos(peaks: readonly number[], quantos = 40): number[] {
   if (peaks.length <= quantos) return [...peaks]
   const passo = peaks.length / quantos
@@ -1100,6 +1143,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   sobreposicoes: [],
   faixasMudas: { video: [], audio: [] },
   clipeSelecionado: null,
+  outrosClipes: [],
   curvePresets: [],
   upscale: false,
   captionY: CAPTION_Y_DEFAULT,
@@ -2989,7 +3033,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         gainDb: 0,
         fadeInSec: 0.5,
         fadeOutSec: 1,
-        peaks: reduzirPicos(r.value.peaks, 120),
+        ...ondaDoTrecho(r.value),
         url: r.value.url,
       }
       // Soltar varios de uma vez enfileira na mesma faixa, um depois do outro.
@@ -3050,7 +3094,9 @@ export const useProject = create<ProjectState>((set, get) => ({
     const repostos = await Promise.all(
       atuais.map(async (t) => {
         const r = await window.dangai.analyzeAudio(t.path)
-        return r.ok ? { ...t, url: r.value.url } : t
+        // A onda tambem e refeita: projeto salvo com a onda antiga (120 barras,
+        // sem RMS) abre com a nova.
+        return r.ok ? { ...t, url: r.value.url, ...ondaDoTrecho(r.value) } : t
       }),
     )
     set({ trilhas: repostos })
@@ -3087,6 +3133,9 @@ export const useProject = create<ProjectState>((set, get) => ({
         escala: 1,
         opacidade: 1,
         aspecto: r.value.aspecto,
+        espelhar: false,
+        fadeInSec: 0,
+        fadeOutSec: 0,
         rotacao: 0,
         efeito: 'nenhum' as const,
         intensidade: 0.1,
@@ -3167,7 +3216,32 @@ export const useProject = create<ProjectState>((set, get) => ({
       return { faixasMudas: { ...state.faixasMudas, [tipo]: proximos }, projectDirty: true }
     }),
 
-  selecionarClipe: (clipe) => set({ clipeSelecionado: clipe }),
+  selecionarClipe: (clipe) => set({ clipeSelecionado: clipe, outrosClipes: [] }),
+
+  alternarClipeNaSelecao: (clipe) =>
+    set((state) => {
+      const todos = clipesEscolhidos(state)
+      const ja = todos.some((c) => c.tipo === clipe.tipo && c.id === clipe.id)
+      const lista = ja ? todos.filter((c) => !(c.tipo === clipe.tipo && c.id === clipe.id)) : [clipe, ...todos]
+      return { clipeSelecionado: lista[0] ?? null, outrosClipes: lista.slice(1) }
+    }),
+
+  definirSelecaoDeClipes: (clipes) => set({ clipeSelecionado: clipes[0] ?? null, outrosClipes: clipes.slice(1) }),
+
+  removerClipesEscolhidos: () => {
+    const todos = clipesEscolhidos(get())
+    if (todos.length === 0) return false
+    const audio = new Set(todos.filter((c) => c.tipo === 'audio').map((c) => c.id))
+    const video = new Set(todos.filter((c) => c.tipo === 'video').map((c) => c.id))
+    set((state) => ({
+      trilhas: state.trilhas.filter((t) => !audio.has(t.id)),
+      sobreposicoes: state.sobreposicoes.filter((o) => !video.has(o.id)),
+      clipeSelecionado: null,
+      outrosClipes: [],
+      projectDirty: true,
+    }))
+    return true
+  },
 
   duplicarClipe: (tipo, id) => {
     const novoId = `${id.replace(/-d\d+$/, '')}-d${Date.now()}`
@@ -3186,35 +3260,52 @@ export const useProject = create<ProjectState>((set, get) => ({
   clipeCopiado: null,
 
   copiarClipe: () => {
-    const c = get().clipeSelecionado
-    if (!c) return false
-    set({ clipeCopiado: c })
+    const todos = clipesEscolhidos(get())
+    if (todos.length === 0) return false
+    set({ clipeCopiado: todos })
     return true
   },
 
+  /*
+   * COLAR: o grupo copiado entra na agulha, cada clipe na mesma distancia dos
+   * outros que tinha, e na faixa dele se couber -- senao na primeira livre
+   * acima. Os colados viram a selecao.
+   */
   colarClipe: () => {
-    const { clipeCopiado: c, playhead, trilhas, sobreposicoes } = get()
-    if (!c) return false
-    const lista: readonly { id: string; faixa: number; at: number; fim: number }[] =
-      c.tipo === 'audio'
-        ? trilhas.map((t) => ({ id: t.id, faixa: t.faixa, at: t.at, fim: t.at + duracaoDoTrecho(t) }))
-        : sobreposicoes.map((o) => ({ id: o.id, faixa: o.faixa, at: o.at, fim: o.at + (o.usarSec ?? o.durationSec - o.inicioSec) }))
-    const original = lista.find((x) => x.id === c.id)
-    if (!original) return false
-    const dur = original.fim - original.at
-    const at = Math.max(0, playhead)
-    const livre = (faixa: number): boolean =>
-      lista.every((x) => x.faixa !== faixa || at + dur <= x.at + 1e-6 || at >= x.fim - 1e-6)
-    // A faixa dele primeiro; senao as de cima; senao uma nova, acima de todas.
-    const maior = Math.max(...lista.map((x) => x.faixa))
-    let faixa = original.faixa
-    while (!livre(faixa) && faixa <= maior) faixa += 1
-    const novoId = get().duplicarClipe(c.tipo, c.id)
-    if (!novoId) return false
-    if (c.tipo === 'audio') get().moveTrilha(novoId, at, faixa)
-    else get().moveSobreposicao(novoId, at, faixa)
-    set({ clipeSelecionado: { tipo: c.tipo, id: novoId } })
-    return true
+    const copiados = get().clipeCopiado
+    if (!copiados || copiados.length === 0) return false
+    const { playhead } = get()
+    type Ocupa = { id: string; faixa: number; at: number; fim: number }
+    const ocupacao = (tipo: 'video' | 'audio'): Ocupa[] =>
+      tipo === 'audio'
+        ? get().trilhas.map((t) => ({ id: t.id, faixa: t.faixa, at: t.at, fim: t.at + duracaoDoTrecho(t) }))
+        : get().sobreposicoes.map((o) => ({ id: o.id, faixa: o.faixa, at: o.at, fim: o.at + (o.usarSec ?? o.durationSec - o.inicioSec) }))
+    const originais: { c: (typeof copiados)[number]; o: Ocupa }[] = []
+    for (const c of copiados) {
+      const o = ocupacao(c.tipo).find((x) => x.id === c.id)
+      if (o) originais.push({ c, o })
+    }
+    if (originais.length === 0) return false
+    const inicio = Math.min(...originais.map((x) => x.o.at))
+    const colados: { tipo: 'video' | 'audio'; id: string }[] = []
+    for (const { c, o } of originais) {
+      const at = Math.max(0, playhead + (o.at - inicio))
+      const dur = o.fim - o.at
+      const lista = ocupacao(c.tipo)
+      const livre = (faixa: number): boolean =>
+        lista.every((x) => x.faixa !== faixa || at + dur <= x.at + 1e-6 || at >= x.fim - 1e-6)
+      // A faixa dele primeiro; senao as de cima; senao uma nova, acima de todas.
+      const maior = Math.max(...lista.map((x) => x.faixa))
+      let faixa = o.faixa
+      while (!livre(faixa) && faixa <= maior) faixa += 1
+      const novoId = get().duplicarClipe(c.tipo, c.id)
+      if (!novoId) continue
+      if (c.tipo === 'audio') get().moveTrilha(novoId, at, faixa)
+      else get().moveSobreposicao(novoId, at, faixa)
+      colados.push({ tipo: c.tipo, id: novoId })
+    }
+    set({ clipeSelecionado: colados[0] ?? null, outrosClipes: colados.slice(1) })
+    return colados.length > 0
   },
 
   removerFaixa: (tipo, faixa) =>
@@ -3231,6 +3322,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         ...(tipo === 'audio' ? { trilhas: desce(state.trilhas) } : { sobreposicoes: desce(state.sobreposicoes) }),
         faixasMudas: { ...state.faixasMudas, [tipo]: mudas },
         clipeSelecionado: sumiu ? null : state.clipeSelecionado,
+        outrosClipes: [],
         projectDirty: true,
       }
     }),
@@ -3264,11 +3356,15 @@ export const useProject = create<ProjectState>((set, get) => ({
       curva: MOTION_CURVE_DEFAULT,
       pontosDaCurva: null,
       cor: AJUSTE_DE_COR_PADRAO,
+      espelhar: false,
+      fadeInSec: 0,
+      fadeOutSec: 0,
       url: '',
     }
     set((state) => ({
       sobreposicoes: [...state.sobreposicoes, nova],
       clipeSelecionado: { tipo: 'video', id: nova.id },
+      outrosClipes: [],
       projectDirty: true,
     }))
   },
@@ -3302,6 +3398,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       set((state) => ({
         trilhas: state.trilhas.flatMap((x) => (x.id === t.id ? [primeira, segunda] : [x])),
         clipeSelecionado: { tipo: 'audio', id: segunda.id },
+        outrosClipes: [],
         projectDirty: true,
       }))
       return true
@@ -3324,6 +3421,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set((state) => ({
       sobreposicoes: state.sobreposicoes.flatMap((x) => (x.id === o.id ? [primeira, segunda] : [x])),
       clipeSelecionado: { tipo: 'video', id: segunda.id },
+      outrosClipes: [],
       projectDirty: true,
     }))
     return true
@@ -3380,6 +3478,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         fadeInSec: 0,
         fadeOutSec: som.usarSec !== null ? 0.03 : 0,
         peaks: som.peaks,
+        rms: [],
         url: som.url,
       })
     }
@@ -3406,7 +3505,7 @@ export const useProject = create<ProjectState>((set, get) => ({
             gainDb: Math.round(musicGainDb),
             fadeInSec: at === 0 ? MUSIC_FADE_IN_SEC : 0,
             fadeOutSec: at + toca >= total - 0.05 ? MUSIC_FADE_OUT_SEC : 0,
-            peaks: reduzirPicos(r.value.peaks, 120),
+            ...ondaDoTrecho(r.value),
             url: r.value.url,
           })
           at += toca
@@ -3698,7 +3797,7 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   selectScene: (index) =>
     // Escolher um BLOCO tira a escolha de clipe: o C volta a cortar o bloco.
-    set({ selectedScene: index, selecionados: index === null ? [] : [index], clipeSelecionado: null }),
+    set({ selectedScene: index, selecionados: index === null ? [] : [index], clipeSelecionado: null, outrosClipes: [] }),
 
   /**
    * Shift+clique: o intervalo inteiro entre a ancora e o bloco clicado.
@@ -4149,6 +4248,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       sobreposicoes: [],
       faixasMudas: { video: [], audio: [] },
       clipeSelecionado: null,
+      outrosClipes: [],
       // Volta ao padrao junto com o resto: sem isto, ter ligado o SFX num
       // projeto o traria ligado para o proximo, que e justamente o som
       // entrando sem ninguem pedir.

@@ -56,6 +56,8 @@ export interface Settings {
   atalhos: Record<string, unknown> | null
   /** Projetos recentes, o mais novo primeiro. Conferidos no renderer. */
   recentes: Record<string, unknown>[]
+  /** Presets de correcao de cor. Conferidos no renderer pelo ajusteDeCorSchema. */
+  presetsDeCor: Record<string, unknown>[]
 }
 
 const DEFAULTS: Settings = {
@@ -70,6 +72,7 @@ const DEFAULTS: Settings = {
   captionStyle: null,
   atalhos: null,
   recentes: [],
+  presetsDeCor: [],
 }
 
 let filePath: string | null = null
@@ -128,6 +131,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
     curvasDeEntrada: settings.curvasDeEntrada,
     atalhos: settings.atalhos,
     recentes: settings.recentes,
+    presetsDeCor: settings.presetsDeCor,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -174,6 +178,11 @@ function coerce(raw: unknown): Settings {
       ? (value['recentes'] as unknown[])
           .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
           .slice(0, 12)
+      : [],
+    presetsDeCor: Array.isArray(value['presetsDeCor'])
+      ? (value['presetsDeCor'] as unknown[])
+          .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
+          .slice(0, 50)
       : [],
   }
 }

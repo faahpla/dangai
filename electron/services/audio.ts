@@ -31,7 +31,7 @@ export async function analyzeAudio(path: string): Promise<AudioAnalysis> {
     fileName: basename(path),
     url: publish(path),
     durationSec: sampleCount / ANALYSIS_SAMPLE_RATE,
-    peaks: computePeaks(pcm, sampleCount),
+    ...computePeaks(pcm, sampleCount),
   }
 }
 
@@ -75,24 +75,35 @@ function decodeToPcm(path: string): Promise<Buffer> {
   })
 }
 
-/** Pico absoluto por bucket, normalizado 0..1. */
-function computePeaks(pcm: Buffer, sampleCount: number): number[] {
+/**
+ * Pico absoluto e RMS por bucket, normalizados 0..1.
+ *
+ * O RMS existe por causa da MUSICA: uma faixa masterizada bate perto do teto
+ * o tempo inteiro, e so com o pico a onda vira um bloco chapado. O RMS mostra
+ * onde a musica cresce e respira -- desenhado por cima do pico, como no editor.
+ */
+function computePeaks(pcm: Buffer, sampleCount: number): { peaks: number[]; rms: number[] } {
   const buckets = Math.min(PEAK_BUCKETS, sampleCount)
   const samplesPerBucket = sampleCount / buckets
   const peaks: number[] = new Array(buckets).fill(0)
+  const rms: number[] = new Array(buckets).fill(0)
 
   for (let bucket = 0; bucket < buckets; bucket++) {
     const start = Math.floor(bucket * samplesPerBucket)
     const end = Math.min(Math.floor((bucket + 1) * samplesPerBucket), sampleCount)
     let max = 0
+    let soma = 0
 
     for (let i = start; i < end; i++) {
-      const magnitude = Math.abs(pcm.readInt16LE(i * 2))
+      const amostra = pcm.readInt16LE(i * 2)
+      const magnitude = Math.abs(amostra)
       if (magnitude > max) max = magnitude
+      soma += amostra * amostra
     }
 
     peaks[bucket] = max / 32768
+    rms[bucket] = end > start ? Math.min(1, Math.sqrt(soma / (end - start)) / 32768) : 0
   }
 
-  return peaks
+  return { peaks, rms }
 }

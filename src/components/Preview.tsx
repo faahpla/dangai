@@ -620,6 +620,35 @@ function TrilhasPreview() {
     }
   }, [trilhas, playing, playhead, mudas])
 
+  /*
+   * O VOLUME SEGUE O RELOGIO DO PROPRIO <audio>, e nao a agulha.
+   *
+   * "Se eu coloco um audio no primeiro frame, nao escuto no preview; se pulo 1
+   * frame, escuto." Tocando do frame 0, o fade de entrada comeca em volume 0, e
+   * o volume so era recalculado quando a agulha andava -- no frame 0 o player
+   * ainda esta carregando o video e demora a anunciar os quadros, e o som
+   * seguia mudo. Agora, tocando, o envelope e refeito a cada 40 ms pelo tempo
+   * do proprio audio.
+   */
+  useEffect(() => {
+    if (!playing) return
+    const id = window.setInterval(() => {
+      for (const t of trilhas) {
+        const el = elementos.current.get(t.id)
+        if (!el || el.paused || mudas.includes(t.faixa)) continue
+        const toca = duracaoDoTrecho(t)
+        const local = el.currentTime - t.inicioSec
+        const entrada = Math.min(t.fadeInSec, toca / 2)
+        const saida = Math.min(t.fadeOutSec, toca / 2)
+        let envelope = 1
+        if (entrada > 0 && local < entrada) envelope = Math.max(0, local / entrada)
+        if (saida > 0 && local > toca - saida) envelope = Math.min(envelope, Math.max(0, (toca - local) / saida))
+        el.volume = Math.min(1, Math.max(0, 10 ** (t.gainDb / 20) * envelope))
+      }
+    }, 40)
+    return () => window.clearInterval(id)
+  }, [playing, trilhas, mudas])
+
   return (
     <>
       {trilhas.map((t) =>

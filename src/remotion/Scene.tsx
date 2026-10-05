@@ -38,6 +38,7 @@ export function Scene({
   rotation,
   curvePoints,
   escala,
+  espelhar,
 }: SceneProps) {
   const frame = useCurrentFrame()
   const { width, height } = useVideoConfig()
@@ -187,6 +188,7 @@ export function Scene({
           curve={curve}
           curvePoints={curvePoints}
           escala={escala}
+          espelhar={espelhar}
           camera={camera}
           aspecto={sourceAspect}
         />
@@ -202,6 +204,7 @@ export function Scene({
           effect={abaixo.effect}
           intensity={abaixo.intensity}
           escala={abaixo.escala}
+          espelhar={abaixo.espelhar}
           camera={abaixo.camera}
           aspecto={abaixo.aspecto}
           curve={curve}
@@ -238,7 +241,10 @@ export function Scene({
         style={{
           position: 'absolute',
           inset: 0,
-          transform: escala > 1 ? `scale(${escala})` : undefined,
+          // O FLIP vai junto do zoom fixo, por fora de tudo: espelha o quadro
+          // que sai, com movimento e giro dentro.
+          transform:
+            [escala > 1 ? `scale(${escala})` : '', espelhar ? 'scaleX(-1)' : ''].join(' ').trim() || undefined,
           transformOrigin: 'center center',
         }}
       >
@@ -376,6 +382,7 @@ function Metade({
   curve,
   curvePoints,
   escala,
+  espelhar,
   camera,
   aspecto,
 }: {
@@ -391,6 +398,7 @@ function Metade({
   curve: SceneProps['curve']
   curvePoints: SceneProps['curvePoints']
   escala: number
+  espelhar: boolean
   /** Camera livre desta metade, no espaco do arquivo original. */
   camera: SceneProps['camera']
   /** Aspecto do arquivo original desta metade. */
@@ -448,7 +456,15 @@ function Metade({
   }
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+    <div
+      style={{
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        position: 'relative',
+        transform: espelhar ? 'scaleX(-1)' : undefined,
+      }}
+    >
       {kind === 'video' ? (
         <Freeze frame={ultimoFrame} active={congelando}>
           <OffthreadVideo

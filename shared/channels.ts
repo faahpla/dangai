@@ -469,6 +469,8 @@ export interface PublicSettings {
   atalhos: Record<string, unknown> | null
   /** Os projetos abertos ou salvos por ultimo, o mais novo primeiro. */
   recentes: Record<string, unknown>[]
+  /** Presets de correcao de cor da camada de ajuste. Conferidos no renderer. */
+  presetsDeCor: Record<string, unknown>[]
 }
 
 export interface SettingsPatch {
@@ -483,6 +485,7 @@ export interface SettingsPatch {
   curvasDeEntrada?: Record<string, unknown>[]
   atalhos?: Record<string, unknown> | null
   recentes?: Record<string, unknown>[]
+  presetsDeCor?: Record<string, unknown>[]
 }
 
 /**

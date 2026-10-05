@@ -451,6 +451,9 @@ export function toRenderProps(
         curva: o.curva ?? MOTION_CURVE_DEFAULT,
         pontosDaCurva: o.pontosDaCurva ?? null,
         ...(o.tipo === 'ajuste' ? { cor: o.cor ?? AJUSTE_DE_COR_PADRAO } : {}),
+        espelhar: o.espelhar ?? false,
+        fadeInFrames: Math.round((o.fadeInSec ?? 0) * VIDEO_FPS),
+        fadeOutFrames: Math.round((o.fadeOutSec ?? 0) * VIDEO_FPS),
       }
     })
   const quadro = medidasDo(formato)
@@ -611,6 +614,7 @@ export function toRenderProps(
               effect: scene.effectB ?? scene.effect,
               intensity: scene.intensityB ?? scene.intensity,
               escala: scene.escalaB ?? 1,
+              espelhar: scene.espelharB ?? false,
               // A camera de baixo enquadra o ORIGINAL desta metade -- a mesma
               // fonte que ela ja usa --, entao a conta precisa do aspecto dele.
               camera: scene.cameraB ?? null,
@@ -676,6 +680,7 @@ export function toRenderProps(
       sourceStartFrames: inicioFonte,
       rotation: scene.rotation ?? 0,
       escala: scene.escala ?? 1,
+      espelhar: scene.espelhar ?? false,
       transitionIn: scene.transitionIn,
       transitionInFrames: incoming,
     }

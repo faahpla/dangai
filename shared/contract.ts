@@ -18,6 +18,8 @@ export const audioAnalysisSchema = z.object({
   durationSec: z.number().positive(),
   /** Picos normalizados 0..1, um por bucket, para desenhar o waveform. */
   peaks: z.array(z.number().min(0).max(1)),
+  /** RMS por bucket, nos mesmos buckets dos picos. Mostra a dinamica da musica. */
+  rms: z.array(z.number().min(0).max(1)).optional(),
 })
 export type AudioAnalysis = z.infer<typeof audioAnalysisSchema>
 
@@ -723,6 +725,10 @@ export const sceneSchema = z.object({
   escala: z.number().min(1).max(4).optional(),
   /** O mesmo, para a metade de baixo da tela dividida. */
   escalaB: z.number().min(1).max(4).optional(),
+  /** Espelhado na horizontal ("flip"). Opcional: plano antigo abre sem. */
+  espelhar: z.boolean().optional(),
+  /** O mesmo, para a metade de baixo. */
+  espelharB: z.boolean().optional(),
   /**
    * Quantos graus o bloco gira, no sentido horario. 0 = como o arquivo veio.
    *
@@ -1166,6 +1172,20 @@ export const ajusteDeCorSchema = z.object({
   intensidade: z.number().min(0).max(1).default(1),
 })
 export type AjusteDeCor = z.infer<typeof ajusteDeCorSchema>
+
+/**
+ * Quanto do clipe aparece neste quadro, de 0 a 1: sobe no fade de entrada e
+ * desce no de saida. `quadro` conta do comeco do clipe. As duas rampas nunca
+ * passam da metade do clipe -- um fade maior que o clipe cruzaria o outro.
+ */
+export function rampaDoFade(quadro: number, duracao: number, entra: number, sai: number): number {
+  const e = Math.min(entra, duracao / 2)
+  const s = Math.min(sai, duracao / 2)
+  let v = 1
+  if (e > 0 && quadro < e) v = Math.max(0, quadro / e)
+  if (s > 0 && quadro > duracao - s) v = Math.min(v, Math.max(0, (duracao - quadro) / s))
+  return v
+}
 export const AJUSTE_DE_COR_PADRAO: AjusteDeCor = ajusteDeCorSchema.parse({})
 
 export const sobreposicaoSchema = z.object({
@@ -1199,6 +1219,14 @@ export const sobreposicaoSchema = z.object({
   pontosDaCurva: curvePointsSchema.nullable().default(null),
   /** So na camada de ajuste. */
   cor: ajusteDeCorSchema.optional(),
+  /** Espelhado na horizontal. */
+  espelhar: z.boolean().default(false),
+  /**
+   * Fade de entrada e de saida, em segundos: a opacidade (ou, na camada de
+   * ajuste, a intensidade) sobe e desce nessas pontas.
+   */
+  fadeInSec: z.number().min(0).max(10).default(0),
+  fadeOutSec: z.number().min(0).max(10).default(0),
 })
 export type SobreposicaoSalva = z.infer<typeof sobreposicaoSchema>
 
@@ -1303,6 +1331,8 @@ export const renderPropsSchema = z.object({
       rotation: rotationSchema.default(0),
       /** Zoom fixo do bloco (o "Scale"). Com default para props antigas continuarem validas. */
       escala: z.number().min(1).max(4).default(1),
+      /** Espelhado na horizontal. */
+      espelhar: z.boolean().default(false),
       /**
        * A metade de BAIXO, quando o bloco e tela dividida. null = tela cheia.
        *
@@ -1330,6 +1360,7 @@ export const renderPropsSchema = z.object({
           effect: z.enum(SCENE_EFFECTS).default('nenhum'),
           intensity: z.number().min(0.02).max(0.2).default(0.12),
           escala: z.number().min(1).max(4).default(1),
+          espelhar: z.boolean().default(false),
           /** Camera livre desta metade. Preenchida, manda no lugar do efeito. */
           camera: caminhoDaCameraSchema.nullable().default(null),
           /** Aspecto do arquivo desta metade -- a conta da camera precisa dele. */
@@ -1404,6 +1435,9 @@ export const renderPropsSchema = z.object({
         curva: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
         pontosDaCurva: curvePointsSchema.nullable().default(null),
         cor: ajusteDeCorSchema.optional(),
+        espelhar: z.boolean().default(false),
+        fadeInFrames: z.number().int().nonnegative().default(0),
+        fadeOutFrames: z.number().int().nonnegative().default(0),
       }),
     )
     .default([]),
@@ -1540,6 +1574,7 @@ export const trechoDeAudioSchema = z.object({
   fadeInSec: z.number().min(0).max(10).default(0.5),
   fadeOutSec: z.number().min(0).max(10).default(1),
   peaks: z.array(z.number().min(0).max(1)).default([]),
+  rms: z.array(z.number().min(0).max(1)).default([]),
 })
 export type TrechoDeAudioSalvo = z.infer<typeof trechoDeAudioSchema>
 

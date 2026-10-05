@@ -1,6 +1,6 @@
 import { useId, useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame } from 'remotion'
-import type { AjusteDeCor } from '@shared/contract'
+import { rampaDoFade, type AjusteDeCor } from '@shared/contract'
 import { ajusteNeutro, tabelasDoAjuste } from '@shared/cor'
 
 /**
@@ -15,16 +15,27 @@ import { ajusteNeutro, tabelasDoAjuste } from '@shared/cor'
 export function CamadaDeAjuste({
   from,
   durationInFrames,
-  cor,
+  fadeInFrames = 0,
+  fadeOutFrames = 0,
+  cor: corDoClipe,
   children,
 }: {
   from: number
   durationInFrames: number
+  fadeInFrames?: number
+  fadeOutFrames?: number
   cor: AjusteDeCor | undefined
   children: React.ReactNode
 }) {
   const frame = useCurrentFrame()
   const id = `ajuste-${useId().replace(/[^a-zA-Z0-9]/g, '')}`
+  // O fade da camada e a INTENSIDADE subindo e descendo: a correcao entra e
+  // sai aos poucos, em vez de cortar seco.
+  const fade = rampaDoFade(frame - from, durationInFrames, fadeInFrames, fadeOutFrames)
+  const cor = useMemo(
+    () => (corDoClipe && fade < 1 ? { ...corDoClipe, intensidade: corDoClipe.intensidade * fade } : corDoClipe),
+    [corDoClipe, fade],
+  )
   const ativo = cor !== undefined && frame >= from && frame < from + durationInFrames && !ajusteNeutro(cor)
   return (
     <AbsoluteFill>

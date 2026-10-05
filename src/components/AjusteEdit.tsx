@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react'
-import { RotateCcw, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BookmarkPlus, RotateCcw, X } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import {
   AJUSTE_DE_COR_PADRAO,
   CURVA_DE_COR_RETA,
@@ -7,7 +8,8 @@ import {
   type PontoDeCurvaDeCor,
 } from '@shared/contract'
 import { curvaInterpolada } from '@shared/cor'
-import { useProject } from '@/store/project'
+import { idsEscolhidos, useProject } from '@/store/project'
+import { usePresetsDeCor } from '@/store/presets-de-cor'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
 
 /**
@@ -25,10 +27,36 @@ export function AjusteEdit({ id }: { id: string }) {
   const o = useProject((s) => s.sobreposicoes.find((x) => x.id === id))
   const ajustar = useProject((s) => s.ajustarSobreposicao)
   const selecionar = useProject((s) => s.selecionarClipe)
+  const sobreposicoes = useProject((s) => s.sobreposicoes)
+  const escolhidos = useProject(useShallow((s) => idsEscolhidos(s, 'video')))
+  const presets = usePresetsDeCor((s) => s.lista)
+  const carregarPresets = usePresetsDeCor((s) => s.carregar)
+  const salvarPreset = usePresetsDeCor((s) => s.salvar)
+  const removerPreset = usePresetsDeCor((s) => s.remover)
   const [canal, setCanal] = useState<keyof AjusteDeCor['curvas']>('mestre')
+  const [nomeNovo, setNomeNovo] = useState<string | null>(null)
+  useEffect(() => void carregarPresets(), [carregarPresets])
   if (!o) return null
   const cor = o.cor ?? AJUSTE_DE_COR_PADRAO
-  const mudar = (patch: Partial<AjusteDeCor>): void => ajustar(id, { cor: { ...cor, ...patch } })
+
+  /*
+   * VARIAS CAMADAS ESCOLHIDAS: cada mexida vale para todas, e cada uma guarda
+   * o resto do proprio ajuste -- mexer no contraste de tres camadas nao copia
+   * a saturacao de uma para as outras.
+   */
+  const alvos = escolhidos.filter((x) => sobreposicoes.find((y) => y.id === x)?.tipo === 'ajuste')
+  const paraCada = (f: (atual: AjusteDeCor) => AjusteDeCor): void => {
+    for (const alvo of alvos.length > 0 ? alvos : [id]) {
+      const atual = sobreposicoes.find((y) => y.id === alvo)?.cor ?? AJUSTE_DE_COR_PADRAO
+      ajustar(alvo, { cor: f(atual) })
+    }
+  }
+  const mudar = (patch: Partial<AjusteDeCor>): void => paraCada((atual) => ({ ...atual, ...patch }))
+  const mudarCurva = (pontos: PontoDeCurvaDeCor[]): void =>
+    paraCada((atual) => ({ ...atual, curvas: { ...atual.curvas, [canal]: pontos } }))
+  const mudarClipe = (patch: { fadeInSec?: number; fadeOutSec?: number }): void => {
+    for (const alvo of alvos.length > 0 ? alvos : [id]) ajustar(alvo, patch)
+  }
 
   /**
    * Um controle de -100 a 100, com o duplo clique voltando ao zero. Funcao, e
@@ -77,6 +105,9 @@ export function AjusteEdit({ id }: { id: string }) {
             </>
           }
         >
+          {alvos.length > 1 && (
+            <p className="text-[11px] text-accent">{alvos.length} camadas escolhidas -- mexer aqui muda todas.</p>
+          )}
           <p className="text-[10px] leading-snug text-ink-3">
             Corrige tudo o que esta embaixo dela (as cenas e as faixas de video de numero menor) durante{' '}
             <span className="tnum">{toca.toFixed(2)}s</span>. Estique ou arraste na linha do tempo.
@@ -92,6 +123,103 @@ export function AjusteEdit({ id }: { id: string }) {
               onChange={(x) => mudar({ intensidade: x })}
             />
           </Linha>
+          <Linha label="Fade entra" title="A correcao entra aos poucos nesse tempo">
+            <Deslizante
+              valor={o.fadeInSec ?? 0}
+              min={0}
+              max={5}
+              step={0.05}
+              padrao={0}
+              texto={`${(o.fadeInSec ?? 0).toFixed(2)}s`}
+              onChange={(x) => mudarClipe({ fadeInSec: x })}
+            />
+          </Linha>
+          <Linha label="Fade sai" title="A correcao sai aos poucos nesse tempo">
+            <Deslizante
+              valor={o.fadeOutSec ?? 0}
+              min={0}
+              max={5}
+              step={0.05}
+              padrao={0}
+              texto={`${(o.fadeOutSec ?? 0).toFixed(2)}s`}
+              onChange={(x) => mudarClipe({ fadeOutSec: x })}
+            />
+          </Linha>
+        </Grupo>
+
+        {/*
+          PRESETS DE COR: "salvar preset da Color Correction que eu fizer".
+          Valem para todos os projetos. Um clique aplica o preset inteiro
+          (curvas incluidas); salvar com um nome que ja existe substitui.
+        */}
+        <Grupo
+          titulo="Presets"
+          acao={
+            nomeNovo === null ? (
+              <Botaozinho onClick={() => setNomeNovo('')} title="Guarda este ajuste com um nome">
+                <BookmarkPlus size={11} strokeWidth={1.5} />
+                Salvar preset
+              </Botaozinho>
+            ) : undefined
+          }
+        >
+          {nomeNovo !== null && (
+            <div className="flex items-center gap-1.5">
+              <input
+                autoFocus
+                value={nomeNovo}
+                onChange={(e) => setNomeNovo(e.target.value)}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter' && nomeNovo.trim()) {
+                    void salvarPreset(nomeNovo, cor)
+                    setNomeNovo(null)
+                  } else if (e.key === 'Escape') setNomeNovo(null)
+                }}
+                placeholder="Nome do preset (Enter salva)"
+                aria-label="Nome do preset de cor"
+                className="h-6 min-w-0 flex-1 rounded-sm border border-line bg-elevated px-2 text-[11px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
+              />
+              <Botaozinho
+                onClick={() => {
+                  if (nomeNovo.trim()) void salvarPreset(nomeNovo, cor)
+                  setNomeNovo(null)
+                }}
+              >
+                Salvar
+              </Botaozinho>
+            </div>
+          )}
+          {presets.length === 0 ? (
+            <p className="text-[10px] text-ink-3">Nenhum preset ainda. Ajuste a cor e clique em Salvar preset.</p>
+          ) : (
+            <div className="flex flex-wrap gap-1">
+              {presets.map((p) => (
+                <div
+                  key={p.nome}
+                  className="flex h-6 max-w-[160px] items-center rounded-sm border border-line bg-elevated text-[11px] text-ink-2"
+                >
+                  <button
+                    type="button"
+                    onClick={() => paraCada(() => ({ ...p.cor }))}
+                    title={`Aplicar "${p.nome}"`}
+                    className="min-w-0 truncate pl-2 pr-1 hover:text-ink"
+                  >
+                    {p.nome}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void removerPreset(p.nome)}
+                    title={`Esquecer "${p.nome}"`}
+                    aria-label={`Esquecer o preset ${p.nome}`}
+                    className="grid h-full w-5 shrink-0 place-items-center text-ink-3 hover:text-danger"
+                  >
+                    <X size={10} strokeWidth={2} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </Grupo>
 
         <Grupo titulo="Luz">
@@ -141,7 +269,7 @@ export function AjusteEdit({ id }: { id: string }) {
           titulo="Curvas"
           acao={
             <Botaozinho
-              onClick={() => mudar({ curvas: { ...cor.curvas, [canal]: CURVA_DE_COR_RETA.map((p) => ({ ...p })) } })}
+              onClick={() => mudarCurva(CURVA_DE_COR_RETA.map((p) => ({ ...p })))}
               title="Volta este canal para a reta"
             >
               <RotateCcw size={11} strokeWidth={1.5} />
@@ -161,7 +289,7 @@ export function AjusteEdit({ id }: { id: string }) {
           <EditorDeCurva
             pontos={cor.curvas[canal]}
             traco={CORES_DO_CANAL[canal]}
-            onChange={(pontos) => mudar({ curvas: { ...cor.curvas, [canal]: pontos } })}
+            onChange={mudarCurva}
           />
           <p className="text-[10px] leading-snug text-ink-3">
             Clique na linha para criar um ponto e arraste. Dois cliques num ponto o tiram. Esquerda sao as sombras,

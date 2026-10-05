@@ -6,7 +6,7 @@ import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legend
 import { carregarBins } from '@/store/bins'
 import { Bins } from '@/components/Bins'
 import { Divisor } from '@/components/Divisor'
-import { LAYOUT_PADRAO, useIma, useLayout } from '@/store/layout'
+import { LAYOUT_PADRAO, useFerramenta, useIma, useLayout } from '@/store/layout'
 import { useRecentes } from '@/store/recentes'
 import { acaoDoCombo, comboDoEvento, ehTeclaSolta, useAtalhos } from '@/store/atalhos'
 import { useFileDrop } from '@/hooks/useFileDrop'
@@ -181,6 +181,12 @@ export function App() {
         return
       }
 
+      // Esc devolve a ferramenta de agulha, como sair de um modo no editor.
+      if (event.key === 'Escape' && !editando(event.target) && useFerramenta.getState().ferramenta === 'selecao') {
+        useFerramenta.getState().definir('agulha')
+        return
+      }
+
       if (!acao || !combo) return
 
       /*
@@ -262,13 +268,8 @@ export function App() {
            * escolhido, se houver; senao os blocos marcados na timeline (do
            * ultimo para o primeiro, para os indices nao andarem no meio).
            */
-          const clipe = store.clipeSelecionado
-          if (clipe) {
-            if (clipe.tipo === 'audio') store.removeTrilha(clipe.id)
-            else store.removeSobreposicao(clipe.id)
-            store.selecionarClipe(null)
-            break
-          }
+          // Todos os clipes escolhidos de uma vez (Ctrl+clique ou o laco).
+          if (store.removerClipesEscolhidos()) break
           const alvos =
             store.selecionados.length > 1
               ? store.selecionados
@@ -280,6 +281,9 @@ export function App() {
         }
         case 'ima':
           useIma.getState().alternar()
+          break
+        case 'ferramentaSelecao':
+          useFerramenta.getState().alternar()
           break
         case 'desfazer':
           desfazer()

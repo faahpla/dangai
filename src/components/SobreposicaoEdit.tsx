@@ -1,5 +1,6 @@
-import { RotateCcw, X } from 'lucide-react'
-import { useProject } from '@/store/project'
+import { FlipHorizontal2, RotateCcw, X } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
+import { idsEscolhidos, useProject } from '@/store/project'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
 import { ControleDeRitmo, opcoesDeEfeito } from './SceneEdit'
 import { AjusteEdit } from './AjusteEdit'
@@ -15,10 +16,25 @@ import { AjusteEdit } from './AjusteEdit'
  */
 export function SobreposicaoEdit({ id }: { id: string }) {
   const o = useProject((s) => s.sobreposicoes.find((x) => x.id === id))
-  const ajustar = useProject((s) => s.ajustarSobreposicao)
+  const ajustarUm = useProject((s) => s.ajustarSobreposicao)
   const selecionar = useProject((s) => s.selecionarClipe)
+  const sobreposicoes = useProject((s) => s.sobreposicoes)
+  const escolhidos = useProject(useShallow((s) => idsEscolhidos(s, 'video')))
   if (!o) return null
   if (o.tipo === 'ajuste') return <AjusteEdit id={id} />
+
+  /*
+   * VARIOS ESCOLHIDOS: cada mexida vale para todos os clipes comuns da
+   * selecao (as camadas de ajuste ficam de fora -- elas tem painel proprio).
+   * O painel mostra os valores do principal.
+   */
+  const alvos = escolhidos.filter((x) => {
+    const y = sobreposicoes.find((z) => z.id === x)
+    return y !== undefined && y.tipo !== 'ajuste'
+  })
+  const ajustar = (_id: string, patch: Parameters<typeof ajustarUm>[1]): void => {
+    for (const alvo of alvos.length > 0 ? alvos : [id]) ajustarUm(alvo, patch)
+  }
 
   const toca = o.usarSec ?? o.durationSec - o.inicioSec
 
@@ -30,7 +46,7 @@ export function SobreposicaoEdit({ id }: { id: string }) {
           acao={
             <>
               <Botaozinho
-                onClick={() => ajustar(id, { x: 0, y: 0, escala: 1, rotacao: 0, opacidade: 1 })}
+                onClick={() => ajustar(id, { x: 0, y: 0, escala: 1, rotacao: 0, opacidade: 1, espelhar: false })}
                 title="Volta posicao, tamanho, giro e opacidade ao padrao"
               >
                 <RotateCcw size={11} strokeWidth={1.5} />
@@ -49,8 +65,8 @@ export function SobreposicaoEdit({ id }: { id: string }) {
           }
         >
           <p className="truncate text-[11px] text-ink-2" title={o.path}>
-            {o.fileName}
-            <span className="tnum ml-2 text-ink-3">{toca.toFixed(2)}s</span>
+            {alvos.length > 1 ? `${alvos.length} clipes escolhidos -- mexer aqui muda todos` : o.fileName}
+            {alvos.length <= 1 && <span className="tnum ml-2 text-ink-3">{toca.toFixed(2)}s</span>}
           </p>
           <Linha label="Posicao X">
             <Deslizante valor={o.x} min={-60} max={60} step={1} padrao={0} texto={`${Math.round(o.x)}%`}
@@ -74,6 +90,20 @@ export function SobreposicaoEdit({ id }: { id: string }) {
               ativo={(g) => Math.round(o.rotacao) === g}
               onChange={(g) => ajustar(id, { rotacao: g })}
             />
+          </Linha>
+          <Linha label="Espelhar" title="Flip horizontal">
+            <Botaozinho active={!!o.espelhar} onClick={() => ajustar(id, { espelhar: !o.espelhar })}>
+              <FlipHorizontal2 size={11} strokeWidth={1.5} />
+              {o.espelhar ? 'Espelhado' : 'Espelhar horizontal'}
+            </Botaozinho>
+          </Linha>
+          <Linha label="Fade entra" title="A opacidade sobe do zero nesse tempo. Tambem da para puxar a alca no canto do clipe.">
+            <Deslizante valor={o.fadeInSec ?? 0} min={0} max={5} step={0.05} padrao={0}
+              texto={`${(o.fadeInSec ?? 0).toFixed(2)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
+          </Linha>
+          <Linha label="Fade sai" title="A opacidade desce ate o zero nesse tempo">
+            <Deslizante valor={o.fadeOutSec ?? 0} min={0} max={5} step={0.05} padrao={0}
+              texto={`${(o.fadeOutSec ?? 0).toFixed(2)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
           </Linha>
           <Linha label="Opacidade">
             <Deslizante valor={o.opacidade} min={0} max={1} step={0.05} padrao={1}

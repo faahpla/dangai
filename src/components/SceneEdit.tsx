@@ -8,6 +8,7 @@ import {
   BookmarkPlus,
   ClipboardPaste,
   Copy,
+  FlipHorizontal2,
   Crosshair,
   ScanFace,
   Spline,
@@ -268,6 +269,16 @@ export function SceneEdit() {
                   onChange={(v) => updateScene(index, { escala: v })}
                 />
               </Linha>
+              <Linha label="Espelhar" title="Flip horizontal de cada metade">
+                <Botaozinho active={!!scene.espelhar} onClick={() => updateScene(index, { espelhar: !scene.espelhar })}>
+                  <FlipHorizontal2 size={11} strokeWidth={1.5} />
+                  Cima
+                </Botaozinho>
+                <Botaozinho active={!!scene.espelharB} onClick={() => updateScene(index, { espelharB: !scene.espelharB })}>
+                  <FlipHorizontal2 size={11} strokeWidth={1.5} />
+                  Baixo
+                </Botaozinho>
+              </Linha>
               <Linha label="Zoom baixo" title="Zoom fixo da metade de baixo">
                 <Deslizante
                   valor={scene.escalaB ?? 1}
@@ -312,6 +323,13 @@ export function SceneEdit() {
                   ativo={(graus) => (scene.rotation ?? 0) === graus}
                   onChange={(graus) => updateScene(index, { rotation: graus })}
                 />
+              </Linha>
+              {/* FLIP: espelha o quadro que sai, com movimento e zoom dentro. */}
+              <Linha label="Espelhar" title="Flip horizontal">
+                <Botaozinho active={!!scene.espelhar} onClick={() => updateScene(index, { espelhar: !scene.espelhar })}>
+                  <FlipHorizontal2 size={11} strokeWidth={1.5} />
+                  {scene.espelhar ? 'Espelhado' : 'Espelhar horizontal'}
+                </Botaozinho>
               </Linha>
             </>
           )}
@@ -365,10 +383,10 @@ export function SceneEdit() {
                   updateScene(index, {
                     camera:
                       scene.camera == null
-                        ? // Nasce como um zoom out simples, enquadrando o
-                          // arquivo inteiro: da para ver o efeito antes de
-                          // arrastar qualquer coisa.
-                          { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
+                        ? // Nasce PARADA em 1.0x, enquadrando o arquivo
+                          // inteiro: "quando ativa a camera livre, o primeiro ja
+                          // vem com 1.40x, eu quero que venha em 1.0x".
+                          { from: { scale: 1, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
                         : null,
                   })
                 }
@@ -940,7 +958,7 @@ function CameraDaMetade({
           onClick={() =>
             gravar(
               cam == null
-                ? { from: { scale: 1.4, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
+                ? { from: { scale: 1, x: 0, y: 0 }, to: { scale: 1, x: 0, y: 0 }, source: true, keys: [] }
                 : null,
             )
           }
