@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useProject } from '@/store/project'
@@ -93,7 +94,25 @@ export function encaixar(
   return candidatos.reduce((a, b) => (Math.abs(b - at) < Math.abs(a - at) ? b : a))
 }
 
-/** A linha: cabecalho fixo a esquerda, conteudo na largura da linha do tempo. */
+/**
+ * A COLUNA DOS CABECALHOS mora FORA da area que rola, como no DaVinci.
+ *
+ * "O zoom nao deve fazer os blocos, cenas, musica, qualquer coisa ficar por
+ * baixo da coluna V1/A1/Cenas." Os cabecalhos eram fixos (sticky) por cima da
+ * linha do tempo, entao o conteudo e a barra de rolagem passavam por baixo
+ * deles. Agora a linha do tempo comeca na borda da coluna; cada Linha manda o
+ * seu cabecalho para a coluna (portal), na mesma altura em que ela esta, e a
+ * coluna acompanha so a rolagem vertical.
+ *
+ * `versao` muda quando a altura do conteudo muda (faixa nova, faixa excluida),
+ * para toda Linha remedir onde esta.
+ */
+export const ColunaDosCabecalhos = createContext<{ coluna: HTMLDivElement | null; versao: number }>({
+  coluna: null,
+  versao: 0,
+})
+
+/** A linha: conteudo na largura da linha do tempo, cabecalho na coluna da esquerda. */
 export function Linha({
   largura,
   altura,
@@ -109,18 +128,34 @@ export function Linha({
   linhaRef?: (el: HTMLDivElement | null) => void
   fundo?: string
 }) {
+  const { coluna, versao } = useContext(ColunaDosCabecalhos)
+  const raiz = useRef<HTMLDivElement | null>(null)
+  const [topo, setTopo] = useState<number | null>(null)
+  // Onde esta linha esta no conteudo: e ali que o cabecalho dela fica na coluna.
+  useLayoutEffect(() => {
+    const t = raiz.current?.offsetTop ?? null
+    if (t !== topo) setTopo(t)
+  })
+  void versao
   return (
-    <div className="flex border-t border-line" style={{ width: CABECALHO + largura, height: altura }}>
-      <div
-        className="sticky left-0 z-30 flex shrink-0 items-center border-r border-line bg-elevated px-1.5"
-        style={{ width: CABECALHO }}
-      >
-        {cabecalho}
+    <>
+      <div ref={raiz} className="border-t border-line" style={{ width: largura, height: altura }}>
+        <div ref={linhaRef} className={`relative ${fundo}`} style={{ width: largura, height: altura }}>
+          {children}
+        </div>
       </div>
-      <div ref={linhaRef} className={`relative ${fundo}`} style={{ width: largura, height: altura }}>
-        {children}
-      </div>
-    </div>
+      {coluna &&
+        topo !== null &&
+        createPortal(
+          <div
+            className="absolute inset-x-0 flex items-center border-t border-line px-1.5"
+            style={{ top: topo, height: altura }}
+          >
+            {cabecalho}
+          </div>,
+          coluna,
+        )}
+    </>
   )
 }
 

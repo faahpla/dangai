@@ -8,7 +8,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
-import { CABECALHO, Cabecalho, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, type Ima } from './Faixas'
+import { CABECALHO, Cabecalho, ColunaDosCabecalhos, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, type Ima } from './Faixas'
 
 /**
  * O elemento assinatura. Uma faixa horizontal unica: waveform em cinza ao
@@ -72,7 +72,7 @@ export function Timeline() {
   useEffect(() => {
     const scroll = scrollRef.current
     if (!scroll) return
-    const medir = (): void => setLarguraVisivel(Math.max(scroll.clientWidth - CABECALHO, 100))
+    const medir = (): void => setLarguraVisivel(Math.max(scroll.clientWidth, 100))
     medir()
     const observer = new ResizeObserver(medir)
     observer.observe(scroll)
@@ -268,6 +268,28 @@ export function Timeline() {
    */
   const ferramenta = useFerramenta((s) => s.ferramenta)
   const conteudoRef = useRef<HTMLDivElement | null>(null)
+  const [coluna, setColuna] = useState<HTMLDivElement | null>(null)
+  const colunaInterna = useRef<HTMLDivElement | null>(null)
+  const [versaoDaColuna, setVersaoDaColuna] = useState(0)
+  // A coluna dos cabecalhos anda junto com a rolagem vertical das faixas.
+  useEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+    const seguir = (): void => {
+      if (colunaInterna.current) colunaInterna.current.style.transform = `translateY(${-scroll.scrollTop}px)`
+    }
+    seguir()
+    scroll.addEventListener('scroll', seguir, { passive: true })
+    return () => scroll.removeEventListener('scroll', seguir)
+  }, [])
+  // Faixa nova ou excluida muda a altura: cada linha remede onde esta.
+  useEffect(() => {
+    const conteudo = conteudoRef.current
+    if (!conteudo) return
+    const observador = new ResizeObserver(() => setVersaoDaColuna((v) => v + 1))
+    observador.observe(conteudo)
+    return () => observador.disconnect()
+  }, [])
   const [laco, setLaco] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const selecionarClipe = useProject((s) => s.selecionarClipe)
   const ajustarSobreposicao = useProject((s) => s.ajustarSobreposicao)
@@ -407,7 +429,7 @@ export function Timeline() {
     // zoom fazia a vista pular para ela no meio do Alt+roda, longe do cursor.
     if (!scroll || !track || zoom === 1 || duration === 0 || !useProject.getState().playing) return
 
-    const x = CABECALHO + progress * track.clientWidth
+    const x = progress * track.clientWidth
     const margem = scroll.clientWidth * 0.15
     if (x < scroll.scrollLeft + margem || x > scroll.scrollLeft + scroll.clientWidth - margem) {
       // Atribuicao direta, e nao scrollTo com behavior 'smooth': medido neste
@@ -439,7 +461,7 @@ export function Timeline() {
     // No teto ou no chao nada muda, e uma ancora guardada ficaria velha.
     if (Math.abs(alvo - zoomPedido.current) < 1e-6) return
     if (scroll && track) {
-      const ancora = clientX ?? scroll.getBoundingClientRect().left + CABECALHO + (scroll.clientWidth - CABECALHO) / 2
+      const ancora = clientX ?? scroll.getBoundingClientRect().left + scroll.clientWidth / 2
       const r = track.getBoundingClientRect()
       ancoraDoZoom.current = {
         fracao: Math.min(Math.max((ancora - r.left) / r.width, 0), 1),
@@ -457,7 +479,7 @@ export function Timeline() {
     const a = ancoraDoZoom.current
     ancoraDoZoom.current = null
     if (!scroll || !a) return
-    scroll.scrollLeft = Math.max(0, CABECALHO + a.fracao * largura - a.x)
+    scroll.scrollLeft = Math.max(0, a.fracao * largura - a.x)
   }, [largura])
 
   // A roda nativa, NAO passiva: so assim o preventDefault segura o rolar
@@ -690,23 +712,43 @@ export function Timeline() {
         </div>
       </header>
 
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border border-line bg-surface">
+      {/*
+        A COLUNA DOS CABECALHOS, fora da area que rola: nada passa por baixo
+        dela, nem com zoom. Ela so acompanha a rolagem VERTICAL (ver o efeito
+        que copia o scrollTop), e a roda em cima dela rola as faixas.
+      */}
+      <div
+        className="relative shrink-0 overflow-hidden border-r border-line bg-elevated"
+        style={{ width: CABECALHO }}
+        onWheel={(event) => {
+          const scroll = scrollRef.current
+          if (scroll && !event.ctrlKey && !event.altKey) scroll.scrollTop += event.deltaY
+        }}
+      >
+        <div
+          ref={(el) => {
+            colunaInterna.current = el
+            setColuna(el)
+          }}
+          className="absolute inset-x-0 top-0"
+        />
+      </div>
       <div
         ref={scrollRef}
         // Rola nos dois eixos: na horizontal com o zoom, na vertical quando as
-        // faixas passam do teto -- as cenas ficam presas no topo.
-        className="relative min-h-0 flex-1 overflow-auto rounded-md border border-line bg-surface"
-        /*
-         * Ctrl+roda ou ALT+roda ampliam (ouvido la em cima, numa roda nao
-         * passiva). Sem nenhum dos dois, a roda rola.
-         */
+        // faixas passam do teto. Ctrl+roda ou Alt+roda ampliam (ouvido numa
+        // roda nao passiva, mais acima).
+        className="relative min-h-0 min-w-0 flex-1 overflow-auto"
       >
-        <div ref={conteudoRef} className="relative" style={{ width: CABECALHO + largura }}>
+        <ColunaDosCabecalhos.Provider value={{ coluna, versao: versaoDaColuna }}>
+        <div ref={conteudoRef} className="relative" style={{ width: largura }}>
         {/*
           Sem fixar no topo: com as faixas de video em cima das cenas, o bloco
           fixo passava de 200 px e cobria as faixas de audio numa linha do tempo
           baixa. Tudo rola junto, como no editor.
         */}
-        <div style={{ width: CABECALHO + largura }}>
+        <div style={{ width: largura }}>
         {/*
           AS FAIXAS DE VIDEO EM CIMA DAS CENAS, as de audio embaixo: "assim e
           melhor pra mexer no workflow". E a ordem do que se ve -- a faixa de
@@ -990,7 +1032,7 @@ export function Timeline() {
             // Abaixo dos cabecalhos (z-30): com zoom, a agulha passava POR CIMA
             // da coluna V1/A1 quando ficava atras dela.
             className="pointer-events-none absolute inset-y-0 z-[25] w-px bg-accent"
-            style={{ left: CABECALHO + progress * largura }}
+            style={{ left: progress * largura }}
           />
         )}
         {/* O laco da ferramenta de selecao. */}
@@ -1009,10 +1051,12 @@ export function Timeline() {
         {linhaDoIma !== null && duration > 0 && (
           <div
             className="pointer-events-none absolute inset-y-0 z-[26] w-px bg-[#ffd60a]"
-            style={{ left: CABECALHO + (linhaDoIma / duration) * largura }}
+            style={{ left: (linhaDoIma / duration) * largura }}
           />
         )}
         </div>
+        </ColunaDosCabecalhos.Provider>
+      </div>
       </div>
     </section>
   )
