@@ -6,7 +6,8 @@ import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legend
 import { carregarBins } from '@/store/bins'
 import { Bins } from '@/components/Bins'
 import { Divisor } from '@/components/Divisor'
-import { LAYOUT_PADRAO, useFerramenta, useIma, useLayout } from '@/store/layout'
+import { LAYOUT_PADRAO, useConsoleFx, useFerramenta, useIma, useLayout } from '@/store/layout'
+import { ConsoleFx } from '@/components/ConsoleFx'
 import { useRecentes } from '@/store/recentes'
 import { acaoDoCombo, comboDoEvento, ehTeclaSolta, useAtalhos } from '@/store/atalhos'
 import { useFileDrop } from '@/hooks/useFileDrop'
@@ -190,6 +191,12 @@ export function App() {
       if (!acao || !combo) return
 
       /*
+       * O FX CONSOLE aberto: o teclado e dele (busca, setas, Enter, Esc). Daqui
+       * so passam o proprio atalho, que fecha, e salvar.
+       */
+      if (useConsoleFx.getState().aberto && acao !== 'consoleFx' && acao !== 'salvar' && acao !== 'salvarComo') return
+
+      /*
        * COPIAR E COLAR CLIPE DE FAIXA. Num campo de texto, ou sem clipe
        * escolhido, o Ctrl+C e o Ctrl+V continuam sendo do texto -- o evento
        * segue adiante sem preventDefault.
@@ -314,6 +321,9 @@ export function App() {
         case 'bins':
           store.openBins(!store.binsOpen)
           break
+        case 'consoleFx':
+          useConsoleFx.getState().alternar()
+          break
         case 'configuracoes':
           store.openSettings(!store.settingsOpen)
           break
@@ -420,6 +430,7 @@ export function App() {
       <Script />
       <Library />
       <CommandPalette />
+      <ConsoleFx />
     </div>
   )
 }

@@ -3060,8 +3060,9 @@ export const useProject = create<ProjectState>((set, get) => ({
         // Entra em 0 dB, como o arquivo veio: "todo audio importado ta vindo
         // -20 dB". O volume de musica de fundo e um dos atalhos do controle.
         gainDb: 0,
-        fadeInSec: 0.5,
-        fadeOutSec: 1,
+        // Sem fade: "quero eles por padrao, e o fade eu adiciono quando quiser".
+        fadeInSec: 0,
+        fadeOutSec: 0,
         ...ondaDoTrecho(r.value),
         url: r.value.url,
       }

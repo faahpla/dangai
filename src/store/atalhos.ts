@@ -39,6 +39,7 @@ export const ACOES = [
   { id: 'selecao', nome: 'Biblioteca (selecao de cenas)', grupo: 'Telas', padrao: ['Ctrl+B'] },
   { id: 'legendas', nome: 'Editor de legendas', grupo: 'Telas', padrao: [] },
   { id: 'bins', nome: 'Bins', grupo: 'Telas', padrao: [] },
+  { id: 'consoleFx', nome: 'FX Console (buscar nas bins)', grupo: 'Telas', padrao: ['Ctrl+Space'] },
   { id: 'configuracoes', nome: 'Configuracoes', grupo: 'Telas', padrao: ['Ctrl+,'] },
 ] as const satisfies readonly { id: string; nome: string; grupo: string; padrao: readonly string[] }[]
 

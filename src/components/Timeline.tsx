@@ -3,7 +3,7 @@ import { Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMou
 import { classifyFile, isVisual } from '@shared/channels'
 import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { clipesEscolhidos, idsEscolhidos, useProject, formatTimecode } from '@/store/project'
-import { useFerramenta, useIma } from '@/store/layout'
+import { alturaDaFaixa, useAlturas, useFerramenta, useIma } from '@/store/layout'
 import { useShallow } from 'zustand/react/shallow'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { Waveform } from './Waveform'
@@ -91,6 +91,14 @@ export function Timeline() {
   const trilhas = useProject((s) => s.trilhas)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
   const cenasTrancadas = useProject((s) => s.cenasTrancadas)
+  /*
+   * A ALTURA DA FAIXA DE CENAS acompanha o Shift+roda e a borda do cabecalho,
+   * como as outras. A tira dos blocos fica com 38 px enquanto couber; numa
+   * faixa baixa ela encolhe junto e a onda fica com o resto.
+   */
+  const alturas = useAlturas()
+  const alturaCenas = alturaDaFaixa(alturas, 'cenas')
+  const alturaTira = Math.min(38, Math.round(alturaCenas * 0.5))
   const alternarTrancaDasCenas = useProject((s) => s.alternarTrancaDasCenas)
   const sfxManual = useProject((s) => s.sfxManual)
   const ima: Ima = useMemo(
@@ -491,6 +499,17 @@ export function Timeline() {
     let x = 0
     let quadro = 0
     const onWheel = (event: WheelEvent): void => {
+      /*
+       * SHIFT+RODA muda a altura das faixas, todas de uma vez, como no
+       * DaVinci/Premiere: roda para cima estica, para baixo encolhe. Sem o
+       * preventDefault o navegador usaria o Shift para rolar na horizontal.
+       */
+      if (event.shiftKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault()
+        const delta = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY || event.deltaX
+        useAlturas.getState().escalar(Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.0012))
+        return
+      }
       if (!(event.ctrlKey || event.altKey) || useProject.getState().render !== null) return
       event.preventDefault()
       const delta = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaY
@@ -723,6 +742,11 @@ export function Timeline() {
         style={{ width: CABECALHO }}
         onWheel={(event) => {
           const scroll = scrollRef.current
+          if (event.shiftKey && !event.ctrlKey && !event.altKey) {
+            const delta = event.deltaY || event.deltaX
+            useAlturas.getState().escalar(Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.0012))
+            return
+          }
           if (scroll && !event.ctrlKey && !event.altKey) scroll.scrollTop += event.deltaY
         }}
       >
@@ -791,7 +815,9 @@ export function Timeline() {
         )}
         <Linha
           largura={largura}
-          altura={104}
+          altura={alturaCenas}
+          onAltura={(h) => alturas.definir('cenas', h)}
+          onAlturaPadrao={() => alturas.voltar('cenas')}
           cabecalho={
             <Cabecalho
               nome="Cenas"
@@ -844,12 +870,12 @@ export function Timeline() {
             event.stopPropagation()
             void insertImages(paths, timeAt(event.clientX))
           }}
-          style={{ width: '100%' }}
+          style={{ width: '100%', height: alturaCenas }}
           className={[
             // overflow-hidden aqui, e nao no pai: as alcas de arraste e o ponto
             // da agulha passam alguns pixels da borda, e sem clipar isso a
             // faixa ganhava barra de rolagem mesmo sem zoom nenhum.
-            'group relative h-[104px] overflow-hidden',
+            'group relative overflow-hidden',
             isRendering ? 'cursor-default' : 'cursor-ew-resize',
           ].join(' ')}
         >
@@ -864,7 +890,7 @@ export function Timeline() {
           </div>
 
           {duration > 0 && scenes.length > 0 && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-[38px]">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex" style={{ height: alturaTira }}>
               {tiras}
             </div>
           )}
@@ -909,7 +935,7 @@ export function Timeline() {
                   }}
                   onPointerUp={stopDragging}
                   onPointerCancel={stopDragging}
-                  style={{ left: `${(scene.start / duration) * 100}%` }}
+                  style={{ left: `${(scene.start / duration) * 100}%`, height: alturaTira }}
                   /*
                    * A alca vive SO na faixa dos blocos, e nao na altura inteira.
                    *
@@ -922,7 +948,7 @@ export function Timeline() {
                    * Agora o waveform inteiro e da agulha e a faixa de baixo e
                    * dos blocos: um gesto por lugar, como em qualquer editor.
                    */
-                  className="absolute bottom-0 h-[38px] -ml-[5px] w-[10px] cursor-col-resize"
+                  className="absolute bottom-0 -ml-[5px] w-[10px] cursor-col-resize"
                   aria-label={`Ajustar limite do bloco ${index + 1}`}
                 >
                   {/*
@@ -931,8 +957,9 @@ export function Timeline() {
                     permite mirar. Sem eventos: quem pega e a caixa de baixo.
                   */}
                   <span
+                    style={{ top: -(alturaCenas - alturaTira) }}
                     className={[
-                      'pointer-events-none absolute -top-[66px] bottom-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
+                      'pointer-events-none absolute bottom-0 left-1/2 w-px -translate-x-1/2 transition-colors duration-150',
                       dragging === index ? 'bg-accent' : 'bg-transparent group-hover:bg-line-strong',
                     ].join(' ')}
                   />
@@ -1465,9 +1492,9 @@ function ControlesDaTrilha({ id }: { id: string }) {
           </button>
         ))}
       </div>
-      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={5} passo={0.1} padrao={0.5}
+      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={5} passo={0.1} padrao={0}
         texto={`${t.fadeInSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
-      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={t.fadeOutSec} min={0} max={5} passo={0.1} padrao={1}
+      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={t.fadeOutSec} min={0} max={5} passo={0.1} padrao={0}
         texto={`${t.fadeOutSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
     </>
   )

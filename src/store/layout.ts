@@ -93,3 +93,84 @@ export const useFerramenta = create<{
   definir: (ferramenta) => set({ ferramenta }),
   alternar: () => set({ ferramenta: get().ferramenta === 'selecao' ? 'agulha' : 'selecao' }),
 }))
+
+/*
+ * A ALTURA DAS FAIXAS, como no DaVinci/Premiere: Shift+roda encolhe ou estica
+ * todas de uma vez (o `fator`), e a borda de baixo do cabecalho estica uma so
+ * (a altura propria dela). Gosto desta maquina: fica no localStorage.
+ *
+ * Chaves: 'cenas', 'video-0', 'audio-2'...
+ */
+export const ALTURA_PADRAO = { cenas: 104, video: 40, audio: 52 } as const
+const LIMITES = { cenas: [44, 260], video: [20, 220], audio: [20, 220] } as const
+
+function lerAlturas(): { fator: number; proprias: Record<string, number> } {
+  try {
+    const bruto = JSON.parse(localStorage.getItem('dangai.alturas') ?? 'null') as {
+      fator?: unknown
+      proprias?: unknown
+    } | null
+    const fator = typeof bruto?.fator === 'number' && bruto.fator >= 0.4 && bruto.fator <= 3 ? bruto.fator : 1
+    const proprias: Record<string, number> = {}
+    if (bruto?.proprias && typeof bruto.proprias === 'object') {
+      for (const [k, v] of Object.entries(bruto.proprias as Record<string, unknown>)) {
+        if (typeof v === 'number' && v > 0 && v < 400) proprias[k] = v
+      }
+    }
+    return { fator, proprias }
+  } catch {
+    return { fator: 1, proprias: {} }
+  }
+}
+
+export const useAlturas = create<{
+  fator: number
+  /** Alturas proprias, ja sem o fator (o fator multiplica por cima). */
+  proprias: Record<string, number>
+  escalar: (multiplicador: number) => void
+  definir: (chave: string, altura: number) => void
+  voltar: (chave: string) => void
+}>((set, get) => {
+  const gravar = (): void => {
+    try {
+      const { fator, proprias } = get()
+      localStorage.setItem('dangai.alturas', JSON.stringify({ fator, proprias }))
+    } catch {
+      /* vale so nesta sessao */
+    }
+  }
+  return {
+    ...lerAlturas(),
+    escalar: (m) => {
+      set({ fator: Math.min(Math.max(get().fator * m, 0.4), 3) })
+      gravar()
+    },
+    definir: (chave, altura) => {
+      set({ proprias: { ...get().proprias, [chave]: altura / get().fator } })
+      gravar()
+    },
+    voltar: (chave) => {
+      const { [chave]: _fora, ...resto } = get().proprias
+      set({ proprias: resto })
+      gravar()
+    },
+  }
+})
+
+/** A altura de uma faixa agora, em px, ja dentro dos limites do tipo dela. */
+export function alturaDaFaixa(
+  estado: { fator: number; proprias: Record<string, number> },
+  chave: string,
+): number {
+  const tipo = chave === 'cenas' ? 'cenas' : chave.startsWith('video') ? 'video' : 'audio'
+  const [min, max] = LIMITES[tipo]
+  const base = estado.proprias[chave] ?? ALTURA_PADRAO[tipo]
+  return Math.round(Math.min(Math.max(base * estado.fator, min), max))
+}
+
+/** O FX Console (Ctrl+Espaco): busca nas bins sem sair da linha do tempo. */
+export const useConsoleFx = create<{ aberto: boolean; alternar: () => void; fechar: () => void }>((set, get) => ({
+  aberto: false,
+  alternar: () => set({ aberto: !get().aberto }),
+  fechar: () => set({ aberto: false }),
+}))

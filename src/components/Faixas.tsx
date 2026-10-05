@@ -2,6 +2,7 @@ import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState }
 import { createPortal } from 'react-dom'
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
+import { alturaDaFaixa, useAlturas } from '@/store/layout'
 import { useProject } from '@/store/project'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
@@ -120,6 +121,8 @@ export function Linha({
   children,
   linhaRef,
   fundo = 'bg-surface',
+  onAltura,
+  onAlturaPadrao,
 }: {
   largura: number
   altura: number
@@ -127,6 +130,10 @@ export function Linha({
   children: React.ReactNode
   linhaRef?: (el: HTMLDivElement | null) => void
   fundo?: string
+  /** Puxar a borda de baixo do cabecalho estica ou encolhe ESTA faixa. */
+  onAltura?: (altura: number) => void
+  /** Dois cliques na borda: volta a altura padrao. */
+  onAlturaPadrao?: () => void
 }) {
   const { coluna, versao } = useContext(ColunaDosCabecalhos)
   const raiz = useRef<HTMLDivElement | null>(null)
@@ -148,10 +155,36 @@ export function Linha({
         topo !== null &&
         createPortal(
           <div
-            className="absolute inset-x-0 flex items-center border-t border-line px-1.5"
+            // Faixa baixa: so o nome -- a segunda linha ("vazia", "3 clipes")
+            // nao cabe e passava por cima do nome.
+            data-compacto={altura < 34}
+            className="group/linha absolute inset-x-0 flex items-center overflow-hidden border-t border-line px-1.5"
             style={{ top: topo, height: altura }}
           >
             {cabecalho}
+            {onAltura && (
+              <div
+                role="separator"
+                aria-orientation="horizontal"
+                aria-label="Altura da faixa"
+                title="Arraste para mudar a altura desta faixa (dois cliques voltam ao padrao). Shift+roda muda todas."
+                onPointerDown={(event) => {
+                  if (event.button !== 0) return
+                  event.preventDefault()
+                  const y0 = event.clientY
+                  const h0 = altura
+                  const mover = (e: PointerEvent): void => onAltura(h0 + (e.clientY - y0))
+                  const fim = (): void => {
+                    window.removeEventListener('pointermove', mover)
+                    window.removeEventListener('pointerup', fim)
+                  }
+                  window.addEventListener('pointermove', mover)
+                  window.addEventListener('pointerup', fim)
+                }}
+                onDoubleClick={onAlturaPadrao}
+                className="absolute inset-x-0 bottom-0 z-10 h-[5px] cursor-row-resize hover:bg-accent/40"
+              />
+            )}
           </div>,
           coluna,
         )}
@@ -180,7 +213,7 @@ export function Cabecalho({
     <div className="group/cab flex w-full items-center gap-1">
       <div className="min-w-0 flex-1 leading-tight">
         <div className="truncate text-[11px] font-semibold text-ink">{nome}</div>
-        {detalhe && <div className="truncate text-[9px] text-ink-3">{detalhe}</div>}
+        {detalhe && <div className="truncate text-[9px] text-ink-3 group-data-[compacto=true]/linha:hidden">{detalhe}</div>}
       </div>
       {onRemover && (
         <button
@@ -298,6 +331,7 @@ export function GrupoDeFaixas({
   const mudas = useProject((s) => s.faixasMudas[tipo])
   const alternarMudo = useProject((s) => s.alternarMudo)
   const duplicarClipe = useProject((s) => s.duplicarClipe)
+  const alturas = useAlturas()
   const removerFaixa = useProject((s) => s.removerFaixa)
 
   const [extras, setExtras] = useState(0)
@@ -457,7 +491,9 @@ export function GrupoDeFaixas({
           <Linha
             key={faixa}
             largura={largura}
-            altura={altura}
+            altura={alturaDaFaixa(alturas, `${tipo}-${faixa}`)}
+            onAltura={(h) => alturas.definir(`${tipo}-${faixa}`, h)}
+            onAlturaPadrao={() => alturas.voltar(`${tipo}-${faixa}`)}
             fundo={sobre === faixa ? 'bg-accent-dim' : 'bg-surface'}
             linhaRef={(el) => {
               if (el) linhas.current.set(faixa, el)
