@@ -2985,7 +2985,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     const pts = [...curva].sort((a, b) => a.t - b.t)
     if (pts.length < 2) return
     pts[0] = { ...pts[0]!, t: 0 }
-    pts[pts.length - 1] = { t: 1, v: 1 }
+    // A alca de chegada do fim continua dele: e ela que faz o pouso suave.
+    pts[pts.length - 1] = { ...pts[pts.length - 1]!, t: 1, v: 1 }
     const ok = curvaDaEntradaSchema.safeParse(pts)
     if (ok.success) set({ captionAnimationCurve: ok.data })
   },

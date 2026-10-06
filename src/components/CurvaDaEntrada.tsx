@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Pencil } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { removerCurvaDeEntrada, salvarCurvaDeEntrada } from '@/store/estilo-legenda'
-import { CURVA_DA_ENTRADA_PADRAO, escalaDaEntrada, type CurvaDaEntrada } from '@shared/contract'
+import { CURVA_DA_ENTRADA_PADRAO, alcasDaEntrada, escalaDaEntrada, type CurvaDaEntrada } from '@shared/contract'
 
 /**
  * O grafico da entrada elastica: ESCALA (vertical) ao longo da entrada
@@ -51,36 +51,21 @@ const PRONTAS: { nome: string; curva: CurvaDaEntrada }[] = [
     ],
   },
   /*
-   * EASY EASE, o do After Effects: cubic-bezier(0.33, 0, 0.67, 1) -- sai
-   * devagar, acelera no meio e pousa devagar, sem passar do tamanho. Amostrado
-   * em nove pontos; a cubica monotona entre eles reproduz a bezier.
+   * EASY EASE, o do After Effects: dois pontos com as alcas DEITADAS a um
+   * terco -- sai parado, acelera no meio e pousa parado, sem passar do tamanho.
    */
   {
     nome: 'Easy Ease',
     curva: [
-      { t: 0, v: 0.6 },
-      { t: 0.12, v: 0.616 },
-      { t: 0.25, v: 0.663 },
-      { t: 0.38, v: 0.73 },
-      { t: 0.5, v: 0.8 },
-      { t: 0.62, v: 0.87 },
-      { t: 0.75, v: 0.937 },
-      { t: 0.88, v: 0.984 },
-      { t: 1, v: 1 },
+      { t: 0, v: 0.6, sai: { dt: 1 / 3, dv: 0 } },
+      { t: 1, v: 1, ent: { dt: -1 / 3, dv: 0 } },
     ],
   },
   {
     nome: 'Easy Ease do zero',
     curva: [
-      { t: 0, v: 0 },
-      { t: 0.12, v: 0.04 },
-      { t: 0.25, v: 0.157 },
-      { t: 0.38, v: 0.324 },
-      { t: 0.5, v: 0.5 },
-      { t: 0.62, v: 0.676 },
-      { t: 0.75, v: 0.843 },
-      { t: 0.88, v: 0.96 },
-      { t: 1, v: 1 },
+      { t: 0, v: 0, sai: { dt: 1 / 3, dv: 0 } },
+      { t: 1, v: 1, ent: { dt: -1 / 3, dv: 0 } },
     ],
   },
   {
@@ -92,6 +77,33 @@ const PRONTAS: { nome: string; curva: CurvaDaEntrada }[] = [
     ],
   },
 ]
+
+/*
+ * AS PRONTAS QUE ELE ESCONDEU: "me da a possibilidade de deletar os presets
+ * padrao que eu nao quiser". Ficam escondidas nesta maquina (localStorage); o
+ * "restaurar" traz todas de volta.
+ */
+const CHAVE_OCULTAS = 'dangai.curvasProntasOcultas'
+function lerOcultas(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(CHAVE_OCULTAS) ?? '[]')
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+function gravarOcultas(lista: string[]): void {
+  try {
+    localStorage.setItem(CHAVE_OCULTAS, JSON.stringify(lista))
+  } catch {
+    /* vale so nesta sessao */
+  }
+}
+
+/** Escala do grafico: px por unidade de tempo e de escala (para alinhar alcas pelo angulo na tela). */
+const SX = W - 2 * PAD
+const SY = (H - 2 * PAD) / V_MAX
+const arred = (v: number): number => Math.round(v * 1000) / 1000
 
 export function CurvaDaEntradaEditor({
   curva,
@@ -112,9 +124,93 @@ export function CurvaDaEntradaEditor({
   const guardadas = useProject((s) => s.curvasDeEntrada)
   const [nomeando, setNomeando] = useState(false)
   const [nome, setNome] = useState('')
+  const [ocultas, setOcultas] = useState<string[]>(lerOcultas)
+  /*
+   * O PONTO ESCOLHIDO mostra as alcas dele, como no Blender: puxar uma alca
+   * muda a inclinacao e a suavidade da curva naquele ponto. As duas alcas
+   * andam alinhadas (curva lisa); com Alt, so a puxada anda (quina).
+   */
+  const [escolhido, setEscolhido] = useState<number | null>(null)
+  const [puxando, setPuxando] = useState<{ i: number; qual: 'ent' | 'sai' } | null>(null)
 
   const pontos = [...curva].sort((a, b) => a.t - b.t)
   const ultimo = pontos.length - 1
+  const alcas = alcasDaEntrada(pontos)
+  const sel = escolhido !== null && escolhido <= ultimo ? escolhido : null
+
+  /** Puxa uma alca ate o ponteiro; a do outro lado gira junto, salvo com Alt. */
+  const puxarAlca = (i: number, qual: 'ent' | 'sai', alvo: { t: number; v: number }, livre: boolean): void => {
+    const p = pontos[i]!
+    let dt = alvo.t - p.t
+    const dv = alvo.v - p.v
+    dt = qual === 'sai' ? Math.max(dt, 0.005) : Math.min(dt, -0.005)
+    const nova = { dt: arred(dt), dv: arred(dv) }
+    const outra: 'ent' | 'sai' = qual === 'sai' ? 'ent' : 'sai'
+    const temOutra = qual === 'sai' ? i > 0 : i < ultimo
+    const novos = pontos.map((q) => ({ ...q }))
+    const ponto = { ...novos[i]!, [qual]: nova }
+    if (temOutra) {
+      const efetiva = alcas[i]![outra]
+      if (livre) {
+        ponto[outra] = { dt: arred(efetiva.dt), dv: arred(efetiva.dv) }
+      } else {
+        // Alinhada: mesma reta, sentido contrario, comprimento (na tela) dela.
+        const comp = Math.hypot(efetiva.dt * SX, efetiva.dv * SY)
+        const dir = Math.hypot(nova.dt * SX, nova.dv * SY) || 1
+        ponto[outra] = {
+          dt: arred((-nova.dt * SX * comp) / dir / SX),
+          dv: arred((-nova.dv * SY * comp) / dir / SY),
+        }
+      }
+    }
+    novos[i] = ponto
+    onChange(novos)
+  }
+
+  /** Os botoes do ponto escolhido. */
+  const formaDoPonto = (i: number, forma: 'suave' | 'auto' | 'quina'): void => {
+    const novos = pontos.map((q) => ({ ...q }))
+    const p = novos[i]!
+    const antes = i > 0 ? p.t - pontos[i - 1]!.t : 0
+    const depois = i < ultimo ? pontos[i + 1]!.t - p.t : 0
+    if (forma === 'auto') {
+      delete p.ent
+      delete p.sai
+    } else if (forma === 'suave') {
+      // Deitadas a um terco: o "easy ease" daquele ponto.
+      if (i > 0) p.ent = { dt: arred(-antes / 3), dv: 0 }
+      if (i < ultimo) p.sai = { dt: arred(depois / 3), dv: 0 }
+    } else {
+      // Quina: cada alca aponta para o vizinho -- a curva chega e sai reta.
+      if (i > 0) p.ent = { dt: arred(-antes / 3), dv: arred((pontos[i - 1]!.v - p.v) / 3) }
+      if (i < ultimo) p.sai = { dt: arred(depois / 3), dv: arred((pontos[i + 1]!.v - p.v) / 3) }
+    }
+    onChange(novos)
+  }
+
+  /** Suavidade do ponto: o comprimento das alcas, como fracao do vao ate o vizinho. */
+  const suavidadeDe = (i: number): number => {
+    const antes = i > 0 ? pontos[i]!.t - pontos[i - 1]!.t : 0
+    const depois = i < ultimo ? pontos[i + 1]!.t - pontos[i]!.t : 0
+    return depois > 0 ? alcas[i]!.sai.dt / depois : antes > 0 ? -alcas[i]!.ent.dt / antes : 1 / 3
+  }
+  const mudarSuavidade = (i: number, f: number): void => {
+    const novos = pontos.map((q) => ({ ...q }))
+    const p = novos[i]!
+    const antes = i > 0 ? p.t - pontos[i - 1]!.t : 0
+    const depois = i < ultimo ? pontos[i + 1]!.t - p.t : 0
+    const { ent, sai } = alcas[i]!
+    // Mantem a inclinacao de cada alca; muda so o comprimento.
+    if (i > 0) {
+      const incl = ent.dt !== 0 ? ent.dv / ent.dt : 0
+      p.ent = { dt: arred(-f * antes), dv: arred(-f * antes * incl) }
+    }
+    if (i < ultimo) {
+      const incl = sai.dt !== 0 ? sai.dv / sai.dt : 0
+      p.sai = { dt: arred(f * depois), dv: arred(f * depois * incl) }
+    }
+    onChange(novos)
+  }
 
   const noGrafico = (evento: { clientX: number; clientY: number }): { t: number; v: number } => {
     const caixa = svg.current!.getBoundingClientRect()
@@ -131,7 +227,8 @@ export function CurvaDaEntradaEditor({
     const depois = pontos[i + 1]
     // O ponto nao atravessa os vizinhos: a ordem no tempo e a da curva.
     const t = i === 0 ? 0 : Math.min(Math.max(alvo.t, (antes?.t ?? 0) + 0.02), (depois?.t ?? 1) - 0.02)
-    novos[i] = { t: Math.round(t * 1000) / 1000, v: Math.round(alvo.v * 1000) / 1000 }
+    // As alcas vao junto: elas sao relativas ao ponto.
+    novos[i] = { ...novos[i]!, t: Math.round(t * 1000) / 1000, v: Math.round(alvo.v * 1000) / 1000 }
     onChange(novos)
   }
 
@@ -151,6 +248,8 @@ export function CurvaDaEntradaEditor({
           desenhando ? 'cursor-crosshair border-accent' : 'border-line',
         ].join(' ')}
         onPointerDown={(e) => {
+          // Clique no vazio do grafico solta o ponto escolhido.
+          if (!desenhando && e.target === svg.current) setEscolhido(null)
           if (!desenhando) return
           const alvo = e.target as Element
           alvo.setPointerCapture?.(e.pointerId)
@@ -163,10 +262,15 @@ export function CurvaDaEntradaEditor({
             if (p.t > risco.at(-1)!.t) setRisco([...risco, p])
             return
           }
+          if (puxando) {
+            puxarAlca(puxando.i, puxando.qual, noGrafico(e), e.altKey)
+            return
+          }
           if (arrastando !== null) mover(arrastando, noGrafico(e))
         }}
         onPointerUp={() => {
           setArrastando(null)
+          setPuxando(null)
           if (desenhando && risco && risco.length > 2) {
             // As pontas sao fixas (o comeco em t = 0, o fim em 100%): o risco
             // que encosta nelas sai, senao sobram dois pontos no mesmo instante.
@@ -176,13 +280,17 @@ export function CurvaDaEntradaEditor({
           }
           setRisco(null)
         }}
-        onPointerLeave={() => setArrastando(null)}
+        onPointerLeave={() => {
+          setArrastando(null)
+          setPuxando(null)
+        }}
         onDoubleClick={(e) => {
           if (e.target !== svg.current && (e.target as Element).tagName !== 'path') return
           if (pontos.length >= 10) return
           const novo = noGrafico(e)
           if (novo.t <= 0.02 || novo.t >= 0.98) return
           onChange([...pontos, { t: Math.round(novo.t * 1000) / 1000, v: Math.round(novo.v * 1000) / 1000 }])
+          setEscolhido(null)
         }}
         aria-label="Curva da entrada da legenda"
       >
@@ -201,20 +309,56 @@ export function CurvaDaEntradaEditor({
         ) : (
           <path d={caminho} fill="none" className="stroke-accent" strokeWidth={2} />
         )}
+        {/* As alcas do ponto escolhido. */}
+        {sel !== null &&
+          !desenhando &&
+          (['ent', 'sai'] as const).map((qual) => {
+            if ((qual === 'ent' && sel === 0) || (qual === 'sai' && sel === ultimo)) return null
+            const p = pontos[sel]!
+            const a = alcas[sel]![qual]
+            const x = xDe(p.t + a.dt)
+            const y = yDe(p.v + a.dv)
+            return (
+              <g key={qual}>
+                <line x1={xDe(p.t)} y1={yDe(p.v)} x2={x} y2={y} stroke="#f6a23c" strokeWidth={1} />
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={4}
+                  fill="#1a1a1d"
+                  stroke="#f6a23c"
+                  strokeWidth={1.5}
+                  className="cursor-move"
+                  data-alca={qual}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+                    setPuxando({ i: sel, qual })
+                  }}
+                >
+                  <title>Alca: puxe para mudar a suavidade e a inclinacao. Alt solta da outra.</title>
+                </circle>
+              </g>
+            )
+          })}
         {pontos.map((p, i) => (
           <circle
             key={i}
             cx={xDe(p.t)}
             cy={yDe(p.v)}
-            r={i === ultimo ? 3.5 : 5}
-            className={i === ultimo ? 'fill-ink-3' : 'cursor-grab fill-ink stroke-accent'}
+            r={i === ultimo ? 4 : 5}
+            className={[
+              i === ultimo ? 'cursor-pointer fill-ink-3' : 'cursor-grab fill-ink',
+              i === sel ? 'stroke-[#f6a23c]' : 'stroke-accent',
+            ].join(' ')}
             // Desenhando, os pontos nao pegam o clique: o risco comeca onde
             // ele clicar, mesmo que seja em cima de um ponto.
             style={desenhando ? { pointerEvents: 'none' } : undefined}
             strokeWidth={1.5}
             onPointerDown={(e) => {
-              if (i === ultimo) return
               e.stopPropagation()
+              setEscolhido(i)
+              if (i === ultimo) return // o fim nao anda, mas a alca dele sim
               ;(e.target as Element).setPointerCapture?.(e.pointerId)
               setArrastando(i)
             }}
@@ -222,6 +366,7 @@ export function CurvaDaEntradaEditor({
               e.stopPropagation()
               if (i === 0 || i === ultimo || pontos.length <= 2) return
               onChange(pontos.filter((_, k) => k !== i))
+              setEscolhido(null)
             }}
           >
             <title>
@@ -232,6 +377,44 @@ export function CurvaDaEntradaEditor({
           </circle>
         ))}
       </svg>
+      {sel !== null && !desenhando && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-1 rounded-sm border border-line bg-elevated/60 px-1.5 py-1">
+          <span className="mr-0.5 text-[10px] text-ink-3">
+            {sel === 0 ? 'Inicio' : sel === ultimo ? 'Fim' : `Ponto ${sel + 1}`}:
+          </span>
+          {(
+            [
+              ['suave', 'Easy ease', 'Alcas deitadas: a curva chega e sai devagar deste ponto'],
+              ['auto', 'Auto', 'Volta a suavidade automatica'],
+              ['quina', 'Quina', 'Chega e sai reta, sem suavizar'],
+            ] as const
+          ).map(([forma, rotulo, dica]) => (
+            <button
+              key={forma}
+              type="button"
+              title={dica}
+              onClick={() => formaDoPonto(sel, forma)}
+              className="rounded-sm border border-line bg-elevated px-1.5 py-0.5 text-[10px] text-ink-2 hover:text-ink"
+            >
+              {rotulo}
+            </button>
+          ))}
+          <label className="ml-1 flex min-w-[110px] flex-1 items-center gap-1.5 text-[10px] text-ink-3" title="O comprimento das alcas: mais longa, mais suave">
+            Suavidade
+            <input
+              type="range"
+              min={0.02}
+              max={1}
+              step={0.01}
+              value={Math.min(Math.max(suavidadeDe(sel), 0.02), 1)}
+              onChange={(e) => mudarSuavidade(sel, Number(e.target.value))}
+              aria-label="Suavidade do ponto escolhido"
+              className="dangai-range min-w-0 flex-1"
+            />
+            <span className="tnum w-7 text-right">{Math.round(suavidadeDe(sel) * 100)}%</span>
+          </label>
+        </div>
+      )}
       <div className="mt-1.5 flex flex-wrap gap-1">
         <button
           type="button"
@@ -245,15 +428,32 @@ export function CurvaDaEntradaEditor({
           <Pencil size={9} strokeWidth={1.75} />
           {desenhando ? 'Risque no grafico...' : 'Desenhar a mao'}
         </button>
-        {PRONTAS.map((p) => (
-          <button
-            key={p.nome}
-            type="button"
-            onClick={() => onChange(p.curva)}
-            className="rounded-sm border border-line bg-elevated px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink"
-          >
-            {p.nome}
-          </button>
+        {PRONTAS.filter((p) => !ocultas.includes(p.nome)).map((p) => (
+          <span key={p.nome} className="group/pronta flex items-center rounded-sm border border-line bg-elevated">
+            <button
+              type="button"
+              onClick={() => {
+                onChange(p.curva)
+                setEscolhido(null)
+              }}
+              className="px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink"
+            >
+              {p.nome}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const novas = [...ocultas, p.nome]
+                setOcultas(novas)
+                gravarOcultas(novas)
+              }}
+              aria-label={`Esconder a curva pronta ${p.nome}`}
+              title="Esconder esta pronta (o restaurar traz de volta)"
+              className="pr-1 text-[10px] text-ink-3 opacity-0 hover:text-danger group-hover/pronta:opacity-100"
+            >
+              ×
+            </button>
+          </span>
         ))}
         {guardadas.map((g) => (
           <span key={g.nome} className="group/curva flex items-center rounded-sm border border-accent/40 bg-elevated">
@@ -308,7 +508,23 @@ export function CurvaDaEntradaEditor({
         )}
       </div>
       <p className="mt-1 text-[10px] leading-relaxed text-ink-3">
-        Arraste os pontos, ou desenhe a mao. Clique duplo no vazio cria um ponto; num ponto, apaga.
+        Arraste os pontos, ou desenhe a mao. Clique num ponto para ver as alcas (Alt solta uma da outra). Clique duplo
+        no vazio cria um ponto; num ponto, apaga.
+        {ocultas.length > 0 && (
+          <>
+            {' '}
+            <button
+              type="button"
+              onClick={() => {
+                setOcultas([])
+                gravarOcultas([])
+              }}
+              className="text-ink-2 underline decoration-dotted underline-offset-2 hover:text-ink"
+            >
+              Restaurar as {ocultas.length} prontas escondidas
+            </button>
+          </>
+        )}
       </p>
     </div>
   )

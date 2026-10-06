@@ -430,9 +430,21 @@ export function familiaDaFonte(nomeDoArquivo: string): string {
  * Interpolada em cubica MONOTONICA: picos e vales caem exatamente nos pontos
  * que ele arrastou, e a curva nunca passa deles por conta propria.
  */
+/**
+ * As ALCAS de um ponto, como no grafico do Blender: para onde a curva sai dele
+ * (`sai`, para a frente no tempo) e de onde ela chega (`ent`, para tras), em
+ * deslocamento a partir do ponto. Quanto mais longa e mais deitada a alca, mais
+ * suave a curva passa por ali -- "cada marcacao eu possa controlar a
+ * suavidade". Sem alcas o ponto e AUTOMATICO: a curva monotona de sempre.
+ */
+const alcaSchema = z.object({ dt: z.number().min(-1).max(1), dv: z.number().min(-3).max(3) })
+export type AlcaDaEntrada = z.infer<typeof alcaSchema>
+
 export const pontoDaEntradaSchema = z.object({
   t: z.number().min(0).max(1),
   v: z.number().min(0).max(2),
+  ent: alcaSchema.optional(),
+  sai: alcaSchema.optional(),
 })
 export const curvaDaEntradaSchema = z.array(pontoDaEntradaSchema).min(2).max(10)
 export type CurvaDaEntrada = z.infer<typeof curvaDaEntradaSchema>
@@ -454,18 +466,24 @@ export const CURVA_DA_ENTRADA_PADRAO: CurvaDaEntrada = [
   { t: 1, v: 1 },
 ]
 
-/** A escala no instante t (0..1) da entrada. */
-export function escalaDaEntrada(curva: CurvaDaEntrada, t: number): number {
+/**
+ * As alcas EFETIVAS de cada ponto: as que ele desenhou, ou as automaticas.
+ *
+ * As automaticas sao as tangentes de Fritsch-Carlson a 1/3 do vizinho -- uma
+ * bezier com alcas assim e exatamente a cubica de Hermite que a curva sempre
+ * usou, entao curva sem alca nenhuma continua igual. As desenhadas sao presas
+ * ao vizinho (nao passam dele no tempo), o que mantem a curva uma funcao do
+ * tempo: se o vizinho chegou mais perto, a alca encurta na mesma inclinacao.
+ */
+export function alcasDaEntrada(curva: CurvaDaEntrada): { ent: AlcaDaEntrada; sai: AlcaDaEntrada }[] {
   const pts = [...curva].sort((a, b) => a.t - b.t)
-  if (t <= pts[0]!.t) return pts[0]!.v
-  if (t >= pts.at(-1)!.t) return pts.at(-1)!.v
   const n = pts.length
   // Fritsch-Carlson: inclinacoes que nao criam extremos entre os pontos.
   const d: number[] = []
   for (let i = 0; i < n - 1; i++) d.push((pts[i + 1]!.v - pts[i]!.v) / Math.max(pts[i + 1]!.t - pts[i]!.t, 1e-9))
-  const m: number[] = [d[0]!]
+  const m: number[] = n > 1 ? [d[0]!] : [0]
   for (let i = 1; i < n - 1; i++) m.push(d[i - 1]! * d[i]! <= 0 ? 0 : (d[i - 1]! + d[i]!) / 2)
-  m.push(d[n - 2]!)
+  if (n > 1) m.push(d[n - 2]!)
   for (let i = 0; i < n - 1; i++) {
     if (d[i] === 0) {
       m[i] = 0
@@ -481,20 +499,52 @@ export function escalaDaEntrada(curva: CurvaDaEntrada, t: number): number {
       m[i + 1] = k * b * d[i]!
     }
   }
+  const presa = (alca: AlcaDaEntrada, limite: number): AlcaDaEntrada => {
+    const dt = Math.abs(alca.dt)
+    if (dt <= limite || dt === 0) return alca
+    const k = limite / dt
+    return { dt: alca.dt * k, dv: alca.dv * k }
+  }
+  return pts.map((p, i) => {
+    const antes = i > 0 ? p.t - pts[i - 1]!.t : 0
+    const depois = i < n - 1 ? pts[i + 1]!.t - p.t : 0
+    const ent = p.ent
+      ? presa({ dt: Math.min(p.ent.dt, 0), dv: p.ent.dv }, antes)
+      : { dt: -antes / 3, dv: (-m[i]! * antes) / 3 }
+    const sai = p.sai
+      ? presa({ dt: Math.max(p.sai.dt, 0), dv: p.sai.dv }, depois)
+      : { dt: depois / 3, dv: (m[i]! * depois) / 3 }
+    return { ent, sai }
+  })
+}
+
+/** A escala no instante t (0..1) da entrada: bezier cubica entre cada par de pontos. */
+export function escalaDaEntrada(curva: CurvaDaEntrada, t: number): number {
+  const pts = [...curva].sort((a, b) => a.t - b.t)
+  if (t <= pts[0]!.t) return pts[0]!.v
+  if (t >= pts.at(-1)!.t) return pts.at(-1)!.v
+  const alcas = alcasDaEntrada(pts)
   let i = 0
   while (t > pts[i + 1]!.t) i++
   const p0 = pts[i]!
-  const p1 = pts[i + 1]!
-  const h = p1.t - p0.t
-  const s = (t - p0.t) / h
-  const s2 = s * s
-  const s3 = s2 * s
-  return (
-    (2 * s3 - 3 * s2 + 1) * p0.v +
-    (s3 - 2 * s2 + s) * h * m[i]! +
-    (-2 * s3 + 3 * s2) * p1.v +
-    (s3 - s2) * h * m[i + 1]!
-  )
+  const p3 = pts[i + 1]!
+  const x1 = p0.t + alcas[i]!.sai.dt
+  const y1 = p0.v + alcas[i]!.sai.dv
+  const x2 = p3.t + alcas[i + 1]!.ent.dt
+  const y2 = p3.v + alcas[i + 1]!.ent.dv
+  const bez = (a: number, b: number, c: number, d: number, s: number): number => {
+    const u = 1 - s
+    return u * u * u * a + 3 * u * u * s * b + 3 * u * s * s * c + s * s * s * d
+  }
+  // x(s) e crescente (as alcas nao passam dos vizinhos): bissecao acha o s do t.
+  let lo = 0
+  let hi = 1
+  for (let k = 0; k < 40; k++) {
+    const meio = (lo + hi) / 2
+    if (bez(p0.t, x1, x2, p3.t, meio) < t) lo = meio
+    else hi = meio
+  }
+  return bez(p0.v, y1, y2, p3.v, (lo + hi) / 2)
 }
 
 /** Uma curva da entrada guardada com nome: "deixa eu desenhar uma propria e salvar um preset". */
