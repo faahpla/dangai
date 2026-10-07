@@ -8,6 +8,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { spawn } from 'node:child_process'
+import { ffmpegPath } from './ffmpeg-path'
+import { converterRgbHdr, ehHdrPeloFfmpeg } from './cor-hdr'
 import { basename, join } from 'node:path'
 import sharp from 'sharp'
 import type { LibraryClip, LibraryIndex } from '@shared/channels'
@@ -62,7 +65,12 @@ interface CacheFile {
  * inteiro de proposito -- e mais barato reler 27 arquivos de texto do que
  * carregar para sempre um indice montado por uma versao antiga.
  */
-const CACHE_VERSION = 5
+/*
+ * 8: episodio HDR passou a ter a miniatura com a cor convertida (ver
+ * miniaturaHdr). Subir a versao rele os episodios
+ * uma vez; nos que nao sao HDR a miniatura que ja existe e aproveitada.
+ */
+const CACHE_VERSION = 8
 
 /** Profundidade maxima da varredura a partir da raiz. */
 const MAX_DEPTH = 3
@@ -326,7 +334,9 @@ async function lerEpisodio(
 
   // O `thumb` acima ainda e o keyframe grande do AnCut. Aqui ele vira a copia
   // reduzida no userData -- e o que a grade vai de fato carregar.
-  await reduzirMiniaturas(saida)
+  const primeiro = saida[0]
+  const hdr = primeiro ? await ehHdr(primeiro.path) : false
+  await reduzirMiniaturas(saida, hdr)
 
   return saida
 }
@@ -341,14 +351,23 @@ async function lerEpisodio(
  * Falhar aqui nao pode custar a cena: se o sharp nao der conta de uma imagem,
  * ela fica com o keyframe original, que funciona -- so pesa mais.
  */
-async function reduzirMiniaturas(clips: StoredClip[]): Promise<void> {
+async function reduzirMiniaturas(clips: StoredClip[], hdr: boolean): Promise<void> {
   if (!thumbsDir || clips.length === 0) return
 
   let proxima = 0
   const trabalhar = async (): Promise<void> => {
     while (proxima < clips.length) {
       const clip = clips[proxima++]!
-      const destino = caminhoDaMiniatura(clip.id)
+      // Episodio HDR: nome de arquivo proprio, para nao reaproveitar a miniatura
+      // lavada que saiu do keyframe antes desta correcao.
+      const destino = caminhoDaMiniatura(hdr ? `${clip.id}#hdr2` : clip.id)
+      if (hdr) {
+        if (existsSync(destino) || (await miniaturaHdr(clip.thumb, destino))) {
+          clip.thumb = destino
+          continue
+        }
+        // O clipe nao abriu: cai para o keyframe, que ao menos e uma imagem.
+      }
       try {
         if (!existsSync(destino)) {
           mkdirSync(join(destino, '..'), { recursive: true })
@@ -365,6 +384,50 @@ async function reduzirMiniaturas(clips: StoredClip[]): Promise<void> {
   }
 
   await Promise.all(Array.from({ length: THUMB_PARALELO }, trabalhar))
+}
+
+/*
+ * EPISODIO HDR: "eu cortei um anime em HDR, e na selecao de cenas os clipes
+ * ficaram lavados -- na timeline ficam com a cor normal".
+ *
+ * O AnCut corta os clipes com as marcas de HDR (BT.2020/PQ), e o Chrome os toca
+ * com a cor certa. Mas parte dos KEYFRAMES dele sai do video original sem
+ * converter a cor -- e a miniatura da grade vinha deles. Medido no Cyberpunk
+ * Edgerunners: o keyframe lavado e o quadro do proprio clipe com a cor certa,
+ * lado a lado. Entao, em episodio HDR, a miniatura sai do proprio clipe -- o
+ * mesmo quadro que a esteira e a linha do tempo ja mostram.
+ */
+function ehHdr(clipe: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const filho = spawn(ffmpegPath, ['-hide_banner', '-i', clipe], { windowsHide: true })
+    let saida = ''
+    filho.stderr.on('data', (c: Buffer) => (saida += c.toString()))
+    filho.on('error', () => resolve(false))
+    filho.on('close', () => resolve(ehHdrPeloFfmpeg(saida)))
+  })
+}
+
+/**
+ * A miniatura do episodio HDR: o MESMO keyframe do AnCut, com a cor convertida
+ * como o Chrome converteria (ver cor-hdr). Sem ffmpeg por cena -- o keyframe ja
+ * e o quadro lido sem conversao, e a conta e feita direto nos pixels.
+ */
+async function miniaturaHdr(keyframe: string, destino: string): Promise<boolean> {
+  try {
+    mkdirSync(join(destino, '..'), { recursive: true })
+    const { data, info } = await sharp(keyframe)
+      .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    converterRgbHdr(data)
+    await sharp(data, { raw: { width: info.width, height: info.height, channels: 3 } })
+      .webp({ quality: THUMB_QUALITY })
+      .toFile(destino)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**

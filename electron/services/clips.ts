@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import sharp from 'sharp'
 import { medidasAtuais } from './formato'
 import { ffmpegPath } from './ffmpeg-path'
+import { comConversaoHdr, ehHdrPeloFfmpeg, filtroHdr } from './cor-hdr'
 
 /**
  * Clipe de video como fonte de um bloco.
@@ -46,6 +47,8 @@ export interface ClipInfo {
   width: number
   height: number
   durationSec: number
+  /** Marcado como HDR (PQ/HLG): quadro solto precisa de conversao de cor. */
+  hdr: boolean
 }
 
 /**
@@ -88,9 +91,59 @@ export async function probeClip(path: string): Promise<ClipInfo> {
     throw new Error('duracao invalida')
   }
 
-  const info = { width, height, durationSec }
+  const info = { width, height, durationSec, hdr: ehHdrPeloFfmpeg(saida) }
   sondados.set(path, info)
   return info
+}
+
+/*
+ * O CLIPE HDR VIRA VIDEO COMUM, uma vez, na importacao.
+ *
+ * O preview toca no Chrome, que converte o HDR sozinho -- e a cor fica certa.
+ * Mas o render tira os quadros do arquivo com o ffmpeg do Remotion, e la a
+ * conversao NAO acontecia: medido com um clipe do Cyberpunk Edgerunners, o MP4
+ * final saia lavado enquanto o preview estava certo. Convertendo o clipe antes
+ * de tudo, o preview, o render, a tela dividida, o invertido e as miniaturas
+ * passam a usar o MESMO arquivo, ja em cores de video comum.
+ *
+ * A copia fica no cache, pela chave caminho+tamanho+data; clipe que nao e HDR
+ * volta como esta, sem custo nenhum.
+ */
+const emConversao = new Map<string, Promise<string>>()
+
+export async function versaoSdr(path: string): Promise<string> {
+  const info = await probeClip(path)
+  if (!info.hdr) return path
+  const st = statSync(path)
+  const chave = createHash('sha1').update(`${path}|${st.size}|${st.mtimeMs}`).digest('hex').slice(0, 24)
+  const alvo = join(cacheDir, `sdr2-${chave}.mp4`)
+  if (existsSync(alvo) && statSync(alvo).size > 1000) return alvo
+  const andando = emConversao.get(alvo)
+  if (andando) return andando
+  const trabalho = (async () => {
+    mkdirSync(cacheDir, { recursive: true })
+    const parcial = `${alvo}.part.mp4`
+    await runFfmpeg([
+      '-hide_banner', '-loglevel', 'error',
+      '-i', path,
+      '-an',
+      // A conversao calibrada contra o Chrome, e de volta para YUV pelo BT.709.
+      '-vf', `${filtroHdr()},scale=out_color_matrix=bt709:out_range=tv,format=yuv420p`,
+      '-c:v', 'libx264', '-crf', '16', '-preset', 'veryfast',
+      '-pix_fmt', 'yuv420p',
+      // Marcado como video comum: quem ler depois nao converte de novo.
+      '-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709',
+      '-y', parcial,
+    ])
+    renameSync(parcial, alvo)
+    return alvo
+  })()
+  emConversao.set(alvo, trabalho)
+  try {
+    return await trabalho
+  } finally {
+    emConversao.delete(alvo)
+  }
 }
 
 /**
@@ -116,14 +169,17 @@ const THUMB_MINIMO_BYTES = 200
  * dentro do arquivo nos curtos.
  */
 export async function makeClipThumbnail(path: string, durationSec?: number): Promise<string> {
-  const alvo = join(cacheDir, `thumb-${hashDe(path)}.webp`)
+  // "-c": miniatura com a conversao de cor do HDR; as de antes (lavadas) ficam
+  // para tras em vez de serem reaproveitadas.
+  const alvo = join(cacheDir, `thumb-c-${hashDe(path)}.webp`)
 
   // Vazio guardado por uma versao anterior nao pode sobreviver para sempre.
   if (existsSync(alvo) && statSync(alvo).size < THUMB_MINIMO_BYTES) rmSync(alvo, { force: true })
 
   if (!existsSync(alvo)) {
     mkdirSync(cacheDir, { recursive: true })
-    const dur = durationSec ?? (await probeClip(path)).durationSec
+    const sonda = await probeClip(path)
+    const dur = durationSec ?? sonda.durationSec
 
     /*
      * Tres instantes, e nao um.
@@ -150,7 +206,7 @@ export async function makeClipThumbnail(path: string, durationSec?: number): Pro
         '-frames:v',
         '1',
         '-vf',
-        'scale=220:-2',
+        comConversaoHdr(sonda.hdr, 'scale=220:-2'),
         '-c:v',
         'libwebp',
         '-quality',
@@ -296,6 +352,8 @@ export async function extrairFrames(
   mkdirSync(cacheDir, { recursive: true })
   const base = hashDe(path)
   const saida: string[] = []
+  // O detector de rosto tambem enxerga melhor a cor certa do que a lavada.
+  const hdr = (await probeClip(path).catch(() => null))?.hdr ?? false
 
   for (const fracao of fracoes) {
     const instante = Math.max(0, Math.min(durationSec * fracao, Math.max(durationSec - 0.05, 0)))
@@ -321,7 +379,7 @@ export async function extrairFrames(
         // 960px e a largura que o detector usa; maior custa tres vezes mais e
         // nao acha mais rosto nenhum.
         '-vf',
-        'scale=960:-2',
+        comConversaoHdr(hdr, 'scale=960:-2'),
         '-q:v',
         '3',
         '-y',
@@ -357,7 +415,7 @@ export async function extrairFrames(
  * percorrer o clipe e so trocar qual pedaco da imagem aparece -- custo zero
  * por movimento, que e como YouTube e Netflix fazem a previa da barra.
  */
-const TIRA_VERSAO = 1
+const TIRA_VERSAO = 2
 const TIRA_QUADROS = 24
 /** Um pouco acima do cartao (~170px) para nao borrar em tela de alta densidade. */
 const TIRA_W = 256
@@ -416,7 +474,7 @@ async function gerarTira(path: string): Promise<TiraDoClipe> {
 
   const info = await probeClip(path)
   const taxa = TIRA_QUADROS / Math.max(info.durationSec, 0.05)
-  const quadros = await quadrosEmSequencia(path, taxa)
+  const quadros = await quadrosEmSequencia(path, taxa, info.hdr)
   if (quadros.length === 0) throw new Error('o clipe nao devolveu nenhum quadro')
 
   const colunas = Math.min(TIRA_COLUNAS, quadros.length)
@@ -456,7 +514,7 @@ async function gerarTira(path: string): Promise<TiraDoClipe> {
  * 16:9 e corta a sobra --, para a tira mostrar exatamente o que a miniatura
  * mostra, sem distorcer clipe 4:3.
  */
-function quadrosEmSequencia(path: string, taxa: number): Promise<Buffer[]> {
+function quadrosEmSequencia(path: string, taxa: number, hdr: boolean): Promise<Buffer[]> {
   return new Promise((resolve, reject) => {
     const bytes = TIRA_W * TIRA_H * 3
     const child = spawn(
@@ -466,7 +524,10 @@ function quadrosEmSequencia(path: string, taxa: number): Promise<Buffer[]> {
         '-i', path,
         '-an', '-sn',
         '-vf',
-        `fps=${taxa.toFixed(4)},scale=${TIRA_W}:${TIRA_H}:force_original_aspect_ratio=increase,crop=${TIRA_W}:${TIRA_H}`,
+        comConversaoHdr(
+          hdr,
+          `fps=${taxa.toFixed(4)},scale=${TIRA_W}:${TIRA_H}:force_original_aspect_ratio=increase,crop=${TIRA_W}:${TIRA_H}`,
+        ),
         '-frames:v', String(TIRA_QUADROS),
         '-f', 'rawvideo',
         '-pix_fmt', 'rgb24',

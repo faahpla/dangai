@@ -15,6 +15,7 @@ import {
   makeClipRenderReady,
   makeClipThumbnail,
   probeClip,
+  versaoSdr,
 } from './clips'
 
 /** Largura da miniatura usada no strip e nas tiras da timeline. */
@@ -124,7 +125,8 @@ export async function reframeImage(
   // Custa ~0.28s contra alguns milissegundos da imagem, por isso a interface
   // acompanha o arraste em CSS e so chama aqui quando o usuario solta.
   if (isClip(path)) {
-    return publish(await makeClipRenderReady(path, id, focusX, focusY, await probeClip(path)))
+    const fonte = await versaoSdr(path)
+    return publish(await makeClipRenderReady(fonte, id, focusX, focusY, await probeClip(fonte)))
   }
   return publish(await makeRenderReady(path, id, focusX, focusY))
 }
@@ -177,7 +179,10 @@ async function importClip(
 
   try {
     const id = randomUUID()
-    const info = await probeClip(path)
+    // Clipe HDR vira video comum ANTES de tudo: daqui para baixo todo mundo usa
+    // a mesma copia, e o render sai com a cor que o preview mostra.
+    const fonte = await versaoSdr(path)
+    const info = await probeClip(fonte)
 
     /*
      * O rosto so e procurado quando ele ainda nao decidiu.
@@ -186,15 +191,15 @@ async function importClip(
      * que ele ja moveu na mao -- em nenhum dos dois casos um detector pode
      * chegar por cima e mexer.
      */
-    const detectado = focus ? null : await rostoNoClipe(path, info.durationSec)
+    const detectado = focus ? null : await rostoNoClipe(fonte, info.durationSec)
     const x = clamp01(detectado?.focusX ?? focusX)
     const y = clamp01(detectado?.focusY ?? focusY)
 
     const [thumbnail, renderPath] = await Promise.all([
       // A duracao vai junto: a miniatura sai da METADE do clipe, e cena de
       // anime pode durar menos de um segundo.
-      makeClipThumbnail(path, info.durationSec),
-      makeClipRenderReady(path, id, x, y, info),
+      makeClipThumbnail(fonte, info.durationSec),
+      makeClipRenderReady(fonte, id, x, y, info),
     ])
 
     return {
@@ -202,8 +207,9 @@ async function importClip(
       path,
       fileName,
       url: publish(renderPath),
-      // O original vai junto, para a tela dividida poder fazer o proprio corte.
-      urlSource: publish(path),
+      // O original vai junto, para a tela dividida poder fazer o proprio corte
+      // (a copia em cor comum, se o clipe era HDR).
+      urlSource: publish(fonte),
       width: info.width,
       height: info.height,
       thumbnail,
@@ -434,7 +440,8 @@ export async function rostoNosInstantes(
     return instantes.map(() => achado)
   }
 
-  const info = await probeClip(path)
+  const comum = await versaoSdr(path)
+  const info = await probeClip(comum)
   if (info.durationSec <= 0) return instantes.map(() => null)
 
   /*
@@ -446,7 +453,7 @@ export async function rostoNosInstantes(
     Math.min(Math.max(t / info.durationSec, 0), 1),
   )
 
-  const frames = await extrairFrames(path, info.durationSec, fracoes)
+  const frames = await extrairFrames(comum, info.durationSec, fracoes)
   // extrairFrames pula o instante que nao abre, entao a lista pode vir menor.
   // Sem os quadros na mesma quantidade nao da para dizer qual e qual.
   if (frames.length !== instantes.length) return instantes.map(() => null)
@@ -468,7 +475,8 @@ export async function rostoNosInstantes(
  */
 export async function inverterAsset(asset: ImageAsset, invertido: boolean): Promise<ImageAsset> {
   if (asset.kind !== 'video') throw new Error('So clipe pode tocar invertido.')
-  const fonte = invertido ? await clipeInvertido(asset.path) : asset.path
+  const comum = await versaoSdr(asset.path)
+  const fonte = invertido ? await clipeInvertido(comum) : comum
   const render = await makeClipRenderReady(
     fonte,
     invertido ? `${asset.id}-inv` : asset.id,
