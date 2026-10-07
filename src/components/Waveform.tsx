@@ -1,106 +1,137 @@
 import { useEffect, useRef } from 'react'
 
 interface WaveformProps {
+  /** Picos 0..1 cobrindo a largura INTEIRA do elemento pai. */
   peaks: readonly number[]
   className?: string
-  /** Cor das barras. Padrao: o branco translucido da narracao. */
+  /** Cor do pico (a forma clara de fora). Padrao: o branco translucido da narracao. */
   cor?: string
-  /** RMS nos mesmos buckets dos picos: desenhado por cima, mais forte. */
+  /** RMS nos mesmos buckets dos picos: a forma mais forte de dentro. */
   rms?: readonly number[]
   corRms?: string
 }
 
-/*
- * O canvas tem teto de largura no Chrome (32767 px, e menos em area). Com zoom
- * alto, a faixa passava disso, o canvas falhava calado e a onda sumia ou saia
- * cortada -- "a waveform de algumas musicas esta meio bugada". Acima deste
- * limite a resolucao horizontal cai um pouco, mas a onda continua inteira.
- */
-const LARGURA_MAXIMA_DO_CANVAS = 16000
-
 /**
- * Waveform em canvas, desenhado em cinza ao fundo da timeline. Canvas e nao SVG
- * porque sao ~2000 barras redesenhadas a cada resize.
+ * A ONDA, desenhada so no pedaco que esta na tela.
+ *
+ * "Quando eu dou muito zoom na timeline a waveform fica toda bugada." O canvas
+ * tinha a largura da faixa inteira -- com zoom, dezenas de milhares de pixels,
+ * acima do teto do Chrome -- e a onda era espremida ou cortada. Agora o canvas
+ * tem a largura do que se ve: ele procura o container que rola, mede quanto do
+ * pai esta visivel e desenha so isso, de novo a cada rolagem.
+ *
+ * O desenho e uma FORMA cheia e espelhada, como nos editores: o pico por fora
+ * (claro) e o RMS por dentro (forte). Com mais dados que pixels, cada coluna
+ * pega o pico maior e o RMS medio do trecho dela; com menos (zoom alto), a
+ * forma passa reta entre os pontos, sem degraus.
  */
 export function Waveform({ peaks, className, cor = 'rgba(255, 255, 255, 0.16)', rms, corRms }: WaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    const pai = canvas?.parentElement
+    if (!canvas || !pai) return
+    const rolagem = pai.closest('.overflow-auto') as HTMLElement | null
+    let quadro = 0
 
-    const draw = () => {
-      const parent = canvas.parentElement
-      if (!parent) return
+    const desenhar = (): void => {
+      quadro = 0
+      const larguraPai = pai.clientWidth
+      const altura = pai.clientHeight
+      if (larguraPai === 0 || altura === 0) return
+
+      // O pedaco do pai que aparece na tela (com uma folga dos dois lados).
+      const caixaPai = pai.getBoundingClientRect()
+      const vista = rolagem?.getBoundingClientRect() ?? caixaPai
+      const folga = 200
+      const de = Math.max(0, Math.floor(vista.left - caixaPai.left - folga))
+      const ate = Math.min(larguraPai, Math.ceil(vista.right - caixaPai.left + folga))
+      const largura = Math.max(0, ate - de)
+      canvas.style.left = `${de}px`
+      canvas.style.width = `${largura}px`
+      canvas.style.height = `${altura}px`
+      if (largura === 0) return
 
       const dpr = window.devicePixelRatio || 1
-      const cssWidth = parent.clientWidth
-      const cssHeight = parent.clientHeight
-      if (cssWidth === 0 || cssHeight === 0) return
-
-      const escalaX = Math.min(dpr, LARGURA_MAXIMA_DO_CANVAS / cssWidth)
-      canvas.width = Math.max(1, Math.round(cssWidth * escalaX))
-      canvas.height = Math.round(cssHeight * dpr)
-      canvas.style.width = `${cssWidth}px`
-      canvas.style.height = `${cssHeight}px`
-
+      canvas.width = Math.max(1, Math.round(largura * dpr))
+      canvas.height = Math.max(1, Math.round(altura * dpr))
       const ctx = canvas.getContext('2d')
       if (!ctx) return
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, largura, altura)
 
-      ctx.scale(escalaX, dpr)
-      ctx.clearRect(0, 0, cssWidth, cssHeight)
+      const meio = altura / 2
+      const cabe = meio - 1
+      const n = peaks.length
+      if (n === 0) return
 
-      const midline = cssHeight / 2
-      const barWidth = 2
-      const gap = 1
-      const stride = barWidth + gap
-      const barCount = Math.max(Math.floor(cssWidth / stride), 1)
-
-      const camada = (valores: readonly number[], cor: string, media: boolean): void => {
-        ctx.fillStyle = cor
-        for (let i = 0; i < barCount; i++) {
-          // Reamostra para o numero de barras que cabem na largura atual. Com
-          // MENOS valores que barras, interpola entre os vizinhos em vez de
-          // repetir o mesmo -- repetido, a onda virava escada.
-          const exato = ((i + 0.5) / barCount) * valores.length - 0.5
-          let valor: number
-          if (valores.length < barCount) {
-            const a = Math.max(0, Math.floor(exato))
-            const b = Math.min(valores.length - 1, a + 1)
-            const t = Math.min(Math.max(exato - a, 0), 1)
-            valor = (valores[a] ?? 0) * (1 - t) + (valores[b] ?? 0) * t
-          } else {
-            const from = Math.floor((i / barCount) * valores.length)
-            const to = Math.max(Math.floor(((i + 1) / barCount) * valores.length), from + 1)
-            valor = 0
-            let soma = 0
-            for (let p = from; p < to && p < valores.length; p++) {
-              const v = valores[p] ?? 0
-              if (v > valor) valor = v
-              soma += v
-            }
-            if (media) valor = soma / Math.max(to - from, 1)
+      /** O valor de uma serie na coluna x (em px do pai). */
+      const amostrar = (serie: readonly number[], x: number, media: boolean): number => {
+        const a = (x / larguraPai) * serie.length
+        const b = ((x + 1) / larguraPai) * serie.length
+        if (b - a >= 1) {
+          const i0 = Math.floor(a)
+          const i1 = Math.min(Math.ceil(b), serie.length)
+          let max = 0
+          let soma = 0
+          for (let i = i0; i < i1; i++) {
+            const v = serie[i] ?? 0
+            if (v > max) max = v
+            soma += v
           }
-          // Piso de 1px para o silencio continuar legivel como linha.
-          const amplitude = Math.max(valor * (midline - 2), 0.5)
-          ctx.fillRect(i * stride, midline - amplitude, barWidth, amplitude * 2)
+          return media ? soma / Math.max(i1 - i0, 1) : max
         }
+        // Menos dados que pixels: reta entre os dois vizinhos.
+        const c = (a + b) / 2 - 0.5
+        const i = Math.max(0, Math.min(serie.length - 1, Math.floor(c)))
+        const j = Math.min(serie.length - 1, i + 1)
+        const t = Math.min(Math.max(c - i, 0), 1)
+        return (serie[i] ?? 0) * (1 - t) + (serie[j] ?? 0) * t
       }
 
-      camada(peaks, cor, false)
-      // O RMS fica ~1/3 do pico numa musica alta; dobrado ele aparece, e o
-      // contorno do pico continua por tras.
-      if (rms && rms.length > 0) camada(rms.map((v) => Math.min(1, v * 2)), corRms ?? cor, true)
+      const forma = (serie: readonly number[], fill: string, media: boolean, ganho: number): void => {
+        const topo: number[] = new Array(largura + 1)
+        for (let k = 0; k <= largura; k++) topo[k] = Math.min(1, amostrar(serie, de + k, media) * ganho) * cabe
+        ctx.beginPath()
+        ctx.moveTo(0, meio - topo[0]!)
+        for (let k = 1; k <= largura; k++) ctx.lineTo(k, meio - topo[k]!)
+        for (let k = largura; k >= 0; k--) ctx.lineTo(k, meio + topo[k]!)
+        ctx.closePath()
+        ctx.fillStyle = fill
+        ctx.fill()
+      }
+
+      forma(peaks, cor, false, 1)
+      // O RMS fica ~1/3 do pico numa musica alta; dobrado ele aparece por
+      // dentro, e o pico continua como contorno por fora.
+      if (rms && rms.length > 0) forma(rms, corRms ?? cor, true, 2)
+      // A linha do zero: o silencio continua legivel como um fio.
+      ctx.fillStyle = corRms ?? cor
+      ctx.fillRect(0, meio - 0.5, largura, 1)
     }
 
-    draw()
-
-    const parent = canvas.parentElement
-    if (!parent) return
-    const observer = new ResizeObserver(draw)
-    observer.observe(parent)
-    return () => observer.disconnect()
+    const pedir = (): void => {
+      if (!quadro) quadro = requestAnimationFrame(desenhar)
+    }
+    desenhar()
+    const observador = new ResizeObserver(pedir)
+    observador.observe(pai)
+    if (rolagem) observador.observe(rolagem)
+    rolagem?.addEventListener('scroll', pedir, { passive: true })
+    return () => {
+      observador.disconnect()
+      rolagem?.removeEventListener('scroll', pedir)
+      if (quadro) cancelAnimationFrame(quadro)
+    }
   }, [peaks, cor, rms, corRms])
 
-  return <canvas ref={canvasRef} className={className} aria-hidden="true" />
+  return (
+    <canvas
+      ref={canvasRef}
+      className={className}
+      style={{ position: 'absolute', top: 0, left: 0 }}
+      aria-hidden="true"
+    />
+  )
 }

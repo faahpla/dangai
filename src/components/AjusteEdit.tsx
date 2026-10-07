@@ -127,7 +127,7 @@ export function AjusteEdit({ id }: { id: string }) {
             <Deslizante
               valor={o.fadeInSec ?? 0}
               min={0}
-              max={5}
+              max={Math.max(0.1, toca)}
               step={0.05}
               padrao={0}
               texto={`${(o.fadeInSec ?? 0).toFixed(2)}s`}
@@ -138,7 +138,7 @@ export function AjusteEdit({ id }: { id: string }) {
             <Deslizante
               valor={o.fadeOutSec ?? 0}
               min={0}
-              max={5}
+              max={Math.max(0.1, toca)}
               step={0.05}
               padrao={0}
               texto={`${(o.fadeOutSec ?? 0).toFixed(2)}s`}

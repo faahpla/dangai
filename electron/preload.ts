@@ -44,6 +44,10 @@ const bridge: DangaiBridge = {
 
   analyzeAudio: (path) =>
     ipcRenderer.invoke(IPC.analyzeAudio, path) as Promise<IpcResult<AudioAnalysis>>,
+  ondaDetalhada: (path) =>
+    ipcRenderer.invoke(IPC.ondaDetalhada, path) as Promise<
+      IpcResult<{ peaks: number[]; rms: number[]; durationSec: number }>
+    >,
 
   importImages: (paths, focus, sections) =>
     ipcRenderer.invoke(IPC.importImages, paths, focus, sections) as Promise<
@@ -73,6 +77,9 @@ const bridge: DangaiBridge = {
     >,
   escolherPasta: (titulo) =>
     ipcRenderer.invoke(IPC.escolherPasta, titulo) as Promise<IpcResult<string | null>>,
+  exportarTexto: (args) => ipcRenderer.invoke(IPC.exportarTexto, args) as Promise<IpcResult<string | null>>,
+  importarTexto: (args) =>
+    ipcRenderer.invoke(IPC.importarTexto, args) as Promise<IpcResult<{ nome: string; conteudo: string } | null>>,
   listarPasta: (pasta) =>
     ipcRenderer.invoke(IPC.listarPasta, pasta) as Promise<IpcResult<ArquivoDaBin[]>>,
   existemArquivos: (paths) =>

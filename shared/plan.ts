@@ -626,6 +626,7 @@ export function toRenderProps(
               intensity: scene.intensityB ?? scene.intensity,
               escala: scene.escalaB ?? 1,
               espelhar: scene.espelharB ?? false,
+              escalaOrigem: scene.escalaOrigemB ?? { x: 0.5, y: 0.5 },
               // A camera de baixo enquadra o ORIGINAL desta metade -- a mesma
               // fonte que ela ja usa --, entao a conta precisa do aspecto dele.
               camera: scene.cameraB ?? null,
@@ -692,6 +693,7 @@ export function toRenderProps(
       rotation: scene.rotation ?? 0,
       escala: scene.escala ?? 1,
       espelhar: scene.espelhar ?? false,
+      escalaOrigem: scene.escalaOrigem ?? { x: 0.5, y: 0.5 },
       transitionIn: scene.transitionIn,
       transitionInFrames: incoming,
     }

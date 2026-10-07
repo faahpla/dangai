@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
+import { ArrowRightLeft, Columns2, Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { clipesEscolhidos, idsEscolhidos, useProject, formatTimecode } from '@/store/project'
 import { alturaDaFaixa, useAlturas, useFerramenta, useIma } from '@/store/layout'
 import { useShallow } from 'zustand/react/shallow'
 import { dicaDoAtalho } from '@/store/atalhos'
+import { carregarOnda, useOndas } from '@/store/ondas'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
 import { CABECALHO, Cabecalho, ColunaDosCabecalhos, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, type Ima } from './Faixas'
@@ -91,6 +92,12 @@ export function Timeline() {
   const trilhas = useProject((s) => s.trilhas)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
   const cenasTrancadas = useProject((s) => s.cenasTrancadas)
+  // As ondas finas (100 por segundo) da narracao e de cada arquivo das faixas.
+  const ondas = useOndas((s) => s.ondas)
+  useEffect(() => {
+    if (audio?.path) carregarOnda(audio.path)
+    for (const t of trilhas) carregarOnda(t.path)
+  }, [audio?.path, trilhas])
   /*
    * A ALTURA DA FAIXA DE CENAS acompanha o Shift+roda e a borda do cabecalho,
    * como as outras. A tira dos blocos fica com 38 px enquanto couber; numa
@@ -98,7 +105,7 @@ export function Timeline() {
    */
   const alturas = useAlturas()
   const alturaCenas = alturaDaFaixa(alturas, 'cenas')
-  const alturaTira = Math.min(38, Math.round(alturaCenas * 0.5))
+  const alturaTira = Math.min(44, Math.round(alturaCenas * 0.5))
   const alternarTrancaDasCenas = useProject((s) => s.alternarTrancaDasCenas)
   const sfxManual = useProject((s) => s.sfxManual)
   const ima: Ima = useMemo(
@@ -572,34 +579,59 @@ export function Timeline() {
               else selectScene(index)
             }}
             style={{ width: `${((scene.end - scene.start) / duration) * 100}%` }}
-            className={[
-              'pointer-events-auto group/bloco relative min-w-0 overflow-hidden border-r border-black/40 last:border-r-0',
-              /*
-               * A ANCORA tem anel mais grosso que os outros selecionados.
-               *
-               * Com cinco blocos marcados iguais, nada na tela diz qual deles o
-               * painel da direita esta editando -- e o painel edita um so. O
-               * anel de dois pixels e essa resposta.
-               */
-              selecionados.includes(index)
-                ? selectedScene === index
-                  ? 'ring-2 ring-inset ring-accent'
-                  : 'ring-1 ring-inset ring-accent/60'
-                : '',
-              dropAt === index ? 'ring-1 ring-inset ring-accent' : '',
-            ].join(' ')}
+            /*
+             * O BLOCO COMO CARTAO: "um design melhor e mais moderno". Um vao de
+             * 1px entre os blocos (o padding), cantos redondos, borda interna
+             * clara, a imagem acesa no escolhido e um degrade embaixo com o
+             * numero numa pilula. Selos pequenos dizem o que nao se ve na
+             * miniatura: tela dividida e transicao de entrada.
+             */
+            className="pointer-events-auto group/bloco relative min-w-0 px-px"
             title={image.fileName}
             aria-label={`Bloco ${index + 1}: ${image.fileName}`}
           >
-            <img
-              src={image.thumbnail}
-              alt=""
-              className="h-full w-full object-cover opacity-70"
-              draggable={false}
-            />
-            <span className="tnum absolute left-1 top-0.5 text-[10px] text-white/70 drop-shadow">
-              {index + 1}
-            </span>
+            <div
+              className={[
+                'relative h-full overflow-hidden rounded-[5px] bg-elevated transition-shadow duration-150',
+                /*
+                 * A ANCORA tem anel mais grosso que os outros selecionados: com
+                 * cinco marcados iguais, nada diria qual o painel esta editando.
+                 */
+                selecionados.includes(index)
+                  ? selectedScene === index
+                    ? 'ring-2 ring-inset ring-accent shadow-[0_0_12px_rgba(255,62,128,0.35)]'
+                    : 'ring-2 ring-inset ring-accent/55'
+                  : dropAt === index
+                    ? 'ring-2 ring-inset ring-accent'
+                    : 'ring-1 ring-inset ring-white/10 group-hover/bloco:ring-white/30',
+              ].join(' ')}
+            >
+              <img
+                src={image.thumbnail}
+                alt=""
+                className={[
+                  'h-full w-full object-cover transition-opacity duration-150',
+                  selecionados.includes(index) ? 'opacity-100' : 'opacity-75 group-hover/bloco:opacity-95',
+                ].join(' ')}
+                draggable={false}
+              />
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
+              <span className="tnum pointer-events-none absolute bottom-0.5 left-0.5 rounded-[3px] bg-black/55 px-1 text-[9px] font-semibold leading-[13px] text-white/90">
+                {index + 1}
+              </span>
+              <span className="pointer-events-none absolute right-0.5 bottom-0.5 flex gap-0.5">
+                {scene.imageIndexB !== null && (
+                  <span title="Tela dividida" className="grid size-[13px] place-items-center rounded-[3px] bg-black/55 text-white/85">
+                    <Columns2 size={8} strokeWidth={2.25} className="rotate-90" />
+                  </span>
+                )}
+                {scene.transitionIn !== 'cut' && index > 0 && (
+                  <span title="Transicao de entrada" className="grid size-[13px] place-items-center rounded-[3px] bg-black/55 text-white/85">
+                    <ArrowRightLeft size={8} strokeWidth={2.25} />
+                  </span>
+                )}
+              </span>
+            </div>
 
             {/*
               O Delete no bloco selecionado ja fazia isto, mas ninguem
@@ -617,7 +649,7 @@ export function Timeline() {
                 }}
                 title="Excluir este bloco (o tempo dele vai para o bloco anterior)"
                 aria-label={`Excluir o bloco ${index + 1}`}
-                className="absolute right-0.5 top-0.5 grid size-[15px] place-items-center rounded-sm bg-black/70 text-white/80 opacity-0 transition-opacity duration-150 hover:bg-danger hover:text-white group-hover/bloco:opacity-100 focus-visible:opacity-100"
+                className="absolute right-1 top-1 grid size-[15px] place-items-center rounded-[4px] bg-black/70 text-white/80 opacity-0 transition-opacity duration-150 hover:bg-danger hover:text-white group-hover/bloco:opacity-100 focus-visible:opacity-100"
               >
                 <X size={10} strokeWidth={2} />
               </button>
@@ -809,7 +841,7 @@ export function Timeline() {
               onRemover={removeSobreposicao}
               onVazio={aoClicarNoVazio}
               onFade={(id, qual, seg) =>
-                ajustarSobreposicao(id, qual === 'entra' ? { fadeInSec: Math.min(seg, 10) } : { fadeOutSec: Math.min(seg, 10) })
+                ajustarSobreposicao(id, qual === 'entra' ? { fadeInSec: seg } : { fadeOutSec: seg })
               }
             />
         )}
@@ -879,9 +911,16 @@ export function Timeline() {
             isRendering ? 'cursor-default' : 'cursor-ew-resize',
           ].join(' ')}
         >
-          <div className="pointer-events-none absolute inset-0">
+          {/* A onda mora ACIMA dos blocos: inteira, e nao com a metade de baixo tapada por eles. */}
+          <div className="pointer-events-none absolute inset-x-0 top-0" style={{ bottom: alturaTira }}>
             {audio ? (
-              <Waveform peaks={audio.peaks} className="block h-full w-full" />
+              <Waveform
+                peaks={ondas[audio.path]?.peaks ?? audio.peaks}
+                rms={ondas[audio.path]?.rms}
+                cor="rgba(255, 255, 255, 0.13)"
+                corRms="rgba(255, 255, 255, 0.26)"
+                className="block h-full"
+              />
             ) : (
               <div className="flex h-full items-center justify-center text-[11px] text-ink-3">
                 Solte a narracao para ver o waveform
@@ -890,7 +929,7 @@ export function Timeline() {
           </div>
 
           {duration > 0 && scenes.length > 0 && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex" style={{ height: alturaTira }}>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex pb-0.5" style={{ height: alturaTira }}>
               {tiras}
             </div>
           )}
@@ -1032,8 +1071,9 @@ export function Timeline() {
                 at: t.at,
                 toca: duracaoDoTrecho(t),
                 nome: t.fileName,
-                peaks: t.peaks,
-                rms: t.rms,
+                // A onda fina do arquivo, quando ja chegou; ate la, a curta do projeto.
+                peaks: ondas[t.path]?.peaks ?? t.peaks,
+                rms: ondas[t.path]?.rms ?? t.rms,
                 arquivoSec: t.durationSec,
                 inicioSec: t.inicioSec,
                 fadeInSec: t.fadeInSec,
@@ -1047,7 +1087,7 @@ export function Timeline() {
               onRemover={removeTrilha}
               onVazio={aoClicarNoVazio}
               onFade={(id, qual, seg) =>
-                ajustarTrilha(id, qual === 'entra' ? { fadeInSec: Math.min(seg, 10) } : { fadeOutSec: Math.min(seg, 10) })
+                ajustarTrilha(id, qual === 'entra' ? { fadeInSec: seg } : { fadeOutSec: seg })
               }
             />
           </>
@@ -1492,9 +1532,9 @@ function ControlesDaTrilha({ id }: { id: string }) {
           </button>
         ))}
       </div>
-      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={5} passo={0.1} padrao={0}
+      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={Math.max(0.1, Math.round(duracaoDoTrecho(t) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${t.fadeInSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
-      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={t.fadeOutSec} min={0} max={5} passo={0.1} padrao={0}
+      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={t.fadeOutSec} min={0} max={Math.max(0.1, Math.round(duracaoDoTrecho(t) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${t.fadeOutSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
     </>
   )
@@ -1515,9 +1555,9 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
   }
   const fades = (
     <>
-      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={o.fadeInSec ?? 0} min={0} max={5} passo={0.1} padrao={0}
+      <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={o.fadeInSec ?? 0} min={0} max={Math.max(0.1, Math.round((o.usarSec ?? o.durationSec - o.inicioSec) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${(o.fadeInSec ?? 0).toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
-      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={o.fadeOutSec ?? 0} min={0} max={5} passo={0.1} padrao={0}
+      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={o.fadeOutSec ?? 0} min={0} max={Math.max(0.1, Math.round((o.usarSec ?? o.durationSec - o.inicioSec) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${(o.fadeOutSec ?? 0).toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
     </>
   )

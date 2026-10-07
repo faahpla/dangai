@@ -27,6 +27,7 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
 /** Canais de IPC, centralizados para nao existir string solta nos dois lados. */
 export const IPC = {
   analyzeAudio: 'audio:analyze',
+  ondaDetalhada: 'audio:onda-detalhada',
   importImages: 'images:import',
   expandDrop: 'drop:expand',
   reframeImage: 'images:reframe',
@@ -75,6 +76,8 @@ export const IPC = {
   libraryClipStrip: 'library:clip-strip',
   sincronizarLegendas: 'captions:sync',
   escolherPasta: 'dialog:pasta',
+  exportarTexto: 'dialog:exportar-texto',
+  importarTexto: 'dialog:importar-texto',
   prepararSobreposicao: 'timeline:sobreposicao',
   listarPasta: 'bins:listar-pasta',
   existemArquivos: 'arquivos:existem',
@@ -515,6 +518,11 @@ export interface DangaiBridge {
   /** Resolve o caminho real de um File soltado na janela (Electron >= 32). */
   pathForFile(file: File): string
   analyzeAudio(path: string): Promise<IpcResult<AudioAnalysis>>
+  /**
+   * A onda FINA de um arquivo de audio, para a linha do tempo com zoom: 100
+   * picos (e RMS) por segundo. Nao vai para o projeto -- e refeita ao abrir.
+   */
+  ondaDetalhada(path: string): Promise<IpcResult<{ peaks: number[]; rms: number[]; durationSec: number }>>
   /** `focus` so vem preenchido ao abrir projeto salvo, para o recorte sair certo de primeira. */
   importImages(
     paths: readonly string[],
@@ -560,6 +568,10 @@ export interface DangaiBridge {
   >
   /** Dialogo de escolher pasta. null = fechou sem escolher. */
   escolherPasta(titulo: string): Promise<IpcResult<string | null>>
+  /** Salva um arquivo de texto onde ele escolher. null = fechou o dialogo. */
+  exportarTexto(args: { titulo: string; nome: string; extensao: string; descricao: string; conteudo: string }): Promise<IpcResult<string | null>>
+  /** Abre um arquivo de texto que ele escolher (ate 1 MB). null = fechou o dialogo. */
+  importarTexto(args: { titulo: string; extensoes: string[]; descricao: string }): Promise<IpcResult<{ nome: string; conteudo: string } | null>>
   /** Os arquivos de midia (audio, video, imagem) de uma pasta e das subpastas. */
   listarPasta(pasta: string): Promise<IpcResult<ArquivoDaBin[]>>
   /** Quais destes caminhos ainda existem no disco. */

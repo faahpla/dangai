@@ -697,13 +697,13 @@ function Clipe({
       {(c.fadeInSec ?? 0) > 0 && (
         <span
           className="pointer-events-none absolute inset-y-0 left-0 bg-gradient-to-r from-black/55 to-transparent"
-          style={{ width: `${Math.min((c.fadeInSec ?? 0) / c.toca, 0.5) * 100}%` }}
+          style={{ width: `${Math.min((c.fadeInSec ?? 0) / c.toca, 1) * 100}%` }}
         />
       )}
       {(c.fadeOutSec ?? 0) > 0 && (
         <span
           className="pointer-events-none absolute inset-y-0 right-0 bg-gradient-to-l from-black/55 to-transparent"
-          style={{ width: `${Math.min((c.fadeOutSec ?? 0) / c.toca, 0.5) * 100}%` }}
+          style={{ width: `${Math.min((c.fadeOutSec ?? 0) / c.toca, 1) * 100}%` }}
         />
       )}
       {/* O rodape do DaVinci: nome e duracao. */}
@@ -719,7 +719,8 @@ function Clipe({
       */}
       {(['entra', 'sai'] as const).map((qual) => {
         const seg = (qual === 'entra' ? c.fadeInSec : c.fadeOutSec) ?? 0
-        const pos = `${Math.min(seg / Math.max(c.toca, 0.01), 0.5) * 100}%`
+        // A alca vai ate a outra ponta: o fade pode cobrir o clipe inteiro.
+        const pos = `${Math.min(seg / Math.max(c.toca, 0.01), 1) * 100}%`
         return (
           <span
             key={qual}
@@ -734,7 +735,7 @@ function Clipe({
               const mover = (e: PointerEvent): void => {
                 const r = clipe.getBoundingClientRect()
                 const fracao = qual === 'entra' ? (e.clientX - r.left) / r.width : (r.right - e.clientX) / r.width
-                onFade(qual, Math.round(Math.min(Math.max(fracao, 0), 0.5) * c.toca * 100) / 100)
+                onFade(qual, Math.round(Math.min(Math.max(fracao, 0), 1) * c.toca * 100) / 100)
               }
               const soltar = (): void => {
                 window.removeEventListener('pointermove', mover)

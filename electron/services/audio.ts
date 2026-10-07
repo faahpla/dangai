@@ -35,6 +35,38 @@ export async function analyzeAudio(path: string): Promise<AudioAnalysis> {
   }
 }
 
+/**
+ * A onda fina, para o zoom alto: 100 picos por segundo (ate 40 mil), com RMS.
+ * Os 2000 da analise normal davam um pico a cada 36 ms numa narracao de 72 s --
+ * ampliada, a onda virava bolhas lisas que nao eram o som. Tres casas: e o que
+ * a tela distingue, e a resposta fica leve.
+ */
+export async function ondaDetalhada(path: string): Promise<{ peaks: number[]; rms: number[]; durationSec: number }> {
+  const pcm = await decodeToPcm(path)
+  const sampleCount = Math.floor(pcm.byteLength / 2)
+  if (sampleCount === 0) return { peaks: [], rms: [], durationSec: 0 }
+  const durationSec = sampleCount / ANALYSIS_SAMPLE_RATE
+  const buckets = Math.max(1, Math.min(40_000, Math.round(durationSec * 100), sampleCount))
+  const porBucket = sampleCount / buckets
+  const peaks: number[] = new Array(buckets)
+  const rms: number[] = new Array(buckets)
+  for (let b = 0; b < buckets; b++) {
+    const ini = Math.floor(b * porBucket)
+    const fim = Math.min(Math.floor((b + 1) * porBucket), sampleCount)
+    let max = 0
+    let soma = 0
+    for (let i = ini; i < fim; i++) {
+      const a = pcm.readInt16LE(i * 2)
+      const m = a < 0 ? -a : a
+      if (m > max) max = m
+      soma += a * a
+    }
+    peaks[b] = Math.round((max / 32768) * 1000) / 1000
+    rms[b] = fim > ini ? Math.round(Math.min(1, Math.sqrt(soma / (fim - ini)) / 32768) * 1000) / 1000 : 0
+  }
+  return { peaks, rms, durationSec }
+}
+
 function decodeToPcm(path: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = spawn(

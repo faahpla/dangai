@@ -321,6 +321,11 @@ export const captionShadowSchema = z.object({
   distancia: z.number().min(0).max(24),
   desfoque: z.number().min(0).max(40),
   opacidade: z.number().min(0).max(1),
+  /**
+   * Para onde a sombra cai, em graus: 90 e para baixo (o de sempre), 0 para a
+   * direita, 180 para a esquerda, 270 para cima. Default para estilo antigo.
+   */
+  angulo: z.number().min(0).max(360).default(90),
 })
 export type CaptionShadow = z.infer<typeof captionShadowSchema>
 
@@ -337,6 +342,7 @@ export const CAPTION_SHADOW_DEFAULT: CaptionShadow = {
   distancia: 3,
   desfoque: 0,
   opacidade: 1,
+  angulo: 90,
 }
 
 /**
@@ -346,10 +352,15 @@ export const CAPTION_SHADOW_DEFAULT: CaptionShadow = {
  * componente, mas a conta tambem serve para qualquer lugar que precise mostrar
  * a sombra fora dele.
  */
-export function sombraCss({ distancia, desfoque, opacidade }: CaptionShadow): string | undefined {
+export function sombraCss({ distancia, desfoque, opacidade, angulo = 90 }: CaptionShadow): string | undefined {
   if (opacidade <= 0) return undefined
-  const espalhada = `0 ${(distancia * 2.5).toFixed(1)}px ${(desfoque * 3.6).toFixed(1)}px rgba(0,0,0,${(opacidade * 0.8).toFixed(3)})`
-  return `0 ${distancia.toFixed(1)}px ${desfoque.toFixed(1)}px rgba(0,0,0,${opacidade.toFixed(3)}), ${espalhada}`
+  // O deslocamento na direcao do angulo (y cresce para baixo, como na tela).
+  const rad = (angulo * Math.PI) / 180
+  const dx = Math.cos(rad)
+  const dy = Math.sin(rad)
+  const desloca = (k: number): string => `${(dx * distancia * k).toFixed(1)}px ${(dy * distancia * k).toFixed(1)}px`
+  const espalhada = `${desloca(2.5)} ${(desfoque * 3.6).toFixed(1)}px rgba(0,0,0,${(opacidade * 0.8).toFixed(3)})`
+  return `${desloca(1)} ${desfoque.toFixed(1)}px rgba(0,0,0,${opacidade.toFixed(3)}), ${espalhada}`
 }
 
 /**
@@ -775,6 +786,15 @@ export const sceneSchema = z.object({
   escala: z.number().min(1).max(4).optional(),
   /** O mesmo, para a metade de baixo da tela dividida. */
   escalaB: z.number().min(1).max(4).optional(),
+  /**
+   * PARA ONDE o zoom fixo aponta: o ponto do quadro que fica parado enquanto o
+   * resto amplia (0..1 em x e y; 0,5/0,5 e o centro). "Uso o Zoom mas nao posso
+   * definir a posicao X e Y." Como e um ponto DENTRO do quadro, o zoom nunca
+   * abre tarja preta. Opcional: plano antigo abre centrado.
+   */
+  escalaOrigem: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional(),
+  /** O mesmo, para a metade de baixo. */
+  escalaOrigemB: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional(),
   /** Espelhado na horizontal ("flip"). Opcional: plano antigo abre sem. */
   espelhar: z.boolean().optional(),
   /** O mesmo, para a metade de baixo. */
@@ -1229,8 +1249,10 @@ export type AjusteDeCor = z.infer<typeof ajusteDeCorSchema>
  * passam da metade do clipe -- um fade maior que o clipe cruzaria o outro.
  */
 export function rampaDoFade(quadro: number, duracao: number, entra: number, sai: number): number {
-  const e = Math.min(entra, duracao / 2)
-  const s = Math.min(sai, duracao / 2)
+  // Cada fade pode cobrir o clipe INTEIRO ("ate o final ou ate o inicio do
+  // clipe"); se os dois se cruzam, vale o menor dos dois no quadro.
+  const e = Math.min(entra, duracao)
+  const s = Math.min(sai, duracao)
   let v = 1
   if (e > 0 && quadro < e) v = Math.max(0, quadro / e)
   if (s > 0 && quadro > duracao - s) v = Math.min(v, Math.max(0, (duracao - quadro) / s))
@@ -1275,8 +1297,8 @@ export const sobreposicaoSchema = z.object({
    * Fade de entrada e de saida, em segundos: a opacidade (ou, na camada de
    * ajuste, a intensidade) sobe e desce nessas pontas.
    */
-  fadeInSec: z.number().min(0).max(10).default(0),
-  fadeOutSec: z.number().min(0).max(10).default(0),
+  fadeInSec: z.number().min(0).max(3600).default(0),
+  fadeOutSec: z.number().min(0).max(3600).default(0),
 })
 export type SobreposicaoSalva = z.infer<typeof sobreposicaoSchema>
 
@@ -1383,6 +1405,8 @@ export const renderPropsSchema = z.object({
       escala: z.number().min(1).max(4).default(1),
       /** Espelhado na horizontal. */
       espelhar: z.boolean().default(false),
+      /** Para onde o zoom fixo aponta (0..1). */
+      escalaOrigem: z.object({ x: z.number(), y: z.number() }).default({ x: 0.5, y: 0.5 }),
       /**
        * A metade de BAIXO, quando o bloco e tela dividida. null = tela cheia.
        *
@@ -1411,6 +1435,7 @@ export const renderPropsSchema = z.object({
           intensity: z.number().min(0.02).max(0.2).default(0.12),
           escala: z.number().min(1).max(4).default(1),
           espelhar: z.boolean().default(false),
+          escalaOrigem: z.object({ x: z.number(), y: z.number() }).default({ x: 0.5, y: 0.5 }),
           /** Camera livre desta metade. Preenchida, manda no lugar do efeito. */
           camera: caminhoDaCameraSchema.nullable().default(null),
           /** Aspecto do arquivo desta metade -- a conta da camera precisa dele. */
@@ -1621,8 +1646,8 @@ export const trechoDeAudioSchema = z.object({
   /** Quanto toca, em segundos. null = ate o fim do arquivo. */
   usarSec: z.number().positive().nullable().default(null),
   gainDb: z.number().min(-40).max(12).default(MUSIC_GAIN_DB_DEFAULT),
-  fadeInSec: z.number().min(0).max(10).default(0.5),
-  fadeOutSec: z.number().min(0).max(10).default(1),
+  fadeInSec: z.number().min(0).max(3600).default(0.5),
+  fadeOutSec: z.number().min(0).max(3600).default(1),
   peaks: z.array(z.number().min(0).max(1)).default([]),
   rms: z.array(z.number().min(0).max(1)).default([]),
 })

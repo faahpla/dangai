@@ -529,6 +529,9 @@ export interface ProjectState {
         // O flip horizontal de cada metade.
         | 'espelhar'
         | 'espelharB'
+        // Para onde o zoom fixo aponta, em cada metade.
+        | 'escalaOrigem'
+        | 'escalaOrigemB'
       >
     >,
   ) => void

@@ -98,11 +98,11 @@ export function SobreposicaoEdit({ id }: { id: string }) {
             </Botaozinho>
           </Linha>
           <Linha label="Fade entra" title="A opacidade sobe do zero nesse tempo. Tambem da para puxar a alca no canto do clipe.">
-            <Deslizante valor={o.fadeInSec ?? 0} min={0} max={5} step={0.05} padrao={0}
+            <Deslizante valor={o.fadeInSec ?? 0} min={0} max={Math.max(0.1, toca)} step={0.05} padrao={0}
               texto={`${(o.fadeInSec ?? 0).toFixed(2)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
           </Linha>
           <Linha label="Fade sai" title="A opacidade desce ate o zero nesse tempo">
-            <Deslizante valor={o.fadeOutSec ?? 0} min={0} max={5} step={0.05} padrao={0}
+            <Deslizante valor={o.fadeOutSec ?? 0} min={0} max={Math.max(0.1, toca)} step={0.05} padrao={0}
               texto={`${(o.fadeOutSec ?? 0).toFixed(2)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
           </Linha>
           <Linha label="Opacidade">

@@ -269,6 +269,11 @@ export function SceneEdit() {
                   onChange={(v) => updateScene(index, { escala: v })}
                 />
               </Linha>
+              <PosicaoDoZoom
+                escala={scene.escala ?? 1}
+                origem={scene.escalaOrigem ?? { x: 0.5, y: 0.5 }}
+                onChange={(o) => updateScene(index, { escalaOrigem: o })}
+              />
               <Linha label="Espelhar" title="Flip horizontal de cada metade">
                 <Botaozinho active={!!scene.espelhar} onClick={() => updateScene(index, { espelhar: !scene.espelhar })}>
                   <FlipHorizontal2 size={11} strokeWidth={1.5} />
@@ -290,12 +295,22 @@ export function SceneEdit() {
                   onChange={(v) => updateScene(index, { escalaB: v })}
                 />
               </Linha>
+              <PosicaoDoZoom
+                escala={scene.escalaB ?? 1}
+                origem={scene.escalaOrigemB ?? { x: 0.5, y: 0.5 }}
+                onChange={(o) => updateScene(index, { escalaOrigemB: o })}
+              />
             </>
           ) : (
             <>
               <Framing
                 image={image}
                 trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
+                zoom={{
+                  escala: scene.escala ?? 1,
+                  origem: scene.escalaOrigem ?? { x: 0.5, y: 0.5 },
+                  onOrigem: (o) => updateScene(index, { escalaOrigem: o }),
+                }}
               />
               {/*
                 O "Scale" dos editores: zoom FIXO no bloco inteiro, centrado no
@@ -312,6 +327,11 @@ export function SceneEdit() {
                   onChange={(v) => updateScene(index, { escala: v })}
                 />
               </Linha>
+              <PosicaoDoZoom
+                escala={scene.escala ?? 1}
+                origem={scene.escalaOrigem ?? { x: 0.5, y: 0.5 }}
+                onChange={(o) => updateScene(index, { escalaOrigem: o })}
+              />
               {/*
                 Girar existe para o material que chega deitado. Sao os quatro
                 angulos retos: o corte continua preenchendo, sem tarja preta.
@@ -606,6 +626,50 @@ export function SceneEdit() {
         </Grupo>
       </div>
     </div>
+  )
+}
+
+/**
+ * PARA ONDE O ZOOM APONTA, em X e Y. "Uso o Zoom mas nao posso definir a
+ * posicao X e Y." So aparece com zoom acima de 100% -- sem zoom nao ha o que
+ * apontar. 0% e a borda esquerda (ou de cima), 100% a direita (ou de baixo).
+ * Tambem da para arrastar o retangulo tracejado no enquadramento.
+ */
+function PosicaoDoZoom({
+  escala,
+  origem,
+  onChange,
+}: {
+  escala: number
+  origem: { x: number; y: number }
+  onChange: (o: { x: number; y: number }) => void
+}) {
+  if (escala <= 1.001) return null
+  return (
+    <>
+      <Linha label="Zoom X" title="Para onde o zoom aponta na horizontal. Duplo clique centraliza.">
+        <Deslizante
+          valor={origem.x}
+          min={0}
+          max={1}
+          step={0.01}
+          padrao={0.5}
+          texto={`${Math.round(origem.x * 100)}%`}
+          onChange={(x) => onChange({ ...origem, x })}
+        />
+      </Linha>
+      <Linha label="Zoom Y" title="Para onde o zoom aponta na vertical. Duplo clique centraliza.">
+        <Deslizante
+          valor={origem.y}
+          min={0}
+          max={1}
+          step={0.01}
+          padrao={0.5}
+          texto={`${Math.round(origem.y * 100)}%`}
+          onChange={(y) => onChange({ ...origem, y })}
+        />
+      </Linha>
+    </>
   )
 }
 

@@ -725,7 +725,8 @@ function EstiloControl() {
                 disabled={
                   sombra.distancia === CAPTION_SHADOW_DEFAULT.distancia &&
                   sombra.desfoque === CAPTION_SHADOW_DEFAULT.desfoque &&
-                  sombra.opacidade === CAPTION_SHADOW_DEFAULT.opacidade
+                  sombra.opacidade === CAPTION_SHADOW_DEFAULT.opacidade &&
+                  (sombra.angulo ?? 90) === CAPTION_SHADOW_DEFAULT.angulo
                 }
                 className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
               >
@@ -757,6 +758,15 @@ function EstiloControl() {
               max={40}
               valorBruto={sombra.desfoque}
               onChange={(v) => setCaptionShadow({ desfoque: v })}
+            />
+            {/* Para onde ela cai: 90 e para baixo, como sempre foi. */}
+            <Medida
+              rotulo="Angulo"
+              valor={`${Math.round(sombra.angulo ?? 90)}°`}
+              min={0}
+              max={359}
+              valorBruto={Math.round(sombra.angulo ?? 90)}
+              onChange={(v) => setCaptionShadow({ angulo: v })}
             />
             {sombra.opacidade === 0 && (
               <p className="mt-1 text-[11px] leading-relaxed text-ink-3">

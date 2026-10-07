@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readdirSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import {
@@ -41,7 +41,7 @@ import {
   type OpenedProject,
   type ProjectFile,
 } from '@shared/project-file'
-import { analyzeAudio } from './services/audio'
+import { analyzeAudio, ondaDetalhada } from './services/audio'
 import { publish } from './services/media-server'
 import {
   importImages,
@@ -127,6 +127,9 @@ function broadcastLibrary(message: string): void {
 
 export function registerIpc(): void {
   handle<[string], AudioAnalysis>(IPC.analyzeAudio, (path) => analyzeAudio(path))
+  handle<[string], { peaks: number[]; rms: number[]; durationSec: number }>(IPC.ondaDetalhada, (path) =>
+    ondaDetalhada(path),
+  )
 
   handle<
     [
@@ -236,6 +239,41 @@ export function registerIpc(): void {
     const r = await dialog.showOpenDialog({ title: titulo, properties: ['openDirectory'] })
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0]!
   })
+
+  /*
+   * EXPORTAR E IMPORTAR um arquivo de texto pequeno -- os presets que ele
+   * passa para outra pessoa. So o que ele escolhe no dialogo, nada mais.
+   */
+  handle<[{ titulo: string; nome: string; extensao: string; descricao: string; conteudo: string }], string | null>(
+    IPC.exportarTexto,
+    async ({ titulo, nome, extensao, descricao, conteudo }) => {
+      const limpo = nome.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 60) || 'preset'
+      const r = await dialog.showSaveDialog({
+        title: titulo,
+        defaultPath: `${limpo}.${extensao}`,
+        filters: [{ name: descricao, extensions: [extensao] }],
+      })
+      if (r.canceled || !r.filePath) return null
+      await writeFile(r.filePath, conteudo, 'utf8')
+      return r.filePath
+    },
+  )
+
+  handle<[{ titulo: string; extensoes: string[]; descricao: string }], { nome: string; conteudo: string } | null>(
+    IPC.importarTexto,
+    async ({ titulo, extensoes, descricao }) => {
+      const r = await dialog.showOpenDialog({
+        title: titulo,
+        properties: ['openFile'],
+        filters: [{ name: descricao, extensions: extensoes }, { name: 'JSON', extensions: ['json'] }],
+      })
+      if (r.canceled || r.filePaths.length === 0) return null
+      const caminho = r.filePaths[0]!
+      const conteudo = await readFile(caminho, 'utf8')
+      if (conteudo.length > 1_000_000) throw new Error('Arquivo grande demais para ser um preset.')
+      return { nome: basename(caminho, extname(caminho)), conteudo }
+    },
+  )
 
   /*
    * A pasta de uma Power Bin: os arquivos de midia dela e das subpastas, ate

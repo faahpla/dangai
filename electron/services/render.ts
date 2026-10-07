@@ -538,8 +538,10 @@ async function muxWithNormalizedAudio(
   const primeiraTrilha = sfx.length + 2 + (music ? 1 : 0)
   trilhas.forEach((t, k) => {
     const ms = Math.round(t.at * 1000)
-    const entrada = Math.min(t.fadeInSec, t.duracaoSec / 2)
-    const saida = Math.min(t.fadeOutSec, t.duracaoSec / 2)
+    // Cada fade ate o clipe inteiro; cruzados, o afade de saida multiplica o de
+    // entrada -- o mesmo "vale o menor" do preview, so que suave.
+    const entrada = Math.min(t.fadeInSec, t.duracaoSec)
+    const saida = Math.min(t.fadeOutSec, t.duracaoSec)
     const fades = [
       entrada > 0 ? `afade=t=in:st=0:d=${entrada.toFixed(3)}` : null,
       saida > 0 ? `afade=t=out:st=${(t.duracaoSec - saida).toFixed(3)}:d=${saida.toFixed(3)}` : null,

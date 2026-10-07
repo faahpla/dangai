@@ -40,9 +40,16 @@ export function Framing({
   image,
   trecho,
   alturaMax = 180,
+  zoom,
 }: {
   image: ImageAsset
   trecho?: TrechoNaTimeline
+  /**
+   * O zoom fixo do bloco: com ele acima de 100%, um retangulo tracejado dentro
+   * do recorte mostra o que fica no quadro -- e arrastar o retangulo escolhe
+   * para onde o zoom aponta.
+   */
+  zoom?: { escala: number; origem: { x: number; y: number }; onOrigem: (o: { x: number; y: number }) => void }
   /**
    * A caixa nunca passa desta altura. Na largura da coluna, um clipe deitado
    * dava uns 230px e um print em pe passava de 600 -- o painel inteiro so para
@@ -143,7 +150,43 @@ export function Framing({
             boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.62)',
           }}
           className="pointer-events-none absolute border border-accent"
-        />
+        >
+          {zoom && zoom.escala > 1.001 && (
+            <div
+              title="O que fica no quadro com o zoom. Arraste para escolher para onde ele aponta."
+              onPointerDown={(event) => {
+                event.stopPropagation()
+                const caixa = event.currentTarget.parentElement?.getBoundingClientRect()
+                if (!caixa) return
+                const sobra = 1 - 1 / zoom.escala
+                const x0 = event.clientX
+                const y0 = event.clientY
+                const o0 = zoom.origem
+                const mover = (e: PointerEvent): void => {
+                  const nx = o0.x + (e.clientX - x0) / caixa.width / sobra
+                  const ny = o0.y + (e.clientY - y0) / caixa.height / sobra
+                  zoom.onOrigem({
+                    x: Math.round(Math.min(Math.max(nx, 0), 1) * 1000) / 1000,
+                    y: Math.round(Math.min(Math.max(ny, 0), 1) * 1000) / 1000,
+                  })
+                }
+                const fim = (): void => {
+                  window.removeEventListener('pointermove', mover)
+                  window.removeEventListener('pointerup', fim)
+                }
+                window.addEventListener('pointermove', mover)
+                window.addEventListener('pointerup', fim)
+              }}
+              style={{
+                left: `${zoom.origem.x * (1 - 1 / zoom.escala) * 100}%`,
+                top: `${zoom.origem.y * (1 - 1 / zoom.escala) * 100}%`,
+                width: `${100 / zoom.escala}%`,
+                height: `${100 / zoom.escala}%`,
+              }}
+              className="pointer-events-auto absolute cursor-move border border-dashed border-white/90 bg-white/5"
+            />
+          )}
+        </div>
       </div>
 
       <div className="flex items-baseline justify-between gap-2">

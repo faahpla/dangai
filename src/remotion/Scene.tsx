@@ -39,6 +39,7 @@ export function Scene({
   curvePoints,
   escala,
   espelhar,
+  escalaOrigem,
 }: SceneProps) {
   const frame = useCurrentFrame()
   const { width, height } = useVideoConfig()
@@ -189,6 +190,7 @@ export function Scene({
           curvePoints={curvePoints}
           escala={escala}
           espelhar={espelhar}
+          escalaOrigem={escalaOrigem}
           camera={camera}
           aspecto={sourceAspect}
         />
@@ -205,6 +207,7 @@ export function Scene({
           intensity={abaixo.intensity}
           escala={abaixo.escala}
           espelhar={abaixo.espelhar}
+          escalaOrigem={abaixo.escalaOrigem}
           camera={abaixo.camera}
           aspecto={abaixo.aspecto}
           curve={curve}
@@ -237,15 +240,21 @@ export function Scene({
         conta de nenhum. Parte do centro do quadro, que e onde o enquadramento
         pos o que importa; e como so amplia (>= 1), nunca abre tarja.
       */}
+      {/* O FLIP, por fora de tudo: espelha o quadro que sai, pelo centro. */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          // O FLIP vai junto do zoom fixo, por fora de tudo: espelha o quadro
-          // que sai, com movimento e giro dentro.
-          transform:
-            [escala > 1 ? `scale(${escala})` : '', espelhar ? 'scaleX(-1)' : ''].join(' ').trim() || undefined,
-          transformOrigin: 'center center',
+          transform: espelhar ? 'scaleX(-1)' : undefined,
+        }}
+      >
+      {/* O ZOOM FIXO, apontado para a origem que ele escolheu. */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          transform: escala > 1 ? `scale(${escala})` : undefined,
+          transformOrigin: `${(escalaOrigem.x * 100).toFixed(2)}% ${(escalaOrigem.y * 100).toFixed(2)}%`,
         }}
       >
       <div style={caixa}>
@@ -288,6 +297,7 @@ export function Scene({
         ) : (
           <Img src={url} style={cobrindo} />
         )}
+      </div>
       </div>
       </div>
     </AbsoluteFill>
@@ -383,6 +393,7 @@ function Metade({
   curvePoints,
   escala,
   espelhar,
+  escalaOrigem,
   camera,
   aspecto,
 }: {
@@ -399,6 +410,7 @@ function Metade({
   curvePoints: SceneProps['curvePoints']
   escala: number
   espelhar: boolean
+  escalaOrigem: { x: number; y: number }
   /** Camera livre desta metade, no espaco do arquivo original. */
   camera: SceneProps['camera']
   /** Aspecto do arquivo original desta metade. */
@@ -449,10 +461,16 @@ function Metade({
     // o mesmo motivo pelo qual o Ken Burns de tela cheia parte de uma escala
     // ja ampliada.
     // O zoom fixo da metade multiplica o movimento, a partir do mesmo centro.
-    transform: estiloCamera
-      ? `scale(${escala}) ${estiloCamera.transform}`
-      : `scale(${scale * escala}) translate(${x}%, ${y}%)`,
+    // O zoom fixo da metade fica numa caixa por fora (ver abaixo), apontado
+    // para a origem dela; aqui dentro so o movimento.
+    transform: estiloCamera ? estiloCamera.transform : `scale(${scale}) translate(${x}%, ${y}%)`,
     transformOrigin: 'center center',
+  }
+  const caixaDoZoom = {
+    position: 'absolute' as const,
+    inset: 0,
+    transform: escala > 1 ? `scale(${escala})` : undefined,
+    transformOrigin: `${(escalaOrigem.x * 100).toFixed(2)}% ${(escalaOrigem.y * 100).toFixed(2)}%`,
   }
 
   return (
@@ -465,18 +483,20 @@ function Metade({
         transform: espelhar ? 'scaleX(-1)' : undefined,
       }}
     >
-      {kind === 'video' ? (
-        <Freeze frame={ultimoFrame} active={congelando}>
-          <OffthreadVideo
-            src={url}
-            muted
-            trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
-            style={preenchendo}
-          />
-        </Freeze>
-      ) : (
-        <Img src={url} style={preenchendo} />
-      )}
+      <div style={caixaDoZoom}>
+        {kind === 'video' ? (
+          <Freeze frame={ultimoFrame} active={congelando}>
+            <OffthreadVideo
+              src={url}
+              muted
+              trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
+              style={preenchendo}
+            />
+          </Freeze>
+        ) : (
+          <Img src={url} style={preenchendo} />
+        )}
+      </div>
     </div>
   )
 }

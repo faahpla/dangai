@@ -600,8 +600,8 @@ function volumeDoTrecho(
   local: number,
 ): number {
   const toca = duracaoDoTrecho(t)
-  const entrada = Math.min(t.fadeInSec, toca / 2)
-  const saida = Math.min(t.fadeOutSec, toca / 2)
+  const entrada = Math.min(t.fadeInSec, toca)
+  const saida = Math.min(t.fadeOutSec, toca)
   let envelope = 1
   if (entrada > 0 && local < entrada) envelope = Math.max(0, local / entrada)
   if (saida > 0 && local > toca - saida) envelope = Math.min(envelope, Math.max(0, (toca - local) / saida))

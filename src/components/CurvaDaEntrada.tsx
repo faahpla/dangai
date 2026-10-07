@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react'
-import { Pencil } from 'lucide-react'
+import { Download, Pencil, Upload } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { removerCurvaDeEntrada, salvarCurvaDeEntrada } from '@/store/estilo-legenda'
-import { CURVA_DA_ENTRADA_PADRAO, alcasDaEntrada, escalaDaEntrada, type CurvaDaEntrada } from '@shared/contract'
+import { CURVA_DA_ENTRADA_PADRAO, alcasDaEntrada, curvaDaEntradaSchema, escalaDaEntrada, type CurvaDaEntrada } from '@shared/contract'
 
 /**
  * O grafico da entrada elastica: ESCALA (vertical) ao longo da entrada
@@ -100,6 +100,49 @@ function gravarOcultas(lista: string[]): void {
   }
 }
 
+/*
+ * EXPORTAR E IMPORTAR CURVAS: "deixa exportar um preset, e que outra pessoa
+ * possa importar o mesmo". Um arquivo .dangai-curva e um JSON pequeno; o import
+ * confere tudo pelo schema antes de guardar, e nome repetido ganha um numero.
+ */
+const TIPO_DO_ARQUIVO = 'dangai.curva-da-entrada'
+
+async function exportarCurva(nome: string, curva: CurvaDaEntrada): Promise<void> {
+  const conteudo = JSON.stringify({ tipo: TIPO_DO_ARQUIVO, versao: 1, nome, curva }, null, 2)
+  await window.dangai.exportarTexto({
+    titulo: 'Exportar curva da entrada',
+    nome,
+    extensao: 'dangai-curva',
+    descricao: 'Curva da entrada do Dangai',
+    conteudo,
+  })
+}
+
+async function importarCurva(): Promise<string | null> {
+  const r = await window.dangai.importarTexto({
+    titulo: 'Importar curva da entrada',
+    extensoes: ['dangai-curva'],
+    descricao: 'Curva da entrada do Dangai',
+  })
+  if (!r.ok) return r.error
+  if (!r.value) return null
+  let dados: unknown
+  try {
+    dados = JSON.parse(r.value.conteudo)
+  } catch {
+    return 'Esse arquivo nao e uma curva do Dangai.'
+  }
+  const bruto = dados as { tipo?: unknown; nome?: unknown; curva?: unknown }
+  const curva = curvaDaEntradaSchema.safeParse(bruto?.curva)
+  if (bruto?.tipo !== TIPO_DO_ARQUIVO || !curva.success) return 'Esse arquivo nao e uma curva do Dangai.'
+  const base = (typeof bruto.nome === 'string' && bruto.nome.trim() ? bruto.nome.trim() : r.value.nome).slice(0, 26)
+  const usados = new Set(useProject.getState().curvasDeEntrada.map((c) => c.nome))
+  let nome = base
+  for (let n = 2; usados.has(nome); n++) nome = `${base} (${n})`
+  salvarCurvaDeEntrada(nome, curva.data)
+  return `"${nome}" importada.`
+}
+
 /** Escala do grafico: px por unidade de tempo e de escala (para alinhar alcas pelo angulo na tela). */
 const SX = W - 2 * PAD
 const SY = (H - 2 * PAD) / V_MAX
@@ -125,6 +168,7 @@ export function CurvaDaEntradaEditor({
   const [nomeando, setNomeando] = useState(false)
   const [nome, setNome] = useState('')
   const [ocultas, setOcultas] = useState<string[]>(lerOcultas)
+  const [recado, setRecado] = useState<string | null>(null)
   /*
    * O PONTO ESCOLHIDO mostra as alcas dele, como no Blender: puxar uma alca
    * muda a inclinacao e a suavidade da curva naquele ponto. As duas alcas
@@ -466,6 +510,15 @@ export function CurvaDaEntradaEditor({
             </button>
             <button
               type="button"
+              onClick={() => void exportarCurva(g.nome, g.curva)}
+              aria-label={`Exportar a curva ${g.nome}`}
+              title="Exportar para um arquivo .dangai-curva (para mandar para outra pessoa)"
+              className="px-0.5 text-ink-3 opacity-0 hover:text-ink group-hover/curva:opacity-100"
+            >
+              <Upload size={9} strokeWidth={2} />
+            </button>
+            <button
+              type="button"
               onClick={() => removerCurvaDeEntrada(g.nome)}
               aria-label={`Apagar a curva ${g.nome}`}
               className="pr-1 text-[10px] text-ink-3 opacity-0 hover:text-danger group-hover/curva:opacity-100"
@@ -506,6 +559,25 @@ export function CurvaDaEntradaEditor({
             + Salvar curva
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => void importarCurva().then(setRecado)}
+          title="Importar uma curva que alguem exportou (.dangai-curva)"
+          className="flex items-center gap-1 rounded-sm border border-dashed border-line px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink-2"
+        >
+          <Download size={9} strokeWidth={2} />
+          Importar
+        </button>
+        <button
+          type="button"
+          onClick={() => void exportarCurva('curva', pontos)}
+          title="Exportar a curva que esta no grafico agora"
+          className="flex items-center gap-1 rounded-sm border border-dashed border-line px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink-2"
+        >
+          <Upload size={9} strokeWidth={2} />
+          Exportar a atual
+        </button>
+        {recado && <span className="w-full text-[10px] text-accent">{recado}</span>}
       </div>
       <p className="mt-1 text-[10px] leading-relaxed text-ink-3">
         Arraste os pontos, ou desenhe a mao. Clique num ponto para ver as alcas (Alt solta uma da outra). Clique duplo
