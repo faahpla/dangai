@@ -10,8 +10,10 @@ import {
   Copy,
   FlipHorizontal2,
   Crosshair,
+  Download,
   ScanFace,
   Spline,
+  Upload,
   Video,
   X,
   ZoomIn,
@@ -23,6 +25,7 @@ import {
   MOTION_CURVES,
   ROTATIONS,
   VIDEO_FPS,
+  curvePointsSchema,
   medidasDo,
   type CurvePoints,
   type ImageAsset,
@@ -31,6 +34,7 @@ import {
 } from '@shared/contract'
 import { fonteDaCamera } from '@shared/camera'
 import { useProject } from '@/store/project'
+import { exportarPreset, importarPreset, nomeLivre } from '@/store/arquivo-de-preset'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos, type Segmento } from './painel'
 import { Framing } from './Framing'
 import { Camera } from './Camera'
@@ -708,6 +712,7 @@ export function ControleDeRitmo({
   const carregarCurvas = useProject((s) => s.loadCurvePresets)
   const guardarCurva = useProject((s) => s.saveCurvePreset)
   const removerCurva = useProject((s) => s.removeCurvePreset)
+  const [recado, setRecado] = useState<string | null>(null)
   useEffect(() => void carregarCurvas(), [carregarCurvas])
 
   return (
@@ -768,13 +773,22 @@ export function ControleDeRitmo({
                   ativa={mesmaCurva(curvePoints, preset.pontos)}
                   onUsar={() => onChange({ curvePoints: preset.pontos })}
                   onEsquecer={() => void removerCurva(preset.nome)}
+                  onExportar={() => void exportarPreset('movimento', preset.nome, preset.pontos).then(setRecado)}
                 />
               ))}
               <Botaozinho onClick={() => void guardarCurva(curvePoints)} title="Guardar esta curva">
                 <BookmarkPlus size={11} strokeWidth={1.5} />
                 Salvar
               </Botaozinho>
+              <Botaozinho
+                onClick={() => void importarCurvaDeMovimento().then(setRecado)}
+                title="Importar uma curva de movimento (.dangai-movimento)"
+              >
+                <Upload size={11} strokeWidth={1.5} />
+                Importar
+              </Botaozinho>
             </div>
+            {recado && <p className="text-[10px] text-ink-3">{recado}</p>}
             <p className="text-[10px] leading-snug text-ink-3">
               Quanto do movimento ja aconteceu ao longo do tempo. Plana e pausa, ingreme e disparada.
             </p>
@@ -1073,16 +1087,31 @@ function Subtitulo({ children }: { children: React.ReactNode }) {
  * Uma curva guardada: usar e esquecer no mesmo botao, sem botao dentro de
  * botao -- sao dois, colados.
  */
+/** Le um .dangai-movimento e guarda junto das curvas dele (nome repetido ganha numero). */
+async function importarCurvaDeMovimento(): Promise<string | null> {
+  const r = await importarPreset('movimento', curvePointsSchema)
+  if (r === null) return null
+  if ('erro' in r) return r.erro
+  const atuais = useProject.getState().curvePresets
+  const nome = nomeLivre(r.nome, atuais.map((c) => c.nome))
+  const proximas = [...atuais, { nome, pontos: r.dados }]
+  useProject.setState({ curvePresets: proximas })
+  await window.dangai.saveSettings({ curvePresets: proximas })
+  return `"${nome}" importada.`
+}
+
 function CurvaSalva({
   nome,
   ativa,
   onUsar,
   onEsquecer,
+  onExportar,
 }: {
   nome: string
   ativa: boolean
   onUsar: () => void
   onEsquecer: () => void
+  onExportar: () => void
 }) {
   return (
     <div
@@ -1093,6 +1122,15 @@ function CurvaSalva({
     >
       <button type="button" onClick={onUsar} className="min-w-0 truncate pl-2 pr-1 hover:text-ink">
         {nome}
+      </button>
+      <button
+        type="button"
+        onClick={onExportar}
+        title={`Exportar "${nome}" para um arquivo`}
+        aria-label={`Exportar ${nome}`}
+        className="grid h-full w-5 shrink-0 place-items-center text-ink-3 hover:text-ink"
+      >
+        <Download size={10} strokeWidth={2} />
       </button>
       <button
         type="button"

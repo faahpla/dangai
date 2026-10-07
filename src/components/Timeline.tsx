@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRightLeft, Columns2, Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
+import { Columns2, Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { clipesEscolhidos, idsEscolhidos, useProject, formatTimecode } from '@/store/project'
@@ -10,6 +10,15 @@ import { carregarOnda, useOndas } from '@/store/ondas'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
 import { CABECALHO, Cabecalho, ColunaDosCabecalhos, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, type Ima } from './Faixas'
+import { EditorDaEmenda, IconeDaTransicao } from './EditorDeTransicao'
+import {
+  aplicarNaEmenda,
+  ehArrasteDeTransicao,
+  lerEmenda,
+  segundosDaEmenda,
+  TRANSITION_LABEL,
+  transicaoDoArraste,
+} from '@/store/transicoes'
 
 /**
  * O elemento assinatura. Uma faixa horizontal unica: waveform em cinza ao
@@ -137,6 +146,28 @@ export function Timeline() {
     },
     [duration],
   )
+
+  /*
+   * A EMENDA MAIS PERTO do ponteiro: 0 e o comeco do video, n o fim, e as do
+   * meio os cortes. E onde o botao direito abre o editor de transicao e onde
+   * a transicao arrastada cai -- clicar dentro de um bloco vale a ponta dele
+   * mais proxima, entao ninguem precisa mirar no corte de 1px.
+   */
+  const emendaEm = useCallback(
+    (clientX: number): number => {
+      const t = timeAt(clientX)
+      const tempos = [0, ...scenes.slice(1).map((s) => s.start), duration]
+      let melhor = 0
+      for (let e = 1; e < tempos.length; e++) {
+        if (Math.abs(tempos[e]! - t) < Math.abs(tempos[melhor]! - t)) melhor = e
+      }
+      return melhor
+    },
+    [scenes, timeAt, duration],
+  )
+  const [editorDaEmenda, setEditorDaEmenda] = useState<{ emenda: number; x: number; y: number } | null>(null)
+  const fecharEditorDaEmenda = useCallback(() => setEditorDaEmenda(null), [])
+  const [emendaAlvo, setEmendaAlvo] = useState<number | null>(null)
 
   /** Qual bloco esta sob o ponteiro, para saber onde a imagem entra. */
   const sceneAt = useCallback(
@@ -443,6 +474,8 @@ export function Timeline() {
     // So TOCANDO: parado, quem manda na vista e ele. Seguir a agulha tambem no
     // zoom fazia a vista pular para ela no meio do Alt+roda, longe do cursor.
     if (!scroll || !track || zoom === 1 || duration === 0 || !useProject.getState().playing) return
+    // Logo depois de um zoom quem manda e a ancora dele (ver zoomAt).
+    if (performance.now() - ultimoZoom.current < 500) return
 
     const x = progress * track.clientWidth
     const margem = scroll.clientWidth * 0.15
@@ -469,15 +502,32 @@ export function Timeline() {
    */
   const zoomPedido = useRef(1)
   const ancoraDoZoom = useRef<{ fracao: number; x: number } | null>(null)
+  /*
+   * "A timeline comecou a tremer pra caramba do nada, quando dei ou tirei o
+   * zoom." TOCANDO, cada tique da roda ancorava a vista no CURSOR, e no quadro
+   * seguinte o "seguir a agulha" (mais abaixo) puxava a vista de volta para a
+   * agulha -- as duas regras se revezando a cada quadro. Agora, tocando, o zoom
+   * ancora na propria agulha, e o seguir espera o gesto acabar.
+   */
+  const ultimoZoom = useRef(0)
   const zoomAt = useCallback((next: number, clientX?: number) => {
     const scroll = scrollRef.current
     const track = trackRef.current
-    const alvo = Math.min(Math.max(next, 1), MAX_ZOOM)
+    let alvo = Math.min(Math.max(next, 1), MAX_ZOOM)
+    // Quase 1 e 1: um zoom de 1,001 deixava a faixa um pixel mais larga que a
+    // vista, e a barra de rolagem piscava.
+    if (alvo < 1.003) alvo = 1
     // No teto ou no chao nada muda, e uma ancora guardada ficaria velha.
     if (Math.abs(alvo - zoomPedido.current) < 1e-6) return
+    ultimoZoom.current = performance.now()
     if (scroll && track) {
-      const ancora = clientX ?? scroll.getBoundingClientRect().left + scroll.clientWidth / 2
+      const estado = useProject.getState()
       const r = track.getBoundingClientRect()
+      const naAgulha =
+        estado.playing && estado.audio && estado.audio.durationSec > 0
+          ? r.left + (estado.playhead / estado.audio.durationSec) * r.width
+          : null
+      const ancora = naAgulha ?? clientX ?? scroll.getBoundingClientRect().left + scroll.clientWidth / 2
       ancoraDoZoom.current = {
         fracao: Math.min(Math.max((ancora - r.left) / r.width, 0), 1),
         // clientLeft desconta a borda: sem ele, cada passo da roda errava 1 px,
@@ -623,11 +673,6 @@ export function Timeline() {
                 {scene.imageIndexB !== null && (
                   <span title="Tela dividida" className="grid size-[13px] place-items-center rounded-[3px] bg-black/55 text-white/85">
                     <Columns2 size={8} strokeWidth={2.25} className="rotate-90" />
-                  </span>
-                )}
-                {scene.transitionIn !== 'cut' && index > 0 && (
-                  <span title="Transicao de entrada" className="grid size-[13px] place-items-center rounded-[3px] bg-black/55 text-white/85">
-                    <ArrowRightLeft size={8} strokeWidth={2.25} />
                   </span>
                 )}
               </span>
@@ -796,6 +841,13 @@ export function Timeline() {
         // faixas passam do teto. Ctrl+roda ou Alt+roda ampliam (ouvido numa
         // roda nao passiva, mais acima).
         className="relative min-h-0 min-w-0 flex-1 overflow-auto"
+        /*
+         * O VAO DA BARRA VERTICAL SEMPRE RESERVADO: a largura das faixas sai da
+         * largura desta caixa, e a barra que aparece e some mudava essa largura
+         * -- que mudava a horizontal, que mudava a altura, que trazia a
+         * vertical de volta. Com o vao fixo a largura nao depende dela.
+         */
+        style={{ scrollbarGutter: 'stable' }}
       >
         <ColunaDosCabecalhos.Provider value={{ coluna, versao: versaoDaColuna }}>
         <div ref={conteudoRef} className="relative" style={{ width: largura }}>
@@ -882,15 +934,38 @@ export function Timeline() {
           onPointerMove={handlePointerMove}
           onPointerUp={stopDragging}
           onPointerCancel={stopDragging}
+          onContextMenu={(event) => {
+            // Botao direito no corte (ou dentro do bloco): o editor da
+            // transicao da emenda mais perto.
+            event.preventDefault()
+            if (isRendering || scenes.length === 0 || duration === 0) return
+            setEditorDaEmenda({ emenda: emendaEm(event.clientX), x: event.clientX, y: event.clientY })
+          }}
           onDragOver={(event) => {
             if (isRendering || scenes.length === 0) return
             event.preventDefault()
+            if (ehArrasteDeTransicao(event)) {
+              event.dataTransfer.dropEffect = 'copy'
+              setEmendaAlvo(emendaEm(event.clientX))
+              return
+            }
             setDropAt(sceneAt(event.clientX))
           }}
-          onDragLeave={() => setDropAt(null)}
+          onDragLeave={() => {
+            setDropAt(null)
+            setEmendaAlvo(null)
+          }}
           onDrop={(event) => {
             setDropAt(null)
+            setEmendaAlvo(null)
             if (isRendering || scenes.length === 0) return
+            const transicao = transicaoDoArraste(event)
+            if (transicao) {
+              event.preventDefault()
+              event.stopPropagation()
+              aplicarNaEmenda(emendaEm(event.clientX), transicao.tipo, transicao.ajuste)
+              return
+            }
             const paths = Array.from(event.dataTransfer.files)
               .map((file) => window.dangai.pathForFile(file))
               .filter((path) => path && isVisual(path))
@@ -1007,6 +1082,52 @@ export function Timeline() {
             })}
 
           {/*
+            AS TRANSICOES NAS EMENDAS: uma caixa sobre o corte, da largura do
+            tempo que a transicao dura (como no Premiere). Fica meio acima da
+            tira dos blocos, para nao tapar a alca de arrastar o corte. Clique
+            abre o editor.
+          */}
+          {duration > 0 &&
+            !isRendering &&
+            scenes.length > 0 &&
+            Array.from({ length: scenes.length + 1 }, (_, e) => {
+              const emenda = lerEmenda(scenes, e, duration)
+              if (!emenda || emenda.tipo === 'cut') return null
+              const larguraPx = Math.max(18, (segundosDaEmenda(emenda) / duration) * largura)
+              const pos = (emenda.em / duration) * 100
+              return (
+                <button
+                  key={`emenda-${e}`}
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => setEditorDaEmenda({ emenda: e, x: event.clientX, y: event.clientY })}
+                  title={`${TRANSITION_LABEL[emenda.tipo]} (${segundosDaEmenda(emenda).toFixed(2)}s) -- clique para ajustar`}
+                  aria-label={`Transicao ${TRANSITION_LABEL[emenda.tipo]} na emenda ${e}`}
+                  className="absolute z-[3] flex h-[16px] items-center justify-center gap-0.5 overflow-hidden rounded-[4px] border border-accent/70 bg-[linear-gradient(90deg,rgba(255,62,128,0.15),rgba(255,62,128,0.55),rgba(255,62,128,0.15))] text-white shadow-[0_1px_6px_rgba(0,0,0,0.5)] backdrop-blur-[2px] transition-colors hover:border-accent hover:bg-accent/60"
+                  style={{
+                    left: e === scenes.length ? undefined : `${pos}%`,
+                    right: e === scenes.length ? 0 : undefined,
+                    width: larguraPx,
+                    bottom: alturaTira - 9,
+                    transform: e === 0 || e === scenes.length ? undefined : 'translateX(-50%)',
+                  }}
+                >
+                  <IconeDaTransicao tipo={emenda.tipo} size={10} />
+                </button>
+              )
+            })}
+
+          {/* A emenda onde a transicao arrastada vai cair. */}
+          {emendaAlvo !== null && duration > 0 && (
+            <div
+              className="pointer-events-none absolute inset-y-0 z-[4] w-[3px] -translate-x-1/2 rounded-full bg-accent shadow-[0_0_12px_rgba(255,62,128,0.9)]"
+              style={{
+                left: `${((emendaAlvo === 0 ? 0 : emendaAlvo >= scenes.length ? duration : scenes[emendaAlvo]!.start) / duration) * 100}%`,
+              }}
+            />
+          )}
+
+          {/*
             O progresso do render acontece aqui: a faixa inteira se preenche de
             rosa da esquerda para a direita. Nao existe outra barra no app.
           */}
@@ -1029,6 +1150,14 @@ export function Timeline() {
           )}
         </div>
         </Linha>
+        {editorDaEmenda && (
+          <EditorDaEmenda
+            emenda={editorDaEmenda.emenda}
+            x={editorDaEmenda.x}
+            y={editorDaEmenda.y}
+            onFechar={fecharEditorDaEmenda}
+          />
+        )}
 
         {/*
           A FAIXA DE LEGENDAS, logo abaixo dos blocos.
@@ -1043,9 +1172,17 @@ export function Timeline() {
           faixas que se quer ler de relance.
         */}
         {duration > 0 && (
-          <Linha largura={largura} altura={16} cabecalho={<Cabecalho nome="Legendas" />}>
+          <Linha
+            largura={largura}
+            altura={alturaDaFaixa(alturas, 'legendas')}
+            onAltura={(h) => alturas.definir('legendas', h)}
+            onAlturaPadrao={() => alturas.voltar('legendas')}
+            cabecalho={
+              <Cabecalho nome="Legendas" detalhe={captions.length > 0 ? `${captions.length} blocos` : undefined} />
+            }
+          >
             <div className="h-full" onPointerDown={arrastarAgulha}>
-              <FaixaLegendas duration={duration} zoom={zoom} />
+              <FaixaLegendas duration={duration} />
             </div>
           </Linha>
         )}
@@ -1385,10 +1522,12 @@ function FaixaSfx({
  *
  * Quem mostra o texto o tempo todo e o cabecalho, que tem largura de sobra.
  */
-function FaixaLegendas({ duration, zoom }: { duration: number; zoom: number }) {
+function FaixaLegendas({ duration }: { duration: number }) {
   const captions = useProject((s) => s.captions)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const playhead = useProject((s) => s.playhead)
+  const openCaptions = useProject((s) => s.openCaptions)
+  const visivel = captionsEnabled && captions.length > 0 && duration > 0
 
   const faixaRef = useRef<HTMLDivElement | null>(null)
   const [largura, setLargura] = useState(0)
@@ -1408,9 +1547,57 @@ function FaixaLegendas({ duration, zoom }: { duration: number; zoom: number }) {
     const observer = new ResizeObserver(medir)
     observer.observe(alvo)
     return () => observer.disconnect()
-  }, [])
+    // A faixa so existe com legenda: medir de novo quando ela aparece.
+  }, [visivel])
 
-  if (!captionsEnabled || captions.length === 0 || duration === 0) return null
+  /*
+   * AS PILULAS (v1.61, "melhora a aparencia daquilo"): cada legenda vira uma
+   * pilula arredondada com respiro dos dois lados, o texto aparece cortado com
+   * reticencias assim que houver ~3 letras de espaco (antes era tudo ou nada),
+   * e tracinhos marcam onde cada palavra entra -- o ritmo da fala dentro do
+   * bloco. Feitas uma vez por mudanca de legenda ou de zoom; a agulha so move
+   * o destaque, que e uma pilula a parte por cima.
+   */
+  const pilulas = useMemo(() => {
+    if (duration === 0) return null
+    return captions.map((bloco, i) => {
+      const inicio = bloco.from / VIDEO_FPS
+      const fim = (bloco.from + bloco.durationInFrames) / VIDEO_FPS
+      const larguraDaBarra = ((fim - inicio) / duration) * largura
+      const texto = bloco.words.map((w) => w.text).join(' ')
+      // Texto so quando cabe ao menos a primeira palavra inteira: "P..." e
+      // "a.." poluiam mais do que diziam.
+      const cabe = larguraDaBarra >= (bloco.words[0]?.text.length ?? 0) * 6 + 16
+      return (
+        <div
+          key={`legenda-${bloco.from}-${i}`}
+          className="absolute inset-y-[3px] px-px"
+          style={{ left: `${(inicio / duration) * 100}%`, width: `${((fim - inicio) / duration) * 100}%` }}
+          title={texto}
+          onDoubleClick={() => openCaptions(true)}
+        >
+          <div className="relative flex h-full items-center overflow-hidden rounded-[4px] border border-white/[0.07] bg-[linear-gradient(180deg,rgba(255,255,255,0.10),rgba(255,255,255,0.04))] transition-colors hover:border-white/25">
+            {cabe && (
+              <span className="truncate px-1.5 text-[10px] font-medium leading-none text-ink-2">{texto}</span>
+            )}
+            {larguraDaBarra > 40 &&
+              bloco.words.slice(1).map((w, k) => (
+                <span
+                  key={k}
+                  className="pointer-events-none absolute bottom-0 h-[3px] w-px bg-white/25"
+                  style={{ left: `${((w.from - bloco.from) / bloco.durationInFrames) * 100}%` }}
+                />
+              ))}
+          </div>
+        </div>
+      )
+    })
+  }, [captions, duration, largura, openCaptions])
+
+  if (!visivel) return null
+
+  const frame = playhead * VIDEO_FPS
+  const atual = captions.find((c) => frame >= c.from && frame < c.from + c.durationInFrames)
 
   return (
     <div
@@ -1425,46 +1612,27 @@ function FaixaLegendas({ duration, zoom }: { duration: number; zoom: number }) {
        * existir -- desalinhada, ela so atrapalha.
        */
       style={{ width: '100%' }}
-      className="relative h-full overflow-hidden bg-surface"
+      className="relative h-full overflow-hidden bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgba(255,255,255,0.018)_6px_7px)]"
+      title="Dois cliques numa legenda abrem o editor de legendas"
     >
-      {captions.map((bloco, i) => {
-        const inicio = bloco.from / VIDEO_FPS
-        const fim = (bloco.from + bloco.durationInFrames) / VIDEO_FPS
-        const atual = playhead >= inicio && playhead < fim
-        const texto = bloco.words.map((w) => w.text).join(' ')
-
-        /*
-         * Sete pixels por caractere na fonte de 9px, com folga para o respiro
-         * dos lados. Abaixo disso a palavra sai cortada no meio, que e pior do
-         * que nao mostrar nada: barra lisa se le como ritmo, letra picotada se
-         * le como defeito.
-         */
-        const larguraDaBarra = ((fim - inicio) / duration) * largura
-        const cabe = larguraDaBarra > texto.length * 7
-
-        return (
-          <div
-            key={`legenda-${bloco.from}-${i}`}
-            style={{
-              left: `${(inicio / duration) * 100}%`,
-              width: `${((fim - inicio) / duration) * 100}%`,
-            }}
-            /*
-             * A borda direita separa uma legenda da seguinte: elas se encostam
-             * quase sempre, e sem o corte a faixa viraria uma barra continua
-             * que nao diz nada sobre onde uma acaba e a outra comeca.
-             */
-            className={[
-              'absolute inset-y-0 overflow-hidden border-r border-bg',
-              cabe ? 'px-1 text-[9px] leading-[14px] whitespace-nowrap' : '',
-              atual ? 'bg-accent text-white' : 'bg-line-strong text-ink-3',
-            ].join(' ')}
-            title={texto}
-          >
-            {cabe ? texto : null}
+      {pilulas}
+      {atual && (
+        <div
+          className="pointer-events-none absolute inset-y-[2px] px-px"
+          style={{
+            left: `${(atual.from / VIDEO_FPS / duration) * 100}%`,
+            width: `${(atual.durationInFrames / VIDEO_FPS / duration) * 100}%`,
+          }}
+        >
+          <div className="flex h-full items-center overflow-hidden rounded-[4px] border border-accent bg-accent shadow-[0_0_10px_rgba(255,62,128,0.55)]">
+            {(atual.durationInFrames / VIDEO_FPS / duration) * largura >= (atual.words[0]?.text.length ?? 0) * 6 + 16 && (
+              <span className="truncate px-1.5 text-[10px] font-semibold leading-none text-white">
+                {atual.words.map((w) => w.text).join(' ')}
+              </span>
+            )}
           </div>
-        )
-      })}
+        </div>
+      )}
     </div>
   )
 }

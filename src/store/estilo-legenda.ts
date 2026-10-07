@@ -9,6 +9,7 @@ import {
 } from '@shared/contract'
 import { useProject } from './project'
 import { estaCarregando } from './quiet'
+import { exportarPreset, importarPreset, nomeLivre } from './arquivo-de-preset'
 
 /**
  * O estilo de legenda vira PADRAO do proximo video.
@@ -170,6 +171,36 @@ export function aplicarPreset(nome: string): void {
 
 export function removerPreset(nome: string): void {
   gravarPresets(useProject.getState().captionPresets.filter((p) => p.nome !== nome))
+}
+
+/*
+ * A LEGENDA INTEIRA NUM ARQUIVO: "inclusive uma configuracao inteira de
+ * legenda". Cor, altura, tamanho, fonte (pelo nome), entrada e a curva dela,
+ * marcacao, sombra, contorno e as regras -- tudo o que o estilo descreve.
+ * Quem importa ganha um preset com esse nome, ja aplicado. A fonte so vem se
+ * existir na pasta de fontes de quem importa; senao fica a embutida.
+ */
+export function exportarPresetDeLegenda(nome: string): Promise<string | null> {
+  const p = useProject.getState().captionPresets.find((x) => x.nome === nome)
+  return p ? exportarPreset('legenda', p.nome, p.estilo) : Promise.resolve(null)
+}
+
+export function exportarEstiloAtual(): Promise<string | null> {
+  return exportarPreset('legenda', 'Minha legenda', estiloAtual())
+}
+
+export async function importarEstilo(): Promise<string | null> {
+  const r = await importarPreset('legenda', captionStyleSchema)
+  if (r === null) return null
+  if ('erro' in r) return r.erro
+  const nome = nomeLivre(r.nome, useProject.getState().captionPresets.map((p) => p.nome))
+  gravarPresets([...useProject.getState().captionPresets, { nome, estilo: r.dados }])
+  aplicarEstilo(r.dados, true)
+  const fonte = r.dados.fontNome
+  const semFonte = fonte && !useProject.getState().fontes.some((f) => f.nome === fonte)
+  return semFonte
+    ? `"${nome}" importado e aplicado. A fonte "${fonte}" nao esta na sua pasta de fontes -- ficou a embutida.`
+    : `"${nome}" importado e aplicado.`
 }
 
 function gravarCurvas(lista: CurvaGuardada[]): void {

@@ -101,8 +101,8 @@ export const useFerramenta = create<{
  *
  * Chaves: 'cenas', 'video-0', 'audio-2'...
  */
-export const ALTURA_PADRAO = { cenas: 104, video: 40, audio: 52 } as const
-const LIMITES = { cenas: [44, 260], video: [20, 220], audio: [20, 220] } as const
+export const ALTURA_PADRAO = { cenas: 104, video: 40, audio: 52, legendas: 28 } as const
+const LIMITES = { cenas: [44, 260], video: [20, 220], audio: [20, 220], legendas: [16, 72] } as const
 
 function lerAlturas(): { fator: number; proprias: Record<string, number> } {
   try {
@@ -162,7 +162,8 @@ export function alturaDaFaixa(
   estado: { fator: number; proprias: Record<string, number> },
   chave: string,
 ): number {
-  const tipo = chave === 'cenas' ? 'cenas' : chave.startsWith('video') ? 'video' : 'audio'
+  const tipo =
+    chave === 'cenas' ? 'cenas' : chave === 'legendas' ? 'legendas' : chave.startsWith('video') ? 'video' : 'audio'
   const [min, max] = LIMITES[tipo]
   const base = estado.proprias[chave] ?? ALTURA_PADRAO[tipo]
   return Math.round(Math.min(Math.max(base * estado.fator, min), max))

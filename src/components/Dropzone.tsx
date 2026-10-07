@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import {
+  Clapperboard,
   History,
   Library as LibraryIcon,
   RectangleHorizontal,
@@ -68,6 +69,7 @@ export function Dropzone({ isDragging }: DropzoneProps) {
 
         <EscolhaDeFormato />
         <div className="absolute right-6 top-6 flex items-center gap-2">
+          <LegendarVideoPronto />
           <MelhorarVideoPronto />
           <AbrirBiblioteca />
         </div>
@@ -301,6 +303,40 @@ function Recuperar() {
         <X size={13} strokeWidth={1.5} />
       </button>
     </div>
+  );
+}
+
+/**
+ * VIDEO PRONTO VIRA PROJETO: "importar um video pronto so pra fazer a legenda
+ * ou algum ajuste como corte e etc". A fala do video vira a narracao e a
+ * imagem um bloco so -- ver legendarVideoPronto no store.
+ */
+function LegendarVideoPronto() {
+  const legendar = useProject((s) => s.legendarVideoPronto);
+  const busy = useProject((s) => s.busy);
+
+  if (busy !== null) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => void legendar()}
+      // Soltar o video EM CIMA do botao tambem vale -- e nao cai na area de
+      // soltar de baixo, que trataria o video como clipe de um projeto novo.
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        const arquivo = event.dataTransfer.files[0];
+        if (!arquivo) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void legendar(window.dangai.pathForFile(arquivo));
+      }}
+      title="Abre um video ja editado para legendar, cortar, por transicao, zoom, cor ou SFX. A fala dele vira a narracao. (Clique, ou solte o video aqui.)"
+      className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
+    >
+      <Clapperboard size={13} strokeWidth={1.5} className="text-accent" />
+      Legendar video pronto
+    </button>
   );
 }
 

@@ -83,7 +83,7 @@ import {
 } from './services/upscale'
 import { inverterAsset } from './services/assets'
 import { prepararSobreposicao } from './services/sobreposicao'
-import { tiraDoClipe } from './services/clips'
+import { sondarVideoPronto, tiraDoClipe } from './services/clips'
 import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 
@@ -282,6 +282,20 @@ export function registerIpc(): void {
    */
   handle<[string[]], boolean[]>(IPC.existemArquivos, async (paths) =>
     paths.map((p) => typeof p === 'string' && existsSync(p)),
+  )
+
+  handle<[], string | null>(IPC.escolherVideo, async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Escolher o video pronto',
+      properties: ['openFile'],
+      filters: [{ name: 'Videos', extensions: [...VIDEO_EXTENSIONS] }],
+    })
+    return r.canceled ? null : (r.filePaths[0] ?? null)
+  })
+
+  handle<[string], { width: number; height: number; durationSec: number; temAudio: boolean }>(
+    IPC.sondarVideo,
+    async (path) => sondarVideoPronto(path),
   )
 
   handle<[string], ArquivoDaBin[]>(IPC.listarPasta, async (pasta) => {

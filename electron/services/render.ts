@@ -147,33 +147,54 @@ export async function renderVideo(
 
     onProgress({ progress: 0, stage: 'rendering', message: 'Renderizando...' })
 
-    await renderMedia({
-      composition: {
-        ...composition,
-        durationInFrames: request.durationInFrames,
-        fps: VIDEO_FPS,
-      },
-      serveUrl,
-      codec: 'h264',
-      outputLocation: silentVideo,
-      inputProps: request.props,
-      browserExecutable,
-      binariesDirectory,
-      // JPEG em vez de PNG: para imagem fotografica a diferenca visual e nula e
-      // a serializacao de cada frame fica bem mais rapida.
-      imageFormat: 'jpeg',
-      jpegQuality: 90,
-      crf: 18,
-      // Sem isto o H.264 sai em yuvj420p (full range, formato legado herdado
-      // dos frames JPEG), que alguns decodificadores mostram com cor lavada.
-      pixelFormat: 'yuv420p',
-      colorSpace: 'bt709',
-      cancelSignal,
-      onProgress: ({ progress }) => {
-        // O render e ~90% do tempo; o mux fecha os 10% restantes.
-        onProgress({ progress: progress * 0.9, stage: 'rendering' })
-      },
-    })
+    /*
+     * A GPU NO CHROME DO RENDER (gl 'angle').
+     *
+     * As transicoes de verdade (v1.61) desenham o borrao de movimento com
+     * filtros SVG -- o radial do zoom sao dezenas de deslocamentos por quadro.
+     * No Chrome sem GPU (o padrao do render) um quadro desses levava 9 a 14s e
+     * estourava o limite de 30s; com a GPU, 0,6s. Os quadros comuns saem iguais
+     * nos dois jeitos (medido: 62 dB). Se a GPU falhar nesta maquina, o render
+     * recomeca sem ela, com mais paciencia por quadro.
+     */
+    const renderizar = (comGpu: boolean) =>
+      renderMedia({
+        composition: {
+          ...composition,
+          durationInFrames: request.durationInFrames,
+          fps: VIDEO_FPS,
+        },
+        serveUrl,
+        codec: 'h264',
+        outputLocation: silentVideo,
+        inputProps: request.props,
+        browserExecutable,
+        binariesDirectory,
+        // JPEG em vez de PNG: para imagem fotografica a diferenca visual e nula e
+        // a serializacao de cada frame fica bem mais rapida.
+        imageFormat: 'jpeg',
+        jpegQuality: 90,
+        crf: 18,
+        // Sem isto o H.264 sai em yuvj420p (full range, formato legado herdado
+        // dos frames JPEG), que alguns decodificadores mostram com cor lavada.
+        pixelFormat: 'yuv420p',
+        colorSpace: 'bt709',
+        cancelSignal,
+        chromiumOptions: comGpu ? { gl: 'angle' } : {},
+        timeoutInMilliseconds: comGpu ? 30_000 : 180_000,
+        onProgress: ({ progress }) => {
+          // O render e ~90% do tempo; o mux fecha os 10% restantes.
+          onProgress({ progress: progress * 0.9, stage: 'rendering' })
+        },
+      })
+    try {
+      await renderizar(true)
+    } catch (err) {
+      if (cancelRequested) throw err
+      console.warn('[render] com GPU falhou, refazendo sem:', err)
+      onProgress({ progress: 0, stage: 'rendering', message: 'Renderizando sem a GPU...' })
+      await renderizar(false)
+    }
 
     onProgress({ progress: 0.9, stage: 'muxing', message: 'Ajustando o audio...' })
     await muxWithNormalizedAudio(

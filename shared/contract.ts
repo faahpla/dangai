@@ -232,6 +232,18 @@ export const TRANSITIONS = [
   'whip-pan-left',
   'whip-pan-right',
   'whip-pan',
+  /*
+   * As transicoes "de verdade" (v1.61): zoom que entra e que sai, luz, e o pan
+   * nas quatro direcoes -- com borrao de movimento e bordas espelhadas. Ver
+   * src/remotion/Transition.tsx.
+   */
+  'zoom-in',
+  'zoom-out',
+  'light',
+  'pan-left',
+  'pan-right',
+  'pan-up',
+  'pan-down',
 ] as const
 export type Transition = (typeof TRANSITIONS)[number]
 
@@ -239,10 +251,15 @@ export type Transition = (typeof TRANSITIONS)[number]
 export const TRANSITIONS_NA_TELA = [
   'cut',
   'crossfade',
+  'zoom-in',
+  'zoom-out',
+  'light',
+  'pan-left',
+  'pan-right',
+  'pan-up',
+  'pan-down',
   'slide-left',
   'slide-right',
-  'whip-pan-left',
-  'whip-pan-right',
 ] as const satisfies readonly Transition[]
 
 /**
@@ -263,6 +280,74 @@ export const TRANSITION_FRAMES: Readonly<Record<Transition, number>> = {
   'whip-pan-right': 3,
   // O valor antigo, que so chega de projeto salvo. Mesma duracao de sempre.
   'whip-pan': 3,
+  /*
+   * As novas sao mais longas que a regra dos 250ms de proposito: zoom e luz
+   * precisam de tempo para a curva acelerar e frear, senao viram um tranco.
+   * Cada emenda pode mudar a duracao (ver ajusteDaTransicaoSchema).
+   */
+  'zoom-in': 12, // 500ms
+  'zoom-out': 12,
+  light: 14, // 584ms
+  'pan-left': 9, // 375ms
+  'pan-right': 9,
+  'pan-up': 9,
+  'pan-down': 9,
+}
+
+/**
+ * O AJUSTE DE UMA EMENDA: "todas eu quero que sejam configuraveis". Tudo
+ * opcional -- ausente vale o padrao do tipo --, para emenda antiga abrir igual.
+ *
+ * - `frames`: quanto a transicao dura (2 a 72 quadros, 0,08s a 3s).
+ * - `intensidade`: quanto anda -- o zoom amplia, o pan corre, a luz estoura.
+ * - `borrao`: o borrao de movimento (0 = nenhum).
+ * - `cor`: a cor da luz, so na `light`.
+ */
+export const ajusteDaTransicaoSchema = z.object({
+  frames: z.number().int().min(2).max(72).optional(),
+  intensidade: z.number().min(0).max(1).optional(),
+  borrao: z.number().min(0).max(1).optional(),
+  cor: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .optional(),
+})
+export type AjusteDaTransicao = z.infer<typeof ajusteDaTransicaoSchema>
+
+export const AJUSTE_DA_TRANSICAO_PADRAO = {
+  intensidade: 0.6,
+  borrao: 0.7,
+  cor: '#ffe6c4',
+} as const
+
+/** Quantos quadros a emenda dura, com o ajuste dela. */
+export function framesDaTransicao(tipo: Transition, ajuste: AjusteDaTransicao | undefined): number {
+  if (tipo === 'cut') return 0
+  return ajuste?.frames ?? TRANSITION_FRAMES[tipo]
+}
+
+/** O que o Remotion recebe de uma transicao, ja com os padroes resolvidos. */
+export const transicaoResolvidaSchema = z.object({
+  tipo: z.enum(TRANSITIONS),
+  frames: z.number().int().nonnegative(),
+  intensidade: z.number().min(0).max(1),
+  borrao: z.number().min(0).max(1),
+  cor: z.string(),
+})
+export type TransicaoResolvida = z.infer<typeof transicaoResolvidaSchema>
+
+export function resolverTransicao(
+  tipo: Transition,
+  ajuste: AjusteDaTransicao | undefined,
+  frames: number,
+): TransicaoResolvida {
+  return {
+    tipo,
+    frames,
+    intensidade: ajuste?.intensidade ?? AJUSTE_DA_TRANSICAO_PADRAO.intensidade,
+    borrao: ajuste?.borrao ?? AJUSTE_DA_TRANSICAO_PADRAO.borrao,
+    cor: ajuste?.cor ?? AJUSTE_DA_TRANSICAO_PADRAO.cor,
+  }
 }
 
 /**
@@ -808,6 +893,15 @@ export const sceneSchema = z.object({
    */
   rotation: rotationSchema.default(0),
   transitionIn: z.enum(TRANSITIONS),
+  /** O ajuste da emenda de ENTRADA (duracao, intensidade, borrao, cor). */
+  transicao: ajusteDaTransicaoSchema.optional(),
+  /*
+   * A SAIDA DO VIDEO: so vale no ULTIMO bloco -- a emenda com o seguinte e a
+   * entrada dele. No primeiro bloco a `transitionIn` vira a entrada do video
+   * (do preto, ou da luz).
+   */
+  transitionOut: z.enum(TRANSITIONS).optional(),
+  transicaoSaida: ajusteDaTransicaoSchema.optional(),
   reason: z.string().optional(),
 })
 export type Scene = z.infer<typeof sceneSchema>
@@ -1451,6 +1545,13 @@ export const renderPropsSchema = z.object({
       transitionIn: z.enum(TRANSITIONS),
       /** Frames da transicao de entrada. 0 = corte seco. */
       transitionInFrames: z.number().int().nonnegative(),
+      /**
+       * A entrada resolvida (tipo, quadros, intensidade, borrao, cor). No
+       * PRIMEIRO bloco e a entrada do video, sem bloco anterior por baixo.
+       */
+      entrada: transicaoResolvidaSchema.nullable().default(null),
+      /** So no ULTIMO bloco: a saida do video. */
+      saida: transicaoResolvidaSchema.nullable().default(null),
     }),
   ),
   /** Vazio quando as legendas estao desligadas ou nao ha transcricao. */

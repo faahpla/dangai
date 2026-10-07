@@ -58,6 +58,8 @@ export interface Settings {
   recentes: Record<string, unknown>[]
   /** Presets de correcao de cor. Conferidos no renderer pelo ajusteDeCorSchema. */
   presetsDeCor: Record<string, unknown>[]
+  /** Transicoes configuradas e guardadas com nome. Conferidas no renderer. */
+  presetsDeTransicao: Record<string, unknown>[]
 }
 
 const DEFAULTS: Settings = {
@@ -73,6 +75,7 @@ const DEFAULTS: Settings = {
   atalhos: null,
   recentes: [],
   presetsDeCor: [],
+  presetsDeTransicao: [],
 }
 
 let filePath: string | null = null
@@ -132,6 +135,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
     atalhos: settings.atalhos,
     recentes: settings.recentes,
     presetsDeCor: settings.presetsDeCor,
+    presetsDeTransicao: settings.presetsDeTransicao,
     hasApiKey: key.length > 0,
     apiKeyHint: key.length > 8 ? `••••${key.slice(-4)}` : '',
   }
@@ -181,6 +185,11 @@ function coerce(raw: unknown): Settings {
       : [],
     presetsDeCor: Array.isArray(value['presetsDeCor'])
       ? (value['presetsDeCor'] as unknown[])
+          .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
+          .slice(0, 50)
+      : [],
+    presetsDeTransicao: Array.isArray(value['presetsDeTransicao'])
+      ? (value['presetsDeTransicao'] as unknown[])
           .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
           .slice(0, 50)
       : [],

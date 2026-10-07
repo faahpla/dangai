@@ -81,6 +81,8 @@ export const IPC = {
   prepararSobreposicao: 'timeline:sobreposicao',
   listarPasta: 'bins:listar-pasta',
   existemArquivos: 'arquivos:existem',
+  escolherVideo: 'dialog:escolher-video',
+  sondarVideo: 'video:sondar',
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
@@ -474,6 +476,8 @@ export interface PublicSettings {
   recentes: Record<string, unknown>[]
   /** Presets de correcao de cor da camada de ajuste. Conferidos no renderer. */
   presetsDeCor: Record<string, unknown>[]
+  /** Transicoes configuradas e guardadas com nome. Conferidas no renderer. */
+  presetsDeTransicao: Record<string, unknown>[]
 }
 
 export interface SettingsPatch {
@@ -489,6 +493,7 @@ export interface SettingsPatch {
   atalhos?: Record<string, unknown> | null
   recentes?: Record<string, unknown>[]
   presetsDeCor?: Record<string, unknown>[]
+  presetsDeTransicao?: Record<string, unknown>[]
 }
 
 /**
@@ -576,6 +581,10 @@ export interface DangaiBridge {
   listarPasta(pasta: string): Promise<IpcResult<ArquivoDaBin[]>>
   /** Quais destes caminhos ainda existem no disco. */
   existemArquivos(paths: readonly string[]): Promise<IpcResult<boolean[]>>
+  /** Dialogo para escolher UM video (o "video pronto"). null = fechou. */
+  escolherVideo(): Promise<IpcResult<string | null>>
+  /** Medidas, duracao e se o video tem audio. */
+  sondarVideo(path: string): Promise<IpcResult<{ width: number; height: number; durationSec: number; temAudio: boolean }>>
   /**
    * Andamento da varredura. So fala quando ha episodio novo para preparar --
    * a primeira varredura de um acervo grande leva perto de um minuto gerando as

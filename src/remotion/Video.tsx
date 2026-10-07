@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import {
   AbsoluteFill,
   cancelRender,
@@ -11,13 +11,12 @@ import {
   Sequence,
   useCurrentFrame,
 } from 'remotion'
-import { TransitionSeries } from '@remotion/transitions'
-import { rampaDoFade, type RenderProps } from '@shared/contract'
+import { rampaDoFade, resolverTransicao, type RenderProps } from '@shared/contract'
 import { Scene, easingFor, motionFor } from './Scene'
 import { CamadaDeAjuste } from './Ajuste'
 import { Captions } from './Captions'
 import { Cards } from './Card'
-import { presentationFor, timingFor } from './Transition'
+import { Transicionada, type Ponta } from './Transition'
 
 /**
  * A composicao inteira, no formato do projeto: 1080x1920 no vertical,
@@ -85,6 +84,22 @@ export function Video({
    */
   const premount = getRemotionEnvironment().isRendering ? 0 : 30
 
+  /*
+   * ONDE CADA CENA COMECA. A emenda com transicao SOBREPOE as duas cenas pela
+   * duracao dela (as duracoes ja vem com a folga, ver toRenderProps) -- a mesma
+   * conta que o TransitionSeries fazia. A entrada do PRIMEIRO bloco e a do
+   * video: nao sobrepoe nada.
+   */
+  const inicios = useMemo(() => {
+    let t = 0
+    return scenes.map((scene, index) => {
+      if (index > 0) t -= scene.transitionInFrames
+      const from = t
+      t += scene.durationInFrames
+      return from
+    })
+  }, [scenes])
+
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {/*
@@ -106,15 +121,12 @@ export function Video({
         <>
       <CamaDoPreview scenes={scenes} />
 
-      <TransitionSeries>
-        {scenes.map((scene, index) => (
+      {scenes.map((scene, index) => {
+        const proxima = scenes[index + 1]
+        const entrada = pontaDe(scene, index === 0)
+        const saida = proxima ? pontaDe(proxima, false) : scene.saida ? { ...scene.saida, borda: true } : null
+        return (
           <Fragment key={`${scene.url}-${index}`}>
-            {scene.transitionInFrames > 0 && (
-              <TransitionSeries.Transition
-                presentation={presentationFor(scene.transitionIn)}
-                timing={timingFor(scene.transitionIn, scene.transitionInFrames)}
-              />
-            )}
             {/*
               PREMOUNT: a cena nasce ANTES de entrar, e por isso nao pisca.
 
@@ -138,15 +150,18 @@ export function Video({
               So no preview: no render o frame vem pronto do compositor, nao ha
               o que esconder, e montar cenas adiantado so custaria memoria.
             */}
-            <TransitionSeries.Sequence
+            <Sequence
+              from={inicios[index]!}
               durationInFrames={scene.durationInFrames}
-              {...(premount > 0 ? ({ premountFor: premount } as { premountFor: number }) : {})}
+              {...(premount > 0 ? { premountFor: premount } : {})}
             >
-              <Scene {...scene} />
-            </TransitionSeries.Sequence>
+              <Transicionada entrada={entrada} saida={saida} duracao={scene.durationInFrames}>
+                <Scene {...scene} />
+              </Transicionada>
+            </Sequence>
           </Fragment>
-        ))}
-      </TransitionSeries>
+        )
+      })}
         </>
       </Pilha>
 
@@ -172,6 +187,16 @@ export function Video({
 }
 
 /**
+ * A transicao de ENTRADA de uma cena, pronta para desenhar. Props sem o campo
+ * resolvido (de antes da v1.61) caem no padrao do tipo.
+ */
+function pontaDe(scene: RenderProps['scenes'][number], borda: boolean): Ponta | null {
+  if (scene.transitionInFrames <= 0 || scene.transitionIn === 'cut') return null
+  const resolvida = scene.entrada ?? resolverTransicao(scene.transitionIn, undefined, scene.transitionInFrames)
+  return { ...resolvida, frames: scene.transitionInFrames, borda }
+}
+
+/**
  * A miniatura do bloco atual, viva o video inteiro, so trocando de src.
  *
  * Existe para o preview e mais nada: no render o frame vem pronto do
@@ -189,8 +214,9 @@ function CamaDoPreview({ scenes }: { scenes: RenderProps['scenes'] }) {
 
   let inicio = 0
   let atual: RenderProps['scenes'][number] | undefined
-  for (const scene of scenes) {
-    inicio -= scene.transitionInFrames
+  for (const [index, scene] of scenes.entries()) {
+    // A entrada do primeiro bloco nao sobrepoe nada (e a entrada do video).
+    if (index > 0) inicio -= scene.transitionInFrames
     if (frame < inicio + scene.durationInFrames) {
       atual = scene
       break

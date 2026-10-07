@@ -19,7 +19,14 @@ import {
   Library as LibraryIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { aplicarPreset, removerPreset, salvarPreset } from '@/store/estilo-legenda'
+import {
+  aplicarPreset,
+  exportarEstiloAtual,
+  exportarPresetDeLegenda,
+  importarEstilo,
+  removerPreset,
+  salvarPreset,
+} from '@/store/estilo-legenda'
 import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
 import { BotaoDeTransicao } from './BotaoDeTransicao'
 import { useLayout } from '@/store/layout'
@@ -1255,6 +1262,7 @@ function PresetsDeEstilo() {
   const presets = useProject((s) => s.captionPresets)
   const [nomeando, setNomeando] = useState(false)
   const [nome, setNome] = useState('')
+  const [recado, setRecado] = useState<string | null>(null)
   const salvar = (): void => {
     if (nome.trim()) salvarPreset(nome)
     setNomeando(false)
@@ -1262,7 +1270,25 @@ function PresetsDeEstilo() {
   }
   return (
     <div className="col-span-2 mb-3 border-b border-line pb-3">
-      <span className="text-[10px] uppercase tracking-wide text-ink-3">Presets de estilo</span>
+      <div className="flex items-center gap-1">
+        <span className="flex-1 text-[10px] uppercase tracking-wide text-ink-3">Presets de estilo</span>
+        <button
+          type="button"
+          onClick={() => void importarEstilo().then(setRecado)}
+          title="Importar um estilo de legenda (.dangai-legenda) -- vira preset e ja e aplicado"
+          className="rounded-sm px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink"
+        >
+          Importar
+        </button>
+        <button
+          type="button"
+          onClick={() => void exportarEstiloAtual().then(setRecado)}
+          title="Exportar a legenda inteira de agora (cor, fonte, tamanho, sombra, contorno, entrada, regras) para um arquivo"
+          className="rounded-sm px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink"
+        >
+          Exportar estilo atual
+        </button>
+      </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
         {presets.map((p) => (
           <span key={p.nome} className="group/preset flex items-center rounded-sm border border-line bg-elevated">
@@ -1277,6 +1303,15 @@ function PresetsDeEstilo() {
                 style={{ backgroundColor: corDaLegenda(p.estilo.color ?? CAPTION_COLOR_DEFAULT) }}
               />
               {p.nome}
+            </button>
+            <button
+              type="button"
+              onClick={() => void exportarPresetDeLegenda(p.nome).then(setRecado)}
+              aria-label={`Exportar o preset ${p.nome}`}
+              title="Exportar para um arquivo"
+              className="px-1 py-1 text-[11px] text-ink-3 opacity-0 hover:text-ink group-hover/preset:opacity-100"
+            >
+              ↓
             </button>
             <button
               type="button"
@@ -1314,6 +1349,7 @@ function PresetsDeEstilo() {
           </button>
         )}
       </div>
+      {recado && <p className="mt-1.5 text-[10px] text-ink-3">{recado}</p>}
     </div>
   )
 }

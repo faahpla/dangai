@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BookmarkPlus, RotateCcw, X } from 'lucide-react'
+import { BookmarkPlus, Download, RotateCcw, Upload, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import {
   AJUSTE_DE_COR_PADRAO,
@@ -33,6 +33,9 @@ export function AjusteEdit({ id }: { id: string }) {
   const carregarPresets = usePresetsDeCor((s) => s.carregar)
   const salvarPreset = usePresetsDeCor((s) => s.salvar)
   const removerPreset = usePresetsDeCor((s) => s.remover)
+  const exportarPresetDeCor = usePresetsDeCor((s) => s.exportar)
+  const importarPresetDeCor = usePresetsDeCor((s) => s.importar)
+  const [recado, setRecado] = useState<string | null>(null)
   const [canal, setCanal] = useState<keyof AjusteDeCor['curvas']>('mestre')
   const [nomeNovo, setNomeNovo] = useState<string | null>(null)
   useEffect(() => void carregarPresets(), [carregarPresets])
@@ -156,10 +159,19 @@ export function AjusteEdit({ id }: { id: string }) {
           titulo="Presets"
           acao={
             nomeNovo === null ? (
-              <Botaozinho onClick={() => setNomeNovo('')} title="Guarda este ajuste com um nome">
-                <BookmarkPlus size={11} strokeWidth={1.5} />
-                Salvar preset
-              </Botaozinho>
+              <div className="flex gap-1">
+                <Botaozinho
+                  onClick={() => void importarPresetDeCor().then(setRecado)}
+                  title="Importar um preset de cor (.dangai-cor)"
+                >
+                  <Upload size={11} strokeWidth={1.5} />
+                  Importar
+                </Botaozinho>
+                <Botaozinho onClick={() => setNomeNovo('')} title="Guarda este ajuste com um nome">
+                  <BookmarkPlus size={11} strokeWidth={1.5} />
+                  Salvar preset
+                </Botaozinho>
+              </div>
             ) : undefined
           }
         >
@@ -209,6 +221,15 @@ export function AjusteEdit({ id }: { id: string }) {
                   </button>
                   <button
                     type="button"
+                    onClick={() => void exportarPresetDeCor(p.nome).then(setRecado)}
+                    title={`Exportar "${p.nome}" para um arquivo`}
+                    aria-label={`Exportar o preset ${p.nome}`}
+                    className="grid h-full w-5 shrink-0 place-items-center text-ink-3 hover:text-ink"
+                  >
+                    <Download size={10} strokeWidth={2} />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => void removerPreset(p.nome)}
                     title={`Esquecer "${p.nome}"`}
                     aria-label={`Esquecer o preset ${p.nome}`}
@@ -220,6 +241,7 @@ export function AjusteEdit({ id }: { id: string }) {
               ))}
             </div>
           )}
+          {recado && <p className="text-[10px] text-ink-3">{recado}</p>}
         </Grupo>
 
         <Grupo titulo="Luz">

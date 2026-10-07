@@ -96,6 +96,18 @@ export async function probeClip(path: string): Promise<ClipInfo> {
   return info
 }
 
+/**
+ * O VIDEO PRONTO: medidas, duracao e se tem audio -- sem audio nao ha o que
+ * legendar, e a fala dele e que vira a narracao do projeto.
+ */
+export async function sondarVideoPronto(
+  path: string,
+): Promise<{ width: number; height: number; durationSec: number; temAudio: boolean }> {
+  const info = await probeClip(path)
+  const saida = await runFfmpeg(['-hide_banner', '-i', path], { aceitaFalha: true })
+  return { width: info.width, height: info.height, durationSec: info.durationSec, temAudio: /Stream #.*Audio:/.test(saida) }
+}
+
 /*
  * O CLIPE HDR VIRA VIDEO COMUM, uma vez, na importacao.
  *

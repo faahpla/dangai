@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Film, Image as ImageIcon, Music, Pause, Play, Search, X } from 'lucide-react'
 import { classifyFile, type ArquivoDaBin } from '@shared/channels'
-import { duracaoDoTrecho } from '@shared/contract'
+import { duracaoDoTrecho, TRANSITIONS_NA_TELA, type AjusteDaTransicao, type Transition } from '@shared/contract'
 import { useProject } from '@/store/project'
 import { useConsoleFx } from '@/store/layout'
+import {
+  aplicarNaEmenda,
+  iniciarArrasteDeTransicao,
+  TRANSITION_LABEL,
+  usePresetsDeTransicao,
+} from '@/store/transicoes'
 import { iniciarArraste } from './arrastar'
+import { IconeDaTransicao } from './EditorDeTransicao'
 
 /**
  * O FX CONSOLE (Ctrl+Espaco): busca em TODAS as bins de uma vez.
@@ -20,6 +27,33 @@ import { iniciarArraste } from './arrastar'
  */
 
 type Item = ArquivoDaBin & { bin: string }
+
+/*
+ * AS TRANSICOES TAMBEM MORAM AQUI: digitar "zoom", "light", "pan" acha a
+ * transicao (e os presets dele), que arrasta para um corte como um SFX
+ * arrasta para a faixa. Enter poe no corte mais perto da agulha.
+ */
+interface ItemDeTransicao {
+  chave: string
+  nome: string
+  tipo: Transition
+  ajuste?: AjusteDaTransicao
+  busca: string
+}
+
+/** Palavras que tambem acham cada transicao. */
+const SINONIMOS: Partial<Record<Transition, string>> = {
+  light: 'luz flash brilho',
+  'zoom-in': 'aproximar entrar',
+  'zoom-out': 'afastar sair',
+  'pan-left': 'whip esquerda',
+  'pan-right': 'whip direita',
+  'pan-up': 'whip cima',
+  'pan-down': 'whip baixo',
+  crossfade: 'fade dissolve',
+  'slide-left': 'deslizar empurrar',
+  'slide-right': 'deslizar empurrar',
+}
 
 /** Sem acento e sem caixa: "impacto" acha "Impácto_01.wav". */
 function normal(t: string): string {
@@ -128,6 +162,36 @@ export function ConsoleFx() {
     return lista.slice(0, 300)
   }, [todos, busca])
 
+  const presetsDeTransicao = usePresetsDeTransicao((s) => s.lista)
+  const presetsCarregados = usePresetsDeTransicao((s) => s.carregado)
+  const carregarPresets = usePresetsDeTransicao((s) => s.carregar)
+  useEffect(() => {
+    if (aberto && !presetsCarregados) void carregarPresets()
+  }, [aberto, presetsCarregados, carregarPresets])
+
+  // So com busca: com o campo vazio a lista e das bins, como sempre foi.
+  const transicoes = useMemo<ItemDeTransicao[]>(() => {
+    const termos = normal(busca).split(/\s+/).filter(Boolean)
+    if (termos.length === 0) return []
+    const todas: ItemDeTransicao[] = [
+      ...presetsDeTransicao.map((p) => ({
+        chave: `p-${p.nome}`,
+        nome: p.nome,
+        tipo: p.tipo,
+        ajuste: p.ajuste,
+        busca: normal(`${p.nome} transicao preset ${TRANSITION_LABEL[p.tipo]} ${p.tipo} ${SINONIMOS[p.tipo] ?? ''}`),
+      })),
+      ...TRANSITIONS_NA_TELA.filter((t) => t !== 'cut').map((t) => ({
+        chave: `t-${t}`,
+        nome: TRANSITION_LABEL[t],
+        tipo: t,
+        busca: normal(`${TRANSITION_LABEL[t]} transicao ${t} ${SINONIMOS[t] ?? ''}`),
+      })),
+    ]
+    return todas.filter((t) => termos.every((termo) => t.busca.includes(termo)))
+  }, [busca, presetsDeTransicao])
+  const total = transicoes.length + achados.length
+
   useEffect(() => setEscolhido(0), [busca])
   useEffect(() => {
     lista.current?.querySelector(`[data-indice="${escolhido}"]`)?.scrollIntoView({ block: 'nearest' })
@@ -149,6 +213,19 @@ export function ConsoleFx() {
     el.currentTime = 0
     void el.play().catch(() => undefined)
     setTocando(path)
+  }
+
+  /** No corte mais perto da agulha. */
+  const porNoCorte = (t: ItemDeTransicao): void => {
+    const s = useProject.getState()
+    const scenes = s.plan?.scenes ?? []
+    if (scenes.length === 0) return
+    const tempos = [0, ...scenes.slice(1).map((c) => c.start), s.audio?.durationSec ?? 0]
+    let melhor = 0
+    for (let e = 1; e < tempos.length; e++) {
+      if (Math.abs(tempos[e]! - s.playhead) < Math.abs(tempos[melhor]! - s.playhead)) melhor = e
+    }
+    aplicarNaEmenda(melhor, t.tipo, t.ajuste)
   }
 
   /** Na agulha, na primeira faixa do tipo que esteja livre ali. */
@@ -187,13 +264,18 @@ export function ConsoleFx() {
             fechar()
           } else if (event.key === 'ArrowDown') {
             event.preventDefault()
-            setEscolhido((i) => Math.min(i + 1, achados.length - 1))
+            setEscolhido((i) => Math.min(i + 1, total - 1))
           } else if (event.key === 'ArrowUp') {
             event.preventDefault()
             setEscolhido((i) => Math.max(i - 1, 0))
           } else if (event.key === 'Enter') {
             event.preventDefault()
-            const a = achados[escolhido]
+            const t = transicoes[escolhido]
+            if (t) {
+              porNoCorte(t)
+              return
+            }
+            const a = achados[escolhido - transicoes.length]
             if (a) porNaAgulha(a)
           }
         }}
@@ -211,21 +293,45 @@ export function ConsoleFx() {
             spellCheck={false}
             className="min-w-0 flex-1 bg-transparent text-[13px] text-ink placeholder:text-ink-3 focus:outline-none"
           />
-          <span className="tnum shrink-0 text-[10px] text-ink-3">{achados.length}</span>
+          <span className="tnum shrink-0 text-[10px] text-ink-3">{total}</span>
           <button type="button" onClick={fechar} aria-label="Fechar o FX Console" className="text-ink-3 hover:text-ink">
             <X size={13} strokeWidth={1.75} />
           </button>
         </div>
 
-        {bins.length === 0 ? (
+        {total === 0 ? (
           <p className="px-4 py-6 text-center text-[12px] text-ink-3">
-            Nenhuma bin ainda. Crie uma no botao Bins e ponha seus SFX nela.
+            {bins.length === 0
+              ? 'Nenhuma bin ainda. Crie uma no botao Bins e ponha seus SFX nela. Para transicoes, digite zoom, light ou pan.'
+              : 'Nada com esse nome nas bins nem nas transicoes.'}
           </p>
-        ) : achados.length === 0 ? (
-          <p className="px-4 py-6 text-center text-[12px] text-ink-3">Nada com esse nome nas bins.</p>
         ) : (
           <div ref={lista} className="min-h-0 overflow-y-auto p-1.5">
-            {achados.map((a, i) => {
+            {transicoes.map((t, i) => (
+              <div
+                key={t.chave}
+                data-indice={i}
+                draggable
+                onDragStart={(e) => iniciarArrasteDeTransicao(e, { tipo: t.tipo, ajuste: t.ajuste })}
+                onMouseEnter={() => setEscolhido(i)}
+                onDoubleClick={() => porNoCorte(t)}
+                title="Arraste ate um corte da linha do tempo, ou Enter / dois cliques para por no corte mais perto da agulha"
+                className={[
+                  'flex cursor-grab items-center gap-2 rounded-sm px-2 py-1.5 text-[12px]',
+                  i === escolhido ? 'bg-accent-dim text-ink' : 'text-ink-2',
+                ].join(' ')}
+              >
+                <span className="shrink-0 text-accent">
+                  <IconeDaTransicao tipo={t.tipo} />
+                </span>
+                <span className="min-w-0 flex-1 truncate">{t.nome}</span>
+                <span className="shrink-0 text-[10px] text-ink-3">
+                  {t.chave.startsWith('p-') ? `preset · ${TRANSITION_LABEL[t.tipo]}` : 'transicao'}
+                </span>
+              </div>
+            ))}
+            {achados.map((a, j) => {
+              const i = j + transicoes.length
               const I = Icone(a.tipo)
               return (
                 <div
@@ -263,7 +369,7 @@ export function ConsoleFx() {
           </div>
         )}
         <p className="border-t border-line px-3 py-1.5 text-[10px] text-ink-3">
-          Arraste para a linha do tempo · Enter poe na agulha · ↑↓ escolhe · Esc fecha
+          Arraste para a linha do tempo · Enter poe na agulha · zoom, light, pan acham transicoes · Esc fecha
         </p>
       </div>
     </>

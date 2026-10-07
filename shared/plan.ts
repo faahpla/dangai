@@ -17,7 +17,8 @@ import {
   KEN_BURNS_EFFECTS,
   MOTION_CURVE_DEFAULT,
   AJUSTE_DE_COR_PADRAO,
-  TRANSITION_FRAMES,
+  framesDaTransicao,
+  resolverTransicao,
   VIDEO_FPS,
   type CaptionBlock,
   type Formato,
@@ -514,9 +515,33 @@ export function toRenderProps(
     totalFrames(fim),
   ]
 
-  const transitionFrames = usable.map((scene, index) =>
-    index === 0 ? 0 : TRANSITION_FRAMES[scene.transitionIn],
+  /*
+   * Quanto cada emenda dura, com o ajuste dela -- e PRESA a metade do bloco
+   * mais curto dos dois. Transicao de 1,5s entre dois blocos de 1s cruzaria
+   * tres cenas de uma vez; com o teto, as duas pontas de um bloco nunca se
+   * encontram, por mais longa que ele peca cada uma.
+   */
+  const bases = usable.map((_, index) => bounds[index + 1]! - bounds[index]!)
+  const transitionFrames = usable.map((scene, index) => {
+    if (index === 0) return 0
+    const pedido = framesDaTransicao(scene.transitionIn, scene.transicao)
+    return Math.max(0, Math.min(pedido, Math.floor(Math.min(bases[index - 1]!, bases[index]!) / 2)))
+  })
+
+  /*
+   * A ENTRADA E A SAIDA DO VIDEO: a transicao de entrada do primeiro bloco e a
+   * de saida do ultimo. Nao sobrepoem nada -- nao ha vizinho --, entao nao
+   * entram na compensacao abaixo.
+   */
+  const primeira = usable[0]!
+  const ultima = usable.at(-1)!
+  const entradaDoVideo = Math.min(
+    framesDaTransicao(primeira.transitionIn, primeira.transicao),
+    Math.floor(bases[0]! / 2),
   )
+  const saidaDoVideo = ultima.transitionOut
+    ? Math.min(framesDaTransicao(ultima.transitionOut, ultima.transicaoSaida), Math.floor(bases.at(-1)! / 2))
+    : 0
 
   /**
    * Compensacao da sobreposicao.
@@ -566,10 +591,18 @@ export function toRenderProps(
         ? Math.floor(image.durationSec * VIDEO_FPS)
         : null
 
+    /*
+     * A cena que entra por transicao nasce floor(T/2) quadros ANTES do corte
+     * planejado (a compensacao acima). Recuar o ponto de entrada do clipe na
+     * mesma conta faz o quadro do corte ser exatamente o escolhido -- e, num
+     * video pronto cortado em dois, a fala continua batendo com a boca durante
+     * a transicao.
+     */
+    const recuo = Math.floor(incoming / 2)
     const inicioFonte =
       totalFonte === null
         ? 0
-        : clamp(Math.round((scene.sourceStart ?? 0) * VIDEO_FPS), 0, Math.max(totalFonte - 1, 0))
+        : clamp(Math.round((scene.sourceStart ?? 0) * VIDEO_FPS) - recuo, 0, Math.max(totalFonte - 1, 0))
 
     const sourceFrames = totalFonte === null ? null : totalFonte - inicioFonte
 
@@ -695,7 +728,15 @@ export function toRenderProps(
       espelhar: scene.espelhar ?? false,
       escalaOrigem: scene.escalaOrigem ?? { x: 0.5, y: 0.5 },
       transitionIn: scene.transitionIn,
-      transitionInFrames: incoming,
+      transitionInFrames: index === 0 ? entradaDoVideo : incoming,
+      entrada:
+        (index === 0 ? entradaDoVideo : incoming) > 0
+          ? resolverTransicao(scene.transitionIn, scene.transicao, index === 0 ? entradaDoVideo : incoming)
+          : null,
+      saida:
+        index === usable.length - 1 && saidaDoVideo > 0 && ultima.transitionOut
+          ? resolverTransicao(ultima.transitionOut, ultima.transicaoSaida, saidaDoVideo)
+          : null,
     }
   })
 
@@ -1101,6 +1142,10 @@ export function reordenarBlocos(
       start: lugar.start,
       end: lugar.end,
       transitionIn: lugar.transitionIn,
+      transicao: lugar.transicao,
+      // A saida do video e do FIM, nao do bloco que estava la.
+      transitionOut: lugar.transitionOut,
+      transicaoSaida: lugar.transicaoSaida,
     }
   })
 
