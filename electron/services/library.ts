@@ -69,8 +69,12 @@ interface CacheFile {
  * 8: episodio HDR passou a ter a miniatura com a cor convertida (ver
  * miniaturaHdr). Subir a versao rele os episodios
  * uma vez; nos que nao sao HDR a miniatura que ja existe e aproveitada.
+ *
+ * 9: a miniatura confere se e mais nova que o keyframe (ver
+ * reduzirMiniaturas). Rele tudo uma vez para pegar os episodios recortados
+ * que a versao 8 ja tinha relido com a miniatura velha.
  */
-const CACHE_VERSION = 8
+const CACHE_VERSION = 9
 
 /** Profundidade maxima da varredura a partir da raiz. */
 const MAX_DEPTH = 3
@@ -360,7 +364,32 @@ async function reduzirMiniaturas(clips: StoredClip[], hdr: boolean): Promise<voi
       const clip = clips[proxima++]!
       // Episodio HDR: nome de arquivo proprio, para nao reaproveitar a miniatura
       // lavada que saiu do keyframe antes desta correcao.
-      const destino = caminhoDaMiniatura(hdr ? `${clip.id}#hdr2` : clip.id)
+      const base = hdr ? `${clip.id}#hdr2` : clip.id
+      /*
+       * A MINIATURA SO VALE SE FOR MAIS NOVA QUE O KEYFRAME.
+       *
+       * "Refiz todos os cortes do Cyberpunk e a thumbnail continua lavada -- e o
+       * que aparece nela nem e o clipe que toca." O nome saia so de episodio +
+       * numero da cena, e o AnCut, recortando, reusa os numeros: a 0155 nova
+       * achava a miniatura da 0155 VELHA (outra cena, ainda lavada do HDR) e
+       * ficava com ela. Keyframe mais novo que a miniatura = a cena mudou, e a
+       * miniatura sai de novo, com o instante do keyframe no nome.
+       */
+      let doKeyframe = 0
+      try {
+        doKeyframe = statSync(clip.thumb).mtimeMs
+      } catch {
+        /* sem keyframe legivel: fica a regra antiga */
+      }
+      const antiga = caminhoDaMiniatura(base)
+      let destino = antiga
+      try {
+        if (existsSync(antiga) && statSync(antiga).mtimeMs < doKeyframe) {
+          destino = caminhoDaMiniatura(`${base}@${Math.round(doKeyframe)}`)
+        }
+      } catch {
+        /* fica a antiga */
+      }
       if (hdr) {
         if (existsSync(destino) || (await miniaturaHdr(clip.thumb, destino))) {
           clip.thumb = destino

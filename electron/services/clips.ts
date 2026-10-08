@@ -71,7 +71,14 @@ export interface ClipInfo {
 const sondados = new Map<string, ClipInfo>()
 
 export async function probeClip(path: string): Promise<ClipInfo> {
-  const lembrado = sondados.get(path)
+  // A data entra na chave: o arquivo recortado com o app aberto e outro clipe.
+  let chave = path
+  try {
+    chave = `${path}|${statSync(path).mtimeMs}`
+  } catch {
+    /* sem stat: o ffmpeg abaixo da o erro de verdade */
+  }
+  const lembrado = sondados.get(chave)
   if (lembrado) return lembrado
 
   const saida = await runFfmpeg(['-hide_banner', '-i', path], { aceitaFalha: true })
@@ -92,7 +99,7 @@ export async function probeClip(path: string): Promise<ClipInfo> {
   }
 
   const info = { width, height, durationSec, hdr: ehHdrPeloFfmpeg(saida) }
-  sondados.set(path, info)
+  sondados.set(chave, info)
   return info
 }
 
@@ -183,7 +190,11 @@ const THUMB_MINIMO_BYTES = 200
 export async function makeClipThumbnail(path: string, durationSec?: number): Promise<string> {
   // "-c": miniatura com a conversao de cor do HDR; as de antes (lavadas) ficam
   // para tras em vez de serem reaproveitadas.
-  const alvo = join(cacheDir, `thumb-c-${hashDe(path)}.webp`)
+  // O tamanho e a data do arquivo entram no nome: um clipe RECORTADO no mesmo
+  // caminho (o AnCut reusa os numeros das cenas) nao pode herdar a miniatura
+  // da cena antiga.
+  const st = statSync(path)
+  const alvo = join(cacheDir, `thumb-c-${hashDe(`${path}|${st.size}|${st.mtimeMs}`)}.webp`)
 
   // Vazio guardado por uma versao anterior nao pode sobreviver para sempre.
   if (existsSync(alvo) && statSync(alvo).size < THUMB_MINIMO_BYTES) rmSync(alvo, { force: true })
