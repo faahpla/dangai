@@ -1545,6 +1545,8 @@ export const renderPropsSchema = z.object({
       transitionIn: z.enum(TRANSITIONS),
       /** Frames da transicao de entrada. 0 = corte seco. */
       transitionInFrames: z.number().int().nonnegative(),
+      /** So na previa: `url` e o original, e o foco recorta na hora. */
+      focoNaFonte: z.boolean().default(false),
       /**
        * A entrada resolvida (tipo, quadros, intensidade, borrao, cor). No
        * PRIMEIRO bloco e a entrada do video, sem bloco anterior por baixo.

@@ -307,6 +307,27 @@ export function SceneEdit() {
             </>
           ) : (
             <>
+              {/*
+                CAMERA LIVRE LIGADA: ela manda no quadro, e o retangulo daqui
+                nao muda nada no video -- "mudo o enquadramento e o preview nao
+                muda". Dizer isso na cara, com o atalho para desligar.
+              */}
+              {scene.camera != null && (scene.rotation ?? 0) !== 90 && (scene.rotation ?? 0) !== 270 && (
+                <div className="flex items-start gap-2 rounded-sm border border-accent/50 bg-accent-dim px-2 py-1.5 text-[11px] leading-snug text-ink-2">
+                  <Video size={12} strokeWidth={1.5} className="mt-0.5 shrink-0 text-accent" />
+                  <span className="min-w-0 flex-1">
+                    A camera livre esta ligada e manda no quadro: este enquadramento nao muda o video. Ajuste o
+                    comeco e o fim dela ao lado, ou desligue.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => updateScene(index, { camera: null })}
+                    className="shrink-0 rounded-sm border border-line bg-elevated px-1.5 py-0.5 text-[10px] text-ink-2 hover:text-ink"
+                  >
+                    Desligar
+                  </button>
+                </div>
+              )}
               <Framing
                 image={image}
                 trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}

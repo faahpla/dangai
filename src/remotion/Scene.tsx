@@ -40,6 +40,7 @@ export function Scene({
   escala,
   espelhar,
   escalaOrigem,
+  focoNaFonte,
 }: SceneProps) {
   const frame = useCurrentFrame()
   const { width, height } = useVideoConfig()
@@ -137,7 +138,7 @@ export function Scene({
      * O foco vale em coordenadas da IMAGEM, nao da tela: o cover acontece antes
      * do giro, entao nao ha eixo para trocar.
      */
-    ...(quarto
+    ...(quarto || focoNaFonte
       ? { objectPosition: `${(focusX * 100).toFixed(1)}% ${(focusY * 100).toFixed(1)}%` }
       : {}),
     /*

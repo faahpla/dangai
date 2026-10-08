@@ -426,6 +426,15 @@ export function toRenderProps(
   formato: Formato = FORMATO_PADRAO,
   /** A faixa de video: as sobreposicoes, com a URL do arquivo preparado. */
   sobreposicoesDoProjeto: readonly (SobreposicaoSalva & { url: string })[] = [],
+  /**
+   * PREVIA: o bloco comum toca o ORIGINAL e recorta na hora pelo foco, em vez
+   * do arquivo ja recortado. "Mudo o enquadramento e o preview nao muda junto":
+   * o recorte em disco so era refeito ao soltar o retangulo -- num clipe,
+   * reencodando o video inteiro, segundos depois. O render continua com o
+   * arquivo recortado, que da o mesmo quadro (cover + object-position e a
+   * mesma conta do recorte).
+   */
+  previa = false,
 ): RenderProps {
   /*
    * As sobreposicoes em quadros. Sem URL (projeto recem-aberto, arquivo ainda
@@ -698,9 +707,10 @@ export function toRenderProps(
       url:
         cameraNaFonte !== null
           ? cameraNaFonte.url
-          : abaixo === null && !quarto
+          : abaixo === null && !quarto && !(previa && image.urlSource)
             ? image.url
             : (image.urlSource ?? image.url),
+      focoNaFonte: previa && cameraNaFonte === null && abaixo === null && !quarto && Boolean(image.urlSource),
       sourceAspect:
         cameraNaFonte?.aspecto ??
         // Na tela dividida a metade de cima tambem parte do original: a camera

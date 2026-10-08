@@ -98,6 +98,8 @@ export function Preview() {
             },
             formato,
             sobreposicoes.filter((o) => !faixasMudas.video.includes(o.faixa)),
+            // O enquadramento muda o preview AO VIVO, enquanto arrasta.
+            true,
           )
         : {
             formato,
