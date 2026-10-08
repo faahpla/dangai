@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { useProject } from "@/store/project";
+import { classifyFile } from "@shared/channels";
 import { useRecentes } from "@/store/recentes";
 import { FORMATOS, medidasDo, type Formato } from "@shared/contract";
 
@@ -325,13 +326,15 @@ function LegendarVideoPronto() {
       // soltar de baixo, que trataria o video como clipe de um projeto novo.
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
-        const arquivo = event.dataTransfer.files[0];
-        if (!arquivo) return;
+        // O video e, se vier junto, o roteiro: a legenda sai com o texto dele.
+        const caminhos = Array.from(event.dataTransfer.files).map((f) => window.dangai.pathForFile(f));
+        const video = caminhos.find((p) => classifyFile(p) === "video");
+        if (!video) return;
         event.preventDefault();
         event.stopPropagation();
-        void legendar(window.dangai.pathForFile(arquivo));
+        void legendar(video, caminhos.find((p) => classifyFile(p) === "script") ?? null);
       }}
-      title="Abre um video ja editado para legendar, cortar, por transicao, zoom, cor ou SFX. A fala dele vira a narracao. (Clique, ou solte o video aqui.)"
+      title="Abre um video ja editado para legendar, cortar, por transicao, zoom, cor ou SFX. A fala dele vira a narracao. Mande o roteiro (.txt) junto e a legenda sai com o texto dele. (Clique e escolha os dois, ou solte os dois aqui.)"
       className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
     >
       <Clapperboard size={13} strokeWidth={1.5} className="text-accent" />

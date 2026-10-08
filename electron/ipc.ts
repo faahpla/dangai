@@ -284,13 +284,19 @@ export function registerIpc(): void {
     paths.map((p) => typeof p === 'string' && existsSync(p)),
   )
 
-  handle<[], string | null>(IPC.escolherVideo, async () => {
+  handle<[], { video: string; roteiro: string | null } | null>(IPC.escolherVideo, async () => {
     const r = await dialog.showOpenDialog({
-      title: 'Escolher o video pronto',
-      properties: ['openFile'],
-      filters: [{ name: 'Videos', extensions: [...VIDEO_EXTENSIONS] }],
+      title: 'Escolher o video pronto (e o roteiro, se tiver)',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Video e roteiro', extensions: [...VIDEO_EXTENSIONS, 'txt', 'md'] },
+        { name: 'Videos', extensions: [...VIDEO_EXTENSIONS] },
+      ],
     })
-    return r.canceled ? null : (r.filePaths[0] ?? null)
+    if (r.canceled) return null
+    const video = r.filePaths.find((p) => classifyFile(p) === 'video')
+    if (!video) return null
+    return { video, roteiro: r.filePaths.find((p) => classifyFile(p) === 'script') ?? null }
   })
 
   handle<[string], { width: number; height: number; durationSec: number; temAudio: boolean }>(

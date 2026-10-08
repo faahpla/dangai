@@ -547,7 +547,7 @@ export interface ProjectState {
    * Abre um video PRONTO como projeto: a fala dele vira a narracao, a imagem
    * vira um bloco so, e dali da para legendar, cortar, por transicao, zoom...
    */
-  legendarVideoPronto: (caminho?: string) => Promise<void>
+  legendarVideoPronto: (caminho?: string, roteiro?: string | null) => Promise<void>
   cancelarVideoPronto: () => Promise<void>
   setVideoProntoProgresso: (p: { feitos: number; total: number; nome: string }) => void
   /** Joga a curva de uma cena em todas as outras. */
@@ -2512,15 +2512,17 @@ export const useProject = create<ProjectState>((set, get) => ({
    * zoom, transicao, cor, SFX como qualquer bloco. O formato segue o video:
    * deitado abre como Long form, em pe como Short.
    */
-  legendarVideoPronto: async (caminhoDado) => {
+  legendarVideoPronto: async (caminhoDado, roteiroDado) => {
     let caminho = caminhoDado ?? null
+    let roteiro = roteiroDado ?? null
     if (!caminho) {
       const escolha = await window.dangai.escolherVideo()
       if (!escolha.ok) {
         set({ error: escolha.error })
         return
       }
-      caminho = escolha.value
+      caminho = escolha.value?.video ?? null
+      roteiro = escolha.value?.roteiro ?? null
     }
     if (!caminho) return
 
@@ -2576,6 +2578,17 @@ export const useProject = create<ProjectState>((set, get) => ({
       selecionados: [],
       busy: null,
     })
+
+    /*
+     * O ROTEIRO JUNTO: "nao posso enviar o roteiro junto pra ele sincronizar?"
+     * Com ele, a regra do app vale aqui tambem -- o texto das legendas vem do
+     * roteiro, e o Whisper so da os tempos.
+     */
+    if (roteiro) {
+      const lido = await window.dangai.readScript(roteiro)
+      if (lido.ok) set({ script: lido.value, captionsEdited: false, scriptBlocks: null })
+      else set({ error: lido.error })
+    }
     await get().analyze()
   },
 

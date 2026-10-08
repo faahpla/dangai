@@ -581,8 +581,11 @@ export interface DangaiBridge {
   listarPasta(pasta: string): Promise<IpcResult<ArquivoDaBin[]>>
   /** Quais destes caminhos ainda existem no disco. */
   existemArquivos(paths: readonly string[]): Promise<IpcResult<boolean[]>>
-  /** Dialogo para escolher UM video (o "video pronto"). null = fechou. */
-  escolherVideo(): Promise<IpcResult<string | null>>
+  /**
+   * Dialogo do "video pronto": UM video e, se ele marcar junto, o roteiro
+   * (.txt/.md). null = fechou.
+   */
+  escolherVideo(): Promise<IpcResult<{ video: string; roteiro: string | null } | null>>
   /** Medidas, duracao e se o video tem audio. */
   sondarVideo(path: string): Promise<IpcResult<{ width: number; height: number; durationSec: number; temAudio: boolean }>>
   /**
