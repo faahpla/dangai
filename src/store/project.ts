@@ -793,6 +793,11 @@ export interface ProjectState {
   removeScene: (index: number) => void
   /** Move o enquadramento 9:16 sobre a imagem. Instantaneo, so no estado. */
   setImageFocus: (id: string, focusX: number, focusY: number) => void
+  /**
+   * A imagem cujo enquadramento esta sendo arrastado AGORA (ate o recorte novo
+   * ficar pronto). So ela toca o original no preview -- ver focoAoVivo.
+   */
+  enquadrando: string | null
   /** Confirma o enquadramento: pede o novo recorte ao main e troca a URL. */
   commitImageFocus: (id: string) => Promise<void>
   /**
@@ -1114,6 +1119,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   selectedScene: null,
   selecionados: [],
   ajustesCopiados: null,
+  enquadrando: null,
   render: null,
   lastOutput: null,
   settingsOpen: false,
@@ -2411,6 +2417,7 @@ export const useProject = create<ProjectState>((set, get) => ({
             { ...image, focusX: clamp01(focusX), focusY: clamp01(focusY), focusAuto: false }
           : image,
       ),
+      enquadrando: id,
     }))
   },
 
@@ -2433,7 +2440,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
 
     if (!result.ok) {
-      set({ error: result.error })
+      set({ error: result.error, enquadrando: null })
       return
     }
 
@@ -2442,10 +2449,12 @@ export const useProject = create<ProjectState>((set, get) => ({
     const current = get().images.find((item) => item.id === id)
     if (!current || current.focusX !== image.focusX || current.focusY !== image.focusY) return
 
+    // O recorte novo esta pronto: o preview volta a copia leve.
     set((state) => ({
       images: state.images.map((item) =>
         item.id === id ? { ...item, url: result.value } : item,
       ),
+      enquadrando: state.enquadrando === id ? null : state.enquadrando,
     }))
   },
 

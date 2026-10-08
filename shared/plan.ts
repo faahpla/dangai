@@ -427,14 +427,17 @@ export function toRenderProps(
   /** A faixa de video: as sobreposicoes, com a URL do arquivo preparado. */
   sobreposicoesDoProjeto: readonly (SobreposicaoSalva & { url: string })[] = [],
   /**
-   * PREVIA: o bloco comum toca o ORIGINAL e recorta na hora pelo foco, em vez
-   * do arquivo ja recortado. "Mudo o enquadramento e o preview nao muda junto":
-   * o recorte em disco so era refeito ao soltar o retangulo -- num clipe,
-   * reencodando o video inteiro, segundos depois. O render continua com o
-   * arquivo recortado, que da o mesmo quadro (cover + object-position e a
-   * mesma conta do recorte).
+   * FOCO AO VIVO: as imagens (por id) que tocam o ORIGINAL e recortam na
+   * hora pelo foco, em vez do arquivo ja recortado. "Mudo o enquadramento e o
+   * preview nao muda junto": o recorte em disco so era refeito ao soltar o
+   * retangulo -- num clipe, reencodando o video inteiro, segundos depois.
+   *
+   * So a que esta sendo ENQUADRADA AGORA: o original tem tres vezes os pixels
+   * da copia recortada (e audio 5.1 junto), e tocar todos deixava o play
+   * lento para pegar. O render nao passa nada aqui: sai do arquivo recortado, que da o mesmo
+   * quadro (cover + object-position e a mesma conta do recorte).
    */
-  previa = false,
+  focoAoVivo: ReadonlySet<string> = new Set(),
 ): RenderProps {
   /*
    * As sobreposicoes em quadros. Sem URL (projeto recem-aberto, arquivo ainda
@@ -707,10 +710,11 @@ export function toRenderProps(
       url:
         cameraNaFonte !== null
           ? cameraNaFonte.url
-          : abaixo === null && !quarto && !(previa && image.urlSource)
+          : abaixo === null && !quarto && !(focoAoVivo.has(image.id) && image.urlSource)
             ? image.url
             : (image.urlSource ?? image.url),
-      focoNaFonte: previa && cameraNaFonte === null && abaixo === null && !quarto && Boolean(image.urlSource),
+      focoNaFonte:
+        focoAoVivo.has(image.id) && cameraNaFonte === null && abaixo === null && !quarto && Boolean(image.urlSource),
       sourceAspect:
         cameraNaFonte?.aspecto ??
         // Na tela dividida a metade de cima tambem parte do original: a camera

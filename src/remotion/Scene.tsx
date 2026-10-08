@@ -292,6 +292,9 @@ export function Scene({
               src={url}
               muted
               trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
+              // No player: espera o clipe abrir em vez de deixar o audio
+              // correr na frente (ver useEspera no Preview). O render ignora.
+              pauseWhenBuffering
               style={cobrindo}
             />
           </Freeze>
@@ -491,6 +494,9 @@ function Metade({
               src={url}
               muted
               trimBefore={sourceStartFrames > 0 ? sourceStartFrames : undefined}
+              // No player: espera o clipe abrir em vez de deixar o audio
+              // correr na frente (ver useEspera no Preview). O render ignora.
+              pauseWhenBuffering
               style={preenchendo}
             />
           </Freeze>

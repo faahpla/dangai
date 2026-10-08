@@ -244,6 +244,7 @@ function useMapaPronto(src: string | null): void {
   }, [handle, src])
 }
 
+/** Amostras do borrao radial por passada (6 x 6 = 36). So no render -- ver Transicionada. */
 const TAPS = 6
 
 /**
@@ -267,6 +268,8 @@ function FiltroDoBorrao({
   altura: number
   mapa: string
 }) {
+  // A folga em volta e onde o espelho entra no borrao.
+  const folga = 25
   const d = Math.max(largura, altura)
   const passos: React.ReactNode[] = []
   let ultimo = 'SourceGraphic'
@@ -351,10 +354,10 @@ function FiltroDoBorrao({
       <defs>
         <filter
           id={id}
-          x="-25%"
-          y="-25%"
-          width="150%"
-          height="150%"
+          x={`-${folga}%`}
+          y={`-${folga}%`}
+          width={`${100 + 2 * folga}%`}
+          height={`${100 + 2 * folga}%`}
           filterUnits="objectBoundingBox"
           primitiveUnits="userSpaceOnUse"
           colorInterpolationFilters="sRGB"
@@ -463,7 +466,15 @@ export function Transicionada({
     sx = Math.abs(((adiante.x - pose.x) / 100) * width) * 0.3
     sy = Math.abs(((adiante.y - pose.y) / 100) * height) * 0.3
   }
-  const radial = mapa !== null && Math.abs(Math.log(r)) > 0.004
+  /*
+   * NO PREVIEW, SEM O RADIAL. Medido tocando: 160 a 390ms por quadro nas
+   * emendas de zoom com as 36 amostras, e ainda 60 a 120ms com 9 -- o play
+   * engasgava ali. Ao vivo o rastro vira um desfoque comum (da GPU, de graca)
+   * do tamanho que o radial teria na borda; o MP4 sai com o radial de verdade.
+   */
+  const aoVivo = !getRemotionEnvironment().isRendering
+  const zoomando = mapa !== null && Math.abs(Math.log(r)) > 0.004
+  const radial = zoomando && !aoVivo
   const comFiltro = radial || sx > 0.3 || sy > 0.3
 
   // Bordas espelhadas sempre que o quadro pode ficar descoberto.
@@ -471,6 +482,10 @@ export function Transicionada({
 
   const filtros: string[] = []
   if (comFiltro) filtros.push(`url(#${id})`)
+  if (zoomando && aoVivo) {
+    const borda = (Math.max(width, height) / 2) * Math.abs(1 - 1 / r) * 0.3
+    if (borda > 0.5) filtros.push(`blur(${Math.min(borda, 28).toFixed(1)}px)`)
+  }
   if (pose.brilho > 1.001) {
     filtros.push(`brightness(${pose.brilho.toFixed(3)})`)
     // Um brilho que estoura tambem desbota e espalha um pouco.

@@ -6,6 +6,24 @@ import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
 import { useProject } from '@/store/project'
 import { Video } from '@/remotion/Video'
+import { create } from 'zustand'
+
+/*
+ * O PLAYER ESPERANDO O VIDEO. "Aperto play e demora pra cena acompanhar o
+ * audio, principalmente no inicio": a narracao comecava na hora e a imagem,
+ * ainda abrindo o clipe e procurando o ponto (medido: ate 1s quando o play cai
+ * no meio de um bloco), corria atras. Agora o <video> pede espera
+ * (pauseWhenBuffering, em Scene) e todo audio do preview espera junto -- os
+ * dois comecam no mesmo instante, como num editor.
+ */
+const useEspera = create<{ esperando: boolean }>(() => ({ esperando: false }))
+
+/** Tocando DE VERDADE: play apertado e o player nao esta esperando video. */
+function useTocando(): boolean {
+  const playing = useProject((s) => s.playing)
+  const esperando = useEspera((s) => s.esperando)
+  return playing && !esperando
+}
 
 /**
  * Preview NO FORMATO DO PROJETO, com o @remotion/player -- o MESMO componente
@@ -66,6 +84,15 @@ export function Preview() {
   const endSec = useProject((s) => s.endSec)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
   const faixasMudas = useProject((s) => s.faixasMudas)
+  /*
+   * So a imagem que esta sendo ENQUADRADA AGORA toca o original, com o foco
+   * recortando ao vivo; assim que o recorte novo fica pronto ela volta a copia
+   * leve. Tocar o original em todos (v1.62.2) -- ou so no bloco escolhido --
+   * deixava o play lento para pegar: "aperto play e demora pra cena
+   * acompanhar o audio, principalmente no inicio".
+   */
+  const enquadrando = useProject((s) => s.enquadrando)
+  const focoAoVivo = useMemo(() => new Set(enquadrando ? [enquadrando] : []), [enquadrando])
 
   const inputProps = useMemo(
     () =>
@@ -98,8 +125,8 @@ export function Preview() {
             },
             formato,
             sobreposicoes.filter((o) => !faixasMudas.video.includes(o.faixa)),
-            // O enquadramento muda o preview AO VIVO, enquanto arrasta.
-            true,
+            // O enquadramento do bloco escolhido muda o preview AO VIVO.
+            focoAoVivo,
           )
         : {
             formato,
@@ -149,6 +176,7 @@ export function Preview() {
       endSec,
       sobreposicoes,
       faixasMudas,
+      focoAoVivo,
     ],
   )
 
@@ -231,7 +259,7 @@ export function Preview() {
 function SfxPreview() {
   const sfxManual = useProject((s) => s.sfxManual)
   const sfxEnabled = useProject((s) => s.sfxEnabled)
-  const playing = useProject((s) => s.playing)
+  const playing = useTocando()
   const playhead = useProject((s) => s.playhead)
 
   const elementos = useRef(new Map<string, HTMLAudioElement>())
@@ -325,7 +353,7 @@ function SyncedAudio({
   loop?: boolean
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  const playing = useProject((s) => s.playing)
+  const playing = useTocando()
   const playhead = useProject((s) => s.playhead)
   const corrigindo = useRef(false)
 
@@ -341,7 +369,11 @@ function SyncedAudio({
        * comecava dessincronizada e assim seguia, porque nada dentro da
        * tolerancia corrigia.
        */
-      if (!loop) element.currentTime = useProject.getState().playhead
+      // So se estiver fora do lugar: parado (e esperando o video) a faixa ja
+      // fica na agulha -- ver o efeito abaixo --, e reposicionar de novo aqui
+      // atrasava o som uns 100-180ms em relacao a imagem.
+      const alvo = useProject.getState().playhead
+      if (!loop && Math.abs(element.currentTime - alvo) > 0.03) element.currentTime = alvo
       void element.play().catch(() => undefined)
     } else {
       element.pause()
@@ -432,6 +464,7 @@ function Sincronia({
   images: readonly ImageAsset[]
 }) {
   const playhead = useProject((s) => s.playhead)
+  // O play APERTADO (e nao o "tocando de verdade"): e ele que manda no player.
   const playing = useProject((s) => s.playing)
   const setPlayhead = useProject((s) => s.setPlayhead)
   const setPlaying = useProject((s) => s.setPlaying)
@@ -576,16 +609,30 @@ function Sincronia({
       frameDoPlayer.current = event.detail.frame
       setPlayhead(event.detail.frame / VIDEO_FPS)
     }
-    const onPause = (): void => setPlaying(false)
-    const onEnded = (): void => setPlaying(false)
+    const onPause = (): void => {
+      useEspera.setState({ esperando: false })
+      setPlaying(false)
+    }
+    const onEnded = (): void => {
+      useEspera.setState({ esperando: false })
+      setPlaying(false)
+    }
+    // O video pediu espera / ficou pronto: o audio para e volta junto.
+    const onWaiting = (): void => useEspera.setState({ esperando: true })
+    const onResume = (): void => useEspera.setState({ esperando: false })
 
     player.addEventListener('frameupdate', onFrame)
     player.addEventListener('pause', onPause)
     player.addEventListener('ended', onEnded)
+    player.addEventListener('waiting', onWaiting)
+    player.addEventListener('resume', onResume)
     return () => {
       player.removeEventListener('frameupdate', onFrame)
       player.removeEventListener('pause', onPause)
       player.removeEventListener('ended', onEnded)
+      player.removeEventListener('waiting', onWaiting)
+      player.removeEventListener('resume', onResume)
+      useEspera.setState({ esperando: false })
     }
   }, [player, setPlayhead, setPlaying])
 
@@ -621,7 +668,7 @@ function volumeDoTrecho(
 function TrilhasPreview() {
   const trilhas = useProject((s) => s.trilhas)
   const mudas = useProject((s) => s.faixasMudas.audio)
-  const playing = useProject((s) => s.playing)
+  const playing = useTocando()
   const playhead = useProject((s) => s.playhead)
   const elementos = useRef(new Map<string, HTMLAudioElement>())
 
