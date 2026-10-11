@@ -497,9 +497,16 @@ async function muxWithNormalizedAudio(
   // deixar o final em silencio. O atrim logo abaixo corta no lugar certo, entao
   // o loop infinito nunca chega a segurar o encerramento do ffmpeg.
   if (music) inputs.push('-stream_loop', '-1', '-i', music.path)
-  // Cada trecho le SO o pedaco que toca: -ss e -t antes do -i limitam a leitura.
+  /*
+   * Cada trecho le do COMECO do arquivo ate o fim do pedaco (-t), e o filtro
+   * corta o comeco (atrim). Sem -ss na entrada de proposito: num arquivo do
+   * Google Drive (H:\Meu Drive\...) o ffmpeg pulando direto para o ponto lia
+   * lixo -- "Invalid data found", taxa de erro 1 -- e o render inteiro morria
+   * no fim com "Conversion failed!". Lido do comeco, o mesmo arquivo decodifica
+   * limpo; e ler uns segundos a mais de um mp3 nao custa nada.
+   */
   for (const t of trilhas) {
-    inputs.push('-ss', t.inicioSec.toFixed(3), '-t', t.duracaoSec.toFixed(3), '-i', t.path)
+    inputs.push('-t', (t.inicioSec + t.duracaoSec).toFixed(3), '-i', t.path)
   }
 
   // Os SFX entram por cima da narracao em -12dB, para o nivel de referencia do
@@ -570,6 +577,7 @@ async function muxWithNormalizedAudio(
     chain.push(
       [
         `[${primeiraTrilha + k}:a]aformat=channel_layouts=stereo`,
+        `atrim=start=${t.inicioSec.toFixed(3)}`,
         'asetpts=PTS-STARTPTS',
         ...fades,
         `volume=${(10 ** (t.gainDb / 20)).toFixed(5)}`,
@@ -694,7 +702,35 @@ function runFfmpeg(args: readonly string[]): Promise<string> {
         resolve(stderr)
         return
       }
-      const detail = stderr.trim().split('\n').slice(-3).join(' ')
+      /*
+       * A CAUSA, e nao a ultima linha. O fim do stderr e quase sempre a linha
+       * de progresso e o "Conversion failed!" -- que nao dizem nada. "FFmpeg
+       * falhou: size=55597kB time=00:01:07.79 ... Conversion failed!" foi tudo
+       * o que ele viu, duas vezes. As linhas com cara de erro vao para a tela;
+       * o stderr inteiro, para o log.
+       */
+      console.error('[ffmpeg] falhou com codigo', code, '\nargs:', JSON.stringify(args), '\n', stderr)
+      const linhas = stderr
+        .split(/\r?\n|\r/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+      const erros = linhas.filter(
+        (l) =>
+          /error|invalid|failed|could not|unable|no such|denied|not found|matches no|too large/i.test(l) &&
+          !/^Conversion failed/i.test(l),
+      )
+      /*
+       * "aist#11:0" e a entrada 11: dizer QUAL arquivo e o que deixa ele
+       * resolver (trocar ou tirar o som) sem precisar de mim.
+       */
+      const entradas = args.flatMap((a, i) => (a === '-i' ? [args[i + 1] ?? ''] : []))
+      const ruim = /aist#(\d+):/.exec(erros.join(' '))
+      const arquivo = ruim ? entradas[Number(ruim[1])] : undefined
+      if (arquivo) {
+        reject(new Error(`Nao deu para ler o audio "${basename(arquivo)}" (${arquivo}). Troque ou tire esse som e renderize de novo.`))
+        return
+      }
+      const detail = (erros.length > 0 ? erros.slice(-3) : linhas.slice(-3)).join(' | ')
       reject(new Error(`FFmpeg falhou: ${detail}`))
     })
   })
