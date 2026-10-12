@@ -3,7 +3,7 @@ import { Columns2, Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, Squar
 import { classifyFile, isVisual } from '@shared/channels'
 import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { clipesEscolhidos, idsEscolhidos, useProject, formatTimecode } from '@/store/project'
-import { alturaDaFaixa, useAlturas, useFerramenta, useIma } from '@/store/layout'
+import { alturaDaFaixa, useAlturas, useFerramenta, useIma, usePresetsDeVolume } from '@/store/layout'
 import { useShallow } from 'zustand/react/shallow'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { carregarOnda, useOndas } from '@/store/ondas'
@@ -881,7 +881,17 @@ export function Timeline() {
                 ajuste: o.tipo === 'ajuste',
                 fadeInSec: o.fadeInSec ?? 0,
                 fadeOutSec: o.fadeOutSec ?? 0,
+                transEntrada: o.transicaoEntrada?.tipo,
+                transSaida: o.transicaoSaida?.tipo,
               }))}
+              onTransicao={(id, lado, t) =>
+                ajustarSobreposicao(
+                  id,
+                  lado === 'entrada'
+                    ? { transicaoEntrada: { tipo: t.tipo, ajuste: t.ajuste } }
+                    : { transicaoSaida: { tipo: t.tipo, ajuste: t.ajuste } },
+                )
+              }
               aceita={(p) => {
                 const t = classifyFile(p)
                 return t === 'video' || t === 'image'
@@ -1675,6 +1685,10 @@ function ControlesDaTrilha({ id }: { id: string }) {
   const ajustar = (_id: string, patch: Parameters<typeof ajustarUm>[1]): void => {
     for (const alvo of alvos.length > 0 ? alvos : [id]) ajustarUm(alvo, patch)
   }
+  const presets = usePresetsDeVolume((s) => s.lista)
+  const adicionarPreset = usePresetsDeVolume((s) => s.adicionar)
+  const removerPreset = usePresetsDeVolume((s) => s.remover)
+  const [novoPreset, setNovoPreset] = useState<string | null>(null)
   if (!t) return null
   return (
     <>
@@ -1685,12 +1699,16 @@ function ControlesDaTrilha({ id }: { id: string }) {
         texto={`${t.gainDb > 0 ? '+' : ''}${t.gainDb} dB`} onChange={(v) => ajustar(id, { gainDb: v })} />
       {/* Os volumes de sempre num clique; o slider continua para o resto. */}
       <div className="flex items-center gap-0.5">
-        {[-3, -5, -10, -15, -20, -25].map((db) => (
+        {presets.map((db) => (
           <button
             key={db}
             type="button"
             onClick={() => ajustar(id, { gainDb: db })}
-            title={`Volume em ${db} dB`}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              removerPreset(db)
+            }}
+            title={`Volume em ${db} dB (botao direito tira este preset)`}
             className={[
               'tnum h-[18px] rounded-[3px] border px-1 text-[10px]',
               t.gainDb === db ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
@@ -1699,6 +1717,39 @@ function ControlesDaTrilha({ id }: { id: string }) {
             {db}
           </button>
         ))}
+        {novoPreset === null ? (
+          <button
+            type="button"
+            onClick={() => setNovoPreset(String(t.gainDb))}
+            title="Criar um preset de volume"
+            aria-label="Criar um preset de volume"
+            className="h-[18px] rounded-[3px] border border-dashed border-line px-1 text-[10px] text-ink-3 hover:text-ink"
+          >
+            +
+          </button>
+        ) : (
+          <input
+            autoFocus
+            value={novoPreset}
+            onChange={(e) => setNovoPreset(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter') {
+                const v = Number(novoPreset.replace(',', '.'))
+                if (Number.isFinite(v)) {
+                  adicionarPreset(v)
+                  ajustar(id, { gainDb: Math.round(Math.min(Math.max(v, -40), 12) * 10) / 10 })
+                }
+                setNovoPreset(null)
+              } else if (e.key === 'Escape') setNovoPreset(null)
+            }}
+            onBlur={() => setNovoPreset(null)}
+            placeholder="dB"
+            aria-label="Volume do novo preset, em dB (Enter salva)"
+            title="Volume do novo preset em dB, de -40 a +12 (Enter salva)"
+            className="tnum h-[18px] w-[42px] rounded-[3px] border border-accent bg-elevated px-1 text-[10px] text-ink focus:outline-none"
+          />
+        )}
       </div>
       <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={Math.max(0.1, Math.round(duracaoDoTrecho(t) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${t.fadeInSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />

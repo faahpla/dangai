@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Expand, FlipHorizontal2, RotateCcw, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { idsEscolhidos, useProject } from '@/store/project'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
 import { ControleDeRitmo, opcoesDeEfeito } from './SceneEdit'
 import { AjusteEdit } from './AjusteEdit'
+import { AjusteDaTransicaoCampos, PaletaDeTransicoes } from './EditorDeTransicao'
 
 /**
  * O INSPETOR do clipe escolhido na faixa de video -- seta, imagem, .mov.
@@ -20,6 +22,7 @@ export function SobreposicaoEdit({ id }: { id: string }) {
   const selecionar = useProject((s) => s.selecionarClipe)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
   const escolhidos = useProject(useShallow((s) => idsEscolhidos(s, 'video')))
+  const [lado, setLado] = useState<'entrada' | 'saida'>('entrada')
   if (!o) return null
   if (o.tipo === 'ajuste') return <AjusteEdit id={id} />
 
@@ -150,6 +153,45 @@ export function SobreposicaoEdit({ id }: { id: string }) {
               />
             </>
           )}
+        </Grupo>
+
+        {/*
+          A TRANSICAO DO CLIPE: entra e sai com o mesmo motor das emendas,
+          revelando o que estiver por baixo. Tambem da para arrastar uma
+          transicao ate o clipe na faixa (metade esquerda = entrada).
+        */}
+        <Grupo titulo="Transicao">
+          <Linha label="">
+            <Segmentos
+              opcoes={[
+                { valor: 'entrada' as const, rotulo: o.transicaoEntrada && o.transicaoEntrada.tipo !== 'cut' ? 'Entrada ●' : 'Entrada', title: 'Como o clipe aparece' },
+                { valor: 'saida' as const, rotulo: o.transicaoSaida && o.transicaoSaida.tipo !== 'cut' ? 'Saida ●' : 'Saida', title: 'Como o clipe some' },
+              ]}
+              ativo={(l) => l === lado}
+              onChange={setLado}
+            />
+          </Linha>
+          {(() => {
+            const campo = lado === 'entrada' ? 'transicaoEntrada' : 'transicaoSaida'
+            const atual = o[campo]
+            return (
+              <>
+                <PaletaDeTransicoes
+                  atual={atual?.tipo ?? 'cut'}
+                  onEscolher={(t) => ajustar(id, { [campo]: t === 'cut' ? undefined : { tipo: t, ajuste: atual?.ajuste } })}
+                />
+                {atual && atual.tipo !== 'cut' && (
+                  <div className="mt-2">
+                    <AjusteDaTransicaoCampos
+                      tipo={atual.tipo}
+                      ajuste={atual.ajuste}
+                      onChange={(parcial) => ajustar(id, { [campo]: { tipo: atual.tipo, ajuste: { ...atual.ajuste, ...parcial } } })}
+                    />
+                  </div>
+                )}
+              </>
+            )
+          })()}
         </Grupo>
       </div>
     </div>

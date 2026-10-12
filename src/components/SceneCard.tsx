@@ -288,6 +288,9 @@ function PontoDeEntrada({
 }) {
   const updateScene = useProject((s) => s.updateScene)
   const setPlayhead = useProject((s) => s.setPlayhead)
+  const definirTrechoAoVivo = useProject((s) => s.definirTrechoAoVivo)
+  const ultimoAoVivo = useRef(0)
+  const pendenteAoVivo = useRef<number | null>(null)
   const quadroRef = useRef<HTMLVideoElement | null>(null)
   const trilhoRef = useRef<HTMLDivElement | null>(null)
   const [larguraDoTrilho, setLarguraDoTrilho] = useState(0)
@@ -393,36 +396,58 @@ function PontoDeEntrada({
   const confirmar = (t: number): void => {
     setRascunho(null)
     updateScene(index, { [campo]: Math.round(t * 1000) / 1000 })
+    definirTrechoAoVivo(null)
     // O preview vai para o comeco do bloco: e ali que o ponto novo se ve.
     setPlayhead(scene.start)
   }
 
   /*
-   * ARRASTAR A JANELA (ou clicar fora dela para leva-la ate ali). Durante o
-   * gesto NADA vai para o bloco: so o visor anda. "Tu arrasta e nao sabe onde
-   * ta indo o clipe porque ele buga tudo na preview" -- cada passo do slider
-   * reescrevia o bloco, e o player remontava o video a cada um. Agora o bloco
-   * muda uma vez, ao soltar.
+   * ARRASTAR A JANELA (ou clicar fora dela para leva-la ate ali).
+   *
+   * O PREVIEW ACOMPANHA, mas sem gravar nada no bloco ate soltar: o ponto do
+   * dedo vai para um valor temporario que so o preview le (trechoAoVivo), no
+   * maximo ~12 vezes por segundo, com a agulha parada no comeco do bloco -- o
+   * quadro que aparece e exatamente onde o bloco vai comecar. Gravar no bloco
+   * a cada pixel (historico, autosave) e levar a agulha junto era o que fazia
+   * "bugar tudo na preview".
    */
+  const mandarAoVivo = (t: number): void => {
+    pendenteAoVivo.current = t
+    const agora = performance.now()
+    const espera = 80 - (agora - ultimoAoVivo.current)
+    const enviar = (): void => {
+      if (pendenteAoVivo.current === null) return
+      ultimoAoVivo.current = performance.now()
+      definirTrechoAoVivo({ index, campo, valor: pendenteAoVivo.current })
+      pendenteAoVivo.current = null
+    }
+    if (espera <= 0) enviar()
+    else setTimeout(enviar, espera)
+  }
   const comecar = (event: React.PointerEvent): void => {
     if (event.button !== 0) return
     event.preventDefault()
     setTocando(false)
+    // Um quadro dentro do bloco: no corte exato a emenda ainda pode estar na tela.
+    setPlayhead(scene.start + Math.min(1 / VIDEO_FPS, bloco / 2))
     const t0 = aoTempo(event.clientX)
     const dentro = t0 >= inicio && t0 <= inicio + Math.min(bloco, total)
     const pega = dentro ? t0 - inicio : Math.min(bloco, total) / 2
     let atual = prender(t0 - pega)
     setRascunho(atual)
     buscar(atual)
+    mandarAoVivo(atual)
     const mover = (e: PointerEvent): void => {
       atual = prender(aoTempo(e.clientX) - pega)
       setRascunho(atual)
       buscar(atual)
+      mandarAoVivo(atual)
     }
     const soltar = (): void => {
       window.removeEventListener('pointermove', mover)
       window.removeEventListener('pointerup', soltar)
       window.removeEventListener('pointercancel', soltar)
+      pendenteAoVivo.current = null
       confirmar(atual)
     }
     window.addEventListener('pointermove', mover)

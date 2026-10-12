@@ -1395,7 +1395,10 @@ function PersonagensDoAnime({
       if (episodio && chaveEpisodio(clip) !== episodio) continue
       for (const nome of clip.characters) conta.set(nome, (conta.get(nome) ?? 0) + 1)
     }
-    return [...conta.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))
+    // Em ordem ALFABETICA ("organize os nomes por ordem alfabetica"): achar um
+    // nome numa fileira de trinta e mais facil pelo alfabeto do que pela
+    // contagem, que muda de episodio para episodio.
+    return [...conta.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { sensitivity: 'base' }))
   }, [clips, anime, episodio])
 
   if (nomes.length === 0) return null

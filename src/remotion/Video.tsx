@@ -287,7 +287,15 @@ function Pilha({ itens, children }: { itens: RenderProps['sobreposicoes']; child
         <Fragment key={`camada-${i}`}>
           {pilha}
           <Sequence from={o.from} durationInFrames={o.durationInFrames} layout="none">
-            <Sobreposicao o={o} />
+            {/* O clipe entra e sai com a transicao dele, por cima do que houver embaixo. */}
+            <Transicionada
+              entrada={o.entrada ? { ...o.entrada, borda: true } : null}
+              saida={o.saida ? { ...o.saida, borda: true } : null}
+              duracao={o.durationInFrames}
+              semEspelho
+            >
+              <Sobreposicao o={o} />
+            </Transicionada>
           </Sequence>
         </Fragment>
       )

@@ -66,24 +66,48 @@ export async function prepararSobreposicao(path: string): Promise<SobreposicaoPr
   const chave = createHash('sha1').update(`${path}|${s.size}|${s.mtimeMs}`).digest('hex').slice(0, 20)
   const alvo = join(dir(), `${chave}.webm`)
   if (!existsSync(alvo)) {
-    const parcial = `${alvo}.part.webm`
-    try {
-      await rodar([
-        '-y', '-hide_banner', '-loglevel', 'error', '-i', path,
-        // yuva420p guarda o canal alfa; sem alfa na fonte, ele sai opaco.
-        '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p',
-        '-b:v', '0', '-crf', '24', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '4',
-        // Alfa em VP9 exige isto desligado.
-        '-auto-alt-ref', '0',
-        '-an', parcial,
-      ])
-      renameSync(parcial, alvo)
-    } catch (erro) {
-      rmSync(parcial, { force: true })
-      throw erro
+    /*
+     * UMA CONVERSAO POR ARQUIVO. O mesmo .mov duas vezes na linha do tempo (a
+     * mesma seta em dois pontos) pedia duas conversoes ao mesmo tempo para o
+     * mesmo destino: a primeira renomeava o .part, a segunda falhava no rename
+     * ("ENOENT") e aquele clipe ficava sem video no preview e no render.
+     * Quem chega com a conversao andando espera a mesma.
+     */
+    const andando = convertendo.get(alvo)
+    if (andando) {
+      await andando
+    } else {
+      const tarefa = converter(path, alvo)
+      convertendo.set(alvo, tarefa)
+      try {
+        await tarefa
+      } finally {
+        convertendo.delete(alvo)
+      }
     }
   }
   return { arquivo: alvo, tipo: 'video', durationSec: info.durationSec, aspecto }
+}
+
+const convertendo = new Map<string, Promise<void>>()
+
+async function converter(path: string, alvo: string): Promise<void> {
+  const parcial = `${alvo}.part.webm`
+  try {
+    await rodar([
+      '-y', '-hide_banner', '-loglevel', 'error', '-i', path,
+      // yuva420p guarda o canal alfa; sem alfa na fonte, ele sai opaco.
+      '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p',
+      '-b:v', '0', '-crf', '24', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '4',
+      // Alfa em VP9 exige isto desligado.
+      '-auto-alt-ref', '0',
+      '-an', parcial,
+    ])
+    renameSync(parcial, alvo)
+  } catch (erro) {
+    rmSync(parcial, { force: true })
+    throw erro
+  }
 }
 
 function rodar(args: string[]): Promise<void> {

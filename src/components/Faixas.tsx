@@ -6,6 +6,9 @@ import { alturaDaFaixa, useAlturas } from '@/store/layout'
 import { useProject } from '@/store/project'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
+import type { Transition } from '@shared/contract'
+import { ehArrasteDeTransicao, transicaoDoArraste, TRANSITION_LABEL, type TransicaoArrastada } from '@/store/transicoes'
+import { IconeDaTransicao } from './EditorDeTransicao'
 
 /**
  * As faixas da linha do tempo, no jeito do DaVinci.
@@ -265,6 +268,9 @@ export interface ClipeDaFaixa {
   imagem?: string
   /** Camada de ajuste: roxa, sem miniatura. */
   ajuste?: boolean
+  /** As transicoes do proprio clipe (faixa de video). */
+  transEntrada?: Transition
+  transSaida?: Transition
 }
 
 const formatarDuracao = (s: number): string => {
@@ -297,6 +303,7 @@ export function GrupoDeFaixas({
   onRemover,
   onVazio,
   onFade,
+  onTransicao,
 }: {
   tipo: 'video' | 'audio'
   clipes: readonly ClipeDaFaixa[]
@@ -320,6 +327,8 @@ export function GrupoDeFaixas({
   onVazio: (event: React.PointerEvent) => void
   /** Puxar a alca de fade de um clipe: quantos segundos de entrada ou saida. */
   onFade: (id: string, qual: 'entra' | 'sai', segundos: number) => void
+  /** Uma transicao arrastada solta num clipe: metade esquerda = entrada, direita = saida. */
+  onTransicao?: (id: string, lado: 'entrada' | 'saida', t: TransicaoArrastada) => void
 }) {
   const principal = useProject((s) => (s.clipeSelecionado?.tipo === tipo ? s.clipeSelecionado.id : null))
   const juntos = useProject(
@@ -598,6 +607,7 @@ export function GrupoDeFaixas({
                     comecarGesto()
                   }}
                   onFade={(qual, segundos) => onFade(c.id, qual, segundos)}
+                  onTransicao={onTransicao && !c.ajuste ? (lado, t) => onTransicao(c.id, lado, t) : undefined}
                   onRestaurarFim={() => onCortarFim(c.id, null)}
                   onRemover={() => {
                     onRemover(c.id)
@@ -621,6 +631,7 @@ function Clipe({
   escolhido,
   onPegar,
   onFade,
+  onTransicao,
   onRestaurarFim,
   onRemover,
 }: {
@@ -631,10 +642,17 @@ function Clipe({
   escolhido: 'principal' | 'junto' | null
   onPegar: (event: React.PointerEvent<HTMLElement>, parte: 'corpo' | 'inicio' | 'fim') => void
   onFade: (qual: 'entra' | 'sai', segundos: number) => void
+  onTransicao?: (lado: 'entrada' | 'saida', t: TransicaoArrastada) => void
   onRestaurarFim: () => void
   onRemover: () => void
 }) {
   const audio = tipo === 'audio'
+  // Qual ponta acende enquanto uma transicao e arrastada por cima.
+  const [alvoDaTransicao, setAlvoDaTransicao] = useState<'entrada' | 'saida' | null>(null)
+  const ladoDoPonteiro = (event: React.DragEvent): 'entrada' | 'saida' => {
+    const r = event.currentTarget.getBoundingClientRect()
+    return event.clientX - r.left < r.width / 2 ? 'entrada' : 'saida'
+  }
   const arquivo = c.arquivoSec ?? c.toca
   /*
    * A onda e do arquivo inteiro, mas so o PEDACO QUE TOCA vai para o canvas.
@@ -655,6 +673,30 @@ function Clipe({
       data-clipe={c.id}
       data-tipo={tipo}
       onPointerDown={(event) => onPegar(event, 'corpo')}
+      onDragOver={
+        onTransicao
+          ? (event) => {
+              if (!ehArrasteDeTransicao(event)) return
+              event.preventDefault()
+              event.stopPropagation()
+              event.dataTransfer.dropEffect = 'copy'
+              setAlvoDaTransicao(ladoDoPonteiro(event))
+            }
+          : undefined
+      }
+      onDragLeave={onTransicao ? () => setAlvoDaTransicao(null) : undefined}
+      onDrop={
+        onTransicao
+          ? (event) => {
+              setAlvoDaTransicao(null)
+              const t = transicaoDoArraste(event)
+              if (!t) return
+              event.preventDefault()
+              event.stopPropagation()
+              onTransicao(ladoDoPonteiro(event), t)
+            }
+          : undefined
+      }
       style={{ left: `${(c.at / duration) * 100}%`, width: `${(c.toca / duration) * 100}%` }}
       title={`${c.nome} — entra em ${c.at.toFixed(2)}s, ${formatarDuracao(c.toca)}`}
       className={[
@@ -677,6 +719,31 @@ function Clipe({
             className="block h-full w-full"
           />
         </div>
+      )}
+      {/* As transicoes do clipe, nas pontas -- e a ponta que vai receber a arrastada. */}
+      {alvoDaTransicao && (
+        <span
+          className={[
+            'pointer-events-none absolute inset-y-0 w-1/2 bg-accent/35',
+            alvoDaTransicao === 'entrada' ? 'left-0' : 'right-0',
+          ].join(' ')}
+        />
+      )}
+      {c.transEntrada && c.transEntrada !== 'cut' && (
+        <span
+          title={`Entra com ${TRANSITION_LABEL[c.transEntrada]}`}
+          className="pointer-events-none absolute left-0.5 top-0.5 z-[1] grid size-[14px] place-items-center rounded-[3px] bg-accent text-white"
+        >
+          <IconeDaTransicao tipo={c.transEntrada} size={9} />
+        </span>
+      )}
+      {c.transSaida && c.transSaida !== 'cut' && (
+        <span
+          title={`Sai com ${TRANSITION_LABEL[c.transSaida]}`}
+          className="pointer-events-none absolute right-0.5 top-0.5 z-[1] grid size-[14px] place-items-center rounded-[3px] bg-accent text-white"
+        >
+          <IconeDaTransicao tipo={c.transSaida} size={9} />
+        </span>
       )}
       {c.ajuste && (
         <SlidersHorizontal

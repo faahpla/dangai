@@ -419,11 +419,18 @@ export function Transicionada({
   entrada,
   saida,
   duracao,
+  semEspelho = false,
   children,
 }: {
   entrada: Ponta | null
   saida: Ponta | null
   duracao: number
+  /**
+   * Sem bordas espelhadas: num clipe da faixa de video (uma seta, um .mov com
+   * fundo vazado) o espelho criaria COPIAS dele em volta. La o que aparece em
+   * volta e a cena de baixo, que e o certo.
+   */
+  semEspelho?: boolean
   children: React.ReactNode
 }) {
   const frame = useCurrentFrame()
@@ -478,7 +485,7 @@ export function Transicionada({
   const comFiltro = radial || sx > 0.3 || sy > 0.3
 
   // Bordas espelhadas sempre que o quadro pode ficar descoberto.
-  const espelhar = ponta !== null && (pose.s < 0.999 || Math.abs(pose.x) > 0.01 || Math.abs(pose.y) > 0.01 || comFiltro)
+  const espelhar = !semEspelho && ponta !== null && (pose.s < 0.999 || Math.abs(pose.x) > 0.01 || Math.abs(pose.y) > 0.01 || comFiltro)
 
   const filtros: string[] = []
   if (comFiltro) filtros.push(`url(#${id})`)

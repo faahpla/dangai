@@ -94,11 +94,27 @@ export function Preview() {
   const enquadrando = useProject((s) => s.enquadrando)
   const focoAoVivo = useMemo(() => new Set(enquadrando ? [enquadrando] : []), [enquadrando])
 
+  /*
+   * O TRECHO DO CLIPE AO VIVO: enquanto ele arrasta a janela da tira, o preview
+   * usa o ponto de entrada do dedo (ver PontoDeEntrada) -- "quero que mude
+   * simultaneamente no preview, so assim pra eu ver exatamente onde deve
+   * comecar". So a cena arrastada muda; a chave dela nao, entao o video so
+   * procura o quadro, sem remontar.
+   */
+  const trechoAoVivo = useProject((s) => s.trechoAoVivo)
+  const planDoPreview = useMemo(() => {
+    if (!plan || !trechoAoVivo) return plan
+    return {
+      ...plan,
+      scenes: plan.scenes.map((s, i) => (i === trechoAoVivo.index ? { ...s, [trechoAoVivo.campo]: trechoAoVivo.valor } : s)),
+    }
+  }, [plan, trechoAoVivo])
+
   const inputProps = useMemo(
     () =>
-      plan && images.length > 0
+      planDoPreview && images.length > 0
         ? toRenderProps(
-            plan,
+            planDoPreview,
             images,
             captionsEnabled ? captions : [],
             { hook: hookText, hookSec, end: endText, endSec },
@@ -146,7 +162,7 @@ export function Preview() {
             sobreposicoes: [],
           },
     [
-      plan,
+      planDoPreview,
       images,
       audio,
       captions,

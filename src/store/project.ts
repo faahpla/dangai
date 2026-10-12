@@ -812,6 +812,13 @@ export interface ProjectState {
    * ficar pronto). So ela toca o original no preview -- ver focoAoVivo.
    */
   enquadrando: string | null
+  /**
+   * O ponto de entrada sendo ARRASTADO no "Trecho do clipe": o preview usa este
+   * valor no lugar do salvo, para mudar junto com o dedo. Nao vai para o
+   * projeto nem para o desfazer -- quem grava e o soltar (updateScene).
+   */
+  trechoAoVivo: { index: number; campo: 'sourceStart' | 'sourceStartB'; valor: number } | null
+  definirTrechoAoVivo: (t: { index: number; campo: 'sourceStart' | 'sourceStartB'; valor: number } | null) => void
   /** Confirma o enquadramento: pede o novo recorte ao main e troca a URL. */
   commitImageFocus: (id: string) => Promise<void>
   /**
@@ -1134,6 +1141,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   selecionados: [],
   ajustesCopiados: null,
   enquadrando: null,
+  trechoAoVivo: null,
   render: null,
   lastOutput: null,
   settingsOpen: false,
@@ -3792,6 +3800,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   esquecerIrParaClipe: () => set({ irParaClipe: null }),
+
+  definirTrechoAoVivo: (t) => set({ trechoAoVivo: t }),
 
   mesclarCenas: async (paths) => {
     set({ busy: `Mesclando ${paths.length} cenas...` })

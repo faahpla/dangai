@@ -1394,6 +1394,14 @@ export const sobreposicaoSchema = z.object({
    * que e o que um .mov exportado no tamanho do video precisa.
    */
   preencher: z.boolean().optional(),
+  /*
+   * TRANSICAO DO PROPRIO CLIPE, na entrada e na saida: "adiciono uma imagem na
+   * timeline e quero fazer uma transicao, mas os blocos estao embaixo, a
+   * transicao vai apenas nos blocos e nao na imagem". O clipe entra e sai com
+   * o mesmo motor das emendas -- revelando o que estiver por baixo.
+   */
+  transicaoEntrada: z.object({ tipo: z.enum(TRANSITIONS), ajuste: ajusteDaTransicaoSchema.optional() }).optional(),
+  transicaoSaida: z.object({ tipo: z.enum(TRANSITIONS), ajuste: ajusteDaTransicaoSchema.optional() }).optional(),
   /**
    * Fade de entrada e de saida, em segundos: a opacidade (ou, na camada de
    * ajuste, a intensidade) sobe e desce nessas pontas.
@@ -1622,6 +1630,9 @@ export const renderPropsSchema = z.object({
         cor: ajusteDeCorSchema.optional(),
         espelhar: z.boolean().default(false),
         preencher: z.boolean().default(false),
+        /** A transicao de entrada e de saida do clipe, resolvidas. */
+        entrada: transicaoResolvidaSchema.nullable().default(null),
+        saida: transicaoResolvidaSchema.nullable().default(null),
         fadeInFrames: z.number().int().nonnegative().default(0),
         fadeOutFrames: z.number().int().nonnegative().default(0),
       }),

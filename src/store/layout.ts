@@ -175,3 +175,41 @@ export const useConsoleFx = create<{ aberto: boolean; alternar: () => void; fech
   alternar: () => set({ aberto: !get().aberto }),
   fechar: () => set({ aberto: false }),
 }))
+
+/*
+ * OS PRESETS DE VOLUME dos audios da timeline: "me de a possibilidade de
+ * criar novos presets de dB manualmente". Comeca com os seis de sempre; ele
+ * acrescenta (o "+") e tira (botao direito). Gosto desta maquina.
+ */
+const PRESETS_DE_VOLUME_PADRAO = [-3, -5, -10, -15, -20, -25]
+function lerPresetsDeVolume(): number[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem('dangai.presetsDeVolume') ?? 'null')
+    if (Array.isArray(v) && v.every((x) => typeof x === 'number' && Number.isFinite(x))) return v as number[]
+  } catch {
+    /* padrao */
+  }
+  return PRESETS_DE_VOLUME_PADRAO
+}
+export const usePresetsDeVolume = create<{
+  lista: number[]
+  adicionar: (db: number) => void
+  remover: (db: number) => void
+  restaurar: () => void
+}>((set, get) => {
+  const gravar = (lista: number[]): void => {
+    const limpa = [...new Set(lista.map((x) => Math.round(Math.min(Math.max(x, -40), 12) * 10) / 10))].sort((a, b) => b - a)
+    set({ lista: limpa })
+    try {
+      localStorage.setItem('dangai.presetsDeVolume', JSON.stringify(limpa))
+    } catch {
+      /* vale so nesta sessao */
+    }
+  }
+  return {
+    lista: lerPresetsDeVolume(),
+    adicionar: (db) => gravar([...get().lista, db]),
+    remover: (db) => gravar(get().lista.filter((x) => x !== db)),
+    restaurar: () => gravar(PRESETS_DE_VOLUME_PADRAO),
+  }
+})

@@ -458,7 +458,16 @@ export function toRenderProps(
       if (durationSec !== undefined && o.at + toca >= durationSec - 1 / VIDEO_FPS) {
         ate = Math.max(ate, Math.ceil(durationSec * VIDEO_FPS))
       }
+      const quadros = Math.max(1, ate - from)
+      // A transicao de cada ponta cabe na metade do clipe: as duas nunca se cruzam.
+      const ponta = (t: SobreposicaoSalva['transicaoEntrada']) => {
+        if (!t || t.tipo === 'cut' || o.tipo === 'ajuste') return null
+        const f = Math.min(framesDaTransicao(t.tipo, t.ajuste), Math.floor(quadros / 2))
+        return f > 0 ? resolverTransicao(t.tipo, t.ajuste, f) : null
+      }
       return {
+        entrada: ponta(o.transicaoEntrada),
+        saida: ponta(o.transicaoSaida),
         url: o.url,
         tipo: o.tipo,
         from,
