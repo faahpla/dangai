@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { Reorder, useDragControls } from 'motion/react'
 import {
-  AlertTriangle,
   Check,
   Copy,
   GripVertical,
   Loader2,
+  LocateFixed,
+  Pause,
   Merge,
   Minus,
   Plus,
@@ -289,17 +290,24 @@ export function ScriptColumn() {
                 )}
                 {cenas.length > 0 && (
                   <span className="flex items-center gap-2">
+                    {/*
+                      "Esse sistema de congela... ate hoje acho confuso." O nome
+                      agora diz o que se VE no video: a imagem para. O tooltip
+                      diz por que e como resolver; a fita do trecho aberto mostra
+                      quanto, em cada cena.
+                    */}
                     {congelamentos.length > 0 && (
                       <span
                         className="flex items-center gap-1 text-[10px] text-accent"
                         title={
-                          congelamentos.length === 1
-                            ? `Uma cena e curta demais: vai congelar ${congelamentos[0]!.toFixed(1)}s no fim`
-                            : `${congelamentos.length} cenas sao curtas demais; a pior congela ${Math.max(...congelamentos).toFixed(1)}s`
+                          (congelamentos.length === 1
+                            ? `Uma cena e mais curta que o tempo que ganhou: o ultimo quadro dela fica PARADO por ${congelamentos[0]!.toFixed(1)}s.`
+                            : `${congelamentos.length} cenas sao mais curtas que o tempo que ganharam; a pior fica PARADA por ${Math.max(...congelamentos).toFixed(1)}s.`) +
+                          ' Abra o trecho: a barra riscada mostra onde. Para resolver, de menos tempo a ela (-), troque por um clipe mais longo ou ponha mais uma cena.'
                         }
                       >
-                        <AlertTriangle size={10} strokeWidth={2} />
-                        congela
+                        <Pause size={10} strokeWidth={2.25} />
+                        imagem parada
                       </span>
                     )}
                     <span
@@ -341,6 +349,7 @@ export function ScriptColumn() {
                 <Fita
                   caminhos={cenas}
                   duracao={dura}
+                  fatias={fatias}
                   pesos={pesosDoBloco}
                   porCaminho={porCaminho}
                   onOrdem={(paths) => reordenar(i, paths)}
@@ -433,6 +442,46 @@ function Frase({
   onSoltar: () => void
 }) {
   const [puxando, setPuxando] = useState<number | null>(null)
+  const [alvo, setAlvo] = useState<number | null>(null)
+
+  /*
+   * O ARRASTE MORA NA JANELA, e nao no paragrafo nem na alca.
+   *
+   * "A alcinha de arrastar e meio bugada, tem hora que nao consigo colocar
+   * onde eu quero." A alca segurava o ponteiro (pointer capture), mas a cada
+   * palavra que o corte andava a frase se redesenhava e a alca era RECRIADA
+   * em outro lugar -- a captura morria junto, e o arraste soltava sozinho no
+   * meio do gesto. Sair do paragrafo tambem soltava. Ouvindo a janela, nada
+   * disso interrompe: o gesto so acaba quando o botao sobe.
+   *
+   * A palavra sob o dedo vem do ELEMENTO sob o ponteiro, e nao de coordenada
+   * calculada: o texto QUEBRA LINHA, entao a posicao horizontal sozinha nao
+   * diz nada -- a primeira palavra da segunda linha fica a esquerda da
+   * ultima da primeira.
+   */
+  useEffect(() => {
+    if (puxando === null) return
+    const mover = (event: PointerEvent): void => {
+      const sob = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-palavra]')
+      const valor = sob?.getAttribute('data-palavra')
+      if (valor === null || valor === undefined) return
+      const palavra = Number(valor)
+      setAlvo(palavra)
+      onPuxar(puxando, palavra)
+    }
+    const soltar = (): void => {
+      setPuxando(null)
+      setAlvo(null)
+    }
+    window.addEventListener('pointermove', mover)
+    window.addEventListener('pointerup', soltar)
+    window.addEventListener('pointercancel', soltar)
+    return () => {
+      window.removeEventListener('pointermove', mover)
+      window.removeEventListener('pointerup', soltar)
+      window.removeEventListener('pointercancel', soltar)
+    }
+  }, [puxando, onPuxar])
 
   if (spans.length === 0 || palavras.length === 0) {
     return (
@@ -463,30 +512,14 @@ function Frase({
     }
   }
 
-  /*
-   * Qual palavra esta debaixo do dedo.
-   *
-   * Vai pelo elemento sob o ponteiro em vez de por coordenada calculada: o
-   * texto QUEBRA LINHA, entao a posicao horizontal sozinha nao diz nada -- a
-   * primeira palavra da segunda linha fica a esquerda da ultima da primeira.
-   */
-  const palavraSob = (x: number, y: number): number | null => {
-    const alvo = document.elementFromPoint(x, y)?.closest('[data-palavra]')
-    const valor = alvo?.getAttribute('data-palavra')
-    return valor === null || valor === undefined ? null : Number(valor)
-  }
-
   return (
     <>
       <p
-        className={['mt-1 text-[12px] leading-snug', aberto ? 'text-ink' : 'text-ink-2'].join(' ')}
-        onPointerMove={(event) => {
-          if (puxando === null) return
-          const palavra = palavraSob(event.clientX, event.clientY)
-          if (palavra !== null) onPuxar(puxando, palavra)
-        }}
-        onPointerUp={() => setPuxando(null)}
-        onPointerLeave={() => setPuxando(null)}
+        className={[
+          'mt-1 text-[12px] leading-snug',
+          aberto ? 'text-ink' : 'text-ink-2',
+          puxando !== null ? 'cursor-ew-resize select-none' : '',
+        ].join(' ')}
       >
         {grupos.map((grupo, g) => (
           <span key={g}>
@@ -495,21 +528,30 @@ function Frase({
               uma vez, uma alca por fronteira viraria uma parede de pontinhos.
             */}
             {g > 0 && aberto && podePuxar && (
+              /*
+                Area de pegar com 13px, e a barrinha visivel de 3px no meio --
+                3px era o alvo inteiro, e errar por um pixel pegava a palavra.
+              */
               <span
                 role="separator"
-                title={`Puxe para a cena ${grupo.slot + 1} comecar em outra palavra`}
+                title={`Arraste para escolher em que palavra a cena ${grupo.slot + 1} comeca`}
                 onPointerDown={(event) => {
+                  event.preventDefault()
                   event.stopPropagation()
-                  event.currentTarget.setPointerCapture(event.pointerId)
                   setPuxando(grupo.slot - 1)
                 }}
-                className={[
-                  'mx-1 inline-block w-[3px] cursor-ew-resize rounded-full align-middle',
-                  puxando === grupo.slot - 1
-                    ? 'h-4 bg-accent'
-                    : 'h-3 bg-accent/50 hover:h-4 hover:bg-accent',
-                ].join(' ')}
-              />
+                onClick={(event) => event.stopPropagation()}
+                className="group/alca inline-flex h-4 w-[13px] cursor-ew-resize items-center justify-center align-middle"
+              >
+                <span
+                  className={[
+                    'block w-[3px] rounded-full transition-all duration-100',
+                    puxando === grupo.slot - 1
+                      ? 'h-4 bg-accent shadow-[0_0_6px_rgba(255,62,128,0.8)]'
+                      : 'h-3 bg-accent/60 group-hover/alca:h-4 group-hover/alca:bg-accent',
+                  ].join(' ')}
+                />
+              </span>
             )}
             <span
               className={[
@@ -524,7 +566,12 @@ function Frase({
               ].join(' ')}
             >
               {grupo.palavras.map((palavra, i) => (
-                <span key={palavra.indice} data-palavra={palavra.indice}>
+                <span
+                  key={palavra.indice}
+                  data-palavra={palavra.indice}
+                  // A palavra onde a cena vai comecar, enquanto arrasta.
+                  className={puxando !== null && alvo === palavra.indice ? 'rounded-[2px] outline outline-1 outline-accent' : undefined}
+                >
                   {i > 0 ? ' ' : ''}
                   {palavra.texto}
                 </span>
@@ -534,6 +581,9 @@ function Frase({
         ))}
       </p>
 
+      {aberto && podePuxar && spans.length > 1 && !puxada && puxando === null && (
+        <p className="mt-1 text-[10px] text-ink-3">Arraste a barrinha rosa para escolher em que palavra cada cena comeca.</p>
+      )}
       {aberto && puxada && (
         <button
           type="button"
@@ -570,6 +620,7 @@ function Frase({
 function Fita({
   caminhos,
   duracao,
+  fatias,
   pesos,
   porCaminho,
   onOrdem,
@@ -582,6 +633,13 @@ function Fita({
   caminhos: readonly string[]
   /** O tempo do trecho inteiro, repartido entre as cenas conforme o peso. */
   duracao: number
+  /**
+   * Os segundos de CADA cena como o video vai mostrar -- pelas palavras,
+   * quando a barrinha cortou a frase. A fita dividia por peso enquanto o selo
+   * "imagem parada" do trecho media pelas palavras: o aviso aparecia em cima e
+   * nenhuma linha dizia qual cena era.
+   */
+  fatias?: readonly number[]
   /** Peso de cada cena, na ordem da fita. 1 = todas iguais. */
   pesos: readonly number[]
   porCaminho: Map<string, LibraryClip>
@@ -632,7 +690,7 @@ function Fita({
             posicao={i}
             total={caminhos.length}
             clip={porCaminho.get(caminho)}
-            fatia={(duracao * peso) / soma}
+            fatia={fatias?.[i] ?? (duracao * peso) / soma}
             peso={peso}
             podePesar={slots > 1 && dono === i}
             emCima={uniao.has(i)}
@@ -689,6 +747,7 @@ function LinhaDaFita({
   const controles = useDragControls()
   const congela = clip ? fatia - clip.duration : 0
   const unida = emCima || embaixo
+  const mostrarNaBiblioteca = useProject((s) => s.mostrarNaBiblioteca)
 
   return (
     <Reorder.Item
@@ -768,11 +827,25 @@ function LinhaDaFita({
               </PassoDeTempo>
             )}
           </span>
-          {(unida || congela > 0.05) && (
-            <span className="truncate text-[10px] leading-tight">
-              {unida && <span className="text-accent">{emCima ? 'em cima' : 'embaixo'}</span>}
-              {unida && congela > 0.05 && <span className="text-ink-3"> · </span>}
-              {congela > 0.05 && <span className="text-accent">congela {congela.toFixed(1)}s</span>}
+          {unida && (
+            <span className="truncate text-[10px] leading-tight text-accent">{emCima ? 'em cima' : 'embaixo'}</span>
+          )}
+          {/*
+            IMAGEM PARADA, desenhada: a barra e o tempo que a cena ganha; a
+            parte cheia e o clipe tocando, a riscada e o ultimo quadro parado
+            esperando o trecho acabar. Era um "congela 0,3s" solto, que ele
+            nunca entendeu.
+          */}
+          {clip && congela > 0.05 && (
+            <span
+              className="mt-0.5 flex items-center gap-1.5"
+              title={`O clipe tem ${clip.duration.toFixed(1)}s, mas esta cena ganha ${fatia.toFixed(1)}s: nos ultimos ${congela.toFixed(1)}s a imagem fica PARADA no ultimo quadro. Para resolver: menos tempo para ela (-), um clipe mais longo, ou mais uma cena no trecho.`}
+            >
+              <span className="relative flex h-[5px] w-[54px] shrink-0 overflow-hidden rounded-full bg-elevated">
+                <span className="h-full bg-ink-3/70" style={{ width: `${(clip.duration / fatia) * 100}%` }} />
+                <span className="h-full flex-1 bg-[repeating-linear-gradient(135deg,rgba(255,62,128,0.9)_0_2px,transparent_2px_4px)]" />
+              </span>
+              <span className="tnum whitespace-nowrap text-[10px] text-accent">parada {congela.toFixed(1)}s</span>
             </span>
           )}
         </div>
@@ -783,6 +856,14 @@ function LinhaDaFita({
             de dividir a tela, e dois botoes com o mesmo desenho fazendo coisas
             diferentes e o tipo de coisa que so se descobre errando.
           */}
+          {clip && (
+            <AcaoDaLinha
+              rotulo="Mostrar este clipe na biblioteca (episodio e posicao)"
+              onClick={() => void mostrarNaBiblioteca(clip.path)}
+            >
+              <LocateFixed size={12} strokeWidth={1.5} />
+            </AcaoDaLinha>
+          )}
           <AcaoDaLinha rotulo="Usar esta cena mais uma vez, logo depois" onClick={onRepetir}>
             <Copy size={12} strokeWidth={1.5} />
           </AcaoDaLinha>

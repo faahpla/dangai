@@ -155,6 +155,36 @@ export function Library() {
    */
   const [maisSugestoes, setMaisSugestoes] = useState(false)
 
+  /*
+   * IR ATE O CLIPE: "um botao onde eu clique e me leve exatamente para onde
+   * esta aquele clip (episodio e posicao na biblioteca)". O pedido vem do
+   * store (mostrarNaBiblioteca): poe o anime e o episodio do clipe, tira os
+   * filtros que poderiam esconde-lo, e a grade rola ate ele e acende.
+   */
+  const irParaClipe = useProject((s) => s.irParaClipe)
+  const esquecerIrParaClipe = useProject((s) => s.esquecerIrParaClipe)
+  const [destaque, setDestaque] = useState<string | null>(null)
+  useEffect(() => {
+    if (!open || !irParaClipe || !library) return
+    const clip = library.clips.find((c) => c.path === irParaClipe)
+    esquecerIrParaClipe()
+    if (!clip) return
+    setTexto('')
+    setPersonagem(null)
+    setSoFavoritos(false)
+    setMinSec(0)
+    setMaxSec(0)
+    setAnime(clip.anime)
+    setEpisodio(chaveEpisodio(clip))
+    setDestaque(clip.id)
+  }, [open, irParaClipe, library, esquecerIrParaClipe])
+  // O brilho dura o bastante para o olho achar o cartao, e some.
+  useEffect(() => {
+    if (!destaque) return
+    const t = setTimeout(() => setDestaque(null), 2600)
+    return () => clearTimeout(t)
+  }, [destaque])
+
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
@@ -803,6 +833,7 @@ export function Library() {
                 favoritos={favoritosSet}
                 onFavoritar={(id) => void toggleFavorite(id)}
                 onEscolher={escolher}
+                destaque={destaque}
               />
             )}
           </div>
@@ -1464,6 +1495,8 @@ interface GradeProps {
   favoritos: ReadonlySet<string>
   onFavoritar: (id: string) => void
   onEscolher: (id: string) => void
+  /** A cena para onde rolar e acender ("ir ate o clipe"). */
+  destaque?: string | null
 }
 
 /**
@@ -1474,7 +1507,7 @@ interface GradeProps {
  * dezenas, e o espacador de cima e de baixo faz a barra de rolagem continuar
  * dizendo a verdade sobre o tamanho do acervo.
  */
-function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEscolher }: GradeProps) {
+function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEscolher, destaque }: GradeProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
   const [altura, setAltura] = useState(0)
@@ -1521,6 +1554,20 @@ function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEsc
   const linhaH = Math.round((itemW * 9) / 16) + RODAPE + GAP
   const linhas = Math.ceil(clips.length / colunas)
 
+  /*
+   * Rola ate a cena em destaque, no MEIO da vista. Depois do efeito de volta
+   * ao topo (a troca de episodio muda a chave) -- os dois rodam no mesmo
+   * ciclo, e este vem por ultimo.
+   */
+  useEffect(() => {
+    if (!destaque || linhaH <= 0 || colunas <= 0) return
+    const indice = clips.findIndex((c) => c.id === destaque)
+    if (indice < 0) return
+    const topo = Math.max(0, Math.floor(indice / colunas) * linhaH - altura / 2 + linhaH / 2)
+    ref.current?.scrollTo({ top: topo })
+    setScroll(topo)
+  }, [destaque, clips, colunas, linhaH, altura, chave])
+
   const primeira = Math.max(0, Math.floor(scroll / linhaH) - FOLGA)
   const ultima = Math.min(linhas, Math.ceil((scroll + altura) / linhaH) + FOLGA)
   const visiveis = clips.slice(primeira * colunas, ultima * colunas)
@@ -1566,6 +1613,7 @@ function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEsc
                 favorito={favoritos.has(clip.id)}
                 onFavoritar={() => onFavoritar(clip.id)}
                 onClick={() => onEscolher(clip.id)}
+                destacado={clip.id === destaque}
               />
             ))}
         </div>
@@ -1749,10 +1797,13 @@ function Cartao({
   favorito,
   onFavoritar,
   onClick,
+  destacado = false,
 }: {
   clip: LibraryClip
   /** Posicao na fila, comecando em 1. Zero quando nao foi escolhida. */
   ordem: number
+  /** Acabou de ser procurada ("ir ate o clipe"): acende por um instante. */
+  destacado?: boolean
   /** Ja foi gasta em outra frase. Nao impede -- so avisa. */
   usada?: boolean
   favorito: boolean
@@ -1894,6 +1945,7 @@ function Cartao({
       title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.join(', ')}` : ''}${usada ? ' · ja usada em outra frase' : ''}`}
       className={[
         'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
+        destacado ? 'animate-pulse ring-2 ring-accent shadow-[0_0_18px_rgba(255,62,128,0.7)]' : '',
         marcado
           ? 'border-accent'
           : usada

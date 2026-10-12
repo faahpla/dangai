@@ -476,6 +476,7 @@ export function toRenderProps(
         pontosDaCurva: o.pontosDaCurva ?? null,
         ...(o.tipo === 'ajuste' ? { cor: o.cor ?? AJUSTE_DE_COR_PADRAO } : {}),
         espelhar: o.espelhar ?? false,
+        preencher: o.preencher ?? false,
         fadeInFrames: Math.round((o.fadeInSec ?? 0) * VIDEO_FPS),
         fadeOutFrames: Math.round((o.fadeOutSec ?? 0) * VIDEO_FPS),
       }

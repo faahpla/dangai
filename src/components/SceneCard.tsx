@@ -1,6 +1,6 @@
-import { useRef } from 'react'
-import { Film, ImagePlus, Library as LibraryIcon, RefreshCcw, Scissors } from 'lucide-react'
-import { isVisual } from '@shared/channels'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Film, ImagePlus, Library as LibraryIcon, LocateFixed, Pause, Play, RefreshCcw, Scissors } from 'lucide-react'
+import { isVisual, type TiraDaCena } from '@shared/channels'
 import { VIDEO_FPS, type ImageAsset, type Scene } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
 import { Chip, Field } from './painel'
@@ -75,6 +75,11 @@ export function SceneCard() {
   const applyCurveToAll = useProject((s) => s.applyCurveToAll)
   const insertImages = useProject((s) => s.insertImages)
   const abrirBiblioteca = useProject((s) => s.openLibraryToReplace)
+  const mostrarNaBiblioteca = useProject((s) => s.mostrarNaBiblioteca)
+  // So clipe que veio da biblioteca tem lugar nela para onde ir.
+  const library = useProject((s) => s.library)
+  const caminhosDaBiblioteca = useMemo(() => new Set((library?.clips ?? []).map((c) => c.path)), [library])
+  const naBiblioteca = (p: string | undefined): boolean => p !== undefined && caminhosDaBiblioteca.has(p)
 
   const scene = index === null ? undefined : plan?.scenes[index]
   const image = scene ? images[scene.imageIndex] : undefined
@@ -138,6 +143,12 @@ export function SceneCard() {
           <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
           Buscar na biblioteca
         </Chip>
+        {naBiblioteca(image.path) && (
+          <Chip active={false} onClick={() => void mostrarNaBiblioteca(image.path)}>
+            <LocateFixed size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+            Ver este clipe na biblioteca
+          </Chip>
+        )}
       </Field>
 
       {/*
@@ -168,6 +179,12 @@ export function SceneCard() {
               <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
               Buscar na biblioteca
             </Chip>
+            {naBiblioteca(imageB.path) && (
+              <Chip active={false} onClick={() => void mostrarNaBiblioteca(imageB.path)}>
+                <LocateFixed size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                Ver este clipe na biblioteca
+              </Chip>
+            )}
             <p className="flex items-baseline gap-1.5 text-[11px] leading-relaxed text-ink-3">
               {imageB.kind === 'video' && (
                 <span className="flex items-center gap-1 text-accent">
@@ -272,10 +289,15 @@ function PontoDeEntrada({
   const updateScene = useProject((s) => s.updateScene)
   const setPlayhead = useProject((s) => s.setPlayhead)
   const quadroRef = useRef<HTMLVideoElement | null>(null)
+  const trilhoRef = useRef<HTMLDivElement | null>(null)
+  const [larguraDoTrilho, setLarguraDoTrilho] = useState(0)
+  const [tira, setTira] = useState<TiraDaCena | null>(null)
+  /** O ponto de entrada enquanto ele arrasta -- so vai para o bloco ao soltar. */
+  const [rascunho, setRascunho] = useState<number | null>(null)
+  const [tocando, setTocando] = useState(false)
 
   const bloco = scene.end - scene.start
   const total = image.durationSec ?? 0
-
   /*
    * Ate onde o ponto de entrada pode ir: o clipe inteiro menos um frame.
    *
@@ -283,70 +305,233 @@ function PontoDeEntrada({
    * imagem nenhuma para congelar.
    */
   const ultimo = Math.max(total - 1 / VIDEO_FPS, 0)
+  const salvo = Math.min(scene[campo] ?? 0, ultimo)
+  const inicio = rascunho ?? salvo
+  /** Quanto do bloco fica sem clipe, e portanto com a imagem parada no ultimo frame. */
+  const parada = Math.max(inicio + bloco - total, 0)
+  // A tira do clipe que o bloco TOCA (o invertido, se estiver invertido).
+  const fonte = image.invertido && image.caminhoInvertido ? image.caminhoInvertido : image.path
+
+  useEffect(() => {
+    if (image.kind !== 'video') return
+    let vivo = true
+    void window.dangai.libraryClipStrip(fonte).then((r) => {
+      if (vivo && r.ok) setTira(r.value)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [fonte, image.kind])
+
+  useEffect(() => {
+    const alvo = trilhoRef.current
+    if (!alvo) return
+    const medir = (): void => setLarguraDoTrilho(alvo.clientWidth)
+    medir()
+    const observer = new ResizeObserver(medir)
+    observer.observe(alvo)
+    return () => observer.disconnect()
+  }, [image.kind])
+
+  /*
+   * O VISOR SEGUE O PONTO SEM FILA. Atribuir currentTime a cada pixel do
+   * arraste empilhava buscas, e o visor "ficava travando" no meio delas. Aqui
+   * so se pede a proxima quando a anterior termina, sempre para o ponto MAIS
+   * RECENTE -- o visor pula os intermediarios em vez de percorre-los.
+   */
+  const pedido = useRef<number | null>(null)
+  const buscando = useRef(false)
+  const buscar = (t: number): void => {
+    const v = quadroRef.current
+    if (!v) return
+    pedido.current = t
+    if (buscando.current) return
+    buscando.current = true
+    v.currentTime = t
+  }
+  const aoBuscar = (): void => {
+    buscando.current = false
+    const v = quadroRef.current
+    if (v && pedido.current !== null && Math.abs(v.currentTime - pedido.current) > 0.02) buscar(pedido.current)
+  }
+  useEffect(() => {
+    if (rascunho === null && !tocando) buscar(salvo)
+    // So quando o ponto SALVO muda (outro bloco, desfazer).
+  }, [salvo])
+
+  // ▶: toca so o trecho do bloco no visor, em loop.
+  useEffect(() => {
+    const v = quadroRef.current
+    if (!v) return
+    if (!tocando) {
+      v.pause()
+      return
+    }
+    v.currentTime = inicio
+    void v.play().catch(() => setTocando(false))
+    const fim = Math.min(inicio + bloco, total)
+    let quadro = 0
+    const vigiar = (): void => {
+      if (v.currentTime >= fim - 0.02) v.currentTime = inicio
+      quadro = requestAnimationFrame(vigiar)
+    }
+    quadro = requestAnimationFrame(vigiar)
+    return () => {
+      cancelAnimationFrame(quadro)
+      v.pause()
+    }
+  }, [tocando, inicio, bloco, total])
+
   if (image.kind !== 'video' || ultimo <= 0.05) return null
 
-  const inicio = Math.min(scene[campo] ?? 0, ultimo)
-  /** Quanto do bloco fica sem clipe, e portanto congelado no ultimo frame. */
-  const congela = Math.max(inicio + bloco - total, 0)
+  const aoTempo = (clientX: number): number => {
+    const r = trilhoRef.current?.getBoundingClientRect()
+    if (!r || r.width === 0) return 0
+    return ((clientX - r.left) / r.width) * total
+  }
+  const prender = (t: number): number => Math.min(Math.max(t, 0), ultimo)
+  const confirmar = (t: number): void => {
+    setRascunho(null)
+    updateScene(index, { [campo]: Math.round(t * 1000) / 1000 })
+    // O preview vai para o comeco do bloco: e ali que o ponto novo se ve.
+    setPlayhead(scene.start)
+  }
+
+  /*
+   * ARRASTAR A JANELA (ou clicar fora dela para leva-la ate ali). Durante o
+   * gesto NADA vai para o bloco: so o visor anda. "Tu arrasta e nao sabe onde
+   * ta indo o clipe porque ele buga tudo na preview" -- cada passo do slider
+   * reescrevia o bloco, e o player remontava o video a cada um. Agora o bloco
+   * muda uma vez, ao soltar.
+   */
+  const comecar = (event: React.PointerEvent): void => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    setTocando(false)
+    const t0 = aoTempo(event.clientX)
+    const dentro = t0 >= inicio && t0 <= inicio + Math.min(bloco, total)
+    const pega = dentro ? t0 - inicio : Math.min(bloco, total) / 2
+    let atual = prender(t0 - pega)
+    setRascunho(atual)
+    buscar(atual)
+    const mover = (e: PointerEvent): void => {
+      atual = prender(aoTempo(e.clientX) - pega)
+      setRascunho(atual)
+      buscar(atual)
+    }
+    const soltar = (): void => {
+      window.removeEventListener('pointermove', mover)
+      window.removeEventListener('pointerup', soltar)
+      window.removeEventListener('pointercancel', soltar)
+      confirmar(atual)
+    }
+    window.addEventListener('pointermove', mover)
+    window.addEventListener('pointerup', soltar)
+    window.addEventListener('pointercancel', soltar)
+  }
+
+  /*
+   * A TIRA: quadros do clipe inteiro, lado a lado, cada um no instante do
+   * meio do pedaco que ocupa -- entao a posicao na tira e a posicao no clipe.
+   */
+  const QUADRO_W = 52
+  const nQuadros = tira && larguraDoTrilho > 0 ? Math.max(1, Math.ceil(larguraDoTrilho / QUADRO_W)) : 0
+  const posicaoNaTira = (k: number): string => {
+    if (!tira) return '0 0'
+    const x = tira.colunas > 1 ? ((k % tira.colunas) / (tira.colunas - 1)) * 100 : 0
+    const y = tira.linhas > 1 ? (Math.floor(k / tira.colunas) / (tira.linhas - 1)) * 100 : 0
+    return `${x}% ${y}%`
+  }
+  const esq = (inicio / total) * 100
+  const larg = (Math.min(bloco, total - inicio) / total) * 100
 
   return (
     <Field label={label}>
       <div className="flex flex-col gap-1.5">
-        {/*
-          O QUADRO DAQUELE INSTANTE, enquanto ele arrasta.
+        <div className="relative">
+          <video
+            ref={quadroRef}
+            src={image.url}
+            muted
+            playsInline
+            preload="auto"
+            onLoadedMetadata={() => buscar(inicio)}
+            onSeeked={aoBuscar}
+            className="h-[104px] w-full rounded-sm border border-line bg-black object-contain"
+          />
+          <button
+            type="button"
+            onClick={() => setTocando((v) => !v)}
+            title={tocando ? 'Parar' : 'Tocar so este trecho, em loop'}
+            aria-label={tocando ? 'Parar o trecho' : 'Tocar o trecho'}
+            className="absolute bottom-1.5 left-1.5 grid size-6 place-items-center rounded-full bg-black/70 text-white hover:bg-accent"
+          >
+            {tocando ? <Pause size={11} strokeWidth={2.25} /> : <Play size={11} strokeWidth={2.25} className="ml-px" />}
+          </button>
+        </div>
 
-          O slider sozinho pedia fe: mexer nele mostrava "1,2s - 3,2s de 6,0s" e
-          mais nada, entao descobrir se o ponto era o certo exigia dar play e
-          esperar o bloco chegar. Escolher onde o clipe comeca olhando numero e
-          o que tornava esta parte confusa de usar.
-
-          E um <video> parado servindo de visor: nada toca, so o currentTime
-          anda junto com o slider.
-        */}
-        <video
-          ref={quadroRef}
-          src={image.url}
-          muted
-          playsInline
-          preload="metadata"
-          // O primeiro quadro so pode ser posicionado depois que o navegador
-          // sabe a duracao; antes disso, atribuir currentTime nao faz nada.
-          onLoadedMetadata={() => {
-            if (quadroRef.current) quadroRef.current.currentTime = inicio
-          }}
-          className="h-[104px] w-full rounded-sm border border-line bg-black object-contain"
-        />
-        <input
-          type="range"
-          min={0}
-          max={Math.round(ultimo * 10)}
-          value={Math.round(inicio * 10)}
-          onChange={(event) => {
-            const alvo = Number(event.target.value) / 10
-            updateScene(index, { [campo]: alvo })
-            if (quadroRef.current) quadroRef.current.currentTime = alvo
-            /*
-             * Leva o preview para o comeco do bloco a cada arrasto.
-             *
-             * Sem isto ele arrastaria olhando um instante do video que nao tem
-             * relacao com o que esta mudando -- e o ponto de entrada so se ve
-             * assistindo o bloco.
-             */
-            setPlayhead(scene.start)
-          }}
-          className="w-full accent-accent"
+        <div
+          ref={trilhoRef}
+          role="slider"
+          tabIndex={0}
           aria-label="De que ponto do clipe este bloco comeca"
-        />
+          aria-valuemin={0}
+          aria-valuemax={ultimo}
+          aria-valuenow={inicio}
+          onPointerDown={comecar}
+          onKeyDown={(event) => {
+            // Setas: um quadro; com Shift, dez.
+            if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+            event.preventDefault()
+            event.stopPropagation()
+            const passo = (event.shiftKey ? 10 : 1) / VIDEO_FPS
+            confirmar(prender(salvo + (event.key === 'ArrowRight' ? passo : -passo)))
+          }}
+          title="Arraste a janela (ou clique na tira) para escolher o trecho do clipe que o bloco mostra. Setas: 1 quadro."
+          className="relative h-[40px] w-full cursor-grab touch-none select-none overflow-hidden rounded-sm border border-line bg-elevated focus-visible:outline focus-visible:outline-1 focus-visible:outline-accent active:cursor-grabbing"
+        >
+          {tira &&
+            Array.from({ length: nQuadros }, (_, i) => {
+              const meio = ((i + 0.5) * QUADRO_W) / Math.max(larguraDoTrilho, 1)
+              const k = Math.min(tira.quadros - 1, Math.max(0, Math.round(meio * (tira.quadros - 1))))
+              return (
+                <div
+                  key={i}
+                  className="absolute inset-y-0"
+                  style={{
+                    left: i * QUADRO_W,
+                    width: QUADRO_W,
+                    backgroundImage: `url(${tira.url})`,
+                    backgroundSize: `${tira.colunas * 100}% ${tira.linhas * 100}%`,
+                    backgroundPosition: posicaoNaTira(k),
+                  }}
+                />
+              )
+            })}
+          {/* Fora do trecho: escurecido. */}
+          <div className="pointer-events-none absolute inset-y-0 left-0 bg-black/60" style={{ width: `${esq}%` }} />
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 bg-black/60"
+            style={{ width: `${Math.max(0, 100 - esq - larg)}%` }}
+          />
+          {/* A janela: o que o bloco mostra. */}
+          <div
+            className="pointer-events-none absolute inset-y-0 rounded-[3px] border-2 border-accent shadow-[0_0_10px_rgba(255,62,128,0.45)]"
+            style={{ left: `${esq}%`, width: `${larg}%` }}
+          />
+        </div>
+
         <span className="tnum text-[11px] text-ink-2">
           {inicio.toFixed(1)}s – {Math.min(inicio + bloco, total).toFixed(1)}s
           <span className="text-ink-3"> de {total.toFixed(1)}s</span>
-          {/*
-            O congelamento sempre existiu; o que nao existia era o aviso.
-            Duas das doze cenas medidas no projeto dele congelavam ~0,3s sem
-            nada na tela dizer -- e descobrir isso exigia renderizar.
-          */}
-          {congela > 0.05 && (
-            <span className="text-accent"> · congela {congela.toFixed(1)}s no fim</span>
+          {parada > 0.05 && (
+            <span
+              className="text-accent"
+              title="O bloco dura mais que o resto do clipe a partir daqui: nesse fim a imagem fica parada no ultimo quadro. Puxe a janela para a esquerda para encurtar isso."
+            >
+              {' '}
+              · imagem parada {parada.toFixed(1)}s no fim
+            </span>
           )}
         </span>
       </div>

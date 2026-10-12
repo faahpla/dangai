@@ -1,4 +1,4 @@
-import { FlipHorizontal2, RotateCcw, X } from 'lucide-react'
+import { Expand, FlipHorizontal2, RotateCcw, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { idsEscolhidos, useProject } from '@/store/project'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
@@ -90,6 +90,12 @@ export function SobreposicaoEdit({ id }: { id: string }) {
               ativo={(g) => Math.round(o.rotacao) === g}
               onChange={(g) => ajustar(id, { rotacao: g })}
             />
+          </Linha>
+          <Linha label="Preencher" title="Cobrir a tela inteira (corta o que sobra), ou o arquivo inteiro com bordas">
+            <Botaozinho active={!!o.preencher} onClick={() => ajustar(id, { preencher: !o.preencher })}>
+              <Expand size={11} strokeWidth={1.5} />
+              {o.preencher ? 'Preenchendo a tela' : 'Preencher a tela'}
+            </Botaozinho>
           </Linha>
           <Linha label="Espelhar" title="Flip horizontal">
             <Botaozinho active={!!o.espelhar} onClick={() => ajustar(id, { espelhar: !o.espelhar })}>

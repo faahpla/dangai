@@ -685,6 +685,15 @@ export interface ProjectState {
   openPalette: (open: boolean) => void
   /** Abre a biblioteca. A primeira abertura varre sozinha. */
   openLibrary: (open: boolean) => Promise<void>
+  /**
+   * "Um botao que me leve exatamente para onde esta aquele clipe (episodio e
+   * posicao na biblioteca)." Guarda o caminho e abre a Biblioteca, que poe o
+   * anime e o episodio dele, rola ate o cartao e acende.
+   */
+  irParaClipe: string | null
+  mostrarNaBiblioteca: (path: string) => Promise<void>
+  /** A Biblioteca ja atendeu o pedido. */
+  esquecerIrParaClipe: () => void
   /** Rele a biblioteca: episodio novo entra, episodio conhecido sai do cache. */
   syncLibrary: () => Promise<void>
   /** Andamento vindo do main durante a varredura. */
@@ -1181,6 +1190,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   automountMode: null,
   automountSeries: null,
   replaceTarget: null,
+  irParaClipe: null,
   scriptBlocks: null,
   scriptBlocksBusy: null,
   activeBlock: null,
@@ -3770,6 +3780,14 @@ export const useProject = create<ProjectState>((set, get) => ({
    * tela abre instantanea -- reler seria pagar de novo por uma resposta que nao
    * mudou, e o botao "Sincronizar" existe justamente para quando ela mudou.
    */
+  mostrarNaBiblioteca: async (path) => {
+    // Sem troca pendurada: e para OLHAR o clipe, nao para substituir um bloco.
+    set({ irParaClipe: path, replaceTarget: null })
+    await get().openLibrary(true)
+  },
+
+  esquecerIrParaClipe: () => set({ irParaClipe: null }),
+
   openLibrary: async (open) => {
     // Fechar cancela a substituicao: sair da tela e desistir da pergunta.
     set(open ? { libraryOpen: true } : { libraryOpen: false, replaceTarget: null })

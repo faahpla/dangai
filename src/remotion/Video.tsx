@@ -309,7 +309,8 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
     extrapolateRight: 'clamp',
   })
   const m = o.efeito === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(o.efeito, o.intensidade, t)
-  const cobre = { width: '100%', height: '100%', objectFit: 'contain' as const }
+  // Inteiro na tela (contain) ou cobrindo o quadro todo (cover, "preencher").
+  const cobre = { width: '100%', height: '100%', objectFit: o.preencher ? ('cover' as const) : ('contain' as const) }
   const fade = rampaDoFade(frame, o.durationInFrames, o.fadeInFrames, o.fadeOutFrames)
   return (
     <AbsoluteFill

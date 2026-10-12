@@ -1388,6 +1388,13 @@ export const sobreposicaoSchema = z.object({
   /** Espelhado na horizontal. */
   espelhar: z.boolean().default(false),
   /**
+   * PREENCHER A TELA: "opcao de dar fill numa imagem ou video pra se ajustar
+   * na tela toda". Ligado, o arquivo cobre o quadro inteiro (corta o que
+   * sobra, como as cenas); desligado, entra inteiro, com a sobra vazia --
+   * que e o que um .mov exportado no tamanho do video precisa.
+   */
+  preencher: z.boolean().optional(),
+  /**
    * Fade de entrada e de saida, em segundos: a opacidade (ou, na camada de
    * ajuste, a intensidade) sobe e desce nessas pontas.
    */
@@ -1614,6 +1621,7 @@ export const renderPropsSchema = z.object({
         pontosDaCurva: curvePointsSchema.nullable().default(null),
         cor: ajusteDeCorSchema.optional(),
         espelhar: z.boolean().default(false),
+        preencher: z.boolean().default(false),
         fadeInFrames: z.number().int().nonnegative().default(0),
         fadeOutFrames: z.number().int().nonnegative().default(0),
       }),
