@@ -694,6 +694,11 @@ export interface ProjectState {
   mostrarNaBiblioteca: (path: string) => Promise<void>
   /** A Biblioteca ja atendeu o pedido. */
   esquecerIrParaClipe: () => void
+  /**
+   * Mescla cenas seguidas de um episodio num clipe so (como o AnCut). Devolve
+   * o recado para a tela, ou o erro.
+   */
+  mesclarCenas: (paths: readonly string[]) => Promise<{ ok: boolean; recado: string; path?: string }>
   /** Rele a biblioteca: episodio novo entra, episodio conhecido sai do cache. */
   syncLibrary: () => Promise<void>
   /** Andamento vindo do main durante a varredura. */
@@ -3787,6 +3792,58 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   esquecerIrParaClipe: () => set({ irParaClipe: null }),
+
+  mesclarCenas: async (paths) => {
+    set({ busy: `Mesclando ${paths.length} cenas...` })
+    const r = await window.dangai.mesclarClipes(paths)
+    if (!r.ok) {
+      set({ busy: null })
+      return { ok: false, recado: r.error }
+    }
+    const novo = r.value.path
+    const saiu = new Set(r.value.pedacos)
+    const nomeNovo = novo.split(/[\\/]/).pop()!.replace(/\.mp4$/i, '')
+    /*
+     * O ROTEIRO SEGUE A MESCLA: um trecho que usava os pedacos passa a usar o
+     * clipe novo (uma vez so), e a fila de escolhidas tambem -- senao os dois
+     * apontariam para arquivos que foram para a lixeira.
+     */
+    set((state) => {
+      const blockClips: Record<number, string[]> = {}
+      for (const [k, lista] of Object.entries(state.blockClips)) {
+        const proxima: string[] = []
+        for (const p of lista) {
+          if (!saiu.has(p)) proxima.push(p)
+          else if (!proxima.includes(novo)) proxima.push(novo)
+        }
+        blockClips[Number(k)] = proxima
+      }
+      const idsQueSairam = new Set(
+        (state.library?.clips ?? []).filter((c) => saiu.has(c.path)).map((c) => c.id),
+      )
+      const escolhidos: string[] = []
+      for (const id of state.escolhidos) {
+        if (!idsQueSairam.has(id)) escolhidos.push(id)
+        else {
+          const idNovo = `${id.slice(0, id.lastIndexOf('/'))}/${nomeNovo}`
+          if (!escolhidos.includes(idNovo)) escolhidos.push(idNovo)
+        }
+      }
+      return { blockClips, escolhidos, busy: null }
+    })
+    await get().syncLibrary()
+    const banco =
+      r.value.ancut === 'atualizado'
+        ? 'O AnCut ja ve o mesmo.'
+        : r.value.ancut === 'episodio-nao-encontrado'
+          ? 'O AnCut nao conhece este episodio, entao so os arquivos mudaram.'
+          : 'Nao deu para atualizar o banco do AnCut (ele esta aberto?); os arquivos ja mudaram.'
+    return {
+      ok: true,
+      path: novo,
+      recado: `${paths.length} cenas viraram ${nomeNovo} (${r.value.segundos.toFixed(1)}s). Os pedacos foram para a _lixeira do episodio. ${banco}`,
+    }
+  },
 
   openLibrary: async (open) => {
     // Fechar cancela a substituicao: sair da tela e desistir da pergunta.

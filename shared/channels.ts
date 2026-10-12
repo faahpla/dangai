@@ -82,6 +82,7 @@ export const IPC = {
   listarPasta: 'bins:listar-pasta',
   existemArquivos: 'arquivos:existem',
   escolherVideo: 'dialog:escolher-video',
+  mesclarClipes: 'biblioteca:mesclar',
   sondarVideo: 'video:sondar',
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
@@ -586,6 +587,13 @@ export interface DangaiBridge {
    * (.txt/.md). null = fechou.
    */
   escolherVideo(): Promise<IpcResult<{ video: string; roteiro: string | null } | null>>
+  /**
+   * Junta cenas SEGUIDAS de um episodio num clipe so, como o AnCut faz (e
+   * atualiza o banco dele). Os pedacos vao para a _lixeira do episodio.
+   */
+  mesclarClipes(paths: readonly string[]): Promise<
+    IpcResult<{ path: string; pedacos: string[]; ancut: 'atualizado' | 'sem-banco' | 'episodio-nao-encontrado'; segundos: number }>
+  >
   /** Medidas, duracao e se o video tem audio. */
   sondarVideo(path: string): Promise<IpcResult<{ width: number; height: number; durationSec: number; temAudio: boolean }>>
   /**

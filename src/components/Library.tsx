@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
+  Combine,
   Eye,
   FolderOpen,
   Loader2,
+  Maximize2,
   RefreshCw,
   Search,
   Sparkles,
@@ -43,6 +46,35 @@ import { Nicknames } from './Nicknames'
 
 /** Largura alvo de cada miniatura. Define quantas colunas cabem. */
 const ITEM_ALVO = 190
+/*
+ * O TAMANHO DOS CARTOES: "poder aumentar e reduzir o tamanho dos clipes, em
+ * alguns casos e muito dificil ver o que ta acontecendo". A largura-alvo de
+ * cada cartao vai de 120 a 520px; fica lembrada nesta maquina.
+ */
+const TAMANHO_MIN = 120
+const TAMANHO_MAX = 520
+function lerTamanho(): number {
+  try {
+    const v = Number(localStorage.getItem('dangai.biblioteca.tamanho'))
+    return v >= TAMANHO_MIN && v <= TAMANHO_MAX ? v : ITEM_ALVO
+  } catch {
+    return ITEM_ALVO
+  }
+}
+function gravarTamanho(v: number): void {
+  try {
+    localStorage.setItem('dangai.biblioteca.tamanho', String(v))
+  } catch {
+    /* vale so nesta sessao */
+  }
+}
+/** "0010" -> [10, 10]; "0010-0012" -> [10, 12]. O mesmo nome que o AnCut da. */
+function faixaDaCena(shot: string): [number, number] | null {
+  const m = /^(\d+)(?:-(\d+))?$/.exec(shot)
+  if (!m) return null
+  const a = Number(m[1])
+  return [a, m[2] === undefined ? a : Number(m[2])]
+}
 const GAP = 10
 /** Altura da faixa de texto embaixo da miniatura. */
 const RODAPE = 26
@@ -154,6 +186,30 @@ export function Library() {
    * sozinho a cada troca seria um clique a mais por trecho, trinta vezes.
    */
   const [maisSugestoes, setMaisSugestoes] = useState(false)
+  const [tamanho, setTamanho] = useState(lerTamanho)
+  const mudarTamanho = useCallback((v: number) => {
+    const t = Math.round(Math.min(Math.max(v, TAMANHO_MIN), TAMANHO_MAX))
+    setTamanho(t)
+    gravarTamanho(t)
+  }, [])
+  /** O "player" grande: a cena aberta, ou null. */
+  const [tocador, setTocador] = useState<LibraryClip | null>(null)
+  /*
+   * MESCLAR: Ctrl+clique marca as cenas, a barra de baixo junta. "No AnCut eu
+   * seleciono alguns clipes e mesclo... quero a mesma opcao aqui." Ver
+   * mesclarCenas no store e electron/services/mesclar.
+   */
+  const [paraMesclar, setParaMesclar] = useState<string[]>([])
+  const [confirmandoMescla, setConfirmandoMescla] = useState(false)
+  const [recadoDaMescla, setRecadoDaMescla] = useState<string | null>(null)
+  const mesclarCenas = useProject((s) => s.mesclarCenas)
+  const paraMesclarRef = useRef<string[]>([])
+  paraMesclarRef.current = paraMesclar
+  const alternarMescla = useCallback((id: string) => {
+    setConfirmandoMescla(false)
+    setRecadoDaMescla(null)
+    setParaMesclar((atual) => (atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]))
+  }, [])
 
   /*
    * IR ATE O CLIPE: "um botao onde eu clique e me leve exatamente para onde
@@ -190,6 +246,11 @@ export function Library() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
+        if (paraMesclarRef.current.length > 0) {
+          setParaMesclar([])
+          setConfirmandoMescla(false)
+          return
+        }
         void openLibrary(false)
         return
       }
@@ -758,7 +819,7 @@ export function Library() {
             }}
           />
 
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div className="relative flex min-w-0 flex-1 flex-col">
             <Filtros
               texto={texto}
               onTexto={setTexto}
@@ -772,6 +833,8 @@ export function Library() {
               totalFavoritos={totalFavoritos}
               onFavoritos={() => setSoFavoritos((v) => !v)}
               total={filtrados.length}
+              tamanho={tamanho}
+              onTamanho={mudarTamanho}
             />
             {/*
               As sugestoes ficam ACIMA da grade, nunca no lugar dela.
@@ -834,10 +897,47 @@ export function Library() {
                 onFavoritar={(id) => void toggleFavorite(id)}
                 onEscolher={escolher}
                 destaque={destaque}
+                tamanho={tamanho}
+                onTamanho={mudarTamanho}
+                paraMesclar={paraMesclar}
+                onMesclar={alternarMescla}
+                onAbrir={setTocador}
+              />
+            )}
+            {(paraMesclar.length > 0 || recadoDaMescla) && library && (
+              <BarraDeMescla
+                ids={paraMesclar}
+                clips={library.clips}
+                confirmando={confirmandoMescla}
+                recado={recadoDaMescla}
+                onConfirmar={() => setConfirmandoMescla(true)}
+                onCancelar={() => {
+                  setParaMesclar([])
+                  setConfirmandoMescla(false)
+                  setRecadoDaMescla(null)
+                }}
+                onMesclar={async (paths) => {
+                  const r = await mesclarCenas(paths)
+                  setConfirmandoMescla(false)
+                  setRecadoDaMescla(r.recado)
+                  if (r.ok) setParaMesclar([])
+                }}
               />
             )}
           </div>
         </div>
+      )}
+      {tocador && library && (
+        <Tocador
+          clip={tocador}
+          lista={filtrados.length > 0 ? filtrados : [tocador]}
+          favorito={favoritosSet.has(tocador.id)}
+          onFavoritar={() => void toggleFavorite(tocador.id)}
+          onEscolher={() => escolher(tocador.id)}
+          marcado={(replaceTarget !== null ? [] : porRoteiro ? marcadosNaFrase() : escolhidos).includes(tocador.id)}
+          onIr={setTocador}
+          onFechar={() => setTocador(null)}
+        />
       )}
 
       {/*
@@ -1391,6 +1491,8 @@ interface FiltrosProps {
   maxSec: number
   onFaixa: (min: number, max: number) => void
   total: number
+  tamanho: number
+  onTamanho: (v: number) => void
 }
 
 /**
@@ -1415,6 +1517,8 @@ function Filtros({
   totalFavoritos,
   onFavoritos,
   total,
+  tamanho,
+  onTamanho,
 }: FiltrosProps) {
   return (
     <div className="flex h-[46px] shrink-0 items-center gap-3 border-b border-line px-4">
@@ -1440,6 +1544,36 @@ function Filtros({
         botoes gastavam largura permanente da barra -- largura que a busca, que
         ele usa o tempo todo, estava perdendo.
       */}
+      {/* O tamanho dos cartoes (tambem com Ctrl+roda em cima da grade). */}
+      <div className="flex shrink-0 items-center gap-1.5" title="Tamanho das cenas na grade (Ctrl+roda tambem muda)">
+        <button
+          type="button"
+          onClick={() => onTamanho(tamanho / 1.25)}
+          aria-label="Cenas menores"
+          className="grid size-5 place-items-center rounded-sm text-ink-3 hover:text-ink"
+        >
+          <span className="text-[13px] leading-none">−</span>
+        </button>
+        <input
+          type="range"
+          min={TAMANHO_MIN}
+          max={TAMANHO_MAX}
+          step={10}
+          value={tamanho}
+          onChange={(e) => onTamanho(Number(e.target.value))}
+          aria-label="Tamanho das cenas"
+          className="dangai-range w-[84px]"
+        />
+        <button
+          type="button"
+          onClick={() => onTamanho(tamanho * 1.25)}
+          aria-label="Cenas maiores"
+          className="grid size-5 place-items-center rounded-sm text-ink-3 hover:text-ink"
+        >
+          <span className="text-[13px] leading-none">+</span>
+        </button>
+      </div>
+
       <button
         type="button"
         onClick={onFavoritos}
@@ -1497,6 +1631,14 @@ interface GradeProps {
   onEscolher: (id: string) => void
   /** A cena para onde rolar e acender ("ir ate o clipe"). */
   destaque?: string | null
+  /** Largura-alvo de cada cartao, em px. */
+  tamanho?: number
+  onTamanho?: (v: number) => void
+  /** Cenas marcadas para mesclar (Ctrl+clique). */
+  paraMesclar?: readonly string[]
+  onMesclar?: (id: string) => void
+  /** Abre o player grande. */
+  onAbrir?: (clip: LibraryClip) => void
 }
 
 /**
@@ -1507,7 +1649,21 @@ interface GradeProps {
  * dezenas, e o espacador de cima e de baixo faz a barra de rolagem continuar
  * dizendo a verdade sobre o tamanho do acervo.
  */
-function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEscolher, destaque }: GradeProps) {
+function Grade({
+  clips,
+  chave,
+  escolhidos,
+  usadas,
+  favoritos,
+  onFavoritar,
+  onEscolher,
+  destaque,
+  tamanho = ITEM_ALVO,
+  onTamanho,
+  paraMesclar = [],
+  onMesclar,
+  onAbrir,
+}: GradeProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
   const [altura, setAltura] = useState(0)
@@ -1549,7 +1705,22 @@ function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEsc
     setScroll(0)
   }, [chave])
 
-  const colunas = Math.max(2, Math.floor((largura + GAP) / (ITEM_ALVO + GAP)))
+  // Ctrl+roda na grade muda o tamanho dos cartoes, como o zoom de um editor.
+  const tamanhoRef = useRef(tamanho)
+  tamanhoRef.current = tamanho
+  useEffect(() => {
+    const alvo = ref.current
+    if (!alvo || !onTamanho) return
+    const roda = (event: WheelEvent): void => {
+      if (!event.ctrlKey) return
+      event.preventDefault()
+      onTamanho(tamanhoRef.current * Math.exp(-event.deltaY * 0.0015))
+    }
+    alvo.addEventListener('wheel', roda, { passive: false })
+    return () => alvo.removeEventListener('wheel', roda)
+  }, [onTamanho])
+
+  const colunas = Math.max(1, Math.floor((largura + GAP) / (tamanho + GAP)))
   const itemW = colunas > 0 && largura > 0 ? (largura - GAP * (colunas - 1) - 24) / colunas : 0
   const linhaH = Math.round((itemW * 9) / 16) + RODAPE + GAP
   const linhas = Math.ceil(clips.length / colunas)
@@ -1612,8 +1783,14 @@ function Grade({ clips, chave, escolhidos, usadas, favoritos, onFavoritar, onEsc
                 usada={usadas?.has(clip.id) ?? false}
                 favorito={favoritos.has(clip.id)}
                 onFavoritar={() => onFavoritar(clip.id)}
-                onClick={() => onEscolher(clip.id)}
+                onClick={(event) => {
+                  // Ctrl+clique: marcar para mesclar, sem escolher a cena.
+                  if (event && (event.ctrlKey || event.metaKey) && onMesclar) onMesclar(clip.id)
+                  else onEscolher(clip.id)
+                }}
                 destacado={clip.id === destaque}
+                paraMesclar={paraMesclar.indexOf(clip.id) + 1}
+                onAbrir={onAbrir ? () => onAbrir(clip) : undefined}
               />
             ))}
         </div>
@@ -1798,17 +1975,23 @@ function Cartao({
   onFavoritar,
   onClick,
   destacado = false,
+  paraMesclar = 0,
+  onAbrir,
 }: {
   clip: LibraryClip
   /** Posicao na fila, comecando em 1. Zero quando nao foi escolhida. */
   ordem: number
   /** Acabou de ser procurada ("ir ate o clipe"): acende por um instante. */
   destacado?: boolean
+  /** Posicao na selecao de mesclar (1, 2...), ou 0. */
+  paraMesclar?: number
+  /** Abre o player grande. */
+  onAbrir?: () => void
   /** Ja foi gasta em outra frase. Nao impede -- so avisa. */
   usada?: boolean
   favorito: boolean
   onFavoritar: () => void
-  onClick: () => void
+  onClick: (event?: React.MouseEvent) => void
 }) {
   const marcado = ordem > 0
   const formato = useProject((s) => s.formato)
@@ -1925,7 +2108,7 @@ function Cartao({
     <div
       role="button"
       tabIndex={0}
-      onClick={onClick}
+      onClick={(event) => onClick(event)}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return
         event.preventDefault()
@@ -1942,7 +2125,8 @@ function Cartao({
        * imagem, pode tirar tudo". Quem precisa do episodio ou do personagem
        * passa o mouse -- e a previa em video ja toca no mesmo gesto.
        */
-      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.join(', ')}` : ''}${usada ? ' · ja usada em outra frase' : ''}`}
+      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.join(', ')}` : ''}${usada ? ' · ja usada em outra frase' : ''}
+Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
       className={[
         'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
         destacado ? 'animate-pulse ring-2 ring-accent shadow-[0_0_18px_rgba(255,62,128,0.7)]' : '',
@@ -2032,6 +2216,37 @@ function Cartao({
             className={favorito ? 'fill-accent text-accent' : 'text-white'}
           />
         </span>
+        {/* O PLAYER GRANDE: ver a cena em tamanho de verdade, com som. */}
+        {onAbrir && (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label="Abrir esta cena no player"
+            title="Abrir no player (grande, com som)"
+            onClick={(event) => {
+              event.stopPropagation()
+              onAbrir()
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              event.stopPropagation()
+              onAbrir()
+            }}
+            className="absolute bottom-1 left-1 grid size-[20px] cursor-pointer place-items-center rounded-sm bg-black/60 text-white opacity-0 transition-opacity duration-150 hover:bg-accent group-hover:opacity-100"
+          >
+            <Maximize2 size={11} strokeWidth={1.75} />
+          </span>
+        )}
+        {paraMesclar > 0 && (
+          <>
+            <span className="pointer-events-none absolute inset-0 border-2 border-dashed border-white bg-white/10" />
+            <span className="tnum absolute right-1 bottom-6 flex items-center gap-0.5 rounded-sm bg-white px-1 text-[10px] font-semibold text-black">
+              <Combine size={10} strokeWidth={2} />
+              {paraMesclar}
+            </span>
+          </>
+        )}
         {marcado && (
           <>
             <span className="absolute inset-0 border-2 border-accent bg-accent-dim/30" />
@@ -2120,4 +2335,240 @@ function Marcadas({
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
+}
+
+// ------------------------------------------------------------------- mesclar
+
+/**
+ * A barra de MESCLAR, embaixo da grade, enquanto ha cenas marcadas com
+ * Ctrl+clique. Diz na hora se da para mesclar (mesmo episodio, cenas seguidas)
+ * e pede uma confirmacao antes -- os pedacos saem da pasta shots.
+ */
+function BarraDeMescla({
+  ids,
+  clips,
+  confirmando,
+  recado,
+  onConfirmar,
+  onCancelar,
+  onMesclar,
+}: {
+  ids: readonly string[]
+  clips: readonly LibraryClip[]
+  confirmando: boolean
+  recado: string | null
+  onConfirmar: () => void
+  onCancelar: () => void
+  onMesclar: (paths: string[]) => Promise<void>
+}) {
+  const [indo, setIndo] = useState(false)
+  const porId = useMemo(() => new Map(clips.map((c) => [c.id, c])), [clips])
+  const escolhidas = ids.map((id) => porId.get(id)).filter((c): c is LibraryClip => c !== undefined)
+
+  /*
+   * O mesmo que o servico confere -- dito ANTES de clicar. O nome do clipe
+   * mesclado ("0010-0012") diz ao indexador quais cenas estao dentro, entao um
+   * buraco no meio deixaria duracao e personagens errados.
+   */
+  let problema: string | null = null
+  const episodio = escolhidas[0] ? `${escolhidas[0].anime}|${chaveEpisodio(escolhidas[0])}` : ''
+  if (escolhidas.length < 2) problema = 'Ctrl+clique em mais uma cena para mesclar.'
+  else if (escolhidas.some((c) => `${c.anime}|${chaveEpisodio(c)}` !== episodio)) problema = 'As cenas precisam ser do mesmo episodio.'
+  else {
+    const faixas = escolhidas.map((c) => faixaDaCena(c.shot)).sort((a, b) => (a?.[0] ?? 0) - (b?.[0] ?? 0))
+    if (faixas.some((f) => f === null)) problema = 'Alguma dessas cenas nao veio do corte do AnCut.'
+    else {
+      for (let k = 1; k < faixas.length; k++) {
+        if (faixas[k]![0] !== faixas[k - 1]![1] + 1) {
+          problema = 'So da para mesclar cenas SEGUIDAS do episodio (ex.: 0010, 0011, 0012).'
+          break
+        }
+      }
+    }
+  }
+  const segundos = escolhidas.reduce((n, c) => n + c.duration, 0)
+
+  return (
+    <div className="glass enter absolute bottom-4 left-1/2 z-30 flex max-w-[680px] -translate-x-1/2 items-center gap-3 rounded-md px-3 py-2 text-[12px]">
+      <Combine size={14} strokeWidth={1.75} className="shrink-0 text-accent" />
+      {ids.length === 0 && recado ? (
+        <span className="text-ink-2">{recado}</span>
+      ) : (
+        <span className="min-w-0 text-ink-2">
+          <span className="text-ink">{escolhidas.length} cenas para mesclar</span>
+          {escolhidas.length > 0 && <span className="tnum text-ink-3"> · {segundos.toFixed(1)}s</span>}
+          {(problema || recado) && <span className="block text-[11px] text-ink-3">{problema ?? recado}</span>}
+          {confirmando && !problema && (
+            <span className="block text-[11px] text-ink-3">
+              Viram um clipe so; os pedacos vao para a _lixeira do episodio e o AnCut e atualizado junto.
+            </span>
+          )}
+        </span>
+      )}
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        {ids.length > 0 && !problema && (
+          <button
+            type="button"
+            disabled={indo}
+            onClick={() => {
+              if (!confirmando) {
+                onConfirmar()
+                return
+              }
+              setIndo(true)
+              void onMesclar(escolhidas.map((c) => c.path)).finally(() => setIndo(false))
+            }}
+            className="flex items-center gap-1.5 rounded-sm border border-accent bg-accent-dim px-2.5 py-1 text-ink hover:bg-accent disabled:opacity-50"
+          >
+            {indo && <Loader2 size={12} className="animate-spin" />}
+            {confirmando ? 'Confirmar mescla' : 'Mesclar'}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="rounded-sm border border-line bg-elevated px-2.5 py-1 text-ink-2 hover:text-ink"
+        >
+          {ids.length === 0 ? 'Ok' : 'Cancelar'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------- player
+
+/**
+ * O PLAYER GRANDE: "um player que abre pra poder ver em alta escala". A cena
+ * em tamanho de verdade, com som e controles; setas andam pela grade (na
+ * ordem dos filtros), Esc fecha. Escolher daqui faz o mesmo que clicar no
+ * cartao.
+ */
+function Tocador({
+  clip,
+  lista,
+  favorito,
+  marcado,
+  onFavoritar,
+  onEscolher,
+  onIr,
+  onFechar,
+}: {
+  clip: LibraryClip
+  lista: readonly LibraryClip[]
+  favorito: boolean
+  marcado: boolean
+  onFavoritar: () => void
+  onEscolher: () => void
+  onIr: (clip: LibraryClip) => void
+  onFechar: () => void
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const indice = lista.findIndex((c) => c.id === clip.id)
+  const anterior = indice > 0 ? lista[indice - 1] : undefined
+  const proximo = indice >= 0 && indice < lista.length - 1 ? lista[indice + 1] : undefined
+
+  useEffect(() => {
+    let vivo = true
+    setUrl(null)
+    void window.dangai.libraryClipUrl(clip.path).then((r) => {
+      if (vivo && r.ok) setUrl(r.value)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [clip.path])
+
+  /*
+   * O teclado do player vem ANTES do da Biblioteca (fase de captura): o Esc
+   * aqui fecha o player, e nao a Biblioteca inteira; as setas andam pelas
+   * cenas, e nao pelos trechos do roteiro.
+   */
+  useEffect(() => {
+    const tecla = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onFechar()
+      else if (event.key === 'ArrowRight' && proximo) onIr(proximo)
+      else if (event.key === 'ArrowLeft' && anterior) onIr(anterior)
+      else return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    window.addEventListener('keydown', tecla, true)
+    return () => window.removeEventListener('keydown', tecla, true)
+  }, [onFechar, onIr, anterior, proximo])
+
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-black/85 p-6" onClick={onFechar}>
+      <div className="flex max-h-full w-full max-w-[1400px] flex-col gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 text-[12px] text-ink-2">
+          <span className="min-w-0 flex-1 truncate">
+            <span className="text-ink">{clip.animeTitle || clip.anime}</span> · S{pad(clip.season)}E{pad(clip.episode)} · cena{' '}
+            {clip.shot} · <span className="tnum">{clip.duration.toFixed(1)}s</span>
+            {clip.characters.length > 0 && <span className="text-ink-3"> · {clip.characters.join(', ')}</span>}
+          </span>
+          <span className="tnum text-ink-3">
+            {indice + 1} de {lista.length}
+          </span>
+          <button type="button" onClick={onFechar} aria-label="Fechar o player" className="text-ink-3 hover:text-ink">
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="relative flex min-h-0 items-center justify-center">
+          <button
+            type="button"
+            disabled={!anterior}
+            onClick={() => anterior && onIr(anterior)}
+            aria-label="Cena anterior"
+            className="absolute left-2 z-10 grid size-10 place-items-center rounded-full bg-black/60 text-white hover:bg-accent disabled:opacity-20"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          {url ? (
+            <video
+              key={url}
+              src={url}
+              autoPlay
+              loop
+              controls
+              className="max-h-[78vh] w-full rounded-md bg-black object-contain"
+            />
+          ) : (
+            <div className="grid aspect-video w-full place-items-center rounded-md bg-black">
+              <Loader2 size={20} className="animate-spin text-ink-3" />
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={!proximo}
+            onClick={() => proximo && onIr(proximo)}
+            aria-label="Proxima cena"
+            className="absolute right-2 z-10 grid size-10 place-items-center rounded-full bg-black/60 text-white hover:bg-accent disabled:opacity-20"
+          >
+            <ChevronRight size={20} />
+          </button>
+        </div>
+        <div className="flex items-center justify-center gap-2 text-[12px]">
+          <button
+            type="button"
+            onClick={onFavoritar}
+            className="flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 py-1.5 text-ink-2 hover:text-ink"
+          >
+            <Star size={13} strokeWidth={1.5} className={favorito ? 'fill-accent text-accent' : ''} />
+            {favorito ? 'Favorita' : 'Favoritar'}
+          </button>
+          <button
+            type="button"
+            onClick={onEscolher}
+            className={[
+              'rounded-sm border px-3 py-1.5',
+              marcado ? 'border-accent bg-accent-dim text-ink' : 'border-accent text-ink hover:bg-accent-dim',
+            ].join(' ')}
+          >
+            {marcado ? 'Escolhida (clique para tirar)' : 'Escolher esta cena'}
+          </button>
+          <span className="text-[11px] text-ink-3">← → outra cena · Esc fecha</span>
+        </div>
+      </div>
+    </div>
+  )
 }

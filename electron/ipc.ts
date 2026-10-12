@@ -84,6 +84,7 @@ import {
 import { inverterAsset } from './services/assets'
 import { prepararSobreposicao } from './services/sobreposicao'
 import { sondarVideoPronto, tiraDoClipe } from './services/clips'
+import { mesclarClipes, type ResultadoDaMescla } from './services/mesclar'
 import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 
@@ -283,6 +284,8 @@ export function registerIpc(): void {
   handle<[string[]], boolean[]>(IPC.existemArquivos, async (paths) =>
     paths.map((p) => typeof p === 'string' && existsSync(p)),
   )
+
+  handle<[string[]], ResultadoDaMescla>(IPC.mesclarClipes, async (paths) => mesclarClipes(paths))
 
   handle<[], { video: string; roteiro: string | null } | null>(IPC.escolherVideo, async () => {
     const r = await dialog.showOpenDialog({
