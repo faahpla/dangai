@@ -6,6 +6,7 @@ import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
 import { useProject } from '@/store/project'
 import { Video } from '@/remotion/Video'
+import { TransformNoPreview } from './TransformNoPreview'
 import { create } from 'zustand'
 
 /*
@@ -233,6 +234,8 @@ export function Preview() {
             doubleClickToFullscreen={false}
             acknowledgeRemotionLicense
           />
+          {/* A caixa do insert escolhido: mover, escalar e girar no proprio preview. */}
+          <TransformNoPreview />
           {/*
             A narracao toca por fora da composicao porque o Remotion entrega
             video puro e o audio so entra no mux -- ver Video.tsx.

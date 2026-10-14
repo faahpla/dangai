@@ -111,11 +111,10 @@ function poseNa(tipo: Transition, lado: Lado, p: number, intensidade: number): P
     const distancia = 0.22 + 0.5 * intensidade
     // A de saida acelera PARA o lado; a de entrada chega pelo lado oposto, freando.
     const t = lado === 'sai' ? distancia * entraCubica(u) : -distancia * (1 - saiCubica(v))
-    // Um respiro de escala no pico vende a velocidade.
-    const s = 1 + 0.08 * intensidade * Math.sin(Math.PI * p)
+    // So o deslocamento: o "respiro" de escala que havia aqui virava um zoom
+    // que ele nao pediu ("alem do movimento ele da um leve zoom").
     return {
       ...NEUTRA,
-      s,
       x: pan[0] * t * 100,
       y: pan[1] * t * 100,
       o: lado === 'sai' ? 1 : troca,

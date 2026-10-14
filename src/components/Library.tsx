@@ -919,7 +919,8 @@ export function Library() {
                 onMesclar={async (paths) => {
                   const r = await mesclarCenas(paths)
                   setConfirmandoMescla(false)
-                  setRecadoDaMescla(r.recado)
+                  // Deu certo, a grade ja mostra a cena nova: recado so quando falha.
+                  setRecadoDaMescla(r.ok ? null : r.recado)
                   if (r.ok) setParaMesclar([])
                 }}
               />
@@ -1201,8 +1202,9 @@ function Rail({
       eps.set(clip.anime, osEps)
     }
 
+    // Em ordem ALFABETICA, animes e personagens: e pelo nome que ele procura.
     const ordenar = (m: Map<string, number>): [string, number][] =>
-      [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR'))
+      [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { sensitivity: 'base' }))
 
     return {
       animes: ordenar(contagemAnime),
