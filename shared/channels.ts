@@ -79,6 +79,7 @@ export const IPC = {
   exportarTexto: 'dialog:exportar-texto',
   importarTexto: 'dialog:importar-texto',
   prepararSobreposicao: 'timeline:sobreposicao',
+  caixaDoConteudo: 'timeline:caixa-do-conteudo',
   listarPasta: 'bins:listar-pasta',
   existemArquivos: 'arquivos:existem',
   escolherVideo: 'dialog:escolher-video',
@@ -572,6 +573,11 @@ export interface DangaiBridge {
   prepararSobreposicao(path: string): Promise<
     IpcResult<{ url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }>
   >
+  /**
+   * Onde esta o que se ve no arquivo (a parte nao transparente), em fracao da
+   * largura e da altura dele. null = nao deu para medir.
+   */
+  caixaDoConteudo(path: string): Promise<IpcResult<{ x0: number; y0: number; x1: number; y1: number } | null>>
   /** Dialogo de escolher pasta. null = fechou sem escolher. */
   escolherPasta(titulo: string): Promise<IpcResult<string | null>>
   /** Salva um arquivo de texto onde ele escolher. null = fechou o dialogo. */

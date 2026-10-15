@@ -75,6 +75,10 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.prepararSobreposicao, path) as Promise<
       IpcResult<{ url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }>
     >,
+  caixaDoConteudo: (path) =>
+    ipcRenderer.invoke(IPC.caixaDoConteudo, path) as Promise<
+      IpcResult<{ x0: number; y0: number; x1: number; y1: number } | null>
+    >,
   escolherPasta: (titulo) =>
     ipcRenderer.invoke(IPC.escolherPasta, titulo) as Promise<IpcResult<string | null>>,
   exportarTexto: (args) => ipcRenderer.invoke(IPC.exportarTexto, args) as Promise<IpcResult<string | null>>,

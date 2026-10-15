@@ -1,6 +1,7 @@
 import { useId, useMemo } from 'react'
 import { AbsoluteFill, useCurrentFrame } from 'remotion'
-import { rampaDoFade, type AjusteDeCor } from '@shared/contract'
+import { rampaDoFade, VIDEO_FPS, type AjusteDeCor, type MotionCurve } from '@shared/contract'
+import { transformNoTempo, type ChaveDeTransform, type Transform2D } from '@shared/transform'
 import { ajusteNeutro, tabelasDoAjuste } from '@shared/cor'
 
 /**
@@ -18,6 +19,9 @@ export function CamadaDeAjuste({
   fadeInFrames = 0,
   fadeOutFrames = 0,
   cor: corDoClipe,
+  transform,
+  chaves,
+  curvaDasChaves = 'ease-in-out',
   children,
 }: {
   from: number
@@ -25,6 +29,10 @@ export function CamadaDeAjuste({
   fadeInFrames?: number
   fadeOutFrames?: number
   cor: AjusteDeCor | undefined
+  /** O transform de TUDO o que esta embaixo: fixo, ou animado pelas chaves. */
+  transform?: Transform2D
+  chaves?: readonly ChaveDeTransform[] | null
+  curvaDasChaves?: MotionCurve
   children: React.ReactNode
 }) {
   const frame = useCurrentFrame()
@@ -36,12 +44,27 @@ export function CamadaDeAjuste({
     () => (corDoClipe && fade < 1 ? { ...corDoClipe, intensidade: corDoClipe.intensidade * fade } : corDoClipe),
     [corDoClipe, fade],
   )
-  const ativo = cor !== undefined && frame >= from && frame < from + durationInFrames && !ajusteNeutro(cor)
+  const dentro = frame >= from && frame < from + durationInFrames
+  const ativo = cor !== undefined && dentro && !ajusteNeutro(cor)
+  /*
+   * O TRANSFORM DA CAMADA: move, escala e gira o que esta embaixo -- "pra eu
+   * poder animar o que eu quiser". Fora do trecho dela, nada. A arvore e a
+   * mesma com ou sem transform: as cenas embaixo nunca sao remontadas.
+   */
+  const v = dentro && transform ? transformNoTempo(transform, chaves, (frame - from) / VIDEO_FPS, curvaDasChaves) : null
+  const mexe = v !== null && (v.x !== 0 || v.y !== 0 || v.escala !== 1 || v.rotacao !== 0)
   return (
     <AbsoluteFill>
       {ativo && <FiltroDeCor id={id} cor={cor} />}
       <AbsoluteFill style={{ filter: ativo ? `url(#${id})` : undefined, backgroundColor: '#000' }}>
-        {children}
+        <AbsoluteFill
+          style={{
+            transform: mexe ? `translate(${v.x}%, ${v.y}%) rotate(${v.rotacao}deg) scale(${v.escala})` : undefined,
+            transformOrigin: 'center center',
+          }}
+        >
+          {children}
+        </AbsoluteFill>
       </AbsoluteFill>
     </AbsoluteFill>
   )

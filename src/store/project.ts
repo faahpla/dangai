@@ -118,6 +118,7 @@ import {
 } from '@shared/trecho'
 import { semPassoDeDesfazer, semSujar } from './quiet'
 import { remapearEscolhas } from '@shared/remapear-escolhas'
+import { deslocarChaves } from '@shared/transform'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
 export type Phase = 'empty' | 'editing' | 'rendering'
@@ -3416,6 +3417,8 @@ export const useProject = create<ProjectState>((set, get) => ({
           at: novoAt,
           inicioSec: o.tipo !== 'video' ? 0 : o.inicioSec + delta,
           usarSec: fim - novoAt,
+          // A animacao fica presa a linha do tempo, e nao ao comeco do clipe.
+          ...(o.chaves?.length ? { chaves: deslocarChaves(o.chaves, delta, o.curvaDasChaves ?? 'ease-in-out') } : {}),
         }
       }),
       projectDirty: true,

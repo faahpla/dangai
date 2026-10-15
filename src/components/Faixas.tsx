@@ -271,6 +271,8 @@ export interface ClipeDaFaixa {
   /** As transicoes do proprio clipe (faixa de video). */
   transEntrada?: Transition
   transSaida?: Transition
+  /** Os quadros-chave do transform, em segundos desde o inicio do clipe. */
+  chaves?: readonly number[]
 }
 
 const formatarDuracao = (s: number): string => {
@@ -773,6 +775,14 @@ function Clipe({
           style={{ width: `${Math.min((c.fadeOutSec ?? 0) / c.toca, 1) * 100}%` }}
         />
       )}
+      {/* Os quadros-chave do transform: losangos no alto do clipe. */}
+      {c.chaves?.map((t, i) => (
+        <span
+          key={`chave-${i}`}
+          className="pointer-events-none absolute top-[3px] size-[7px] -translate-x-1/2 rotate-45 border border-black/50 bg-white/90"
+          style={{ left: `${Math.min(Math.max(t / c.toca, 0), 1) * 100}%` }}
+        />
+      ))}
       {/* O rodape do DaVinci: nome e duracao. */}
       <span className="pointer-events-none absolute inset-x-0 bottom-0 flex h-[13px] items-center gap-1.5 truncate bg-black/25 px-1 text-[9px] text-white/90">
         <span className="min-w-0 truncate">{c.nome}</span>

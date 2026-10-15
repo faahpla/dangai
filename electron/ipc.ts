@@ -82,7 +82,7 @@ import {
   upscaleReady,
 } from './services/upscale'
 import { inverterAsset } from './services/assets'
-import { prepararSobreposicao } from './services/sobreposicao'
+import { caixaDoConteudo, prepararSobreposicao } from './services/sobreposicao'
 import { sondarVideoPronto, tiraDoClipe } from './services/clips'
 import { mesclarClipes, type ResultadoDaMescla } from './services/mesclar'
 import { alinharAoAudio } from './services/alinhador'
@@ -235,6 +235,10 @@ export function registerIpc(): void {
     const pronta = await prepararSobreposicao(path)
     return { url: publish(pronta.arquivo), tipo: pronta.tipo, durationSec: pronta.durationSec, aspecto: pronta.aspecto }
   })
+
+  handle<[string], { x0: number; y0: number; x1: number; y1: number } | null>(IPC.caixaDoConteudo, (path) =>
+    caixaDoConteudo(path),
+  )
 
   handle<[string], string | null>(IPC.escolherPasta, async (titulo) => {
     const r = await dialog.showOpenDialog({ title: titulo, properties: ['openDirectory'] })

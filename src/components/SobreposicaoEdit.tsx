@@ -6,6 +6,7 @@ import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
 import { ControleDeRitmo, opcoesDeEfeito } from './SceneEdit'
 import { AjusteEdit } from './AjusteEdit'
 import { AjusteDaTransicaoCampos, PaletaDeTransicoes } from './EditorDeTransicao'
+import { TransformDoClipe } from './TransformDoClipe'
 
 /**
  * O INSPETOR do clipe escolhido na faixa de video -- seta, imagem, .mov.
@@ -49,8 +50,10 @@ export function SobreposicaoEdit({ id }: { id: string }) {
           acao={
             <>
               <Botaozinho
-                onClick={() => ajustar(id, { x: 0, y: 0, escala: 1, rotacao: 0, opacidade: 1, espelhar: false })}
-                title="Volta posicao, tamanho, giro e opacidade ao padrao"
+                onClick={() =>
+                  ajustar(id, { x: 0, y: 0, escala: 1, rotacao: 0, opacidade: 1, espelhar: false, chaves: undefined })
+                }
+                title="Volta posicao, tamanho, giro e opacidade ao padrao (e tira a animacao)"
               >
                 <RotateCcw size={11} strokeWidth={1.5} />
                 Resetar
@@ -71,29 +74,7 @@ export function SobreposicaoEdit({ id }: { id: string }) {
             {alvos.length > 1 ? `${alvos.length} clipes escolhidos -- mexer aqui muda todos` : o.fileName}
             {alvos.length <= 1 && <span className="tnum ml-2 text-ink-3">{toca.toFixed(2)}s</span>}
           </p>
-          <Linha label="Posicao X">
-            <Deslizante valor={o.x} min={-60} max={60} step={1} padrao={0} texto={`${Math.round(o.x)}%`}
-              onChange={(v) => ajustar(id, { x: v })} />
-          </Linha>
-          <Linha label="Posicao Y">
-            <Deslizante valor={o.y} min={-60} max={60} step={1} padrao={0} texto={`${Math.round(o.y)}%`}
-              onChange={(v) => ajustar(id, { y: v })} />
-          </Linha>
-          <Linha label="Tamanho">
-            <Deslizante valor={o.escala} min={0.1} max={3} step={0.05} padrao={1}
-              texto={`${Math.round(o.escala * 100)}%`} onChange={(v) => ajustar(id, { escala: v })} />
-          </Linha>
-          <Linha label="Rotacao" title="Duplo clique no slider volta para 0°">
-            <Deslizante valor={o.rotacao} min={-180} max={180} step={1} padrao={0}
-              texto={`${Math.round(o.rotacao)}°`} onChange={(v) => ajustar(id, { rotacao: v })} />
-          </Linha>
-          <Linha label="">
-            <Segmentos
-              opcoes={[-90, -45, 0, 45, 90, 180].map((g) => ({ valor: g, rotulo: `${g}°`, title: `Girar para ${g}°` }))}
-              ativo={(g) => Math.round(o.rotacao) === g}
-              onChange={(g) => ajustar(id, { rotacao: g })}
-            />
-          </Linha>
+          <TransformDoClipe o={o} alvos={alvos} comPresetsDeGiro />
           <Linha label="Preencher" title="Cobrir a tela inteira (corta o que sobra), ou o arquivo inteiro com bordas">
             <Botaozinho active={!!o.preencher} onClick={() => ajustar(id, { preencher: !o.preencher })}>
               <Expand size={11} strokeWidth={1.5} />

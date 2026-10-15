@@ -91,6 +91,94 @@ export async function prepararSobreposicao(path: string): Promise<SobreposicaoPr
 
 const convertendo = new Map<string, Promise<void>>()
 
+/** Onde esta o que se VE no arquivo, em fracao da largura e da altura dele. */
+export interface CaixaDoConteudo {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
+const caixas = new Map<string, Promise<CaixaDoConteudo | null>>()
+
+/**
+ * A CAIXA DO CONTEUDO: a parte nao transparente do arquivo, somada ao longo do
+ * clipe todo.
+ *
+ * Uma seta exportada no tamanho do video e um quadro 1080x1920 quase todo
+ * vazio, com a seta pequena num canto. O transform pelo preview desenhava a
+ * caixa do QUADRO -- girada, virava um losango enorme saindo da tela, longe da
+ * seta. Esta e a caixa que abraca a seta.
+ *
+ * O ffmpeg extrai o alfa de ate 60 quadros (4 por segundo), num tamanho
+ * pequeno, e o filtro bbox diz onde ha alguma coisa em cada um. Arquivo sem
+ * alfa sai com o quadro inteiro. null = nao deu para medir (o preview fica com
+ * o quadro inteiro, como antes).
+ */
+export function caixaDoConteudo(path: string): Promise<CaixaDoConteudo | null> {
+  let chave = path
+  try {
+    const s = statSync(path)
+    chave = `${path}|${s.size}|${s.mtimeMs}`
+  } catch {
+    return Promise.resolve(null)
+  }
+  const ja = caixas.get(chave)
+  if (ja) return ja
+  const medindo = medirCaixa(path).catch(() => null)
+  caixas.set(chave, medindo)
+  return medindo
+}
+
+async function medirCaixa(path: string): Promise<CaixaDoConteudo | null> {
+  const ext = extname(path).toLowerCase()
+  const L = 256
+  // O decodificador VP9 nativo do ffmpeg joga o alfa fora; o libvpx guarda.
+  const decodificadores = ext === '.webm' ? [['-c:v', 'libvpx-vp9'], ['-c:v', 'libvpx'], []] : [[]]
+  for (const dec of decodificadores) {
+    const saida = await rodarComSaida([
+      '-hide_banner', '-nostats', ...dec, '-i', path,
+      '-vf', `fps=4,scale=${L}:${L},format=rgba,alphaextract,bbox=min_val=24`,
+      '-frames:v', '60', '-an', '-f', 'null', '-',
+    ])
+    if (saida === null) continue
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    for (const m of saida.matchAll(/x1:(\d+) x2:(\d+) y1:(\d+) y2:(\d+)/g)) {
+      x0 = Math.min(x0, Number(m[1]))
+      x1 = Math.max(x1, Number(m[2]) + 1)
+      y0 = Math.min(y0, Number(m[3]))
+      y1 = Math.max(y1, Number(m[4]) + 1)
+    }
+    if (!Number.isFinite(x0) || x1 <= x0 || y1 <= y0) return null
+    // Um pixel de folga em volta: a caixa nao encosta na borda da seta.
+    return {
+      x0: Math.max(0, (x0 - 1) / L),
+      y0: Math.max(0, (y0 - 1) / L),
+      x1: Math.min(1, (x1 + 1) / L),
+      y1: Math.min(1, (y1 + 1) / L),
+    }
+  }
+  return null
+}
+
+/** Roda o ffmpeg e devolve o stderr; null se ele falhou. */
+function rodarComSaida(args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    const child = spawn(ffmpegPath, args, { windowsHide: true })
+    let stderr = ''
+    child.stderr.on('data', (c: Buffer) => {
+      stderr += c.toString()
+      // So as linhas do bbox interessam; o resto nao precisa crescer sem fim.
+      if (stderr.length > 2_000_000) stderr = stderr.slice(-1_000_000)
+    })
+    child.on('error', () => resolve(null))
+    child.on('close', (code) => resolve(code === 0 ? stderr : null))
+  })
+}
+
 async function converter(path: string, alvo: string): Promise<void> {
   const parcial = `${alvo}.part.webm`
   try {

@@ -1354,6 +1354,22 @@ export function rampaDoFade(quadro: number, duracao: number, entra: number, sai:
 }
 export const AJUSTE_DE_COR_PADRAO: AjusteDeCor = ajusteDeCorSchema.parse({})
 
+/**
+ * Um QUADRO-CHAVE do transform de um clipe da faixa de video (ou da camada de
+ * ajuste). `t` em segundos desde o inicio do clipe. O giro aqui pode passar de
+ * 180 graus: de 0 a 360 e uma volta inteira. Ver shared/transform.ts.
+ */
+export const chaveDeTransformSchema = z.object({
+  t: z.number().min(0),
+  x: z.number().min(-100).max(100),
+  y: z.number().min(-100).max(100),
+  escala: z.number().min(0.05).max(4),
+  rotacao: z.number().min(-3600).max(3600),
+})
+
+/** O ponto em volta do qual o clipe gira e escala, em fracao do quadro. */
+export const pivoSchema = z.object({ x: z.number().min(-2).max(3), y: z.number().min(-2).max(3) })
+
 export const sobreposicaoSchema = z.object({
   id: z.string(),
   path: z.string(),
@@ -1408,6 +1424,20 @@ export const sobreposicaoSchema = z.object({
    */
   fadeInSec: z.number().min(0).max(3600).default(0),
   fadeOutSec: z.number().min(0).max(3600).default(0),
+  /**
+   * ANIMAR O TRANSFORM: com quadros-chave, a posicao, o tamanho e o giro
+   * passam a variar ao longo do clipe -- e na camada de ajuste, o de TUDO o que
+   * esta embaixo dela. Sem chaves, valem x/y/escala/rotacao fixos.
+   */
+  chaves: z.array(chaveDeTransformSchema).max(200).optional(),
+  /** O ritmo entre uma chave e a proxima. */
+  curvaDasChaves: motionCurveSchema.optional(),
+  /**
+   * O PONTO DE GIRO. Sem ele, o centro do quadro -- o de sempre. O transform
+   * pelo preview poe aqui o centro do que se ve no arquivo (a seta, e nao o
+   * quadro transparente inteiro), compensando a posicao para nada pular.
+   */
+  pivo: pivoSchema.optional(),
 })
 export type SobreposicaoSalva = z.infer<typeof sobreposicaoSchema>
 
@@ -1635,6 +1665,9 @@ export const renderPropsSchema = z.object({
         saida: transicaoResolvidaSchema.nullable().default(null),
         fadeInFrames: z.number().int().nonnegative().default(0),
         fadeOutFrames: z.number().int().nonnegative().default(0),
+        chaves: z.array(chaveDeTransformSchema).nullable().default(null),
+        curvaDasChaves: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
+        pivo: pivoSchema.nullable().default(null),
       }),
     )
     .default([]),

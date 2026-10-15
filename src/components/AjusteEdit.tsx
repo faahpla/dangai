@@ -11,6 +11,7 @@ import { curvaInterpolada } from '@shared/cor'
 import { idsEscolhidos, useProject } from '@/store/project'
 import { usePresetsDeCor } from '@/store/presets-de-cor'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
+import { TransformDoClipe } from './TransformDoClipe'
 
 /**
  * O INSPETOR DA CAMADA DE AJUSTE: a correcao de cor.
@@ -148,6 +149,33 @@ export function AjusteEdit({ id }: { id: string }) {
               onChange={(x) => mudarClipe({ fadeOutSec: x })}
             />
           </Linha>
+        </Grupo>
+
+        {/*
+          O TRANSFORM DA CAMADA: move, escala e gira tudo o que esta embaixo,
+          fixo ou animado por quadros-chave. Tambem pela caixa no preview.
+        */}
+        <Grupo
+          titulo="Transform"
+          acao={
+            <Botaozinho
+              onClick={() => {
+                for (const alvo of alvos.length > 0 ? alvos : [id]) {
+                  ajustar(alvo, { x: 0, y: 0, escala: 1, rotacao: 0, chaves: undefined })
+                }
+              }}
+              title="Volta posicao, tamanho e giro ao padrao (e tira a animacao)"
+            >
+              <RotateCcw size={11} strokeWidth={1.5} />
+              Resetar
+            </Botaozinho>
+          }
+        >
+          <p className="text-[10px] leading-snug text-ink-3">
+            Move, escala e gira tudo o que esta embaixo -- tambem arrastando no preview. Para animar, ponha a agulha
+            no comeco, clique em Animar, ande com a agulha e mexa.
+          </p>
+          <TransformDoClipe o={o} alvos={alvos} />
         </Grupo>
 
         {/*

@@ -11,7 +11,8 @@ import {
   Sequence,
   useCurrentFrame,
 } from 'remotion'
-import { rampaDoFade, resolverTransicao, type RenderProps } from '@shared/contract'
+import { rampaDoFade, resolverTransicao, VIDEO_FPS, type RenderProps } from '@shared/contract'
+import { transformNoTempo } from '@shared/transform'
 import { Scene, easingFor, motionFor } from './Scene'
 import { CamadaDeAjuste } from './Ajuste'
 import { Captions } from './Captions'
@@ -280,6 +281,9 @@ function Pilha({ itens, children }: { itens: RenderProps['sobreposicoes']; child
           fadeInFrames={o.fadeInFrames}
           fadeOutFrames={o.fadeOutFrames}
           cor={o.cor}
+          transform={o}
+          chaves={o.chaves}
+          curvaDasChaves={o.curvaDasChaves}
         >
           {pilha}
         </CamadaDeAjuste>
@@ -320,11 +324,13 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
   // Inteiro na tela (contain) ou cobrindo o quadro todo (cover, "preencher").
   const cobre = { width: '100%', height: '100%', objectFit: o.preencher ? ('cover' as const) : ('contain' as const) }
   const fade = rampaDoFade(frame, o.durationInFrames, o.fadeInFrames, o.fadeOutFrames)
+  // Fixo, ou animado pelos quadros-chave (o tempo da chave e desde o inicio do clipe).
+  const v = transformNoTempo(o, o.chaves, frame / VIDEO_FPS, o.curvaDasChaves)
   return (
     <AbsoluteFill
       style={{
-        transform: `translate(${o.x}%, ${o.y}%) rotate(${o.rotacao}deg) scale(${o.escala})${o.espelhar ? ' scaleX(-1)' : ''}`,
-        transformOrigin: 'center center',
+        transform: `translate(${v.x}%, ${v.y}%) rotate(${v.rotacao}deg) scale(${v.escala})${o.espelhar ? ' scaleX(-1)' : ''}`,
+        transformOrigin: o.pivo ? `${o.pivo.x * 100}% ${o.pivo.y * 100}%` : 'center center',
         opacity: o.opacidade * fade,
       }}
     >

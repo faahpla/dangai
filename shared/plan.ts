@@ -488,6 +488,9 @@ export function toRenderProps(
         preencher: o.preencher ?? false,
         fadeInFrames: Math.round((o.fadeInSec ?? 0) * VIDEO_FPS),
         fadeOutFrames: Math.round((o.fadeOutSec ?? 0) * VIDEO_FPS),
+        chaves: o.chaves && o.chaves.length > 0 ? o.chaves : null,
+        curvaDasChaves: o.curvaDasChaves ?? MOTION_CURVE_DEFAULT,
+        pivo: o.pivo ?? null,
       }
     })
   const quadro = medidasDo(formato)

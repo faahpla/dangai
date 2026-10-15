@@ -262,7 +262,7 @@ export function Timeline() {
   }, [duration, scenes, captions, trilhas, sobreposicoes])
 
   const levarAgulha = useCallback(
-    (clientX: number, livre = false): void => {
+    (clientX: number, livre = false, soAgulha = false): void => {
       let seconds = timeAt(clientX)
       if (imaLigado && !livre) {
         let dist = ima.tolerancia
@@ -278,6 +278,8 @@ export function Timeline() {
         setLinhaDoIma(melhor)
       }
       setPlayhead(seconds)
+      // Pela regua, so a agulha anda: o clipe escolhido continua escolhido.
+      if (soAgulha) return
       const sob = scenes.findIndex((scene) => seconds >= scene.start && seconds < scene.end)
       if (sob !== -1) selectScene(sob)
     },
@@ -858,6 +860,32 @@ export function Timeline() {
         */}
         <div style={{ width: largura }}>
         {/*
+          A REGUA: clicar ou arrastar aqui so leva a agulha -- nao escolhe bloco
+          nem solta o clipe escolhido. E o que permite animar um clipe: andar
+          com a agulha e mexer, sem perder o painel dele.
+        */}
+        {duration > 0 && (
+          <Linha largura={largura} altura={18} fundo="bg-bg" cabecalho={<span className="text-[9px] text-ink-3">Tempo</span>}>
+            <Regua
+              duration={duration}
+              largura={largura}
+              onPointerDown={(event) => {
+                if (isRendering || event.button !== 0) return
+                event.preventDefault()
+                levarAgulha(event.clientX, event.altKey, true)
+                const mover = (e: PointerEvent): void => levarAgulha(e.clientX, e.altKey, true)
+                const fim = (): void => {
+                  setLinhaDoIma(null)
+                  window.removeEventListener('pointermove', mover)
+                  window.removeEventListener('pointerup', fim)
+                }
+                window.addEventListener('pointermove', mover)
+                window.addEventListener('pointerup', fim)
+              }}
+            />
+          </Linha>
+        )}
+        {/*
           AS FAIXAS DE VIDEO EM CIMA DAS CENAS, as de audio embaixo: "assim e
           melhor pra mexer no workflow". E a ordem do que se ve -- a faixa de
           cima cobre a de baixo, e as cenas sao o fundo de tudo.
@@ -883,6 +911,7 @@ export function Timeline() {
                 fadeOutSec: o.fadeOutSec ?? 0,
                 transEntrada: o.transicaoEntrada?.tipo,
                 transSaida: o.transicaoSaida?.tipo,
+                chaves: o.chaves?.map((c) => c.t),
               }))}
               onTransicao={(id, lado, t) =>
                 ajustarSobreposicao(
@@ -1903,5 +1932,54 @@ function BotaoDaFerramenta() {
       <SquareDashedMousePointer size={12} strokeWidth={1.5} />
       Selecao
     </button>
+  )
+}
+
+/**
+ * A REGUA DE TEMPO no alto das faixas: marcas com o tempo, num passo que deixa
+ * os numeros legiveis em qualquer zoom.
+ */
+function Regua({
+  duration,
+  largura,
+  onPointerDown,
+}: {
+  duration: number
+  largura: number
+  onPointerDown: (event: React.PointerEvent) => void
+}) {
+  const porSegundo = largura / Math.max(duration, 1e-3)
+  const passo = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300].find((p) => p * porSegundo >= 56) ?? 600
+  const marcas: number[] = []
+  for (let t = 0; t <= duration + 1e-6; t += passo) marcas.push(t)
+  const rotulo = (t: number): string => {
+    const m = Math.floor(t / 60)
+    const s = t - m * 60
+    return passo < 1 ? `${m}:${s.toFixed(1).padStart(4, '0')}` : `${m}:${String(Math.round(s)).padStart(2, '0')}`
+  }
+  return (
+    <div
+      className="absolute inset-0 cursor-ew-resize select-none"
+      onPointerDown={onPointerDown}
+      title="Clique ou arraste para levar a agulha (o clipe escolhido continua escolhido)"
+      data-regua
+      style={{
+        // As marquinhas entre os numeros: cinco por passo.
+        backgroundImage: 'linear-gradient(to right, rgb(255 255 255 / 0.14) 1px, transparent 1px)',
+        backgroundSize: `${(passo * porSegundo) / 5}px 5px`,
+        backgroundRepeat: 'repeat-x',
+        backgroundPosition: 'left bottom',
+      }}
+    >
+      {marcas.map((t) => (
+        <span
+          key={t}
+          className="pointer-events-none absolute bottom-0 top-[3px] border-l border-white/25 pl-1 text-[9px] leading-none text-ink-3 tnum"
+          style={{ left: t * porSegundo }}
+        >
+          {rotulo(t)}
+        </span>
+      ))}
+    </div>
   )
 }
