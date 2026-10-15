@@ -116,7 +116,8 @@ import {
   slotsDoTrecho,
   spansDoTrecho,
 } from '@shared/trecho'
-import { semSujar } from './quiet'
+import { semPassoDeDesfazer, semSujar } from './quiet'
+import { remapearEscolhas } from '@shared/remapear-escolhas'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
 export type Phase = 'empty' | 'editing' | 'rendering'
@@ -740,6 +741,12 @@ export interface ProjectState {
   replaceSceneWith: (path: string) => Promise<void>
   /** Le a narracao e quebra em frases. Chamada quando a Biblioteca abre. */
   loadScriptBlocks: () => Promise<void>
+  /**
+   * Troca o roteiro SEM perder as escolhas da Biblioteca: le os trechos novos
+   * com o texto novo e so entao aplica tudo junto, com cada cena remapeada
+   * para o trecho que cai no mesmo tempo. Um passo so de Ctrl+Z.
+   */
+  trocarRoteiro: (texto: string) => Promise<void>
   setActiveBlock: (index: number | null) => void
   /**
    * Volta a Biblioteca, no trecho do bloco atual, para consertar a selecao e
@@ -1358,7 +1365,13 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Roteiro novo muda onde cada frase comeca e acaba: o que estava lido
       // deixa de valer.
       if (result.ok) {
-        set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {}, blockSplits: {}, blockCuts: {} })
+        /*
+         * So o roteiro mudou (a narracao continua): as escolhas vao junto,
+         * remapeadas. Com uma narracao nova chegando na mesma leva, nao ha o
+         * que preservar -- o tempo das escolhas era o do audio antigo.
+         */
+        if (audioPaths.length === 0 && get().audio && get().scriptBlocks) await get().trocarRoteiro(result.value)
+        else set({ script: result.value, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {}, blockSplits: {}, blockCuts: {} })
       }
       else set({ error: result.error })
     }
@@ -1652,13 +1665,68 @@ export const useProject = create<ProjectState>((set, get) => ({
       set({ scriptBlocksBusy: null, busy: null, libraryError: r.error })
       return
     }
+    // A leitura chegou sozinha: nao e uma edicao, e nao vira passo de Ctrl+Z
+    // (desfaze-la so faria a Biblioteca ler de novo). O autosave ve.
+    semPassoDeDesfazer(() =>
+      set({
+        scriptBlocks: r.value.blocks,
+        // A transcricao vem junto e fica: as legendas saem dela sem outra passada.
+        transcript: r.value.transcript,
+        captions: get().captionsEdited ? get().captions : buildCaptions(r.value.transcript, get().captionRules),
+        scriptNote: r.value.scriptNote,
+        activeBlock: r.value.blocks.length > 0 ? 0 : null,
+        scriptBlocksBusy: null,
+        busy: null,
+      }),
+    )
+  },
+
+  trocarRoteiro: async (texto) => {
+    const { audio, subtitlePath, scriptBlocks, blockClips, transcript } = get()
+    if (!audio || !scriptBlocks || lendoRoteiro) {
+      // Nada lido ainda: nao ha escolha para preservar.
+      set({ script: texto, captionsEdited: false, scriptBlocks: null, blockClips: {}, blockWeights: {}, blockSplits: {}, blockCuts: {} })
+      return
+    }
+    /*
+     * Le os trechos do roteiro NOVO antes de mexer em qualquer coisa. Ate o
+     * resultado chegar, a Biblioteca segue com o roteiro e as escolhas de antes
+     * -- e se der errado, nada se perde.
+     */
+    set({ scriptBlocksBusy: 'Lendo o roteiro novo...' })
+    const pedido = window.dangai.scriptBlocks({ audioPath: audio.path, subtitlePath, script: texto, transcript })
+    lendoRoteiro = pedido
+    let r
+    try {
+      r = await pedido
+    } finally {
+      lendoRoteiro = null
+    }
+    if (get().audio !== audio) {
+      set({ scriptBlocksBusy: null, busy: null })
+      return
+    }
+    if (!r.ok) {
+      set({ scriptBlocksBusy: null, busy: null, libraryError: `O roteiro novo nao entrou (${r.error}). As escolhas ficaram como estavam.` })
+      return
+    }
+    const novos = r.value.blocks
+    const remapeadas = remapearEscolhas(scriptBlocks, blockClips, novos)
+    const ativo = get().activeBlock
+    // UM set so: o Ctrl+Z volta roteiro, trechos e escolhas juntos.
     set({
-      scriptBlocks: r.value.blocks,
-      // A transcricao vem junto e fica: as legendas saem dela sem outra passada.
-      transcript: r.value.transcript,
-      captions: get().captionsEdited ? get().captions : buildCaptions(r.value.transcript, get().captionRules),
+      script: texto,
+      captionsEdited: false,
       scriptNote: r.value.scriptNote,
-      activeBlock: r.value.blocks.length > 0 ? 0 : null,
+      scriptBlocks: novos,
+      transcript: r.value.transcript ?? transcript,
+      captions: buildCaptions(r.value.transcript ?? transcript, get().captionRules),
+      blockClips: remapeadas,
+      // Peso, tela dividida e cortes por palavra eram de trechos que mudaram.
+      blockWeights: {},
+      blockSplits: {},
+      blockCuts: {},
+      activeBlock: novos.length === 0 ? null : Math.min(ativo ?? 0, novos.length - 1),
       scriptBlocksBusy: null,
       busy: null,
     })

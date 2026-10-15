@@ -162,6 +162,18 @@ export function App() {
         }
 
         /*
+         * Na BIBLIOTECA o Ctrl+Z vale: as escolhas de cena sao documento, e
+         * desfazer uma marcacao (ou a troca do roteiro) e justamente o que se
+         * quer ali. Na busca, o Ctrl+Z continua sendo do campo.
+         */
+        if (store.libraryOpen && (acao === 'desfazer' || acao === 'refazer') && !editando(event.target)) {
+          event.preventDefault()
+          if (acao === 'desfazer') desfazer()
+          else refazer()
+          return
+        }
+
+        /*
          * Esc fecha TUDO, como ultimo recurso.
          *
          * Cada modal ja trata o proprio Esc, e com a tela no ar este daqui nao

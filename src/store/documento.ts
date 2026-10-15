@@ -50,6 +50,18 @@ export const CAMPOS = [
   'metadata',
   'script',
   'subtitlePath',
+  /*
+   * AS ESCOLHAS DA BIBLIOTECA tambem sao o documento. Fora daqui, marcar cenas
+   * nao disparava o autosave (so ia de carona quando outra coisa mudava) e o
+   * Ctrl+Z nao as alcancava -- e trocar o roteiro levou uma selecao inteira
+   * sem volta. Os trechos vao junto: as escolhas apontam para eles por indice.
+   */
+  'scriptBlocks',
+  'blockClips',
+  'blockWeights',
+  'blockSplits',
+  'blockCuts',
+  'escolhidos',
 ] as const
 
 export type CampoDoDocumento = (typeof CAMPOS)[number]

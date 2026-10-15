@@ -71,9 +71,14 @@ export function ScriptColumn() {
 
   const lista = useRef<HTMLDivElement>(null)
 
+  /*
+   * Le os trechos sempre que faltam -- e nao so quando a narracao muda. Trocar
+   * so o roteiro zerava os trechos com a mesma narracao, e a coluna ficava
+   * presa em "Lendo o roteiro..." para sempre.
+   */
   useEffect(() => {
-    if (audio) void carregar()
-  }, [audio, carregar])
+    if (audio && !blocos) void carregar()
+  }, [audio, blocos, carregar])
 
   // A frase aberta anda sozinha ao marcar cenas; sem isto ela sairia da vista.
   useEffect(() => {
@@ -137,7 +142,16 @@ export function ScriptColumn() {
   return (
     <Coluna>
       <header className="flex shrink-0 items-baseline justify-between border-b border-line px-4 py-2.5">
-        <span className="text-[12px] font-medium text-ink">Roteiro</span>
+        <span className="flex items-center gap-1.5 text-[12px] font-medium text-ink">
+          Roteiro
+          {/* Trocando o roteiro: os trechos de antes ficam ate os novos chegarem. */}
+          {busy && (
+            <span className="flex items-center gap-1 text-[10px] font-normal text-ink-3" title={busy}>
+              <Loader2 size={10} className="animate-spin text-accent" />
+              {busy}
+            </span>
+          )}
+        </span>
         {/*
           Duas ou tres contagens, nunca quatro.
           "25 frases" saia junto e nao mudava decisao nenhuma -- a frase e

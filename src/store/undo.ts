@@ -1,5 +1,5 @@
 import { useProject } from './project'
-import { estaCarregando } from './quiet'
+import { estaCarregando, pulaDesfazer } from './quiet'
 import { fotografar, mudou, type Documento } from './documento'
 
 /**
@@ -45,7 +45,7 @@ export function startUndo(): () => void {
   const unsubscribe = useProject.subscribe((state, anterior) => {
     // Abrir projeto, recuperar autosave e limpar nao sao edicoes: entram pela
     // mesma porta no estado, mas ninguem espera desfaze-los com Ctrl+Z.
-    if (aplicando || estaCarregando()) return
+    if (aplicando || estaCarregando() || pulaDesfazer()) return
     if (!mudou(state, anterior)) return
 
     /*

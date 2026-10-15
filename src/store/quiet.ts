@@ -31,3 +31,24 @@ export async function semSujar<T>(fn: () => Promise<T>): Promise<T> {
     carregando = false
   }
 }
+
+/*
+ * SEM PASSO DE DESFAZER, mas salvando. A leitura dos trechos do roteiro chega
+ * sozinha, segundos depois de abrir a Biblioteca: nao e uma edicao dele, e um
+ * Ctrl+Z que a desfizesse so faria a Biblioteca ler de novo. O autosave
+ * continua vendo a mudanca -- os trechos lidos vao para o arquivo.
+ */
+let semDesfazer = false
+
+export function pulaDesfazer(): boolean {
+  return semDesfazer
+}
+
+export function semPassoDeDesfazer(fn: () => void): void {
+  semDesfazer = true
+  try {
+    fn()
+  } finally {
+    semDesfazer = false
+  }
+}
