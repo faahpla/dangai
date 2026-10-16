@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { ensureBrowser, makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer'
@@ -609,10 +609,18 @@ async function muxWithNormalizedAudio(
    */
   const mix = `${misturado}[cru];[cru]apad,atrim=0:${durationSec.toFixed(3)},asetpts=N/SR/TB[out]`
 
+  /*
+   * O grafo vai por ARQUIVO, na pasta de trabalho do render: video longo com
+   * muitos SFX e trechos tem uma cadeia por entrada, e a linha de comando do
+   * Windows para em 32 mil caracteres. O grafo e o mesmo; so muda a porta.
+   */
+  const grafo = join(dirname(videoPath), 'mix.txt')
+  writeFileSync(grafo, [...chain, mix].join(';\n'))
+
   await runFfmpeg([
     '-y',
     ...inputs,
-    '-filter_complex', [...chain, mix].join(';'),
+    '-filter_complex_script', grafo,
     '-map', '0:v:0',
     '-map', '[out]',
     '-c:v', 'copy',
