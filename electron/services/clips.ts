@@ -176,6 +176,18 @@ export async function versaoSdr(path: string): Promise<string> {
 const THUMB_MINIMO_BYTES = 200
 
 /**
+ * Miniatura sendo gerada agora, pelo arquivo de destino.
+ *
+ * O importImages importa 3 a 3, e o mesmo mp4 em dois blocos vizinhos pede a
+ * mesma miniatura duas vezes ao mesmo tempo. Sem isto, a segunda chamada
+ * achava o .webp da primeira ainda no meio da gravacao (menos de 200 bytes),
+ * tratava como "vazio guardado" e tentava apagar com o ffmpeg segurando o
+ * arquivo: EPERM no Windows, e o projeto inteiro nao abria. Quem chega depois
+ * espera a mesma promessa.
+ */
+const emMiniatura = new Map<string, Promise<string>>()
+
+/**
  * Miniatura de um frame do meio do clipe, no mesmo formato que a da imagem.
  *
  * O instante e `min(1s, metade do clipe)`. Um segundo fixo era o que existia
@@ -196,6 +208,19 @@ export async function makeClipThumbnail(path: string, durationSec?: number): Pro
   const st = statSync(path)
   const alvo = join(cacheDir, `thumb-c-${hashDe(`${path}|${st.size}|${st.mtimeMs}`)}.webp`)
 
+  // Antes de olhar o cache: o arquivo pela metade de outra chamada nao e vazio.
+  const andando = emMiniatura.get(alvo)
+  if (andando) return andando
+  const trabalho = gerarMiniaturaDoClipe(path, alvo, durationSec)
+  emMiniatura.set(alvo, trabalho)
+  try {
+    return await trabalho
+  } finally {
+    emMiniatura.delete(alvo)
+  }
+}
+
+async function gerarMiniaturaDoClipe(path: string, alvo: string, durationSec?: number): Promise<string> {
   // Vazio guardado por uma versao anterior nao pode sobreviver para sempre.
   if (existsSync(alvo) && statSync(alvo).size < THUMB_MINIMO_BYTES) rmSync(alvo, { force: true })
 
