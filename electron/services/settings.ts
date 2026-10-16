@@ -362,7 +362,20 @@ function coerce(raw: unknown): Settings {
     anthropicApiKey:
       typeof value['anthropicApiKey'] === 'string' ? value['anthropicApiKey'].trim() : '',
     geminiApiKey: typeof value['geminiApiKey'] === 'string' ? value['geminiApiKey'].trim() : '',
-    iaProvedor: value['iaProvedor'] === 'anthropic' ? 'anthropic' : 'gemini',
+    /*
+     * Quem ja usava o Dangai so com a chave da Anthropic (sem iaProvedor salvo)
+     * continua vendo a Anthropic marcada: abrir a versao nova com "Gemini"
+     * selecionado e a nota "usa a da Anthropic" parecia que algo tinha mudado
+     * sozinho. O Gemini e o padrao so para quem nao tinha escolha nenhuma.
+     */
+    iaProvedor:
+      value['iaProvedor'] === 'anthropic' || value['iaProvedor'] === 'gemini'
+        ? value['iaProvedor']
+        : typeof value['anthropicApiKey'] === 'string' &&
+            value['anthropicApiKey'].trim() !== '' &&
+            !(typeof value['geminiApiKey'] === 'string' && value['geminiApiKey'].trim() !== '')
+          ? 'anthropic'
+          : 'gemini',
     geminiModelo: nomeDeModelo(value['geminiModelo'], ''),
     anthropicModelo: nomeDeModelo(value['anthropicModelo'], DEFAULTS.anthropicModelo),
     whisperModel: model === 'base' || model === 'small' || model === 'medium' ? model : 'small',
