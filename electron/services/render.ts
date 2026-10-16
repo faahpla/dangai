@@ -6,6 +6,7 @@ import { ensureBrowser, makeCancelSignal, renderMedia, selectComposition } from 
 import type { RenderProgress, RenderProps } from '@shared/contract'
 import { MUSIC_FADE_IN_SEC, MUSIC_FADE_OUT_SEC, VIDEO_FPS } from '@shared/contract'
 import type { PontoDeGanho } from '@shared/ducking'
+import { LUFS_DA_NARRACAO } from '@shared/loudness'
 import { makeWebpackOverride } from '../../remotion.webpack'
 import { ffmpegPath } from './ffmpeg-path'
 import { filtroDoEnvelope } from './mix'
@@ -468,8 +469,8 @@ export async function muxWithNormalizedAudio(
   const measured = await measureLoudness(audioPath)
 
   const loudnormFilter = measured
-    ? `loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true`
-    : 'loudnorm=I=-14:TP=-1.5:LRA=11'
+    ? `loudnorm=I=${LUFS_DA_NARRACAO}:TP=-1.5:LRA=11:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true`
+    : `loudnorm=I=${LUFS_DA_NARRACAO}:TP=-1.5:LRA=11`
 
   /*
    * A normalizacao acontece SOZINHA, num passo antes do mix.
@@ -680,7 +681,7 @@ async function measureLoudness(audioPath: string): Promise<LoudnessMeasurement |
     const stderr = await runFfmpeg([
       '-hide_banner',
       '-i', audioPath,
-      '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json',
+      '-af', `loudnorm=I=${LUFS_DA_NARRACAO}:TP=-1.5:LRA=11:print_format=json`,
       '-f', 'null',
       '-',
     ])

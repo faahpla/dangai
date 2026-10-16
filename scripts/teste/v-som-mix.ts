@@ -7,7 +7,10 @@
  *    do codigo de antes, abaixo);
  * 2. a conta do envelope (shared/ducking.ts);
  * 3. o filtro do ffmpeg toca a mesma curva que ganhoDoEnvelope (medido);
- * 4. envelope longo passa no parser do ffmpeg, e o mux inteiro roda com ele.
+ * 4. envelope longo passa no parser do ffmpeg, e o mux inteiro roda com ele;
+ * 5. o preview no equilibrio do render: a medida em JS (shared/loudness.ts)
+ *    bate com o ebur128, o desconto da voz e dos arquivos mono, e o MP4
+ *    continua com a voz em -14 LUFS.
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -24,6 +27,9 @@ import {
 import { filtroDoEnvelope } from '../../electron/services/mix.ts'
 import { grafoDoMix, muxWithNormalizedAudio, type ResolvedCue } from '../../electron/services/render.ts'
 import { ffmpegPath } from '../../electron/services/ffmpeg-path.ts'
+import { medirSom } from '../../electron/services/medir-som.ts'
+import { LUFS_DA_NARRACAO, monoEmDoisCanais } from '../../shared/loudness.ts'
+import { descontoDaVoz, descontoDoArquivo } from '../../src/components/som-do-preview.ts'
 
 let falhas = 0
 const ok = (nome: string, c: boolean, d = ''): void => {
@@ -42,6 +48,16 @@ function ff(args: readonly string[]): Promise<{ code: number; out: Buffer; err: 
     c.stderr.on('data', (d: Buffer) => (err += d.toString()))
     c.on('close', (code) => resolve({ code: code ?? -1, out: Buffer.concat(out), err }))
   })
+}
+
+/** O integrado do ebur128 do ffmpeg (a referencia). */
+async function integradoDoFfmpeg(path: string): Promise<number | null> {
+  const c = spawn(ffmpegPath, ['-nostdin', '-hide_banner', '-nostats', '-i', path, '-vn', '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'], { windowsHide: true })
+  let err = ''
+  c.stderr.on('data', (d: Buffer) => (err += d.toString()))
+  await new Promise((r) => c.on('close', r))
+  const m = /Integrated loudness:\s*[\r\n]+\s*I:\s*(-?[\d.]+)/.exec(err)
+  return m ? Number(m[1]) : null
 }
 
 async function main(): Promise<void> {
@@ -200,6 +216,27 @@ async function main(): Promise<void> {
     ok('o mix.txt leva o envelope', grafo.includes('asetnsamples=n=256') && grafo.includes("eval=frame"))
     await muxWithNormalizedAudio(p('video.mp4'), p('voz.wav'), p('saida2.mp4'), [], null, [t], 4)
     ok('mux sem envelope: grafo sem filtro novo', !readFileSync(p('mix.txt'), 'utf8').includes('asetnsamples'))
+
+    // ------------------------- 7. o preview no equilibrio do render (-14)
+    secao('loudness: a conta em JS = o ebur128 do ffmpeg; o render segue em -14')
+    await ff(['-f', 'lavfi', '-i', 'anoisesrc=d=6:c=pink:a=0.1,highpass=f=80', '-ac', '1', p('ruido-mono.wav')])
+    await ff(['-f', 'lavfi', '-i', 'sine=f=440:d=5', '-af', 'volume=-8dB', '-ac', '2', p('seno-estereo.wav')])
+    for (const [nome, canais] of [['ruido-mono.wav', 1], ['seno-estereo.wav', 2]] as const) {
+      const m = await medirSom(p(nome))
+      const ref = await integradoDoFfmpeg(p(nome))
+      ok(`${nome}: integrado ${m.lufsIntegrado} = ebur128 ${ref}`, m.lufsIntegrado !== null && ref !== null && perto(m.lufsIntegrado, ref, 0.15))
+      ok(`${nome}: ${canais} canal(is)`, m.canais === canais, String(m.canais))
+    }
+    ok('a mesma medida volta do cache', (await medirSom(p('ruido-mono.wav'))) === (await medirSom(p('ruido-mono.wav'))))
+    ok('mono soa +3 dB no navegador', perto(monoEmDoisCanais(1), 3.01, 0.01) && monoEmDoisCanais(2) === 0)
+    ok('voz mono a -23: faixas -6 dB no preview', perto(descontoDaVoz({ lufsIntegrado: -23, canais: 1 }), -5.99, 0.01))
+    ok('voz estereo a -14: nada muda', descontoDaVoz({ lufsIntegrado: -14, canais: 2 }) === 0)
+    ok('sem medida: nada muda (o preview de antes)', descontoDaVoz(null) === 0 && descontoDaVoz({ lufsIntegrado: null }) === 0 && descontoDoArquivo(null) === 0)
+    ok('faixa mono: -3 dB no preview', perto(descontoDoArquivo({ canais: 1 }), -3.01, 0.01) && descontoDoArquivo({ canais: 2 }) === 0)
+
+    await muxWithNormalizedAudio(p('video.mp4'), p('ruido-mono.wav'), p('so-voz.mp4'), [], null, [], 4)
+    const final = await integradoDoFfmpeg(p('so-voz.mp4'))
+    ok(`o MP4 continua com a voz em ${LUFS_DA_NARRACAO} LUFS`, final !== null && perto(final, LUFS_DA_NARRACAO, 0.5), String(final))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

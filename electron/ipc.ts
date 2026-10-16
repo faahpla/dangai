@@ -46,6 +46,8 @@ import {
   type ProjectFile,
 } from '@shared/project-file'
 import { analyzeAudio, ondaDetalhada } from './services/audio'
+import { medirSom } from './services/medir-som'
+import type { MedidaDoSom } from '@shared/loudness'
 import { publish } from './services/media-server'
 import {
   importImages,
@@ -136,6 +138,7 @@ export function registerIpc(): void {
   handle<[string], { peaks: number[]; rms: number[]; durationSec: number }>(IPC.ondaDetalhada, (path) =>
     ondaDetalhada(path),
   )
+  handle<[string], MedidaDoSom>(IPC.medirSom, (path) => medirSom(path))
 
   handle<
     [

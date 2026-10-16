@@ -5,7 +5,7 @@ import { toRenderProps } from '@shared/plan'
 import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
 import { useProject } from '@/store/project'
-import { useDucking } from './som-do-preview'
+import { useAjusteDasFaixas, useDucking } from './som-do-preview'
 import { Video } from '@/remotion/Video'
 import { TransformNoPreview } from './TransformNoPreview'
 import { create } from 'zustand'
@@ -667,7 +667,7 @@ function Sincronia({
 function volumeDoTrecho(
   t: { gainDb: number; fadeInSec: number; fadeOutSec: number; durationSec: number; inicioSec: number; usarSec: number | null },
   local: number,
-  /** Ducking do trecho neste instante (som-do-preview.ts), em dB. */
+  /** Ducking do trecho neste instante + o desconto do nivel do preview (som-do-preview.ts), em dB. */
   extraDb = 0,
 ): number {
   const toca = duracaoDoTrecho(t)
@@ -694,12 +694,14 @@ function TrilhasPreview() {
   const playhead = useProject((s) => s.playhead)
   const elementos = useRef(new Map<string, HTMLAudioElement>())
 
-  // O mesmo envelope de ducking do render (som-do-preview.ts). Trecho sem
-  // `ducking`: 0 dB, nada muda.
+  // O equilibrio do render (a narracao aqui toca crua, la vai a -14 LUFS) e o
+  // mesmo envelope de ducking dele. Ver som-do-preview.ts.
+  const vozPath = useProject((s) => s.audio?.path)
   const duracaoDaVoz = useProject((s) => s.audio?.durationSec)
   const words = useProject((s) => s.transcript?.words)
+  const ajuste = useAjusteDasFaixas(vozPath, trilhas.map((t) => t.path))
   const ducking = useDucking(trilhas, words, duracaoDaVoz)
-  const extraDb = (t: (typeof trilhas)[number], local: number): number => ducking(t.ducking, t.at + local)
+  const extraDb = (t: (typeof trilhas)[number], local: number): number => ajuste(t.path) + ducking(t.ducking, t.at + local)
 
   /*
    * QUEM TOCA E QUANDO segue a agulha; o volume segue o relogio do audio.
@@ -743,7 +745,7 @@ function TrilhasPreview() {
         el.playbackRate = 1
       }
     }
-  }, [trilhas, playing, playhead, mudas, ducking])
+  }, [trilhas, playing, playhead, mudas, ajuste, ducking])
 
   /*
    * O VOLUME, pelo tempo do proprio <audio>, a cada 40 ms. Tocando do frame 0,
@@ -759,12 +761,14 @@ function TrilhasPreview() {
         const local = el.currentTime - t.inicioSec
         const v = volumeDoTrecho(t, local, extraDb(t, local))
         // Escrever o mesmo valor de novo nao custa, mas escrever um quase igual
-        // a cada 40 ms e o que fazia o volume tremer.
-        if (Math.abs(el.volume - v) > 0.003) el.volume = v
+        // a cada 40 ms e o que fazia o volume tremer. A folga e RELATIVA (1%,
+        // ~0,1 dB): com o desconto do nivel a musica toca perto de 0,03, e a
+        // folga fixa de 0,003 la era 1 dB de degrau numa rampa.
+        if (Math.abs(el.volume - v) > Math.max(v * 0.01, 0.0002)) el.volume = v
       }
     }, 40)
     return () => window.clearInterval(id)
-  }, [playing, trilhas, mudas, ducking])
+  }, [playing, trilhas, mudas, ajuste, ducking])
 
   return (
     <>

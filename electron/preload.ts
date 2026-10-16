@@ -32,6 +32,7 @@ import type {
   RenderProgress,
 } from '@shared/contract'
 import type { OpenedProject, ProjectFile } from '@shared/project-file'
+import type { MedidaDoSom } from '@shared/loudness'
 
 /**
  * Unica superficie entre renderer e sistema. Tipada por DangaiBridge, entao um
@@ -45,6 +46,7 @@ const bridge: DangaiBridge = {
 
   analyzeAudio: (path) =>
     ipcRenderer.invoke(IPC.analyzeAudio, path) as Promise<IpcResult<AudioAnalysis>>,
+  medirSom: (path) => ipcRenderer.invoke(IPC.medirSom, path) as Promise<IpcResult<MedidaDoSom>>,
   ondaDetalhada: (path) =>
     ipcRenderer.invoke(IPC.ondaDetalhada, path) as Promise<
       IpcResult<{ peaks: number[]; rms: number[]; durationSec: number }>

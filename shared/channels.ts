@@ -8,6 +8,7 @@ import type {
   Transcript,
 } from './contract'
 import type { PontoDeGanho } from './ducking'
+import type { MedidaDoSom } from './loudness'
 import type { OpenedProject, ProjectFile } from './project-file'
 
 /**
@@ -29,6 +30,7 @@ export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
 export const IPC = {
   analyzeAudio: 'audio:analyze',
   ondaDetalhada: 'audio:onda-detalhada',
+  medirSom: 'som:medir',
   importImages: 'images:import',
   expandDrop: 'drop:expand',
   reframeImage: 'images:reframe',
@@ -566,6 +568,8 @@ export interface DangaiBridge {
    * picos (e RMS) por segundo. Nao vai para o projeto -- e refeita ao abrir.
    */
   ondaDetalhada(path: string): Promise<IpcResult<{ peaks: number[]; rms: number[]; durationSec: number }>>
+  /** Loudness (BS.1770) e canais de um arquivo de som; o preview usa para tocar no equilibrio do render. */
+  medirSom(path: string): Promise<IpcResult<MedidaDoSom>>
   /** `focus` so vem preenchido ao abrir projeto salvo, para o recorte sair certo de primeira. */
   importImages(
     paths: readonly string[],
