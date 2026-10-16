@@ -165,6 +165,7 @@ function useCommands(): Command[] {
   const sfxCount = useProject((s) =>
     s.plan && s.sfxFiles.length > 0 ? Math.ceil((s.plan.scenes.length - 1) / 2) : 0,
   )
+  const sfxManual = useProject((s) => s.sfxManual.length)
   const rendering = useProject((s) => s.render !== null)
   const script = useProject((s) => s.script)
   const captionsOpen = useProject((s) => s.captionsOpen)
@@ -256,7 +257,10 @@ function useCommands(): Command[] {
       {
         id: 'sfx',
         label: sfxEnabled ? 'Mutar SFX' : 'Ativar SFX',
-        hint: sfxCount > 0 ? `${sfxCount}` : 'nenhum',
+        // So os sons postos a mao (sfxManual) tocam: o rodizio automatico saiu
+        // (o render manda sfxCues vazio), e o numero de antes sugeria sons que
+        // nao tocam mais.
+        hint: sfxManual > 0 ? `${sfxManual} postos a mao` : 'so os postos a mao',
         icon: Volume2,
         disabled: sfxCount === 0,
         run: () => store().toggleSfx(),
@@ -347,6 +351,7 @@ function useCommands(): Command[] {
     lastOutput,
     pronto,
     sfxCount,
+    sfxManual,
     rendering,
     script,
     captionsOpen,

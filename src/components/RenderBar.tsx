@@ -287,7 +287,9 @@ export function RenderBar() {
         <button
           type="button"
           onClick={() => void window.dangai.revealFile(lastOutput)}
-          className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
+          aria-label="Abrir pasta"
+          title="Abrir a pasta do video"
+          className="lift flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
         >
           <FolderOpen size={12} strokeWidth={1.5} />
           Abrir pasta
