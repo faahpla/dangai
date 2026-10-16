@@ -63,6 +63,33 @@ async function carregar(): Promise<typeof import('electron-updater')> {
 /** Uma vez por dia basta: o app fica aberto por sessoes de edicao, nao dias. */
 const INTERVALO_MS = 6 * 60 * 60 * 1000
 
+/**
+ * Busca sem release para ler ainda responde "em dia", e nao "erro".
+ *
+ * Acontece no meio de uma publicacao (a release criada e o latest.yml ainda
+ * subindo) ou num repo sem release nenhuma: nao ha versao mais nova que a
+ * instalada, nao e falha de ninguem, e um "nao consegui verificar" em
+ * vermelho assustaria por nada. Sem internet, GitHub fora e o resto continuam
+ * "erro" na busca manual.
+ *
+ * Pelos codigos do electron-updater 6 (GitHubProvider), e pela frase como
+ * reserva: o repo sem release nenhuma chega com o codigo generico
+ * ERR_XML_MISSED_ELEMENT (o releases.atom vazio) e a frase "No published
+ * versions on GitHub". Teste: scripts/teste/v-updater-sem-release.ts.
+ */
+const CODIGOS_SEM_RELEASE = new Set([
+  'ERR_UPDATER_NO_PUBLISHED_VERSIONS',
+  'ERR_UPDATER_LATEST_VERSION_NOT_FOUND',
+  'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND',
+])
+
+export function semReleaseAinda(err: unknown): boolean {
+  const codigo = (err as { code?: unknown } | null)?.code
+  if (typeof codigo === 'string' && CODIGOS_SEM_RELEASE.has(codigo)) return true
+  const msg = err instanceof Error ? err.message : String(err)
+  return /No published versions|Unable to find latest version|Cannot find latest\.yml/i.test(msg)
+}
+
 export async function startUpdater(
   windows: () => BrowserWindow[],
   isPackaged: boolean,
@@ -117,6 +144,10 @@ export async function startUpdater(
       enviar({ state: 'bloqueada', version: prontaPara, message: err.message })
       return
     }
+    if (semReleaseAinda(err)) {
+      enviar({ state: 'atual' })
+      return
+    }
     enviar({ state: 'erro', message: err.message })
   })
 
@@ -164,8 +195,9 @@ export async function installUpdate(): Promise<void> {
  * Sem uma forma de perguntar, a unica maneira de saber se a atualizacao
  * funciona e esperar sair uma versao nova e torcer.
  *
- * Ao contrario da busca automatica, esta REPORTA o erro: quem clicou esta
- * esperando uma resposta, e silencio seria a mesma armadilha de novo.
+ * Ao contrario da busca automatica, esta REPORTA o erro (sem internet, GitHub
+ * fora): quem clicou esta esperando uma resposta, e silencio seria a mesma
+ * armadilha de novo. "Ainda sem release" nao e erro: responde "em dia".
  */
 export async function checkForUpdateNow(): Promise<void> {
   const enviar = enviarStatus
@@ -188,9 +220,12 @@ export async function checkForUpdateNow(): Promise<void> {
     // sem isto a interface ficaria presa em "procurando" para sempre.
     if (!resultado) enviar({ state: 'atual' })
   } catch (err) {
-    enviar({
-      state: 'erro',
-      message: err instanceof Error ? err.message : 'Nao consegui verificar agora.',
-    })
+    // O `error` do autoUpdater ja respondeu; isto e para a falha que chega so
+    // pela promessa. Sem release ainda = "em dia" (ver semReleaseAinda).
+    enviar(
+      semReleaseAinda(err)
+        ? { state: 'atual' }
+        : { state: 'erro', message: err instanceof Error ? err.message : 'Nao consegui verificar agora.' },
+    )
   }
 }
