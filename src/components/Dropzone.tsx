@@ -76,12 +76,35 @@ export function Dropzone({ isDragging }: DropzoneProps) {
           </motion.div>
         </button>
 
-        <EscolhaDeFormato />
-        <div className="absolute right-6 top-6 flex items-center gap-2">
-          <BotoesDosModulosNaTelaInicial arrastando={isDragging} definirAlvo={setAlvoDeModulo} />
-          <LegendarVideoPronto />
-          <MelhorarVideoPronto />
-          <AbrirBiblioteca />
+        {/*
+          A LINHA DE CIMA, uma so: os botoes dos modulos (o "Gerar recap") a
+          esquerda, o formato no meio e os atalhos na direita -- o desenho do
+          AniRecap Studio. Antes eram blocos soltos e absolutos por cima da
+          area de soltar, e os atalhos ja cobriam o "Long form" em 1280 px,
+          mesmo sem modulo; com o "Gerar recap" junto, ate em 1440.
+
+          Com espaco, grade 1fr|auto|1fr: o formato fica no centro da TELA, em
+          cima do titulo, como sempre. Sem espaco para os dois lados iguais
+          (linha < 1312 px: a direita tem ~480 px, o formato ~304, e 16 px de
+          folga de cada lado), vira flex: o formato no meio do vao, longe dos
+          dois. Os botoes dos modulos ficam no fluxo, nunca por cima de nada.
+          O @container/topo tambem tira as medidas dos chips quando nem o flex
+          tem espaco (janela minima). Sem modulo, a esquerda fica vazia.
+        */}
+        <div className="@container/topo pointer-events-none absolute inset-x-6 top-6 z-10">
+          <div className="flex items-center gap-2 whitespace-nowrap @min-[1312px]/topo:grid @min-[1312px]/topo:grid-cols-[1fr_auto_1fr]">
+            <div className="pointer-events-auto flex shrink-0 items-center gap-2 justify-self-start">
+              <BotoesDosModulosNaTelaInicial arrastando={isDragging} definirAlvo={setAlvoDeModulo} />
+            </div>
+            <div className="flex min-w-0 flex-1 justify-center">
+              <EscolhaDeFormato />
+            </div>
+            <div className="pointer-events-auto flex shrink-0 items-center gap-2 justify-self-end">
+              <LegendarVideoPronto />
+              <MelhorarVideoPronto />
+              <AbrirBiblioteca />
+            </div>
+          </div>
         </div>
         <Recuperar />
       </div>
@@ -219,7 +242,7 @@ function EscolhaDeFormato() {
   };
 
   return (
-    <div className="pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 gap-1.5">
+    <div className="pointer-events-auto flex gap-1.5">
       {FORMATOS.map((f) => {
         const medidas = medidasDo(f);
         const ativo = formato === f;
@@ -231,7 +254,7 @@ function EscolhaDeFormato() {
             onClick={() => void definirFormato(f)}
             title={rotulo[f].dica}
             className={[
-              "pointer-events-auto flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px] transition-colors",
+              "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border px-2.5 py-1.5 text-[11px] transition-colors",
               ativo
                 ? "border-accent bg-accent-dim text-ink"
                 : "border-line bg-elevated text-ink-3 hover:text-ink-2",
@@ -239,7 +262,7 @@ function EscolhaDeFormato() {
           >
             <Icone size={12} strokeWidth={1.5} />
             {rotulo[f].nome}
-            <span className="tnum text-ink-3">
+            <span className="tnum text-ink-3 @max-[920px]/topo:hidden">
               {medidas.width}x{medidas.height}
             </span>
           </button>
