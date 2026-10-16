@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { ID_DE_MODULO, prefixoDoModulo, type ModuloPublico } from '@shared/modulos'
 import { handle } from './handle'
 import { dicaDaChave, getSettings, registrarCampoDeChave, saveSettings, type Settings } from './services/settings'
+import { escolherProvedor, gerarJson, type Provedor } from './services/llm'
 
 /**
  * OS MODULOS NO MAIN: o Gerar recap do Levi, e o que vier depois.
@@ -54,6 +55,16 @@ export interface ContextoDoModulo {
   pasta(tipo: 'userData' | 'dados' | 'temp' | 'recursos' | 'app'): string
   /** Ligado agora nas Configuracoes. */
   ligado(): boolean
+  /**
+   * A IA DO NUCLEO (Gemini ou Anthropic, o que ele escolheu nas
+   * Configuracoes): o modulo pede e recebe, sem nunca ver as chaves.
+   */
+  ia: {
+    /** O gerarJson do nucleo (llm.ts), com a troca de modelo e a reserva. */
+    gerarJson: typeof gerarJson
+    /** Quem atenderia agora (ou o forcado, se tiver chave). null = nenhuma chave. */
+    provedor(forcado?: Provedor): Provedor | null
+  }
 }
 
 export interface ConfigVistaPeloModulo {
@@ -200,6 +211,10 @@ function criarContexto(def: ModuloDoMain, base: BaseDosModulos): ContextoDoModul
       }
     },
     ligado: () => estaLigado(def),
+    ia: {
+      gerarJson,
+      provedor: (forcado) => escolherProvedor(getSettings(), forcado),
+    },
   }
 }
 

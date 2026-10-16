@@ -387,7 +387,7 @@ function unificarNomes(clips: LibraryClip[]): void {
 // ---------------------------------------------------------------- leitura crua
 
 /** O shots.json do AnCut, so os campos que usamos. */
-interface RawShot {
+export interface RawShot {
   shot_id?: unknown
   file?: unknown
   keyframe?: unknown
@@ -648,7 +648,7 @@ function caminhoDaMiniatura(id: string): string {
  * inclusive somando os personagens: quem aparece so na terceira parte continua
  * encontravel pelo clipe inteiro.
  */
-function abrangidas(shot: string, porShot: ReadonlyMap<string, RawShot>): RawShot[] {
+export function abrangidas(shot: string, porShot: ReadonlyMap<string, RawShot>): RawShot[] {
   const direto = porShot.get(shot)
   if (direto) return [direto]
 
@@ -676,7 +676,7 @@ function abrangidas(shot: string, porShot: ReadonlyMap<string, RawShot>): RawSho
  *
  * Fica o nome mais longo, que e o mais especifico ("Kisuke Urahara").
  */
-function nomesCanonicos(dir: string): ReadonlyMap<string, string> {
+export function nomesCanonicos(dir: string): ReadonlyMap<string, string> {
   const mapa = new Map<string, string>()
 
   let cru: unknown
@@ -720,7 +720,7 @@ function personagens(cru: unknown, canonico: ReadonlyMap<string, string>): strin
  * la: a lixeira leva justamente esse, e um punhado de cenas nunca teve. Como
  * existem tres por cena, cair para os vizinhos salva a miniatura.
  */
-function acharKeyframe(
+export function acharKeyframe(
   dir: string,
   existentes: ReadonlySet<string>,
   citado: string,
@@ -747,7 +747,7 @@ function acharKeyframe(
  * `_quarentena_...` guardam material que o usuario ja tirou de circulacao, com
  * shots.json proprio e tudo. Sem este filtro o descartado voltaria para a busca.
  */
-function* episodiosEm(dir: string, profundidade: number): Generator<string> {
+export function* episodiosEm(dir: string, profundidade: number): Generator<string> {
   if (profundidade > MAX_DEPTH) return
 
   if (existsSync(join(dir, 'metadata', 'shots.json'))) {
@@ -775,7 +775,7 @@ function* episodiosEm(dir: string, profundidade: number): Generator<string> {
  * Uma leitura de pasta por episodio em vez de um stat por cena: sao 27 chamadas
  * em vez de 9 mil para a mesma resposta.
  */
-function arquivosEm(dir: string): Set<string> {
+export function arquivosEm(dir: string): Set<string> {
   try {
     return new Set(
       readdirSync(dir, { withFileTypes: true })
@@ -847,7 +847,7 @@ function gravarCache(dados: CacheFile): void {
  * Ordem natural, entendendo o numero: sem isto "0164-0167" e "10" cairiam em
  * lugares errados na comparacao letra a letra.
  */
-function naturalmente(a: string, b: string): number {
+export function naturalmente(a: string, b: string): number {
   return a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' })
 }
 

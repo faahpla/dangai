@@ -93,9 +93,27 @@ export function startModulos(): () => void {
   }
 }
 
-/** Some com o componente do modulo que lancar, e deixa o resto da tela de pe. */
-class Protegido extends Component<{ id: string; children: ReactNode }, { erro: boolean }> {
-  override state = { erro: false }
+/**
+ * Some com o componente do modulo que lancar, e deixa o resto da tela de pe.
+ *
+ * FICA MONTADO MESMO COM O MODULO DESLIGADO -- so o conteudo de dentro sai.
+ * Um erro na LIMPEZA de um componente (o efeito que roda quando ele sai) vai
+ * para a fronteira mais proxima que ainda esta na tela; se a fronteira saisse
+ * junto com o componente, o erro subia ate a raiz e derrubava a janela
+ * inteira. Religar o modulo zera o erro.
+ */
+class Protegido extends Component<
+  { id: string; ativo: boolean; children: ReactNode },
+  { erro: boolean; ativo: boolean }
+> {
+  override state = { erro: false, ativo: this.props.ativo }
+  static getDerivedStateFromProps(
+    props: { ativo: boolean },
+    state: { erro: boolean; ativo: boolean },
+  ): { erro: boolean; ativo: boolean } | null {
+    if (props.ativo === state.ativo) return null
+    return { ativo: props.ativo, erro: props.ativo ? false : state.erro }
+  }
   static getDerivedStateFromError(): { erro: boolean } {
     return { erro: true }
   }
@@ -103,89 +121,63 @@ class Protegido extends Component<{ id: string; children: ReactNode }, { erro: b
     console.error(`[modulo:${this.props.id}] um componente quebrou:`, err)
   }
   override render(): ReactNode {
-    return this.state.erro ? null : this.props.children
+    return this.state.erro || !this.props.ativo ? null : this.props.children
   }
+}
+
+/**
+ * Um encaixe por modulo REGISTRADO (ligado ou nao), cada um no seu
+ * <Protegido>, sempre montado. `conteudo` so roda para os ligados.
+ */
+function Encaixes({ conteudo }: { conteudo: (m: ModuloDoRenderer) => ReactNode }) {
+  const ligados = useModulosLigados()
+  return (
+    <>
+      {MODULOS_DO_RENDERER.map((m) => {
+        const ativo = ligados.includes(m)
+        return (
+          <Protegido key={m.id} id={m.id} ativo={ativo}>
+            {ativo ? conteudo(m) : null}
+          </Protegido>
+        )
+      })}
+    </>
+  )
 }
 
 /** As telas proprias de cada modulo (o assistente do recap). */
 export function TelasDosModulos() {
-  const modulos = useModulosLigados()
-  return (
-    <>
-      {modulos.map(({ id, Telas }) =>
-        Telas ? (
-          <Protegido key={id} id={id}>
-            <Telas />
-          </Protegido>
-        ) : null,
-      )}
-    </>
-  )
+  return <Encaixes conteudo={({ Telas }) => (Telas ? <Telas /> : null)} />
 }
 
 export function BotoesDosModulosNaTelaInicial(props: PropsDosBotoesDaTelaInicial) {
-  const modulos = useModulosLigados()
-  return (
-    <>
-      {modulos.map(({ id, BotoesDaTelaInicial }) =>
-        BotoesDaTelaInicial ? (
-          <Protegido key={id} id={id}>
-            <BotoesDaTelaInicial {...props} />
-          </Protegido>
-        ) : null,
-      )}
-    </>
-  )
+  return <Encaixes conteudo={({ BotoesDaTelaInicial }) => (BotoesDaTelaInicial ? <BotoesDaTelaInicial {...props} /> : null)} />
 }
 
 export function BotoesDosModulosNaBarraDeRender() {
-  const modulos = useModulosLigados()
-  return (
-    <>
-      {modulos.map(({ id, BotoesDaBarraDeRender }) =>
-        BotoesDaBarraDeRender ? (
-          <Protegido key={id} id={id}>
-            <BotoesDaBarraDeRender />
-          </Protegido>
-        ) : null,
-      )}
-    </>
-  )
+  return <Encaixes conteudo={({ BotoesDaBarraDeRender }) => (BotoesDaBarraDeRender ? <BotoesDaBarraDeRender /> : null)} />
 }
 
 export function ItensDosModulosNaBarraDeStatus() {
-  const modulos = useModulosLigados()
-  return (
-    <>
-      {modulos.map(({ id, ItemDaBarraDeStatus }) =>
-        ItemDaBarraDeStatus ? (
-          <Protegido key={id} id={id}>
-            <ItemDaBarraDeStatus />
-          </Protegido>
-        ) : null,
-      )}
-    </>
-  )
+  return <Encaixes conteudo={({ ItemDaBarraDeStatus }) => (ItemDaBarraDeStatus ? <ItemDaBarraDeStatus /> : null)} />
 }
 
 /** As secoes de modulo que entram depois de uma ancora das Configuracoes. */
 export function SecoesDosModulos({ depoisDe }: { depoisDe: AncoraDasConfiguracoes }) {
-  const modulos = useModulosLigados()
-  const secoes = modulos.flatMap((m) =>
-    (m.secoesDasConfiguracoes ?? []).filter((s) => s.depoisDe === depoisDe).map((s) => ({ ...s, modulo: m.id })),
-  )
   return (
-    <>
-      {secoes.map(({ id, titulo, Componente, modulo }) => (
-        <div key={id} data-secao={id}>
-          <div className="my-5 h-px bg-line" />
-          <label className="mb-1.5 block text-[11px] font-medium text-ink-2">{titulo}</label>
-          <Protegido id={modulo}>
-            <Componente />
-          </Protegido>
-        </div>
-      ))}
-    </>
+    <Encaixes
+      conteudo={(m) =>
+        (m.secoesDasConfiguracoes ?? [])
+          .filter((s) => s.depoisDe === depoisDe)
+          .map(({ id, titulo, Componente }) => (
+            <div key={id} data-secao={id}>
+              <div className="my-5 h-px bg-line" />
+              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">{titulo}</label>
+              <Componente />
+            </div>
+          ))
+      }
+    />
   )
 }
 

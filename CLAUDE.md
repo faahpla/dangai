@@ -71,14 +71,18 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
   `desligar`; `antesDeSair` segura a saída (teto de 11 min); `motivoParaNaoAtualizar`
   veta o "Atualizar". Tudo em try/catch: módulo que quebra fica de fora e o Dangai abre.
   O `ctx` recusa canal fora de `<id>:` e dá `config`/`salvarConfig`, `chave`/`salvarChave`
-  (cofre), `pasta(...)` e `enviar`.
+  (cofre), `pasta(...)`, `enviar` e `ia` (o `gerarJson` do núcleo e o `provedor()` — o
+  módulo nunca vê as chaves de IA). Os leitores de pasta do `library.ts` (`episodiosEm`,
+  `arquivosEm`, `acharKeyframe`, `nomesCanonicos`, `abrangidas`, `naturalmente`) são públicos.
 - **Ponte:** `window.dangai.modulos.<id>`, montada pelo preload do núcleo com um
   `invocar`/`assinar` presos ao prefixo. A ponte roda no sandbox: só `import type` e constantes.
 - **Renderer:** telas cheias (`nucleo.telaCheia` deixa o resto inerte e os atalhos quietos),
   botões na tela inicial, seções nas Configurações (com âncora e "abrir numa seção"),
   comandos na paleta, barra de render, barra de status, rótulo do clipe na timeline e
-  `interceptarArquivos` (soltar/diálogo). O módulo usa a **fachada** (`src/modulos/nucleo.ts`),
-  nunca o `useProject` direto; mudar a fachada é combinar antes.
+  `interceptarArquivos` (soltar/diálogo). O módulo usa a **fachada** (`src/modulos/nucleo.ts`)
+  e o **kit de interface** (`src/modulos/kit.ts`), nunca o `useProject` nem `@/components`
+  direto; mudar os dois é combinar antes. Cada módulo tem uma fronteira de erro sempre
+  montada: erro de componente — inclusive na limpeza, ao desligar — some com ele, não com a janela.
 - **Ligar/desligar:** Configurações > Módulos (`Settings.modulosLigados`); desligado por padrão.
 - **Eventos:** `abrirProjeto`, `depoisDeSalvar`, `depoisDeRenderizar`, `narracaoTrocada`
   (`src/modulos/ganchos.ts`). `aplicarNoDocumento`/`gravarNoProjeto` = um passo de Ctrl+Z.
