@@ -463,6 +463,8 @@ export interface PublicSettings {
   libraryDir: string
   hasApiKey: boolean
   apiKeyHint: string
+  /** As chaves estao cifradas no disco (safeStorage). false = texto puro. */
+  chavesProtegidas: boolean
   /** Curvas de movimento que ele guardou, para reusar em outros videos. */
   curvePresets: { nome: string; pontos: [number, number, number, number] }[]
   /** O estilo de legenda que ele deixou por ultimo. Ponto de partida do proximo video. */
