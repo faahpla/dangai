@@ -23,6 +23,14 @@ files:
   - out/preload/**
   - out/renderer/**
   - package.json
+  # O onnxruntime-node traz o binario de varias plataformas e arquiteturas; so
+  # o desta vai (${platform} = win32 e ${arch} = x64 no Windows; darwin e o
+  # arch de cada dmg no mac): ~200 MB a menos no instalado. Fica AQUI, e nao em
+  # win.files: um `files` na secao da plataforma SUBSTITUI esta lista inteira.
+  # O dmg x64 fica sem binario, como ja era na pratica: a 1.27 nao traz
+  # darwin/x64, e o arm64 que ia junto nao carrega num processo x64.
+  - '!**/node_modules/onnxruntime-node/bin/napi-v6/!(${platform}){,/**}'
+  - '!**/node_modules/onnxruntime-node/bin/napi-v6/*/!(${arch}){,/**}'
 
 # O bundle do Remotion e os SFX ficam FORA do asar, como recursos soltos.
 # O Chrome do render carrega o bundle por caminho de arquivo e nao enxerga
