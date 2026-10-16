@@ -34,7 +34,10 @@ const ESPERA_MS = 600
 let timer: ReturnType<typeof setTimeout> | null = null
 
 export function estiloAtual(): CaptionStyle {
-  const s = useProject.getState()
+  return estiloDe(useProject.getState())
+}
+
+function estiloDe(s: ReturnType<typeof useProject.getState>): CaptionStyle {
   return {
     color: s.captionColor,
     y: s.captionY,
@@ -78,10 +81,14 @@ export function startEstiloLegenda(): () => void {
     if (estaCarregando()) return
     if (!mudou(state, anterior)) return
 
+    // O estilo DESTA mudanca, e nao o da hora de gravar: abrir um projeto nos
+    // 600 ms de espera (o estilo salvo aplicado na abertura do app, e logo em
+    // seguida o autosave) gravava o estilo DAQUELE video como padrao.
+    const estilo = estiloDe(state)
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = null
-      void window.dangai.saveSettings({ captionStyle: estiloAtual() })
+      void window.dangai.saveSettings({ captionStyle: estilo })
     }, ESPERA_MS)
   })
 
