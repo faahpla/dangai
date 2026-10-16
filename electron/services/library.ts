@@ -11,10 +11,11 @@ import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { ffmpegPath } from './ffmpeg-path'
 import { converterRgbHdr, ehHdrPeloFfmpeg } from './cor-hdr'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import sharp from 'sharp'
 import type { LibraryClip, LibraryIndex } from '@shared/channels'
 import { canonizar } from '@shared/nomes'
+import { getSettings } from './settings'
 
 /**
  * Le a biblioteca de cenas que o AnCut HUB ja produziu.
@@ -49,6 +50,12 @@ interface CachedEpisode {
   mtimeMs: number
   /** Quantos arquivos existiam em shots/. A lixeira mexe aqui sem tocar no json. */
   fileCount: number
+  /**
+   * Prefixo do id das cenas da raiz que leu este episodio. Ausente = sem
+   * prefixo, que e a libraryDir e todo cache antigo. Cada raiz cuida so das
+   * entradas do proprio prefixo (ver scanLibrary).
+   */
+  prefixo?: string
   clips: StoredClip[]
 }
 
@@ -88,6 +95,16 @@ const THUMB_QUALITY = 72
 /** Quantas miniaturas em voo. Medido: 8 dá 4,8ms por imagem nesta maquina. */
 const THUMB_PARALELO = 8
 
+/** O que muda numa varredura alem da raiz. */
+export interface OpcoesDaVarredura {
+  /**
+   * Vai na frente do id de cada cena. Favorito, etiqueta, descricao e miniatura
+   * sao guardados por id, e "Dr. Stone/S04E37/0025" pode existir em duas
+   * raizes. Vazio (a libraryDir) = os ids de sempre.
+   */
+  prefixoDoId?: string
+}
+
 let cachePath: string | null = null
 let thumbsDir: string | null = null
 
@@ -106,7 +123,9 @@ export async function scanLibrary(
   root: string,
   publishThumb: (absolutePath: string) => string,
   onProgress: (mensagem: string) => void = () => {},
+  opcoes: OpcoesDaVarredura = {},
 ): Promise<LibraryIndex> {
+  const prefixo = opcoes.prefixoDoId ?? ''
   if (!root) throw new Error('Nenhuma pasta de biblioteca escolhida.')
   if (!ehPasta(root)) {
     throw new Error(`A pasta da biblioteca nao existe mais: ${root}`)
@@ -135,9 +154,14 @@ export async function scanLibrary(
     // de perceber que o usuario descartou algo sem reler o json toda vez.
     const naPasta = arquivosEm(join(dir, 'shots'))
 
-    const anterior = cache.episodes[dir]
+    // Sem prefixo a chave e a pasta, como sempre foi. Com prefixo a chave leva
+    // ele na frente: uma raiz dentro da outra le a mesma pasta com dois
+    // prefixos, e com a mesma chave uma leitura derrubaria a outra a cada vez.
+    const chave = `${prefixo}${dir}`
+    const anterior = cache.episodes[chave]
     const aproveitavel =
       anterior &&
+      (anterior.prefixo ?? '') === prefixo &&
       anterior.mtimeMs === mtimeMs &&
       anterior.fileCount === naPasta.size &&
       // Uma conferida so por episodio: se alguem limpou o userData, as
@@ -151,10 +175,10 @@ export async function scanLibrary(
       )
     }
 
-    const guardados = aproveitavel ? anterior.clips : await lerEpisodio(dir, root, naPasta)
+    const guardados = aproveitavel ? anterior.clips : await lerEpisodio(dir, root, naPasta, prefixo)
     if (!aproveitavel) scanned += 1
 
-    proximos[dir] = { mtimeMs, fileCount: naPasta.size, clips: guardados }
+    proximos[chave] = { mtimeMs, fileCount: naPasta.size, ...(prefixo ? { prefixo } : {}), clips: guardados }
 
     for (const clip of guardados) {
       const { thumb, ...resto } = clip
@@ -166,8 +190,11 @@ export async function scanLibrary(
   }
 
   // Episodios que sumiram do disco somem do cache junto: reescrevemos o mapa
-  // inteiro em vez de remendar o antigo.
-  gravarCache({ version: CACHE_VERSION, episodes: proximos })
+  // inteiro em vez de remendar o antigo. So o DESTE prefixo, porem: com mais
+  // de uma raiz, regravar so com esta apagaria o cache das outras a cada
+  // sincronizacao. Sem raiz de modulo nao existe outro prefixo, e o arquivo
+  // sai igual ao de sempre.
+  gravarCache({ version: CACHE_VERSION, episodes: { ...deOutrosPrefixos(cache.episodes, prefixo), ...proximos } })
 
   unificarNomes(clips)
   clips.sort(ordemNatural)
@@ -179,6 +206,147 @@ export async function scanLibrary(
     characters: unicos(clips.flatMap((c) => c.characters)),
     episodes: Object.keys(proximos).length,
     scanned,
+  }
+}
+
+// ------------------------------------------------------------- varias raizes
+
+/**
+ * Uma pasta lida como biblioteca, com o prefixo do id das cenas dela.
+ *
+ * A primeira e sempre a libraryDir das configuracoes, sem prefixo: e o que o
+ * Dangai sempre leu, com os ids de sempre, para nada do que ja foi favoritado
+ * ou etiquetado ficar orfao. As outras vem de quem registrou uma raiz.
+ */
+export interface RaizDaBiblioteca {
+  raiz: string
+  prefixo: string
+}
+
+/** Uma raiz a mais, contribuida por fora do nucleo. */
+export interface RaizContribuida {
+  /** Quem registrou. Registrar o mesmo id de novo troca a anterior. */
+  id: string
+  /** Vai na frente do id das cenas: `<nome>:`, unico entre as raizes. */
+  prefixo: string
+  /** Lida a cada varredura: a pasta pode mudar, ou ainda nao existir (null). */
+  raiz: () => string | null
+}
+
+const CONTRIBUIDAS: RaizContribuida[] = []
+
+/**
+ * Poe mais uma raiz na biblioteca. Todo leitor (a grade, o Montar sozinho, o
+ * etiquetador, o leitor de cenas, o vocabulario do Whisper) passa a ver as
+ * cenas dela, sem o nucleo saber de quem e.
+ */
+export function registrarRaizDaBiblioteca(nova: RaizContribuida): void {
+  // O prefixo precisa ser nao vazio (vazio e o da libraryDir) e sem barra: o id
+  // e "<prefixo><serie>/<SxxEyy>/<cena>" e o resto le o episodio pelas barras.
+  if (!nova.id || !/^[A-Za-z0-9_-]+:$/.test(nova.prefixo)) {
+    throw new Error(`Raiz de biblioteca invalida: ${nova.id} (${nova.prefixo})`)
+  }
+  const outra = CONTRIBUIDAS.find((r) => r.prefixo === nova.prefixo && r.id !== nova.id)
+  if (outra) throw new Error(`O prefixo ${nova.prefixo} ja e da raiz ${outra.id}`)
+  const i = CONTRIBUIDAS.findIndex((r) => r.id === nova.id)
+  if (i >= 0) CONTRIBUIDAS[i] = nova
+  else CONTRIBUIDAS.push(nova)
+}
+
+/**
+ * A lista unica que todo leitor da biblioteca percorre.
+ *
+ * A libraryDir entra quando esta escolhida (mesmo que a pasta tenha sumido: a
+ * varredura da o erro de sempre). Uma raiz contribuida so entra se a pasta
+ * existe e tem pelo menos um episodio: vazia, ela nao muda nada, e assim o
+ * resultado sem episodio dela e exatamente o do Dangai. Lista vazia = nenhuma
+ * biblioteca, e cada leitor da o proprio aviso, como antes.
+ */
+export function raizesDaBiblioteca(): RaizDaBiblioteca[] {
+  const { libraryDir } = getSettings()
+  const raizes: RaizDaBiblioteca[] = libraryDir ? [{ raiz: libraryDir, prefixo: '' }] : []
+  for (const r of CONTRIBUIDAS) {
+    let raiz: string | null = null
+    try {
+      raiz = r.raiz()
+    } catch {
+      // Raiz de fora quebrada nao pode derrubar a biblioteca do usuario.
+    }
+    if (raiz && temEpisodio(raiz)) raizes.push({ raiz, prefixo: r.prefixo })
+  }
+  return raizes
+}
+
+/**
+ * Varre as raizes e devolve UMA grade. Com uma raiz so, e a varredura de
+ * sempre, sem tirar nem por.
+ *
+ * Uma raiz dentro de outra ja lida nao e varrida: as cenas dela ja vieram, com
+ * o id da de fora. A de fora de uma ja lida e varrida, mas so acrescenta o que
+ * a outra nao trouxe -- a mesma cena nunca aparece duas vezes.
+ */
+export async function escanearRaizes(
+  raizes: readonly RaizDaBiblioteca[],
+  publishThumb: (absolutePath: string) => string,
+  onProgress: (mensagem: string) => void = () => {},
+): Promise<LibraryIndex> {
+  const [primeira, ...resto] = raizes
+  // Sem raiz: o mesmo erro do scanLibrary com a pasta vazia.
+  if (!primeira) return scanLibrary('', publishThumb, onProgress)
+
+  let indice = await scanLibrary(primeira.raiz, publishThumb, onProgress, { prefixoDoId: primeira.prefixo })
+  const lidas = [primeira.raiz]
+  for (const r of resto) {
+    if (lidas.some((l) => dentroDe(r.raiz, l))) continue
+    const outra = await scanLibrary(r.raiz, publishThumb, onProgress, { prefixoDoId: r.prefixo })
+    lidas.push(r.raiz)
+    const jaTem = new Set(indice.clips.map((c) => normal(c.path)))
+    indice = juntar(
+      indice,
+      outra.clips.filter((c) => !jaTem.has(normal(c.path))),
+      outra.scanned,
+    )
+  }
+  return indice
+}
+
+/** A pasta tem pelo menos um episodio cortado? (para no primeiro achado) */
+function temEpisodio(raiz: string): boolean {
+  try {
+    return ehPasta(raiz) && !episodiosEm(raiz, 0).next().done
+  } catch {
+    return false
+  }
+}
+
+/** Caminho comparavel no Windows: barra, caixa e barra final nao contam. */
+function normal(caminho: string): string {
+  return resolve(caminho).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+export function dentroDe(caminho: string, raiz: string): boolean {
+  const a = normal(caminho)
+  const r = normal(raiz)
+  return a === r || a.startsWith(`${r}/`)
+}
+
+/** A grade unica: os clipes de todas, nomes de personagem unificados por serie, na ordem de leitura. */
+export function juntar(base: LibraryIndex, extras: LibraryClip[], scannedExtras: number): LibraryIndex {
+  if (extras.length === 0) return base
+  const clips = [...base.clips, ...extras]
+  // A mesma serie em duas raizes: as grafias do personagem viram uma so, como
+  // dentro de uma raiz.
+  unificarNomes(clips)
+  clips.sort(ordemNatural)
+  // O id e "<prefixo><serie>/<SxxEyy>/<cena>": sem a cena, e o episodio.
+  const episodiosExtras = new Set(extras.map((c) => c.id.slice(0, c.id.lastIndexOf('/'))))
+  return {
+    root: base.root,
+    clips,
+    animes: unicos(clips.map((c) => c.anime)),
+    characters: unicos(clips.flatMap((c) => c.characters)),
+    episodes: base.episodes + episodiosExtras.size,
+    scanned: base.scanned + scannedExtras,
   }
 }
 
@@ -248,6 +416,7 @@ async function lerEpisodio(
   dir: string,
   root: string,
   naPasta: ReadonlySet<string>,
+  prefixoDoId = '',
 ): Promise<StoredClip[]> {
   let cru: unknown
   try {
@@ -316,7 +485,7 @@ async function lerEpisodio(
     const span = numero(fim.end) - numero(inicio.start)
 
     saida.push({
-      id: `${prefixo}/${shot}`,
+      id: `${prefixoDoId}${prefixo}/${shot}`,
       path: join(dir, 'shots', nomeMp4),
       thumb,
       // Guardado ANTES de reduzirMiniaturas trocar `thumb` pela copia de 320px:
@@ -644,6 +813,18 @@ function lerCache(): CacheFile {
     // Sem cache ou cache de outra versao: varre tudo de novo, que sao segundos.
   }
   return { version: CACHE_VERSION, episodes: {} }
+}
+
+/** As entradas do cache que outra raiz (outro prefixo) leu. */
+function deOutrosPrefixos(
+  episodios: Record<string, CachedEpisode>,
+  prefixo: string,
+): Record<string, CachedEpisode> {
+  const saida: Record<string, CachedEpisode> = {}
+  for (const [chave, ep] of Object.entries(episodios)) {
+    if ((ep.prefixo ?? '') !== prefixo) saida[chave] = ep
+  }
+  return saida
 }
 
 function gravarCache(dados: CacheFile): void {

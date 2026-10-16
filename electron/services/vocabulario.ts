@@ -1,5 +1,4 @@
-import { scanLibrary } from './library'
-import { getSettings } from './settings'
+import { escanearRaizes, raizesDaBiblioteca } from './library'
 
 /**
  * Os nomes proprios que o Whisper recebe como dica antes de transcrever.
@@ -41,7 +40,7 @@ export function vocabulario(
 }
 
 /**
- * O vocabulario da biblioteca apontada nas configuracoes, ou nada.
+ * O vocabulario da biblioteca (todas as raizes, como a grade), ou nada.
  *
  * Existe para os dois caminhos que transcrevem chegarem ao MESMO prompt. Antes
  * a importacao mandava os nomes dos ARQUIVOS soltos ("print-1.jpg", que o
@@ -55,10 +54,10 @@ export function vocabulario(
 export async function vocabularioDaBiblioteca(
   publishThumb: (absolutePath: string) => string,
 ): Promise<string[]> {
-  const { libraryDir } = getSettings()
-  if (!libraryDir) return []
+  const raizes = raizesDaBiblioteca()
+  if (raizes.length === 0) return []
   try {
-    return vocabulario(await scanLibrary(libraryDir, publishThumb, () => {}), null)
+    return vocabulario(await escanearRaizes(raizes, publishThumb, () => {}), null)
   } catch {
     return []
   }

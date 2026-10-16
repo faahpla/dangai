@@ -10,9 +10,8 @@ import { selectClips } from '@shared/selection'
 import { applyScript, transcriptOnly } from './transcribe'
 import { readNicknames } from './nicknames'
 import { readDescriptions } from './describe'
-import { scanLibrary } from './library'
+import { escanearRaizes, raizesDaBiblioteca } from './library'
 import { vocabulario, vocabularioDaBiblioteca } from './vocabulario'
-import { getSettings } from './settings'
 
 /**
  * Montar o video sozinho: narracao entra, clipes escolhidos saem.
@@ -36,13 +35,14 @@ export async function automount(
   publishThumb: (absolutePath: string) => string,
   onProgress: (message: string) => void,
 ): Promise<AutomountResult> {
-  const { libraryDir } = getSettings()
-  if (!libraryDir) {
+  // A mesma lista da grade: o que aparece no Ctrl+B pode ser escolhido aqui.
+  const raizes = raizesDaBiblioteca()
+  if (raizes.length === 0) {
     throw new Error('Escolha a pasta das cenas nas configuracoes antes de montar sozinho.')
   }
 
   onProgress('Lendo a biblioteca...')
-  const library = await scanLibrary(libraryDir, publishThumb, onProgress)
+  const library = await escanearRaizes(raizes, publishThumb, onProgress)
 
   onProgress('Ouvindo a narracao...')
   const { transcript, scriptNote } = await transcriptOnly(

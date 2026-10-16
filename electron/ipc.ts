@@ -58,7 +58,7 @@ import { perseguir, type Perseguicao } from './services/tracker'
 import { definirFormato } from './services/formato'
 import type { Formato } from '@shared/contract'
 import { expandDrop } from './services/folders'
-import { scanLibrary } from './services/library'
+import { escanearRaizes, raizesDaBiblioteca } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
 import { automount, scriptBlocks } from './services/automount'
 import { readFavorites, toggleFavorite } from './services/favorites'
@@ -179,14 +179,19 @@ export function registerIpc(): void {
    * sao 27 arquivos de texto, 300ms no pior caso e 100ms com cache. Jogar isso
    * num worker custaria mais em complexidade do que economiza em tempo.
    */
+  /*
+   * Todo leitor da biblioteca percorre a MESMA lista (raizesDaBiblioteca): a
+   * libraryDir e as raizes registradas por modulo. Ler so a libraryDir aqui e
+   * a lista toda la deixaria a grade e o Montar sozinho vendo cenas diferentes.
+   */
   handle<[], LibraryIndex>(IPC.scanLibrary, async () => {
-    const { libraryDir } = getSettings()
-    if (!libraryDir) {
+    const raizes = raizesDaBiblioteca()
+    if (raizes.length === 0) {
       throw new Error(
         'Nenhuma biblioteca escolhida. Abra as configuracoes (Ctrl+,) e aponte a pasta onde o AnCut grava as cenas.',
       )
     }
-    return scanLibrary(libraryDir, publish, broadcastLibrary)
+    return escanearRaizes(raizes, publish, broadcastLibrary)
   })
 
   handle<[], string | null>(IPC.pickLibraryDir, async () => {
@@ -380,24 +385,24 @@ export function registerIpc(): void {
   handle<[], Record<string, string[]>>(IPC.readTags, async () => readTags())
 
   handle<[], Record<string, string[]>>(IPC.tagLibrary, async () => {
-    const { libraryDir } = getSettings()
-    if (!libraryDir) {
+    const raizes = raizesDaBiblioteca()
+    if (raizes.length === 0) {
       throw new Error('Escolha a pasta das cenas nas configuracoes antes de etiquetar.')
     }
     // A varredura e cacheada: pedir o indice de novo aqui custa quase nada e
     // garante que episodio recem-adicionado tambem seja etiquetado.
-    const library = await scanLibrary(libraryDir, publish, broadcastLibrary)
+    const library = await escanearRaizes(raizes, publish, broadcastLibrary)
     return tagClips(library.clips, broadcastLibrary)
   })
 
   handle<[], Record<string, SceneDescription>>(IPC.readDescriptions, async () => readDescriptions())
 
   handle<[string | null], Record<string, SceneDescription>>(IPC.describeLibrary, async (anime) => {
-    const { libraryDir } = getSettings()
-    if (!libraryDir) {
+    const raizes = raizesDaBiblioteca()
+    if (raizes.length === 0) {
       throw new Error('Escolha a pasta das cenas nas configuracoes antes de ler as cenas.')
     }
-    const library = await scanLibrary(libraryDir, publish, broadcastLibrary)
+    const library = await escanearRaizes(raizes, publish, broadcastLibrary)
     /*
      * Um anime por vez e o uso esperado: sao ~4,7s por cena, entao o acervo
      * inteiro passa de 24 horas e um episodio sai em meia hora. null le tudo,
