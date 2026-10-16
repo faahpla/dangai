@@ -1,10 +1,65 @@
+import { spawn } from 'node:child_process'
 import type { PontoDeGanho } from '@shared/ducking'
+import { ffmpegPath } from './ffmpeg-path'
 
 /**
  * Pedacos do grafo do ffmpeg do MIX FINAL (render.ts, grafoDoMix) que nao sao
  * o de sempre. Ficam aqui, fora do render.ts, para o teste
  * (scripts/teste/v-som-mix.ts) montar o mesmo filtro sem Remotion.
  */
+
+/**
+ * O teto do mix, em dBTP. O limitador trabalha a 192 kHz (4x de 48 kHz: o
+ * mesmo sobreamostrado que o ebur128 usa para medir pico VERDADEIRO), entao o
+ * pico entre amostras tambem fica abaixo. -1,5 e o mesmo TP do loudnorm da
+ * narracao: a voz sozinha ja chega ate ele e passa intacta; so a soma com
+ * faixas e SFX encosta. O AAC sobe o pico uns decimos depois disso.
+ */
+export const TETO_DO_MIX_DBTP = -1.5
+
+/** O pico verdadeiro maximo do MP4 entregue (o padrao das plataformas). */
+export const PICO_MAXIMO_DBTP = -1
+
+/**
+ * O pico VERDADEIRO do audio de um arquivo (ebur128 peak=true: 4x
+ * sobreamostrado), em dBTP. null = nao deu para medir (o render segue: medir
+ * e conferencia, nao requisito).
+ */
+export function picoVerdadeiro(path: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    const c = spawn(ffmpegPath, ['-nostdin', '-hide_banner', '-nostats', '-i', path, '-vn', '-af', 'ebur128=peak=true:framelog=quiet', '-f', 'null', '-'], {
+      windowsHide: true,
+    })
+    let err = ''
+    c.stderr.on('data', (d: Buffer) => {
+      err += d.toString()
+      // So o resumo do fim importa; o resto (cabecalho) nao precisa acumular.
+      if (err.length > 200_000) err = err.slice(-20_000)
+    })
+    c.on('error', () => resolve(null))
+    c.on('close', (code) => {
+      if (code !== 0) return resolve(null)
+      const m = /True peak:\s*[\r\n]+\s*Peak:\s*(-?[\d.]+|-inf)/.exec(err)
+      const v = m ? Number(m[1]) : NaN
+      resolve(m?.[1] === '-inf' ? Number.NEGATIVE_INFINITY : Number.isFinite(v) ? v : null)
+    })
+  })
+}
+
+/**
+ * O limitador do fim do mix: lookahead de 5 ms (o "attack" do alimiter e a
+ * janela que ele olha a frente), solta em 80 ms, sem o "auto level" (que
+ * normalizaria tudo para 0 dB) e com a latencia compensada (sem isso o audio
+ * sairia 5 ms atrasado da imagem).
+ */
+export function filtroDoLimitador(tetoDbtp = TETO_DO_MIX_DBTP): string {
+  const limite = 10 ** (tetoDbtp / 20)
+  return [
+    'aresample=192000',
+    `alimiter=limit=${limite.toFixed(5)}:attack=5:release=80:level=disabled:latency=1`,
+    'aresample=48000',
+  ].join(',')
+}
 
 /** Numero curto e sem notacao exponencial para a expressao do ffmpeg. */
 function num(x: number, casas: number): string {

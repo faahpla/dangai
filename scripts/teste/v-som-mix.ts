@@ -24,7 +24,7 @@ import {
   trilhaParaMixar,
   type PontoDeGanho,
 } from '../../shared/ducking.ts'
-import { filtroDoEnvelope } from '../../electron/services/mix.ts'
+import { filtroDoEnvelope, filtroDoLimitador, picoVerdadeiro, PICO_MAXIMO_DBTP } from '../../electron/services/mix.ts'
 import { grafoDoMix, muxWithNormalizedAudio, type ResolvedCue } from '../../electron/services/render.ts'
 import { ffmpegPath } from '../../electron/services/ffmpeg-path.ts'
 import { medirSom } from '../../electron/services/medir-som.ts'
@@ -237,6 +237,22 @@ async function main(): Promise<void> {
     await muxWithNormalizedAudio(p('video.mp4'), p('ruido-mono.wav'), p('so-voz.mp4'), [], null, [], 4)
     const final = await integradoDoFfmpeg(p('so-voz.mp4'))
     ok(`o MP4 continua com a voz em ${LUFS_DA_NARRACAO} LUFS`, final !== null && perto(final, LUFS_DA_NARRACAO, 0.5), String(final))
+
+    // ------------------------------------------- 8. o limitador de pico
+    secao('limitador de pico: o MP4 fecha abaixo de -1 dBTP')
+    const lim = filtroDoLimitador()
+    ok('filtro do limitador', lim === 'aresample=192000,alimiter=limit=0.84140:attack=5:release=80:level=disabled:latency=1,aresample=48000', lim)
+    ok('sem limitador: o grafo de antes', grafoDoMix([], null, [], 3) === OURO_B)
+    ok('com limitador: so entra no fim, antes do apad', grafoDoMix([], null, [], 3, lim) === OURO_B.replace('[cru]apad', `[cru]${lim},apad`))
+    const picoDaVoz = await picoVerdadeiro(p('so-voz.mp4'))
+    ok(`so a voz: pico ${picoDaVoz?.toFixed(2)} dBTP <= ${PICO_MAXIMO_DBTP}`, picoDaVoz !== null && picoDaVoz <= PICO_MAXIMO_DBTP)
+    // Uma faixa alta de proposito: a soma com a voz passa de 0 dBFS sem limitador.
+    await ff(['-f', 'lavfi', '-i', 'sine=f=220:d=4', '-af', 'volume=-1dB', '-ac', '2', p('alto.wav')])
+    const alto = { path: p('alto.wav'), at: 0, inicioSec: 0, duracaoSec: 4, gainDb: 6, fadeInSec: 0, fadeOutSec: 0 }
+    await muxWithNormalizedAudio(p('video.mp4'), p('ruido-mono.wav'), p('alto.mp4'), [], null, [alto], 4)
+    const picoAlto = await picoVerdadeiro(p('alto.mp4'))
+    ok(`soma alta: pico ${picoAlto?.toFixed(2)} dBTP <= ${PICO_MAXIMO_DBTP}`, picoAlto !== null && picoAlto <= PICO_MAXIMO_DBTP)
+    ok('o mix.txt leva o limitador', readFileSync(p('mix.txt'), 'utf8').includes('alimiter='))
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

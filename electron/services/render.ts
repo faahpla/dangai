@@ -9,7 +9,7 @@ import type { PontoDeGanho } from '@shared/ducking'
 import { LUFS_DA_NARRACAO } from '@shared/loudness'
 import { makeWebpackOverride } from '../../remotion.webpack'
 import { ffmpegPath } from './ffmpeg-path'
-import { filtroDoEnvelope } from './mix'
+import { filtroDoEnvelope, filtroDoLimitador, picoVerdadeiro, PICO_MAXIMO_DBTP, TETO_DO_MIX_DBTP } from './mix'
 
 const COMPOSITION_ID = 'dangai'
 
@@ -518,36 +518,53 @@ export async function muxWithNormalizedAudio(
     inputs.push('-t', (t.inicioSec + t.duracaoSec).toFixed(3), '-i', t.path)
   }
 
-  const grafoTexto = grafoDoMix(sfx, music, trilhas, durationSec)
-
   /*
-   * O grafo vai por ARQUIVO, na pasta de trabalho do render: video longo com
-   * muitos SFX e trechos tem uma cadeia por entrada, e a linha de comando do
-   * Windows para em 32 mil caracteres. O grafo e o mesmo; so muda a porta.
+   * SEM CLIPAR: a voz chega aqui em -14 LUFS com pico em -1,5 dBTP, e a soma
+   * com faixas e SFX passava disso sem ninguem segurar. O limitador do fim
+   * (mix.ts) so encosta nos picos da SOMA; a voz sozinha passa intacta, entao
+   * o loudness dela continua o de sempre.
+   *
+   * O AAC sobe o pico DEPOIS do limitador. Por isso o MP4 pronto e medido, e
+   * passou de -1 dBTP ele e refeito com o teto mais baixo pelo tanto que
+   * passou (mix normal: uma passada so).
    */
-  const grafo = join(dirname(videoPath), 'mix.txt')
-  writeFileSync(grafo, grafoTexto)
+  let teto = TETO_DO_MIX_DBTP
+  for (let tentativa = 0; ; tentativa++) {
+    const grafoTexto = grafoDoMix(sfx, music, trilhas, durationSec, filtroDoLimitador(teto))
 
-  await runFfmpeg([
-    '-y',
-    ...inputs,
-    '-filter_complex_script', grafo,
-    '-map', '0:v:0',
-    '-map', '[out]',
-    '-c:v', 'copy',
-    '-c:a', 'aac',
-    '-b:a', '192k',
-    '-ar', '48000',
-    // Estereo na entrega: narracao de TTS costuma vir mono, e alguns
-    // encoders de plataforma tratam mono de forma inconsistente.
-    '-ac', '2',
-    '-movflags', '+faststart',
-    // Trava de seguranca: o audio ja sai no tamanho certo do filtro, e o video
-    // vem com a duracao exata do Remotion. -t garante que nenhuma entrada
-    // (a musica em loop, em particular) estique a saida.
-    '-t', durationSec.toFixed(3),
-    outputPath,
-  ])
+    /*
+     * O grafo vai por ARQUIVO, na pasta de trabalho do render: video longo com
+     * muitos SFX e trechos tem uma cadeia por entrada, e a linha de comando do
+     * Windows para em 32 mil caracteres. O grafo e o mesmo; so muda a porta.
+     */
+    const grafo = join(dirname(videoPath), 'mix.txt')
+    writeFileSync(grafo, grafoTexto)
+
+    await runFfmpeg([
+      '-y',
+      ...inputs,
+      '-filter_complex_script', grafo,
+      '-map', '0:v:0',
+      '-map', '[out]',
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-ar', '48000',
+      // Estereo na entrega: narracao de TTS costuma vir mono, e alguns
+      // encoders de plataforma tratam mono de forma inconsistente.
+      '-ac', '2',
+      '-movflags', '+faststart',
+      // Trava de seguranca: o audio ja sai no tamanho certo do filtro, e o video
+      // vem com a duracao exata do Remotion. -t garante que nenhuma entrada
+      // (a musica em loop, em particular) estique a saida.
+      '-t', durationSec.toFixed(3),
+      outputPath,
+    ])
+
+    const pico = await picoVerdadeiro(outputPath)
+    if (pico === null || pico <= PICO_MAXIMO_DBTP || tentativa >= 2) break
+    teto -= pico - PICO_MAXIMO_DBTP + 0.3
+  }
 }
 
 /**
@@ -561,6 +578,8 @@ export function grafoDoMix(
   music: MusicBed | null,
   trilhas: readonly TrechoParaMixar[],
   durationSec: number,
+  /** O limitador do fim (filtroDoLimitador). null = sem, o grafo de antes. */
+  limitador: string | null = null,
 ): string {
   // Os SFX entram por cima da narracao em -12dB, para o nivel de referencia do
   // video continuar sendo a voz, que e o que importa.
@@ -663,7 +682,7 @@ export function grafoDoMix(
    * quem alinhava as pontas era o -shortest, e ele cortava o VIDEO quando havia
    * trilha, levando embora os ultimos blocos.
    */
-  const mix = `${misturado}[cru];[cru]apad,atrim=0:${durationSec.toFixed(3)},asetpts=N/SR/TB[out]`
+  const mix = `${misturado}[cru];[cru]${limitador ? `${limitador},` : ''}apad,atrim=0:${durationSec.toFixed(3)},asetpts=N/SR/TB[out]`
 
   return [...chain, mix].join(';\n')
 }
