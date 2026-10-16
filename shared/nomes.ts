@@ -56,7 +56,8 @@ function distancia(a: string, b: string, teto: number): number {
  *   - SO UMA palavra difere, e as outras sao identicas -- o nome proprio igual
  *     segura que e a mesma pessoa;
  *   - a palavra que difere tem 5 letras ou mais dos dois lados, e fica a no
- *     maximo 2 edicoes da outra.
+ *     maximo 2 edicoes da outra -- ou so difere na vogal longa do romaji
+ *     (semVogalLonga), em qualquer tamanho.
  *
  * "Rem" e "Ram" nao se juntam (uma palavra so, e curtas). "Kurosaki, Ichigo" e
  * "Kurosaki, Isshin" nao se juntam (4 edicoes).
@@ -73,8 +74,21 @@ export function mesmaPessoaComErro(a: readonly string[], b: readonly string[]): 
   if (sobraA.length !== 1 || sobraB.length !== 1) return false
   const x = sobraA[0]!
   const y = sobraB[0]!
+  if (semVogalLonga(x) === semVogalLonga(y)) return true
   if (Math.min(x.length, y.length) < 5) return false
   return distancia(x, y, 2) <= 2
+}
+
+/**
+ * A vogal longa do romaji, que cada fonte escreve de um jeito: o MyAnimeList
+ * da "Saionji, Ukyou" e "Ishigami, Senkuu", o AniList "Ukyo Saionji" e
+ * "Senku Ishigami". No Dr. Stone S4E37 os dois nomes do Ukyo
+ * vieram com ids diferentes, e "ukyo" tem 4 letras -- abaixo do piso do erro
+ * de digitacao. Fica estreito pelo resto da regra: o sobrenome tem que ser
+ * identico.
+ */
+function semVogalLonga(palavra: string): string {
+  return palavra.replace(/ou/g, 'o').replace(/uu/g, 'u').replace(/oo/g, 'o')
 }
 
 /** nome cru -> nome escolhido, para uma serie. `contagem` e quantas cenas usam cada nome cru. */
@@ -143,4 +157,61 @@ export function canonizar(contagem: ReadonlyMap<string, number>): ReadonlyMap<st
     for (const [nome] of nomes) mapa.set(nome, escolhido)
   }
   return mapa
+}
+
+/**
+ * Uma palavra que se le inteira como romaji: silabas do japones, o "n" que
+ * fecha silaba e a consoante dobrada. "Senkuu", "Ryuusui", "Ukyou" e "Inoue"
+ * passam; "Gourry", "Louis" e "Douglas" nao.
+ */
+const ROMAJI = /^(?:(?:sh|ch|ts|[kgnhbpmr]y|[kgsztdnhbpmrwyfjv])?[aiueo]|n(?![aiueoy])|([kgsztdhbpmcfj])(?=\1)|t(?=ch))+$/
+
+/**
+ * A vogal longa encurtada, so para a TELA: "Senkuu" -> "Senku", "Ryuusui" ->
+ * "Ryusui", "Ukyou" -> "Ukyo". Sem isto o mesmo personagem aparecia com tres
+ * grafias: a do MyAnimeList onde nao ha legenda com nomes (.srt), a da
+ * legenda onde ha (.ass), e a crua na Biblioteca.
+ *
+ * Estreita de proposito: so "uu" e o "ou" que fecha silaba -- o "ou" antes de
+ * vogal e outra coisa ("Inoue" e i-no-u-e), e antes de consoante dobrada e
+ * nome de fora ("Rousseau") --, e so em palavra que e romaji ("Gourry" fica).
+ * O "oo" fica: "Taiju Ooki" e assim nas duas fontes.
+ */
+export function vogalLongaCurta(palavra: string): string {
+  if (!ROMAJI.test(palavra.toLowerCase())) return palavra
+  return palavra.replace(/([uU])[uU]/g, '$1').replace(/([oO])[uU](?![aeiouAEIOU]|(.)\2)/g, '$1')
+}
+
+/**
+ * O nome como se fala, so para a TELA (o indice guarda o nome cru).
+ *
+ * O MyAnimeList escreve "Ishigami, Senkuu" -- sobrenome, virgula, nome --, e
+ * lido assim na lista de personagens parece ficha de cadastro. Vira "Senku
+ * Ishigami", a ordem da AniList. Com `falantes` (os nomes de uma legenda),
+ * cada palavra segue a grafia de la quando e o mesmo nome com outra vogal
+ * longa (semVogalLonga): o Name do .ass diz "Senku", entao a tela diz "Senku
+ * Ishigami". Sem eles, a vogal longa encurta do mesmo jeito (vogalLongaCurta).
+ */
+export function nomeNatural(nome: string, falantes: readonly string[] = []): string {
+  const limpo = nome.trim().replace(/\s+/g, ' ')
+  const m = /^([^,]+),\s*([^,]+)$/.exec(limpo)
+  const ordem = m ? `${m[2]!.trim()} ${m[1]!.trim()}` : limpo
+  const grafia = new Map<string, string>()
+  for (const falante of falantes) {
+    for (const palavra of falante.trim().split(/\s+/)) {
+      if (!/^[A-Za-z]{2,}$/.test(palavra)) continue
+      const chave = semVogalLonga(palavra.toLowerCase())
+      if (!grafia.has(chave)) grafia.set(chave, palavra)
+    }
+  }
+  return ordem
+    .split(' ')
+    .map((palavra) => {
+      const da = grafia.get(semVogalLonga(palavra.toLowerCase()))
+      if (!da) return vogalLongaCurta(palavra)
+      // Legenda em caixa alta ("SENKU") nao manda na caixa: so na grafia.
+      const caixaUnica = da === da.toUpperCase() || da === da.toLowerCase()
+      return caixaUnica ? da.charAt(0).toUpperCase() + da.slice(1).toLowerCase() : da
+    })
+    .join(' ')
 }

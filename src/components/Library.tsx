@@ -28,6 +28,7 @@ import {
 } from '@shared/suggest'
 import type { SelectionCandidate } from '@shared/selection'
 import { TAGS_PT } from '@shared/tags-pt'
+import { nomeNatural } from '@shared/nomes'
 import { useProject } from '@/store/project'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
@@ -1095,14 +1096,32 @@ export function Library() {
 }
 
 /**
+ * O nome do personagem como a tela mostra (nomeNatural), com memoria: a busca
+ * pede por cena a cada tecla, e os nomes diferentes sao poucas centenas.
+ */
+const NOMES_NATURAIS = new Map<string, string>()
+function natural(nome: string): string {
+  let n = NOMES_NATURAIS.get(nome)
+  if (n === undefined) {
+    n = nomeNatural(nome)
+    NOMES_NATURAIS.set(nome, n)
+  }
+  return n
+}
+
+/**
  * Tudo que a busca por texto enxerga de uma cena.
  *
  * O titulo do AnCut entra aqui mesmo sem agrupar nada: quem lembra de "Sennen
  * Kessen" ou de "Slime Datta Ken" tem que achar, ainda que a pasta se chame
  * "Bleach - Thousand Year Blood War" ou "Tensura".
+ *
+ * O personagem entra cru e no nome da tela (nomeNatural): quem le "Ryusui" no
+ * botao e digita isso tem que achar o "Nanami, Ryuusui".
  */
 function textoDe(clip: LibraryClip): string {
-  return `${clip.anime} ${clip.animeTitle} ${clip.characters.join(' ')} s${clip.season}e${clip.episode} ${clip.shot}`.toLowerCase()
+  const nomes = clip.characters.flatMap((c) => [c, natural(c)]).join(' ')
+  return `${clip.anime} ${clip.animeTitle} ${nomes} s${clip.season}e${clip.episode} ${clip.shot}`.toLowerCase()
 }
 
 // ------------------------------------------------------------------ sem pasta
@@ -1203,12 +1222,14 @@ function Rail({
     }
 
     // Em ordem ALFABETICA, animes e personagens: e pelo nome que ele procura.
-    const ordenar = (m: Map<string, number>): [string, number][] =>
-      [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { sensitivity: 'base' }))
+    // O personagem pelo nome que a tela mostra (natural), e nao pelo cru:
+    // "Nanami, Ryuusui" aparece como "Ryusui Nanami" e entra no R.
+    const ordenar = (m: Map<string, number>, rotulo: (nome: string) => string = (nome) => nome): [string, number][] =>
+      [...m.entries()].sort((a, b) => rotulo(a[0]).localeCompare(rotulo(b[0]), 'pt-BR', { sensitivity: 'base' }))
 
     return {
       animes: ordenar(contagemAnime),
-      porAnime: new Map([...dentro].map(([serie, nomes]) => [serie, ordenar(nomes)])),
+      porAnime: new Map([...dentro].map(([serie, nomes]) => [serie, ordenar(nomes, natural)])),
       /*
        * Episodio ordenado do MAIOR para o menor, e nao por contagem.
        *
@@ -1352,7 +1373,7 @@ function Rail({
                   contagem={n}
                   recuado
                 >
-                  {nome}
+                  {natural(nome)}
                 </Item>
               ))}
           </div>
@@ -1399,8 +1420,11 @@ function PersonagensDoAnime({
     }
     // Em ordem ALFABETICA ("organize os nomes por ordem alfabetica"): achar um
     // nome numa fileira de trinta e mais facil pelo alfabeto do que pela
-    // contagem, que muda de episodio para episodio.
-    return [...conta.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR', { sensitivity: 'base' }))
+    // contagem, que muda de episodio para episodio. A ordem e a do nome na
+    // tela ("Ryusui Nanami", nao "Nanami, Ryuusui"); o filtro segue pelo cru.
+    return [...conta.entries()]
+      .map(([nome, n]) => [nome, n, natural(nome)] as const)
+      .sort((a, b) => a[2].localeCompare(b[2], 'pt-BR', { sensitivity: 'base' }))
   }, [clips, anime, episodio])
 
   if (nomes.length === 0) return null
@@ -1420,14 +1444,14 @@ function PersonagensDoAnime({
         <button type="button" onClick={() => onPersonagem(null)} className={botao(personagem === null)}>
           Todos
         </button>
-        {nomes.map(([nome, n]) => (
+        {nomes.map(([nome, n, rotulo]) => (
           <button
             key={nome}
             type="button"
             onClick={() => onPersonagem(personagem === nome ? null : nome)}
             className={botao(personagem === nome)}
           >
-            {nome}
+            {rotulo}
             <span className="tnum text-[10px] text-ink-3">{n.toLocaleString('pt-BR')}</span>
           </button>
         ))}
@@ -1912,10 +1936,10 @@ function Sugestoes({
               key={p.nome}
               type="button"
               onClick={p.abrir}
-              title={`Abre a pasta inteira de ${p.nome} na grade abaixo`}
+              title={`Abre a pasta inteira de ${natural(p.nome)} na grade abaixo`}
               className="flex items-center gap-0.5 text-[11px] text-ink-3 transition-colors duration-150 hover:text-accent"
             >
-              Pasta de {nomeCurto(p.nome)}
+              Pasta de {natural(nomeCurto(p.nome))}
               <ChevronRight size={11} strokeWidth={1.5} />
             </button>
           ))}
@@ -2130,7 +2154,7 @@ function Cartao({
        * imagem, pode tirar tudo". Quem precisa do episodio ou do personagem
        * passa o mouse -- e a previa em video ja toca no mesmo gesto.
        */
-      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.join(', ')}` : ''}${usada ? ' · ja usada em outra frase' : ''}
+      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · ja usada em outra frase' : ''}
 Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
       className={[
         'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
@@ -2509,7 +2533,7 @@ function Tocador({
           <span className="min-w-0 flex-1 truncate">
             <span className="text-ink">{clip.animeTitle || clip.anime}</span> · S{pad(clip.season)}E{pad(clip.episode)} · cena{' '}
             {clip.shot} · <span className="tnum">{clip.duration.toFixed(1)}s</span>
-            {clip.characters.length > 0 && <span className="text-ink-3"> · {clip.characters.join(', ')}</span>}
+            {clip.characters.length > 0 && <span className="text-ink-3"> · {clip.characters.map(natural).join(', ')}</span>}
           </span>
           <span className="tnum text-ink-3">
             {indice + 1} de {lista.length}
