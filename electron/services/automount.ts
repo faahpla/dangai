@@ -44,14 +44,18 @@ export async function automount(
   onProgress('Lendo a biblioteca...')
   const library = await escanearRaizes(raizes, publishThumb, onProgress)
 
-  onProgress('Ouvindo a narracao...')
-  const { transcript, scriptNote } = await transcriptOnly(
-    request.audioPath,
-    request.subtitlePath,
-    request.script,
-    vocabulario(library, request.series),
-    onProgress,
-  )
+  // Transcricao travada (a voz gerada ja trouxe os tempos): so casa o texto.
+  const travada = request.transcript && request.transcript.words.length > 0 ? request.transcript : null
+  if (!travada) onProgress('Ouvindo a narracao...')
+  const { transcript, scriptNote } = travada
+    ? await applyScript(request.script, { ...travada, alinhado: true }, onProgress, request.audioPath)
+    : await transcriptOnly(
+        request.audioPath,
+        request.subtitlePath,
+        request.script,
+        vocabulario(library, request.series),
+        onProgress,
+      )
   if (!transcript || transcript.segments.length === 0) {
     throw new Error(
       'Nao deu para ouvir a narracao. Sem o texto nao ha como saber quem esta em cada frase.',

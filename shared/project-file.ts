@@ -212,6 +212,8 @@ export const projectFileSchema = z.object({
   planOrigin: z.enum(PLAN_ORIGINS).nullable(),
   planEdited: z.boolean(),
   transcript: transcriptSchema.nullable(),
+  /** Os tempos da transcricao sao os certos: nada de Whisper por cima. Ver o store. */
+  transcriptTravado: z.boolean().default(false),
   captions: z.array(captionBlockSchema),
   captionsEdited: z.boolean(),
   captionsEnabled: z.boolean(),

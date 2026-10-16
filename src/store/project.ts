@@ -155,6 +155,15 @@ export interface ProjectState {
   planOrigin: PlanOrigin | null
   transcript: Transcript | null
   /**
+   * TRANSCRICAO TRAVADA: os tempos das palavras ja sao os certos -- a voz
+   * gerada (o Gerar recap) vem com eles -- e nenhuma reanalise roda o Whisper
+   * por cima. Trocar o roteiro so casa o texto novo sobre estes tempos.
+   * Trocar a NARRACAO destrava: os tempos eram da outra.
+   */
+  transcriptTravado: boolean
+  /** Liga ou desliga a trava (marca a transcricao como alinhada). */
+  travarTranscript: (travado: boolean) => void
+  /**
    * Blocos de legenda derivados da transcricao, guardados prontos.
    *
    * Guardados e nao derivados num seletor pelo mesmo motivo do plano: seletor
@@ -1158,6 +1167,16 @@ export const useProject = create<ProjectState>((set, get) => ({
   plan: null,
   planOrigin: null,
   transcript: null,
+  transcriptTravado: false,
+
+  travarTranscript: (travado) =>
+    set((state) => ({
+      transcriptTravado: travado,
+      ...(travado && state.transcript && !state.transcript.alinhado
+        ? { transcript: { ...state.transcript, alinhado: true } }
+        : {}),
+      projectDirty: true,
+    })),
   captions: [],
   aiNote: null,
   script: null,
@@ -1456,6 +1475,8 @@ export const useProject = create<ProjectState>((set, get) => ({
         set({
           audio: result.value,
           playhead: 0,
+          // Os tempos travados eram da narracao anterior.
+          transcriptTravado: false,
           scriptBlocks: null,
           activeBlock: null,
           blockClips: {},
@@ -1499,6 +1520,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       script,
       mode,
       series,
+      transcript: get().transcriptTravado ? get().transcript : null,
     })
     if (!proposta.ok) {
       set({ busy: null, error: proposta.error })
@@ -2289,6 +2311,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       images,
       durationSec: audio.durationSec,
       script,
+      // Travada: o main usa esta e nao ouve a narracao de novo.
+      transcript: get().transcriptTravado ? get().transcript : null,
     })
 
     if (result.ok) {
@@ -4542,6 +4566,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       plan: null,
       planOrigin: null,
       transcript: null,
+      transcriptTravado: false,
       captions: [],
       aiNote: null,
       script: null,
@@ -4656,6 +4681,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       planOrigin: state.planOrigin,
       planEdited: state.planEdited,
       transcript: state.transcript,
+      transcriptTravado: state.transcriptTravado,
       captions: state.captions,
       captionsEdited: state.captionsEdited,
       captionsEnabled: state.captionsEnabled,
@@ -4982,6 +5008,7 @@ async function applyProjectFile(
       planOrigin: file.planOrigin,
       planEdited: file.planEdited,
       transcript: file.transcript,
+      transcriptTravado: file.transcriptTravado,
       captions: file.captions,
       captionsEdited: file.captionsEdited,
       captionsEnabled: file.captionsEnabled,

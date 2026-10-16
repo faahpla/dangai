@@ -82,5 +82,8 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
 - **Ligar/desligar:** Configurações > Módulos (`Settings.modulosLigados`); desligado por padrão.
 - **Eventos:** `abrirProjeto`, `depoisDeSalvar`, `depoisDeRenderizar`, `narracaoTrocada`
   (`src/modulos/ganchos.ts`). `aplicarNoDocumento`/`gravarNoProjeto` = um passo de Ctrl+Z.
+- **Transcrição travada** (`transcriptTravado`, `nucleo.travarTranscript`): com os tempos
+  vindos da voz gerada, análise, Biblioteca e "montar sozinho" não rodam o Whisper — o
+  roteiro novo é casado por texto sobre esses tempos. Trocar a narração destrava.
 - O `settings.json` também guarda o que não conhece (campos de versão futura, a chave
   cifrada de um módulo que não está instalado).

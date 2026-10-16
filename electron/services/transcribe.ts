@@ -37,6 +37,8 @@ export interface AnalyzeRequest {
   durationSec: number
   /** Roteiro escrito pelo usuario. Vira a fonte do texto das legendas. */
   script: string | null
+  /** Transcricao travada: usada no lugar do Whisper. Ver AnalyzeArgs. */
+  transcript?: Transcript | null
 }
 
 export type AnalyzeProgress = (message: string) => void
@@ -98,13 +100,21 @@ async function analisar(
    * Com a mesma dica dos dois lados, a primeira transcricao serve para as duas
    * telas -- e ainda por cima e a boa, a que conhece os nomes dos personagens.
    */
-  const nomes = await vocabularioDaBiblioteca(publishThumb)
-  const measured = await getTranscript(
-    audioPath,
-    subtitlePath,
-    nomes.length > 0 ? nomes : images.map((image) => image.fileName),
-    onProgress,
-  )
+  /*
+   * Transcricao TRAVADA (a voz gerada ja trouxe os tempos): nada de Whisper.
+   * Marcada como alinhada, o applyScript abaixo so casa o texto do roteiro
+   * sobre estes tempos, sem ouvir o audio.
+   */
+  const travada = request.transcript && request.transcript.words.length > 0 ? request.transcript : null
+  const nomes = travada ? [] : await vocabularioDaBiblioteca(publishThumb)
+  const measured = travada
+    ? { ...travada, alinhado: true }
+    : await getTranscript(
+        audioPath,
+        subtitlePath,
+        nomes.length > 0 ? nomes : images.map((image) => image.fileName),
+        onProgress,
+      )
 
   const { transcript, scriptNote } = await applyScript(script, measured, onProgress, audioPath)
 

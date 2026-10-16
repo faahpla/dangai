@@ -42,6 +42,7 @@ export type EstadoPublico = Pick<
   | 'appVersion'
   | 'update'
   | 'modulos'
+  | 'transcriptTravado'
 >
 
 /** A tela cheia de modulo aberta agora (o assistente do recap), se houver. */
@@ -81,6 +82,11 @@ export interface Nucleo {
   gravarNoProjeto(dados: unknown): void
   /** Poe um estilo de legenda sem virar o padrao dos proximos videos. */
   aplicarEstiloDeLegenda(estilo: CaptionStyle): void
+  /**
+   * Trava (ou solta) a transcricao: com os tempos travados, nenhuma
+   * reanalise roda o Whisper por cima -- o "Abrir no editor" da voz gerada.
+   */
+  travarTranscript(travado: boolean): void
 
   marcarSujo(): void
   mostrarErro(mensagem: string): void
@@ -123,6 +129,7 @@ export function criarNucleo(id: string): Nucleo {
       fecharPassoAgora()
     },
     aplicarEstiloDeLegenda: (estilo) => aplicarEstiloSemVirarPadrao(estilo, true),
+    travarTranscript: (travado) => store().travarTranscript(travado),
 
     marcarSujo: () => useProject.setState({ projectDirty: true }),
     mostrarErro: (mensagem) => useProject.setState({ error: mensagem }),

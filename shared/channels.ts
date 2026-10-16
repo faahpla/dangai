@@ -315,6 +315,8 @@ export interface AutomountRequest {
    * blinda o bloco que nao cita ninguem, que e onde a deducao nao alcanca.
    */
   series: string | null
+  /** Transcricao travada: usa esta em vez de ouvir a narracao. Ver AnalyzeArgs. */
+  transcript?: Transcript | null
 }
 
 /** Um clipe proposto para um bloco. */
@@ -425,6 +427,12 @@ export interface AnalyzeArgs {
   durationSec: number
   /** Roteiro escrito, quando o usuario forneceu. */
   script: string | null
+  /**
+   * TRANSCRICAO TRAVADA: os tempos ja sao os certos (a voz gerada do recap
+   * vem com eles) e o Whisper nao passa de novo. O roteiro, se mudou, e
+   * casado por TEXTO sobre estes tempos.
+   */
+  transcript?: Transcript | null
 }
 
 /**
