@@ -4724,13 +4724,18 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (result.value === null) return
 
     await applyProjectFile(set, result.value.file, result.value.path, false)
-    get().refazerLegendasNaoEditadas()
     // O projeto guarda so o NOME da fonte; e esta leitura que reencontra a URL
     // dela na pasta -- ou derruba a escolha, se o arquivo nao estiver mais la.
-    await get().refreshFontes()
-    await get().refreshSfxManual()
-    await get().refreshTrilhas()
-    await get().refreshSobreposicoes()
+    // Ainda e abrir (sem passo de Ctrl+Z), e as legendas refeitas vem DEPOIS:
+    // o passo delas fotografava as faixas de audio ainda sem url e sem onda, e
+    // o primeiro Ctrl+Z depois de abrir as deixava mudas.
+    await semSujar(async () => {
+      await get().refreshFontes()
+      await get().refreshSfxManual()
+      await get().refreshTrilhas()
+      await get().refreshSobreposicoes()
+    })
+    get().refazerLegendasNaoEditadas()
     await get().migrarSonsAntigos()
   },
 
@@ -4754,12 +4759,15 @@ export const useProject = create<ProjectState>((set, get) => ({
     // save de verdade. Marcar limpo faria o app dizer que nao ha nada a gravar
     // justamente sobre o trabalho que quase se perdeu.
     await applyProjectFile(set, result.value.file, result.value.path, true)
+    // Mesmo motivo do openProject: a fonte volta pelo nome e precisa da URL, e
+    // as legendas refeitas vem depois das faixas ja com url.
+    await semSujar(async () => {
+      await get().refreshFontes()
+      await get().refreshSfxManual()
+      await get().refreshTrilhas()
+      await get().refreshSobreposicoes()
+    })
     get().refazerLegendasNaoEditadas()
-    // Mesmo motivo do openProject: a fonte volta pelo nome e precisa da URL.
-    await get().refreshFontes()
-    await get().refreshSfxManual()
-    await get().refreshTrilhas()
-    await get().refreshSobreposicoes()
     await get().migrarSonsAntigos()
   },
 

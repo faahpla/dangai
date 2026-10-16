@@ -45,7 +45,14 @@ export function startUndo(): () => void {
   const unsubscribe = useProject.subscribe((state, anterior) => {
     // Abrir projeto, recuperar autosave e limpar nao sao edicoes: entram pela
     // mesma porta no estado, mas ninguem espera desfaze-los com Ctrl+Z.
-    if (aplicando || estaCarregando() || pulaDesfazer()) return
+    if (aplicando) return
+    if (estaCarregando()) {
+      // Abrir OUTRO projeto troca o documento inteiro: o historico era do
+      // anterior, e um Ctrl+Z depois trazia o video de la para dentro deste.
+      if (state.audio?.path !== anterior.audio?.path || state.projectPath !== anterior.projectPath) esquecerHistorico()
+      return
+    }
+    if (pulaDesfazer()) return
     if (!mudou(state, anterior)) return
 
     /*
@@ -67,6 +74,14 @@ export function startUndo(): () => void {
     pilha.frente = []
     unsubscribe()
   }
+}
+
+function esquecerHistorico(): void {
+  if (timer) clearTimeout(timer)
+  timer = null
+  antesDoGesto = null
+  pilha.atras = []
+  pilha.frente = []
 }
 
 function fecharPasso(): void {
