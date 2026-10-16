@@ -7,6 +7,7 @@ import type {
   RenderProps,
   Transcript,
 } from './contract'
+import type { PontoDeGanho } from './ducking'
 import type { OpenedProject, ProjectFile } from './project-file'
 
 /**
@@ -156,6 +157,11 @@ export interface StartRenderArgs {
     gainDb: number
     fadeInSec: number
     fadeOutSec: number
+    /**
+     * Ducking: o envelope de ganho em TEMPO DO VIDEO, dB sobre gainDb, ja
+     * recortado no trecho (trilhaParaMixar, shared/ducking.ts). Ausente = volume fixo.
+     */
+    envelope?: readonly PontoDeGanho[]
   }[]
 }
 

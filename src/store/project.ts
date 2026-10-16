@@ -99,6 +99,7 @@ import {
 import type { CaptionBlock } from '@shared/contract'
 import { chavesDesconhecidas, semExtensaoDeProjeto, versaoParaGravar, type ProjectFile } from '@shared/project-file'
 import { temDadosDeModulo, type Modulos } from '@shared/contract'
+import { trilhaParaMixar } from '@shared/ducking'
 import { herdarAjustes, reaproveitar } from '@shared/remontar'
 import { retemporizar } from '@shared/legendas'
 import { abrirEspaco, removerCena, repararMetadesDeBaixo } from '@shared/indices'
@@ -4351,17 +4352,11 @@ export const useProject = create<ProjectState>((set, get) => ({
        */
       sfxCues: [],
       music: null,
+      // trilhaParaMixar: o de sempre e, no trecho com `ducking`, o envelope
+      // pelas palavras -- a mesma conta do preview (shared/ducking.ts).
       trilhas: get()
         .trilhas.filter((t) => !get().faixasMudas.audio.includes(t.faixa))
-        .map((t) => ({
-        path: t.path,
-        at: t.at,
-        inicioSec: t.inicioSec,
-        duracaoSec: duracaoDoTrecho(t),
-        gainDb: t.gainDb,
-        fadeInSec: t.fadeInSec,
-        fadeOutSec: t.fadeOutSec,
-      })),
+        .map((t) => trilhaParaMixar(t, get().transcript?.words ?? [], audio.durationSec)),
     })
 
     if (!result.ok) {

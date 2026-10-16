@@ -52,5 +52,8 @@ por commit. Antes de cada push: `git pull --rebase`, `npm run typecheck` e os te
   (`projectFileSchemaQuePreserva`, `extrasDoProjeto`);
 - arquivo com dado de módulo grava `version: 2`; sem, continua 1;
 - `.anirecap` abre, mas nunca é regravado: o Salvar sugere um `.dangai`.
+- `ducking` no trecho de áudio é do núcleo (não `modulos.recap`): com ele o trecho
+  desce sob a voz pelo envelope das palavras do transcript (`shared/ducking.ts`),
+  o mesmo no preview e no render; sem ele, nada muda (`v-som-mix.ts`).
 
 Testes: `npx tsx --tsconfig tsconfig.node.json scripts/teste/v-<nome>.ts`.

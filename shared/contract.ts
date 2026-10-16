@@ -1792,6 +1792,30 @@ export const CAPTION_CHARS_PER_LINE = 18
 export const MUSIC_GAIN_DB_DEFAULT = -20
 
 /**
+ * DUCKING de um trecho de audio: ele desce enquanto a narracao fala e sobe nas
+ * pausas. O envelope sai das PALAVRAS do transcript (o tempo real da voz), e
+ * nao de um compressor ouvindo o audio: o preview e o render calculam o MESMO
+ * ganho com a mesma funcao (envelopeDeDucking, em shared/ducking.ts).
+ *
+ * O comentario do MUSIC_GAIN_DB_DEFAULT continua valendo: o nucleo nunca liga
+ * isto sozinho. So o trecho que traz o campo (posto por um modulo) tem ducking.
+ */
+export const duckingSchema = z.object({
+  /** Quanto o trecho desce enquanto a voz fala, em dB (positivo). */
+  abaixoDb: z.number().min(0).max(30).default(6),
+  /** Quanto tempo leva para descer, terminando na 1a palavra, em segundos. */
+  ataqueSec: z.number().min(0).max(2).default(0.15),
+  /** Quanto tempo leva para voltar, depois da ultima palavra, em segundos. */
+  soltaSec: z.number().min(0).max(4).default(0.6),
+  /** Pausa menor que isto nao conta: o trecho fica embaixo. Segundos. */
+  pausaMinSec: z.number().min(0).max(5).default(0.5),
+})
+  // Guarda o que nao conhece (um campo de versao futura, de um modulo).
+  .loose()
+export type Ducking = z.infer<typeof duckingSchema>
+export const DUCKING_PADRAO: Ducking = { abaixoDb: 6, ataqueSec: 0.15, soltaSec: 0.6, pausaMinSec: 0.5 }
+
+/**
  * Um trecho numa FAIXA DE AUDIO da linha do tempo -- musica, ambiente, o que
  * ele quiser por por baixo da narracao, onde quiser.
  *
@@ -1822,6 +1846,14 @@ export const trechoDeAudioSchema = z.object({
   fadeOutSec: z.number().min(0).max(3600).default(1),
   peaks: z.array(z.number().min(0).max(1)).default([]),
   rms: z.array(z.number().min(0).max(1)).default([]),
+  /**
+   * Ducking deste trecho pela voz (ver duckingSchema). null/ausente = volume
+   * fixo, como sempre. O envelope e em TEMPO DO VIDEO (segue a narracao, nao o
+   * trecho): mover o trecho nao arrasta o ducking junto. Opcional SEM default:
+   * projeto sem o campo abre e grava igual. Valor que nao passa vira "sem
+   * ducking" em vez de derrubar o projeto.
+   */
+  ducking: duckingSchema.nullable().optional().catch(undefined),
   /** Dados de modulo deste trecho. Ver modulosSchema. */
   modulos: modulosSchema,
 })

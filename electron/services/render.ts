@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os'
 import { ensureBrowser, makeCancelSignal, renderMedia, selectComposition } from '@remotion/renderer'
 import type { RenderProgress, RenderProps } from '@shared/contract'
 import { MUSIC_FADE_IN_SEC, MUSIC_FADE_OUT_SEC, VIDEO_FPS } from '@shared/contract'
+import type { PontoDeGanho } from '@shared/ducking'
 import { makeWebpackOverride } from '../../remotion.webpack'
 import { ffmpegPath } from './ffmpeg-path'
+import { filtroDoEnvelope } from './mix'
 
 const COMPOSITION_ID = 'dangai'
 
@@ -70,6 +72,11 @@ export interface TrechoParaMixar {
   gainDb: number
   fadeInSec: number
   fadeOutSec: number
+  /**
+   * Ducking: o envelope em TEMPO DO VIDEO, dB sobre gainDb, ja recortado no
+   * trecho (trilhaParaMixar, shared/ducking.ts). Ausente = volume fixo.
+   */
+  envelope?: readonly PontoDeGanho[]
 }
 
 export interface MusicBed {
@@ -398,7 +405,7 @@ const SFX_GAIN = 0.2512
 /** Fade aplicado no fim de um SFX cortado, para o corte nao estalar. */
 const FADE_CORTE_SEC = 0.03
 
-interface ResolvedCue {
+export interface ResolvedCue {
   path: string
   at: number
   /** Ganho em dB SOBRE o nivel padrao dos SFX. 0 = como sempre foi. */
@@ -448,7 +455,8 @@ function resolveMusic(request: RenderRequest): MusicBed | null {
   return existsSync(request.music.path) ? request.music : null
 }
 
-async function muxWithNormalizedAudio(
+/** Exportada para o teste do mix (scripts/teste/v-som-mix.ts). */
+export async function muxWithNormalizedAudio(
   videoPath: string,
   audioPath: string,
   outputPath: string,
@@ -509,6 +517,50 @@ async function muxWithNormalizedAudio(
     inputs.push('-t', (t.inicioSec + t.duracaoSec).toFixed(3), '-i', t.path)
   }
 
+  const grafoTexto = grafoDoMix(sfx, music, trilhas, durationSec)
+
+  /*
+   * O grafo vai por ARQUIVO, na pasta de trabalho do render: video longo com
+   * muitos SFX e trechos tem uma cadeia por entrada, e a linha de comando do
+   * Windows para em 32 mil caracteres. O grafo e o mesmo; so muda a porta.
+   */
+  const grafo = join(dirname(videoPath), 'mix.txt')
+  writeFileSync(grafo, grafoTexto)
+
+  await runFfmpeg([
+    '-y',
+    ...inputs,
+    '-filter_complex_script', grafo,
+    '-map', '0:v:0',
+    '-map', '[out]',
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    '-ar', '48000',
+    // Estereo na entrega: narracao de TTS costuma vir mono, e alguns
+    // encoders de plataforma tratam mono de forma inconsistente.
+    '-ac', '2',
+    '-movflags', '+faststart',
+    // Trava de seguranca: o audio ja sai no tamanho certo do filtro, e o video
+    // vem com a duracao exata do Remotion. -t garante que nenhuma entrada
+    // (a musica em loop, em particular) estique a saida.
+    '-t', durationSec.toFixed(3),
+    outputPath,
+  ])
+}
+
+/**
+ * O GRAFO do mix final (o -filter_complex_script), puro: a entrada 0 e o video,
+ * a 1 a narracao ja normalizada, depois os SFX, a musica e os trechos, na ordem
+ * das entradas que muxWithNormalizedAudio monta. Exportado para o teste
+ * (scripts/teste/v-som-mix.ts) conferir o grafo sem ffmpeg nem Remotion.
+ */
+export function grafoDoMix(
+  sfx: readonly ResolvedCue[],
+  music: MusicBed | null,
+  trilhas: readonly TrechoParaMixar[],
+  durationSec: number,
+): string {
   // Os SFX entram por cima da narracao em -12dB, para o nivel de referencia do
   // video continuar sendo a voz, que e o que importa.
   const chain = [`[1:a]aformat=channel_layouts=stereo[narr]`]
@@ -574,6 +626,8 @@ async function muxWithNormalizedAudio(
       entrada > 0 ? `afade=t=in:st=0:d=${entrada.toFixed(3)}` : null,
       saida > 0 ? `afade=t=out:st=${(t.duracaoSec - saida).toFixed(3)}:d=${saida.toFixed(3)}` : null,
     ].filter(Boolean)
+    // Ducking: o MESMO envelope do preview, no tempo do trecho. Sem = nada muda.
+    const envelope = filtroDoEnvelope(t.envelope, t.at)
     chain.push(
       [
         `[${primeiraTrilha + k}:a]aformat=channel_layouts=stereo`,
@@ -581,6 +635,7 @@ async function muxWithNormalizedAudio(
         'asetpts=PTS-STARTPTS',
         ...fades,
         `volume=${(10 ** (t.gainDb / 20)).toFixed(5)}`,
+        ...(envelope ? [envelope] : []),
         `adelay=${ms}|${ms}[t${k}]`,
       ].join(','),
     )
@@ -609,34 +664,7 @@ async function muxWithNormalizedAudio(
    */
   const mix = `${misturado}[cru];[cru]apad,atrim=0:${durationSec.toFixed(3)},asetpts=N/SR/TB[out]`
 
-  /*
-   * O grafo vai por ARQUIVO, na pasta de trabalho do render: video longo com
-   * muitos SFX e trechos tem uma cadeia por entrada, e a linha de comando do
-   * Windows para em 32 mil caracteres. O grafo e o mesmo; so muda a porta.
-   */
-  const grafo = join(dirname(videoPath), 'mix.txt')
-  writeFileSync(grafo, [...chain, mix].join(';\n'))
-
-  await runFfmpeg([
-    '-y',
-    ...inputs,
-    '-filter_complex_script', grafo,
-    '-map', '0:v:0',
-    '-map', '[out]',
-    '-c:v', 'copy',
-    '-c:a', 'aac',
-    '-b:a', '192k',
-    '-ar', '48000',
-    // Estereo na entrega: narracao de TTS costuma vir mono, e alguns
-    // encoders de plataforma tratam mono de forma inconsistente.
-    '-ac', '2',
-    '-movflags', '+faststart',
-    // Trava de seguranca: o audio ja sai no tamanho certo do filtro, e o video
-    // vem com a duracao exata do Remotion. -t garante que nenhuma entrada
-    // (a musica em loop, em particular) estique a saida.
-    '-t', durationSec.toFixed(3),
-    outputPath,
-  ])
+  return [...chain, mix].join(';\n')
 }
 
 interface LoudnessMeasurement {

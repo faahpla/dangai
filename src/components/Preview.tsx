@@ -5,6 +5,7 @@ import { toRenderProps } from '@shared/plan'
 import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
 import { useProject } from '@/store/project'
+import { useDucking } from './som-do-preview'
 import { Video } from '@/remotion/Video'
 import { TransformNoPreview } from './TransformNoPreview'
 import { create } from 'zustand'
@@ -666,6 +667,8 @@ function Sincronia({
 function volumeDoTrecho(
   t: { gainDb: number; fadeInSec: number; fadeOutSec: number; durationSec: number; inicioSec: number; usarSec: number | null },
   local: number,
+  /** Ducking do trecho neste instante (som-do-preview.ts), em dB. */
+  extraDb = 0,
 ): number {
   const toca = duracaoDoTrecho(t)
   const entrada = Math.min(t.fadeInSec, toca)
@@ -673,7 +676,7 @@ function volumeDoTrecho(
   let envelope = 1
   if (entrada > 0 && local < entrada) envelope = Math.max(0, local / entrada)
   if (saida > 0 && local > toca - saida) envelope = Math.min(envelope, Math.max(0, (toca - local) / saida))
-  return Math.min(1, Math.max(0, 10 ** (t.gainDb / 20) * envelope))
+  return Math.min(1, Math.max(0, 10 ** ((t.gainDb + extraDb) / 20) * envelope))
 }
 
 /**
@@ -690,6 +693,13 @@ function TrilhasPreview() {
   const playing = useTocando()
   const playhead = useProject((s) => s.playhead)
   const elementos = useRef(new Map<string, HTMLAudioElement>())
+
+  // O mesmo envelope de ducking do render (som-do-preview.ts). Trecho sem
+  // `ducking`: 0 dB, nada muda.
+  const duracaoDaVoz = useProject((s) => s.audio?.durationSec)
+  const words = useProject((s) => s.transcript?.words)
+  const ducking = useDucking(trilhas, words, duracaoDaVoz)
+  const extraDb = (t: (typeof trilhas)[number], local: number): number => ducking(t.ducking, t.at + local)
 
   /*
    * QUEM TOCA E QUANDO segue a agulha; o volume segue o relogio do audio.
@@ -717,7 +727,7 @@ function TrilhasPreview() {
       if (el.paused) {
         el.currentTime = alvo
         el.playbackRate = 1
-        el.volume = volumeDoTrecho(t, playhead - t.at)
+        el.volume = volumeDoTrecho(t, playhead - t.at, extraDb(t, playhead - t.at))
         void el.play().catch(() => undefined)
         continue
       }
@@ -733,7 +743,7 @@ function TrilhasPreview() {
         el.playbackRate = 1
       }
     }
-  }, [trilhas, playing, playhead, mudas])
+  }, [trilhas, playing, playhead, mudas, ducking])
 
   /*
    * O VOLUME, pelo tempo do proprio <audio>, a cada 40 ms. Tocando do frame 0,
@@ -746,14 +756,15 @@ function TrilhasPreview() {
       for (const t of trilhas) {
         const el = elementos.current.get(t.id)
         if (!el || el.paused || mudas.includes(t.faixa)) continue
-        const v = volumeDoTrecho(t, el.currentTime - t.inicioSec)
+        const local = el.currentTime - t.inicioSec
+        const v = volumeDoTrecho(t, local, extraDb(t, local))
         // Escrever o mesmo valor de novo nao custa, mas escrever um quase igual
         // a cada 40 ms e o que fazia o volume tremer.
         if (Math.abs(el.volume - v) > 0.003) el.volume = v
       }
     }, 40)
     return () => window.clearInterval(id)
-  }, [playing, trilhas, mudas])
+  }, [playing, trilhas, mudas, ducking])
 
   return (
     <>
