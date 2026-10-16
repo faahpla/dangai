@@ -216,8 +216,10 @@ async function importClip(
       focusX: x,
       focusY: y,
       // Marcado para a interface poder DIZER que mexeu. Enquadrar doze clipes
-      // em silencio seria mudar o video sem avisar.
-      focusAuto: detectado !== null,
+      // em silencio seria mudar o video sem avisar. Projeto reaberto guarda a
+      // marca que tinha (como a imagem, abaixo): sem isso o foco automatico
+      // voltava como "posto a mao" e nao era mais atualizado.
+      focusAuto: focus ? (focus.focusAuto ?? false) : detectado !== null,
       kind: 'video',
       section: section?.index ?? null,
       ...(section === null ? {} : { sectionName: section.name }),
