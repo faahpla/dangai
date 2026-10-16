@@ -45,6 +45,7 @@ export const IPC = {
   pickMusic: 'dialog:pick-music',
   loadMusic: 'music:load',
   generateMetadata: 'metadata:generate',
+  testarGemini: 'ia:testar-gemini',
   copyText: 'clipboard:write',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
@@ -457,12 +458,20 @@ export const RELEASES_URL = `https://github.com/${REPO}/releases`
 
 /** O que a interface pode ver das configuracoes. A chave nunca volta inteira. */
 export interface PublicSettings {
+  /** A IA preferida. Sem a chave dela, o main usa a outra que tiver chave. */
+  iaProvedor: 'gemini' | 'anthropic'
+  /** Modelo do Gemini. Vazio = automatico. */
+  geminiModelo: string
+  anthropicModelo: string
   whisperModel: 'base' | 'small' | 'medium'
   sfxDir: string
   /** Raiz da biblioteca do AnCut. Vazio = o usuario ainda nao escolheu. */
   libraryDir: string
+  /** Chave da Anthropic: so se existe e os quatro ultimos caracteres. */
   hasApiKey: boolean
   apiKeyHint: string
+  hasGeminiKey: boolean
+  geminiKeyHint: string
   /** As chaves estao cifradas no disco (safeStorage). false = texto puro. */
   chavesProtegidas: boolean
   /** Curvas de movimento que ele guardou, para reusar em outros videos. */
@@ -487,6 +496,11 @@ export interface PublicSettings {
 
 export interface SettingsPatch {
   anthropicApiKey?: string
+  geminiApiKey?: string
+  iaProvedor?: 'gemini' | 'anthropic'
+  /** Vazio = automatico. */
+  geminiModelo?: string
+  anthropicModelo?: string
   whisperModel?: 'base' | 'small' | 'medium'
   sfxDir?: string
   libraryDir?: string
@@ -499,6 +513,19 @@ export interface SettingsPatch {
   recentes?: Record<string, unknown>[]
   presetsDeCor?: Record<string, unknown>[]
   presetsDeTransicao?: Record<string, unknown>[]
+}
+
+/** O resultado do botao "Testar" da chave do Gemini. */
+export interface TesteDoGemini {
+  /** Os modelos Gemini de texto que a chave enxerga, para o dropdown. */
+  modelos: string[]
+  /** O modelo que a chamada de teste usou: o escolhido ou o automatico. */
+  modelo: string
+  /**
+   * A chave vale (listar deu certo), mas a chamada falhou -- cota do dia, modelo
+   * sem cota gratis. null = tudo certo.
+   */
+  aviso: string | null
 }
 
 /**
@@ -717,8 +744,13 @@ export interface DangaiBridge {
   pickMusic(): Promise<IpcResult<MusicPick | null>>
   /** Republica no servidor local uma faixa que veio de projeto salvo. */
   loadMusic(path: string): Promise<IpcResult<MusicPick>>
-  /** Titulo, descricao e hashtags a partir do roteiro. Precisa da chave da API. */
+  /** Titulo, descricao e hashtags a partir do roteiro. Precisa de uma chave de IA. */
   generateMetadata(texto: string): Promise<IpcResult<Metadata>>
+  /**
+   * Confere a chave do Gemini: lista os modelos e faz uma chamada minima.
+   * `chave` null testa a que ja esta salva -- a salva nunca volta para ca.
+   */
+  testarGemini(chave: string | null): Promise<IpcResult<TesteDoGemini>>
   /** Copia texto para a area de transferencia pelo Electron. */
   copyText(text: string): Promise<IpcResult<null>>
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */

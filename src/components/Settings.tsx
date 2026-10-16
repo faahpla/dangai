@@ -3,12 +3,16 @@ import { FolderOpen, X } from "lucide-react";
 import type { PublicSettings } from "@shared/channels";
 import { useProject } from "@/store/project";
 import { Atalhos } from "./Atalhos";
+import { ChaveDoGemini, LINK_DA_CHAVE_DO_GEMINI } from "./ChaveDoGemini";
 
 /**
- * Um campo que importa: a chave da API. O resto e escolha rara.
+ * Um campo que importa: a chave da IA. O resto e escolha rara.
  *
  * A chave nunca volta do main por inteiro -- so um hint com os quatro ultimos
  * caracteres, o suficiente para reconhecer qual chave esta salva.
+ *
+ * O Gemini vem primeiro porque tem cota gratis; quem ja tem a chave da
+ * Anthropic continua nela sem mexer em nada (o main cai na que tiver chave).
  */
 export function Settings() {
   const open = useProject((s) => s.settingsOpen);
@@ -20,6 +24,9 @@ export function Settings() {
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [saving, setSaving] = useState(false);
+  // A lista vem do "Testar": o main so conhece os modelos depois de falar com
+  // o Google usando a chave.
+  const [modelos, setModelos] = useState<string[]>([]);
   const [aba, setAba] = useState<"geral" | "atalhos">("geral");
 
   useEffect(() => {
@@ -75,6 +82,28 @@ export function Settings() {
     }
   };
 
+  // Quem atende de verdade: a preferida so se tiver chave, como no main.
+  const emUso = !settings
+    ? null
+    : settings.iaProvedor === "gemini"
+      ? settings.hasGeminiKey
+        ? "gemini"
+        : settings.hasApiKey
+          ? "anthropic"
+          : null
+      : settings.hasApiKey
+        ? "anthropic"
+        : settings.hasGeminiKey
+          ? "gemini"
+          : null;
+
+  // O modelo salvo aparece mesmo antes de testar, ou o select mostraria
+  // "Automatico" mentindo.
+  const opcoesDeModelo =
+    settings?.geminiModelo && !modelos.includes(settings.geminiModelo)
+      ? [settings.geminiModelo, ...modelos]
+      : modelos;
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6"
@@ -123,6 +152,86 @@ export function Settings() {
           ) : (
             <>
               <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+                Inteligencia artificial
+              </label>
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    ["gemini", "Gemini (gratis)"],
+                    ["anthropic", "Anthropic"],
+                  ] as const
+                ).map(([qual, nome]) => (
+                  <button
+                    key={qual}
+                    type="button"
+                    onClick={() => void save({ iaProvedor: qual })}
+                    className={[
+                      "lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]",
+                      settings?.iaProvedor === qual
+                        ? "border-accent bg-accent-dim text-ink"
+                        : "border-line bg-elevated text-ink-2",
+                    ].join(" ")}
+                  >
+                    {nome}
+                  </button>
+                ))}
+              </div>
+              {settings && emUso !== null && emUso !== settings.iaProvedor && (
+                <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                  {emUso === "anthropic"
+                    ? "Sem a chave do Gemini, usa a da Anthropic."
+                    : "Sem a chave da Anthropic, usa a do Gemini."}
+                </p>
+              )}
+
+              <div className="mt-4 mb-1.5 flex items-baseline gap-2">
+                <label className="block text-[11px] font-medium text-ink-2">
+                  Chave do Gemini
+                </label>
+                <span className="flex-1" />
+                <a
+                  href={LINK_DA_CHAVE_DO_GEMINI}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-ink-3 underline-offset-2 hover:text-ink hover:underline"
+                >
+                  Pegar chave gratis
+                </a>
+              </div>
+              {/* Chave nova refaz o plano: o usuario acabou de habilitar a IA,
+                  como na da Anthropic. */}
+              <ChaveDoGemini
+                settings={settings}
+                onSettings={setSettings}
+                onModelos={setModelos}
+                aoSalvar={() => void analyze()}
+              />
+
+              <label className="mt-4 mb-1.5 block text-[11px] font-medium text-ink-2">
+                Modelo do Gemini
+              </label>
+              <select
+                value={settings?.geminiModelo ?? ""}
+                onChange={(event) =>
+                  void save({ geminiModelo: event.target.value })
+                }
+                className="w-full rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink"
+              >
+                <option value="">Automatico</option>
+                {opcoesDeModelo.map((modelo) => (
+                  <option key={modelo} value={modelo}>
+                    {modelo}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                {modelos.length === 0
+                  ? "Teste a chave para ver a lista. "
+                  : ""}
+                No automatico, usa o melhor flash e troca sozinho se lotar.
+              </p>
+
+              <label className="mt-4 mb-1.5 block text-[11px] font-medium text-ink-2">
                 Chave da API da Anthropic
               </label>
               <div className="flex gap-2">
@@ -151,8 +260,9 @@ export function Settings() {
                 </button>
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Fica so nesta maquina. Sem ela, as cenas sao distribuidas pelas
-                pausas da narracao.
+                As chaves ficam so nesta maquina
+                {settings?.chavesProtegidas ? ", cifradas" : ""}. Sem nenhuma,
+                as cenas sao distribuidas pelas pausas da narracao.
               </p>
 
               <div className="my-5 h-px bg-line" />

@@ -23,6 +23,7 @@ import {
   type SceneDescription,
   type SettingsPatch,
   type StartRenderArgs,
+  type TesteDoGemini,
   type TiraDaCena,
   type LegendasSincronizadas,
   type ArquivoDaBin,
@@ -74,6 +75,7 @@ import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 import { encerrarWhisper } from './services/whisper'
 import { analyze } from './services/transcribe'
 import { generateMetadata } from './services/metadata'
+import { iaDisponivel, testarGemini } from './services/llm'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
 import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
 import { caminhoDaFonte, ensureFontesDir, fontesDir, listFontes } from './services/fontes'
@@ -719,14 +721,24 @@ export function registerIpc(): void {
     return null
   })
 
+  // A chave e o provedor (Gemini ou Anthropic) vem das configuracoes, pelo llm.ts.
   handle<[string], Metadata>(IPC.generateMetadata, async (texto) => {
-    const { anthropicApiKey } = getSettings()
-    if (!anthropicApiKey) {
+    if (!iaDisponivel()) {
       throw new Error(
-        'Sem chave da Anthropic. Abra as configuracoes (Ctrl+,) e cole a sua para gerar os textos.',
+        'Sem chave de IA. Abra as configuracoes (Ctrl+,) e cole a do Gemini (gratis) ou a da Anthropic para gerar os textos.',
       )
     }
-    return generateMetadata({ apiKey: anthropicApiKey, texto })
+    return generateMetadata({ texto })
+  })
+
+  // A chave digitada vem do renderer; a salva fica aqui e nunca vai para la.
+  handle<[string | null], TesteDoGemini>(IPC.testarGemini, async (chave) => {
+    const settings = getSettings()
+    const usada = (typeof chave === 'string' ? chave.trim() : '') || settings.geminiApiKey
+    if (!usada) {
+      throw new Error('Cole a chave do Gemini antes de testar. Ela sai de graca em aistudio.google.com/apikey.')
+    }
+    return testarGemini(usada, settings.geminiModelo)
   })
 
   handle<[string], null>(IPC.copyText, async (text) => {

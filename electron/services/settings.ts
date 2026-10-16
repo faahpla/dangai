@@ -25,7 +25,7 @@ import { safeStorage } from 'electron'
  * registrarCampoDeChave, e ela ganha a mesma cifra, a mesma migracao e o mesmo
  * cuidado com a chave que nao abre, sem o nucleo conhecer o modulo.
  */
-const CAMPOS_DE_CHAVE: string[] = ['anthropicApiKey']
+const CAMPOS_DE_CHAVE: string[] = ['anthropicApiKey', 'geminiApiKey']
 
 /**
  * Poe mais um campo no cofre. Ele mora na raiz do settings.json (no disco como
@@ -60,6 +60,17 @@ export interface Cofre {
 
 export interface Settings {
   anthropicApiKey: string
+  /** Chave do Google AI Studio. O Gemini e o padrao: tem cota gratis. */
+  geminiApiKey: string
+  /**
+   * Qual IA ele prefere. Sem a chave dela, vale a outra que tiver chave -- quem
+   * so tem a da Anthropic (todo usuario antigo) continua como estava.
+   */
+  iaProvedor: 'gemini' | 'anthropic'
+  /** Modelo do Gemini. Vazio = automatico, o melhor "flash" que a chave enxerga. */
+  geminiModelo: string
+  /** Modelo da Anthropic. Antes fixo no planner e no metadata. */
+  anthropicModelo: string
   /** Modelo do Whisper: quanto maior, melhor e mais lento. */
   whisperModel: 'base' | 'small' | 'medium'
   /** Pasta dos SFX. Vazio = usa a que vem com o app. */
@@ -119,6 +130,11 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   anthropicApiKey: '',
+  geminiApiKey: '',
+  iaProvedor: 'gemini',
+  geminiModelo: '',
+  // O mesmo que o planner e o metadata usavam fixo: quem so tem a Anthropic nao muda de modelo.
+  anthropicModelo: 'claude-sonnet-5',
   whisperModel: 'small',
   sfxDir: '',
   libraryDir: '',
@@ -299,14 +315,19 @@ export function decifrar(base64: string): string | null {
 }
 
 /** A interface nunca recebe a chave inteira -- so o suficiente para reconhecer. */
-export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'modulos'> & {
+export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'geminiApiKey' | 'modulos'> & {
   hasApiKey: boolean
   apiKeyHint: string
+  hasGeminiKey: boolean
+  geminiKeyHint: string
   chavesProtegidas: boolean
 } {
   const settings = getSettings()
   const key = settings.anthropicApiKey
   return {
+    iaProvedor: settings.iaProvedor,
+    geminiModelo: settings.geminiModelo,
+    anthropicModelo: settings.anthropicModelo,
     whisperModel: settings.whisperModel,
     sfxDir: settings.sfxDir,
     libraryDir: settings.libraryDir,
@@ -321,6 +342,8 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'mo
     presetsDeTransicao: settings.presetsDeTransicao,
     hasApiKey: key.length > 0,
     apiKeyHint: dicaDaChave(key),
+    hasGeminiKey: settings.geminiApiKey.length > 0,
+    geminiKeyHint: dicaDaChave(settings.geminiApiKey),
     chavesProtegidas: cifraDisponivel(),
   }
 }
@@ -338,6 +361,10 @@ function coerce(raw: unknown): Settings {
   const settings: Settings = {
     anthropicApiKey:
       typeof value['anthropicApiKey'] === 'string' ? value['anthropicApiKey'].trim() : '',
+    geminiApiKey: typeof value['geminiApiKey'] === 'string' ? value['geminiApiKey'].trim() : '',
+    iaProvedor: value['iaProvedor'] === 'anthropic' ? 'anthropic' : 'gemini',
+    geminiModelo: nomeDeModelo(value['geminiModelo'], ''),
+    anthropicModelo: nomeDeModelo(value['anthropicModelo'], DEFAULTS.anthropicModelo),
     whisperModel: model === 'base' || model === 'small' || model === 'medium' ? model : 'small',
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
@@ -395,6 +422,19 @@ function coerce(raw: unknown): Settings {
     if (typeof chave === 'string') (settings as unknown as Record<string, unknown>)[campo] = chave.trim()
   }
   return settings
+}
+
+/**
+ * O nome de um modelo, ou o padrao.
+ *
+ * O do Gemini vai parar no caminho da URL (`models/<nome>:generateContent`), e
+ * o valor chega do renderer e de um arquivo editavel a mao: so letra, numero,
+ * ponto, traco e sublinhado. Barra ou dois-pontos ali mudariam o endpoint.
+ */
+export function nomeDeModelo(raw: unknown, padrao: string): string {
+  if (typeof raw !== 'string') return padrao
+  const nome = raw.trim().replace(/^models\//, '')
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(nome) ? nome : padrao
 }
 
 /**

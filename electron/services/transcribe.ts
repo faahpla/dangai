@@ -14,6 +14,7 @@ import { parseSrt } from './srt'
 import { transcribe } from './whisper'
 import { detectSilences } from './silence'
 import { planWithAI } from './planner'
+import { ErroDeIa, iaDisponivel } from './llm'
 import { getSettings } from './settings'
 import { vocabularioDaBiblioteca } from './vocabulario'
 
@@ -84,7 +85,6 @@ async function analisar(
   publishThumb: (absolutePath: string) => string,
 ): Promise<AnalysisResult> {
   const { audioPath, subtitlePath, images, durationSec, script } = request
-  const settings = getSettings()
 
   /*
    * A dica do Whisper sai da BIBLIOTECA, e nao dos nomes dos arquivos.
@@ -130,11 +130,11 @@ async function analisar(
   }
 
   // --------------------------------------------------------------- degrau 1: IA
-  if (settings.anthropicApiKey && transcript && transcript.text.length > 0) {
+  // Qualquer provedor serve (Gemini ou Anthropic): o llm.ts escolhe pela chave.
+  if (iaDisponivel() && transcript && transcript.text.length > 0) {
     try {
       onProgress('Distribuindo as cenas...')
       const raw = await planWithAI({
-        apiKey: settings.anthropicApiKey,
         imageCount: images.length,
         durationSec,
         transcript,
@@ -166,7 +166,11 @@ async function analisar(
         images.length,
         durationSec,
         transcript,
-        friendlyAiNote(note),
+        // A nota do llm.ts ja diz o que fazer (a cota do dia do Gemini, por
+        // exemplo, renova a meia-noite); o friendlyAiNote fica para o resto.
+        err instanceof ErroDeIa
+          ? `${err.nota} Cenas distribuidas pelas pausas da narracao.`
+          : friendlyAiNote(note),
         scriptNote,
         porPartes.note,
       )
@@ -182,7 +186,7 @@ async function analisar(
     images.length,
     durationSec,
     transcript,
-    whyNoAI(!!settings.anthropicApiKey, transcript),
+    whyNoAI(iaDisponivel(), transcript),
     scriptNote,
     porPartes.note,
   )

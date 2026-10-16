@@ -1,7 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
 import { metadataSchema, type Metadata } from '@shared/contract'
+import { gerarJson } from './llm'
 
 /**
  * Titulo, descricao e hashtags a partir do roteiro.
@@ -14,20 +13,19 @@ import { metadataSchema, type Metadata } from '@shared/contract'
  * trabalho manual que hoje acontece depois de cada render.
  */
 
-const MODEL = 'claude-sonnet-5'
-
 /**
  * Contrato de saida, fechado e sem default -- saida estruturada exige isso, e
  * `.default()` nao tem como ser expresso em JSON Schema.
+ *
+ * Exportado para o teste conferir o JSON Schema que vai para o Gemini.
  */
-const aiMetadataSchema = z.object({
+export const aiMetadataSchema = z.object({
   titles: z.array(z.string()),
   description: z.string(),
   hashtags: z.array(z.string()),
 })
 
 export interface MetadataRequest {
-  apiKey: string
   /** Roteiro escrito, ou o texto transcrito quando nao ha roteiro. */
   texto: string
 }
@@ -40,23 +38,21 @@ export async function generateMetadata(request: MetadataRequest): Promise<Metada
     )
   }
 
-  const client = new Anthropic({ apiKey: request.apiKey, maxRetries: 1 })
-
-  const message = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 2048,
-    output_config: { format: zodOutputFormat(aiMetadataSchema) },
-    system:
+  // A chave e o provedor vem das configuracoes, pelo llm.ts. Aqui a nota vai
+  // direto para a interface: ninguem traduz o erro depois.
+  const resposta = await gerarJson({
+    schema: aiMetadataSchema,
+    etapa: 'textos',
+    maxTokens: 2048,
+    sistema:
       'Voce escreve o titulo, a descricao e as hashtags de um short de recap de anime, ' +
       'em portugues do Brasil, para YouTube Shorts e TikTok. Escreve como quem fala com ' +
       'a comunidade de anime, sem soar como anuncio.',
-    messages: [{ role: 'user', content: buildPrompt(texto) }],
+    prompt: buildPrompt(texto),
   })
+  if (!resposta.ok) throw new Error(resposta.nota)
 
-  const output = message.parsed_output
-  if (!output) throw new Error('A IA nao devolveu os textos.')
-
-  const parsed = metadataSchema.safeParse(output)
+  const parsed = metadataSchema.safeParse(resposta.valor)
   if (!parsed.success) {
     throw new Error(`Textos invalidos: ${parsed.error.issues[0]?.message ?? 'formato inesperado'}`)
   }

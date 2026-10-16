@@ -18,6 +18,7 @@ import {
   type SceneDescription,
   type SettingsPatch,
   type StartRenderArgs,
+  type TesteDoGemini,
   type TiraDaCena,
   type LegendasSincronizadas,
   type ArquivoDaBin,
@@ -196,6 +197,9 @@ const bridge: DangaiBridge = {
 
   generateMetadata: (texto) =>
     ipcRenderer.invoke(IPC.generateMetadata, texto) as Promise<IpcResult<Metadata>>,
+
+  testarGemini: (chave) =>
+    ipcRenderer.invoke(IPC.testarGemini, chave) as Promise<IpcResult<TesteDoGemini>>,
 
   copyText: (text) => ipcRenderer.invoke(IPC.copyText, text) as Promise<IpcResult<null>>,
 
