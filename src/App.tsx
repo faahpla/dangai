@@ -30,6 +30,15 @@ import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
 import { semExtensaoDeProjeto } from '@shared/project-file'
 
+/**
+ * Deslizante, caixinha e botao nao tem texto para desfazer: depois de arrastar
+ * o volume da musica (o foco fica no range), o Ctrl+Z e do projeto. As teclas
+ * soltas (setas) continuam do deslizante.
+ */
+function semTexto(alvo: EventTarget | null): boolean {
+  return alvo instanceof HTMLInputElement && ['range', 'checkbox', 'radio', 'button', 'color'].includes(alvo.type)
+}
+
 /** O foco esta num lugar onde o proprio campo trata o teclado. */
 function editando(alvo: EventTarget | null): boolean {
   if (!(alvo instanceof HTMLElement)) return false
@@ -168,7 +177,7 @@ export function App() {
          * desfazer uma marcacao (ou a troca do roteiro) e justamente o que se
          * quer ali. Na busca, o Ctrl+Z continua sendo do campo.
          */
-        if (store.libraryOpen && (acao === 'desfazer' || acao === 'refazer') && !editando(event.target)) {
+        if (store.libraryOpen && (acao === 'desfazer' || acao === 'refazer') && (!editando(event.target) || semTexto(event.target))) {
           event.preventDefault()
           if (acao === 'desfazer') desfazer()
           else refazer()
@@ -228,7 +237,7 @@ export function App() {
        */
       if (editando(event.target)) {
         if (ehTeclaSolta(combo)) return
-        if (acao === 'desfazer' || acao === 'refazer') return
+        if ((acao === 'desfazer' || acao === 'refazer') && !semTexto(event.target)) return
       }
 
       /*
