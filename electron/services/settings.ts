@@ -60,6 +60,15 @@ export interface Settings {
   presetsDeCor: Record<string, unknown>[]
   /** Transicoes configuradas e guardadas com nome. Conferidas no renderer. */
   presetsDeTransicao: Record<string, unknown>[]
+  /**
+   * As configuracoes de cada MODULO (o Gerar recap), por id do modulo.
+   *
+   * O nucleo nao entende nada daqui: guarda e devolve como veio. Sem isto, o
+   * `coerce` -- que so deixa passar o que conhece -- apagaria as preferencias
+   * e as chaves do modulo no primeiro save. Quem confere o proprio pedaco e o
+   * modulo. Nao vai para o renderer por aqui.
+   */
+  modulos: Record<string, unknown>
 }
 
 const DEFAULTS: Settings = {
@@ -76,6 +85,7 @@ const DEFAULTS: Settings = {
   recentes: [],
   presetsDeCor: [],
   presetsDeTransicao: [],
+  modulos: {},
 }
 
 let filePath: string | null = null
@@ -117,7 +127,7 @@ export function saveSettings(patch: Partial<Settings>): Settings {
 }
 
 /** A interface nunca recebe a chave inteira -- so o suficiente para reconhecer. */
-export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey'> & {
+export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'modulos'> & {
   hasApiKey: boolean
   apiKeyHint: string
 } {
@@ -193,6 +203,10 @@ function coerce(raw: unknown): Settings {
           .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
           .slice(0, 50)
       : [],
+    modulos:
+      typeof value['modulos'] === 'object' && value['modulos'] !== null && !Array.isArray(value['modulos'])
+        ? (value['modulos'] as Record<string, unknown>)
+        : {},
   }
 }
 

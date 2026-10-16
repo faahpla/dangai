@@ -23,6 +23,8 @@ import {
   MUSIC_GAIN_DB_DEFAULT,
   trechoDeAudioSchema,
   sobreposicaoSchema,
+  modulosSchema,
+  temDadosDeModulo,
   PLAN_ORIGINS,
   scenePlanSchema,
   transcriptSchema,
@@ -44,8 +46,30 @@ import {
  * depois de mesclado, dividido e corrigido na mao.
  */
 
-export const PROJECT_FILE_VERSION = 1
+/**
+ * A versao MAIS NOVA que este app le.
+ *
+ * 1 = o formato de sempre. 2 = o mesmo formato com DADOS DE MODULO (o Gerar
+ * recap). O arquivo so e gravado como 2 quando tem esses dados: um Dangai
+ * antigo, que nao sabe guardar o que nao conhece, recusa abrir ("atualize o
+ * app") em vez de abrir e apagar em silencio o trabalho do modulo no proximo
+ * save. Projeto sem modulo continua 1 e abre em qualquer versao.
+ */
+export const PROJECT_FILE_VERSION = 2
+export const VERSAO_SEM_MODULOS = 1
 export const PROJECT_EXTENSION = 'dangai'
+
+/**
+ * O que abre como projeto. O .anirecap e o projeto do AniRecap Studio (o app do
+ * Levi, irmao deste): o MESMO formato, com outro nome. Abre normal, mas salvar
+ * nunca grava por cima dele -- o "Salvar" pergunta onde, e sugere o .dangai.
+ */
+export const PROJECT_EXTENSIONS_ABRIR = [PROJECT_EXTENSION, 'anirecap'] as const
+
+export const ehProjetoDoStudio = (caminho: string): boolean => /\.anirecap$/i.test(caminho)
+
+/** O nome do arquivo sem a extensao de projeto, qualquer uma delas. */
+export const semExtensaoDeProjeto = (nome: string): string => nome.replace(/\.(dangai|anirecap)$/i, '')
 
 /**
  * Um arquivo do disco referenciado pelo projeto.
@@ -266,8 +290,50 @@ export const projectFileSchema = z.object({
    * disto reabre sem selecao, que e exatamente como ele foi salvo.
    */
   biblioteca: bibliotecaSchema,
+  /** Dados de modulo do projeto, por id do modulo. Ver modulosSchema. */
+  modulos: modulosSchema,
 })
 export type ProjectFile = z.infer<typeof projectFileSchema>
+
+/**
+ * A LEITURA QUE NAO PERDE NADA.
+ *
+ * O zod descarta o que o schema nao conhece, e o save seguinte regravava o
+ * arquivo sem aquilo -- um projeto do AniRecap Studio aberto aqui perdia o
+ * `studio` da raiz e o `ducking`/`papel` dos trechos em silencio. Lido por
+ * este schema, o que e desconhecido FICA: na raiz, o store guarda a parte (ver
+ * chavesDesconhecidas) e devolve ao salvar; nos trechos e clipes, as copias
+ * sao feitas com spread e o campo vai junto.
+ *
+ * O TIPO continua o do projectFileSchema: o resto do app nao ve campo
+ * desconhecido nenhum.
+ */
+export const projectFileSchemaQuePreserva = projectFileSchema
+  .extend({
+    trilhas: z.array(trechoDeAudioSchema.loose()).default([]),
+    sobreposicoes: z.array(sobreposicaoSchema.loose()).default([]),
+  })
+  .loose()
+
+/** Os campos da raiz que este app nao conhece -- os de um app irmao, ou de uma versao futura. */
+export function chavesDesconhecidas(file: object): Record<string, unknown> {
+  const conhecidas = new Set(Object.keys(projectFileSchema.shape))
+  return Object.fromEntries(Object.entries(file).filter(([k]) => !conhecidas.has(k)))
+}
+
+/** Tem dado de modulo em algum lugar: na raiz, num trecho de audio ou num clipe. */
+export function projetoTemModulos(file: Pick<ProjectFile, 'modulos' | 'trilhas' | 'sobreposicoes'>): boolean {
+  return (
+    temDadosDeModulo(file.modulos) ||
+    file.trilhas.some((t) => temDadosDeModulo(t.modulos)) ||
+    file.sobreposicoes.some((o) => temDadosDeModulo(o.modulos))
+  )
+}
+
+/** A versao com que o arquivo e gravado: 2 so quando ha dados de modulo. */
+export function versaoParaGravar(file: Pick<ProjectFile, 'modulos' | 'trilhas' | 'sobreposicoes'>): number {
+  return projetoTemModulos(file) ? PROJECT_FILE_VERSION : VERSAO_SEM_MODULOS
+}
 
 /**
  * O autosave embrulha o projeto para carregar tambem de onde ele veio.
@@ -279,6 +345,12 @@ export type ProjectFile = z.infer<typeof projectFileSchema>
 export const autosaveSchema = z.object({
   projectPath: z.string().nullable(),
   file: projectFileSchema,
+})
+
+/** O autosave lido sem perder o que nao se conhece. Ver projectFileSchemaQuePreserva. */
+export const autosaveSchemaQuePreserva = z.object({
+  projectPath: z.string().nullable(),
+  file: projectFileSchemaQuePreserva,
 })
 export type Autosave = z.infer<typeof autosaveSchema>
 

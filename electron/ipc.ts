@@ -38,6 +38,9 @@ import type {
 } from '@shared/contract'
 import {
   PROJECT_EXTENSION,
+  PROJECT_EXTENSIONS_ABRIR,
+  ehProjetoDoStudio,
+  semExtensaoDeProjeto,
   type OpenedProject,
   type ProjectFile,
 } from '@shared/project-file'
@@ -505,11 +508,11 @@ export function registerIpc(): void {
             'srt',
             'txt',
             'md',
-            PROJECT_EXTENSION,
+            ...PROJECT_EXTENSIONS_ABRIR,
           ],
         },
         // Varios projetos de uma vez entram na fila de render.
-        { name: 'Projetos do Dangai', extensions: [PROJECT_EXTENSION] },
+        { name: 'Projetos do Dangai', extensions: [...PROJECT_EXTENSIONS_ABRIR] },
         { name: 'Roteiro', extensions: ['txt', 'md'] },
         { name: 'Audio', extensions: [...AUDIO_EXTENSIONS] },
         { name: 'Imagens', extensions: [...IMAGE_EXTENSIONS] },
@@ -657,10 +660,20 @@ export function registerIpc(): void {
     async ({ path, file, suggestedName }) => {
       let alvo = path
 
-      if (!alvo) {
+      /*
+       * Um .anirecap (o projeto do AniRecap Studio) nunca e regravado daqui: o
+       * Studio ainda abre esse arquivo, e este app pode gravar coisa que ele
+       * nao entende. O "Salvar" vira "Salvar como", sugerindo um .dangai com
+       * o mesmo nome, na mesma pasta.
+       */
+      const doStudio = alvo !== null && ehProjetoDoStudio(alvo)
+      if (!alvo || doStudio) {
         const result = await dialog.showSaveDialog({
           title: 'Salvar projeto',
-          defaultPath: `${suggestedName}.${PROJECT_EXTENSION}`,
+          defaultPath:
+            doStudio && alvo
+              ? `${semExtensaoDeProjeto(alvo)}.${PROJECT_EXTENSION}`
+              : `${suggestedName}.${PROJECT_EXTENSION}`,
           filters: [{ name: 'Projeto do Dangai', extensions: [PROJECT_EXTENSION] }],
         })
         if (result.canceled || !result.filePath) return null
@@ -682,7 +695,7 @@ export function registerIpc(): void {
       const result = await dialog.showOpenDialog({
         title: 'Abrir projeto',
         properties: ['openFile'],
-        filters: [{ name: 'Projeto do Dangai', extensions: [PROJECT_EXTENSION] }],
+        filters: [{ name: 'Projeto do Dangai', extensions: [...PROJECT_EXTENSIONS_ABRIR] }],
       })
       if (result.canceled || result.filePaths.length === 0) return null
       alvo = result.filePaths[0]!

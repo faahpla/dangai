@@ -113,7 +113,8 @@ export function classifyFile(
   if ((VIDEO_EXTENSIONS as readonly string[]).includes(ext)) return 'video'
   if (ext === 'srt') return 'subtitle'
   if (ext === 'txt' || ext === 'md') return 'script'
-  if (ext === 'dangai') return 'project'
+  // .anirecap: o projeto do AniRecap Studio, no mesmo formato.
+  if (ext === 'dangai' || ext === 'anirecap') return 'project'
   return 'unknown'
 }
 

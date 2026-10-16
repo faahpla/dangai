@@ -97,7 +97,8 @@ import {
   totalFrames,
 } from '@shared/plan'
 import type { CaptionBlock } from '@shared/contract'
-import { PROJECT_FILE_VERSION, type ProjectFile } from '@shared/project-file'
+import { chavesDesconhecidas, semExtensaoDeProjeto, versaoParaGravar, type ProjectFile } from '@shared/project-file'
+import { temDadosDeModulo, type Modulos } from '@shared/contract'
 import { herdarAjustes, reaproveitar } from '@shared/remontar'
 import { retemporizar } from '@shared/legendas'
 import { abrirEspaco, removerCena, repararMetadesDeBaixo } from '@shared/indices'
@@ -501,6 +502,22 @@ export interface ProjectState {
   projectDirty: boolean
   /** Sobrou trabalho da ultima sessao. So consultado no estado vazio. */
   hasAutosave: boolean
+
+  /**
+   * OS DADOS DE MODULO do projeto (o Gerar recap), por id do modulo. O nucleo
+   * so guarda e devolve: vai e volta do arquivo, entra no Ctrl+Z e no autosave.
+   */
+  modulos: Modulos
+  /** Le o pedaco de um modulo. undefined = o modulo nao guardou nada aqui. */
+  lerModulo: (id: string) => unknown
+  /** Grava (ou, com undefined, apaga) o pedaco de um modulo. Um passo de Ctrl+Z. */
+  gravarModulo: (id: string, dados: unknown) => void
+  /**
+   * Os campos da raiz do arquivo que este app NAO conhece -- de um app irmao
+   * (o `studio` do AniRecap Studio) ou de uma versao futura. Nao sao editados:
+   * voltam para o arquivo como vieram.
+   */
+  extrasDoProjeto: Record<string, unknown>
 
   phase: () => Phase
   /** `parte` nomeia uma parte do roteiro para este material. So a Biblioteca usa. */
@@ -1234,6 +1251,16 @@ export const useProject = create<ProjectState>((set, get) => ({
   projectPath: null,
   projectDirty: false,
   hasAutosave: false,
+  modulos: {},
+  extrasDoProjeto: {},
+
+  lerModulo: (id) => get().modulos[id],
+
+  gravarModulo: (id, dados) =>
+    set((state) => {
+      const { [id]: _antigo, ...resto } = state.modulos
+      return { modulos: dados === undefined ? resto : { ...resto, [id]: dados }, projectDirty: true }
+    }),
 
   phase: () => {
     const state = get()
@@ -4566,6 +4593,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       metadata: null,
       projectPath: null,
       projectDirty: false,
+      modulos: {},
+      extrasDoProjeto: {},
     }),
 
   // ------------------------------------------------------------------ projeto
@@ -4577,8 +4606,14 @@ export const useProject = create<ProjectState>((set, get) => ({
     // `rel` sai null daqui: quem sabe para onde o arquivo esta indo e o main,
     // que recalcula todos na hora de gravar. "Salvar como" em outra pasta
     // reescreve os caminhos relativos sem o renderer participar.
+    const sobreposicoes = state.sobreposicoes.map(({ url: _fora, ...resto }) => resto)
+    const trilhas = state.trilhas.map(({ url: _fora, ...resto }) => resto)
+    const modulos = temDadosDeModulo(state.modulos) ? state.modulos : undefined
     return {
-      version: PROJECT_FILE_VERSION,
+      // O que veio de um app irmao (ou de uma versao futura) volta como veio.
+      // Primeiro, para nada daqui ser sobrescrito por ele.
+      ...state.extrasDoProjeto,
+      version: versaoParaGravar({ modulos, trilhas, sobreposicoes }),
       savedAt: new Date().toISOString(),
       formato: state.formato,
       audio: { path: state.audio.path, rel: null, fileName: state.audio.fileName },
@@ -4619,8 +4654,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       captionStroke: state.captionStroke,
       // A URL fica de fora: ela e desta sessao e nao vale nada amanha.
       sfxManual: state.sfxManual.map(({ url: _fora, ...resto }) => resto),
-      trilhas: state.trilhas.map(({ url: _fora, ...resto }) => resto),
-      sobreposicoes: state.sobreposicoes.map(({ url: _fora, ...resto }) => resto),
+      trilhas,
+      sobreposicoes,
       faixasMudas: state.faixasMudas,
       cenasTrancadas: state.cenasTrancadas,
       captionY: state.captionY,
@@ -4652,6 +4687,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         cortes: state.blockCuts,
         ativo: state.activeBlock,
       },
+      ...(modulos ? { modulos } : {}),
     }
   },
 
@@ -4742,7 +4778,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       .filter((path) => !existentes.has(path))
       .map((path) => ({
         path,
-        fileName: path.split(/[\\/]/).pop()?.replace(/\.dangai$/i, '') ?? path,
+        fileName: semExtensaoDeProjeto(path.split(/[\\/]/).pop() ?? path),
         status: 'pendente' as const,
         output: null,
         error: null,
@@ -4981,6 +5017,10 @@ async function applyProjectFile(
       // texto antigo seria afirmar um resultado que esta sessao nao mediu.
       scriptNote: null,
       busy: null,
+
+      // Os dados de modulo e o que este app nao conhece voltam intactos.
+      modulos: file.modulos ?? {},
+      extrasDoProjeto: chavesDesconhecidas(file),
 
       projectPath: path,
       projectDirty: sujo,

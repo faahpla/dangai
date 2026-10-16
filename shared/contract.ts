@@ -1355,6 +1355,21 @@ export function rampaDoFade(quadro: number, duracao: number, entra: number, sai:
 export const AJUSTE_DE_COR_PADRAO: AjusteDeCor = ajusteDeCorSchema.parse({})
 
 /**
+ * OS DADOS DE MODULO, por id do modulo ("recap" e o Gerar recap do Levi).
+ *
+ * O nucleo nao interpreta nada daqui: so GUARDA e DEVOLVE como veio -- ao
+ * abrir, salvar, desfazer, copiar, colar, duplicar e cortar na agulha. Quem
+ * valida o proprio pedaco e o modulo. Um pedaco que nao e objeto e jogado fora
+ * sozinho (catch), em vez de impedir o projeto de abrir.
+ */
+export const modulosSchema = z.record(z.string(), z.unknown()).optional().catch(undefined)
+export type Modulos = Record<string, unknown>
+
+/** Tem algum dado de modulo de verdade (nao vazio)? */
+export const temDadosDeModulo = (m: Modulos | undefined | null): boolean =>
+  m !== undefined && m !== null && Object.keys(m).length > 0
+
+/**
  * Um QUADRO-CHAVE do transform de um clipe da faixa de video (ou da camada de
  * ajuste). `t` em segundos desde o inicio do clipe. O giro aqui pode passar de
  * 180 graus: de 0 a 360 e uma volta inteira. Ver shared/transform.ts.
@@ -1438,6 +1453,8 @@ export const sobreposicaoSchema = z.object({
    * quadro transparente inteiro), compensando a posicao para nada pular.
    */
   pivo: pivoSchema.optional(),
+  /** Dados de modulo deste clipe. Ver modulosSchema. */
+  modulos: modulosSchema,
 })
 export type SobreposicaoSalva = z.infer<typeof sobreposicaoSchema>
 
@@ -1805,6 +1822,8 @@ export const trechoDeAudioSchema = z.object({
   fadeOutSec: z.number().min(0).max(3600).default(1),
   peaks: z.array(z.number().min(0).max(1)).default([]),
   rms: z.array(z.number().min(0).max(1)).default([]),
+  /** Dados de modulo deste trecho. Ver modulosSchema. */
+  modulos: modulosSchema,
 })
 export type TrechoDeAudioSalvo = z.infer<typeof trechoDeAudioSchema>
 

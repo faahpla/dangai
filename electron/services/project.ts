@@ -9,9 +9,10 @@ import {
 } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
-  autosaveSchema,
-  projectFileSchema,
+  autosaveSchemaQuePreserva as autosaveSchema,
+  projectFileSchemaQuePreserva as projectFileSchema,
   PROJECT_FILE_VERSION,
+  versaoParaGravar,
   type FileReference,
   type OpenedProject,
   type ProjectFile,
@@ -96,7 +97,7 @@ export function saveProjectFile(path: string, file: ProjectFile): void {
   // arquivo esta indo. "Salvar como" numa outra pasta reescreve todos eles.
   const gravado: ProjectFile = {
     ...file,
-    version: PROJECT_FILE_VERSION,
+    version: versaoParaGravar(file),
     savedAt: new Date().toISOString(),
     audio: withRel(file.audio, base),
     subtitle: file.subtitle ? withRel(file.subtitle, base) : null,
@@ -156,7 +157,7 @@ export function writeAutosave(file: ProjectFile, projectPath: string | null): vo
   // faz sentido para algo guardado no userData.
   const conteudo = {
     projectPath,
-    file: { ...file, version: PROJECT_FILE_VERSION },
+    file: { ...file, version: versaoParaGravar(file) },
   }
   writeAtomic(autosavePath, JSON.stringify(conteudo, null, 2))
 }

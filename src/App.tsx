@@ -28,6 +28,7 @@ import { CommandPalette } from '@/components/CommandPalette'
 import { Library } from '@/components/Library'
 import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
+import { semExtensaoDeProjeto } from '@shared/project-file'
 
 /** O foco esta num lugar onde o proprio campo trata o teclado. */
 function editando(alvo: EventTarget | null): boolean {
@@ -118,7 +119,8 @@ export function App() {
   }, [projectPath])
 
   useEffect(() => {
-    const nome = projectPath?.split(/[\\/]/).pop()?.replace(/\.dangai$/i, '') ?? null
+    const arquivo = projectPath?.split(/[\\/]/).pop()
+    const nome = arquivo ? semExtensaoDeProjeto(arquivo) : null
     document.title = nome
       ? `${projectDirty ? '• ' : ''}${nome} — Dangai`
       : `${projectDirty ? '• ' : ''}Dangai`

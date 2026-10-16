@@ -62,6 +62,8 @@ export const CAMPOS = [
   'blockSplits',
   'blockCuts',
   'escolhidos',
+  // Os dados de modulo (o Gerar recap): uma acao do modulo e desfeita como as outras.
+  'modulos',
 ] as const
 
 export type CampoDoDocumento = (typeof CAMPOS)[number]

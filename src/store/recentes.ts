@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { semExtensaoDeProjeto } from '@shared/project-file'
 import { useProject } from './project'
 
 /**
@@ -72,7 +73,7 @@ export const useRecentes = create<EstadoDosRecentes>((set, get) => {
       const capa = primeira ? (p.images[primeira.imageIndex]?.thumbnail ?? null) : (p.images[0]?.thumbnail ?? null)
       const novo: Recente = {
         path,
-        nome: path.split(/[\\/]/).pop()?.replace(/\.dangai$/i, '') ?? path,
+        nome: semExtensaoDeProjeto(path.split(/[\\/]/).pop() ?? path),
         // Miniatura grande demais nao entra: o settings.json e lido a cada abertura.
         capa: capa && capa.length < 60_000 ? capa : null,
         em: Date.now(),
