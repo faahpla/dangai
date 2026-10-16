@@ -22,6 +22,10 @@
   },
   "include": [
     "electron/**/*.ts",
+    "modulos/registro.main.ts",
+    "modulos/registro.preload.ts",
+    "modulos/*/electron/**/*.ts",
+    "modulos/*/shared/**/*.ts",
     "shared/**/*.ts",
     "electron.vite.config.ts",
     "remotion.config.ts",

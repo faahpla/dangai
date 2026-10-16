@@ -1,3 +1,4 @@
+import { rotuloDoClipe } from '@/modulos/ganchos'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Columns2, Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
@@ -904,7 +905,7 @@ export function Timeline() {
                 faixa: o.faixa,
                 at: o.at,
                 toca: o.usarSec ?? o.durationSec - o.inicioSec,
-                nome: o.fileName,
+                nome: rotuloDoClipe({ tipo: 'video', clipe: o }) ?? o.fileName,
                 imagem: o.tipo === 'image' ? o.url : undefined,
                 ajuste: o.tipo === 'ajuste',
                 fadeInSec: o.fadeInSec ?? 0,
@@ -1246,7 +1247,7 @@ export function Timeline() {
                 faixa: t.faixa,
                 at: t.at,
                 toca: duracaoDoTrecho(t),
-                nome: t.fileName,
+                nome: rotuloDoClipe({ tipo: 'audio', clipe: t }) ?? t.fileName,
                 // A onda fina do arquivo, quando ja chegou; ate la, a curta do projeto.
                 peaks: ondas[t.path]?.peaks ?? t.peaks,
                 rms: ondas[t.path]?.rms ?? t.rms,

@@ -22,5 +22,15 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "shared/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "shared/**/*.ts",
+    "modulos/registro.renderer.ts",
+    "modulos/registro.preload.ts",
+    "modulos/*/electron/ponte.ts",
+    "modulos/*/src/**/*.ts",
+    "modulos/*/src/**/*.tsx",
+    "modulos/*/shared/**/*.ts"
+  ]
 }

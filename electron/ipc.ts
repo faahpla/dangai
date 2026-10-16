@@ -94,26 +94,9 @@ import { sondarVideoPronto, tiraDoClipe } from './services/clips'
 import { mesclarClipes, type ResultadoDaMescla } from './services/mesclar'
 import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
+import { handle } from './handle'
+import { motivoParaNaoAtualizar } from './modulos'
 
-/**
- * Envolve um handler para que erro nunca atravesse a ponte como excecao. O
- * renderer sempre recebe um valor, e a mensagem ja esta em portugues pronta
- * para virar toast.
- */
-function handle<Args extends unknown[], T>(
-  channel: string,
-  fn: (...args: Args) => Promise<T>,
-): void {
-  ipcMain.handle(channel, async (_event, ...args: Args): Promise<IpcResult<T>> => {
-    try {
-      return { ok: true, value: await fn(...args) }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(`[ipc:${channel}]`, err)
-      return { ok: false, error: message }
-    }
-  })
-}
 
 function broadcast(progress: RenderProgress): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -494,6 +477,10 @@ export function registerIpc(): void {
   handle<[], string>(IPC.appVersion, async () => app.getVersion())
 
   handle<[], null>(IPC.installUpdate, async () => {
+    // Um modulo no meio de algo que nao pode ser cortado (um download, um
+    // motor trabalhando) segura a troca: o recado volta para a barra.
+    const motivo = motivoParaNaoAtualizar()
+    if (motivo) throw new Error(motivo)
     await installUpdate()
     return null
   })

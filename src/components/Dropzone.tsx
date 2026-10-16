@@ -8,7 +8,8 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { BotoesDosModulosNaTelaInicial } from "@/modulos";
 import { useProject } from "@/store/project";
 import { classifyFile } from "@shared/channels";
 import { useRecentes } from "@/store/recentes";
@@ -25,10 +26,17 @@ interface DropzoneProps {
 export function Dropzone({ isDragging }: DropzoneProps) {
   const ingest = useProject((s) => s.ingest);
   const busy = useProject((s) => s.busy);
+  // Um botao de modulo (o "Gerar recap") com o arquivo em cima dele: a area
+  // de soltar do nucleo se apaga, para nao parecer que vai cair nela.
+  const [alvoDeModulo, setAlvoDeModulo] = useState(false);
+  const destaque = isDragging && !alvoDeModulo;
+  useEffect(() => {
+    if (!isDragging) setAlvoDeModulo(false);
+  }, [isDragging]);
 
   const pick = async () => {
     const result = await window.dangai.pickFiles();
-    if (result.ok && result.value.length > 0) await ingest(result.value);
+    if (result.ok && result.value.length > 0) await ingest(result.value, undefined, "dialogo");
   };
 
   return (
@@ -41,20 +49,20 @@ export function Dropzone({ isDragging }: DropzoneProps) {
           className={[
             "group relative flex h-full w-full flex-col items-center justify-center gap-5 rounded-lg",
             "border border-dashed transition-colors duration-200 ease-dangai",
-            isDragging
+            destaque
               ? "border-accent bg-accent-dim"
               : "border-line hover:border-line-strong",
           ].join(" ")}
         >
           <motion.div
-            animate={{ scale: isDragging ? 1.04 : 1 }}
+            animate={{ scale: destaque ? 1.04 : 1 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             className="flex flex-col items-center gap-5"
           >
             <span
               className={[
                 "text-[32px] font-semibold tracking-tight transition-colors duration-200",
-                isDragging ? "text-accent" : "text-ink",
+                destaque ? "text-accent" : "text-ink",
               ].join(" ")}
             >
               {busy ?? "Soltar audio e imagens aqui"}
@@ -70,6 +78,7 @@ export function Dropzone({ isDragging }: DropzoneProps) {
 
         <EscolhaDeFormato />
         <div className="absolute right-6 top-6 flex items-center gap-2">
+          <BotoesDosModulosNaTelaInicial arrastando={isDragging} definirAlvo={setAlvoDeModulo} />
           <LegendarVideoPronto />
           <MelhorarVideoPronto />
           <AbrirBiblioteca />

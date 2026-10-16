@@ -23,6 +23,7 @@ import {
 import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { desfazer, podeDesfazer, podeRefazer, refazer } from '@/store/undo'
+import { comandosDosModulos, useModulosLigados } from '@/modulos'
 
 interface Command {
   id: string
@@ -46,7 +47,14 @@ export function CommandPalette() {
   const [cursor, setCursor] = useState(0)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
-  const commands = useCommands()
+  const doNucleo = useCommands()
+  // Os comandos dos modulos ligados entram no fim, refeitos a cada abertura.
+  const ligados = useModulosLigados()
+  const commands = useMemo<Command[]>(
+    () => [...doNucleo, ...comandosDosModulos()],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doNucleo, ligados, open],
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()

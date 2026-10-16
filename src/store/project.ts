@@ -121,6 +121,8 @@ import {
 import { semPassoDeDesfazer, semSujar } from './quiet'
 import { remapearEscolhas } from '@shared/remapear-escolhas'
 import { deslocarChaves } from '@shared/transform'
+import { emitir, interceptarArquivos } from '@/modulos/ganchos'
+import type { OrigemDosArquivos } from '@/modulos/api'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
 export type Phase = 'empty' | 'editing' | 'rendering'
@@ -212,6 +214,8 @@ export interface ProjectState {
   render: RenderProgress | null
   lastOutput: string | null
   settingsOpen: boolean
+  /** Abrir as Configuracoes ja numa secao (a de um modulo, por exemplo). */
+  settingsSecao: string | null
 
   /** Ligado quando o usuario mexe no plano: a analise para de sobrescrever. */
   planEdited: boolean
@@ -522,7 +526,11 @@ export interface ProjectState {
 
   phase: () => Phase
   /** `parte` nomeia uma parte do roteiro para este material. So a Biblioteca usa. */
-  ingest: (paths: readonly string[], parte?: string) => Promise<void>
+  /**
+   * Poe arquivos no projeto. `origem` diz que foi ele quem trouxe (soltou na
+   * janela ou escolheu no dialogo): ai os modulos veem antes.
+   */
+  ingest: (paths: readonly string[], parte?: string, origem?: OrigemDosArquivos) => Promise<void>
   /** Troca efeito, transicao, intensidade ou curva de uma cena. */
   updateScene: (
     index: number,
@@ -911,7 +919,7 @@ export interface ProjectState {
   stopQueue: () => void
   applyRenderProgress: (progress: RenderProgress) => void
   setBusy: (message: string | null) => void
-  openSettings: (open: boolean) => void
+  openSettings: (open: boolean, secao?: string) => void
   dismissError: () => void
   reset: () => void
 
@@ -1171,6 +1179,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   render: null,
   lastOutput: null,
   settingsOpen: false,
+  settingsSecao: null,
   planEdited: false,
   hookText: '',
   hookSec: HOOK_SEC_DEFAULT,
@@ -1271,7 +1280,14 @@ export const useProject = create<ProjectState>((set, get) => ({
     return state.audio || state.images.length > 0 ? 'editing' : 'empty'
   },
 
-  ingest: async (paths, parte) => {
+  ingest: async (entrada, parte, origem) => {
+    /*
+     * O que ele TROUXE (soltou ou escolheu no dialogo) passa antes pelos
+     * modulos: um episodio inteiro, por exemplo, vira "Gerar recap" e nao
+     * chega aqui. Sem modulo ligado, nada muda.
+     */
+    const paths = origem ? await interceptarArquivos(entrada, origem) : entrada
+    if (paths.length === 0) return
     const audioPaths: string[] = []
     const imagePaths: string[] = []
     /** A parte de cada arquivo visual, na mesma ordem de imagePaths. */
@@ -1427,6 +1443,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const audioPath = audioPaths[0]
     if (audioPath) {
       set({ busy: 'Analisando a narracao...' })
+      const anterior = get().audio?.path ?? null
       const result = await window.dangai.analyzeAudio(audioPath)
       if (result.ok) {
         /*
@@ -1446,6 +1463,9 @@ export const useProject = create<ProjectState>((set, get) => ({
           blockSplits: {},
           blockCuts: {},
         })
+        if (anterior !== null && anterior !== result.value.path) {
+          emitir('narracaoTrocada', { anterior, nova: result.value.path })
+        }
       } else {
         set({ error: result.error })
       }
@@ -4488,6 +4508,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   applyRenderProgress: (progress) => {
     if (progress.stage === 'done') {
       set({ render: null, lastOutput: progress.outputPath ?? null, error: null })
+      emitir('depoisDeRenderizar', { outputPath: progress.outputPath ?? null })
       return
     }
     if (progress.stage === 'failed') {
@@ -4509,7 +4530,7 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   setBusy: (message) => set((state) => (state.busy === null && message === null ? state : { busy: message })),
 
-  openSettings: (open) => set({ settingsOpen: open }),
+  openSettings: (open, secao) => set({ settingsOpen: open, settingsSecao: open ? (secao ?? null) : null }),
 
   dismissError: () => set({ error: null }),
 
@@ -4708,6 +4729,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (result.value === null) return
 
     get().markSaved(result.value)
+    emitir('depoisDeSalvar', { path: result.value })
   },
 
   openProject: async (path) => {
@@ -4732,6 +4754,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
     get().refazerLegendasNaoEditadas()
     await get().migrarSonsAntigos()
+    emitir('abrirProjeto', { path: get().projectPath })
   },
 
   checkAutosave: async () => {
@@ -4764,6 +4787,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
     get().refazerLegendasNaoEditadas()
     await get().migrarSonsAntigos()
+    emitir('abrirProjeto', { path: get().projectPath })
   },
 
   discardAutosave: async () => {

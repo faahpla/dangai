@@ -1,3 +1,4 @@
+import { BotoesDosModulosNaBarraDeRender } from '@/modulos'
 import {
   Play,
   Pause,
@@ -297,6 +298,9 @@ export function RenderBar() {
       )}
 
       <div className="flex-1" />
+
+      {/* Os botoes dos modulos ligados, antes do Renderizar. */}
+      <BotoesDosModulosNaBarraDeRender />
 
       {isRendering ? (
         <div className="flex items-center gap-3">

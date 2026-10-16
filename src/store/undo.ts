@@ -107,6 +107,15 @@ function fecharAgora(): void {
   fecharPasso()
 }
 
+/**
+ * Fecha o passo em andamento AGORA, sem esperar a pausa do gesto. Uma acao de
+ * modulo (a Edicao rapida do recap) chama antes e depois de mexer: vira
+ * exatamente UM passo de Ctrl+Z, separado do que veio antes.
+ */
+export function fecharPassoAgora(): void {
+  fecharAgora()
+}
+
 function aplicar(foto: Documento): void {
   aplicando = true
   try {

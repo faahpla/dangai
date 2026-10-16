@@ -20,6 +20,8 @@ import { configureUpscale, configureUpscaleCache } from './services/upscale'
 import { startUpdater } from './services/updater'
 import { configureWhisper, encerrarWhisper } from './services/whisper'
 import { configureFaces } from './services/faces'
+import { ligarModulosNoInicio, prepararModulos, registrarIpcDosModulos, segurarSaida } from './modulos'
+import { MODULOS_DO_MAIN } from '../modulos/registro.main'
 
 const isDev = !app.isPackaged
 
@@ -182,8 +184,21 @@ app.whenReady().then(async () => {
     binariesDirectory: app.isPackaged ? findCompositorDir() : null,
   })
 
+  // Os modulos (o Gerar recap): configurados antes do IPC, com os canais
+  // deles depois dos do nucleo, e ligados so depois da janela. Um modulo que
+  // quebra fica de fora; o Dangai abre do mesmo jeito.
+  prepararModulos(MODULOS_DO_MAIN, {
+    userData,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    empacotado: app.isPackaged,
+    versaoDoApp: app.getVersion(),
+  })
+
   registerIpc()
+  registrarIpcDosModulos()
   createWindow()
+  void ligarModulosNoInicio()
 
   // Com catch: sem ele, uma falha aqui vira UnhandledPromiseRejection no
   // stdout do processo main -- que ninguem le -- e a atualizacao simplesmente
@@ -205,6 +220,8 @@ app.whenReady().then(async () => {
  * so o Gerenciador de Tarefas resolveu. Quem cria o processo tem a obrigacao
  * de leva-lo embora.
  */
+// Um modulo pode segurar a saida (um download, um motor fechando), com teto.
+app.on('before-quit', (evento) => segurarSaida(evento, () => app.quit()))
 app.on('before-quit', encerrarWhisper)
 
 app.on('window-all-closed', () => {

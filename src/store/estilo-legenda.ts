@@ -73,8 +73,26 @@ function mudou(a: ReturnType<typeof useProject.getState>, b: typeof a): boolean 
   )
 }
 
+/** Ligado enquanto um modulo aplica um estilo que NAO deve virar o padrao. */
+let semVirarPadrao = 0
+
+/**
+ * Poe um estilo na legenda SEM ele virar o padrao dos proximos videos -- a
+ * troca de estilo que um modulo faz sozinho (a Edicao rapida), e que nao foi
+ * escolha dele.
+ */
+export function aplicarEstiloSemVirarPadrao(e: CaptionStyle, comFonte: boolean): void {
+  semVirarPadrao++
+  try {
+    aplicarEstilo(e, comFonte)
+  } finally {
+    semVirarPadrao--
+  }
+}
+
 export function startEstiloLegenda(): () => void {
   const unsubscribe = useProject.subscribe((state, anterior) => {
+    if (semVirarPadrao > 0) return
     // Abrir projeto e recuperar autosave escrevem nestes campos pela mesma
     // porta que ele usa. Sem esta guarda, abrir um video antigo trocaria o
     // padrao pelo estilo daquele video.

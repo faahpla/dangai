@@ -54,7 +54,8 @@ export function useFileDrop(): boolean {
         .map((file) => window.dangai.pathForFile(file))
         .filter((path): path is string => Boolean(path))
 
-      if (paths.length > 0) void ingest(paths)
+      // 'soltar': os modulos ligados veem os arquivos antes do nucleo.
+      if (paths.length > 0) void ingest(paths, undefined, 'soltar')
     }
 
     window.addEventListener('dragenter', onDragEnter)

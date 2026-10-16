@@ -1,3 +1,4 @@
+import { ItensDosModulosNaBarraDeStatus } from '@/modulos'
 import { useEffect, useState } from 'react'
 import {
   Loader2,
@@ -55,6 +56,8 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   return (
     <footer className="flex h-[38px] shrink-0 items-center justify-between gap-4 border-t border-line px-6">
       <div className="flex min-w-0 flex-1 items-center gap-2">
+        {/* O que os modulos ligados tem a dizer (ex.: uma analise rodando). */}
+        <ItensDosModulosNaBarraDeStatus />
         {videoPronto ? (
           /*
             O upscale de video pronto leva MINUTOS -- cada quadro passa pelo

@@ -57,3 +57,30 @@ por commit. Antes de cada push: `git pull --rebase`, `npm run typecheck` e os te
   o mesmo no preview e no render; sem ele, nada muda (`v-som-mix.ts`).
 
 Testes: `npx tsx --tsconfig tsconfig.node.json scripts/teste/v-<nome>.ts`.
+
+**Os ganchos** (fase 2). Um módulo só fala com o núcleo por aqui; o núcleo só conhece
+o módulo pelos três arquivos de registro, uma linha por módulo:
+
+| registro | o que entra | contrato |
+|---|---|---|
+| `modulos/registro.main.ts` | `ModuloDoMain` | `electron/modulos.ts` |
+| `modulos/registro.preload.ts` | a fábrica da ponte (`modulos/<id>/electron/ponte.ts`) | `shared/modulos.ts` |
+| `modulos/registro.renderer.ts` | `ModuloDoRenderer` | `src/modulos/api.ts` |
+
+- **Main:** `configurar` → `registrarIpc` → `ligar` (depois da janela, só ligado) →
+  `desligar`; `antesDeSair` segura a saída (teto de 11 min); `motivoParaNaoAtualizar`
+  veta o "Atualizar". Tudo em try/catch: módulo que quebra fica de fora e o Dangai abre.
+  O `ctx` recusa canal fora de `<id>:` e dá `config`/`salvarConfig`, `chave`/`salvarChave`
+  (cofre), `pasta(...)` e `enviar`.
+- **Ponte:** `window.dangai.modulos.<id>`, montada pelo preload do núcleo com um
+  `invocar`/`assinar` presos ao prefixo. A ponte roda no sandbox: só `import type` e constantes.
+- **Renderer:** telas cheias (`nucleo.telaCheia` deixa o resto inerte e os atalhos quietos),
+  botões na tela inicial, seções nas Configurações (com âncora e "abrir numa seção"),
+  comandos na paleta, barra de render, barra de status, rótulo do clipe na timeline e
+  `interceptarArquivos` (soltar/diálogo). O módulo usa a **fachada** (`src/modulos/nucleo.ts`),
+  nunca o `useProject` direto; mudar a fachada é combinar antes.
+- **Ligar/desligar:** Configurações > Módulos (`Settings.modulosLigados`); desligado por padrão.
+- **Eventos:** `abrirProjeto`, `depoisDeSalvar`, `depoisDeRenderizar`, `narracaoTrocada`
+  (`src/modulos/ganchos.ts`). `aplicarNoDocumento`/`gravarNoProjeto` = um passo de Ctrl+Z.
+- O `settings.json` também guarda o que não conhece (campos de versão futura, a chave
+  cifrada de um módulo que não está instalado).

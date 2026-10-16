@@ -10,6 +10,8 @@ import type {
 import type { PontoDeGanho } from './ducking'
 import type { MedidaDoSom } from './loudness'
 import type { OpenedProject, ProjectFile } from './project-file'
+import type { ModuloPublico } from './modulos'
+import type { PontesDosModulos } from '../modulos/registro.preload'
 
 /**
  * Valores de runtime que o preload precisa, sem dependencias.
@@ -828,4 +830,10 @@ export interface DangaiBridge {
   /** Assina o progresso do render. Devolve a funcao para cancelar a assinatura. */
   onRenderProgress(listener: (progress: RenderProgress) => void): () => void
   onAnalyzeProgress(listener: (message: string) => void): () => void
+  /** Os modulos instalados (o Gerar recap), com o ligado e a config publica de cada um. */
+  listarModulos(): Promise<IpcResult<ModuloPublico[]>>
+  /** Liga ou desliga um modulo. Devolve a lista de novo. */
+  ligarModulo(id: string, ligado: boolean): Promise<IpcResult<ModuloPublico[]>>
+  /** A ponte de cada modulo, por id. Ver modulos/registro.preload.ts. */
+  modulos: PontesDosModulos
 }

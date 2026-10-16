@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useProject } from '@/store/project'
 import { startAutosave } from '@/store/autosave'
 import { desfazer, refazer, startUndo } from '@/store/undo'
@@ -29,6 +29,8 @@ import { Library } from '@/components/Library'
 import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
 import { semExtensaoDeProjeto } from '@shared/project-file'
+import { startModulos, TelasDosModulos } from '@/modulos'
+import { useTelaCheia } from '@/modulos/nucleo'
 
 /**
  * Deslizante, caixinha e botao nao tem texto para desfazer: depois de arrastar
@@ -52,6 +54,19 @@ function editando(alvo: EventTarget | null): boolean {
 export function App() {
   const isDragging = useFileDrop()
   const phase = useProject((s) => s.phase())
+  /*
+   * A TELA CHEIA DE UM MODULO (o assistente do recap) e um modal: o que esta
+   * atras fica inerte -- sem isso o Tab saia dele para os botoes escondidos
+   * da tela inicial. As Configuracoes, a paleta e a Biblioteca ficam fora do
+   * embrulho: elas abrem POR CIMA da tela do modulo e precisam do teclado.
+   */
+  const telaCheia = useTelaCheia((s) => s.de)
+  const atrasDaTelaCheia = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (atrasDaTelaCheia.current) atrasDaTelaCheia.current.inert = telaCheia !== null
+  }, [telaCheia])
+  // Os modulos ligados (o Gerar recap) iniciam junto com o app.
+  useEffect(() => startModulos(), [])
   const applyRenderProgress = useProject((s) => s.applyRenderProgress)
   const setBusy = useProject((s) => s.setBusy)
   const captionsOpen = useProject((s) => s.captionsOpen)
@@ -150,10 +165,28 @@ export function App() {
 
       // A paleta e os modais tratam o proprio teclado; enquanto abertos, os
       // atalhos globais ficam quietos para nao disparar por baixo.
-      if (store.paletteOpen || store.settingsOpen || store.scriptOpen || store.libraryOpen) {
+      // A tela cheia de um modulo conta como modal: os atalhos ficam quietos por baixo dela.
+      if (
+        store.paletteOpen ||
+        store.settingsOpen ||
+        store.scriptOpen ||
+        store.libraryOpen ||
+        useTelaCheia.getState().de !== null
+      ) {
+        /*
+         * Com SO a tela de um modulo aberta, a paleta e as Configuracoes abrem
+         * por cima dela, como no editor. Com um modal do nucleo aberto, o
+         * Ctrl+K so fecha a paleta, como sempre.
+         */
+        const porCima = store.paletteOpen || store.settingsOpen || store.scriptOpen || store.libraryOpen
         if (acao === 'paleta') {
           event.preventDefault()
-          store.openPalette(false)
+          store.openPalette(!porCima)
+          return
+        }
+        if (acao === 'configuracoes' && !porCima) {
+          event.preventDefault()
+          store.openSettings(true)
           return
         }
 
@@ -363,6 +396,7 @@ export function App() {
        * conteudo principal nunca fica dependendo de JS para se tornar visivel --
        * ver o comentario da keyframe em index.css.
        */}
+      <div ref={atrasDaTelaCheia} className="contents">
       {phase === 'empty' ? (
         <main className="enter flex-1 p-6">
           <Dropzone isDragging={isDragging} />
@@ -449,6 +483,8 @@ export function App() {
       </div>
 
       <StatusBar isDragging={isDragging} />
+      </div>
+      <TelasDosModulos />
       <Settings />
       <Script />
       <Library />

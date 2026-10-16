@@ -4,6 +4,7 @@ import type { PublicSettings } from "@shared/channels";
 import { useProject } from "@/store/project";
 import { Atalhos } from "./Atalhos";
 import { ChaveDoGemini, LINK_DA_CHAVE_DO_GEMINI } from "./ChaveDoGemini";
+import { ModulosNasConfiguracoes, SecoesDosModulos } from "@/modulos";
 
 /**
  * Um campo que importa: a chave da IA. O resto e escolha rara.
@@ -28,6 +29,22 @@ export function Settings() {
   // o Google usando a chave.
   const [modelos, setModelos] = useState<string[]>([]);
   const [aba, setAba] = useState<"geral" | "atalhos">("geral");
+
+  /*
+   * ABRIR NUMA SECAO: "abrir as Configuracoes ja na do motor", por exemplo.
+   * Vai para a aba Geral e rola ate a secao, que tem o `data-secao` dela.
+   */
+  const secao = useProject((s) => s.settingsSecao);
+  useEffect(() => {
+    if (!open || !secao) return;
+    setAba("geral");
+    const quadro = requestAnimationFrame(() =>
+      document
+        .querySelector(`[data-secao="${CSS.escape(secao)}"]`)
+        ?.scrollIntoView({ block: "start", behavior: "smooth" }),
+    );
+    return () => cancelAnimationFrame(quadro);
+  }, [open, secao]);
 
   useEffect(() => {
     if (!open) return;
@@ -151,7 +168,7 @@ export function Settings() {
             <Atalhos />
           ) : (
             <>
-              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+              <label data-secao="ia" className="mb-1.5 block text-[11px] font-medium text-ink-2">
                 Inteligencia artificial
               </label>
               <div className="flex gap-1.5">
@@ -264,10 +281,11 @@ export function Settings() {
                 {settings?.chavesProtegidas ? ", cifradas" : ""}. Sem nenhuma,
                 as cenas sao distribuidas pelas pausas da narracao.
               </p>
+              <SecoesDosModulos depoisDe="ia" />
 
               <div className="my-5 h-px bg-line" />
 
-              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+              <label data-secao="whisper" className="mb-1.5 block text-[11px] font-medium text-ink-2">
                 Modelo do Whisper
               </label>
               <div className="flex gap-1.5">
@@ -291,10 +309,11 @@ export function Settings() {
                 Baixado uma vez na primeira transcricao. Maior transcreve melhor
                 e mais devagar.
               </p>
+              <SecoesDosModulos depoisDe="whisper" />
 
               <div className="my-5 h-px bg-line" />
 
-              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+              <label data-secao="sons" className="mb-1.5 block text-[11px] font-medium text-ink-2">
                 Sons de transicao
               </label>
               <button
@@ -317,10 +336,11 @@ export function Settings() {
                 uma transicao sim e outra nao — som em todo corte vira ruido de
                 fundo.
               </p>
+              <SecoesDosModulos depoisDe="sons" />
 
               <div className="my-5 h-px bg-line" />
 
-              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">
+              <label data-secao="biblioteca" className="mb-1.5 block text-[11px] font-medium text-ink-2">
                 Biblioteca de cenas
               </label>
               <button
@@ -337,6 +357,9 @@ export function Settings() {
                 A pasta onde o AnCut grava as cenas. O Dangai so le: nunca
                 renomeia, move nem apaga nada ai dentro. Ctrl+B abre a busca.
               </p>
+              <SecoesDosModulos depoisDe="biblioteca" />
+              <SecoesDosModulos depoisDe="fim" />
+              <ModulosNasConfiguracoes />
             </>
           )}
         </div>

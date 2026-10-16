@@ -24,6 +24,8 @@ import {
   type ArquivoDaBin,
   type UpdateStatus,
 } from '@shared/channels'
+import { prefixoDoModulo, type CriarPonte, type ModuloPublico } from '@shared/modulos'
+import { PONTES } from '../modulos/registro.preload'
 import type {
   AnalysisResult,
   AudioAnalysis,
@@ -258,6 +260,47 @@ const bridge: DangaiBridge = {
       ipcRenderer.off(IPC.analyzeProgress, handler)
     }
   },
+
+  listarModulos: () => ipcRenderer.invoke('modulos:listar') as Promise<IpcResult<ModuloPublico[]>>,
+  ligarModulo: (id, ligado) =>
+    ipcRenderer.invoke('modulos:ligar', id, ligado) as Promise<IpcResult<ModuloPublico[]>>,
+  modulos: pontesDosModulos(),
+}
+
+/**
+ * A PONTE DE CADA MODULO, montada aqui porque o `exposeInMainWorld('dangai')`
+ * so aceita a chave uma vez. Cada fabrica recebe um invocar e um assinar que
+ * so alcancam os canais do prefixo dela -- o ipcRenderer cru nunca chega ao
+ * modulo.
+ */
+function pontesDosModulos(): DangaiBridge['modulos'] {
+  const pontes: Record<string, object> = {}
+  for (const [id, criar] of Object.entries(PONTES) as [string, CriarPonte][]) {
+    const prefixo = prefixoDoModulo(id)
+    const conferir = (canal: string): void => {
+      if (!canal.startsWith(prefixo)) throw new Error(`O modulo "${id}" so pode usar canais "${prefixo}...".`)
+    }
+    try {
+      pontes[id] = criar({
+        invocar: (canal, ...args) => {
+          conferir(canal)
+          return ipcRenderer.invoke(canal, ...args)
+        },
+        assinar: (canal, ouvinte) => {
+          conferir(canal)
+          const handler = (_event: unknown, dados: unknown): void => ouvinte(dados as never)
+          ipcRenderer.on(canal, handler)
+          return () => {
+            ipcRenderer.off(canal, handler)
+          }
+        },
+      })
+    } catch (err) {
+      // Uma ponte que quebra fica de fora; a do nucleo sobe do mesmo jeito.
+      console.error(`[modulo:${id}] a ponte nao montou:`, err)
+    }
+  }
+  return pontes as DangaiBridge['modulos']
 }
 
 contextBridge.exposeInMainWorld('dangai', bridge)

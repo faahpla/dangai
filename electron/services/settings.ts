@@ -126,6 +126,8 @@ export interface Settings {
    * modulo. Nao vai para o renderer por aqui.
    */
   modulos: Record<string, unknown>
+  /** Que modulo esta ligado, por id. Sem entrada = o padrao do modulo. */
+  modulosLigados: Record<string, boolean>
 }
 
 const DEFAULTS: Settings = {
@@ -148,6 +150,7 @@ const DEFAULTS: Settings = {
   presetsDeCor: [],
   presetsDeTransicao: [],
   modulos: {},
+  modulosLigados: {},
 }
 
 let filePath: string | null = null
@@ -159,6 +162,13 @@ let cofre: Cofre | null = null
  * de vez uma chave que ainda abre na conta certa.
  */
 let ilegiveis: Record<string, string> = {}
+/**
+ * Os campos do settings.json que esta versao NAO conhece -- de uma versao mais
+ * nova do Dangai, ou a chave cifrada (`<campo>Enc`) de um modulo que nao esta
+ * instalado aqui. O `coerce` so deixa passar o que conhece; sem isto, o primeiro
+ * save apagaria esses campos em silencio. Voltam ao disco como vieram.
+ */
+let extrasDoArquivo: Record<string, unknown> = {}
 let avisouTextoPuro = false
 
 export function configureSettings(userDataDir: string, cofreDoTeste?: Cofre): void {
@@ -169,6 +179,7 @@ export function configureSettings(userDataDir: string, cofreDoTeste?: Cofre): vo
   cofre = cofreDoTeste ?? safeStorage ?? null
   cache = null
   ilegiveis = {}
+  extrasDoArquivo = {}
 }
 
 export function getSettings(): Settings {
@@ -181,11 +192,13 @@ export function getSettings(): Settings {
   } catch {
     // Arquivo ausente ou corrompido: volta ao padrao em vez de derrubar o app.
     cache = { ...DEFAULTS }
+    extrasDoArquivo = {}
     return cache
   }
 
   const { chaves, emTextoPuro } = abrirChaves(raw)
   cache = coerce({ ...(raw as object), ...chaves })
+  extrasDoArquivo = camposDesconhecidos(raw)
 
   // Settings de antes da cifra, com a chave aberta no arquivo: regrava ja
   // cifrado. Acontece uma vez; da proxima a chave vem do campo *Enc.
@@ -226,7 +239,7 @@ function gravar(settings: Settings): void {
 
 /** O que vai para o arquivo: igual ao de memoria, mas com as chaves cifradas. */
 function paraODisco(settings: Settings): Record<string, unknown> {
-  const disco: Record<string, unknown> = { ...settings }
+  const disco: Record<string, unknown> = { ...extrasDoArquivo, ...settings }
   for (const campo of CAMPOS_DE_CHAVE) {
     const chave = disco[campo]
     delete disco[campo]
@@ -315,7 +328,7 @@ export function decifrar(base64: string): string | null {
 }
 
 /** A interface nunca recebe a chave inteira -- so o suficiente para reconhecer. */
-export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'geminiApiKey' | 'modulos'> & {
+export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'geminiApiKey' | 'modulos' | 'modulosLigados'> & {
   hasApiKey: boolean
   apiKeyHint: string
   hasGeminiKey: boolean
@@ -426,6 +439,14 @@ function coerce(raw: unknown): Settings {
       typeof value['modulos'] === 'object' && value['modulos'] !== null && !Array.isArray(value['modulos'])
         ? (value['modulos'] as Record<string, unknown>)
         : {},
+    modulosLigados:
+      typeof value['modulosLigados'] === 'object' && value['modulosLigados'] !== null && !Array.isArray(value['modulosLigados'])
+        ? Object.fromEntries(
+            Object.entries(value['modulosLigados'] as Record<string, unknown>).filter(
+              (e): e is [string, boolean] => typeof e[1] === 'boolean',
+            ),
+          )
+        : {},
   }
   // As chaves registradas por modulo nao estao no tipo: passam como texto, ou o
   // coerce -- que so deixa passar o que conhece -- as apagaria no primeiro save.
@@ -435,6 +456,17 @@ function coerce(raw: unknown): Settings {
     if (typeof chave === 'string') (settings as unknown as Record<string, unknown>)[campo] = chave.trim()
   }
   return settings
+}
+
+/** Os campos do arquivo que nem o nucleo nem o cofre conhecem. */
+function camposDesconhecidos(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
+  const conhecidos = new Set<string>(Object.keys(DEFAULTS))
+  for (const campo of CAMPOS_DE_CHAVE) {
+    conhecidos.add(campo)
+    conhecidos.add(`${campo}Enc`)
+  }
+  return Object.fromEntries(Object.entries(raw as Record<string, unknown>).filter(([k]) => !conhecidos.has(k)))
 }
 
 /**

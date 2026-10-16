@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* As telas dos modulos (modulos/<id>/src) usam as mesmas classes. */
+@source '../modulos';
 
 /* ------------------------------------------------------------------ tokens */
 
