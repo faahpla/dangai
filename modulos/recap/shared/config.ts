@@ -4,6 +4,7 @@ import {
   type PreferenciasDaEdicaoRapida,
 } from './edicao-rapida'
 import type { VozPadrao } from './tipos-da-voz'
+import { ESCRITORES_IDS, MODELO_GEMINI_PRO_PADRAO, type Escritor } from './escritor'
 import { arrumarVelocidadeNativa, VELOCIDADE_NATIVA_PADRAO } from './voz'
 
 /**
@@ -31,6 +32,16 @@ export interface ConfigDoRecap {
   /** A pasta de musicas da Edicao rapida (so leitura). '' = nenhuma: sem musica. */
   pastaDeMusicas: string
   edicaoRapidaPadrao: PreferenciasDaEdicaoRapida
+  /**
+   * O ROTEIRO (lote 1 das ideias do Levi, 17/10): o revisor depois de gerar
+   * (uma chamada a mais, no provedor padrao) e quem ESCREVE o roteiro
+   * (shared/escritor.ts). O "Meu estilo" mora num arquivo proprio
+   * (electron/gerar/estilo.ts): e grande demais para o settings.json.
+   */
+  revisarAoGerar: boolean
+  escritor: Escritor
+  /** O modelo do "Gemini Pro" ('' = o apelido do pro atual, MODELO_GEMINI_PRO_PADRAO). */
+  modeloGeminiPro: string
 }
 
 /** O que a tela ve (o paraRenderer): sem segredo nenhum. */
@@ -45,6 +56,10 @@ export interface ConfigDoRecapNaTela extends ConfigDoRecap {
   bibliotecaDoDangai: string
   /** A pasta de musicas que vale agora ('' = nenhuma, ou a escolhida sumiu). */
   pastaDeMusicasEfetiva: string
+  /** Os escritores pagos com chave do provedor no nucleo (sem chave, a opcao mostra "sem chave"). */
+  escritoresComChave: Record<Escritor, boolean>
+  /** O modelo que o "Gemini Pro" usa de fato. */
+  modeloGeminiProEfetivo: string
 }
 
 /** Sem voz: o "sem voz" da parte 1, na velocidade nativa padrao (1,2). */
@@ -55,6 +70,9 @@ export const CONFIG_PADRAO: ConfigDoRecap = {
   vozPadrao: SEM_VOZ,
   pastaDeMusicas: '',
   edicaoRapidaPadrao: PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO,
+  revisarAoGerar: true,
+  escritor: 'gemini',
+  modeloGeminiPro: '',
 }
 
 /** O que veio do disco, conferido campo a campo. Campo errado vale o padrao. */
@@ -67,7 +85,15 @@ export function coerceConfig(raw: unknown): ConfigDoRecap {
     vozPadrao: vozSalva(r['vozPadrao']),
     pastaDeMusicas,
     edicaoRapidaPadrao: preferenciasDaEdicaoRapidaSchema.catch(PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO).parse(r['edicaoRapidaPadrao'] ?? {}),
+    revisarAoGerar: r['revisarAoGerar'] !== false,
+    escritor: (ESCRITORES_IDS as readonly unknown[]).includes(r['escritor']) ? (r['escritor'] as Escritor) : 'gemini',
+    modeloGeminiPro: nomeDeModelo(r['modeloGeminiPro'], ''),
   }
+}
+
+/** O modelo do "Gemini Pro": o escolhido ou o apelido do pro atual. */
+export function modeloGeminiProDe(c: Pick<ConfigDoRecap, 'modeloGeminiPro'>): string {
+  return c.modeloGeminiPro || MODELO_GEMINI_PRO_PADRAO
 }
 
 /**

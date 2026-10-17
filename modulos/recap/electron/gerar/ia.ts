@@ -84,9 +84,34 @@ export function trocarIaParaTeste(ia: Chamada): () => void {
 }
 
 /** Quem vai responder, para a mensagem de andamento ("Pedindo ... ao Gemini"). */
-export function nomeDoProvedor(): string {
-  const p = contexto().ia.provedor()
+export function nomeDoProvedor(forcado?: 'gemini' | 'anthropic'): string {
+  const p = contexto().ia.provedor(forcado)
   return p === 'anthropic' ? 'Claude' : 'Gemini'
+}
+
+/**
+ * A chave do cache de um pedido. O modelo pedido e o forcado (escritor pago)
+ * ou o das Configuracoes: sem modelo forcado, a chave e a de sempre. Sem
+ * provedor nao ha cache a consultar (o gerarJson devolve a nota de "sem chave").
+ */
+function chaveDoPedido(pedido: PedidoJson<z.ZodType>): string | null {
+  const provedor = contexto().ia.provedor(pedido.provedor)
+  if (!provedor) return null
+  return chaveDoCache({
+    etapa: pedido.etapa,
+    provedor,
+    modeloPedido: (pedido.provedor && pedido.modelo?.trim()) || modeloEscolhido(provedor),
+    sistema: pedido.sistema,
+    prompt: pedido.prompt,
+    schema: z.toJSONSchema(pedido.schema),
+  })
+}
+
+/** O pedido ja tem resposta valida no cache (o escritor pago nao pergunta o custo: sai de graca). */
+export function estaNoCache(pedido: PedidoJson<z.ZodType>): boolean {
+  const chave = chaveDoPedido(pedido)
+  const guardada = chave ? lerDoCache<unknown>(chave) : null
+  return guardada !== null && pedido.schema.safeParse(guardada.valor).success
 }
 
 export async function gerarComCache<S extends z.ZodType>(
@@ -94,18 +119,7 @@ export async function gerarComCache<S extends z.ZodType>(
   opcoes: OpcoesDoCache = {},
 ): Promise<RespostaDoPasso<z.infer<S>>> {
   const inicio = Date.now()
-  const provedor = contexto().ia.provedor(pedido.provedor)
-  // Sem provedor nao ha cache a consultar: o gerarJson devolve a nota de "sem chave".
-  const chave = provedor
-    ? chaveDoCache({
-        etapa: pedido.etapa,
-        provedor,
-        modeloPedido: modeloEscolhido(provedor),
-        sistema: pedido.sistema,
-        prompt: pedido.prompt,
-        schema: z.toJSONSchema(pedido.schema),
-      })
-    : null
+  const chave = chaveDoPedido(pedido)
 
   if (chave && opcoes.lerCache !== false) {
     const guardada = lerDoCache<unknown>(chave)

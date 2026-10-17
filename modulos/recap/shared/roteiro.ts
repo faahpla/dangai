@@ -5,6 +5,9 @@ import type { Cue, EpisodeIndex, Exclusao, Plano } from './episodio'
 import { estadoDaVozSchema, situacaoDaVoz } from './voz'
 // O mesmo para o passo 4: cenas.ts importa daqui apenas TIPOS.
 import { estadoDasCenasSchema } from './cenas'
+// E para o revisor: revisao.ts importa daqui apenas TIPOS.
+import { revisaoSchema } from './revisao'
+import type { PerguntaDeCusto } from './escritor'
 
 /**
  * O ROTEIRO, do jeito que o Studio o entende: o contrato do passo 2 do
@@ -245,6 +248,11 @@ export const roteiroSchema = z.object({
   /** A versao de onde esta saiu (edicao ou "Refazer esta parte"). null = do zero. */
   derivadoDe: z.number().int().positive().nullable().default(null),
   pedido: pedidoDaVersaoSchema.nullable().default(null),
+  /**
+   * Saiu do "Aplicar todas" do revisor (shared/revisao.ts): 'ia' com o texto
+   * das sugestoes, derivada da versao revisada. Ausente = nao.
+   */
+  revisada: z.boolean().optional(),
 })
 export type Roteiro = z.infer<typeof roteiroSchema>
 
@@ -307,6 +315,11 @@ const rascunhoBase = z.object({
    * e escolhasDesatualizadas (shared/cenas.ts), pelo texto e pelo take.
    */
   cenas: estadoDasCenasSchema.nullable().default(null),
+  /**
+   * As revisoes do revisor (shared/revisao.ts), uma por versao revisada.
+   * Rascunho de antes le como [].
+   */
+  revisoes: z.array(revisaoSchema).default([]),
 })
 
 export const rascunhoDoRecapSchema = rascunhoBase.superRefine((r, ctx) => {
@@ -400,6 +413,12 @@ export const pedidoDeRoteiroSchema = z.object({
    * como ParadoNoReserva. Vale para o pedido inteiro: eventos e roteiro.
    */
   aceitouReserva: z.boolean().optional(),
+  /**
+   * O ESCRITOR PAGO (shared/escritor.ts): o teto em US$ que ele aceitou na
+   * pergunta de custo. Sem isto, com escritor pago, o main devolve a
+   * PerguntaDeCusto sem chamar; com isto, nunca gasta mais que isso.
+   */
+  custoAceito: z.number().nonnegative().max(5).optional(),
 })
 export type PedidoDeRoteiro = z.infer<typeof pedidoDeRoteiroSchema>
 
@@ -482,7 +501,7 @@ export interface EventosProntos {
   avisos: string[]
 }
 
-export type RoteiroGerado = RoteiroPronto | ParadoNoReserva
+export type RoteiroGerado = RoteiroPronto | ParadoNoReserva | PerguntaDeCusto
 
 export interface RoteiroPronto {
   rascunho: RascunhoDoRecap
@@ -496,6 +515,8 @@ export interface RoteiroPronto {
   soNoHistorico: boolean
   /** Reparos feitos na saida do LLM + os avisos do validarRoteiro, em ASCII. */
   avisos: string[]
+  /** Quem escreveu, quando nao foi o gratis ("Claude Sonnet"). Ausente = o padrao. */
+  escritor?: string
 }
 
 /** Etapas que o andamento mostra. */

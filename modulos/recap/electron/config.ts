@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { ConfigDoModulo } from '../../../electron/modulos'
-import { aplicarPatch, CONFIG_PADRAO, coerceConfig, type ConfigDoRecap, type ConfigDoRecapNaTela } from '../shared/config'
+import { aplicarPatch, CONFIG_PADRAO, coerceConfig, modeloGeminiProDe, type ConfigDoRecap, type ConfigDoRecapNaTela } from '../shared/config'
+import { ESCRITORES, ESCRITORES_IDS, type Escritor } from '../shared/escritor'
 import { contexto } from './contexto'
 import { garantirGravavel } from './episodio/protegidas'
 import { bibliotecaPadrao } from './settings'
@@ -28,7 +29,28 @@ export function configNaTela(raw: unknown): ConfigDoRecapNaTela {
     /* antes do configurar (teste): sem a libraryDir */
   }
   const musicas = c.pastaDeMusicas && existsSync(c.pastaDeMusicas) ? c.pastaDeMusicas : ''
-  return { ...c, bibliotecaEfetiva: bibliotecaEfetiva(c), bibliotecaDoDangai, pastaDeMusicasEfetiva: musicas }
+  return {
+    ...c,
+    bibliotecaEfetiva: bibliotecaEfetiva(c),
+    bibliotecaDoDangai,
+    pastaDeMusicasEfetiva: musicas,
+    escritoresComChave: escritoresComChave(),
+    modeloGeminiProEfetivo: modeloGeminiProDe(c),
+  }
+}
+
+/** Quem pode escrever agora: o provedor do escritor tem chave no nucleo (so o sim/nao, nunca a chave). */
+export function escritoresComChave(): Record<Escritor, boolean> {
+  const tem = {} as Record<Escritor, boolean>
+  for (const id of ESCRITORES_IDS) {
+    const provedor = ESCRITORES[id].provedor
+    try {
+      tem[id] = provedor === null ? true : contexto().ia.provedor(provedor) !== null
+    } catch {
+      tem[id] = provedor === null
+    }
+  }
+  return tem
 }
 
 export const configDoRecap: ConfigDoModulo = {

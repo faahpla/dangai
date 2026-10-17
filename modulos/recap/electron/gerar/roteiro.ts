@@ -28,10 +28,24 @@ import {
   type RoteiroGerado,
 } from '../../shared/roteiro'
 import type { EpisodeIndex } from '../../shared/episodio'
+import type { PedidoJson } from '../../../../electron/services/llm'
+import type { z } from 'zod'
+import { blocoDoEstilo, estimarTokens } from '../../shared/estilo'
+import { modeloGeminiProDe } from '../../shared/config'
+import {
+  ESCRITORES,
+  estimarCusto,
+  ehPerguntaDeCusto,
+  tokensDeSaida,
+  type Escritor,
+  type PerguntaDeCusto,
+} from '../../shared/escritor'
+import { configDoRecap, contexto } from '../contexto'
 import { gerarEventos } from './eventos'
+import { lerEstilo } from './estilo'
 import { umaFrasePorItem, umaFrasePorItemDaSecao } from './frases'
-import { gerarComCache, nomeDoProvedor, paradaDoPasso } from './ia'
-import { acertarNomesDaSecao, acertarNomesDoRoteiro, elencoDoEpisodio, type Elenco } from './nomes'
+import { estaNoCache, gerarComCache, nomeDoProvedor, paradaDoPasso } from './ia'
+import { acertarNomesDaSecao, acertarNomesDoRoteiro, elencoDoEpisodio, nomesDoElenco, type Elenco } from './nomes'
 import { frasesDoAlvo, promptDaSecao, promptDoRoteiro, SISTEMA_ROTEIRO, SISTEMA_SECAO } from './prompts'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from './rascunho'
 import { ritmoDoRascunho } from '../voz/ritmo'
@@ -65,6 +79,18 @@ import { ritmoDoRascunho } from '../voz/ritmo'
  *   `permitirReserva: false`. So sobrou reserva = devolve ParadoNoReserva sem
  *   gravar versao (a atual e a aprovacao ficam como estavam) e a tela
  *   pergunta. Na segunda tentativa, se ja ha uma resposta boa, fica ela.
+ *
+ * Lote 1 das ideias do Levi (17/10):
+ * - MEU ESTILO: o bloco do estilo (shared/estilo.ts, nomes dos exemplos
+ *   mascarados, teto de tokens) vai no fim do prompt do roteiro inteiro e do
+ *   "Refazer esta parte". Sem estilo, o prompt e o de sempre;
+ * - ESCRITOR PAGO (shared/escritor.ts): com Claude Sonnet ou Gemini Pro na
+ *   config, SO a escrita vai forcada para ele (os eventos ficam no padrao).
+ *   Antes de cada chamada paga: resposta no cache = de graca; senao a conta
+ *   tem que caber no `custoAceito` do pedido -- sem ele, volta a
+ *   PerguntaDeCusto sem chamar; a segunda tentativa que nao cabe nao acontece
+ *   (fica a primeira). Pago le o cache SEMPRE: o mesmo pedido nunca paga duas
+ *   vezes. Sem a chave do provedor: escreve o gratis, com aviso.
  */
 
 /** Um pedido de roteiro por rascunho de cada vez: rascunhoId -> pedidoId ('' = sem id). */
@@ -149,6 +175,56 @@ interface Contexto {
   /** O usuario aceitou o modelo reserva para este pedido. */
   permitirReserva: boolean
   avisar: (progresso: ProgressoDoRoteiro) => void
+  /** O bloco do "Meu estilo" (null = sem estilo: o prompt de sempre). */
+  estilo: string | null
+  escritor: EscritorDoPedido
+  /** O teto em US$ que ele aceitou (escritor pago). */
+  custoAceito: number | undefined
+  /** O que este pedido ja gastou (estimado), no pago. */
+  conta: { gasto: number }
+}
+
+/** Quem escreve este pedido (configDoRecap().escritor, ja conferida a chave). */
+interface EscritorDoPedido {
+  id: Escritor
+  rotulo: string
+  pago: boolean
+  provedor?: 'gemini' | 'anthropic'
+  modelo?: string
+}
+
+function escritorDoPedido(avisos: string[]): EscritorDoPedido {
+  const c = configDoRecap()
+  const d = ESCRITORES[c.escritor]
+  const gratis: EscritorDoPedido = { id: 'gemini', rotulo: ESCRITORES.gemini.rotulo, pago: false }
+  if (d.provedor === null) return gratis
+  if (contexto().ia.provedor(d.provedor) === null) {
+    avisos.push(`${d.rotulo} sem chave: escrito pelo gratis.`)
+    return gratis
+  }
+  const modelo = c.escritor === 'gemini-pro' ? modeloGeminiProDe(c) : d.modelo!
+  return { id: c.escritor, rotulo: d.rotulo, pago: true, provedor: d.provedor, modelo }
+}
+
+/** O pedido de IA com o escritor forcado (so no pago). */
+function comEscritor<S extends z.ZodType>(pedido: PedidoJson<S>, e: EscritorDoPedido): PedidoJson<S> {
+  return e.pago ? { ...pedido, provedor: e.provedor!, modelo: e.modelo! } : pedido
+}
+
+/**
+ * A porta do pago: 'ok' = pode chamar (cache, gratis, ou cabe no aceito, e a
+ * conta soma); a pergunta = a primeira chamada precisa do sim dele; 'parar' =
+ * a chamada extra nao cabe no que ele aceitou (fica a resposta que ja tem).
+ */
+function portaDoCusto(c: Contexto, pedido: PedidoJson<z.ZodType>, frases: number, primeira: boolean): 'ok' | 'parar' | PerguntaDeCusto {
+  if (!c.escritor.pago || estaNoCache(pedido)) return 'ok'
+  const est = estimarCusto(c.escritor.id, c.escritor.modelo!, pedido.sistema.length + pedido.prompt.length, tokensDeSaida(frases))
+  if (c.custoAceito !== undefined && c.conta.gasto + est.usd <= c.custoAceito + 1e-9) {
+    c.conta.gasto += est.usd
+    console.log(`[gerar:${pedido.etapa}] ${c.escritor.rotulo} (${c.escritor.modelo}): ~US$ ${est.usd.toFixed(3)} (${est.tokensDeEntrada} + ${est.tokensDeSaida} tokens)`)
+    return 'ok'
+  }
+  return primeira ? { motivo: 'custo', estimativa: est } : 'parar'
 }
 
 /** O que escreverInteiro e refazerSecao devolvem quando deu certo. */
@@ -183,20 +259,26 @@ async function gerar(
   }
 
   const { indice } = indiceDoRascunho(r)
+  const elenco = elencoDoEpisodio(indice)
+  const escritor = escritorDoPedido(avisos)
   const ctx: Contexto = {
     rascunhoId,
     r,
     indice,
-    elenco: elencoDoEpisodio(indice),
+    elenco,
     alvoSec: pedido.alvoSec,
     ritmo: ritmoDoRascunho(r).ritmo,
     instrucao: pedido.instrucao?.trim() || null,
     permitirReserva,
     avisar,
+    estilo: blocoDoEstilo(lerEstilo(), nomesDoElenco(elenco)),
+    escritor,
+    custoAceito: pedido.custoAceito,
+    conta: { gasto: 0 },
   }
   const secaoId = pedido.secaoId?.trim() || null
   const feito = secaoId ? await refazerSecao(ctx, secaoId) : await escreverInteiro(ctx)
-  if (ehParadaNoReserva(feito)) return feito
+  if (ehParadaNoReserva(feito) || ehPerguntaDeCusto(feito)) return feito
   doCache &&= feito.doCache
 
   // Relido agora: sem await daqui ate gravar. A versao ganha o numero livre do
@@ -209,7 +291,7 @@ async function gerar(
   gravarRascunho(rascunho)
 
   avisos.push(...feito.candidato.reparos, ...resumirAvisos(validarRoteiro(roteiro, rascunho.eventos, indice, ctx.ritmo)))
-  return { rascunho, roteiro, doCache, soNoHistorico, avisos }
+  return { rascunho, roteiro, doCache, soNoHistorico, avisos, ...(escritor.pago ? { escritor: escritor.rotulo } : {}) }
 }
 
 /** Os avisos do validarRoteiro, um por tipo ("Sem evento (3x)"): a tela nao precisa de dez linhas iguais. */
@@ -329,9 +411,9 @@ function motivoDosTermos(problemas: readonly ProblemaDoRoteiro[], roteiro: Pick<
   return `algumas frases quebram as regras: ${itens.join('; ')}. Reescreva essas frases dentro das regras, sem perder a fidelidade.`
 }
 
-async function escreverInteiro(c: Contexto): Promise<Feito | ParadoNoReserva> {
+async function escreverInteiro(c: Contexto): Promise<Feito | ParadoNoReserva | PerguntaDeCusto> {
   const faixa = faixaDePalavras(c.alvoSec, c.ritmo)
-  const quem = nomeDoProvedor()
+  const quem = c.escritor.pago ? c.escritor.rotulo : nomeDoProvedor()
   const anteriores = primeirasFrases(c.r)
   const ganchos = anteriores.slice(-4).map((g) => g.texto)
   // Com versao anterior, e outra tomada: o cache so devolveria a de antes.
@@ -348,7 +430,7 @@ async function escreverInteiro(c: Contexto): Promise<Feito | ParadoNoReserva> {
       etapa: 'roteiro',
       mensagem: tentativa === 0 ? `${quem} · ate 2 min` : `${rotuloDoAjuste} · ${quem}`,
     })
-    const resposta = await gerarComCache(
+    const pedidoIa = comEscritor(
       {
         schema: roteiroDaIaSchema,
         sistema: SISTEMA_ROTEIRO,
@@ -361,13 +443,22 @@ async function escreverInteiro(c: Contexto): Promise<Feito | ParadoNoReserva> {
           instrucao: c.instrucao,
           ganchosAnteriores: ganchos,
           ajuste,
+          estilo: c.estilo,
         }),
         etapa: 'roteiro',
         maxTokens: 8000,
         permitirReserva: c.permitirReserva,
       },
-      { lerCache },
+      c.escritor,
     )
+    if (tentativa === 0 && c.estilo) {
+      console.log(`[gerar:roteiro] prompt ~${estimarTokens(pedidoIa.sistema + pedidoIa.prompt)} tokens (estilo ~${estimarTokens(c.estilo)})`)
+    }
+    const porta = portaDoCusto(c, pedidoIa, frasesDoAlvo(c.alvoSec, c.ritmo), !melhor)
+    if (porta === 'parar') break
+    if (porta !== 'ok') return porta
+    // Pago le o cache sempre: o mesmo pedido nunca paga duas vezes.
+    const resposta = await gerarComCache(pedidoIa, { lerCache: lerCache || c.escritor.pago })
     if (!resposta.ok) {
       // A segunda tentativa falhou (cota, rede, so reserva livre): fica a
       // primeira, que ja serve -- melhor que perguntar por um ajuste.
@@ -421,7 +512,7 @@ async function escreverInteiro(c: Contexto): Promise<Feito | ParadoNoReserva> {
   return { candidato: melhor, doCache }
 }
 
-async function refazerSecao(c: Contexto, secaoId: string): Promise<Feito | ParadoNoReserva> {
+async function refazerSecao(c: Contexto, secaoId: string): Promise<Feito | ParadoNoReserva | PerguntaDeCusto> {
   const atual = roteiroAtual(c.r)
   if (!atual) throw new Error('Gere um roteiro antes de refazer uma parte.')
   const secao = atual.secoes.find((s) => s.id === secaoId)
@@ -436,7 +527,7 @@ async function refazerSecao(c: Contexto, secaoId: string): Promise<Feito | Parad
   const teto = Math.max(piso, Math.round(hoje * 1.6), 12)
   const palavrasDaSecao = Math.min(teto, Math.max(piso, faixa.alvo - outras))
 
-  const quem = nomeDoProvedor()
+  const quem = c.escritor.pago ? c.escritor.rotulo : nomeDoProvedor()
   let aviso: string | null = null
   let doCache = true
   let melhor: { candidato: Candidato; ruins: number } | null = null
@@ -448,7 +539,7 @@ async function refazerSecao(c: Contexto, secaoId: string): Promise<Feito | Parad
     })
     // Refazer e sempre outra tomada: nunca le o cache (voltar a mesma base com
     // a mesma instrucao devolvia a parte que o Levi acabou de recusar).
-    const resposta = await gerarComCache(
+    const pedidoIa = comEscritor(
       {
         schema: secaoDaIaSchema,
         sistema: SISTEMA_SECAO,
@@ -463,13 +554,19 @@ async function refazerSecao(c: Contexto, secaoId: string): Promise<Feito | Parad
           palavrasDaSecao,
           instrucao: c.instrucao,
           aviso,
+          estilo: c.estilo,
         }),
         etapa: 'secao',
         maxTokens: 4000,
         permitirReserva: c.permitirReserva,
       },
-      { lerCache: false },
+      c.escritor,
     )
+    const porta = portaDoCusto(c, pedidoIa, Math.max(1, Math.round(palavrasDaSecao / 9.5)), !melhor)
+    if (porta === 'parar') break
+    if (porta !== 'ok') return porta
+    // Pago le o cache sempre (o mesmo pedido nunca paga duas vezes); o gratis nunca, aqui.
+    const resposta = await gerarComCache(pedidoIa, { lerCache: c.escritor.pago })
     if (!resposta.ok) {
       if (melhor) break
       if (resposta.motivo === 'so-reserva') return paradaDoPasso(resposta, 'secao')
