@@ -19,7 +19,7 @@ import {
 } from '../../shared/roteiro'
 import { useRoteiro, type GeracaoEmCurso } from '../store/gerar-roteiro'
 import { useRitmoDaVoz } from '../store/ritmo'
-import { Linha } from '@/components/painel'
+import { Linha } from '@/modulos/kit'
 import { AndamentoDoRoteiro } from './AndamentoDoRoteiro'
 import { PerguntaDoReserva } from './PerguntaDoReserva'
 import { Botao, CAMPO_PEQUENO, CLASSE_DO_CAMPO, COR_DE_AVISO, focarBotao, Link, Secao as Cartao } from './pecas'

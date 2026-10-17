@@ -11,7 +11,7 @@ import {
 import { useGerar } from '../store/gerar'
 import { useRoteiro } from '../store/gerar-roteiro'
 import { useVoz } from '../store/gerar-voz'
-import { Field } from '@/components/painel'
+import { Field } from '@/modulos/kit'
 import { AbrirPasta, Botao, CAMPO_NORMAL, CLASSE_DO_CAMPO, formatarTempo, Secao } from './pecas'
 
 /**

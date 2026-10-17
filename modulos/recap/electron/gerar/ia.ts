@@ -1,15 +1,17 @@
 import { z } from 'zod'
 import { ehModeloReserva, type EtapaDoRoteiro, type ParadoNoReserva } from '../../shared/roteiro'
-import { escolherProvedor, gerarJson, type PedidoJson, type RespostaJson } from '../llm'
-import { getSettings } from '../settings'
+import type { PedidoJson, RespostaJson } from '../../../../electron/services/llm'
+import { contexto } from '../contexto'
+import { modeloEscolhido } from '../settings'
 import { chaveDoCache, gravarNoCache, lerDoCache } from './cache'
 
 /**
- * A chamada de IA do passo 2: gerarJson (llm.ts) atras do cache (cache.ts).
+ * A chamada de IA do passo 2: o gerarJson do nucleo (`ctx.ia`) atras do cache
+ * (cache.ts).
  *
  * O llm.ts nunca lanca e devolve a nota pronta; aqui so entra o cache e a
  * medida de tempo (para o log e para o teste real dizer quanto cada chamada
- * levou). A chave da API nunca passa por aqui: o llm.ts le de settings.
+ * levou). A chave da API nunca passa por aqui: o nucleo escolhe e chama.
  *
  * Duas regras do cache, cada uma saida de um botao que travou:
  * - so entra no cache o que o passo ACEITOU (`guardar`, chamado por quem
@@ -59,7 +61,8 @@ export interface OpcoesDoCache {
 
 type Chamada = <S extends z.ZodType>(pedido: PedidoJson<S>) => Promise<RespostaJson<z.infer<S>>>
 
-let chamar: Chamada = gerarJson
+let falsa: Chamada | null = null
+const chamar: Chamada = (pedido) => (falsa ?? contexto().ia.gerarJson)(pedido)
 
 /**
  * Quanto esperar cada resposta. O passo 2 manda o episodio inteiro e recebe
@@ -73,16 +76,16 @@ export const TEMPO_LIMITE_DO_PASSO_MS = 300_000
  * So os testes usam: troca o gerarJson por uma IA falsa (sem rede, sem cota).
  * Devolve a funcao que desfaz.
  */
-export function trocarIaParaTeste(falsa: Chamada): () => void {
-  chamar = falsa
+export function trocarIaParaTeste(ia: Chamada): () => void {
+  falsa = ia
   return () => {
-    chamar = gerarJson
+    falsa = null
   }
 }
 
 /** Quem vai responder, para a mensagem de andamento ("Pedindo ... ao Gemini"). */
 export function nomeDoProvedor(): string {
-  const p = escolherProvedor(getSettings())
+  const p = contexto().ia.provedor()
   return p === 'anthropic' ? 'Claude' : 'Gemini'
 }
 
@@ -91,14 +94,13 @@ export async function gerarComCache<S extends z.ZodType>(
   opcoes: OpcoesDoCache = {},
 ): Promise<RespostaDoPasso<z.infer<S>>> {
   const inicio = Date.now()
-  const settings = getSettings()
-  const provedor = escolherProvedor(settings, pedido.provedor)
+  const provedor = contexto().ia.provedor(pedido.provedor)
   // Sem provedor nao ha cache a consultar: o gerarJson devolve a nota de "sem chave".
   const chave = provedor
     ? chaveDoCache({
         etapa: pedido.etapa,
         provedor,
-        modeloPedido: provedor === 'gemini' ? settings.geminiModelo : settings.anthropicModelo,
+        modeloPedido: modeloEscolhido(provedor),
         sistema: pedido.sistema,
         prompt: pedido.prompt,
         schema: z.toJSONSchema(pedido.schema),

@@ -4,7 +4,7 @@ import type { ComoAchou, EpisodioEncontrado, OrigemDaBiblioteca, PalpiteDoEpisod
 import { getSettings, pastaDaBibliotecaStudio, pastaDeDocumentos } from '../settings'
 import { fotosDoElenco } from '../elenco-reserva'
 import { pastaDeDadosDoMotor } from '../motor'
-import { episodiosEm } from '../library'
+import { episodiosEm } from '../../../../electron/services/library'
 import { animeParecido, tituloParecido } from './anime-parecido'
 import { impressaoLembrada } from './impressao'
 import {

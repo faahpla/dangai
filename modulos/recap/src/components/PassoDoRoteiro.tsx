@@ -26,7 +26,7 @@ import {
 import { nucleo } from '../nucleo'
 import { useRitmo, useRitmoDaVoz, useSeguirRitmo } from '../store/ritmo'
 import { textoDoRitmo } from '../../shared/ritmo'
-import { Segmentos, type Segmento } from '@/components/painel'
+import { Segmentos, type Segmento } from '@/modulos/kit'
 import { AndamentoDoRoteiro } from './AndamentoDoRoteiro'
 import { CartaoDoEpisodio } from './CartaoDoEpisodio'
 import { MeuRoteiro } from './MeuRoteiro'

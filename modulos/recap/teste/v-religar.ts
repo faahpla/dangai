@@ -58,8 +58,8 @@ import {
   type RoteiroReligadoPronto,
 } from '../shared/roteiro'
 import { hashDoTexto } from '../shared/voz'
-import type { PedidoJson, RespostaJson } from '../../../electron/services/llm'
-import { configureSettings, saveSettings, type Cofre } from '../../../electron/services/settings'
+import { escolherProvedor, gerarJson, type PedidoJson, type RespostaJson } from '../../../electron/services/llm'
+import { configureSettings, getSettings, saveSettings, type Cofre } from '../../../electron/services/settings'
 import { configurarEpisodios } from '../electron/episodio/indice'
 import { pastaDoCache } from '../electron/gerar/cache'
 import { trocarIaParaTeste } from '../electron/gerar/ia'
@@ -239,6 +239,8 @@ async function principal(): Promise<void> {
     id: 'recap',
     config: () => ({ libraryDir: '', iaProvedor: 'gemini', whisperModel: 'small', modulo: { biblioteca: BIBLIOTECA } }),
     ligado: () => true,
+    // O ctx.ia como o nucleo monta (electron/modulos.ts); o teste troca o gerarJson pela falsa.
+    ia: { gerarJson, provedor: (forcado?: 'gemini' | 'anthropic') => escolherProvedor(getSettings(), forcado) },
   } as unknown as ContextoDoModulo)
   configurarEpisodios(userData)
   const indiceReal = join(BIBLIOTECA_REAL, '_indices', ID_37, 'episodio.json')

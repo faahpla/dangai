@@ -5,7 +5,7 @@ import { nomeNatural } from '@shared/nomes'
 import { useGerar } from '../store/gerar'
 import { nucleo } from '../nucleo'
 import { ponte } from '../ponte'
-import { Chip } from '@/components/painel'
+import { Chip } from '@/modulos/kit'
 import { AbrirPasta, Aviso, Botao, Contagem, EmBreve, Link, nuvemDoCaminho, Secao } from './pecas'
 
 /** Como a busca achou, em poucas palavras. O jargao (impressao digital, indice) fica de fora. */

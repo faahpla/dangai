@@ -8,7 +8,7 @@ import {
   naturalmente,
   nomesCanonicos,
   type RawShot,
-} from '../library'
+} from '../../../../electron/services/library'
 
 /**
  * A PASTA DE UM EPISODIO cortado (formato do AnCut/Corte Cenas/motor do
