@@ -529,6 +529,15 @@
       ]
     },
     {
+      "nome": "tokenizers",
+      "versao": "0.23.3",
+      "bytes": 2872101,
+      "hashes": [
+        "1f0823bb00c5fdc98e487354d54dd55a03848d61a1a0bf29a68c77f24f3b26c3",
+        "cded33237c77caeef62944d32aa9a7ef42bdce2b3497e18d137e072a8c4be438"
+      ]
+    },
+    {
       "nome": "tqdm",
       "versao": "4.70.1",
       "bytes": 80199,

@@ -34,3 +34,5 @@ onnxruntime>=1.17
 # Acelera o download dos modelos do HF Hub (CLIP ~890 MB na primeira análise).
 # Sem ele o hub cai em HTTP puro e loga um warning em toda instalação.
 hf_xet>=1.0
+# [recap] Busca por sentido (lote 2, app/cenas.py): o tokenizador do multilingual-e5-small em ONNX.
+tokenizers>=0.20

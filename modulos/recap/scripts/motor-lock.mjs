@@ -6,6 +6,8 @@
  *   node modulos/recap/scripts/motor-lock.mjs --conferir  so compara com o arquivo (sai 1 se mudou)
  *   node modulos/recap/scripts/motor-lock.mjs --de <lock> sem venv: o torch e os pacotes de
  *                                                         outro lock (o do Studio) + as fontes daqui
+ *   ... --com nome==versao                                [recap] mais um pacote do PyPI, com os
+ *                                                         hashes (repetivel; lote 2: tokenizers)
  *
  * [recap] Portado do Studio. No Dangai o lock leva tambem as FONTES OFICIAIS
  * que a tela baixa na instalacao (electron/motor-runtime/fontes.ts):
@@ -48,6 +50,8 @@ const VENV = join(ROOT, 'motor', '.venv')
 const SAIDA = join(ROOT, 'motor', 'studio-runtime.json')
 const CONFERIR = process.argv.includes('--conferir')
 const DE = process.argv.includes('--de') ? process.argv[process.argv.indexOf('--de') + 1] : null
+/** [recap] Pacotes a mais (--com nome==versao), alem dos do venv/lock. */
+const COM = process.argv.flatMap((a, i) => (a === '--com' && process.argv[i + 1] ? [process.argv[i + 1]] : []))
 
 /** [recap] O Python OFICIAL: o pacote "python" do nuget.org (3.12.10 e a ultima 3.12 com binario do python.org). */
 const PYTHON_OFICIAL = {
@@ -249,7 +253,23 @@ function deOutroLock(caminho) {
   })
 }
 
-const novo = await (DE ? Promise.resolve().then(() => deOutroLock(DE)) : gerar()).catch((e) => {
+/** [recap] Os pacotes do --com, do PyPI com os hashes, no lugar de uma versao antiga do mesmo nome. */
+async function comMais(lock) {
+  if (COM.length === 0) return lock
+  const [maior, menor] = PYTHON_OFICIAL.versao.split('.')
+  const cp = `cp${maior}${menor}`
+  const novos = await emLotes(COM, 4, (par) => {
+    const m = /^([A-Za-z0-9][A-Za-z0-9._-]*)==([^\s;]+)$/.exec(par)
+    if (!m) throw new Error(`--com fora do formato nome==versao: ${par}`)
+    return pacoteDoPyPI(normalizar(m[1]), m[2], cp)
+  })
+  const nomes = new Set(novos.map((p) => p.nome))
+  const pacotes = [...lock.pacotes.filter((p) => !nomes.has(p.nome)), ...novos].sort((a, b) => a.nome.localeCompare(b.nome))
+  log(`a mais: ${novos.map((p) => `${p.nome}==${p.versao} (${(p.bytes / 1e6).toFixed(1)} MB)`).join(', ')}`)
+  return { ...lock, pacotes }
+}
+
+const novo = await (DE ? Promise.resolve().then(() => deOutroLock(DE)) : gerar()).then(comMais).catch((e) => {
   process.stderr.write(`\n  ERRO: ${e instanceof Error ? e.message : String(e)}\n\n`)
   process.exit(1)
 })

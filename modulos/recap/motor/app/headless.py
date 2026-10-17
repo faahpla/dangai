@@ -1371,6 +1371,20 @@ def _rostos() -> int:
     return rodar(req, _emit, lambda: cancel.requested)
 
 
+def _cenas() -> int:
+    """[recap] O que o passo 4 ve das cenas: CLIP, beleza, nitidez e sentido (app/cenas.py).
+
+    Mesmo cuidado do _rostos com o stdin: le o pedido, solta o pipe e deixa a
+    thread de sondagem cuidar do cancelamento (e do host que morreu)."""
+    req = _read_request()
+    _detach_stdin()
+    cancel = _CancelFlag()
+    threading.Thread(target=_watch_stdin, args=(cancel,), daemon=True).start()
+    from .cenas import rodar
+
+    return rodar(req, _emit, lambda: cancel.requested)
+
+
 def _apply_request_to_config(cfg: Any, req: dict[str, Any]) -> None:
     """Passa os parâmetros da requisição pra Config.
 
@@ -1752,6 +1766,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run()
         if mode == "rostos":  # [Studio] app/rostos.py
             return _rostos()
+        if mode == "cenas":  # [recap] app/cenas.py (lote 2 das ideias)
+            return _cenas()
         _emit({"type": "failed", "message": f"modo desconhecido: {mode}"})
         return 2
     except Exception as e:  # noqa: BLE001 — a fronteira do processo
