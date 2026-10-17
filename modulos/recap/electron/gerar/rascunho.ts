@@ -21,6 +21,7 @@ import {
 import { abrirIndicePorId, type IndiceAberto } from '../episodio/abrir-indice'
 import { gravarJsonAtomico, pastaDoPerfil } from '../episodio/perfil'
 import { tituloDoEpisodio } from './prompts'
+import { aprenderDoAprovado } from './estilo'
 
 /**
  * O RASCUNHO DO RECAP no disco: <userData>/recaps/<id>.json.
@@ -144,6 +145,7 @@ export async function abrirRascunho(episodioId: string, novo = false): Promise<R
       atualizadoEm: quando,
       voz: null,
       cenas: null,
+      revisoes: [],
     }
     gravarRascunho(rascunho)
   } else {
@@ -199,6 +201,8 @@ export async function aprovarRoteiro(rascunhoId: string, roteiro: Roteiro): Prom
   const editado = aplicarEdicao(r, roteiro, quando)
   const aprovado = marcarAprovado(editado, quando, indiceParaConferir(editado))
   gravarRascunho(aprovado)
+  // "Aprender com as minhas edicoes" (estilo.ts): extra, nunca derruba a aprovacao.
+  aprenderDoAprovado(aprovado)
   return aprovado
 }
 

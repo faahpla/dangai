@@ -414,6 +414,8 @@ export interface EntradaDoRoteiro {
    * O modelo ajusta em vez de comecar do zero -- mantem a estrutura.
    */
   ajuste?: { anterior: Pick<Roteiro, 'secoes'>; motivo: string } | null
+  /** O bloco do "Meu estilo" (shared/estilo.ts, blocoDoEstilo). null/ausente = o prompt de sempre. */
+  estilo?: string | null
 }
 
 export function promptDoRoteiro(e: EntradaDoRoteiro): string {
@@ -434,6 +436,7 @@ export function promptDoRoteiro(e: EntradaDoRoteiro): string {
       ...ganchos.map((g) => `- ${g}`),
     )
   }
+  if (e.estilo) linhas.push('', e.estilo)
   if (e.instrucao?.trim()) {
     linhas.push('', `PEDIDO DO EDITOR: ${e.instrucao.trim()} (siga o pedido sem quebrar a fidelidade nem o formato)`)
   }
@@ -462,6 +465,8 @@ export interface EntradaDaSecao {
   instrucao?: string | null
   /** Nova tentativa depois de uma resposta sem frase valida (ou com termo vetado). */
   aviso?: string | null
+  /** O bloco do "Meu estilo". null/ausente = o prompt de sempre. */
+  estilo?: string | null
 }
 
 export function promptDaSecao(e: EntradaDaSecao): string {
@@ -493,6 +498,7 @@ export function promptDaSecao(e: EntradaDaSecao): string {
       : 'As outras partes ainda não contam nenhum acontecimento.',
     'Diga de um jeito novo: não reaproveite as frases de hoje desta parte.',
   ]
+  if (e.estilo) linhas.push(e.estilo)
   if (e.instrucao?.trim()) {
     linhas.push(`PEDIDO DO EDITOR: ${e.instrucao.trim()} (manda sobre o tamanho e o tom desta parte, sem quebrar a fidelidade)`)
   }

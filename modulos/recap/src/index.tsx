@@ -2,6 +2,7 @@ import { WandSparkles, Zap } from 'lucide-react'
 import type { ModuloDoRenderer } from '@/modulos/api'
 import { AjustesDaEdicaoRapida } from './components/AjustesDaEdicaoRapida'
 import { AjustesDoRecap } from './components/AjustesDoRecap'
+import { AjustesDoRoteiro } from './components/AjustesDoRoteiro'
 import { SecaoDaVoz } from './components/AjustesDeVoz'
 import { BotaoGerarRecap } from './components/BotaoGerarRecap'
 import { ControleDaMusica } from './components/ControleDaMusica'
@@ -66,6 +67,7 @@ export const recap: ModuloDoRenderer = {
   ),
 
   secoesDasConfiguracoes: [
+    { id: 'recap-roteiro', titulo: 'Roteiro do recap', depoisDe: 'ia', Componente: AjustesDoRoteiro },
     { id: 'recap-voz', titulo: 'Voz do recap', depoisDe: 'ia', Componente: SecaoDaVoz },
     { id: 'recap-edicao-rapida', titulo: 'Edicao rapida', depoisDe: 'sons', Componente: AjustesDaEdicaoRapida },
     { id: 'recap-biblioteca', titulo: 'Biblioteca do recap', depoisDe: 'biblioteca', Componente: AjustesDoRecap },
