@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# PyInstaller output
+build/
+dist/
+
+# Inno Setup output
+releases/
+
+# Runtime cache & outputs (per-user, huge)
+cache/
+Output/
+models/
+
+# Model weights sometimes checked in during dev; keep them out of the repo
+*.pt
+*.onnx
+
+# Bundled FFmpeg — downloaded fresh by fetch_ffmpeg.py during each build
+bin/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local scratch scripts
+_build_all.bat
+_smoke_ep/
+cache_test_v015/
+*.patch
+
+# gerado pelo gen_deps_fingerprint.py a cada build
+app/deps_fingerprint.txt

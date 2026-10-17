@@ -1,0 +1,36 @@
+# Core
+PySide6>=6.6
+
+# Video / imaging
+opencv-python>=4.9
+scenedetect[opencv]>=0.6.3
+ffmpeg-python>=0.2
+Pillow>=10.2
+numpy>=1.26
+
+# ML / embeddings
+# For CUDA (NVIDIA): install torch + torchvision from the cu121 index (see README).
+# The plain install below is the CPU fallback.
+torch>=2.2
+torchvision>=0.17
+open_clip_torch>=2.24
+ftfy>=6.1
+regex>=2023.12.25
+
+# Networking / data
+httpx>=0.27
+aiofiles>=23.2
+platformdirs>=4.2
+
+# Anime face detection (YOLOv8 fine-tuned on anime). deepghs/anime_face_detection
+# is ~3x better hit rate than the legacy lbpcascade_animeface cascade and the
+# small variant is 34ms/img on GPU.
+ultralytics>=8.1
+huggingface_hub>=0.20
+# CCIP: a segunda opinião sobre "esses dois desenhos são a mesma pessoa?".
+# CPU-only de propósito — o modelo tem 150 MB e roda em ~75s por episódio
+# sem GPU, e a GPU já está ocupada com o CLIP e o corte NVENC.
+onnxruntime>=1.17
+# Acelera o download dos modelos do HF Hub (CLIP ~890 MB na primeira análise).
+# Sem ele o hub cai em HTTP puro e loga um warning em toda instalação.
+hf_xet>=1.0
