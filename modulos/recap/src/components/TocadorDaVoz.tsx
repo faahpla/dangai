@@ -389,7 +389,7 @@ function detalheDoTake(take: TakeDaVoz, vozes: Record<'elevenlabs' | 'fish', Voz
     // As duas velocidades (15/10): a nativa (gerada) e o acelerar (o pos). A
     // nativa e a que FOI ao provedor: o eleven_v4 nao tem speed e gera a 1,0,
     // mesmo com a do perfil guardada no take (a mesma conta do cache e do slider).
-    `${c.fonte !== 'importado' ? `velocidade ${textoDaVelocidade(velocidadeNativaEnviada(c))} · ` : ''}acelerar ${textoDaVelocidade(c.velocidade)} · ${c.cortarPausas ? 'pausas cortadas' : 'pausas inteiras'} · ${segundosCurtos(take.duracao)}`,
+    `${c.fonte !== 'importado' ? `velocidade ${textoDaVelocidade(velocidadeNativaEnviada(c))} · ` : ''}acelerar ${textoDaVelocidade(c.velocidade)} · ${c.cortarPausas ? 'pausas cortadas' : 'pausas inteiras'}${c.fonte === 'importado' && c.cortarErros ? ' · erros cortados' : ''} · ${segundosCurtos(take.duracao)}`,
     take.cobrados > 0 ? textoDoGasto(c.fonte, take.cobrados) : 'sem custo',
     take.volume ? `volume ${take.volume.lufs.toFixed(1).replace('.', ',')} LUFS ${take.volume.ganho >= 0 ? '+' : ''}${take.volume.ganho.toFixed(1).replace('.', ',')} dB` : null,
     origem[take.origemDoAlinhamento],

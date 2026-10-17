@@ -85,6 +85,8 @@ export interface Formulario {
   /** O "acelerar" (o pos, de graca). */
   velocidade: number
   cortarPausas: boolean
+  /** So no audio importado (V1): repeticao, "eee" e frase lida duas vezes saem. Ligado por padrao. */
+  cortarErros: boolean
 }
 
 export type TipoDoPedido = 'gerar' | 'regravar' | 'ajustar' | 'importar'
@@ -169,6 +171,7 @@ const FORM_INICIAL: Formulario = {
   nativa: VELOCIDADE_NATIVA_PADRAO,
   velocidade: 1,
   cortarPausas: true,
+  cortarErros: true,
 }
 
 // ------------------------------------------------------------ puras (tela)
@@ -183,14 +186,25 @@ function arredondar(v: number): number {
   return Math.round(v * 100) / 100
 }
 
-function mesmoPos(a: Pick<ConfigDaVoz, 'velocidade' | 'cortarPausas'>, b: Pick<ConfigDaVoz, 'velocidade' | 'cortarPausas'>): boolean {
-  return Math.abs(a.velocidade - b.velocidade) < 1e-6 && a.cortarPausas === b.cortarPausas
+/** O "cortar erros" de uma config (so o importado tem; as outras contam como desligado). */
+function cortaErros(c: ConfigDaVoz): boolean {
+  return c.fonte === 'importado' && c.cortarErros
+}
+
+function mesmoPos(a: ConfigDaVoz, b: ConfigDaVoz): boolean {
+  return Math.abs(a.velocidade - b.velocidade) < 1e-6 && a.cortarPausas === b.cortarPausas && cortaErros(a) === cortaErros(b)
 }
 
 /** O formulario com a config de um take (as outras fontes ficam como estavam). */
 function formComTake(take: TakeDaVoz, base: Formulario): Formulario {
   const c = take.config
-  const f: Formulario = { ...base, fonte: c.fonte, velocidade: c.velocidade, cortarPausas: c.cortarPausas }
+  const f: Formulario = {
+    ...base,
+    fonte: c.fonte,
+    velocidade: c.velocidade,
+    cortarPausas: c.cortarPausas,
+    cortarErros: c.fonte === 'importado' ? c.cortarErros : base.cortarErros,
+  }
   if (c.fonte === 'elevenlabs') f.eleven = { voiceId: c.voiceId, modelId: c.modelId }
   if (c.fonte === 'fish') f.fish = { voiceId: c.voiceId, modelId: c.modelId }
   // A nativa do take (o de antes do campo le 1,0): reabrir nao muda a voz que ja foi paga.
@@ -217,7 +231,7 @@ function formDosAjustes(a: AjustesDaVoz, base: Formulario): Formulario {
         : a.hasFishKey
           ? 'fish'
           : 'importado'
-  return { ...base, fonte, eleven, fish, nativa: velocidadeNativaDoPerfil(v), velocidade: 1, cortarPausas: fonte !== 'importado' }
+  return { ...base, fonte, eleven, fish, nativa: velocidadeNativaDoPerfil(v), velocidade: 1, cortarPausas: fonte !== 'importado', cortarErros: true }
 }
 
 /**
@@ -276,7 +290,7 @@ export function configDoForm(form: Formulario, take: TakeDaVoz | null): ConfigDa
     }
   } else {
     if (take?.config.fonte !== 'importado') return null
-    bruto = { ...take.config, ...pos }
+    bruto = { ...take.config, ...pos, cortarErros: form.cortarErros }
   }
   const r = configDaVozSchema.safeParse(bruto)
   return r.success ? r.data : null
@@ -756,10 +770,14 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
        */
       const pos =
         take && take.config.fonte === fonte
-          ? { velocidade: take.config.velocidade, cortarPausas: take.config.cortarPausas }
+          ? {
+              velocidade: take.config.velocidade,
+              cortarPausas: take.config.cortarPausas,
+              cortarErros: take.config.fonte === 'importado' ? take.config.cortarErros : true,
+            }
           : pago(fonte) && pago(s.form.fonte)
-            ? { velocidade: s.form.velocidade, cortarPausas: s.form.cortarPausas }
-            : { velocidade: 1, cortarPausas: pago(fonte) }
+            ? { velocidade: s.form.velocidade, cortarPausas: s.form.cortarPausas, cortarErros: s.form.cortarErros }
+            : { velocidade: 1, cortarPausas: pago(fonte), cortarErros: true }
       set({
         form: { ...s.form, fonte, ...pos },
         formMexido: true,
@@ -848,9 +866,14 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
     desistir: () => set({ pergunta: null }),
 
     aplicarAjuste: async () => {
-      const { velocidade, cortarPausas } = get().form
+      const { velocidade, cortarPausas, cortarErros, fonte } = get().form
       await executar('ajustar', [], (id, pedidoId) =>
-        ponte.ajustarVoz(id, { velocidade: arredondar(velocidade), cortarPausas, pedidoId }),
+        ponte.ajustarVoz(id, {
+          velocidade: arredondar(velocidade),
+          cortarPausas,
+          ...(fonte === 'importado' ? { cortarErros } : {}),
+          pedidoId,
+        }),
       )
     },
 
@@ -861,13 +884,14 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
         return
       }
       // Soltou um audio com outra fonte na tela: a tela passa a ser a do importado.
-      const form = s.form.fonte === 'importado' ? s.form : { ...s.form, fonte: 'importado' as const, velocidade: 1, cortarPausas: false }
+      const form = s.form.fonte === 'importado' ? s.form : { ...s.form, fonte: 'importado' as const, velocidade: 1, cortarPausas: false, cortarErros: true }
       if (form !== s.form) set({ form, formMexido: true })
       await executar('importar', [], (id, pedidoId) =>
         ponte.importarAudio(id, {
           caminho,
           velocidade: arredondar(form.velocidade),
           cortarPausas: form.cortarPausas,
+          cortarErros: form.cortarErros,
           pedidoId,
         }),
       )

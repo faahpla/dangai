@@ -41,6 +41,7 @@ import { useRitmoDaConfig } from '../store/ritmo'
 import { Deslizante } from '@/modulos/kit'
 import { Barra, useRelogio } from './AndamentoDaAnalise'
 import { CartaoDoEpisodio } from './CartaoDoEpisodio'
+import { ErrosDoAudio } from './ErrosDoAudio'
 import { FrasesDaVoz } from './FrasesDaVoz'
 import { PerguntaDeCusto } from './PerguntaDeCusto'
 import { TocadorDaVoz } from './TocadorDaVoz'
@@ -212,6 +213,7 @@ function Narracao({ rascunho, take }: { rascunho: RascunhoDoRecap; take: TakeDaV
           <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
             <Pos travado={travado} />
           </div>
+          {take?.config.fonte === 'importado' && <ErrosDoAudio rascunhoId={rascunho.id} take={take} />}
         </>
       ) : (
         <CamposDaVoz travado={travado} />
@@ -473,6 +475,8 @@ function VelocidadeNativa({ travado }: { travado: boolean }) {
 function Pos({ travado }: { travado: boolean }) {
   const velocidade = useVoz((s) => s.form.velocidade)
   const cortarPausas = useVoz((s) => s.form.cortarPausas)
+  const cortarErros = useVoz((s) => s.form.cortarErros)
+  const importado = useVoz((s) => s.form.fonte === 'importado')
   const mudarForm = useVoz((s) => s.mudarForm)
   return (
     <>
@@ -503,6 +507,18 @@ function Pos({ travado }: { travado: boolean }) {
           Cortar pausas
         </Caixinha>
       </div>
+      {importado && (
+        <div className="flex h-8 items-center">
+          <Caixinha
+            ligada={cortarErros}
+            onChange={(ligada) => mudarForm((f) => ({ ...f, cortarErros: ligada }))}
+            disabled={travado}
+            title="Repeticao, eee e frase lida 2 vezes saem. Fica a ultima leitura."
+          >
+            Cortar erros
+          </Caixinha>
+        </div>
+      )}
     </>
   )
 }
