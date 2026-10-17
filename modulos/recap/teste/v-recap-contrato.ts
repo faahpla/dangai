@@ -110,7 +110,7 @@ try {
   confere(valores.every((c) => /^recap:[a-z-]+:[a-z-]+$/.test(c)), 'todos recap:<area>:<acao>')
   confere(new Set(valores).size === valores.length, 'nenhum repetido')
   recap.registrarIpc!(ctx)
-  const eventos = [CANAIS.indexarProgresso, CANAIS.roteiroProgresso, CANAIS.vozProgresso] as string[]
+  const eventos = [CANAIS.indexarProgresso, CANAIS.roteiroProgresso, CANAIS.vozProgresso, CANAIS.montarProgresso] as string[]
   const pedidos = valores.filter((c) => !eventos.includes(c))
   confere(
     pedidos.every((c) => canaisRegistrados.includes(c)) && canaisRegistrados.every((c) => pedidos.includes(c)),

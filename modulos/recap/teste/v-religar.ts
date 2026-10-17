@@ -21,10 +21,8 @@
  *
  * [recap] Portado do Studio. O indice do S4-37 e COPIADO da fixture para uma
  * biblioteca temporaria (a do modulo no teste), e o rascunho para o perfil
- * temporario: nada depende dos dados reais. O passo 4
- * (cenas) chega na parte 4: aqui as escolhas de cena sao so as do rascunho
- * (fraseId), e o que se confere e quais seguem depois da re-divisao; o ajuste
- * da barrinha (normalizarCortes) volta com o cenas.ts do Studio.
+ * temporario: nada depende dos dados reais. As escolhas de cena (parte 3)
+ * sao as do Studio: as mantidas seguem e a barrinha cabe no texto novo.
  *
  * Rodar da raiz do projeto:
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-religar.ts
@@ -59,6 +57,7 @@ import {
   type RoteiroReligadoPronto,
 } from '../shared/roteiro'
 import { hashDoTexto } from '../shared/voz'
+import { candidatoDosPlanos, CENAS_VAZIAS, type EscolhaDaFrase, type EstadoDasCenas } from '../shared/cenas'
 import { escolherProvedor, gerarJson, type PedidoJson, type RespostaJson } from '../../../electron/services/llm'
 import { configureSettings, getSettings, saveSettings, type Cofre } from '../../../electron/services/settings'
 import { configurarEpisodios } from '../electron/episodio/indice'
@@ -74,11 +73,6 @@ const FIXTURE = join(__dirname, 'fixture')
 /** A biblioteca do modulo no teste. */
 const BIBLIOTECA = mkdtempSync(join(tmpdir(), 'recap-v-religar-bib-'))
 
-/** As escolhas de cena do rascunho, so o que a parte 1 le delas. */
-interface EscolhaDoTeste {
-  fraseId: string
-  cenas: { palavraInicio: number }[]
-}
 const ID_37 = 'ep_25d63d4babd6dd9145aae70912d5b5b2b1fcb067'
 const REAL = join(FIXTURE, 'rascunho-s4e37.json')
 const RC = 'rc_25d63d4babd6_mv78ssvg'
@@ -217,13 +211,22 @@ function copiarReal(comCenas: boolean): RascunhoDoRecap {
   if (comCenas) {
     const atual = roteiroAtual(r)!
     const f = porId(atual)
-    const escolha = (fraseId: string, segunda: boolean): EscolhaDoTeste => {
+    const plano = indice37.planos[10]!
+    const escolha = (fraseId: string, segunda: boolean): EscolhaDaFrase => {
+      const c = candidatoDosPlanos([plano], ID_37, 'sugestao', { porque: ['teste'] })
       const n = f.get(fraseId)!.texto.split(/\s+/).length
-      return { fraseId, cenas: segunda ? [{ palavraInicio: 0 }, { palavraInicio: n - 1 }] : [{ palavraInicio: 0 }] }
+      return {
+        fraseId,
+        cenas: segunda ? [{ candidato: c, palavraInicio: 0 }, { candidato: c, palavraInicio: n - 1 }] : [{ candidato: c, palavraInicio: 0 }],
+        fita: [c],
+        confianca: 0.5,
+        travada: true,
+        hashTexto: hashDoTexto(f.get(fraseId)!.texto),
+        duracao: 3,
+        avisos: [],
+      }
     }
-    // hashDoTexto segue importado: a parte 4 volta com a escolha inteira.
-    void hashDoTexto
-    const cenas = { escolhas: [escolha('f07', true), escolha('f12', false), escolha('f13', false)], roteiroVersao: 3 }
+    const cenas: EstadoDasCenas = { ...CENAS_VAZIAS, escolhas: [escolha('f07', true), escolha('f12', false), escolha('f13', false)], roteiroVersao: 3 }
     r = { ...r, cenas }
     gravarRascunho(r)
   }
@@ -316,11 +319,10 @@ async function principal(): Promise<void> {
     confere(res.rascunho.atual === 9 && v9.origem === 'editado' && v9.derivadoDe === 3 && !res.rascunho.aprovado && res.rascunho.roteiros.length === 9, `versao 'editado' nova v${v9.versao} (de v3), desaprovada`)
     const disco = lerRascunhoDoDisco(RC)
     confere(JSON.stringify(roteiroAtual(disco)) === JSON.stringify(v9), 'o que voltou e o que esta no disco')
-    const escolhasNoDisco = (disco.cenas as { escolhas?: EscolhaDoTeste[] } | null)?.escolhas ?? []
-    const esc = escolhasNoDisco.map((e) => e.fraseId).join()
+    const esc = (disco.cenas?.escolhas ?? []).map((e) => e.fraseId).join()
     confere(esc === 'f07,f13', `escolhas de cena: as mantidas seguem, a da f12 sai (${esc})`)
-    // [recap] 'f07: a barrinha da 2a cena cabe no texto novo' volta na parte 4 (normalizarCortes).
-    void F07_NOVO
+    const e07 = disco.cenas!.escolhas[0]!
+    confere(e07.cenas.length === 2 && e07.cenas[1]!.palavraInicio < F07_NOVO.split(/\s+/).length, 'f07: a barrinha da 2a cena cabe no texto novo')
     confere(validarRoteiro(v9, disco.eventos, indice37).filter((p) => p.nivel === 'erro').length === 0, 'o roteiro religado nao tem erro (aprova)')
     confere(res.avisos.some((a) => /evento inexistente/.test(a)) && res.avisos.some((a) => /fora dos eventos/.test(a)) && res.avisos.some((a) => /Texto de tela/.test(a)), 'os consertos voltam como aviso')
 
