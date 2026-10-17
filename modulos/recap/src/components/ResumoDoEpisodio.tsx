@@ -14,6 +14,7 @@ import { nomesDeUmaArte, ORIGEM_DO_BATISMO, podeReconhecerNaMao } from '../../sh
 import { TRECHO_MINIMO, useGerar } from '../store/gerar'
 import { useDescoberta } from '../store/gerar-descoberta'
 import { SecaoDoCorte } from './AndamentoDoCorte'
+import { EnviarAoAncut } from './EnviarAoAncut'
 import { BotaoReconhecerNaMao, LinhaDaDescoberta, LinkRevisarPersonagens, useDescobertaViva } from './EntradaDaDescoberta'
 import { SeletorDeLegenda } from './CartaoDoEpisodio'
 import { LISTRADO, ReguaDoEpisodio } from './ReguaDoEpisodio'
@@ -118,6 +119,8 @@ export function ResumoDoEpisodio() {
                 </span>
               )}
             </span>
+            {/* L1: so o episodio cortado pelo recap vai para o AnCut, e so com o clique. */}
+            {comCenas && indice.biblioteca.origem === 'studio' && <EnviarAoAncut episodioId={indice.id} />}
             {/* Sem cenas ainda, a pasta do indice so tem o episodio.json: nada a ver no Explorer. */}
             {comCenas && (
               <AbrirPasta

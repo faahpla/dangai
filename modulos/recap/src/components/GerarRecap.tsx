@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, Check, Library as LibraryIcon, Settings2, X } from 'lucide-react'
 import { ehEpisodio, escutarGerar, podeIrAoRoteiro, useGerar, type FaseDoEpisodio } from '../store/gerar'
+import { escutarAncut } from '../store/ancut'
 import { escutarRoteiro, roteiroAprovado, useRoteiro } from '../store/gerar-roteiro'
 import { escutarVoz, useSituacaoDaVoz, useVoz } from '../store/gerar-voz'
 import { escutarCenas, useCenas } from '../store/gerar-cenas'
@@ -53,6 +54,8 @@ export function GerarRecap() {
   // A escuta mora aqui, e nao no Assistente: o componente monta com o app e
   // continua ouvindo o motor com a tela fechada.
   useEffect(() => escutarGerar(), [])
+  // L1: o resultado do "Enviar sempre para o AnCut" ao fim de um corte.
+  useEffect(() => escutarAncut(), [])
   useEffect(() => escutarRoteiro(), [])
   useEffect(() => escutarVoz(), [])
   // As sugestoes de cena saem em segundo plano assim que o roteiro e aprovado (com o assistente fechado tambem).

@@ -3,7 +3,7 @@ import { FolderOpen } from 'lucide-react'
 import type { ConfigDoRecapNaTela } from '../../shared/config'
 import { ponte } from '../ponte'
 import { useGerar } from '../store/gerar'
-import { Link, meioDoCaminho, nuvemDoCaminho } from './pecas'
+import { Caixinha, Link, meioDoCaminho, nuvemDoCaminho } from './pecas'
 import { TrazerDoStudio } from './TrazerDoStudio'
 
 /**
@@ -34,6 +34,14 @@ export function AjustesDoRecap() {
       vivo = false
     }
   }, [])
+
+  const enviarSempre = async (ligada: boolean): Promise<void> => {
+    setSalvando(true)
+    const r = await ponte.salvarConfig({ enviarSempreAoAncut: ligada })
+    setSalvando(false)
+    if (r.ok) setConfig(r.value)
+    else setAviso(r.error)
+  }
 
   const gravar = async (pasta: string): Promise<void> => {
     setSalvando(true)
@@ -86,6 +94,16 @@ export function AjustesDoRecap() {
           </Link>
         )}
       </p>
+      <div className="mt-3">
+        <Caixinha
+          ligada={config?.enviarSempreAoAncut ?? false}
+          onChange={(v) => void enviarSempre(v)}
+          disabled={!config || salvando}
+          title="Ao fim de cada corte, copia o episodio para a biblioteca do AnCut. Com o AnCut aberto ou o episodio ja la, nao envia e avisa."
+        >
+          Enviar sempre para o AnCut
+        </Caixinha>
+      </div>
       <TrazerDoStudio />
     </div>
   )
