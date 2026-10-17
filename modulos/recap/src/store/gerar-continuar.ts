@@ -79,8 +79,7 @@ export function recapsParaContinuar(
     vistos.add(r.episodioId)
     const { anime, episodio } = partesDoTitulo(r.titulo)
     // Resumo sem `passo` (main de antes desta versao): o passo 2, onde todo rascunho comeca.
-    // [recap] O passo 4 (Cenas) chega na parte 3: a voz aprovada reabre no 3 (gerar.ts).
-    const passo: PassoDoAssistente = Math.min(r.passo ?? 2, 3) as PassoDoAssistente
+    const passo: PassoDoAssistente = r.passo ?? 2
     linhas.push({
       episodioId: r.episodioId,
       anime,

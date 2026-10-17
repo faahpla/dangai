@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Check, Clapperboard, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Clapperboard, TriangleAlert } from 'lucide-react'
 import { roteiroAtual } from '../../shared/roteiro'
 import { podeIrParaCenas, takeAtual } from '../../shared/voz'
 import { useGerar } from '../store/gerar'
@@ -84,8 +84,8 @@ export function RodapeDaVoz() {
   const aprovarEFocar = async (): Promise<void> => {
     setConfirmando(false)
     await aprovar()
-    // O botao virou "Aprovada": o foco vai para o "Desfazer" ([recap] o "Proximo: Cenas" espera a parte 3).
-    focarBotao('desaprovar-voz')
+    // O botao virou "Aprovada": o foco vai para o "Proximo: Cenas" (Enter segue), ou o "Desfazer".
+    focarBotao('proximo-cenas', 'desaprovar-voz')
   }
 
   const pedirAprovacao = (): void => {
@@ -156,11 +156,10 @@ export function RodapeDaVoz() {
           </Link>
           {/* A acao que leva adiante: o rosa da tela, como o "Proximo: Voz" do passo 2. */}
           {cenas && (
-            // [recap] As cenas chegam na parte 3: o botao fica no lugar, desligado, com o porque.
-            <Botao principal foco="proximo-cenas" onClick={() => {}} disabled title="As cenas chegam em breve">
+            <Botao principal foco="proximo-cenas" onClick={() => irParaPasso(4)} title="Ir as cenas (passo 4)">
               <Clapperboard size={13} strokeWidth={1.5} />
               Proximo: Cenas
-              <span className="text-[11px] font-normal opacity-80">em breve</span>
+              <ArrowRight size={13} strokeWidth={1.5} />
             </Botao>
           )}
         </>

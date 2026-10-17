@@ -1,12 +1,19 @@
-import { WandSparkles } from 'lucide-react'
+import { WandSparkles, Zap } from 'lucide-react'
 import type { ModuloDoRenderer } from '@/modulos/api'
+import { AjustesDaEdicaoRapida } from './components/AjustesDaEdicaoRapida'
 import { AjustesDoRecap } from './components/AjustesDoRecap'
 import { SecaoDaVoz } from './components/AjustesDeVoz'
 import { BotaoGerarRecap } from './components/BotaoGerarRecap'
+import { ControleDaMusica } from './components/ControleDaMusica'
+import { BotaoDaEdicaoRapida, rodarEdicaoRapida } from './components/EdicaoRapida'
+import { NaBarraDeStatus } from './components/NaBarraDeStatus'
 import { GerarRecap } from './components/GerarRecap'
 import { perguntarSeEpisodio, PerguntaDoEpisodio } from './components/PerguntaDoEpisodio'
 import { guardarNucleo, nucleo } from './nucleo'
+import { ouvirOProjeto, rotuloDoClipe } from './projeto'
 import { useGerar } from './store/gerar'
+import { partesLigadas, nadaLigado, CONFIG_DA_EDICAO_RAPIDA_PADRAO } from '../shared/edicao-rapida'
+import { useEdicaoRapida } from './store/edicao-rapida'
 
 /**
  * [recap] O GERAR RECAP no renderer: o assistente do AniRecap Studio dentro do
@@ -18,14 +25,21 @@ import { useGerar } from './store/gerar'
  * - a Voz (chaves, voz padrao, velocidade) nas Configuracoes, depois da IA, e
  *   a Biblioteca do recap, depois da Biblioteca do Dangai;
  * - um episodio longo solto (ou escolhido) na tela inicial pergunta "Gerar
- *   recap" ou "Usar como clipe".
+ *   recap" ou "Usar como clipe";
+ * - parte 3: a Edicao rapida (o botao e a musica na barra do Renderizar, o
+ *   comando na paleta, a secao nas Configuracoes depois dos Sons de
+ *   transicao), o andamento na barra de status, o rotulo da camada de cor na
+ *   linha do tempo e os eventos do projeto (converter o do Studio, anotar a
+ *   musica depois de salvar/renderizar).
  */
 export const recap: ModuloDoRenderer = {
   id: 'recap',
 
   iniciar(n) {
     guardarNucleo(n)
+    const pararDeOuvir = ouvirOProjeto()
     return () => {
+      pararDeOuvir()
       // Desligado com a tela aberta: ela fecha (o nucleo ja solta o inerte).
       // A fachada fica guardada: a limpeza das telas (o telaCheia(false) ao
       // desmontar) ainda fala com ela, e um erro numa limpeza de componente
@@ -47,6 +61,7 @@ export const recap: ModuloDoRenderer = {
 
   secoesDasConfiguracoes: [
     { id: 'recap-voz', titulo: 'Voz do recap', depoisDe: 'ia', Componente: SecaoDaVoz },
+    { id: 'recap-edicao-rapida', titulo: 'Edicao rapida', depoisDe: 'sons', Componente: AjustesDaEdicaoRapida },
     { id: 'recap-biblioteca', titulo: 'Biblioteca do recap', depoisDe: 'biblioteca', Componente: AjustesDoRecap },
   ],
 
@@ -58,7 +73,30 @@ export const recap: ModuloDoRenderer = {
       icon: WandSparkles,
       run: () => void useGerar.getState().abrirOuEscolher(),
     },
+    comandoDaEdicaoRapida(),
   ],
+
+  // A Edicao rapida e a musica, antes do Renderizar (so com o projeto pronto para renderizar).
+  BotoesDaBarraDeRender: () => {
+    const pronto = nucleo().usar(
+      (s) =>
+        s.audio !== null &&
+        s.plan !== null &&
+        s.images.length > 0 &&
+        !(s.render !== null && ['bundling', 'rendering', 'muxing'].includes(s.render.stage)),
+    )
+    if (!pronto) return null
+    return (
+      <>
+        <BotaoDaEdicaoRapida />
+        <ControleDaMusica />
+      </>
+    )
+  },
+
+  ItemDaBarraDeStatus: NaBarraDeStatus,
+
+  rotuloDoClipe,
 
   /*
    * Como no Studio: so na TELA INICIAL (nada aberto) um video longo pergunta.
@@ -68,4 +106,20 @@ export const recap: ModuloDoRenderer = {
     if (nucleo().ler().phase() !== 'empty') return []
     return (await perguntarSeEpisodio(caminhos)) ? caminhos : []
   },
+}
+
+/** "Edicao rapida" na paleta: apagado sem projeto pronto ou com tudo desligado. */
+function comandoDaEdicaoRapida() {
+  const e = nucleo().ler()
+  const pronto = e.audio !== null && e.plan !== null && e.images.length > 0 && e.busy === null
+  const config = useEdicaoRapida.getState().padrao?.config ?? CONFIG_DA_EDICAO_RAPIDA_PADRAO
+  const nada = nadaLigado(config)
+  return {
+    id: 'recap-edicao-rapida',
+    label: 'Edicao rapida',
+    hint: nada ? 'Nada ligado (Configuracoes)' : partesLigadas(config),
+    icon: Zap,
+    disabled: !pronto || nada || useEdicaoRapida.getState().rodando !== null,
+    run: () => void rodarEdicaoRapida(),
+  }
 }

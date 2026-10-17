@@ -3,6 +3,10 @@ import { ArrowRight, Check, Library as LibraryIcon, Settings2, X } from 'lucide-
 import { ehEpisodio, escutarGerar, podeIrAoRoteiro, useGerar, type FaseDoEpisodio } from '../store/gerar'
 import { escutarRoteiro, roteiroAprovado, useRoteiro } from '../store/gerar-roteiro'
 import { escutarVoz, useSituacaoDaVoz, useVoz } from '../store/gerar-voz'
+import { escutarCenas, useCenas } from '../store/gerar-cenas'
+import { roteiroAtual } from '../../shared/roteiro'
+import { takeAtual } from '../../shared/voz'
+import { cenasDoRascunho, escolhasDesatualizadas } from '../../shared/cenas'
 import { avisoDoPasso, PASSOS, passoLiberado } from '../store/gerar-passos'
 import { classifyFile } from '@shared/channels'
 import { nucleo } from '../nucleo'
@@ -12,10 +16,12 @@ import { AndamentoDoCorte } from './AndamentoDoCorte'
 import { AreaDeSoltar, CartaoDoEpisodio } from './CartaoDoEpisodio'
 import { EscolhaDoRecap } from './EscolhaDoRecap'
 import { PassoDaVoz } from './PassoDaVoz'
+import { PassoDasCenas } from './PassoDasCenas'
 import { PassoDoRoteiro } from './PassoDoRoteiro'
 import { PedidoDeDescoberta, ResultadoDaBusca } from './ResultadoDaBusca'
 import { ResumoDoEpisodio } from './ResumoDoEpisodio'
 import { RodapeDaVoz } from './RodapeDaVoz'
+import { RodapeDasCenas } from './RodapeDasCenas'
 import { RodapeDoRoteiro } from './RodapeDoRoteiro'
 import { Botao, COR_DE_AVISO } from './pecas'
 
@@ -34,9 +40,9 @@ import { Botao, COR_DE_AVISO } from './pecas'
  * parou.
  *
  * [recap] No Dangai ele e a tela cheia do modulo (`nucleo.telaCheia`): o
- * nucleo deixa o resto inerte e os atalhos quietos por baixo. Partes 1 e 2:
- * os passos 1 (Episodio), 2 (Roteiro) e 3 (Voz); Cenas aparece no cabecalho
- * como "em breve".
+ * nucleo deixa o resto inerte e os atalhos quietos por baixo. Partes 1 a 3:
+ * os passos 1 (Episodio), 2 (Roteiro), 3 (Voz) e 4 (Cenas, sobre um indice
+ * ja cortado: o corte e da parte 4).
  */
 export function GerarRecap() {
   const aberto = useGerar((s) => s.aberto)
@@ -46,6 +52,8 @@ export function GerarRecap() {
   useEffect(() => escutarGerar(), [])
   useEffect(() => escutarRoteiro(), [])
   useEffect(() => escutarVoz(), [])
+  // As sugestoes de cena saem em segundo plano assim que o roteiro e aprovado (com o assistente fechado tambem).
+  useEffect(() => escutarCenas(), [])
 
   // [recap] Aberto, avisa o nucleo (o resto da janela fica inerte e quieto).
   useEffect(() => {
@@ -71,6 +79,8 @@ function Assistente() {
   const temIa = useRoteiro((s) => s.geracao !== null)
   // O mesmo para a voz sendo gerada (passo 3).
   const temVoz = useVoz((s) => s.pedido !== null)
+  // O projeto sendo montado (passo 4): trocar de episodio no meio abriria o projeto de outro.
+  const montando = useCenas((s) => s.montando)
 
   const [arrastando, setArrastando] = useState(false)
   /** No passo 3 um audio solto vira a narracao: o aviso do arraste diz isso (pelo tipo, quando o sistema da). */
@@ -79,6 +89,7 @@ function Assistente() {
 
   const temArquivos = (e: React.DragEvent): boolean => e.dataTransfer.types.includes('Files')
   const noPassoDaVoz = passo === 3 && fase !== 'vazio'
+  const noPassoDasCenas = passo === 4 && fase !== 'vazio'
 
   /*
    * [recap] O Esc da tela cheia, na SUBIDA ate a janela, como o do App: o
@@ -165,6 +176,10 @@ function Assistente() {
         const gerar = useGerar.getState()
         const escolhido = caminhos.find(ehEpisodio) ?? caminhos[0]!
         if (escolhido === gerar.arquivo) return
+        if (useCenas.getState().montando) {
+          useCenas.setState({ erro: 'Espere o projeto abrir antes de trocar de episodio.' })
+          return
+        }
         if (useRoteiro.getState().geracao) {
           useRoteiro.setState({ erro: 'Cancele a IA antes de trocar de episodio.' })
           return
@@ -173,6 +188,7 @@ function Assistente() {
           // O recado vai para o rodape do passo na tela (cada passo mostra o erro da store dele).
           const erro = 'Cancele a voz antes de trocar de episodio.'
           if (noPassoDaVoz) useVoz.setState({ erro })
+          else if (noPassoDasCenas) useCenas.setState({ erro })
           else if (passo === 2) useRoteiro.setState({ erro })
           else useGerar.setState({ erro })
           return
@@ -220,12 +236,20 @@ function Assistente() {
        * conteudo pulava 5 px para o lado quando a barra aparecia ou sumia (passo
        * 1 -> 2, o roteiro chegando depois da geracao).
        */}
-      <div className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+      {/* O passo 4 rola por dentro (coluna do roteiro e grade, como a Biblioteca): aqui nao rola. */}
+      <div
+        className={[
+          'relative min-h-0 flex-1',
+          noPassoDasCenas ? 'overflow-hidden' : 'overflow-y-auto [scrollbar-gutter:stable]',
+        ].join(' ')}
+      >
         {fase === 'vazio' ? (
           // Sem episodio, a area de soltar e a tela inteira, como o Dropzone da tela inicial.
           <div className="flex h-full p-6">
             <AreaDeSoltar arrastando={arrastando} />
           </div>
+        ) : passo === 4 ? (
+          <PassoDasCenas />
         ) : passo === 3 ? (
           <PassoDaVoz />
         ) : passo === 2 ? (
@@ -249,7 +273,9 @@ function Assistente() {
                   ? temVoz
                     ? 'Espere a voz terminar'
                     : 'Solte para importar a narracao'
-                  : temJob
+                  : montando
+                    ? 'Espere o projeto abrir'
+                    : temJob
                     ? 'Cancele a analise antes de trocar'
                     : temIa
                       ? 'Cancele a IA antes de trocar'
@@ -264,7 +290,15 @@ function Assistente() {
         )}
       </div>
 
-      {noPassoDaVoz ? <RodapeDaVoz /> : passo === 2 && fase !== 'vazio' ? <RodapeDoRoteiro /> : <Rodape />}
+      {noPassoDasCenas ? (
+        <RodapeDasCenas />
+      ) : noPassoDaVoz ? (
+        <RodapeDaVoz />
+      ) : passo === 2 && fase !== 'vazio' ? (
+        <RodapeDoRoteiro />
+      ) : (
+        <Rodape />
+      )}
     </div>
   )
 }
@@ -288,6 +322,7 @@ function Passos() {
   const episodioId = useGerar((s) => s.indice?.id ?? null)
   const irParaPasso = useGerar((s) => s.irParaPasso)
   const aprovado = useRoteiro((s) => episodioId !== null && s.episodioId === episodioId && roteiroAprovado(s))
+  const rascunho = useRoteiro((s) => (episodioId !== null && s.episodioId === episodioId ? s.rascunho : null))
 
   // Episodio pronto no passo 1: le o rascunho dele (so se ja tem roteiro), e os
   // passos 3 e 4 ja aparecem como sao -- sem precisar passar pelo passo 2.
@@ -297,23 +332,30 @@ function Passos() {
 
   const situacao = useSituacaoDaVoz()
   const vozAprovada = situacao === 'aprovada' && aprovado
-  // [recap] As Cenas chegam na parte 3: aparecem, mas nao abrem.
   const condicoes = { episodioPronto: pode2, roteiroAprovado: aprovado, vozAprovada }
-  const emBreve = (n: number): boolean => n >= 4
-  const contexto = { vozDesatualizada: aprovado && situacao === 'desatualizada', cenasEncaixadas: false, vozAprovada, cenasForaDaVoz: false }
+  // As cenas ja foram encaixadas numa voz e a voz mudou depois (outro take, regravou): o encaixe se refaz ao voltar.
+  const cenas = rascunho ? cenasDoRascunho(rascunho) : null
+  const roteiro = rascunho ? roteiroAtual(rascunho) : null
+  const cenasEncaixadas = cenas !== null && cenas.escolhas.length > 0 && cenas.encaixadoEm !== null
+  const foraDaVoz =
+    rascunho !== null && roteiro !== null && cenas !== null && cenasEncaixadas
+      ? (() => {
+          const d = escolhasDesatualizadas(roteiro, takeAtual(rascunho), cenas)
+          return d.encaixeVelho || d.duracaoMudou.length > 0
+        })()
+      : false
+  const contexto = { vozDesatualizada: aprovado && situacao === 'desatualizada', cenasEncaixadas, vozAprovada, cenasForaDaVoz: foraDaVoz }
 
   return (
     <ol aria-label="Passos do assistente" className="ml-3 flex items-center gap-0.5 rounded-sm border border-line bg-elevated p-0.5">
       {PASSOS.map((p) => {
         const atual = p.n === passo
         const feito = (p.n === 1 && fase === 'pronto') || (p.n === 2 && aprovado) || (p.n === 3 && vozAprovada)
-        const clicavel = !atual && !emBreve(p.n) && passoLiberado(p.n, condicoes)
+        const clicavel = !atual && passoLiberado(p.n, condicoes)
         const aviso = atual ? null : avisoDoPasso(p.n, contexto)
         const motivo = atual
           ? undefined
-          : emBreve(p.n)
-            ? 'Em breve'
-            : p.n === 1
+          : p.n === 1
             ? 'Voltar ao episodio'
             : p.n === 2
               ? pode2
@@ -321,11 +363,19 @@ function Passos() {
                 : mudaram
                   ? 'Salve as marcacoes de OP/ED antes'
                   : 'Primeiro o episodio'
-              : !pode2
-                ? 'Primeiro o episodio'
-                : aprovado
-                  ? 'Ir a voz'
-                  : 'Aprove o roteiro antes'
+              : p.n === 3
+                ? !pode2
+                  ? 'Primeiro o episodio'
+                  : aprovado
+                    ? 'Ir a voz'
+                    : 'Aprove o roteiro antes'
+                : !pode2
+                  ? 'Primeiro o episodio'
+                  : !aprovado
+                    ? 'Aprove o roteiro antes'
+                    : vozAprovada
+                      ? 'Ir as cenas'
+                      : 'Aprove a voz antes'
         const dica = aviso && motivo ? `${aviso}. ${motivo}` : (aviso ?? motivo)
         const classe = [
           'flex h-6 items-center gap-1.5 rounded-[3px] px-2.5 text-[11px]',
