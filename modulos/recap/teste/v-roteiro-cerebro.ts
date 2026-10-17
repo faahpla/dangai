@@ -14,13 +14,15 @@
  * "Refazer" com frase vazia em outra parte, Cancelar que guarda so no
  * historico, rascunho novo do mesmo episodio, placas e "em cena" no prompt.
  *
- * [recap] Portado do Studio. Os indices reais do Dr. Stone sao COPIADOS da
- * biblioteca do Studio (so leitura) para uma biblioteca temporaria, que e a
- * biblioteca do modulo no teste; o perfil tambem e temporario. Nada e gravado
- * fora do temp. Rodar da raiz do projeto:
+ * [recap] Portado do Studio. Os indices do Dr. Stone vem da FIXTURE
+ * (teste/fixture, tirada dos indices reais do Levi) para uma biblioteca
+ * temporaria, que e a biblioteca do modulo no teste; os keyframes sao
+ * sinteticos e o perfil tambem e temporario. Nada e gravado fora do temp, e
+ * nada depende dos dados reais. Rodar da raiz do projeto:
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-roteiro-cerebro.ts
  */
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
@@ -40,6 +42,7 @@ import {
   type RoteiroDaIa,
   type SecaoDaIa,
 } from '../shared/roteiro'
+import { ffmpegPath } from '../../../electron/services/ffmpeg-path'
 import { escolherProvedor, gerarJson, type PedidoJson, type RespostaJson } from '../../../electron/services/llm'
 import { configureSettings, getSettings, saveSettings, type Cofre } from '../../../electron/services/settings'
 import { configurarEpisodios } from '../electron/episodio/indice'
@@ -63,16 +66,26 @@ import { gerarRoteiro } from '../electron/gerar/roteiro'
 import { ritmoDoRascunho } from '../electron/voz/ritmo'
 import { miniaturasDasCenas } from '../electron/gerar/miniaturas'
 
-/** A biblioteca REAL do Studio: so leitura (o teste copia dela para o temp). */
-const REAL = 'G:\\AniRecap Studio\\Biblioteca'
+/**
+ * A FIXTURE (teste/fixture): os indices do S4-37 e do S04E24, so com o que o
+ * teste le (as falas inteiras, os planos com personagem, os caminhos trocados
+ * por X:\fixture). Roda em qualquer maquina, sem os dados do Levi.
+ */
+const FIXTURE = join(__dirname, 'fixture')
 /** A biblioteca do modulo no teste: uma copia minima, no temp. */
 const BIBLIOTECA = mkdtempSync(join(tmpdir(), 'recap-v-cerebro-bib-'))
 
-/** Copia um arquivo da biblioteca real para a do teste, no mesmo caminho relativo. */
-function copiar(caminhoReal: string): void {
-  const destino = join(BIBLIOTECA, relative(REAL, caminhoReal))
+/** Copia um arquivo da fixture para a biblioteca do teste, no caminho relativo pedido. */
+function copiar(daFixture: string, destinoRelativo: string): void {
+  const destino = join(BIBLIOTECA, destinoRelativo)
   mkdirSync(dirname(destino), { recursive: true })
-  copyFileSync(caminhoReal, destino)
+  copyFileSync(join(FIXTURE, daFixture), destino)
+}
+
+/** Um keyframe sintetico (a imagem de teste do ffmpeg, com detalhe: a miniatura passa de 1 KB). */
+function keyframeFalso(destino: string): void {
+  mkdirSync(dirname(destino), { recursive: true })
+  execFileSync(ffmpegPath, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=640x360', '-frames:v', '1', destino])
 }
 
 /** O contexto que o nucleo daria ao modulo: so a config (a biblioteca no temp). */
@@ -241,12 +254,11 @@ async function principal(): Promise<void> {
   configurarEpisodios(userData)
   const desfazer = trocarIaParaTeste(iaFalsa)
   // A copia minima: os dois indices e os keyframes que as miniaturas pedem.
-  copiar(join(REAL, '_indices', ID_37, 'episodio.json'))
-  const real24 = join(REAL, 'Dr STONE', 'S04E24')
-  copiar(join(real24, 'episodio.json'))
-  const cru24 = lerIndice(JSON.parse(readFileSync(join(real24, 'episodio.json'), 'utf8')))
-  for (const p of cru24.planos.filter((x) => x.keyframe).slice(10, 13)) {
-    copiar(join(real24, relative(cru24.biblioteca.pasta, p.keyframe!)))
+  copiar('indice-s4e37.json', join('_indices', ID_37, 'episodio.json'))
+  copiar('indice-s4e24.json', join('Dr STONE', 'S04E24', 'episodio.json'))
+  const cru24 = lerIndice(JSON.parse(readFileSync(join(FIXTURE, 'indice-s4e24.json'), 'utf8')))
+  for (const p of cru24.planos.filter((x) => x.keyframe).slice(0, 3)) {
+    keyframeFalso(join(BIBLIOTECA, 'Dr STONE', 'S04E24', relative(cru24.biblioteca.pasta, p.keyframe!)))
   }
   indice37 = lerIndice(JSON.parse(readFileSync(join(BIBLIOTECA, '_indices', ID_37, 'episodio.json'), 'utf8')))
 
@@ -466,7 +478,7 @@ async function principal(): Promise<void> {
     eventosRuins = false
 
     secao('11. Miniaturas')
-    const planosCom = i24.planos.filter((p) => p.keyframe).slice(10, 13).map((p) => p.id)
+    const planosCom = i24.planos.filter((p) => p.keyframe).slice(0, 3).map((p) => p.id)
     const mini = await miniaturasDasCenas(ID_24, [...planosCom, 'nao-existe'])
     confere(mini['nao-existe'] === null && planosCom.every((p) => typeof mini[p] === 'string'), `${planosCom.length} urls, plano inexistente = null`)
     const baixado = await baixar(mini[planosCom[0]!]!)

@@ -2,9 +2,10 @@
  * O MODO TEXTO e o "USAR MEU ROTEIRO" do passo 2 (religarRoteiro), sem gastar
  * cota: a IA e trocada por uma falsa (trocarIaParaTeste) que conta as chamadas.
  *
- * Roda numa COPIA do rascunho real do S4-37 (roteiro v3 aprovado) dentro de
- * um perfil temporario; le o indice real da biblioteca do Studio (so leitura)
- * e confere no fim que o arquivo real nao mudou. Cobre:
+ * Roda numa COPIA do rascunho do S4-37 (roteiro v3 aprovado) dentro de um
+ * perfil temporario, com o indice dele; os dois vem da FIXTURE (teste/fixture,
+ * tirada dos dados reais do Levi, sem caminho pessoal) e o teste confere no
+ * fim que a fixture nao mudou. Cobre:
  * - as funcoes puras (texto normalizado, precisaReligar, aplicarReligacao);
  * - editar 2 frases e acrescentar 1: as outras 14 ficam IGUAIS (id e
  *   vinculos), a pouco mudada mantem id e evento, a muito mudada e a nova
@@ -18,9 +19,9 @@
  *   colar de novo nao duplica; num rascunho sem eventos, eles vem antes;
  * - a vez dividida com o gerarRoteiro (um pedido por rascunho).
  *
- * [recap] Portado do Studio. O indice real do S4-37 e COPIADO da biblioteca
- * do Studio (so leitura) para uma biblioteca temporaria (a do modulo no
- * teste), e o rascunho real e copiado para o perfil temporario. O passo 4
+ * [recap] Portado do Studio. O indice do S4-37 e COPIADO da fixture para uma
+ * biblioteca temporaria (a do modulo no teste), e o rascunho para o perfil
+ * temporario: nada depende dos dados reais. O passo 4
  * (cenas) chega na parte 4: aqui as escolhas de cena sao so as do rascunho
  * (fraseId), e o que se confere e quais seguem depois da re-divisao; o ajuste
  * da barrinha (normalizarCortes) volta com o cenas.ts do Studio.
@@ -68,8 +69,8 @@ import { abrirRascunho, gravarRascunho, lerRascunhoDoDisco, pastaDosRascunhos } 
 import { religarRoteiro } from '../electron/gerar/religar'
 import { cancelarRoteiro, gerarRoteiro } from '../electron/gerar/roteiro'
 
-/** A biblioteca REAL do Studio: so leitura (o teste copia o indice dela para o temp). */
-const BIBLIOTECA_REAL = 'G:\\AniRecap Studio\\Biblioteca'
+/** A fixture: o rascunho e o indice do S4-37, so leitura (o teste copia para o temp). */
+const FIXTURE = join(__dirname, 'fixture')
 /** A biblioteca do modulo no teste. */
 const BIBLIOTECA = mkdtempSync(join(tmpdir(), 'recap-v-religar-bib-'))
 
@@ -79,7 +80,7 @@ interface EscolhaDoTeste {
   cenas: { palavraInicio: number }[]
 }
 const ID_37 = 'ep_25d63d4babd6dd9145aae70912d5b5b2b1fcb067'
-const REAL = join(process.env['APPDATA'] ?? '', 'AniRecap Studio', 'recaps', 'rc_25d63d4babd6_mv78ssvg.json')
+const REAL = join(FIXTURE, 'rascunho-s4e37.json')
 const RC = 'rc_25d63d4babd6_mv78ssvg'
 
 let falhas = 0
@@ -208,7 +209,7 @@ function textoEditado(rt: Roteiro): string {
     .replace(f.get('f13')!.texto, `${f.get('f13')!.texto} ${ACRESCIDA}`)
 }
 
-/** Copia o rascunho real para o perfil de teste, com escolhas de cena falsas para f07, f12 e f13. */
+/** Copia o rascunho da fixture para o perfil de teste, com escolhas de cena falsas para f07, f12 e f13. */
 function copiarReal(comCenas: boolean): RascunhoDoRecap {
   const destino = join(pastaDosRascunhos(), `${RC}.json`)
   copyFileSync(REAL, destino)
@@ -247,7 +248,7 @@ async function principal(): Promise<void> {
     },
   } as unknown as ContextoDoModulo)
   configurarEpisodios(userData)
-  const indiceReal = join(BIBLIOTECA_REAL, '_indices', ID_37, 'episodio.json')
+  const indiceReal = join(FIXTURE, 'indice-s4e37.json')
   mkdirSync(join(BIBLIOTECA, '_indices', ID_37), { recursive: true })
   copyFileSync(indiceReal, join(BIBLIOTECA, '_indices', ID_37, 'episodio.json'))
   void dirname
@@ -430,8 +431,8 @@ async function principal(): Promise<void> {
     confere(ligadas.get(n1!)!.cueDoMomento !== null, 'fala do evento citado fica como momento')
     confere(lig.semEvento.join() === n2 && lig.avisos.some((a) => /sem resposta/.test(a)) && lig.respondidas === 1, 'a frase sem resposta fica sem evento, com aviso')
 
-    secao('12. O rascunho real nao mudou')
-    confere(sha(REAL) === shaReal, 'sha256 do arquivo real igual ao do comeco')
+    secao('12. A fixture nao mudou')
+    confere(sha(REAL) === shaReal, 'sha256 do rascunho da fixture igual ao do comeco')
   } finally {
     desfazer()
     rmSync(userData, { recursive: true, force: true })
