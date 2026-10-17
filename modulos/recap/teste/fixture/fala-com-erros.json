@@ -1,0 +1,17 @@
+{
+  "nota": "Whisper small (pt) ouvindo a voz Maria do Windows lendo 6 frases do S4-37 com 3 erros: 'Eeee...' antes da 2a, 'quando... quando' na 3a e a 5a lida duas vezes (a 1a com 'cuidar dos projetos'). Gerado em 17/10.",
+  "roteiro": [
+    "O Senku e o pessoal estão construindo uma máquina do tempo.",
+    "E o Why-Man quer voltar ao passado pra impedir o ataque.",
+    "Tudo começou quando o Why-Man decidiu apostar na humanidade.",
+    "Anos se passaram e o mundo foi totalmente reconstruído.",
+    "O Ryusui fundou o conglomerado dele para tocar os projetos globais.",
+    "O Tsukasa viaja resolvendo problemas e garantindo a segurança."
+  ],
+  "ouvido": ["O","senco","e","o","pessoal","estão","construindo","uma","máquina","do","tempo.","É","é","é.","E","o","WHY","quer","voltar","ao","passado","para","impedir","o","ataque.","Tudo","começou","quando,","quando","o","WHY","decidiu","apostar","na","humanidade.","Anos","se","passaram","e","o","mundo","foi","totalmente","reconstruído.","O","WHY","fundou","o","conglomerado","dele","para","cuidar","dos","projetos.","O","WHY","fundou","o","conglomerado","dele","para","tocar","os","projetos","globais.","O","Tsukasa","viaja","resolvendo","problemas","e","garantindo","a","segurança."],
+  "esperado": [
+    { "ouvidas": [11, 12, 13], "antesDe": 11, "tipo": "hesitacao" },
+    { "ouvidas": [27], "antesDe": 24, "tipo": "repeticao" },
+    { "ouvidas": [44, 45, 46, 47, 48, 49, 50, 51, 52, 53], "antesDe": 40, "tipo": "repeticao" }
+  ]
+}
