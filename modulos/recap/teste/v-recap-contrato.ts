@@ -121,6 +121,8 @@ try {
     CANAIS.corteProgresso,
     CANAIS.descobertaProgresso,
     CANAIS.motorRuntimeEstado,
+    // [recap] Parte 5: o andamento do Trazer do AniRecap Studio.
+    CANAIS.trazerProgresso,
   ] as string[]
   const pedidos = valores.filter((c) => !eventos.includes(c))
   confere(

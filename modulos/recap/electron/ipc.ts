@@ -103,6 +103,7 @@ import type { PlanoNoMesclado } from '../shared/mesclas'
 import { encaixarNaVoz, montarProjeto } from './montar'
 import { rostosDosPedacos } from './montar/rostos-motor'
 import { registrarCanaisDoMotor } from './ipc-motor'
+import { registrarCanaisDaMigracao } from './migracao/ipc'
 import { escolherMusica, listarMusicas, registrarMusicaUsada } from './som/musicas'
 import { planejarSom, sfxDaEdicaoRapida } from './som/planejar'
 
@@ -116,6 +117,7 @@ import { planejarSom, sfxDaEdicaoRapida } from './som/planejar'
  */
 export function registrarCanais(ctx: ContextoDoModulo): void {
   registrarCanaisDoMotor(ctx)
+  registrarCanaisDaMigracao(ctx)
 
   // ------------------------------------------------------------ configuracao
 
