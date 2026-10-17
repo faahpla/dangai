@@ -34,6 +34,7 @@ import { gravarJsonAtomico, lembrarIndice } from './perfil'
 import { garantirGravavel } from './protegidas'
 import { abrirIndicePorId } from './abrir-indice'
 import { garantirVisao } from '../cenas/visao'
+import { enviarSempreAoAncut } from '../ancut/enviar'
 import { configDoRecap } from '../contexto'
 
 export { indexarFalas } from './falas'
@@ -299,6 +300,8 @@ function terminar(corte: Corte, fim: FimDaAnalise): void {
       const novo = anexar(id, fim)
       enviar(id, novo.corte!, novo, fim.fotosDoElenco)
       if (motor === MOTOR_DE_VERDADE) complementar(id)
+      // L1: o "Enviar sempre para o AnCut" (desligado por padrao). Nunca pergunta: avisa a tela.
+      if (fim.motor === 'studio') void enviarSempreAoAncut(id).catch((e: unknown) => console.warn('[corte] envio ao AnCut:', e))
     } catch (e) {
       const erro = e instanceof Error ? e.message : String(e)
       const estado = atualizar(corte, { status: 'falhou', jobId: null, etapa: null, mensagem: '', erro })

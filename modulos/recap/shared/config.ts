@@ -44,6 +44,12 @@ export interface ConfigDoRecap {
   modeloGeminiPro: string
   /** As CENAS (lote 2 das ideias, 17/10): o que o passo 4 usa alem das regras. */
   cenas: ConfigDasCenas
+  /**
+   * L1 (lote 3): ao fim de cada corte do recap, envia o episodio para a
+   * biblioteca do AnCut, com as mesmas conferencias do botao. DESLIGADO por
+   * padrao: e a unica escrita no AnCut que nao e um clique.
+   */
+  enviarSempreAoAncut: boolean
 }
 
 /** C6: o juiz visual (opcional, desligado por padrao). */
@@ -103,6 +109,7 @@ export const CONFIG_PADRAO: ConfigDoRecap = {
   escritor: 'gemini',
   modeloGeminiPro: '',
   cenas: CENAS_PADRAO,
+  enviarSempreAoAncut: false,
 }
 
 /** O que veio do disco, conferido campo a campo. Campo errado vale o padrao. */
@@ -119,6 +126,7 @@ export function coerceConfig(raw: unknown): ConfigDoRecap {
     escritor: (ESCRITORES_IDS as readonly unknown[]).includes(r['escritor']) ? (r['escritor'] as Escritor) : 'gemini',
     modeloGeminiPro: nomeDeModelo(r['modeloGeminiPro'], ''),
     cenas: cenasSalvas(r['cenas']),
+    enviarSempreAoAncut: r['enviarSempreAoAncut'] === true,
   }
 }
 

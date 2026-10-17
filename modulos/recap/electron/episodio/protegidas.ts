@@ -14,6 +14,9 @@ import { pastaDeDocumentos } from '../settings'
  *
  * A excecao e "Analisar com o AnCut": ali quem grava e o PROPRIO CorteCenas.exe
  * do AnCut, na saida dele, e essa escolha e do usuario. O Studio so le depois.
+ * E o "Enviar para o AnCut" (L1, electron/ancut/enviar.ts): a UNICA escrita do
+ * recap no AnCut, so com o clique do Levi (ou o "Enviar sempre" ligado por ele),
+ * com o AnCut fechado, o esquema conferido e backup do index.db antes.
  */
 
 function localAppData(): string {

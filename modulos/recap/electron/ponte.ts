@@ -12,6 +12,11 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     salvarConfig: (patch) => invocar(C.salvarConfig, patch),
     escolherBiblioteca: () => invocar(C.escolherBiblioteca),
 
+    ancutAchado: () => invocar(C.ancutAchado),
+    conferirAncut: (episodioId) => invocar(C.ancutConferir, episodioId),
+    enviarAoAncut: (episodioId, substituir) => invocar(C.ancutEnviar, episodioId, substituir === true),
+    onEnvioAutomatico: (ouvinte) => assinar(C.ancutAutomatico, ouvinte),
+
     escolherEpisodio: () => invocar(C.escolherEpisodio),
     sondarEpisodio: (path) => invocar(C.sondarEpisodio, path),
     procurarEpisodio: (path, palpite) => invocar(C.procurarEpisodio, path, palpite),

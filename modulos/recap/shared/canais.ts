@@ -1,4 +1,5 @@
 import type { IpcResult } from '@shared/channels'
+import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDoEnvio } from './ancut'
 import type { ConfigDasCenas, ConfigDoRecapNaTela } from './config'
 import type {
   EpisodeIndex,
@@ -85,6 +86,13 @@ export const CANAIS = {
   lerConfig: 'recap:config:ler',
   salvarConfig: 'recap:config:salvar',
   escolherBiblioteca: 'recap:config:escolher-biblioteca',
+
+  // L1: enviar para o AnCut. Tipos em shared/ancut.ts.
+  ancutAchado: 'recap:ancut:achado',
+  ancutConferir: 'recap:ancut:conferir',
+  ancutEnviar: 'recap:ancut:enviar',
+  /** main -> renderer, EnvioAutomatico (o "Enviar sempre" ao fim de um corte) */
+  ancutAutomatico: 'recap:ancut:automatico',
 
   // passo 1 (Episodio). Tipos em shared/episodio.ts.
   escolherEpisodio: 'recap:episodio:escolher',
@@ -212,9 +220,18 @@ export interface PonteDoRecap {
     escritor?: Escritor
     modeloGeminiPro?: string
     cenas?: Partial<ConfigDasCenas>
+    enviarSempreAoAncut?: boolean
   }): Promise<IpcResult<ConfigDoRecapNaTela>>
   /** Dialogo de pasta. null = fechou sem escolher. */
   escolherBiblioteca(): Promise<IpcResult<string | null>>
+
+  /** L1: o AnCut esta nesta maquina (config e index.db)? */
+  ancutAchado(): Promise<IpcResult<boolean>>
+  /** L1: as conferencias, sem escrever nada. */
+  conferirAncut(episodioId: string): Promise<IpcResult<ConferenciaDoEnvio>>
+  /** L1: envia (ou substitui) o episodio no AnCut. So com o clique. */
+  enviarAoAncut(episodioId: string, substituir: boolean): Promise<IpcResult<ResultadoDoEnvio>>
+  onEnvioAutomatico(listener: (aviso: EnvioAutomatico) => void): () => void
 
   escolherEpisodio(): Promise<IpcResult<string | null>>
   sondarEpisodio(path: string): Promise<IpcResult<SondaDoEpisodio>>
