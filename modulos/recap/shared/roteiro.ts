@@ -208,6 +208,14 @@ export const fraseSchema = z.object({
   textoDeTela: z.string().nullable(),
   /** Quando a frase cita uma fala literal: a cue dela. null = nao cita. */
   citacaoCueId: z.string().nullable(),
+  /**
+   * [lote 2, C3] Etiquetas do Danbooru (ingles: "crying", "punching", "night")
+   * do que a tela mostra: o passo 4 casa com as do WD-Tagger de cada cena.
+   * Ausente = roteiro de antes (o passo 4 completa num pedido so, ver dicas.ts).
+   */
+  tags: z.array(z.string()).optional(),
+  /** [lote 2, C2] A intencao visual em INGLES, para o CLIP comparar com os quadros. */
+  visualEn: z.string().optional(),
 })
 export type Frase = z.infer<typeof fraseSchema>
 
@@ -565,6 +573,8 @@ export const fraseDaIaSchema = z.object({
   intencaoVisual: z.string(),
   textoDeTela: z.string().nullable(),
   citacaoCueId: z.string().nullable(),
+  tags: z.array(z.string()),
+  visualEn: z.string(),
 })
 export type FraseDaIa = z.infer<typeof fraseDaIaSchema>
 
@@ -933,7 +943,12 @@ function cuesDosEventos(eventoIds: readonly string[], mapa: MapaDosEventos): Set
  * nenhuma, e o momento pulava para ela); a citacao, alem disso, so vale
  * quando o texto traz a fala (aspas ou dois-pontos).
  */
-function repararFrase(bruta: FraseDaIa, id: string, mapa: MapaDosEventos, contar: Reparos): Frase | null {
+function repararFrase(
+  bruta: Omit<FraseDaIa, 'tags' | 'visualEn'> & Partial<Pick<FraseDaIa, 'tags' | 'visualEn'>>,
+  id: string,
+  mapa: MapaDosEventos,
+  contar: Reparos,
+): Frase | null {
   const texto = bruta.texto.replace(/\s+/g, ' ').trim()
   if (!texto) return null
   const eventoIds: string[] = []
@@ -957,7 +972,37 @@ function repararFrase(bruta: FraseDaIa, id: string, mapa: MapaDosEventos, contar
     contar.telas.push(`"${textoDeTela}" (${id})`)
     textoDeTela = null
   }
-  return { id, texto, eventoIds, cueDoMomento, intencaoVisual: bruta.intencaoVisual.trim(), textoDeTela, citacaoCueId }
+  return {
+    id,
+    texto,
+    eventoIds,
+    cueDoMomento,
+    intencaoVisual: bruta.intencaoVisual.trim(),
+    textoDeTela,
+    citacaoCueId,
+    ...dicasDasCenas(bruta),
+  }
+}
+
+/** Ate quantas etiquetas por frase (as do WD-Tagger sao 20 por cena; a frase pede o essencial). */
+export const TAGS_DA_FRASE_MAX = 6
+
+/**
+ * [lote 2] As dicas do passo 4 que a IA escreveu: etiquetas no formato do
+ * Danbooru (minusculas, sublinhado vira espaco, sem repetir, ate
+ * TAGS_DA_FRASE_MAX) e a intencao em ingles (uma linha, ate 200 letras).
+ * Resposta sem elas (modelo que ignorou o campo): fica sem, como roteiro antigo.
+ */
+export function dicasDasCenas(bruta: { tags?: readonly string[] | null; visualEn?: string | null }): Pick<Frase, 'tags' | 'visualEn'> {
+  const tags = [
+    ...new Set(
+      (bruta.tags ?? [])
+        .map((t) => String(t).replace(/_/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase())
+        .filter((t) => /^[a-z0-9][a-z0-9 ()'.:-]{0,40}$/.test(t)),
+    ),
+  ].slice(0, TAGS_DA_FRASE_MAX)
+  const visualEn = (bruta.visualEn ?? '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  return { ...(tags.length > 0 ? { tags } : {}), ...(visualEn ? { visualEn } : {}) }
 }
 
 function avisosDosReparos(contar: Reparos): string[] {
@@ -1839,7 +1884,7 @@ export function aplicarReligacao(
       if (!querer.has(f.id)) return f
       const item = resposta.get(f.id)
       const reparada = item
-        ? repararFrase({ ...item, texto: f.texto, citacaoCueId: null }, f.id, mapa, contar)
+        ? repararFrase({ ...item, texto: f.texto, citacaoCueId: null, tags: f.tags, visualEn: f.visualEn }, f.id, mapa, contar)
         : null
       if (!reparada) {
         semEvento.push(f.id)

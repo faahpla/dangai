@@ -146,7 +146,7 @@ let eventosRuins = false
 let atrasoMs = 0
 
 function frase(texto: string, eventoIds: string[], extra: Partial<FraseDaIa> = {}): FraseDaIa {
-  return { texto, eventoIds, cueDoMomento: null, intencaoVisual: 'close no Senku', textoDeTela: null, citacaoCueId: null, ...extra }
+  return { texto, eventoIds, cueDoMomento: null, intencaoVisual: 'close no Senku', textoDeTela: null, citacaoCueId: null, tags: ['smile'], visualEn: 'a boy smiling', ...extra }
 }
 
 /** N palavras de narracao "falada", em frases de 10. */

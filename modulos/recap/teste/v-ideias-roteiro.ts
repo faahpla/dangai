@@ -130,6 +130,8 @@ function roteiroFalso(): RoteiroDaIa {
         intencaoVisual: f.intencaoVisual || 'close no Senku',
         textoDeTela: f.textoDeTela,
         citacaoCueId: f.citacaoCueId,
+        tags: f.tags ?? [],
+        visualEn: f.visualEn ?? '',
       })),
     })),
   }

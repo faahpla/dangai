@@ -273,7 +273,9 @@ FORMATO DE CADA FRASE:
 - cueDoMomento: o id da fala ("c0123") do INSTANTE que a tela deve mostrar enquanto a frase é dita, escolhido entre as falas do primeiro acontecimento citado (ou dos outros citados). Frases seguidas sobre o mesmo acontecimento escolhem falas diferentes, na ordem. null só em frase sem acontecimento.
 - intencaoVisual: o que aparece na tela, a partir do acontecimento citado e do "em cena" dele — personagem que está em cena + ação ou expressão ("close no X assustado", "Y e Z discutindo"), ou objeto que as falas citam. UMA opção só (nada de "X ou Y"). Nada de logo, mapa, gráfico, diagrama, flashback, céu, planeta inteiro ou imagem genérica: a cena tem que existir no episódio.
 - textoDeTela: 1 ou 2 palavras DE CONTEÚDO queimadas na tela (artigo e preposição não contam: "MÁQUINA DO TEMPO" conta 2), SÓ nas frases de maior impacto (no máximo 4 no roteiro todo, quase sempre no gancho, na virada e no clímax). Um rótulo, nunca a frase falada. null nas outras.
-- citacaoCueId: só quando o texto da frase TRAZ, entre aspas, a fala de um personagem traduzida (ex.: E ele solta: "eu não vou desistir!"), o id dessa fala ("c0123"), que tem que ser de um dos acontecimentos citados; null nas outras. Use pouco (0 a 3 no roteiro todo).`
+- citacaoCueId: só quando o texto da frase TRAZ, entre aspas, a fala de um personagem traduzida (ex.: E ele solta: "eu não vou desistir!"), o id dessa fala ("c0123"), que tem que ser de um dos acontecimentos citados; null nas outras. Use pouco (0 a 3 no roteiro todo).
+- tags: de 2 a 5 etiquetas do Danbooru, em INGLÊS e minúsculas, do que a tela mostra: ação, objeto, lugar, hora, emoção ("crying", "punching", "sword", "night", "explosion", "hospital bed"). Nada de nome de personagem, cor de cabelo ou "1girl".
+- visualEn: a intencaoVisual em INGLÊS, curta e concreta, como legenda de imagem ("a small girl lying weak in a hospital bed", "two men shaking hands on a ship deck"). Sem nome de personagem: descreva quem é ("a white-haired boy").`
 
 export const SISTEMA_ROTEIRO = `${REGRAS_DO_ROTEIRISTA}
 
