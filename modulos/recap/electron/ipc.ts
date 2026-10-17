@@ -75,14 +75,44 @@ import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from
 import { aprovarVoz, audioDoTake, desaprovarVoz, escolherTakeDoRascunho } from './voz/takes'
 import { testarEleven, testarFish } from './voz-chaves'
 import { getSettings } from './settings'
+import { z } from 'zod'
+import {
+  filtrosDeCandidatosSchema,
+  listaDeEscolhasSchema,
+  pedidoDeMontagemSchema,
+  type CandidatosDaFrase,
+  type CenasGravadas,
+  type EscolhaDaFrase,
+  type FiltrosDeCandidatos,
+  type PedidoDeMontagem,
+  type ProjetoMontado,
+} from '../shared/cenas'
+import {
+  loteDeRostosSchema,
+  pedidoDePlanoDeSomSchema,
+  type LoteDeRostos,
+  type RostosDoLote,
+  type MusicaDaPasta,
+  type PedidoDePlanoDeSom,
+  type PlanoDeSom,
+  type SfxDaEdicaoRapida,
+} from '../shared/edicao-rapida'
+import { candidatosDaFrase, salvarCenas, sugerirCenas } from './cenas'
+import { mesclasDoEpisodio } from './cenas/mesclas'
+import type { PlanoNoMesclado } from '../shared/mesclas'
+import { encaixarNaVoz, montarProjeto } from './montar'
+import { rostosDosPedacos } from './montar/rostos'
+import { escolherMusica, listarMusicas, registrarMusicaUsada } from './som/musicas'
+import { planejarSom, sfxDaEdicaoRapida } from './som/planejar'
 
 /**
  * [recap] OS CANAIS DO MODULO no main, os mesmos handlers do ipc.ts do Studio
  * (passos 1 e 2) com o nome novo (`recap:<area>:<acao>`). O que vem do
  * renderer passa pelo zod AQUI: vira arquivo no disco e pedido a IA.
  *
- * Parte 2: o passo 3 (Voz) e as chaves de voz. O corte das cenas, o motor e
- * o passo 4 chegam nas partes seguintes.
+ * Parte 2: o passo 3 (Voz) e as chaves de voz. Parte 3: o passo 4 (Cenas),
+ * o "Abrir no editor" e a Edicao rapida. O corte das cenas e o motor chegam
+ * na parte 4.
  */
 export function registrarCanais(ctx: ContextoDoModulo): void {
   // ------------------------------------------------------------ configuracao
@@ -275,6 +305,60 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
     if (!usada) throw new Error('Cole a chave do Fish Audio antes de testar.')
     return testarFish(usada)
   })
+
+  // --------------------------------------------------------- passo 4 (Cenas)
+  // Contrato em shared/cenas.ts. O casar (cenas/) e por regras, de graca; o
+  // encaixe e a montagem moram em montar/.
+
+  ctx.handle<[string], CenasGravadas>(C.sugerirCenas, async (rascunhoId) => sugerirCenas(idDoRascunho(rascunhoId)))
+
+  ctx.handle<[string, string, FiltrosDeCandidatos], CandidatosDaFrase>(C.candidatosDaFrase, async (rascunhoId, fraseId, filtros) =>
+    candidatosDaFrase(idDoRascunho(rascunhoId), idDaFrase(fraseId), filtrosDeCandidatosSchema.parse(filtros ?? {})),
+  )
+
+  ctx.handle<[string, EscolhaDaFrase[]], CenasGravadas>(C.salvarCenas, async (rascunhoId, escolhas) =>
+    salvarCenas(idDoRascunho(rascunhoId), listaDeEscolhasSchema.parse(escolhas)),
+  )
+
+  ctx.handle<[string], CenasGravadas>(C.encaixarNaVoz, async (rascunhoId) => encaixarNaVoz(idDoRascunho(rascunhoId)))
+
+  ctx.handle<[string], Record<string, PlanoNoMesclado>>(C.mesclasDoEpisodio, async (episodioId) => mesclasDoEpisodio(idDoEpisodio(episodioId)))
+
+  ctx.handle<[string, PedidoDeMontagem], ProjetoMontado>(C.montarProjeto, async (rascunhoId, pedido) => {
+    const id = idDoRascunho(rascunhoId)
+    return montarProjeto(id, pedidoDeMontagemSchema.parse(pedido ?? {}), {
+      aoAndar: (texto) => ctx.enviar(C.montarProgresso, { rascunhoId: id, texto }),
+    })
+  })
+
+  // ----------------------------------------------------------- Edicao rapida
+  // Contrato em shared/edicao-rapida.ts; o som em som/. O rosto e o detector
+  // antigo do nucleo ate o motor (parte 4).
+
+  ctx.handle<[], MusicaDaPasta[]>(C.listarMusicas, async () => listarMusicas())
+
+  ctx.handle<[string[] | undefined], MusicaDaPasta | null>(C.escolherMusica, async (evitar) =>
+    escolherMusica(z.array(z.string().max(1024)).max(50).parse(evitar ?? [])),
+  )
+
+  ctx.handle<[string | null, string | null | undefined], true>(C.registrarMusicaUsada, async (path, projeto) =>
+    registrarMusicaUsada(
+      z.string().min(1).max(1024).nullable().parse(path ?? null),
+      z.string().max(1024).nullable().parse(projeto ?? null),
+    ),
+  )
+
+  ctx.handle<[], SfxDaEdicaoRapida>(C.sfxDaEdicaoRapida, async () => sfxDaEdicaoRapida())
+
+  ctx.handle<[PedidoDePlanoDeSom], PlanoDeSom>(C.planejarSom, async (pedido) => planejarSom(pedidoDePlanoDeSomSchema.parse(pedido)))
+
+  ctx.handle<[LoteDeRostos], RostosDoLote>(C.rostosDosPedacos, async (lote) => rostosDosPedacos(loteDeRostosSchema.parse(lote)))
+}
+
+/** 'f' + numero, como Frase.id. */
+function idDaFrase(valor: unknown): string {
+  if (typeof valor !== 'string' || !/^f\d{2,6}$/.test(valor)) throw new Error('Frase invalida.')
+  return valor
 }
 
 /** O que a tela sabe da voz: das chaves, so o `chaves` do ModuloPublico (tem, dica). */

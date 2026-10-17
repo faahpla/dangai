@@ -465,6 +465,15 @@ export const planoSchema = z.object({
   end: z.number().nonnegative(),
   /** Caminho absoluto do mp4 (shots/NNNN.mp4). Numa biblioteca externa, so leitura. */
   arquivo: z.string().min(1),
+  /**
+   * [recap] Onde o plano comeca DENTRO do `arquivo`, em segundos. Ausente = 0
+   * (o arquivo e so dele). So em memoria: quando o NNNN.mp4 foi mesclado pelo
+   * Dangai num AAAA-BBBB.mp4, o passo 4 e a montagem leem o mesclado a partir
+   * daqui (shared/mesclas.ts). Nunca e gravado no indice.
+   */
+  inicioNoArquivo: z.number().nonnegative().optional(),
+  /** [recap] A duracao do mesclado inteiro (a tira de quadros da grade anda so no pedaco do plano). */
+  duracaoDoArquivo: z.number().positive().optional(),
   /** Keyframe do meio (_1.jpg) ou o vizinho que existir. null quando nao ha nenhum. */
   keyframe: z.string().nullable(),
   /** Cues que cruzam o plano no tempo, em ordem. */

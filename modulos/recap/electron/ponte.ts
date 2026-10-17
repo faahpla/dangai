@@ -51,6 +51,21 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     salvarChaveDaVoz: (campo, valor) => invocar(C.salvarChaveDaVoz, campo, valor),
     testarEleven: (chave) => invocar(C.testarEleven, chave),
     testarFish: (chave) => invocar(C.testarFish, chave),
+
+    sugerirCenas: (rascunhoId) => invocar(C.sugerirCenas, rascunhoId),
+    candidatosDaFrase: (rascunhoId, fraseId, filtros) => invocar(C.candidatosDaFrase, rascunhoId, fraseId, filtros),
+    salvarCenas: (rascunhoId, escolhas) => invocar(C.salvarCenas, rascunhoId, escolhas),
+    encaixarNaVoz: (rascunhoId) => invocar(C.encaixarNaVoz, rascunhoId),
+    mesclasDoEpisodio: (episodioId) => invocar(C.mesclasDoEpisodio, episodioId),
+    montarProjeto: (rascunhoId, pedido) => invocar(C.montarProjeto, rascunhoId, pedido ?? {}),
+    onMontarProgresso: (ouvinte) => assinar(C.montarProgresso, ouvinte),
+
+    listarMusicas: () => invocar(C.listarMusicas),
+    escolherMusica: (evitar) => invocar(C.escolherMusica, evitar ?? []),
+    registrarMusicaUsada: (path, projeto) => invocar(C.registrarMusicaUsada, path, projeto ?? null),
+    sfxDaEdicaoRapida: () => invocar(C.sfxDaEdicaoRapida),
+    planejarSom: (pedido) => invocar(C.planejarSom, pedido),
+    rostosDosPedacos: (lote) => invocar(C.rostosDosPedacos, lote),
   }
   return ponte
 }) satisfies CriarPonte

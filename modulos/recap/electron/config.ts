@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { ConfigDoModulo } from '../../../electron/modulos'
 import { aplicarPatch, CONFIG_PADRAO, coerceConfig, type ConfigDoRecap, type ConfigDoRecapNaTela } from '../shared/config'
@@ -26,7 +27,8 @@ export function configNaTela(raw: unknown): ConfigDoRecapNaTela {
   } catch {
     /* antes do configurar (teste): sem a libraryDir */
   }
-  return { ...c, bibliotecaEfetiva: bibliotecaEfetiva(c), bibliotecaDoDangai }
+  const musicas = c.pastaDeMusicas && existsSync(c.pastaDeMusicas) ? c.pastaDeMusicas : ''
+  return { ...c, bibliotecaEfetiva: bibliotecaEfetiva(c), bibliotecaDoDangai, pastaDeMusicasEfetiva: musicas }
 }
 
 export const configDoRecap: ConfigDoModulo = {
@@ -39,6 +41,8 @@ export const configDoRecap: ConfigDoModulo = {
       if (!isAbsolute(nova.biblioteca)) throw new Error('Escolha uma pasta inteira (com a letra do disco).')
       garantirGravavel(nova.biblioteca)
     }
+    // A pasta de musicas so e lida (o historico mora no perfil): basta ser inteira.
+    if (nova.pastaDeMusicas && !isAbsolute(nova.pastaDeMusicas)) throw new Error('Escolha uma pasta inteira (com a letra do disco).')
     return nova
   },
 }

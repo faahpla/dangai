@@ -1,3 +1,8 @@
+import {
+  PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO,
+  preferenciasDaEdicaoRapidaSchema,
+  type PreferenciasDaEdicaoRapida,
+} from './edicao-rapida'
 import type { VozPadrao } from './tipos-da-voz'
 import { arrumarVelocidadeNativa, VELOCIDADE_NATIVA_PADRAO } from './voz'
 
@@ -13,12 +18,19 @@ import { arrumarVelocidadeNativa, VELOCIDADE_NATIVA_PADRAO } from './voz'
  *   `vozPadrao` do settings do Studio (a parte 5 migra o dele). As chaves
  *   (elevenlabsApiKey, fishApiKey) NAO moram aqui: sao campos de chave do
  *   modulo, no cofre do nucleo.
+ * - a Edicao rapida (parte 3): a pasta de musicas (padrao VAZIO: a do Studio,
+ *   `G:/App Resumo/music`, e da maquina do Levi; a parte 5 migra a dele) e as
+ *   preferencias (o que ela faz, a caixinha do "Abrir no editor" e o preset
+ *   de cor), com os MESMOS nomes do settings do Studio.
  */
 export interface ConfigDoRecap {
   /** '' = o padrao, <Documentos>/AniRecap Studio/Biblioteca (o mesmo do Studio). */
   biblioteca: string
   /** A voz que narra o recap. Sem voz escolhida: provedor ''. */
   vozPadrao: Required<VozPadrao>
+  /** A pasta de musicas da Edicao rapida (so leitura). '' = nenhuma: sem musica. */
+  pastaDeMusicas: string
+  edicaoRapidaPadrao: PreferenciasDaEdicaoRapida
 }
 
 /** O que a tela ve (o paraRenderer): sem segredo nenhum. */
@@ -31,18 +43,31 @@ export interface ConfigDoRecapNaTela extends ConfigDoRecap {
    * do nucleo.
    */
   bibliotecaDoDangai: string
+  /** A pasta de musicas que vale agora ('' = nenhuma, ou a escolhida sumiu). */
+  pastaDeMusicasEfetiva: string
 }
 
 /** Sem voz: o "sem voz" da parte 1, na velocidade nativa padrao (1,2). */
 export const SEM_VOZ: Required<VozPadrao> = { provedor: '', voiceId: '', modelId: '', velocidadeNativa: VELOCIDADE_NATIVA_PADRAO }
 
-export const CONFIG_PADRAO: ConfigDoRecap = { biblioteca: '', vozPadrao: SEM_VOZ }
+export const CONFIG_PADRAO: ConfigDoRecap = {
+  biblioteca: '',
+  vozPadrao: SEM_VOZ,
+  pastaDeMusicas: '',
+  edicaoRapidaPadrao: PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO,
+}
 
 /** O que veio do disco, conferido campo a campo. Campo errado vale o padrao. */
 export function coerceConfig(raw: unknown): ConfigDoRecap {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const biblioteca = typeof r['biblioteca'] === 'string' ? r['biblioteca'].trim() : ''
-  return { biblioteca, vozPadrao: vozSalva(r['vozPadrao']) }
+  const pastaDeMusicas = typeof r['pastaDeMusicas'] === 'string' ? r['pastaDeMusicas'].trim() : ''
+  return {
+    biblioteca,
+    vozPadrao: vozSalva(r['vozPadrao']),
+    pastaDeMusicas,
+    edicaoRapidaPadrao: preferenciasDaEdicaoRapidaSchema.catch(PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO).parse(r['edicaoRapidaPadrao'] ?? {}),
+  }
 }
 
 /**

@@ -3,10 +3,8 @@ import type { Cue, EpisodeIndex, Exclusao, Plano } from './episodio'
 // O schema do passo 3 (e a situacao da voz, para o passo do resumo): voz.ts
 // importa daqui apenas TIPOS, entao nao ha ciclo de valor.
 import { estadoDaVozSchema, situacaoDaVoz } from './voz'
-// [recap] O passo 4 (cenas.ts) chega na parte 4 do modulo. Ate la o pedaco
-// `cenas` do rascunho passa sem ser lido: guardado como veio, para um rascunho
-// do Studio (ou de uma versao futura) nao perder as escolhas de cena.
-const estadoDasCenasSchema = z.unknown()
+// O mesmo para o passo 4: cenas.ts importa daqui apenas TIPOS.
+import { estadoDasCenasSchema } from './cenas'
 
 /**
  * O ROTEIRO, do jeito que o Studio o entende: o contrato do passo 2 do

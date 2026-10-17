@@ -22,6 +22,24 @@ import type {
   RoteiroReligado,
 } from './roteiro'
 import type { RitmoDaVoz } from './ritmo'
+import type { PlanoNoMesclado } from './mesclas'
+import type {
+  CandidatosDaFrase,
+  CenasGravadas,
+  EscolhaDaFrase,
+  EtapaDaMontagem,
+  FiltrosDeCandidatos,
+  PedidoDeMontagem,
+  ProjetoMontado,
+} from './cenas'
+import type {
+  LoteDeRostos,
+  MusicaDaPasta,
+  PedidoDePlanoDeSom,
+  PlanoDeSom,
+  RostosDoLote,
+  SfxDaEdicaoRapida,
+} from './edicao-rapida'
 import type { AjustesDaVoz, CampoDeChaveDaVoz, TesteDeVoz, VozPadrao } from './tipos-da-voz'
 import type {
   AudioDoTake,
@@ -96,6 +114,24 @@ export const CANAIS = {
   salvarChaveDaVoz: 'recap:voz:salvar-chave',
   testarEleven: 'recap:voz:testar-eleven',
   testarFish: 'recap:voz:testar-fish',
+
+  // passo 4 (Cenas) e o "Abrir no editor" (parte 3)
+  sugerirCenas: 'recap:cenas:sugerir',
+  candidatosDaFrase: 'recap:cenas:candidatos',
+  salvarCenas: 'recap:cenas:salvar',
+  encaixarNaVoz: 'recap:cenas:encaixar',
+  mesclasDoEpisodio: 'recap:cenas:mesclas',
+  montarProjeto: 'recap:montar:projeto',
+  /** main -> renderer, EtapaDaMontagem */
+  montarProgresso: 'recap:montar:progresso',
+
+  // Edicao rapida (parte 3)
+  listarMusicas: 'recap:som:listar-musicas',
+  escolherMusica: 'recap:som:escolher-musica',
+  registrarMusicaUsada: 'recap:som:registrar-musica',
+  planejarSom: 'recap:som:planejar',
+  sfxDaEdicaoRapida: 'recap:som:sfx-da-edicao-rapida',
+  rostosDosPedacos: 'recap:rosto:pedacos',
 } as const
 
 /** O que aparece em `window.dangai.modulos.recap`. Os nomes sao os do Studio. */
@@ -105,7 +141,12 @@ export interface PonteDoRecap {
    * Grava a biblioteca ('' = o padrao; recusa pasta do AnCut/Corte Cenas) e/ou
    * a voz padrao. Voz sem `velocidadeNativa` mantem a que ja estava.
    */
-  salvarConfig(patch: { biblioteca?: string; vozPadrao?: VozPadrao }): Promise<IpcResult<ConfigDoRecapNaTela>>
+  salvarConfig(patch: {
+    biblioteca?: string
+    vozPadrao?: VozPadrao
+    pastaDeMusicas?: string
+    edicaoRapidaPadrao?: unknown
+  }): Promise<IpcResult<ConfigDoRecapNaTela>>
   /** Dialogo de pasta. null = fechou sem escolher. */
   escolherBiblioteca(): Promise<IpcResult<string | null>>
 
@@ -158,4 +199,26 @@ export interface PonteDoRecap {
   /** Confere a chave sem gastar: plano/saldo e vozes. `chave` null testa a salva, que nunca volta para ca. */
   testarEleven(chave: string | null): Promise<IpcResult<TesteDeVoz>>
   testarFish(chave: string | null): Promise<IpcResult<TesteDeVoz>>
+
+  // Passo 4 (Cenas), como no Studio: tudo que muda o rascunho devolve o
+  // rascunho INTEIRO (CenasGravadas.rascunho). O casar e por regras, de graca.
+  sugerirCenas(rascunhoId: string): Promise<IpcResult<CenasGravadas>>
+  candidatosDaFrase(rascunhoId: string, fraseId: string, filtros: FiltrosDeCandidatos): Promise<IpcResult<CandidatosDaFrase>>
+  salvarCenas(rascunhoId: string, escolhas: readonly EscolhaDaFrase[]): Promise<IpcResult<CenasGravadas>>
+  encaixarNaVoz(rascunhoId: string): Promise<IpcResult<CenasGravadas>>
+  /** Os planos que o Dangai mesclou depois do indice: planoId -> o mesclado e o ponto dentro dele. So le. */
+  mesclasDoEpisodio(episodioId: string): Promise<IpcResult<Record<string, PlanoNoMesclado>>>
+  /** Grava o .dangai em <biblioteca do recap>/_projetos/. A tela abre pelo abrirProjeto do nucleo. */
+  montarProjeto(rascunhoId: string, pedido?: PedidoDeMontagem): Promise<IpcResult<ProjetoMontado>>
+  onMontarProgresso(listener: (etapa: EtapaDaMontagem) => void): () => void
+
+  // Edicao rapida
+  listarMusicas(): Promise<IpcResult<MusicaDaPasta[]>>
+  escolherMusica(evitar?: readonly string[]): Promise<IpcResult<MusicaDaPasta | null>>
+  /** O historico de "ja usada": uma entrada por projeto, gravada ao salvar/renderizar. */
+  registrarMusicaUsada(path: string | null, projeto?: string | null): Promise<IpcResult<true>>
+  sfxDaEdicaoRapida(): Promise<IpcResult<SfxDaEdicaoRapida>>
+  planejarSom(pedido: PedidoDePlanoDeSom): Promise<IpcResult<PlanoDeSom>>
+  /** O enquadramento de cada pedaco num lote so (o detector antigo ate o motor, parte 4). */
+  rostosDosPedacos(lote: LoteDeRostos): Promise<IpcResult<RostosDoLote>>
 }

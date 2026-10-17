@@ -1,4 +1,5 @@
 import { app } from 'electron'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Provedor } from '../../../electron/services/llm'
@@ -19,6 +20,8 @@ export function getSettings() {
     whisperModel: ctx.config().whisperModel,
     bibliotecaStudio: c.biblioteca,
     vozPadrao: c.vozPadrao,
+    pastaDeMusicas: c.pastaDeMusicas,
+    edicaoRapidaPadrao: c.edicaoRapidaPadrao,
     get elevenlabsApiKey(): string {
       return ctx.chave('elevenlabsApiKey')
     },
@@ -52,4 +55,14 @@ export function pastaDeDocumentos(): string {
  */
 export function pastaDaBibliotecaStudio(): string {
   return configDoRecap().biblioteca || join(pastaDeDocumentos(), 'AniRecap Studio', 'Biblioteca')
+}
+
+/**
+ * A pasta de musicas da Edicao rapida, se existe. [recap] Sem padrao: a do
+ * Studio (`G:/App Resumo/music`) e da maquina do Levi. '' = nenhuma: a Edicao
+ * rapida segue sem musica e avisa. So leitura -- quem lista nunca grava nela.
+ */
+export function pastaDeMusicasEfetiva(): string {
+  const escolhida = configDoRecap().pastaDeMusicas
+  return escolhida && existsSync(escolhida) ? escolhida : ''
 }
