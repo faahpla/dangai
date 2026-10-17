@@ -808,6 +808,23 @@ async function main(): Promise<void> {
     conferir('e o max_tokens de antes', pedidos[0]?.corpo?.['max_tokens'], 2048)
     conferir('textos saneados', textos.hashtags, ['frieren', 'himmel', 'animeshorts'])
 
+    // O modelo forcado (escritor pago do modulo recap): vale so com o provedor forcado.
+    preparar([
+      json(200, {
+        id: 'msg_teste2',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-forcado',
+        content: [{ type: 'text', text: JSON.stringify({ ok: true }) }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }),
+    ])
+    const forcado = await gerarJson({ schema: z.object({ ok: z.boolean() }), sistema: 's', prompt: 'p', etapa: 'teste', provedor: 'anthropic', modelo: 'claude-forcado' })
+    conferir('modelo forcado vai no pedido', pedidos[0]?.corpo?.['model'], 'claude-forcado')
+    conferir('e volta como o modelo que respondeu', forcado.ok && forcado.modelo, 'claude-forcado')
+
     preparar([json(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } })])
     {
       const err = await erroDe(planWithAI({ imageCount: 1, durationSec: 2, transcript: { source: 'srt', words: [], segments: [], text: 'x', cutCandidates: [] } as any, imageNames: ['a'] }))

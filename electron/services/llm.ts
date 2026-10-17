@@ -35,6 +35,13 @@ export interface PedidoJson<S extends z.ZodType> {
   etapa: string
   /** Forca um provedor, sem cair no outro. Sem isto vale o de settings. */
   provedor?: Provedor
+  /**
+   * Forca o MODELO (so junto com `provedor`): o escritor pago do modulo recap
+   * escreve o roteiro no Claude Sonnet ou no Gemini Pro sem trocar o modelo
+   * das Configuracoes. Vale como escolhido a mao: sem troca automatica nem
+   * reserva -- o erro dele vira a nota. Sem isto vale o de settings.
+   */
+  modelo?: string
   /** Teto de saida na Anthropic -- o max_tokens que cada servico ja usava. */
   maxTokens?: number
   /**
@@ -260,12 +267,14 @@ export async function gerarJson<S extends z.ZodType>(
   const provedor = escolherProvedor(settings, pedido.provedor)
   if (!provedor) return { ok: false, nota: SEM_CHAVE, bruto: 'sem chave de IA', provedor: null }
 
+  // O modelo forcado so vale com o provedor forcado: um id do Claude nunca vai para o Google.
+  const forcado = pedido.provedor && pedido.modelo?.trim() ? pedido.modelo.trim() : ''
   let resposta: RespostaJson<z.infer<S>>
   try {
     resposta =
       provedor === 'gemini'
-        ? await viaGemini(pedido, settings.geminiApiKey, settings.geminiModelo)
-        : await viaAnthropic(pedido, settings.anthropicApiKey, settings.anthropicModelo)
+        ? await viaGemini(pedido, settings.geminiApiKey, forcado || settings.geminiModelo)
+        : await viaAnthropic(pedido, settings.anthropicApiKey, forcado || settings.anthropicModelo)
   } catch (err) {
     // Rede de seguranca: um schema que o zod nao converte, por exemplo. O
     // contrato daqui e nunca lancar.
