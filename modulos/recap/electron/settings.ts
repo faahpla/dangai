@@ -1,7 +1,6 @@
 import { app } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { getSettings as settingsDoNucleo } from '../../../electron/services/settings'
 import type { Provedor } from '../../../electron/services/llm'
 import type { VozPadrao } from '../shared/tipos-da-voz'
 import { configDoRecap, contexto } from './contexto'
@@ -30,8 +29,7 @@ export function getSettings() {
  * modelo nao devolver a resposta do outro.
  */
 export function modeloEscolhido(provedor: Provedor): string {
-  const s = settingsDoNucleo()
-  return provedor === 'gemini' ? s.geminiModelo : s.anthropicModelo
+  return contexto().ia.modelo(provedor)
 }
 
 export function pastaDeDocumentos(): string {

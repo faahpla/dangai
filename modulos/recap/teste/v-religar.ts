@@ -240,7 +240,11 @@ async function principal(): Promise<void> {
     config: () => ({ libraryDir: '', iaProvedor: 'gemini', whisperModel: 'small', modulo: { biblioteca: BIBLIOTECA } }),
     ligado: () => true,
     // O ctx.ia como o nucleo monta (electron/modulos.ts); o teste troca o gerarJson pela falsa.
-    ia: { gerarJson, provedor: (forcado?: 'gemini' | 'anthropic') => escolherProvedor(getSettings(), forcado) },
+    ia: {
+      gerarJson,
+      provedor: (forcado?: 'gemini' | 'anthropic') => escolherProvedor(getSettings(), forcado),
+      modelo: (p: 'gemini' | 'anthropic') => (p === 'gemini' ? getSettings().geminiModelo : getSettings().anthropicModelo),
+    },
   } as unknown as ContextoDoModulo)
   configurarEpisodios(userData)
   const indiceReal = join(BIBLIOTECA_REAL, '_indices', ID_37, 'episodio.json')

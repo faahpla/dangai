@@ -85,7 +85,11 @@ function contextoFalso(): ContextoDoModulo {
     config: () => ({ libraryDir: '', iaProvedor: 'gemini', whisperModel: 'small', modulo: { biblioteca: BIBLIOTECA } }),
     ligado: () => true,
     // O ctx.ia como o nucleo monta (electron/modulos.ts); o teste troca o gerarJson pela falsa.
-    ia: { gerarJson, provedor: (forcado?: 'gemini' | 'anthropic') => escolherProvedor(getSettings(), forcado) },
+    ia: {
+      gerarJson,
+      provedor: (forcado?: 'gemini' | 'anthropic') => escolherProvedor(getSettings(), forcado),
+      modelo: (p: 'gemini' | 'anthropic') => (p === 'gemini' ? getSettings().geminiModelo : getSettings().anthropicModelo),
+    },
   } as unknown as ContextoDoModulo
 }
 const ID_37 = 'ep_25d63d4babd6dd9145aae70912d5b5b2b1fcb067'
