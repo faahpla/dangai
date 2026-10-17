@@ -1,6 +1,7 @@
 import { WandSparkles } from 'lucide-react'
 import type { ModuloDoRenderer } from '@/modulos/api'
 import { AjustesDoRecap } from './components/AjustesDoRecap'
+import { SecaoDaVoz } from './components/AjustesDeVoz'
 import { BotaoGerarRecap } from './components/BotaoGerarRecap'
 import { GerarRecap } from './components/GerarRecap'
 import { perguntarSeEpisodio, PerguntaDoEpisodio } from './components/PerguntaDoEpisodio'
@@ -14,7 +15,8 @@ import { useGerar } from './store/gerar'
  * - "Gerar recap" na tela inicial (ao lado de "Abrir projeto"), e na paleta;
  * - o assistente em tela cheia (GerarRecap), com a escolha "Novo recap |
  *   Continuar" e a pergunta do video longo (PerguntaDoEpisodio);
- * - a Biblioteca do recap nas Configuracoes, depois da Biblioteca do Dangai;
+ * - a Voz (chaves, voz padrao, velocidade) nas Configuracoes, depois da IA, e
+ *   a Biblioteca do recap, depois da Biblioteca do Dangai;
  * - um episodio longo solto (ou escolhido) na tela inicial pergunta "Gerar
  *   recap" ou "Usar como clipe".
  */
@@ -44,6 +46,7 @@ export const recap: ModuloDoRenderer = {
   ),
 
   secoesDasConfiguracoes: [
+    { id: 'recap-voz', titulo: 'Voz do recap', depoisDe: 'ia', Componente: SecaoDaVoz },
     { id: 'recap-biblioteca', titulo: 'Biblioteca do recap', depoisDe: 'biblioteca', Componente: AjustesDoRecap },
   ],
 

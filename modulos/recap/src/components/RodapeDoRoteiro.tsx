@@ -1,4 +1,4 @@
-import { ArrowLeft, AudioLines, Check } from 'lucide-react'
+import { ArrowLeft, ArrowRight, AudioLines, Check } from 'lucide-react'
 import { ROTULO_DO_PAPEL, type ProblemaDoRoteiro } from '../../shared/roteiro'
 import { useGerar } from '../store/gerar'
 import { resumoDaFalha, roteiroAprovado, useProblemasDoRoteiro, useRoteiro } from '../store/gerar-roteiro'
@@ -84,8 +84,8 @@ export function RodapeDoRoteiro() {
 
   const aprovarEFocar = async (): Promise<void> => {
     await aprovar()
-    // O botao virou "Aprovado": o foco vai para o "Desfazer" ([recap] o "Proximo: Voz" espera a parte 2).
-    focarBotao('desaprovar')
+    // O botao virou "Aprovado": o foco vai para o "Proximo: Voz" (Enter segue), ou o "Desfazer".
+    focarBotao('ir-a-voz', 'desaprovar')
   }
 
   return (
@@ -153,11 +153,16 @@ export function RodapeDoRoteiro() {
             Desfazer
           </Link>
           {/* A acao que leva adiante: o rosa da tela, como o "Proximo: Roteiro" do passo 1. */}
-          {/* [recap] A voz chega na parte 2: o botao fica no lugar, desligado, com o porque. */}
-          <Botao principal foco="ir-a-voz" onClick={() => {}} disabled title="A voz chega em breve">
+          <Botao
+            principal
+            foco="ir-a-voz"
+            onClick={() => irParaPasso(3)}
+            disabled={geracao !== null}
+            title="Ir a voz (passo 3). O roteiro aprovado e o que vai ser narrado."
+          >
             <AudioLines size={13} strokeWidth={1.5} />
             Proximo: Voz
-            <span className="text-[11px] font-normal opacity-80">em breve</span>
+            <ArrowRight size={13} strokeWidth={1.5} />
           </Botao>
         </>
       ) : (

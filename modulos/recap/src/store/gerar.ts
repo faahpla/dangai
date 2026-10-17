@@ -553,8 +553,9 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
       faixaLegenda: indice.faixaLegenda?.index ?? null,
       indice,
       exclusoes: emOrdem(indice.exclusoes),
-      // Volta no passo onde parou (a regra mora em gerar-passos.ts).
-      passo: passoAoRestaurar(aberto.value.rascunho),
+      // Volta no passo onde parou (a regra mora em gerar-passos.ts). [recap] O
+      // passo 4 (Cenas) chega na parte 3: ate la, a voz aprovada reabre no 3.
+      passo: Math.min(passoAoRestaurar(aberto.value.rascunho), 3) as PassoDoAssistente,
       rascunhoRestaurado: aberto.value,
       corte: corteDoIndice(indice),
       // O corte dele seguia por tras como "de outro": volta a ser o da tela.
@@ -838,6 +839,8 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
 
     irParaPasso: (passo) => {
       if (passo !== 1 && !podeIrAoRoteiro(get())) return
+      // [recap] O passo 4 (Cenas) chega na parte 3.
+      if (passo === 4) return
       set({ passo })
     },
 
