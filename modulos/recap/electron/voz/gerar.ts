@@ -401,7 +401,11 @@ export async function ajustarVoz(
         : { ...take.config, velocidade: pedido.velocidade, cortarPausas: pedido.cortarPausas }
     if (mesmaConfig(config, take.config)) throw new Error('A voz ja esta com esse ajuste.')
 
-    const igual = estadoDaVoz(r).takes.find((t) => t.bruto.arquivo === take.bruto.arquivo && mesmaConfig(t.config, config))
+    // O mesmo bruto, a mesma config e os mesmos erros achados (V1): o take mais recente que ja e isso.
+    const mesmosErros = JSON.stringify(take.bruto.erros)
+    const igual = estadoDaVoz(r).takes.findLast(
+      (t) => t.bruto.arquivo === take.bruto.arquivo && mesmaConfig(t.config, config) && JSON.stringify(t.bruto.erros) === mesmosErros,
+    )
     if (igual) {
       const voltou = escolherTake(r, igual.id, new Date().toISOString())
       gravarRascunho(voltou)
