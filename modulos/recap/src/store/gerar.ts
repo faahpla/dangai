@@ -87,10 +87,15 @@ export interface DescobertaPendente {
 /**
  * O recado de um Continuar que nao abriu, dito para ESTA tela: o main manda
  * "Abra o episodio de novo no passo 1", mas na escolha nao ha passo 1 -- o
- * caminho e o Novo recap com o .mkv.
+ * caminho e o Novo recap com o .mkv. E o caso do rascunho trazido do AniRecap
+ * Studio (parte 5): a biblioteca dele nao vem, o episodio e cortado de novo e,
+ * pela impressao digital do video (o mesmo episodioId), o passo 2 reabre este
+ * rascunho com o roteiro e a voz.
  */
+export const RECADO_DE_CORTAR_DE_NOVO = 'Esse episodio precisa ser cortado de novo. Use Novo recap com o mesmo video: o roteiro e a voz continuam.'
+
 export function recadoDaEscolha(erro: string): string {
-  return /Abra o episodio de novo no passo 1/.test(erro) ? 'Episodio nao encontrado. Use Novo recap.' : erro
+  return /Abra o episodio de novo no passo 1/.test(erro) ? RECADO_DE_CORTAR_DE_NOVO : erro
 }
 
 /** A escolha "Novo recap | Continuar" na tela (EscolhaDoRecap.tsx, regras em gerar-continuar.ts). */

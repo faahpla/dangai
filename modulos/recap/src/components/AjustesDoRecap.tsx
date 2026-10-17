@@ -4,6 +4,7 @@ import type { ConfigDoRecapNaTela } from '../../shared/config'
 import { ponte } from '../ponte'
 import { useGerar } from '../store/gerar'
 import { Link, meioDoCaminho, nuvemDoCaminho } from './pecas'
+import { TrazerDoStudio } from './TrazerDoStudio'
 
 /**
  * [recap] A BIBLIOTECA DO RECAP nas Configuracoes (a secao do modulo, depois
@@ -12,7 +13,8 @@ import { Link, meioDoCaminho, nuvemDoCaminho } from './pecas'
  * AjustesDoStudio; o do motor e a secao seguinte (SecaoDoMotor).
  *
  * O rotulo e a linha de cima sao do nucleo (SecoesDosModulos). Pasta do AnCut
- * ou do Corte Cenas e recusada no main, e a frase dele vira o aviso.
+ * ou do Corte Cenas e recusada no main, e a frase dele vira o aviso. Embaixo,
+ * com dado do Studio neste PC, o "Trazer do AniRecap Studio" (parte 5).
  */
 export function AjustesDoRecap() {
   const [config, setConfig] = useState<ConfigDoRecapNaTela | null>(null)
@@ -84,6 +86,7 @@ export function AjustesDoRecap() {
           </Link>
         )}
       </p>
+      <TrazerDoStudio />
     </div>
   )
 }
