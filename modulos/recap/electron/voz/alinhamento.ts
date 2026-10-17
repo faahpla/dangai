@@ -1,8 +1,12 @@
+import type { Word } from '@shared/contract'
 import type { FraseParaNarrar } from '../../shared/voz'
 import { alinharAoAudio, type Alinhamento } from '../alinhador'
 import { getSettings } from '../settings'
 import { transcribe } from '../whisper'
+import { acharCandidatos, chaveDaFala, sequenciaFalada, type CandidatoDeErro } from './casar-fala'
+import type { ErroOuvido } from './erros'
 import { Cancelado } from './ffmpeg'
+import { quadrosDeFala, type Energia } from './pos'
 import {
   nomesDoRoteiro,
   palavrasDoAlinhador,
@@ -33,6 +37,30 @@ export interface ResultadoDoAlinhador {
   /** Confianca media do wav2vec2 (null = so Whisper). */
   score: number | null
   avisos: string[]
+  /** A fala fora do roteiro (V1, so com `erros` nas opcoes). Vazio sem confianca. */
+  erros: ErroOuvido[]
+}
+
+/** Um erro so entra no alinhamento com fala no tempo que o Whisper deu (folga dos tempos grossos dele). */
+const FOLGA_DO_WHISPER_SEC = 0.3
+
+/**
+ * Os candidatos com fala de verdade perto do tempo que o Whisper deu: o
+ * Whisper inventa frase no silencio ("Obrigado.", legenda de site) e isso nao
+ * pode ir ao wav2vec2 como se tivesse sido dito.
+ */
+function comFalaPerto(candidatos: readonly CandidatoDeErro[], ouvidas: readonly Word[], e: Energia): CandidatoDeErro[] {
+  return candidatos.filter((c) => {
+    const a = ouvidas[c.ouvidas[0]!]!.start - FOLGA_DO_WHISPER_SEC
+    const b = ouvidas[c.ouvidas.at(-1)!]!.end + FOLGA_DO_WHISPER_SEC
+    return quadrosDeFala(e, Math.max(0, a), b) >= 3
+  })
+}
+
+/** A media das notas > 0 (a mesma conta do alinharAoAudio). */
+function mediaDasNotas(tempos: readonly { score: number }[]): number {
+  const comNota = tempos.filter((t) => t.score > 0)
+  return comNota.reduce((a, t) => a + t.score, 0) / Math.max(comNota.length, 1)
 }
 
 /**
@@ -97,7 +125,13 @@ export function vereditoDoAlinhamento(s: {
 export async function alinharPeloAudio(
   caminhoWav: string,
   frases: readonly Pick<FraseParaNarrar, 'fraseId' | 'palavras'>[],
-  opcoes: { whisper: boolean; signal?: AbortSignal; avisar: (mensagem: string) => void },
+  opcoes: {
+    whisper: boolean
+    signal?: AbortSignal
+    avisar: (mensagem: string) => void
+    /** V1: procurar a fala fora do roteiro (so o importado, que tem o Whisper). A energia do audio. */
+    erros?: { energia: Energia }
+  },
 ): Promise<ResultadoDoAlinhador> {
   const avisos: string[] = []
   const tokens = frases.flatMap((f) => f.palavras)
@@ -105,6 +139,8 @@ export async function alinharPeloAudio(
 
   let peloWhisper: PalavrasCasadas | null = null
   let whisperOuviu = false
+  let ouvidas: Word[] = []
+  let candidatos: CandidatoDeErro[] = []
   if (opcoes.whisper) {
     opcoes.avisar('Ouvindo o audio (Whisper local)...')
     try {
@@ -117,6 +153,13 @@ export async function alinharPeloAudio(
       if (t && t.words.length > 0) {
         whisperOuviu = true
         peloWhisper = palavrasPeloRoteiro(t.words, frases)
+        if (opcoes.erros && peloWhisper) {
+          // V1: o que o Whisper ouviu contra o roteiro (casar-fala.ts). So palavra com letra.
+          ouvidas = t.words.filter((w) => chaveDaFala(w.text).length > 0)
+          const achados = acharCandidatos(tokens, ouvidas.map((w) => w.text))
+          if (achados.desconfiado) avisos.push('Muita fala fora do roteiro: nenhum erro foi cortado. Confira o audio.')
+          candidatos = comFalaPerto(achados.candidatos, ouvidas, opcoes.erros.energia)
+        }
       }
     } catch (err) {
       if (err instanceof Cancelado) throw err
@@ -124,14 +167,39 @@ export async function alinharPeloAudio(
     }
   }
 
-  opcoes.avisar(`Alinhando ${tokens.length} palavras...`)
+  /*
+   * Com erro ouvido (V1), o wav2vec2 alinha a SEQUENCIA FALADA: o roteiro com
+   * as palavras de cada erro no lugar onde foram ditas. Sem elas, ele espalhava
+   * as palavras do roteiro pelas duas leituras de uma frase repetida. Sem erro,
+   * os tokens sao os do roteiro, como sempre.
+   */
+  const falada = candidatos.length > 0 ? sequenciaFalada(tokens, ouvidas.map((w) => w.text), candidatos) : null
+  const paraAlinhar = falada ? falada.tokens : tokens
+  opcoes.avisar(`Alinhando ${paraAlinhar.length} palavras...`)
   let forcado: Alinhamento | null = null
   try {
     // [recap] Idem no alinhador do nucleo: sem signal, o correrContra solta a espera.
-    forcado = await correrContra(alinharAoAudio(caminhoWav, paraOModelo(tokens), opcoes.avisar), opcoes.signal)
+    forcado = await correrContra(alinharAoAudio(caminhoWav, paraOModelo(paraAlinhar), opcoes.avisar), opcoes.signal)
   } catch (err) {
     if (err instanceof Cancelado) throw err
     avisos.push(`Sincronia fina indisponivel (${(err instanceof Error ? err.message : String(err)).slice(0, 80)}).`)
+  }
+  let erros: ErroOuvido[] = []
+  if (forcado && falada) {
+    // Separa: os tempos do roteiro seguem como sempre; os do erro viram ErroOuvido.
+    const doRoteiro = forcado.tempos.filter((_, k) => falada.doRoteiro[k]! >= 0)
+    erros = candidatos.map((c, ci) => {
+      const seus = forcado!.tempos.filter((_, k) => falada.doCandidato[k] === ci)
+      return {
+        falado: c.ouvidas.map((j) => ouvidas[j]!.text).join(' '),
+        tipo: c.tipo,
+        start: Math.min(...seus.map((t) => t.start)),
+        end: Math.max(...seus.map((t) => t.end)),
+        score: seus.reduce((a, t) => a + t.score, 0) / Math.max(seus.length, 1),
+        antesDe: c.antesDe,
+      }
+    })
+    forcado = { tempos: doRoteiro, score: mediaDasNotas(doRoteiro) }
   }
   const pelaIa = forcado ? palavrasDoAlinhador(forcado.tempos, frases) : null
   const confianca = forcado?.score ?? 0
@@ -157,7 +225,7 @@ export async function alinharPeloAudio(
     temPeloWhisper: peloWhisper !== null,
     comWhisper: opcoes.whisper,
   })
-  if (veredito === 'forcado' && pelaIa && forcado) return { casadas: pelaIa, score: forcado.score, avisos }
+  if (veredito === 'forcado' && pelaIa && forcado) return { casadas: pelaIa, score: forcado.score, avisos, erros }
   if (veredito === 'recusar') throw new Error('Esse audio nao parece ser a narracao deste roteiro. Confira o arquivo.')
   if (peloWhisper) {
     /*
@@ -167,11 +235,12 @@ export async function alinharPeloAudio(
      * fica FRACA e o "Aprovar voz" pede confirmacao.
      */
     avisos.push('A sincronia fina nao reconheceu o roteiro: tempos do Whisper, grossos. Confira antes de aprovar.')
-    return { casadas: peloWhisper, score: forcado?.score ?? 0, avisos }
+    // Sem a sincronia fina, nenhum erro e cortado (nao ha borda confiavel).
+    return { casadas: peloWhisper, score: forcado?.score ?? 0, avisos, erros: [] }
   }
   if (pelaIa && forcado) {
     avisos.push('O audio nao parece ser este roteiro (confianca baixa). Confira as palavras.')
-    return { casadas: pelaIa, score: forcado.score, avisos }
+    return { casadas: pelaIa, score: forcado.score, avisos, erros: [] }
   }
   throw new Error('Nao deu para achar as palavras do roteiro neste audio.')
 }

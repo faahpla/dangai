@@ -96,10 +96,12 @@ function conferirCusto(aCobrar: number, confirmado: number): void {
  * "Cortando pausas"). Com `antes` (o ajuste de um take), so o que mudou. Sem
  * corte e sem acelerar, so o volume e igualado.
  */
-function mensagemDoPos(c: Pick<TakeDaVoz['config'], 'velocidade' | 'cortarPausas'>, antes?: Pick<TakeDaVoz['config'], 'velocidade' | 'cortarPausas'>): string {
+function mensagemDoPos(c: TakeDaVoz['config'], antes?: TakeDaVoz['config']): string {
   const partes: string[] = []
   const velocidade = `acelerando ${c.velocidade.toFixed(2).replace('.', ',')}x`
   if (antes) {
+    const erros = (x: TakeDaVoz['config']): boolean => x.fonte === 'importado' && x.cortarErros
+    if (erros(antes) !== erros(c)) partes.push(erros(c) ? 'cortando erros' : 'devolvendo os erros')
     if (antes.cortarPausas !== c.cortarPausas) partes.push(c.cortarPausas ? 'cortando pausas' : 'devolvendo as pausas')
     if (Math.abs(antes.velocidade - c.velocidade) > 1e-6) partes.push(velocidade)
   } else {
@@ -388,7 +390,15 @@ export async function ajustarVoz(
     const r = lerRascunhoDoDisco(rascunhoId)
     const take = takeAtual(r)
     if (!take) throw new Error('Gere ou importe a voz antes de ajustar.')
-    const config = { ...take.config, velocidade: pedido.velocidade, cortarPausas: pedido.cortarPausas }
+    const config: TakeDaVoz['config'] =
+      take.config.fonte === 'importado'
+        ? {
+            ...take.config,
+            velocidade: pedido.velocidade,
+            cortarPausas: pedido.cortarPausas,
+            cortarErros: pedido.cortarErros ?? take.config.cortarErros,
+          }
+        : { ...take.config, velocidade: pedido.velocidade, cortarPausas: pedido.cortarPausas }
     if (mesmaConfig(config, take.config)) throw new Error('A voz ja esta com esse ajuste.')
 
     const igual = estadoDaVoz(r).takes.find((t) => t.bruto.arquivo === take.bruto.arquivo && mesmaConfig(t.config, config))
@@ -405,6 +415,7 @@ export async function ajustarVoz(
         pcm: lerWavDoDisco(arquivoDaVoz(rascunhoId, take.bruto.arquivo)),
         palavras: take.bruto.palavras,
         trechos: take.bruto.trechos,
+        erros: take.bruto.erros,
       },
       {
         config,

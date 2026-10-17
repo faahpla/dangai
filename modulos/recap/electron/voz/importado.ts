@@ -7,9 +7,11 @@ import { lerRascunhoDoDisco } from '../gerar/rascunho'
 import { alinharPeloAudio } from './alinhamento'
 import { chaveDoImportado, guardarAlinhamento, lerAlinhamentoGuardado } from './cache'
 import { exigirRoteiroAprovado } from './estimar'
+import { trechosDosErros } from './erros'
 import { decodificar } from './ffmpeg'
 import { brutoPeloSom, montarTake } from './montar'
 import { pastaDaVoz } from './pastas'
+import { medirEnergia } from './pos'
 import { duracaoDoPcm, gravarWavEnderecado } from './wav'
 
 /**
@@ -21,7 +23,12 @@ import { duracaoDoPcm, gravarWavEnderecado } from './wav'
  *   2. Whisper local confere que o audio e deste roteiro e da a reserva;
  *      wav2vec2 (alinhador.ts) da o tempo fino de cada palavra do roteiro;
  *   3. o pos e o mesmo das outras fontes (corte de pausa desligado por padrao:
- *      a pausa de quem gravou costuma ser de proposito).
+ *      a pausa de quem gravou costuma ser de proposito);
+ *   4. CORTAR ERROS (V1, ligado por padrao): o que o Whisper ouviu e nao e do
+ *      roteiro (palavra repetida, "eee", frase lida duas vezes -- fica a
+ *      ULTIMA leitura) sai no mesmo pos, como corte extra, na borda do
+ *      silencio (casar-fala.ts, erros.ts). Desligar e um ajuste de graca: os
+ *      erros ficam guardados no bruto.
  *
  * O alinhamento fica guardado pelo sha256 do arquivo + o texto das frases:
  * importar o mesmo audio de novo (outra velocidade, outro corte) nao roda o
@@ -92,12 +99,14 @@ export async function importarAudioDoLevi(
   }
   if (duracao < palavras / 7) throw new Error('Esse audio e curto demais para este roteiro.')
   const bruto = gravarWavEnderecado(pastaDaVoz(rascunhoId), 'bruto', pcm)
+  const energia = medirEnergia(pcm)
 
   const chave = chaveDoImportado(hash, frases)
   let guardado = lerAlinhamentoGuardado(chave)
   if (!guardado) {
     const resultado = await alinharPeloAudio(bruto.caminho, frases, {
       whisper: true,
+      erros: { energia },
       signal,
       avisar: (m) => {
         const a = traduzirAndamento(m)
@@ -111,6 +120,7 @@ export async function importarAudioDoLevi(
       total: resultado.casadas.total,
       score: resultado.score,
       avisos: resultado.avisos,
+      erros: resultado.erros,
     }
     guardarAlinhamento(chave, guardado)
   }
@@ -118,7 +128,12 @@ export async function importarAudioDoLevi(
   avisar('montando', 'Montando a narracao...')
   // Bordas das palavras e fronteiras das frases pelo SOM (montar.ts).
   const { bruto: montado, avisos: avisosDoSom } = brutoPeloSom(pcm, guardado.palavras, frases)
-  const partes = [pedido.cortarPausas ? 'cortando pausas' : null, pedido.velocidade !== 1 ? `velocidade ${pedido.velocidade.toFixed(2).replace('.', ',')}x` : null]
+  // Os erros ficam no bruto (com ou sem o corte): desligar/ligar depois e so o pos.
+  montado.erros = trechosDosErros(guardado.erros, montado.palavras, energia, duracao)
+  const partes = [
+    pedido.cortarErros && montado.erros.some((t) => t.corte) ? 'cortando erros' : null,
+    pedido.cortarPausas ? 'cortando pausas' : null,
+    pedido.velocidade !== 1 ? `velocidade ${pedido.velocidade.toFixed(2).replace('.', ',')}x` : null]
     .filter(Boolean)
     .join(' e ')
   avisar('ajustando', partes ? `${partes.charAt(0).toUpperCase()}${partes.slice(1)}...` : 'Igualando o volume...')
@@ -132,6 +147,7 @@ export async function importarAudioDoLevi(
         modelId: '',
         velocidade: pedido.velocidade,
         cortarPausas: pedido.cortarPausas,
+        cortarErros: pedido.cortarErros,
         audio: { nome: basename(pedido.caminho).slice(0, 260), hash },
       },
       origem: 'alinhador',

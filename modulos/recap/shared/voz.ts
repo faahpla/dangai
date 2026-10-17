@@ -256,6 +256,13 @@ export const configDaVozSchema = z.discriminatedUnion('fonte', [
     velocidade: velocidadeSchema,
     cortarPausas: cortarPausasSchema,
     /**
+     * CORTAR ERROS (V1): os trechos falados fora do roteiro (palavra repetida,
+     * "eee", frase lida duas vezes) saem no pos, na borda do silencio. Padrao
+     * false aqui: o take de antes do campo nao tinha corte nenhum. A tela e o
+     * pedido de importacao ligam por padrao.
+     */
+    cortarErros: z.boolean().default(false),
+    /**
      * O arquivo que ele soltou: nome (para a tela) e sha256 do conteudo (o
      * cache do audio decodificado e do alinhamento). O caminho original NAO
      * fica: o motor copia o audio para o bruto do take.
@@ -340,6 +347,7 @@ function assinaturaSemPos(c: ConfigDaVoz): string {
   const resto: Record<string, unknown> = { ...c }
   delete resto['velocidade']
   delete resto['cortarPausas']
+  delete resto['cortarErros']
   if (c.fonte !== 'importado') resto['velocidadeNativa'] = velocidadeNativaEnviada(c)
   return JSON.stringify(emOrdem(resto))
 }
@@ -390,6 +398,28 @@ const arquivoNarracaoSchema = z.string().regex(/^narracao-[0-9a-f]{16,64}\.wav$/
 const arquivoBrutoSchema = z.string().regex(/^bruto-[0-9a-f]{16,64}\.wav$/)
 
 /**
+ * Um trecho FALADO que nao e do roteiro (so no audio importado, V1): o Whisper
+ * ouviu, o casamento com o roteiro nao achou par, o wav2vec2 deu o tempo.
+ *   - 'repeticao': a mesma parte do roteiro dita de novo logo depois (fica a
+ *     ULTIMA leitura; esta e a de antes);
+ *   - 'hesitacao': "eee", "hum";
+ *   - 'sobra': palavras a mais.
+ * `corte` = o pedaco que sai (pontas em quadro calado, nunca em palavra do
+ * roteiro). null = ficou: `motivo` diz por que.
+ */
+export const trechoDeErroSchema = z.object({
+  /** Onde a fala do trecho soa no bruto. */
+  de: segundosSchema,
+  ate: segundosSchema,
+  corte: z.object({ de: segundosSchema, ate: segundosSchema }).nullable(),
+  /** O que o Whisper ouviu (so para a tela). */
+  falado: z.string().max(300),
+  tipo: z.enum(['repeticao', 'hesitacao', 'sobra']),
+  motivo: z.enum(['longo', 'sem-silencio', 'incerto']).nullable().default(null),
+})
+export type TrechoDeErro = z.infer<typeof trechoDeErroSchema>
+
+/**
  * O audio ANTES do pos: o que o provedor devolveu (ou o importado
  * decodificado), em WAV, sem corte e sem o "acelerar" (na velocidade nativa
  * em que foi gerado), com os tempos dele. E
@@ -401,6 +431,8 @@ export const audioBrutoSchema = z.object({
   duracao: segundosSchema,
   palavras: z.array(palavraComTempoSchema),
   trechos: z.array(trechoDaFraseSchema),
+  /** Os trechos fora do roteiro achados no importado (V1). Vazio nas outras fontes e nos takes de antes. */
+  erros: z.array(trechoDeErroSchema).default([]),
 })
 export type AudioBruto = z.infer<typeof audioBrutoSchema>
 
@@ -560,6 +592,8 @@ export type PedidoDeRegravar = z.infer<typeof pedidoDeRegravarSchema>
 export const pedidoDeAjusteSchema = z.object({
   velocidade: velocidadeSchema,
   cortarPausas: cortarPausasSchema,
+  /** So no importado (V1). Ausente = fica o do take. */
+  cortarErros: z.boolean().optional(),
   pedidoId: pedidoIdSchema,
 })
 export type PedidoDeAjuste = z.infer<typeof pedidoDeAjusteSchema>
@@ -570,6 +604,8 @@ export const pedidoDeImportacaoSchema = z.object({
   velocidade: velocidadeSchema,
   /** Padrao false aqui: a pausa de quem gravou costuma ser de proposito. */
   cortarPausas: z.boolean().default(false),
+  /** Padrao true: repeticao, "eee" e frase lida duas vezes saem (V1). */
+  cortarErros: z.boolean().default(true),
   pedidoId: pedidoIdSchema,
 })
 export type PedidoDeImportacao = z.infer<typeof pedidoDeImportacaoSchema>
@@ -637,6 +673,8 @@ export interface AudioDoTake {
   /** Picos 0..1 (analyzeAudio), para a Waveform. */
   peaks: number[]
   rms: number[]
+  /** O bruto publicado (so o importado com erros, V1): ouvir o trecho que saiu. */
+  urlDoBruto?: string
 }
 
 export const ROTULO_DA_ETAPA_DA_VOZ = {

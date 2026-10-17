@@ -7,10 +7,13 @@ import {
   type PalavraComTempo,
   type TakeDaVoz,
   type TrechoDaFrase,
+  type TrechoDeErro,
 } from '../../shared/voz'
+import { avisosDosErros, cortesDosErros } from './erros'
 import {
   aplicarPos,
   encostarNoSom,
+  energiaSemOsCortes,
   fimDoSom,
   inicioDoSom,
   maiorTrechoCalado,
@@ -40,6 +43,8 @@ export interface BrutoMontado {
   palavras: PalavraComTempo[]
   /** Cobrem o bruto inteiro (fronteira no meio da pausa). */
   trechos: TrechoDaFrase[]
+  /** A fala fora do roteiro (so o importado, V1). Sai no pos com `cortarErros`. */
+  erros?: TrechoDeErro[]
 }
 
 export interface DadosDoTake {
@@ -109,14 +114,27 @@ export async function montarTake(
   const palavrasDoBruto = encostarNoSom(bruto.palavras, energia)
   const problemasDoBruto = conferirTake({ duracao: duracaoBruto, palavras: palavrasDoBruto, trechos: bruto.trechos })
   if (problemasDoBruto.length > 0) throw new Error(`O audio da voz nao fechou com o roteiro (${problemasDoBruto[0]}).`)
-  const suspeitas = palavrasSuspeitas(palavrasDoBruto, energia)
+  /*
+   * Os erros do importado (V1): com o corte ligado, cada um sai no pos como
+   * corte extra. Ligado ou nao, a fala deles e conhecida: nao conta como
+   * "pausa em cima da fala" na conferencia das suspeitas.
+   */
+  const erros = bruto.erros ?? []
+  const cortarErros = dados.config.fonte === 'importado' && dados.config.cortarErros
+  const amostrasDoBruto = bruto.pcm.amostras.length
+  const conhecidos = cortesDosErros(erros, taxa, amostrasDoBruto)
+  const suspeitas = palavrasSuspeitas(palavrasDoBruto, energiaSemOsCortes(energia, conhecidos))
   const arquivoBruto = gravarWavEnderecado(pasta, 'bruto', bruto.pcm)
 
   const pos = await aplicarPos(
     arquivoBruto.caminho,
     bruto.pcm,
     palavrasDoBruto,
-    { cortarPausas: dados.config.cortarPausas, velocidade: dados.config.velocidade },
+    {
+      cortarPausas: dados.config.cortarPausas,
+      velocidade: dados.config.velocidade,
+      extras: cortarErros ? conhecidos : [],
+    },
     signal,
     energia,
   )
@@ -154,7 +172,7 @@ export async function montarTake(
     duracao,
     palavras,
     trechos,
-    bruto: { arquivo: arquivoBruto.nome, duracao: duracaoBruto, palavras: palavrasDoBruto, trechos: bruto.trechos },
+    bruto: { arquivo: arquivoBruto.nome, duracao: duracaoBruto, palavras: palavrasDoBruto, trechos: bruto.trechos, erros },
     origemDoAlinhamento: dados.origem,
     qualidade: qualidadeComOSom(dados.qualidade, palavrasDoBruto.length, n),
     caracteres: dados.caracteres,
@@ -164,7 +182,7 @@ export async function montarTake(
     roteiroVersao: dados.roteiroVersao,
     derivadoDe: dados.derivadoDe,
     regravadas: dados.regravadas,
-    avisos: [...new Set([...dados.avisos, ...pos.avisos, ...avisoDasSuspeitas])],
+    avisos: [...new Set([...dados.avisos, ...pos.avisos, ...avisoDasSuspeitas, ...(cortarErros ? avisosDosErros(erros) : [])])],
     volume: volume.volume,
   })
   const problemas = conferirTake(take)

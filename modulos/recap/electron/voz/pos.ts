@@ -118,6 +118,45 @@ function temFala(e: Energia, q: number): boolean {
   return q >= 0 && q < e.db.length && e.db[q]! > Math.max(e.limiar, e.fala - FALA_ABAIXO_DB)
 }
 
+/** Quantos quadros no nivel da FALA ha em [a, b] (segundos). */
+export function quadrosDeFala(e: Energia, a: number, b: number): number {
+  const q0 = Math.max(0, quadroDe(e, a))
+  const q1 = Math.min(e.db.length, Math.ceil((b * e.taxa) / e.amostrasPorQuadro))
+  let n = 0
+  for (let q = q0; q < q1; q++) if (temFala(e, q)) n++
+  return n
+}
+
+/**
+ * A energia com os `cortes` (amostras) calados: os quadros inteiros dentro de
+ * um corte viram silencio digital. Os cortes de ERRO (V1) entram assim no
+ * corte de pausa: a fala que sai deixa de ser "ilha de fala" e o vao inteiro
+ * (pausa + erro + pausa) encolhe para a pausa curta, como um silencio so.
+ * O limiar e o nivel da fala ficam os do audio de verdade.
+ */
+export function energiaSemOsCortes(e: Energia, cortes: readonly Corte[]): Energia {
+  if (cortes.length === 0) return e
+  const db = Float32Array.from(e.db)
+  for (const c of cortes) {
+    const q0 = Math.ceil(c.de / e.amostrasPorQuadro)
+    const q1 = Math.min(db.length, Math.floor(c.ate / e.amostrasPorQuadro))
+    for (let q = q0; q < q1; q++) db[q] = -120
+  }
+  return { ...e, db }
+}
+
+/** Os cortes em ordem e sem sobreposicao (cortes que se tocam viram um so). */
+export function unirCortes(cortes: readonly Corte[]): Corte[] {
+  const ordem = cortes.filter((c) => c.ate > c.de).sort((a, b) => a.de - b.de)
+  const saida: Corte[] = []
+  for (const c of ordem) {
+    const ultimo = saida.at(-1)
+    if (ultimo && c.de <= ultimo.ate) ultimo.ate = Math.max(ultimo.ate, c.ate)
+    else saida.push({ ...c })
+  }
+  return saida
+}
+
 /** Segundos do inicio do quadro q. */
 function tempoDoQuadro(e: Energia, q: number): number {
   return (q * e.amostrasPorQuadro) / e.taxa
@@ -479,13 +518,23 @@ export async function aplicarPos(
   caminhoDoBruto: string,
   bruto: Pcm,
   palavras: readonly Pick<PalavraComTempo, 'start' | 'end'>[],
-  opcoes: { cortarPausas: boolean; velocidade: number },
+  opcoes: { cortarPausas: boolean; velocidade: number; extras?: readonly Corte[] },
   signal?: AbortSignal,
   energia?: Energia,
 ): Promise<ResultadoDoPos> {
   const amostras = bruto.amostras.length
   const ilhas = { ilhas: 0 }
-  const cortes = opcoes.cortarPausas ? cortesDasPausas(palavras, energia ?? medirEnergia(bruto), amostras, ilhas) : []
+  /*
+   * Os cortes EXTRAS (os erros do importado, V1) saem junto com os de pausa. A
+   * pausa e medida com eles calados (energiaSemOsCortes): o vao que tinha o
+   * erro vira um silencio so. A conta t' = (t - cortado)/v vale igual: os
+   * cortes viram uma lista so, em ordem e sem sobreposicao.
+   */
+  const extras = (opcoes.extras ?? []).map((c) => ({ de: Math.max(0, c.de), ate: Math.min(amostras, c.ate) }))
+  const daPausa = opcoes.cortarPausas
+    ? cortesDasPausas(palavras, energiaSemOsCortes(energia ?? medirEnergia(bruto), extras), amostras, ilhas)
+    : []
+  const cortes = extras.length > 0 ? unirCortes([...daPausa, ...extras]) : daPausa
   const cortado = cortes.reduce((s, c) => s + c.ate - c.de, 0) / bruto.taxa
   const avisosDoCorte = [avisoDasIlhas(ilhas.ilhas)].filter((a): a is string => a !== null)
   if (cortes.length === 0 && opcoes.velocidade === 1) {

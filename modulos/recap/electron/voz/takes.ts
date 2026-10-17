@@ -8,6 +8,7 @@ import {
   type AudioDoTake,
 } from '../../shared/voz'
 import { analyzeAudio } from '../audio'
+import { publish } from '../media-server'
 import { gravarRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
 import { arquivoDaVoz } from './pastas'
 
@@ -58,5 +59,8 @@ export async function audioDoTake(rascunhoId: string, takeId: string): Promise<A
   const caminho = arquivoDaVoz(rascunhoId, take.arquivo)
   if (!existsSync(caminho)) throw new Error('O audio deste take sumiu do disco. Gere de novo.')
   const analise = await analyzeAudio(caminho)
-  return { takeId, url: analise.url, duracao: take.duracao, peaks: analise.peaks, rms: analise.rms ?? [] }
+  // V1: os erros achados no importado se ouvem no BRUTO (o trecho que saiu nao esta na narracao).
+  const bruto = arquivoDaVoz(rascunhoId, take.bruto.arquivo)
+  const urlDoBruto = take.bruto.erros.length > 0 && existsSync(bruto) ? publish(bruto) : undefined
+  return { takeId, url: analise.url, duracao: take.duracao, peaks: analise.peaks, rms: analise.rms ?? [], ...(urlDoBruto ? { urlDoBruto } : {}) }
 }

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { modeloEleven, velocidadeNativaEnviada, type ConfigEleven, type ConfigFish } from '../../shared/voz'
+import type { ErroOuvido } from './erros'
 import type { AlinhamentoDeCaracteres } from './palavras'
 import { pastaDaVoz, pastaDoCacheDaVoz } from './pastas'
 import { sha256 } from './wav'
@@ -216,18 +217,21 @@ export interface AlinhamentoGuardado {
   total: number
   score: number | null
   avisos: string[]
+  /** A fala fora do roteiro com o tempo do wav2vec2 (V1). */
+  erros: ErroOuvido[]
 }
 
 export function chaveDoImportado(hashDoAudio: string, frases: readonly { fraseId: string; texto: string }[]): string {
   // alinhador 2: as palavras vao ao wav2vec2 sem pontuacao (alinhamento.ts). Os alinhamentos da versao 1 tinham a ultima palavra da frase esticada por cima da pausa e nao valem mais.
-  return sha256(JSON.stringify({ fonte: 'importado', audio: hashDoAudio, frases: frases.map((f) => [f.fraseId, f.texto]), alinhador: 2 }))
+  // alinhador 3 (V1): o Whisper procura a fala fora do roteiro e, com ela, o wav2vec2 alinha a sequencia falada.
+  return sha256(JSON.stringify({ fonte: 'importado', audio: hashDoAudio, frases: frases.map((f) => [f.fraseId, f.texto]), alinhador: 3 }))
 }
 
 export function lerAlinhamentoGuardado(chave: string): AlinhamentoGuardado | null {
   const a = arquivos(chave)
   try {
     const cru = JSON.parse(readFileSync(a.json, 'utf8')) as AlinhamentoGuardado
-    return cru.versao === 1 && Array.isArray(cru.palavras) ? cru : null
+    return cru.versao === 1 && Array.isArray(cru.palavras) ? { ...cru, erros: Array.isArray(cru.erros) ? cru.erros : [] } : null
   } catch {
     return null
   }
