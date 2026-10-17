@@ -1,10 +1,12 @@
 import { Component, useMemo, type ReactNode } from 'react'
-import { create } from 'zustand'
 import type { ModuloPublico } from '@shared/modulos'
 import { MODULOS_DO_RENDERER } from '../../modulos/registro.renderer'
 import type { AncoraDasConfiguracoes, ComandoDoModulo, ModuloDoRenderer, PropsDosBotoesDaTelaInicial } from './api'
 import { definirModulosAtivos } from './ganchos'
 import { criarNucleo, useTelaCheia, type Nucleo } from './nucleo'
+import { useModulos } from './lista'
+
+export { useModulos }
 
 /**
  * OS MODULOS NO RENDERER: quem esta ligado, quando cada um inicia, e os
@@ -14,24 +16,6 @@ import { criarNucleo, useTelaCheia, type Nucleo } from './nucleo'
  * guarda a escolha nas configuracoes. Todo componente de modulo passa por um
  * <Protegido>: um erro dentro dele some com ele, e nao com o app.
  */
-
-export const useModulos = create<{
-  lista: ModuloPublico[]
-  carregar(): Promise<void>
-  ligar(id: string, ligado: boolean): Promise<string | null>
-}>((set) => ({
-  lista: [],
-  carregar: async () => {
-    const r = await window.dangai.listarModulos()
-    if (r.ok) set({ lista: r.value })
-  },
-  ligar: async (id, ligado) => {
-    const r = await window.dangai.ligarModulo(id, ligado)
-    if (!r.ok) return r.error
-    set({ lista: r.value })
-    return null
-  },
-}))
 
 const ligados = (lista: readonly ModuloPublico[]): ModuloDoRenderer[] =>
   MODULOS_DO_RENDERER.filter((m) => lista.some((p) => p.id === m.id && p.ligado && !p.falhou))

@@ -51,9 +51,44 @@ export type WhisperProgress = (message: string) => void
  */
 const vivos = new Set<ReturnType<typeof spawn>>()
 
-function registrar(child: ReturnType<typeof spawn>): void {
+function registrar(child: ReturnType<typeof spawn>, corrida?: Corrida): void {
   vivos.add(child)
-  child.on('close', () => vivos.delete(child))
+  corrida?.filhos.add(child)
+  child.on('close', () => {
+    vivos.delete(child)
+    corrida?.filhos.delete(child)
+  })
+  // Cancelada enquanto este processo nascia: ele nao chega a trabalhar.
+  if (corrida?.cancelada) child.kill()
+}
+
+/**
+ * UMA TRANSCRICAO EM ANDAMENTO, com os processos dela -- para cancelar so
+ * ela, e nao todas (o encerrarWhisper mata tudo).
+ */
+interface Corrida {
+  filhos: Set<ReturnType<typeof spawn>>
+  cancelada: boolean
+  desistir: ((motivo: Error) => void) | null
+}
+
+/** O erro de quem desistiu (signal abortado). */
+export function transcricaoCancelada(): Error {
+  const erro = new Error('Transcricao cancelada')
+  erro.name = 'AbortError'
+  return erro
+}
+
+function cancelarCorrida(corrida: Corrida): void {
+  corrida.cancelada = true
+  for (const child of corrida.filhos) {
+    try {
+      child.kill()
+    } catch {
+      /* ja morreu sozinho */
+    }
+  }
+  corrida.desistir?.(transcricaoCancelada())
 }
 
 /**
@@ -137,7 +172,13 @@ export function isWhisperReady(model: Settings['whisperModel']): boolean {
  */
 const emAndamento = new Map<
   string,
-  { promessa: Promise<Transcript | null>; ouvintes: Set<WhisperProgress> }
+  {
+    promessa: Promise<Transcript | null>
+    ouvintes: Set<WhisperProgress>
+    corrida: Corrida
+    /** Quantos pedidos ainda esperam esta transcricao. Zero = ninguem: ela morre. */
+    interessados: number
+  }
 >()
 
 /**
@@ -162,40 +203,82 @@ export function transcribe(
   model: Settings['whisperModel'],
   onProgress: WhisperProgress,
   vocabulary: readonly string[] = [],
+  /**
+   * DESISTIR DESTE PEDIDO (cancelar a importacao, por exemplo). O pedido sai
+   * na hora com AbortError; o whisper-cli so morre quando NINGUEM mais espera
+   * a mesma transcricao -- quem entrou de carona continua recebendo.
+   */
+  signal?: AbortSignal,
 ): Promise<Transcript | null> {
+  if (signal?.aborted) return Promise.reject(transcricaoCancelada())
   const chave = JSON.stringify([model, audioPath, [...vocabulary].sort()])
 
-  const jaPedido = emAndamento.get(chave)
-  if (jaPedido) {
-    // Entra de carona: recebe o mesmo andamento e a mesma resposta.
-    jaPedido.ouvintes.add(onProgress)
-    return jaPedido.promessa.finally(() => jaPedido.ouvintes.delete(onProgress))
+  let entrada = emAndamento.get(chave)
+  if (!entrada) {
+    const ouvintes = new Set<WhisperProgress>()
+    const avisarTodos: WhisperProgress = (message) => {
+      for (const ouvinte of ouvintes) ouvinte(message)
+    }
+    const corrida: Corrida = { filhos: new Set(), cancelada: false, desistir: null }
+    const promessa = enfileirar(
+      () =>
+        /*
+         * A tarefa corre contra um DESISTIR.
+         *
+         * Sem isso, cancelar so mata processo -- e uma etapa sem processo nenhum
+         * deixaria esta promessa pendurada, travando a fila inteira atras dela.
+         */
+        new Promise<Transcript | null>((resolve, reject) => {
+          // Cancelada ainda na fila: nem comeca.
+          if (corrida.cancelada) return reject(transcricaoCancelada())
+          const desistir = (motivo: Error): void => reject(motivo)
+          pendentes.add(desistir)
+          corrida.desistir = desistir
+          transcrever(audioPath, model, avisarTodos, vocabulary, corrida)
+            .then(resolve, reject)
+            .finally(() => {
+              pendentes.delete(desistir)
+              corrida.desistir = null
+            })
+        }),
+    ).finally(() => {
+      if (emAndamento.get(chave)?.corrida === corrida) emAndamento.delete(chave)
+    })
+    entrada = { promessa, ouvintes, corrida, interessados: 0 }
+    emAndamento.set(chave, entrada)
   }
 
-  const ouvintes = new Set<WhisperProgress>([onProgress])
-  const avisarTodos: WhisperProgress = (message) => {
-    for (const ouvinte of ouvintes) ouvinte(message)
+  // Entra (ou entra de carona): recebe o mesmo andamento e a mesma resposta.
+  const e = entrada
+  e.ouvintes.add(onProgress)
+  e.interessados++
+  let saiu = false
+  const sair = (): void => {
+    if (saiu) return
+    saiu = true
+    e.ouvintes.delete(onProgress)
+    e.interessados--
   }
+  if (!signal) return e.promessa.finally(sair)
 
-  const promessa = enfileirar(
-    () =>
-      /*
-       * A tarefa corre contra um DESISTIR.
-       *
-       * Sem isso, cancelar so mata processo -- e uma etapa sem processo nenhum
-       * deixaria esta promessa pendurada, travando a fila inteira atras dela.
-       */
-      new Promise<Transcript | null>((resolve, reject) => {
-        const desistir = (motivo: Error): void => reject(motivo)
-        pendentes.add(desistir)
-        transcrever(audioPath, model, avisarTodos, vocabulary)
-          .then(resolve, reject)
-          .finally(() => pendentes.delete(desistir))
-      }),
-  ).finally(() => emAndamento.delete(chave))
-
-  emAndamento.set(chave, { promessa, ouvintes })
-  return promessa
+  return new Promise<Transcript | null>((resolve, reject) => {
+    const aoAbortar = (): void => {
+      sair()
+      reject(transcricaoCancelada())
+      if (e.interessados === 0) {
+        // Ninguem mais espera: a transcricao morre, e um pedido novo comeca do zero.
+        if (emAndamento.get(chave) === e) emAndamento.delete(chave)
+        cancelarCorrida(e.corrida)
+      }
+    }
+    signal.addEventListener('abort', aoAbortar, { once: true })
+    e.promessa
+      .then(resolve, reject)
+      .finally(() => {
+        signal.removeEventListener('abort', aoAbortar)
+        sair()
+      })
+  })
 }
 
 async function transcrever(
@@ -203,21 +286,28 @@ async function transcrever(
   model: Settings['whisperModel'],
   onProgress: WhisperProgress,
   vocabulary: readonly string[],
+  corrida?: Corrida,
 ): Promise<Transcript | null> {
+  const seguir = (): void => {
+    if (corrida?.cancelada) throw transcricaoCancelada()
+  }
   if (!isWhisperReady(model)) {
     const installed = await tryInstall(model, onProgress)
     if (!installed) return null
   }
+  seguir()
 
   // O whisper.cpp so aceita WAV PCM 16kHz mono.
   const wav = join(tmpdir(), `dangai-whisper-${Date.now()}.wav`)
   try {
     onProgress('Preparando o audio...')
-    await toWav16k(audioPath, wav)
+    await toWav16k(audioPath, wav, corrida)
+    seguir()
 
     onProgress(`Transcrevendo com Whisper (${model})...`)
     const jsonPath = `${wav}.json`
-    await runWhisper(wav, model, onProgress, buildVocabularyPrompt(vocabulary))
+    await runWhisper(wav, model, onProgress, buildVocabularyPrompt(vocabulary), corrida)
+    seguir()
 
     if (!existsSync(jsonPath)) {
       throw new Error('O Whisper terminou sem gerar a transcricao.')
@@ -230,7 +320,7 @@ async function transcrever(
   }
 }
 
-function toWav16k(input: string, output: string): Promise<void> {
+function toWav16k(input: string, output: string, corrida?: Corrida): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       ffmpegPath,
@@ -238,7 +328,7 @@ function toWav16k(input: string, output: string): Promise<void> {
        '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', output],
       { windowsHide: true },
     )
-    registrar(child)
+    registrar(child, corrida)
     let stderr = ''
     child.stderr.on('data', (c: Buffer) => (stderr += c.toString()))
     child.on('error', reject)
@@ -284,6 +374,7 @@ function runWhisper(
   model: Settings['whisperModel'],
   onProgress: WhisperProgress,
   vocabularyPrompt: string,
+  corrida?: Corrida,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -302,7 +393,7 @@ function runWhisper(
       ],
       { windowsHide: true, cwd: requireBaseDir() },
     )
-    registrar(child)
+    registrar(child, corrida)
 
     let stderr = ''
     child.stderr.on('data', (chunk: Buffer) => {

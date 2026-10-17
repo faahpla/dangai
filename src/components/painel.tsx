@@ -184,6 +184,7 @@ export function Deslizante({
   onChange,
   texto,
   padrao,
+  dica,
 }: {
   valor: number
   min: number
@@ -193,6 +194,8 @@ export function Deslizante({
   texto: string
   /** Duplo clique volta a este valor. */
   padrao?: number
+  /** O que o slider faz, no tooltip (junto do "duplo clique volta ao padrao"). */
+  dica?: string
 }) {
   return (
     <>
@@ -204,7 +207,7 @@ export function Deslizante({
         value={valor}
         onChange={(event) => onChange(Number(event.target.value))}
         onDoubleClick={padrao === undefined ? undefined : () => onChange(padrao)}
-        title={padrao === undefined ? undefined : 'Duplo clique volta ao padrao'}
+        title={[dica, padrao === undefined ? null : 'Duplo clique volta ao padrao'].filter(Boolean).join(' · ') || undefined}
         className="dangai-range min-w-0 flex-1"
       />
       <span className="tnum w-9 shrink-0 text-right text-[11px] text-ink-3">{texto}</span>

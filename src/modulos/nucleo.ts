@@ -5,6 +5,8 @@ import { fotografar, type Documento } from '@/store/documento'
 import { fecharPassoAgora } from '@/store/undo'
 import { aplicarEstiloSemVirarPadrao } from '@/store/estilo-legenda'
 import { ouvir, type EventosDoNucleo } from './ganchos'
+import { useModulos } from './lista'
+import type { ModuloPublico } from '@shared/modulos'
 
 /**
  * A FACHADA DO NUCLEO: o pedaco do Dangai que um modulo pode usar.
@@ -51,6 +53,19 @@ export const useTelaCheia = create<{ de: string | null }>(() => ({ de: null }))
 export interface Nucleo {
   /** O id do modulo dono desta fachada. */
   readonly id: string
+  /**
+   * Hook: o que o main diz DESTE modulo -- ligado, a config publica (o
+   * `paraRenderer`) e o tem/dica de cada chave dele. Atualiza sozinho quando
+   * a lista e relida (ver `reler`).
+   */
+  usarEuMesmo(): ModuloPublico | null
+  /** O mesmo, fora do React. */
+  euMesmo(): ModuloPublico | null
+  /**
+   * Rele a lista no main -- depois de o modulo gravar a config ou uma chave
+   * pelos canais dele, para a tela mostrar o tem/dica novos.
+   */
+  reler(): Promise<void>
   /** Hook de React: le um pedaco do estado, como o useProject. */
   usar<T>(seletor: (estado: EstadoPublico) => T): T
   /** O estado agora, fora do React. */
@@ -103,6 +118,9 @@ export function criarNucleo(id: string): Nucleo {
   const store = useProject.getState
   return {
     id,
+    usarEuMesmo: () => useModulos((s) => s.lista.find((m) => m.id === id) ?? null),
+    euMesmo: () => useModulos.getState().lista.find((m) => m.id === id) ?? null,
+    reler: () => useModulos.getState().carregar(),
     usar: (seletor) => useProject((s) => seletor(s)),
     ler: () => store(),
     assinar: (ouvinte) => useProject.subscribe((s, a) => ouvinte(s, a)),

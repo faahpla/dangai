@@ -122,7 +122,7 @@ async function baixar(url: string, alvo: string, onMb: (mb: number) => void): Pr
  * 32768. Sem normalizacao -- o WhisperX tambem nao normaliza, e qualquer
  * diferenca aqui mudaria os tempos.
  */
-function lerAudio(caminho: string): Promise<Float32Array> {
+function lerAudio(caminho: string, signal?: AbortSignal): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       ffmpegPath,
@@ -132,10 +132,16 @@ function lerAudio(caminho: string): Promise<Float32Array> {
     )
     const pedacos: Buffer[] = []
     let stderr = ''
+    const aoAbortar = (): void => {
+      child.kill()
+      reject(alinhamentoCancelado())
+    }
+    signal?.addEventListener('abort', aoAbortar, { once: true })
     child.stdout.on('data', (c: Buffer) => pedacos.push(c))
     child.stderr.on('data', (c: Buffer) => (stderr += c.toString()))
     child.on('error', reject)
     child.on('close', (code) => {
+      signal?.removeEventListener('abort', aoAbortar)
       if (code !== 0) {
         reject(new Error(`Nao deu para ler o audio: ${stderr.trim()}`))
         return
@@ -211,6 +217,7 @@ async function emissaoCompleta(
   sessao: Sessao,
   audio: Float32Array,
   onProgress: AlinhadorProgresso,
+  signal?: AbortSignal,
 ): Promise<{ dados: Float32Array; quadros: number; classes: number }> {
   if (audio.length <= JANELA_SEC * TAXA) return emitir(ort, sessao, audio)
 
@@ -226,6 +233,8 @@ async function emissaoCompleta(
     // Inicio alinhado ao passo: o quadro local i vira o global ini/PASSO + i.
     const iniAlinhado = ini - (ini % PASSO)
     const fim = Math.min(audio.length, dono + util + sobra)
+    // Cancelado: para entre uma janela e a proxima (cada uma leva ~1 s).
+    if (signal?.aborted) throw alinhamentoCancelado()
     onProgress(`Sincronizando as legendas... ${Math.round((dono / audio.length) * 100)}%`)
     const e = await emitir(ort, sessao, audio.subarray(iniAlinhado, fim))
     classes = e.classes
@@ -251,28 +260,56 @@ export interface Alinhamento {
  * Onde cada palavra soa. `null` quando nao da para alinhar (texto sem letra
  * nenhuma, audio mais curto que o texto).
  */
+/** O erro de quem desistiu (signal abortado). */
+export function alinhamentoCancelado(): Error {
+  const erro = new Error('Sincronizacao cancelada')
+  erro.name = 'AbortError'
+  return erro
+}
+
 export async function alinharAoAudio(
   audioPath: string,
   palavras: readonly string[],
   onProgress: AlinhadorProgresso,
+  /** Desistir: mata a leitura do audio e para entre uma janela e a proxima. */
+  signal?: AbortSignal,
 ): Promise<Alinhamento | null> {
   if (palavras.length === 0) return null
+  if (signal?.aborted) throw alinhamentoCancelado()
   await garantirModelo(onProgress)
+  if (signal?.aborted) throw alinhamentoCancelado()
 
   onProgress('Sincronizando as legendas com a narracao...')
-  const audio = await lerAudio(audioPath)
+  const audio = await lerAudio(audioPath, signal)
   const vocab = JSON.parse(readFileSync(caminhoVocab(), 'utf8')) as Vocabulario
   const ort = await import('onnxruntime-node')
   const sessao = await abrirSessao(ort)
-  try {
-    const e = await emissaoCompleta(ort, sessao, audio, onProgress)
-    // Segundos por quadro como o WhisperX calcula: duracao / quadros.
-    const tempos = alinharPalavras(palavras, e.dados, e.quadros, e.classes, vocab, audio.length / TAXA / e.quadros)
-    if (!tempos) return null
-    const comNota = tempos.filter((t) => t.score > 0)
-    const score = comNota.reduce((a, t) => a + t.score, 0) / Math.max(comNota.length, 1)
-    return { tempos, score }
-  } finally {
-    await sessao.release()
+  /*
+   * A passada do modelo nao se interrompe no meio -- e num short (ate 90 s)
+   * ela e uma so. Cancelado, o pedido sai NA HORA; a passada termina sozinha
+   * por tras e o resultado vai fora. A sessao e liberada quando a passada
+   * acabar, saia o pedido quando sair.
+   */
+  const trabalho = emissaoCompleta(ort, sessao, audio, onProgress, signal)
+  const acabou = trabalho.then(
+    () => undefined,
+    () => undefined,
+  )
+  void acabou.then(() => sessao.release()).catch(() => {})
+  if (signal) {
+    await Promise.race([
+      acabou,
+      new Promise<never>((_, reject) => {
+        if (signal.aborted) reject(alinhamentoCancelado())
+        signal.addEventListener('abort', () => reject(alinhamentoCancelado()), { once: true })
+      }),
+    ])
   }
+  const e = await trabalho
+  // Segundos por quadro como o WhisperX calcula: duracao / quadros.
+  const tempos = alinharPalavras(palavras, e.dados, e.quadros, e.classes, vocab, audio.length / TAXA / e.quadros)
+  if (!tempos) return null
+  const comNota = tempos.filter((t) => t.score > 0)
+  const score = comNota.reduce((a, t) => a + t.score, 0) / Math.max(comNota.length, 1)
+  return { tempos, score }
 }
