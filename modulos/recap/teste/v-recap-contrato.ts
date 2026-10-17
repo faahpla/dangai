@@ -123,6 +123,8 @@ try {
     CANAIS.motorRuntimeEstado,
     // [recap] Parte 5: o andamento do Trazer do AniRecap Studio.
     CANAIS.trazerProgresso,
+    // [recap] Lote 3 (L1): o resultado do "Enviar sempre para o AnCut".
+    CANAIS.ancutAutomatico,
   ] as string[]
   const pedidos = valores.filter((c) => !eventos.includes(c))
   confere(
