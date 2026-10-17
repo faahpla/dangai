@@ -24,11 +24,17 @@
 
 /** Pontos do casamento. */
 const IGUAL = 3
+/**
+ * Palavra de 1-2 letras ("o", "e", "a", "so") casa em qualquer lugar: vale
+ * pouco. Sem isto, a 1a leitura de uma frase repetida emprestava o "o" e o
+ * "e" para a frase de antes e partia a sobra em dois blocos (Nia, 17/10).
+ */
+const IGUAL_CURTA = 1
 const PERTO = 2
-const TROCA = -1
+const TROCA = -2
 /** Lacuna afim: abrir caro, estender barato (um bloco so). */
 const ABRE = -3
-const ESTENDE = -1
+const ESTENDE = -0.5
 /** Mais que isto de sobra no audio inteiro: o casamento nao e confiavel (outro texto, Whisper perdido). */
 const SOBRA_MAXIMA = 0.4
 /** Uma sobra parecida com o roteiro em volta (LCS/tamanho) e repeticao. */
@@ -81,7 +87,10 @@ export function semelhanca(a: string, b: string): Semelhanca {
   return distanciaAte(a, b, 2) <= 2 ? 'perto' : 'troca'
 }
 
-const PONTOS: Record<Semelhanca, number> = { igual: IGUAL, perto: PERTO, troca: TROCA }
+function pontos(a: string, b: string, como: Semelhanca): number {
+  if (como === 'igual') return Math.min(a.length, b.length) <= 2 ? IGUAL_CURTA : IGUAL
+  return como === 'perto' ? PERTO : TROCA
+}
 
 /**
  * O alinhamento (Gotoh): `roteiro` e `ouvido` ja em chaves (chaveDaFala).
@@ -105,7 +114,7 @@ export function casarFalaComRoteiro(roteiro: readonly string[], ouvido: readonly
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
       const d = at(i - 1, j - 1)
-      M[at(i, j)] = Math.max(M[d]!, X[d]!, Y[d]!) + PONTOS[como(i, j)]
+      M[at(i, j)] = Math.max(M[d]!, X[d]!, Y[d]!) + pontos(roteiro[i - 1]!, ouvido[j - 1]!, como(i, j))
       const e = at(i, j - 1)
       X[at(i, j)] = Math.max(M[e]! + ABRE, X[e]! + ESTENDE, Y[e]! + ABRE)
       const c = at(i - 1, j)

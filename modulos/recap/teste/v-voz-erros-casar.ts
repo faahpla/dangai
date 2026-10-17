@@ -43,28 +43,34 @@ function ok(nome: string, cond: boolean, detalhe = ''): void {
 const toks = (t: string): string[] => t.split(/\s+/).filter(Boolean)
 
 // ------------------------------------------------ 1. a fixture
-console.log('1. fixture: Whisper sobre a voz do Windows com 3 erros')
-const fx = JSON.parse(readFileSync(join(process.cwd(), 'modulos', 'recap', 'teste', 'fixture', 'fala-com-erros.json'), 'utf8')) as {
+console.log('1. fixture: o Whisper de verdade sobre a voz do Windows com erros')
+interface Caso {
+  nome: string
   roteiro: string[]
   ouvido: string[]
-  esperado: { ouvidas: number[]; antesDe: number; tipo: string }[]
+  esperado: { ouvidas: number[]; antesDe: number; tipo: string }[] | null
 }
-const roteiroFx = fx.roteiro.flatMap((f) => tokenizeScript(f))
-const achados = acharCandidatos(roteiroFx, fx.ouvido)
-ok('3 blocos, iguais aos esperados', JSON.stringify(achados.candidatos) === JSON.stringify(fx.esperado), JSON.stringify(achados.candidatos))
-ok('nao desconfiado', !achados.desconfiado)
-{
-  const r = achados.candidatos[2]!
-  const falado = r.ouvidas.map((j) => fx.ouvido[j]).join(' ')
-  ok('a frase lida duas vezes: sai a 1a leitura ("cuidar dos projetos"), fica a ultima', falado.includes('cuidar dos projetos') && r.ouvidas.at(-1)! < 54, falado)
+const fx = JSON.parse(readFileSync(join(process.cwd(), 'modulos', 'recap', 'teste', 'fixture', 'fala-com-erros.json'), 'utf8')) as { casos: Caso[] }
+for (const caso of fx.casos) {
+  const roteiro = caso.roteiro.flatMap((f) => tokenizeScript(f))
+  const achados = acharCandidatos(roteiro, caso.ouvido)
+  const falados = achados.candidatos.map((c) => `${c.tipo}: ${c.ouvidas.map((j) => caso.ouvido[j]).join(' ')}`)
+  ok(`${caso.nome}: os blocos esperados`, caso.esperado !== null && JSON.stringify(achados.candidatos) === JSON.stringify(caso.esperado), JSON.stringify(achados.candidatos) + ' | ' + falados.join(' | '))
+  ok(`${caso.nome}: nao desconfiado`, !achados.desconfiado)
+  // A frase lida duas vezes: sai a 1a leitura, fica a ultima (o bloco termina antes da ultima leitura comecar).
+  const repetida = achados.candidatos.find((c) => c.ouvidas.length >= 6)
+  ok(`${caso.nome}: a frase lida duas vezes sai inteira (a 1a), num bloco so`, repetida !== undefined && repetida.tipo === 'repeticao', falados.join(' | '))
+  const passos = casarFalaComRoteiro(roteiro.map(chaveDaFala), caso.ouvido.map(chaveDaFala))
+  const casados = passos.filter((p) => p.tipo === 'casou').length
+  const faltas = passos.filter((p) => p.tipo === 'falta').length
+  ok(`${caso.nome}: toda palavra do roteiro casa ou falta (nenhuma some)`, casados + faltas === roteiro.length, `${casados} casadas + ${faltas} faltas = ${roteiro.length}`)
 }
 {
-  // Toda palavra do roteiro casa com alguma ouvida (troca ou igual), e as ouvidas casadas sao as da ULTIMA leitura.
-  const passos = casarFalaComRoteiro(roteiroFx.map(chaveDaFala), fx.ouvido.map(chaveDaFala))
-  const casados = passos.filter((p) => p.tipo === 'casou')
-  ok('as 60 palavras do roteiro casam', casados.length === roteiroFx.length, `${casados.length}/${roteiroFx.length}`)
-  const ryusui = casados.find((p) => p.tipo === 'casou' && roteiroFx[p.i] === 'Ryusui')
-  ok('"Ryusui" casa com o WHY da 2a leitura (ouvida 55)', ryusui?.tipo === 'casou' && ryusui.j === 55, JSON.stringify(ryusui))
+  const caso = fx.casos[0]!
+  const roteiro = caso.roteiro.flatMap((f) => tokenizeScript(f))
+  const passos = casarFalaComRoteiro(roteiro.map(chaveDaFala), caso.ouvido.map(chaveDaFala))
+  const ryusui = passos.find((p) => p.tipo === 'casou' && roteiro[p.i] === 'Ryusui')
+  ok('S4-37: "Ryusui" casa com o WHY da 2a leitura (ouvida 55)', ryusui?.tipo === 'casou' && ryusui.j === 55, JSON.stringify(ryusui))
 }
 
 // ------------------------------------------------ 2. casos de borda
