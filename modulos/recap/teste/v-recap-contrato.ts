@@ -20,7 +20,7 @@ import type { ContextoDoModulo } from '../../../electron/modulos'
 import { raizesDaBiblioteca } from '../../../electron/services/library'
 import { configureSettings, saveSettings, type Cofre } from '../../../electron/services/settings'
 import { CANAIS } from '../shared/canais'
-import { coerceConfig } from '../shared/config'
+import { CONFIG_PADRAO, coerceConfig } from '../shared/config'
 import { ritmoInicial } from '../shared/ritmo'
 import { configDoRecap, configNaTela } from '../electron/config'
 import { recap } from '../electron'
@@ -77,7 +77,8 @@ const ctx = {
 
 try {
   console.log('\n== 1. Configuracao')
-  confere(JSON.stringify(coerceConfig(undefined)) === '{"biblioteca":""}', 'sem nada: o padrao')
+  confere(JSON.stringify(coerceConfig(undefined)) === JSON.stringify(CONFIG_PADRAO), 'sem nada: o padrao')
+  confere(CONFIG_PADRAO.vozPadrao.provedor === '' && CONFIG_PADRAO.vozPadrao.velocidadeNativa === 1.2, 'o padrao e sem voz, nativa 1,2')
   confere(coerceConfig({ biblioteca: '  D:\\x  ', outro: 1 }).biblioteca === 'D:\\x', 'apara e ignora campo desconhecido')
   confere(coerceConfig({ biblioteca: 42 }).biblioteca === '', 'tipo errado: o padrao')
   const padrao = configNaTela({ biblioteca: '' })
@@ -89,7 +90,7 @@ try {
     'recusa a saida do Corte Cenas (so leitura)',
   )
   confere(/pasta inteira/.test(lancou(() => validar({ biblioteca: 'relativa\\x' }, { biblioteca: '' })) ?? ''), 'recusa caminho sem disco')
-  confere(JSON.stringify(validar({ biblioteca: '' }, { biblioteca })) === '{"biblioteca":""}', "'' volta ao padrao")
+  confere((validar({ biblioteca: '' }, { biblioteca }) as { biblioteca: string }).biblioteca === '', "'' volta ao padrao")
 
   console.log('\n== 2. A raiz recap: da Biblioteca')
   recap.configurar!(ctx)
@@ -109,11 +110,11 @@ try {
   confere(valores.every((c) => /^recap:[a-z-]+:[a-z-]+$/.test(c)), 'todos recap:<area>:<acao>')
   confere(new Set(valores).size === valores.length, 'nenhum repetido')
   recap.registrarIpc!(ctx)
-  const eventos = [CANAIS.indexarProgresso, CANAIS.roteiroProgresso] as string[]
+  const eventos = [CANAIS.indexarProgresso, CANAIS.roteiroProgresso, CANAIS.vozProgresso] as string[]
   const pedidos = valores.filter((c) => !eventos.includes(c))
   confere(
     pedidos.every((c) => canaisRegistrados.includes(c)) && canaisRegistrados.every((c) => pedidos.includes(c)),
-    `o main registra exatamente os ${pedidos.length} pedidos (os 2 eventos so saem)`,
+    `o main registra exatamente os ${pedidos.length} pedidos (os ${eventos.length} eventos so saem)`,
   )
   const chamados: string[] = []
   const ponte = criarPonteDoRecap({
@@ -131,6 +132,8 @@ try {
     valores.every((c) => chamados.includes(c)) && chamados.every((c) => c.startsWith('recap:')),
     `a ponte alcanca cada canal (${Object.keys(ponte).length} metodos), so com o prefixo`,
   )
+
+  confere(JSON.stringify(recap.camposDeChave) === '["elevenlabsApiKey","fishApiKey"]', 'as chaves de voz com os nomes do Studio (camposDeChave)')
 
   console.log('\n== 4. O ritmo do "~Xs" sem voz')
   const r = ritmoPeloId(null)
