@@ -66,6 +66,27 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     sfxDaEdicaoRapida: () => invocar(C.sfxDaEdicaoRapida),
     planejarSom: (pedido) => invocar(C.planejarSom, pedido),
     rostosDosPedacos: (lote) => invocar(C.rostosDosPedacos, lote),
+
+    statusDoMotor: () => invocar(C.statusDoMotor),
+    analisarEpisodio: (pedido) => invocar(C.analisarEpisodio, pedido),
+    cancelarAnalise: (jobId) => invocar(C.cancelarAnalise, jobId),
+    onAnaliseProgresso: (ouvinte) => assinar(C.analiseProgresso, ouvinte),
+    onAnaliseFim: (ouvinte) => assinar(C.analiseFim, ouvinte),
+    iniciarCorte: (pedido) => invocar(C.iniciarCorte, pedido),
+    estadoDoCorte: (episodioId) => invocar(C.estadoDoCorte, episodioId),
+    cancelarCorte: (episodioId) => invocar(C.cancelarCorte, episodioId),
+    onCorteProgresso: (ouvinte) => assinar(C.corteProgresso, ouvinte),
+    iniciarDescoberta: (pedido) => invocar(C.iniciarDescoberta, pedido),
+    descobertaAtual: (episodioId) => invocar(C.descobertaAtual, episodioId),
+    confirmarDescoberta: (jobId, decisao) => invocar(C.confirmarDescoberta, jobId, decisao),
+    cancelarDescoberta: (jobId) => invocar(C.cancelarDescoberta, jobId),
+    onDescobertaProgresso: (ouvinte) => assinar(C.descobertaProgresso, ouvinte),
+    estadoDoMotorRuntime: () => invocar(C.estadoDoMotorRuntime),
+    instalarMotorRuntime: (pedido) => invocar(C.instalarMotorRuntime, pedido),
+    cancelarMotorRuntime: () => invocar(C.cancelarMotorRuntime),
+    escolherPastaDoMotorRuntime: (padrao) => invocar(C.escolherPastaDoMotorRuntime, padrao === true),
+    removerMotorRuntime: () => invocar(C.removerMotorRuntime),
+    onMotorRuntime: (ouvinte) => assinar(C.motorRuntimeEstado, ouvinte),
   }
   return ponte
 }) satisfies CriarPonte

@@ -1,6 +1,7 @@
 import { captionStyleSchema, type CaptionStyle } from '@shared/contract'
 import {
   camadaDeCor,
+  chaveDoPedidoDeRosto,
   lookDaCor,
   presetsDeCorConferidos,
   faixasDaEdicaoRapida,
@@ -9,6 +10,7 @@ import {
   secoesParaSom,
   trilhasDoPlanoDeSom,
   type ConfigDaEdicaoRapida,
+  type PedidoDeRosto,
   type PlanoDeSom,
   type ResumoDaEdicaoRapida,
   type RostosDoLote,
@@ -25,6 +27,7 @@ import { registrarMusicaUsada } from '../som/musicas'
 import { planejarSom } from '../som/planejar'
 import { focosDosPedacos } from './foco'
 import { chaveDoPedaco, type FocoDoPedaco, type PedacoDaMontagem } from './projeto'
+import { rostosDosPedacos } from './rostos-motor'
 
 /**
  * A EDICAO RAPIDA DENTRO DO "ABRIR NO EDITOR" (agente C, 14/10): o projeto ja
@@ -97,21 +100,49 @@ function normalizar(nome: string): string {
 }
 
 /**
- * O ROSTO da Edicao rapida. No Studio era o lote do motor (YOLO de rosto de
- * anime, preferindo quem a frase cita). [recap] O motor chega na parte 4: ate
- * la, o detector ANTIGO do nucleo (o mesmo do Studio sem motor), e o resumo
- * diz "(antigo)". `personagens` fica no contrato para o motor.
+ * O ROSTO da Edicao rapida: o lote inteiro pelo rostosDosPedacos (o motor,
+ * YOLO de rosto de anime preferindo quem a frase cita; sem motor, ele mesmo
+ * cai no detector antigo do nucleo). Se ate o lote lancar, cai aqui no
+ * focosDosPedacos de sempre -- o projeto nunca sai pior que a montagem sem a
+ * Edicao rapida. [recap] Parte 4: o mesmo do Studio.
  */
 export async function rostosDaMontagem(
   pedacos: readonly PedacoDaMontagem[],
-  _personagens: ReadonlyMap<string, string[]>,
-  _episodioId: string,
+  personagens: ReadonlyMap<string, string[]>,
+  episodioId: string,
   tetoMs?: number,
 ): Promise<{ focos: Map<string, FocoDoPedaco>; lote: RostosDoLote | null; avisos: string[] }> {
+  const unicos = new Map<string, PedidoDeRosto>()
+  for (const p of pedacos) {
+    const chave = chaveDoPedaco(p)
+    if (unicos.has(chave)) continue
+    unicos.set(chave, {
+      chave: chaveDoPedidoDeRosto(p.arquivo, p.de),
+      arquivo: p.arquivo,
+      de: p.de,
+      // O trecho que o bloco TOCA do mp4: de `de` ate `de` + o tempo do bloco.
+      ate: p.de + Math.max(p.fim - p.inicio, 0),
+      personagens: personagens.get(chave) ?? [],
+    })
+  }
+  const pedidos = [...unicos.values()]
   try {
-    return { focos: await focosDosPedacos(pedacos, tetoMs), lote: null, avisos: [] }
+    const lote = await rostosDosPedacos({
+      pedidos,
+      formato: 'short',
+      episodioId: /^ep_[0-9a-f]{40}$/.test(episodioId) ? episodioId : null,
+      tetoMs: tetoMs ?? 120_000,
+      motor: true,
+    })
+    const focos = new Map<string, FocoDoPedaco>()
+    for (const f of lote.focos) {
+      if (f.fonte === null) continue
+      focos.set(f.chave, { focusX: f.focusX, focusY: f.focusY, focusAuto: f.focusAuto })
+    }
+    return { focos, lote, avisos: lote.avisos }
   } catch (err) {
-    return { focos: new Map(), lote: null, avisos: [`Sem rosto: ${mensagem(err)}`] }
+    const focos = await focosDosPedacos(pedacos, tetoMs).catch(() => new Map<string, FocoDoPedaco>())
+    return { focos, lote: null, avisos: [`Rosto pelo detector antigo: ${mensagem(err)}`] }
   }
 }
 

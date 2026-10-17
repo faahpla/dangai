@@ -101,7 +101,8 @@ import { candidatosDaFrase, salvarCenas, sugerirCenas } from './cenas'
 import { mesclasDoEpisodio } from './cenas/mesclas'
 import type { PlanoNoMesclado } from '../shared/mesclas'
 import { encaixarNaVoz, montarProjeto } from './montar'
-import { rostosDosPedacos } from './montar/rostos'
+import { rostosDosPedacos } from './montar/rostos-motor'
+import { registrarCanaisDoMotor } from './ipc-motor'
 import { escolherMusica, listarMusicas, registrarMusicaUsada } from './som/musicas'
 import { planejarSom, sfxDaEdicaoRapida } from './som/planejar'
 
@@ -111,10 +112,11 @@ import { planejarSom, sfxDaEdicaoRapida } from './som/planejar'
  * renderer passa pelo zod AQUI: vira arquivo no disco e pedido a IA.
  *
  * Parte 2: o passo 3 (Voz) e as chaves de voz. Parte 3: o passo 4 (Cenas),
- * o "Abrir no editor" e a Edicao rapida. O corte das cenas e o motor chegam
- * na parte 4.
+ * o "Abrir no editor" e a Edicao rapida. Parte 4: o motor (ipc-motor.ts).
  */
 export function registrarCanais(ctx: ContextoDoModulo): void {
+  registrarCanaisDoMotor(ctx)
+
   // ------------------------------------------------------------ configuracao
 
   ctx.handle<[], ConfigDoRecapNaTela>(C.lerConfig, async () => configNaTela(ctx.config().modulo))
@@ -332,8 +334,8 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   })
 
   // ----------------------------------------------------------- Edicao rapida
-  // Contrato em shared/edicao-rapida.ts; o som em som/. O rosto e o detector
-  // antigo do nucleo ate o motor (parte 4).
+  // Contrato em shared/edicao-rapida.ts; o som em som/. O rosto pelo motor
+  // (montar/rostos-motor.ts), com o detector antigo do nucleo de reserva.
 
   ctx.handle<[], MusicaDaPasta[]>(C.listarMusicas, async () => listarMusicas())
 

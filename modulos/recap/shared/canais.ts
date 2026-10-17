@@ -3,12 +3,27 @@ import type { ConfigDoRecapNaTela } from './config'
 import type {
   EpisodeIndex,
   EpisodioEncontrado,
+  EstadoDoCorte,
+  EventoDoCorte,
   Exclusao,
+  FimDaAnalise,
   IndexarEpisodioArgs,
   IndexarFalasArgs,
   PalpiteDoEpisodio,
+  PedidoDeAnalise,
+  PedidoDeCorte,
+  ProgressoDaAnalise,
   SondaDoEpisodio,
+  StatusDoMotor,
 } from './episodio'
+import type {
+  DecisaoDaDescoberta,
+  EstadoDaDescoberta,
+  EventoDaDescoberta,
+  PedidoDaDescoberta,
+  ResultadoDaDescoberta,
+} from './descoberta'
+import type { EstadoDoMotorRuntime, PedidoDeInstalacao } from './motor-runtime'
 import type {
   EventosGerados,
   PedidoDeReligar,
@@ -132,6 +147,35 @@ export const CANAIS = {
   planejarSom: 'recap:som:planejar',
   sfxDaEdicaoRapida: 'recap:som:sfx-da-edicao-rapida',
   rostosDosPedacos: 'recap:rosto:pedacos',
+
+  // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
+  // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
+  // descoberta/ e motor-runtime/.
+  statusDoMotor: 'recap:motor:status',
+  analisarEpisodio: 'recap:motor:analisar',
+  cancelarAnalise: 'recap:motor:cancelar',
+  /** main -> renderer, ProgressoDaAnalise */
+  analiseProgresso: 'recap:motor:progresso',
+  /** main -> renderer, FimDaAnalise (uma vez por job) */
+  analiseFim: 'recap:motor:fim',
+  iniciarCorte: 'recap:corte:iniciar',
+  estadoDoCorte: 'recap:corte:estado',
+  cancelarCorte: 'recap:corte:cancelar',
+  /** main -> renderer, EventoDoCorte */
+  corteProgresso: 'recap:corte:progresso',
+  iniciarDescoberta: 'recap:descoberta:iniciar',
+  descobertaAtual: 'recap:descoberta:atual',
+  confirmarDescoberta: 'recap:descoberta:confirmar',
+  cancelarDescoberta: 'recap:descoberta:cancelar',
+  /** main -> renderer, EventoDaDescoberta */
+  descobertaProgresso: 'recap:descoberta:progresso',
+  estadoDoMotorRuntime: 'recap:motor-runtime:estado',
+  instalarMotorRuntime: 'recap:motor-runtime:instalar',
+  cancelarMotorRuntime: 'recap:motor-runtime:cancelar',
+  escolherPastaDoMotorRuntime: 'recap:motor-runtime:escolher-pasta',
+  removerMotorRuntime: 'recap:motor-runtime:remover',
+  /** main -> renderer, EstadoDoMotorRuntime inteiro (no maximo ~4 por segundo) */
+  motorRuntimeEstado: 'recap:motor-runtime:mudou',
 } as const
 
 /** O que aparece em `window.dangai.modulos.recap`. Os nomes sao os do Studio. */
@@ -219,6 +263,32 @@ export interface PonteDoRecap {
   registrarMusicaUsada(path: string | null, projeto?: string | null): Promise<IpcResult<true>>
   sfxDaEdicaoRapida(): Promise<IpcResult<SfxDaEdicaoRapida>>
   planejarSom(pedido: PedidoDePlanoDeSom): Promise<IpcResult<PlanoDeSom>>
-  /** O enquadramento de cada pedaco num lote so (o detector antigo ate o motor, parte 4). */
+  /** O enquadramento de cada pedaco num lote so: o motor (YOLO de anime) e, sem ele, o detector antigo. */
   rostosDosPedacos(lote: LoteDeRostos): Promise<IpcResult<RostosDoLote>>
+
+  // O motor de personagens (parte 4), com os nomes do Studio.
+  /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */
+  statusDoMotor(): Promise<IpcResult<StatusDoMotor>>
+  /** Comeca a analise (corte + personagens) e devolve o jobId na hora. */
+  analisarEpisodio(pedido: PedidoDeAnalise): Promise<IpcResult<string>>
+  cancelarAnalise(jobId: string): Promise<IpcResult<null>>
+  onAnaliseProgresso(listener: (progresso: ProgressoDaAnalise) => void): () => void
+  onAnaliseFim(listener: (fim: FimDaAnalise) => void): () => void
+  iniciarCorte(pedido: PedidoDeCorte): Promise<IpcResult<EstadoDoCorte>>
+  estadoDoCorte(episodioId: string): Promise<IpcResult<EstadoDoCorte | null>>
+  cancelarCorte(episodioId: string): Promise<IpcResult<boolean>>
+  onCorteProgresso(listener: (evento: EventoDoCorte) => void): () => void
+  iniciarDescoberta(pedido: PedidoDaDescoberta): Promise<IpcResult<EstadoDaDescoberta>>
+  descobertaAtual(episodioId: string): Promise<IpcResult<EventoDaDescoberta | null>>
+  confirmarDescoberta(jobId: string, decisao: DecisaoDaDescoberta): Promise<IpcResult<ResultadoDaDescoberta>>
+  cancelarDescoberta(jobId: string): Promise<IpcResult<boolean>>
+  onDescobertaProgresso(listener: (evento: EventoDaDescoberta) => void): () => void
+  /** O runtime do motor (Python + torch, instalado pela tela no 1o uso). */
+  estadoDoMotorRuntime(): Promise<IpcResult<EstadoDoMotorRuntime>>
+  instalarMotorRuntime(pedido: PedidoDeInstalacao): Promise<IpcResult<EstadoDoMotorRuntime>>
+  cancelarMotorRuntime(): Promise<IpcResult<null>>
+  /** Dialogo de pasta (so com o motor ausente); `padrao` = voltar a pasta padrao. */
+  escolherPastaDoMotorRuntime(padrao?: boolean): Promise<IpcResult<EstadoDoMotorRuntime>>
+  removerMotorRuntime(): Promise<IpcResult<EstadoDoMotorRuntime>>
+  onMotorRuntime(listener: (estado: EstadoDoMotorRuntime) => void): () => void
 }
