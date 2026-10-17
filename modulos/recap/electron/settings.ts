@@ -2,24 +2,29 @@ import { app } from 'electron'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Provedor } from '../../../electron/services/llm'
-import type { VozPadrao } from '../shared/tipos-da-voz'
 import { configDoRecap, contexto } from './contexto'
 
 /**
  * [recap] O getSettings que os servicos do Studio esperam, montado com o que o
- * modulo pode ler: a libraryDir pelo contexto e a biblioteca do recap pela
- * configuracao dele. A IA vem pelo `ctx.ia` (gerar/ia.ts): o modulo nunca le
- * as chaves.
+ * modulo pode ler: a libraryDir e o modelo do Whisper pelo contexto, a
+ * biblioteca e a voz padrao pela configuracao dele, e as chaves de voz pelo
+ * cofre (`ctx.chave`, so no main; nunca vao para a tela). A IA vem pelo
+ * `ctx.ia` (gerar/ia.ts): o modulo nunca le as chaves dela.
  */
-
-/** A voz ainda nao mora no modulo (parte 2): o ritmo do roteiro sai do inicial. */
-const SEM_VOZ: VozPadrao = { provedor: '', voiceId: '', modelId: '', velocidadeNativa: 1.2 }
-
 export function getSettings() {
+  const ctx = contexto()
+  const c = configDoRecap()
   return {
-    libraryDir: contexto().config().libraryDir,
-    bibliotecaStudio: configDoRecap().biblioteca,
-    vozPadrao: SEM_VOZ,
+    libraryDir: ctx.config().libraryDir,
+    whisperModel: ctx.config().whisperModel,
+    bibliotecaStudio: c.biblioteca,
+    vozPadrao: c.vozPadrao,
+    get elevenlabsApiKey(): string {
+      return ctx.chave('elevenlabsApiKey')
+    },
+    get fishApiKey(): string {
+      return ctx.chave('fishApiKey')
+    },
   }
 }
 

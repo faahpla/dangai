@@ -1,6 +1,6 @@
 import { isAbsolute, join } from 'node:path'
 import type { ConfigDoModulo } from '../../../electron/modulos'
-import { CONFIG_PADRAO, coerceConfig, type ConfigDoRecap, type ConfigDoRecapNaTela } from '../shared/config'
+import { aplicarPatch, CONFIG_PADRAO, coerceConfig, type ConfigDoRecap, type ConfigDoRecapNaTela } from '../shared/config'
 import { contexto } from './contexto'
 import { garantirGravavel } from './episodio/protegidas'
 import { pastaDeDocumentos } from './settings'
@@ -34,7 +34,7 @@ export const configDoRecap: ConfigDoModulo = {
   coerce: coerceConfig,
   paraRenderer: configNaTela,
   validarPatch(patch, atual) {
-    const nova = coerceConfig({ ...coerceConfig(atual), ...(patch && typeof patch === 'object' ? patch : {}) })
+    const nova = aplicarPatch(coerceConfig(atual), patch)
     if (nova.biblioteca) {
       if (!isAbsolute(nova.biblioteca)) throw new Error('Escolha uma pasta inteira (com a letra do disco).')
       garantirGravavel(nova.biblioteca)

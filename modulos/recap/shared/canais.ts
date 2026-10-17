@@ -22,6 +22,18 @@ import type {
   RoteiroReligado,
 } from './roteiro'
 import type { RitmoDaVoz } from './ritmo'
+import type { AjustesDaVoz, CampoDeChaveDaVoz, TesteDeVoz, VozPadrao } from './tipos-da-voz'
+import type {
+  AudioDoTake,
+  EstimativaDeCusto,
+  PedidoDeAjuste,
+  PedidoDeEstimativa,
+  PedidoDeGeracao,
+  PedidoDeImportacao,
+  PedidoDeRegravar,
+  ProgressoDaVoz,
+  VozGerada,
+} from './voz'
 
 /**
  * [recap] OS CANAIS DO MODULO: `recap:<area>:<acao>`, o prefixo que o nucleo
@@ -63,13 +75,37 @@ export const CANAIS = {
   ritmoDaVoz: 'recap:roteiro:ritmo',
   /** main -> renderer, ProgressoDoRoteiro (texto de andamento das chamadas a IA) */
   roteiroProgresso: 'recap:roteiro:progresso',
+
+  // passo 3 (Voz). Tipos em shared/voz.ts; o motor e electron/voz/.
+  estimarVoz: 'recap:voz:estimar',
+  gerarVoz: 'recap:voz:gerar',
+  regravarFrases: 'recap:voz:regravar',
+  ajustarVoz: 'recap:voz:ajustar',
+  importarAudio: 'recap:voz:importar',
+  cancelarVoz: 'recap:voz:cancelar',
+  escolherTake: 'recap:voz:escolher-take',
+  aprovarVoz: 'recap:voz:aprovar',
+  desaprovarVoz: 'recap:voz:desaprovar',
+  urlDoAudio: 'recap:voz:url-do-audio',
+  escolherNarracao: 'recap:voz:escolher-narracao',
+  /** main -> renderer, ProgressoDaVoz (andamento de gerar/regravar/ajustar/importar) */
+  vozProgresso: 'recap:voz:progresso',
+
+  // chaves e voz padrao (a secao "Voz" das Configuracoes)
+  lerAjustesDaVoz: 'recap:voz:ler-ajustes',
+  salvarChaveDaVoz: 'recap:voz:salvar-chave',
+  testarEleven: 'recap:voz:testar-eleven',
+  testarFish: 'recap:voz:testar-fish',
 } as const
 
 /** O que aparece em `window.dangai.modulos.recap`. Os nomes sao os do Studio. */
 export interface PonteDoRecap {
   lerConfig(): Promise<IpcResult<ConfigDoRecapNaTela>>
-  /** Grava a biblioteca ('' = o padrao). Recusa pasta do AnCut/Corte Cenas. */
-  salvarConfig(patch: { biblioteca: string }): Promise<IpcResult<ConfigDoRecapNaTela>>
+  /**
+   * Grava a biblioteca ('' = o padrao; recusa pasta do AnCut/Corte Cenas) e/ou
+   * a voz padrao. Voz sem `velocidadeNativa` mantem a que ja estava.
+   */
+  salvarConfig(patch: { biblioteca?: string; vozPadrao?: VozPadrao }): Promise<IpcResult<ConfigDoRecapNaTela>>
   /** Dialogo de pasta. null = fechou sem escolher. */
   escolherBiblioteca(): Promise<IpcResult<string | null>>
 
@@ -94,4 +130,32 @@ export interface PonteDoRecap {
   miniaturasDasCenas(episodioId: string, planoIds: readonly string[]): Promise<IpcResult<Record<string, string | null>>>
   ritmoDaVoz(rascunhoId: string | null, config?: unknown): Promise<IpcResult<RitmoDaVoz>>
   onRoteiroProgresso(listener: (progresso: ProgressoDoRoteiro) => void): () => void
+
+  // Passo 3 (Voz), como no Studio: tudo que muda o rascunho devolve o rascunho
+  // INTEIRO do disco. Gastar SEMPRE passa por estimarVoz antes: gerarVoz e
+  // regravarFrases levam o `confirmado` que a tela mostrou, e o main recusa se
+  // o custo real passar.
+  estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa): Promise<IpcResult<EstimativaDeCusto>>
+  gerarVoz(rascunhoId: string, pedido: PedidoDeGeracao): Promise<IpcResult<VozGerada>>
+  regravarFrases(rascunhoId: string, pedido: PedidoDeRegravar): Promise<IpcResult<VozGerada>>
+  /** Take novo a partir do BRUTO do atual so com outra velocidade/corte. Nao gasta. */
+  ajustarVoz(rascunhoId: string, pedido: PedidoDeAjuste): Promise<IpcResult<VozGerada>>
+  /** Take novo do audio que ele gravou: Whisper + alinhador do nucleo. Nao gasta. */
+  importarAudio(rascunhoId: string, pedido: PedidoDeImportacao): Promise<IpcResult<VozGerada>>
+  cancelarVoz(rascunhoId: string, pedidoId: string): Promise<IpcResult<boolean>>
+  escolherTake(rascunhoId: string, takeId: string): Promise<IpcResult<RascunhoDoRecap>>
+  aprovarVoz(rascunhoId: string): Promise<IpcResult<RascunhoDoRecap>>
+  desaprovarVoz(rascunhoId: string): Promise<IpcResult<RascunhoDoRecap>>
+  /** O WAV do take no servidor de midia do nucleo, pedido por id (nunca por caminho). */
+  urlDoAudio(rascunhoId: string, takeId: string): Promise<IpcResult<AudioDoTake>>
+  escolherNarracao(): Promise<IpcResult<string | null>>
+  onVozProgresso(listener: (progresso: ProgressoDaVoz) => void): () => void
+
+  /** As chaves (so tem/dica) e a voz padrao. */
+  lerAjustesDaVoz(): Promise<IpcResult<AjustesDaVoz>>
+  /** Grava (ou apaga, com '') uma chave de voz no cofre do nucleo. */
+  salvarChaveDaVoz(campo: CampoDeChaveDaVoz, valor: string): Promise<IpcResult<AjustesDaVoz>>
+  /** Confere a chave sem gastar: plano/saldo e vozes. `chave` null testa a salva, que nunca volta para ca. */
+  testarEleven(chave: string | null): Promise<IpcResult<TesteDeVoz>>
+  testarFish(chave: string | null): Promise<IpcResult<TesteDeVoz>>
 }

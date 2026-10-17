@@ -32,7 +32,26 @@ import {
   type RoteiroReligado,
 } from '../shared/roteiro'
 import type { RitmoDaVoz } from '../shared/ritmo'
-import { configDaVozSchema } from '../shared/voz'
+import {
+  configDaVozSchema,
+  pedidoDeAjusteSchema,
+  pedidoDeEstimativaSchema,
+  pedidoDeGeracaoSchema,
+  pedidoDeImportacaoSchema,
+  pedidoDeRegravarSchema,
+  type AudioDoTake,
+  type EstimativaDeCusto,
+  type PedidoDeAjuste,
+  type PedidoDeEstimativa,
+  type PedidoDeGeracao,
+  type PedidoDeImportacao,
+  type PedidoDeRegravar,
+  type ProgressoDaVoz,
+  type VozGerada,
+} from '../shared/voz'
+import { CAMPOS_DE_CHAVE_DA_VOZ, type AjustesDaVoz, type CampoDeChaveDaVoz, type TesteDeVoz } from '../shared/tipos-da-voz'
+import { AUDIO_EXTENSIONS, classifyFile } from '@shared/channels'
+import { listarModulos } from '../../../electron/modulos'
 import { configNaTela } from './config'
 import { indexarFalas } from './episodio/falas'
 import { indexarEpisodio, salvarExclusoes } from './episodio/indice'
@@ -51,13 +70,19 @@ import {
 import { religarRoteiro } from './gerar/religar'
 import { cancelarRoteiro, gerarRoteiro } from './gerar/roteiro'
 import { ritmoDe, ritmoPeloId } from './voz/ritmo'
+import { estimarVoz } from './voz/estimar'
+import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from './voz/gerar'
+import { aprovarVoz, audioDoTake, desaprovarVoz, escolherTakeDoRascunho } from './voz/takes'
+import { testarEleven, testarFish } from './voz-chaves'
+import { getSettings } from './settings'
 
 /**
  * [recap] OS CANAIS DO MODULO no main, os mesmos handlers do ipc.ts do Studio
  * (passos 1 e 2) com o nome novo (`recap:<area>:<acao>`). O que vem do
  * renderer passa pelo zod AQUI: vira arquivo no disco e pedido a IA.
  *
- * O corte das cenas, o motor e a voz chegam nas partes seguintes.
+ * Parte 2: o passo 3 (Voz) e as chaves de voz. O corte das cenas, o motor e
+ * o passo 4 chegam nas partes seguintes.
  */
 export function registrarCanais(ctx: ContextoDoModulo): void {
   // ------------------------------------------------------------ configuracao
@@ -166,6 +191,110 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
       ? ritmoDe(configDaVozSchema.parse(config))
       : ritmoPeloId(rascunhoId === null ? null : idDoRascunho(rascunhoId)),
   )
+
+  // ---------------------------------------------------------- passo 3 (Voz)
+  // Contrato e regras em shared/voz.ts; o motor e electron/voz/. Todo pedido
+  // passa pelo zod aqui: vira chamada paga, nome de arquivo e linha de comando
+  // do ffmpeg. A chave do provedor fica no main (ctx.chave), nunca vai a tela.
+
+  const progressoDaVoz = (p: ProgressoDaVoz): void => ctx.enviar(C.vozProgresso, p)
+
+  ctx.handle<[string, PedidoDeEstimativa], EstimativaDeCusto>(C.estimarVoz, async (rascunhoId, pedido) =>
+    estimarVoz(idDoRascunho(rascunhoId), pedidoDeEstimativaSchema.parse(pedido)),
+  )
+
+  ctx.handle<[string, PedidoDeGeracao], VozGerada>(C.gerarVoz, async (rascunhoId, pedido) =>
+    gerarVoz(idDoRascunho(rascunhoId), pedidoDeGeracaoSchema.parse(pedido), progressoDaVoz),
+  )
+
+  ctx.handle<[string, PedidoDeRegravar], VozGerada>(C.regravarFrases, async (rascunhoId, pedido) =>
+    regravarFrases(idDoRascunho(rascunhoId), pedidoDeRegravarSchema.parse(pedido), progressoDaVoz),
+  )
+
+  ctx.handle<[string, PedidoDeAjuste], VozGerada>(C.ajustarVoz, async (rascunhoId, pedido) =>
+    ajustarVoz(idDoRascunho(rascunhoId), pedidoDeAjusteSchema.parse(pedido), progressoDaVoz),
+  )
+
+  ctx.handle<[string, PedidoDeImportacao], VozGerada>(C.importarAudio, async (rascunhoId, pedido) => {
+    const conferido = pedidoDeImportacaoSchema.parse(pedido)
+    if (classifyFile(conferido.caminho) !== 'audio') {
+      throw new Error(`Esse arquivo nao e audio. Use ${AUDIO_EXTENSIONS.join(', ')}.`)
+    }
+    if (!existsSync(conferido.caminho)) throw new Error('Esse audio nao esta mais no disco.')
+    return importarAudio(idDoRascunho(rascunhoId), conferido, progressoDaVoz)
+  })
+
+  ctx.handle<[string, string], boolean>(C.cancelarVoz, async (rascunhoId, pedidoId) =>
+    cancelarVoz(idDoRascunho(rascunhoId), String(pedidoId).slice(0, 64)),
+  )
+
+  ctx.handle<[string, string], RascunhoDoRecap>(C.escolherTake, async (rascunhoId, takeId) =>
+    escolherTakeDoRascunho(idDoRascunho(rascunhoId), idDoTake(takeId)),
+  )
+
+  ctx.handle<[string], RascunhoDoRecap>(C.aprovarVoz, async (rascunhoId) => aprovarVoz(idDoRascunho(rascunhoId)))
+
+  ctx.handle<[string], RascunhoDoRecap>(C.desaprovarVoz, async (rascunhoId) => desaprovarVoz(idDoRascunho(rascunhoId)))
+
+  ctx.handle<[string, string], AudioDoTake>(C.urlDoAudio, async (rascunhoId, takeId) =>
+    audioDoTake(idDoRascunho(rascunhoId), idDoTake(takeId)),
+  )
+
+  ctx.handle<[], string | null>(C.escolherNarracao, async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Escolher a narracao gravada',
+      properties: ['openFile'],
+      filters: [{ name: 'Audio', extensions: [...AUDIO_EXTENSIONS] }],
+    })
+    return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0]!
+  })
+
+  // ------------------------------------------- chaves de voz e voz padrao
+  // A chave digitada vem do renderer so para Testar ou Salvar; a salva fica
+  // aqui. A tela so ve o `chaves` do ModuloPublico (tem e dica).
+
+  ctx.handle<[], AjustesDaVoz>(C.lerAjustesDaVoz, async () => ajustesDaVoz())
+
+  ctx.handle<[string, string], AjustesDaVoz>(C.salvarChaveDaVoz, async (campo, valor) => {
+    if (!CAMPOS_DE_CHAVE_DA_VOZ.includes(campo as CampoDeChaveDaVoz)) throw new Error('Chave desconhecida.')
+    const limpa = typeof valor === 'string' ? valor.trim() : ''
+    if (limpa.length > 300) throw new Error('Essa chave e grande demais. Confira o que colou.')
+    ctx.salvarChave(campo, limpa)
+    return ajustesDaVoz()
+  })
+
+  // Testar so le plano/saldo e vozes, nao gasta credito.
+  ctx.handle<[string | null], TesteDeVoz>(C.testarEleven, async (chave) => {
+    const usada = (typeof chave === 'string' ? chave.trim() : '') || getSettings().elevenlabsApiKey
+    if (!usada) throw new Error('Cole a chave do ElevenLabs antes de testar.')
+    return testarEleven(usada)
+  })
+
+  ctx.handle<[string | null], TesteDeVoz>(C.testarFish, async (chave) => {
+    const usada = (typeof chave === 'string' ? chave.trim() : '') || getSettings().fishApiKey
+    if (!usada) throw new Error('Cole a chave do Fish Audio antes de testar.')
+    return testarFish(usada)
+  })
+}
+
+/** O que a tela sabe da voz: das chaves, so o `chaves` do ModuloPublico (tem, dica). */
+function ajustesDaVoz(): AjustesDaVoz {
+  const chaves = listarModulos().find((m) => m.id === 'recap')?.chaves ?? {}
+  const eleven = chaves['elevenlabsApiKey'] ?? { tem: false, dica: '' }
+  const fish = chaves['fishApiKey'] ?? { tem: false, dica: '' }
+  return {
+    hasElevenKey: eleven.tem,
+    elevenKeyHint: eleven.dica,
+    hasFishKey: fish.tem,
+    fishKeyHint: fish.dica,
+    vozPadrao: getSettings().vozPadrao,
+  }
+}
+
+/** 't' + numero, como TakeDaVoz.id. */
+function idDoTake(valor: unknown): string {
+  if (typeof valor !== 'string' || !/^t\d{1,6}$/.test(valor)) throw new Error('Take invalido.')
+  return valor
 }
 
 /** O id de episodio do indice ('ep_' + sha1). Vira nome de pasta e de arquivo. */

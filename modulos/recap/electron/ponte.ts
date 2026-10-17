@@ -33,6 +33,24 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     miniaturasDasCenas: (episodioId, planoIds) => invocar(C.miniaturasDasCenas, episodioId, planoIds),
     ritmoDaVoz: (rascunhoId, config) => invocar(C.ritmoDaVoz, rascunhoId, config ?? null),
     onRoteiroProgresso: (ouvinte) => assinar(C.roteiroProgresso, ouvinte),
+
+    estimarVoz: (rascunhoId, pedido) => invocar(C.estimarVoz, rascunhoId, pedido),
+    gerarVoz: (rascunhoId, pedido) => invocar(C.gerarVoz, rascunhoId, pedido),
+    regravarFrases: (rascunhoId, pedido) => invocar(C.regravarFrases, rascunhoId, pedido),
+    ajustarVoz: (rascunhoId, pedido) => invocar(C.ajustarVoz, rascunhoId, pedido),
+    importarAudio: (rascunhoId, pedido) => invocar(C.importarAudio, rascunhoId, pedido),
+    cancelarVoz: (rascunhoId, pedidoId) => invocar(C.cancelarVoz, rascunhoId, pedidoId),
+    escolherTake: (rascunhoId, takeId) => invocar(C.escolherTake, rascunhoId, takeId),
+    aprovarVoz: (rascunhoId) => invocar(C.aprovarVoz, rascunhoId),
+    desaprovarVoz: (rascunhoId) => invocar(C.desaprovarVoz, rascunhoId),
+    urlDoAudio: (rascunhoId, takeId) => invocar(C.urlDoAudio, rascunhoId, takeId),
+    escolherNarracao: () => invocar(C.escolherNarracao),
+    onVozProgresso: (ouvinte) => assinar(C.vozProgresso, ouvinte),
+
+    lerAjustesDaVoz: () => invocar(C.lerAjustesDaVoz),
+    salvarChaveDaVoz: (campo, valor) => invocar(C.salvarChaveDaVoz, campo, valor),
+    testarEleven: (chave) => invocar(C.testarEleven, chave),
+    testarFish: (chave) => invocar(C.testarFish, chave),
   }
   return ponte
 }) satisfies CriarPonte

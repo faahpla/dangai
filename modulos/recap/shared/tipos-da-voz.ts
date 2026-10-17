@@ -23,3 +23,48 @@ export interface VozPadrao {
    */
   velocidadeNativa?: number
 }
+
+/** Uma voz da conta, como o "Testar" lista para o select. */
+export interface VozDoProvedor {
+  id: string
+  nome: string
+  /** Idioma e rotulos curtos ("pt, male"), para reconhecer sem ouvir. '' = nada. */
+  detalhe: string
+  /** Amostra da voz. null = o provedor nao deu. */
+  previewUrl: string | null
+}
+
+/**
+ * O resultado do "Testar" de uma chave de voz. Testar nao gasta caractere nem
+ * credito: so le o plano/saldo e a lista de vozes.
+ */
+export interface TesteDeVoz {
+  provedor: ProvedorDeVoz
+  /** O plano da conta (ElevenLabs: o tier). null = nao veio. */
+  plano: string | null
+  /** ElevenLabs: caracteres usados no periodo e o limite. null no Fish. */
+  usados: number | null
+  limite: number | null
+  /** Fish Audio: saldo da API, como o Fish manda (texto, em dolar). null no ElevenLabs. */
+  saldo: string | null
+  /** As vozes da conta, as proprias primeiro. */
+  vozes: VozDoProvedor[]
+  /** A chave vale, mas algo ficou de fora (sem creditos, sem permissao, sem voz). null = tudo certo. */
+  aviso: string | null
+}
+
+/** Os campos de chave do modulo (camposDeChave): os MESMOS nomes do settings do Studio, que a parte 5 migra. */
+export const CAMPOS_DE_CHAVE_DA_VOZ = ['elevenlabsApiKey', 'fishApiKey'] as const
+export type CampoDeChaveDaVoz = (typeof CAMPOS_DE_CHAVE_DA_VOZ)[number]
+
+/**
+ * O que a tela sabe da voz (o PublicSettings do Studio, so a parte da voz): das
+ * chaves, so se existe e a dica (o `chaves` do ModuloPublico); nunca a chave.
+ */
+export interface AjustesDaVoz {
+  hasElevenKey: boolean
+  elevenKeyHint: string
+  hasFishKey: boolean
+  fishKeyHint: string
+  vozPadrao: Required<VozPadrao>
+}
