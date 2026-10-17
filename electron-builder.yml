@@ -48,6 +48,23 @@ extraResources:
   # momento possivel.
   - from: assets/upscale
     to: upscale
+  # O CODIGO do motor de personagens do modulo recap (~1,5 MB de Python). O
+  # runtime dele (Python oficial + torch, ~5 GB) e o uv NAO vao aqui: a tela do
+  # modulo instala no 1o uso, em %LOCALAPPDATA%\Dangai\recap. Fica de fora o
+  # que o dev do modulo gera (venv, cache, modelos, .pyc): nada disso e codigo.
+  - from: modulos/recap/motor
+    to: modulos/recap/motor
+    filter:
+      - '**/*'
+      - '!.venv{,/**}'
+      - '!venv{,/**}'
+      - '!python{,/**}'
+      - '!cache{,/**}'
+      - '!models{,/**}'
+      - '!Output{,/**}'
+      - '!bin{,/**}'
+      - '!**/__pycache__{,/**}'
+      - '!**/*.pyc'
 
 # Binario dentro de asar nao pode ser executado, e o sharp carrega .node
 # nativo. Os dois precisam ficar desempacotados.
