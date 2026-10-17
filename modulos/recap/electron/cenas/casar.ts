@@ -1836,6 +1836,8 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     }
   })
 
+  if (visao.camadas.conta) return casarPelaConta(e, todos, porId, janelas, fixo, inicial)
+
   /**
    * Uma frase no estado `s` (que ela atualiza). `evitar` = a troca local: a
    * melhor da fita que NAO usa esse plano vai na frente. null = frase fixa.
@@ -1941,4 +1943,202 @@ export function sujeitoHerdado(texto: string, anteriores: readonly Citado[]): Ci
   if (PRONOME_PLURAL.test(sem)) return anteriores.slice(0, 2)
   if (PRONOME_SINGULAR.test(sem)) return anteriores.slice(0, 1)
   return []
+}
+
+// --------------------------------------------- C5: a conta do roteiro inteiro
+
+/** Quantos candidatos de cada frase entram na conta do roteiro inteiro. */
+const CANDIDATOS_DA_CONTA = 12
+/** Quantos caminhos a conta guarda de uma frase para a outra (o feixe). */
+const FEIXE = 48
+
+/** Um trecho ja mostrado no caminho: os planos e [de, ate] (segundos do .mkv). */
+interface TrechoUsado {
+  planoIds: readonly string[]
+  de: number
+  ate: number
+}
+
+interface Caminho {
+  nota: number
+  /** Por frase (indice no roteiro): o candidato escolhido e os termos da passagem. null = fixa ou sem cena. */
+  escolhas: ({ c: CandidatoPontuado; passagem: Termo[] } | null)[]
+  usados: TrechoUsado[]
+  anteriores: CenaAnterior[]
+}
+
+type DuracaoDaFraseDoCasar = ReturnType<typeof duracaoDaFrase>
+
+function cenaAnterior(
+  porId: ReadonlyMap<string, PlanoDoCasar>,
+  c: Pick<CandidatoDeCena, 'planoIds' | 'inSec' | 'outSec'>,
+  duracao: number,
+): CenaAnterior {
+  const primeiro = porId.get(c.planoIds[0] ?? '')
+  const ultimo = porId.get(c.planoIds[c.planoIds.length - 1] ?? '')
+  const fimReal = Math.min(c.outSec, c.inSec + duracao)
+  return {
+    planoIds: [...c.planoIds],
+    inSec: c.inSec,
+    fimReal,
+    ultimoPos: ultimo?.pos ?? -10,
+    chegouAoFim: !!ultimo?.util && fimReal >= ultimo.util.ate - 1,
+    gente: primeiro?.gente ?? [],
+    genteDoRosto: primeiro?.genteDoRosto ?? false,
+  }
+}
+
+function trechoDe(c: Pick<CandidatoDeCena, 'planoIds' | 'inSec' | 'outSec'>, duracao: number): TrechoUsado {
+  return { planoIds: c.planoIds, de: c.inSec, ate: Math.max(c.inSec + 0.05, Math.min(c.outSec, c.inSec + duracao)) }
+}
+
+/** O trecho cruza (com a margem) um trecho usado num plano em comum. */
+function cruzaUsado(usados: readonly TrechoUsado[], t: TrechoUsado): boolean {
+  return usados.some(
+    (u) =>
+      u.planoIds.some((id) => t.planoIds.includes(id)) &&
+      t.ate > u.de - MARGEM_DO_TRECHO_SEC + 1e-6 &&
+      t.de < u.ate + MARGEM_DO_TRECHO_SEC - 1e-6,
+  )
+}
+
+/** A escolha da frase com os avisos de sempre (os mesmos do guloso). */
+function escolhaComAvisos(frase: FraseDoCasar, janela: JanelaDaFrase, fita: CandidatoPontuado[], d: DuracaoDaFraseDoCasar): FraseCasada {
+  const primeira = fita[0]
+  const longe = !!primeira && longeDoEvento(primeira.candidato, janela)
+  const avisos: string[] = []
+  if (!primeira) avisos.push('Sem cena no episodio')
+  else {
+    if (primeira.repetido) avisos.push('Cena repetida')
+    if (primeira.planos.length > 1) avisos.push('Cena emendada')
+    if (primeira.falta > CONGELA_SEC) avisos.push('Cena curta')
+    if (janela.semCenas && !janela.herdada) avisos.push(AVISO_TRECHO_SEM_CENAS)
+    else if (longe && !janela.herdada) avisos.push(AVISO_LONGE_DO_MOMENTO)
+  }
+  if (janela.herdada) avisos.push('Sem evento: perto da vizinha')
+  else if (janela.intervalos.length === 0) avisos.push('Sem evento')
+  if (primeira && fita.length < FITA_MAX) avisos.push(`So ${fita.length} opcoes`)
+  const escolha: EscolhaDaFrase = {
+    fraseId: frase.id,
+    cenas: primeira ? [{ candidato: primeira.candidato, palavraInicio: 0 }] : [],
+    fita: fita.map((c) => c.candidato),
+    confianca: confiancaDaFita(fita, janela, longe),
+    travada: false,
+    hashTexto: hashDoTexto(frase.texto),
+    duracao: d.duracao,
+    avisos,
+  }
+  return { escolha, fita, janela, avisos }
+}
+
+/**
+ * C5: o melhor conjunto de uma vez. Uma programacao dinamica em FEIXE (Viterbi
+ * com os FEIXE melhores caminhos): "sem repetir" e "nao 3x a mesma gente"
+ * dependem do caminho inteiro, e um Viterbi puro (so a frase anterior como
+ * estado) nao enxerga isso. Cada frase tem ate CANDIDATOS_DA_CONTA candidatos
+ * com a nota de sempre (janela, fala, pessoa, o que se ve, duracao no take);
+ * a passagem de uma frase para a outra soma a cronologia (voltar no episodio
+ * custa), a continuidade, a variedade e o reuso de plano. Trecho ja mostrado
+ * no caminho nao entra -- so quando a frase nao tem outra saida, com
+ * "repetida". As escolhas que ficam (travadas, feitas a mao, em dia) sao
+ * pontos FIXOS: entram no caminho como estao. Substitui a troca local.
+ */
+function casarPelaConta(
+  e: EntradaDoCasar,
+  todos: readonly PlanoDoCasar[],
+  porId: ReadonlyMap<string, PlanoDoCasar>,
+  janelas: readonly JanelaDaFrase[],
+  fixo: readonly { d: DuracaoDaFraseDoCasar; ctx: Omit<ContextoDaFrase, 'anteriores'> }[],
+  inicial: EstadoDoCasar,
+): ResultadoDoCasar {
+  const n = e.frases.length
+  // Os trechos das fixas ocupam desde o comeco (como no guloso).
+  const usadosFixos: TrechoUsado[] = []
+  for (const [fraseId, esc] of e.fixas) {
+    if (e.refazer.has(fraseId)) continue
+    for (const c of esc.cenas) usadosFixos.push(trechoDe(c.candidato, esc.duracao))
+  }
+  // Os candidatos de cada frase a refazer, sem as anteriores (a passagem conta a parte).
+  const candidatos: CandidatoPontuado[][] = e.frases.map((frase, i) => {
+    if (!e.refazer.has(frase.id)) return []
+    const ctx: ContextoDaFrase = { ...fixo[i]!.ctx, anteriores: [] }
+    return fitaDaFrase(todos, ctx, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA)
+  })
+
+  let feixe: Caminho[] = [{ nota: 0, escolhas: [], usados: usadosFixos, anteriores: [] }]
+  for (let i = 0; i < n; i++) {
+    const frase = e.frases[i]!
+    const { d, ctx } = fixo[i]!
+    if (!e.refazer.has(frase.id)) {
+      const fixa = e.fixas.get(frase.id)
+      const ultima = fixa?.cenas[fixa.cenas.length - 1]
+      feixe = feixe.map((k) => ({
+        ...k,
+        escolhas: [...k.escolhas, null],
+        anteriores: fixa && ultima ? [...k.anteriores, cenaAnterior(porId, ultima.candidato, fixa.duracao)] : k.anteriores,
+      }))
+      continue
+    }
+    const lista = candidatos[i]!
+    // A ancora da frase anterior que tem cena (fixa ou a refazer).
+    let ancoraAntes: number | null = null
+    for (let a = i - 1; a >= 0; a--) {
+      if (e.refazer.has(e.frases[a]!.id) || e.fixas.has(e.frases[a]!.id)) {
+        ancoraAntes = janelas[a]!.ancora
+        break
+      }
+    }
+    if (lista.length === 0) {
+      feixe = feixe.map((k) => ({ ...k, escolhas: [...k.escolhas, null] }))
+      continue
+    }
+    const proximos: Caminho[] = []
+    for (const k of feixe) {
+      const livres = lista.filter((c) => !cruzaUsado(k.usados, trechoDe(c.candidato, d.duracao)))
+      const opcoes = livres.length > 0 ? livres.map((c) => ({ c, forcado: false })) : lista.map((c) => ({ c, forcado: true }))
+      for (const { c, forcado } of opcoes) {
+        const repetido = c.repetido || forcado
+        const fimReal = Math.min(c.candidato.outSec, c.candidato.inSec + d.duracao)
+        const reusado = !repetido && k.usados.some((u) => u.planoIds.some((id) => c.candidato.planoIds.includes(id)))
+        const passagem = termosDaSequencia(c.planos, c.candidato.inSec, fimReal, ctx, k.anteriores, reusado, ancoraAntes)
+        if (forcado && !c.repetido) passagem.push({ chave: 'repetida', valor: PESOS.repetida, rotulo: 'repetida' })
+        proximos.push({
+          nota: k.nota + c.candidato.nota + passagem.reduce((s, t) => s + t.valor, 0),
+          escolhas: [...k.escolhas, { c: forcado && !c.repetido ? { ...c, repetido: true } : c, passagem }],
+          usados: [...k.usados, trechoDe(c.candidato, d.duracao)],
+          anteriores: [...k.anteriores, cenaAnterior(porId, c.candidato, d.duracao)],
+        })
+      }
+    }
+    proximos.sort((a, b) => b.nota - a.nota)
+    feixe = proximos.slice(0, FEIXE)
+  }
+
+  const melhor = feixe[0]!
+  const casadas: FraseCasada[] = []
+  for (let i = 0; i < n; i++) {
+    const frase = e.frases[i]!
+    if (!e.refazer.has(frase.id)) continue
+    const esc = melhor.escolhas[i] ?? null
+    const d = fixo[i]!.d
+    const fita: CandidatoPontuado[] = []
+    if (esc) {
+      const termos = [...esc.c.termos, ...esc.passagem]
+      const nota = arred(termos.reduce((s, t) => s + t.valor, 0), 2)
+      fita.push({ ...esc.c, termos, candidato: { ...esc.c.candidato, nota, porque: porqueDosTermos(termos) } })
+      // O resto da fita: os outros candidatos da frase que nenhuma OUTRA frase mostra.
+      const dosOutros = melhor.escolhas.flatMap((x, k) => (x && k !== i ? [trechoDe(x.c.candidato, fixo[k]!.d.duracao)] : []))
+      const ocupados = new Set(esc.c.candidato.planoIds)
+      for (const c of candidatos[i]!) {
+        if (fita.length >= FITA_MAX) break
+        if (c.candidato.planoIds.some((id) => ocupados.has(id))) continue
+        if (cruzaUsado([...usadosFixos, ...dosOutros], trechoDe(c.candidato, d.duracao))) continue
+        fita.push(c)
+        for (const id of c.candidato.planoIds) ocupados.add(id)
+      }
+    }
+    casadas.push(escolhaComAvisos(frase, janelas[i]!, fita, d))
+  }
+  const avisos = casadas.flatMap((c) => c.avisos.map((a) => `${c.escolha.fraseId}: ${a.toLowerCase()}`))
+  return { casadas, avisos }
 }
