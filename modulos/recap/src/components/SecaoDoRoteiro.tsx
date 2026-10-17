@@ -17,10 +17,12 @@ import {
   type ProblemaDoRoteiro,
   type Secao,
 } from '../../shared/roteiro'
+import { ROTULO_DO_PROBLEMA, type ItemDaRevisao } from '../../shared/revisao'
 import { useRoteiro, type GeracaoEmCurso } from '../store/gerar-roteiro'
 import { useRitmoDaVoz } from '../store/ritmo'
 import { Linha } from '@/modulos/kit'
 import { AndamentoDoRoteiro } from './AndamentoDoRoteiro'
+import { PerguntaDoEscritor } from './PerguntaDoEscritor'
 import { PerguntaDoReserva } from './PerguntaDoReserva'
 import { Botao, CAMPO_PEQUENO, CLASSE_DO_CAMPO, COR_DE_AVISO, focarBotao, Link, Secao as Cartao } from './pecas'
 
@@ -53,6 +55,7 @@ export function SecaoDoRoteiro({
   problemas,
   ordem,
   geracao,
+  marcas,
 }: {
   secao: Secao
   eventos: readonly Evento[]
@@ -64,6 +67,8 @@ export function SecaoDoRoteiro({
   /** Todas as frases do roteiro em ordem, para as setas andarem entre as partes. */
   ordem: readonly string[]
   geracao: GeracaoEmCurso | null
+  /** As marcas do revisor que valem para a tela, por frase. */
+  marcas: ReadonlyMap<string, ItemDaRevisao>
 }) {
   const gerar = useRoteiro((s) => s.gerar)
   const inserirFrase = useRoteiro((s) => s.inserirFrase)
@@ -72,6 +77,8 @@ export function SecaoDoRoteiro({
   const cancelada = useRoteiro((s) => (s.geracaoCancelada?.secaoId === secao.id ? s.geracaoCancelada : null))
   // O "Refazer" desta parte parou antes do modelo reserva: a pergunta fica aqui, onde o olho esta.
   const reserva = useRoteiro((s) => (s.reserva?.secaoId === secao.id ? s.reserva : null))
+  // O escritor pago parou antes de refazer esta parte: a pergunta de custo tambem fica aqui.
+  const custoAqui = useRoteiro((s) => s.custo?.secaoId === secao.id)
   const [instrucao, setInstrucao] = useState<string | null>(null)
   // O ritmo da voz que vai narrar: o mesmo "~Xs" da contagem do roteiro.
   const ritmo = useRitmoDaVoz()
@@ -152,8 +159,10 @@ export function SecaoDoRoteiro({
           <AndamentoDoRoteiro geracao={geracao} compacto />
         ) : cancelada ? (
           <AndamentoDoRoteiro geracao={cancelada} compacto cancelado />
+        ) : reserva ? (
+          <PerguntaDoReserva pergunta={reserva} compacto />
         ) : (
-          reserva && <PerguntaDoReserva pergunta={reserva} compacto />
+          custoAqui && <PerguntaDoEscritor compacto />
         )}
 
         {secao.frases.length > 0 ? (
@@ -177,6 +186,7 @@ export function SecaoDoRoteiro({
                   erro={erro?.mensagem ?? null}
                   avisos={avisos.length > 0 ? avisos.join('\n') : null}
                   travado={travado}
+                  marca={marcas.get(frase.id) ?? null}
                   anterior={lugar > 0 ? (ordem[lugar - 1] ?? null) : null}
                   proxima={lugar >= 0 ? (ordem[lugar + 1] ?? null) : null}
                 />
@@ -291,6 +301,7 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   erro,
   avisos,
   travado,
+  marca,
   anterior,
   proxima,
 }: {
@@ -306,6 +317,8 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   /** Os avisos desta frase, um por linha (para o tooltip), ou null. */
   avisos: string | null
   travado: boolean
+  /** A marca do revisor nesta frase (com o mesmo texto revisado), ou null. */
+  marca: ItemDaRevisao | null
   anterior: string | null
   proxima: string | null
 }) {
@@ -438,6 +451,7 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
             <span className="truncate">{frase.textoDeTela}</span>
           </span>
         )}
+        {marca && <MarcaDaRevisao marca={marca} travado={travado} />}
         {mostrarAvisos && (
           <span title={avisos ?? undefined} aria-label={avisos ?? undefined} className={`grid size-5 shrink-0 place-items-center ${COR_DE_AVISO}`}>
             <TriangleAlert size={12} strokeWidth={1.75} />
@@ -461,6 +475,42 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
     </li>
   )
 })
+
+/**
+ * A MARCA DO REVISOR numa frase: o chip curto (vermelho = alucinacao, ambar =
+ * o resto), o motivo e a sugestao no tooltip; "Aplicar" troca o texto (uma
+ * edicao comum, com os mesmos vinculos) e "Ignorar" tira a marca.
+ */
+function MarcaDaRevisao({ marca, travado }: { marca: ItemDaRevisao; travado: boolean }) {
+  const { rotulo, grave } = ROTULO_DO_PROBLEMA[marca.problema]
+  const dica = `${marca.motivo}${marca.sugestao ? `\n\nSugestao: ${marca.sugestao}` : ''}`
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <span
+        title={dica}
+        aria-label={`${rotulo}: ${marca.motivo}`}
+        className={[
+          'rounded-[3px] border px-1.5 py-0.5 text-[10px] font-medium',
+          grave ? 'border-danger text-danger' : `border-[#f6a23c] ${COR_DE_AVISO}`,
+        ].join(' ')}
+      >
+        {rotulo}
+      </span>
+      {marca.sugestao && (
+        <Link
+          onClick={() => useRoteiro.getState().editarFrase(marca.fraseId, { texto: marca.sugestao! })}
+          disabled={travado}
+          title={`Trocar por: ${marca.sugestao}`}
+        >
+          Aplicar
+        </Link>
+      )}
+      <Link onClick={() => void useRoteiro.getState().ignorarRevisao([marca.fraseId])} disabled={travado} title="Tirar a marca">
+        Ignorar
+      </Link>
+    </span>
+  )
+}
 
 /** O tooltip do momento: quando, o que acontece e as primeiras falas. */
 function dicaDoMomento(

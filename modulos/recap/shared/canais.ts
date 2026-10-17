@@ -38,6 +38,9 @@ import type {
   RoteiroReligado,
 } from './roteiro'
 import type { RitmoDaVoz } from './ritmo'
+import type { EstiloDoRecap, EstiloNaTela } from './estilo'
+import type { RevisaoFeita } from './revisao'
+import type { Escritor } from './escritor'
 import type { PlanoNoMesclado } from './mesclas'
 import type {
   CandidatosDaFrase,
@@ -109,6 +112,13 @@ export const CANAIS = {
   ritmoDaVoz: 'recap:roteiro:ritmo',
   /** main -> renderer, ProgressoDoRoteiro (texto de andamento das chamadas a IA) */
   roteiroProgresso: 'recap:roteiro:progresso',
+  // lote 1 das ideias (17/10): o "Meu estilo" e o revisor. Tipos em estilo.ts e revisao.ts.
+  lerEstilo: 'recap:roteiro:ler-estilo',
+  salvarEstilo: 'recap:roteiro:salvar-estilo',
+  importarExemplo: 'recap:roteiro:importar-exemplo',
+  revisarRoteiro: 'recap:roteiro:revisar',
+  aplicarRevisao: 'recap:roteiro:aplicar-revisao',
+  ignorarRevisao: 'recap:roteiro:ignorar-revisao',
 
   // passo 3 (Voz). Tipos em shared/voz.ts; o motor e electron/voz/.
   estimarVoz: 'recap:voz:estimar',
@@ -198,6 +208,9 @@ export interface PonteDoRecap {
     vozPadrao?: VozPadrao
     pastaDeMusicas?: string
     edicaoRapidaPadrao?: unknown
+    revisarAoGerar?: boolean
+    escritor?: Escritor
+    modeloGeminiPro?: string
   }): Promise<IpcResult<ConfigDoRecapNaTela>>
   /** Dialogo de pasta. null = fechou sem escolher. */
   escolherBiblioteca(): Promise<IpcResult<string | null>>
@@ -223,6 +236,17 @@ export interface PonteDoRecap {
   miniaturasDasCenas(episodioId: string, planoIds: readonly string[]): Promise<IpcResult<Record<string, string | null>>>
   ritmoDaVoz(rascunhoId: string | null, config?: unknown): Promise<IpcResult<RitmoDaVoz>>
   onRoteiroProgresso(listener: (progresso: ProgressoDoRoteiro) => void): () => void
+  /** O "Meu estilo" e a medida do que vai ao prompt. */
+  lerEstilo(): Promise<IpcResult<EstiloNaTela>>
+  salvarEstilo(estilo: EstiloDoRecap): Promise<IpcResult<EstiloNaTela>>
+  /** Dialogo de .txt: o nome (do arquivo) e o texto. null = fechou sem escolher. */
+  importarExemplo(): Promise<IpcResult<{ nome: string; texto: string } | null>>
+  /** Revisa a versao atual (gravada). `automatico` = depois de gerar: respeita o "Revisar depois de gerar". */
+  revisarRoteiro(rascunhoId: string, automatico: boolean): Promise<IpcResult<RevisaoFeita>>
+  /** "Aplicar todas": versao nova a partir da atual, com as sugestoes da revisao. */
+  aplicarRevisao(rascunhoId: string): Promise<IpcResult<RascunhoDoRecap>>
+  /** "Ignorar": tira as marcas dessas frases da revisao que vale para a versao atual. */
+  ignorarRevisao(rascunhoId: string, fraseIds: readonly string[]): Promise<IpcResult<RascunhoDoRecap>>
 
   // Passo 3 (Voz), como no Studio: tudo que muda o rascunho devolve o rascunho
   // INTEIRO do disco. Gastar SEMPRE passa por estimarVoz antes: gerarVoz e

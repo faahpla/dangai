@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Check, ClipboardPaste, History, Loader2, Settings2, TriangleAlert, WandSparkles } from 'lucide-react'
+import { ArrowLeft, Check, ClipboardPaste, History, Loader2, Palette, Settings2, TriangleAlert, WandSparkles, X } from 'lucide-react'
 import {
   ROTULO_DO_PAPEL,
   cuesElegiveis,
@@ -15,6 +15,7 @@ import {
   type ProblemaDoRoteiro,
   type Roteiro,
 } from '../../shared/roteiro'
+import { marcasNaTela, revisaoDaVersao, type ItemDaRevisao } from '../../shared/revisao'
 import { useGerar } from '../store/gerar'
 import {
   resumoDaFalha,
@@ -27,7 +28,9 @@ import { nucleo } from '../nucleo'
 import { useRitmo, useRitmoDaVoz, useSeguirRitmo } from '../store/ritmo'
 import { textoDoRitmo } from '../../shared/ritmo'
 import { Segmentos, type Segmento } from '@/modulos/kit'
+import { AjustesDoRoteiro } from './AjustesDoRoteiro'
 import { AndamentoDoRoteiro } from './AndamentoDoRoteiro'
+import { PerguntaDoEscritor } from './PerguntaDoEscritor'
 import { CartaoDoEpisodio } from './CartaoDoEpisodio'
 import { MeuRoteiro } from './MeuRoteiro'
 import { PerguntaDoReserva } from './PerguntaDoReserva'
@@ -99,6 +102,8 @@ function Conteudo() {
   const reserva = useRoteiro((s) => s.reserva)
   const modo = useRoteiro((s) => s.modo)
   const colando = useRoteiro((s) => s.colando)
+  const estiloAberto = useRoteiro((s) => s.estiloAberto)
+  const custo = useRoteiro((s) => s.custo)
   const indice = useIndiceDoRoteiro()
 
   // O rascunho na store ainda e de outro episodio (a troca esta a caminho).
@@ -131,15 +136,19 @@ function Conteudo() {
   // O pedido do roteiro inteiro parou antes do modelo reserva: a pergunta fica
   // no lugar do andamento (a do "Refazer" mora na parte).
   const pergunta = !andamento && reserva && reserva.secaoId === null ? reserva : null
+  // O escritor pago parou antes de gastar (o "Refazer" pergunta dentro da parte).
+  const perguntaDeCusto = !andamento && custo && custo.secaoId === null
 
   return (
     <>
       {/* Sem roteiro na tela a barra nao tem o que mostrar: o 60/90 mora no cartao "Roteiro". */}
       {tela && <BarraDoRoteiro />}
+      {estiloAberto && <PainelDoEstilo />}
       {andamento && andamento.secaoId === null && <AndamentoDoRoteiro geracao={andamento} cancelado={!geracao} />}
       {pergunta && <PerguntaDoReserva pergunta={pergunta} />}
+      {perguntaDeCusto && <PerguntaDoEscritor />}
       {colando && <MeuRoteiro />}
-      {!tela && !andamento && !pergunta && !colando && (semFalas ? <SemFalas /> : <SemRoteiro />)}
+      {!tela && !andamento && !pergunta && !perguntaDeCusto && !colando && (semFalas ? <SemFalas /> : <SemRoteiro />)}
       {tela && (modo === 'texto' ? <RoteiroEmTexto /> : <ListaDoRoteiro tela={tela} />)}
     </>
   )
@@ -241,7 +250,9 @@ function BarraDoRoteiro() {
             Ligar {porLigar} {porLigar === 1 ? 'frase' : 'frases'}
           </Link>
         )}
+        {tela && <ResumoDaRevisao travado={travado || aprovando || noTexto} />}
         <span className="flex-1" />
+        <BotaoDoEstilo />
         {tela && !colando && (
           <Botao
             pequeno
@@ -277,6 +288,131 @@ function BarraDoRoteiro() {
       )}
       <AvisosDoRascunho />
     </section>
+  )
+}
+
+/** "Estilo": abre (ou fecha) o painel do "Meu estilo" em cima do roteiro. */
+function BotaoDoEstilo() {
+  const aberto = useRoteiro((s) => s.estiloAberto)
+  const abrir = useRoteiro((s) => s.abrirEstilo)
+  const fechar = useRoteiro((s) => s.fecharEstilo)
+  return (
+    <Botao
+      pequeno
+      foco="estilo"
+      onClick={aberto ? fechar : abrir}
+      title="Meu estilo: instrucoes e roteiros de exemplo que a IA segue. Tambem: revisor e quem escreve."
+    >
+      <Palette size={12} strokeWidth={1.5} className={aberto ? 'text-accent' : undefined} />
+      Estilo
+    </Botao>
+  )
+}
+
+/** O painel "Meu estilo" no passo 2: o mesmo das Configuracoes (Roteiro do recap). Esc fecha so ele. */
+function PainelDoEstilo() {
+  const fechar = useRoteiro((s) => s.fecharEstilo)
+  return (
+    <div
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return
+        e.stopPropagation()
+        fechar()
+      }}
+    >
+      <Secao
+        titulo="Meu estilo"
+        acao={
+          <button
+            type="button"
+            onClick={fechar}
+            aria-label="Fechar"
+            title="Fechar (Esc). Vale no proximo roteiro."
+            className="grid size-7 shrink-0 place-items-center rounded-sm text-ink-3 transition-colors duration-150 hover:text-ink"
+          >
+            <X size={13} strokeWidth={1.5} />
+          </button>
+        }
+      >
+        <AjustesDoRoteiro />
+      </Secao>
+    </div>
+  )
+}
+
+/** As marcas da revisao que valem para a tela (frase com o mesmo texto, nao ignorada). */
+export function useMarcasDaRevisao(): { marcas: ItemDaRevisao[]; atualizada: boolean; existe: boolean } {
+  const tela = useRoteiro((s) => s.tela)
+  const roteiros = useRoteiro((s) => s.rascunho?.roteiros)
+  const revisoes = useRoteiro((s) => s.rascunho?.revisoes)
+  return useMemo(() => {
+    if (!tela || !roteiros || !revisoes) return { marcas: [], atualizada: false, existe: false }
+    const revisao = revisaoDaVersao({ roteiros, revisoes }, tela.versao)
+    return {
+      marcas: marcasNaTela(revisao, tela),
+      // Revisada DEPOIS da ultima gravacao desta versao: "Revisar" de novo nao tem o que achar.
+      atualizada: revisao !== null && revisao.versao === tela.versao && revisao.criadoEm >= tela.criadoEm,
+      existe: revisao !== null,
+    }
+  }, [tela, roteiros, revisoes])
+}
+
+/**
+ * A REVISAO na barra: "Revisando" enquanto a IA confere; com marcas, quantas
+ * e o "Aplicar todas" (versao nova) e o "Ignorar"; sem marca, o "Revisado";
+ * e o "Revisar" quando a versao na tela ainda nao foi conferida.
+ */
+function ResumoDaRevisao({ travado }: { travado: boolean }) {
+  const revisando = useRoteiro((s) => s.revisando)
+  const revisar = useRoteiro((s) => s.revisar)
+  const aplicar = useRoteiro((s) => s.aplicarRevisao)
+  const ignorar = useRoteiro((s) => s.ignorarRevisao)
+  const { marcas, atualizada, existe } = useMarcasDaRevisao()
+
+  if (revisando) {
+    return (
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
+        <Loader2 size={11} strokeWidth={1.75} className="animate-spin text-accent" />
+        Revisando
+      </span>
+    )
+  }
+  const comSugestao = marcas.filter((m) => m.sugestao).length
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      {marcas.length > 0 ? (
+        <>
+          <span
+            className={`flex items-center gap-1 text-[11px] ${COR_DE_AVISO}`}
+            title={marcas.map((m) => `${m.fraseId}: ${m.motivo}`).join('\n')}
+          >
+            <TriangleAlert size={11} strokeWidth={1.75} />
+            Revisao {marcas.length}
+          </span>
+          {comSugestao > 0 && (
+            <Link onClick={() => void aplicar()} disabled={travado} title={`Versao nova com ${comSugestao === 1 ? 'a sugestao' : `as ${comSugestao} sugestoes`}. Esta fica em Versoes.`}>
+              Aplicar todas
+            </Link>
+          )}
+          <Link onClick={() => void ignorar(marcas.map((m) => m.fraseId))} disabled={travado} title="Tira todas as marcas">
+            Ignorar
+          </Link>
+        </>
+      ) : (
+        existe &&
+        atualizada && (
+          <span className="flex items-center gap-1 text-[11px] text-ink-3" title="A IA conferiu cada frase contra as falas">
+            <Check size={11} strokeWidth={2} className={COR_DE_OK} />
+            Revisado
+          </span>
+        )
+      )}
+      {!atualizada && (
+        <Link onClick={() => void revisar()} disabled={travado} title="A IA confere cada frase contra as falas (1 pedido, gratis no Gemini)">
+          Revisar
+        </Link>
+      )}
+    </span>
   )
 }
 
@@ -334,6 +470,7 @@ function ModeloReserva({ modelo }: { modelo: string }) {
 /** "IA", "Editada", "Refeita: Gancho". O pedido inteiro vai no tooltip. */
 function origemDaVersao(v: Roteiro): string {
   if (v.origem === 'editado') return 'Editada'
+  if (v.revisada) return 'Revisada'
   if (v.pedido?.tipo === 'secao') {
     const papel = v.secoes.find((s) => s.id === v.pedido?.secaoId)?.papel
     return papel ? `Refeita: ${ROTULO_DO_PAPEL[papel]}` : 'Parte refeita'
@@ -591,6 +728,8 @@ function ListaDoRoteiro({ tela }: { tela: Roteiro }) {
 
   const ordem = useMemo(() => tela.secoes.flatMap((s) => s.frases.map((f) => f.id)), [tela])
   const inteiro = geracao !== null && geracao.secaoId === null
+  const { marcas } = useMarcasDaRevisao()
+  const marcasPorFrase = useMemo(() => new Map(marcas.map((m) => [m.fraseId, m] as const)), [marcas])
 
   // Todas as partes removidas a mao: o rodape diz o erro, e aqui fica o caminho.
   if (tela.secoes.length === 0) {
@@ -617,6 +756,7 @@ function ListaDoRoteiro({ tela }: { tela: Roteiro }) {
           problemas={problemas.filter((p) => p.secaoId === secao.id)}
           ordem={ordem}
           geracao={geracao}
+          marcas={marcasPorFrase}
         />
       ))}
     </div>

@@ -28,6 +28,7 @@ import {
   type RoteiroReligadoPronto,
   type Secao,
 } from '../../shared/roteiro'
+import { ehPerguntaDeCusto, type EstimativaDoEscritor } from '../../shared/escritor'
 import { ponte } from '../ponte'
 import { useGerar } from './gerar'
 import { useRitmoDaVoz } from './ritmo'
@@ -61,6 +62,11 @@ import { useRitmoDaVoz } from './ritmo'
  * se perde. Ao sair (ou aprovar), o religarRoteiro do main liga as frases
  * novas aos eventos numa chamada so. Texto igual ao da entrada nao chama
  * nada. "Usar meu roteiro" passa pelo mesmo religar, com tudo novo.
+ *
+ * Lote 1 das ideias (17/10): o ESCRITOR PAGO para antes de gastar (a pergunta
+ * de custo, `custo`; o sim refaz o MESMO pedido com o teto aceito), o REVISOR
+ * roda sozinho depois de um roteiro inteiro novo (fora da fila e fora da vez
+ * do roteiro: nunca trava a tela; sem cota, so avisa) e o painel "Meu estilo".
  */
 
 /** O pedido de IA em andamento. */
@@ -102,6 +108,15 @@ export interface PerguntaDoReserva extends ParadoNoReserva {
   instrucao: string | null
   /** Parou no religar: o "Usar modelo reserva" refaz ESTE pedido, nao um roteiro novo. */
   religar?: PedidoDaTela | null
+}
+
+/** O escritor pago parou antes de gastar: a pergunta, com o pedido para refazer igual. */
+export interface PerguntaDeCustoNaTela {
+  estimativa: EstimativaDoEscritor
+  /** A parte do "Refazer". null = o roteiro inteiro. */
+  secaoId: string | null
+  instrucao: string | null
+  usarReserva: boolean
 }
 
 /** O que a lixeira (ou o "Remover parte") tirou, para o "Desfazer" do rodape. */
@@ -160,6 +175,12 @@ interface EstadoDoRoteiro {
   colando: boolean
   /** O que foi colado, ate o roteiro novo existir (Cancelar antes do main nao perde). */
   textoColado: string
+  /** O escritor pago parou antes de gastar: a pergunta de custo. null = nenhuma. */
+  custo: PerguntaDeCustoNaTela | null
+  /** O revisor esta no ar (sozinho depois de gerar, ou o "Revisar"). */
+  revisando: boolean
+  /** O painel "Meu estilo" esta aberto no passo 2. */
+  estiloAberto: boolean
 
   /** Abre (ou reabre) o rascunho do episodio e, sem roteiro, gera sozinho uma vez. */
   entrar: (episodioId: string) => Promise<void>
@@ -178,7 +199,7 @@ interface EstadoDoRoteiro {
    * Sem `secaoId`: "Outra versao" (ou a primeira). Com: "Refazer esta parte".
    * `usarReserva`: ele aceitou o modelo reserva para este pedido.
    */
-  gerar: (pedido?: { secaoId?: string; instrucao?: string; usarReserva?: boolean }) => Promise<void>
+  gerar: (pedido?: { secaoId?: string; instrucao?: string; usarReserva?: boolean; custoAceito?: number }) => Promise<void>
   /** "Usar modelo reserva": refaz o pedido que parou, com a permissao. */
   usarReserva: () => void
   /** "Esperar": fecha a pergunta. O porque fica no cartao "Sem roteiro". */
@@ -223,6 +244,18 @@ interface EstadoDoRoteiro {
   usarMeuRoteiro: () => Promise<void>
   /** Liga aos eventos as frases que ainda nao tem vinculo (o "Ligar N frases" da barra). */
   ligarFrases: () => Promise<void>
+  /** O sim da pergunta de custo: refaz o pedido com o teto que ela mostrou. */
+  confirmarCusto: () => void
+  /** O nao: fecha a pergunta, nada gasto. */
+  desistirCusto: () => void
+  /** Revisa a versao atual (grava antes). `automatico` = depois de gerar (respeita o "Revisar depois de gerar"). */
+  revisar: (automatico?: boolean) => Promise<void>
+  /** "Aplicar todas": versao nova com as sugestoes. */
+  aplicarRevisao: () => Promise<void>
+  /** "Ignorar": as marcas dessas frases somem. */
+  ignorarRevisao: (fraseIds: readonly string[]) => Promise<void>
+  abrirEstilo: () => void
+  fecharEstilo: () => void
 }
 
 /** Espera depois da ultima tecla antes de gravar. */
@@ -300,6 +333,9 @@ const LIMPO = {
   baseDoTexto: null,
   colando: false,
   textoColado: '',
+  custo: null,
+  revisando: false,
+  estiloAberto: false,
 } satisfies Partial<EstadoDoRoteiro>
 
 /** Fora do modo Texto (a tela volta as partes). */
@@ -352,14 +388,16 @@ function reparos(avisos: readonly string[]): string[] {
  * dados do que acabou de ser gravado.
  */
 function comDadosDoDisco(tela: Roteiro, salvo: Roteiro): Roteiro {
+  const { revisada: _revisada, ...resto } = tela
   return {
-    ...tela,
+    ...resto,
     versao: salvo.versao,
     criadoEm: salvo.criadoEm,
     origem: salvo.origem,
     derivadoDe: salvo.derivadoDe,
     pedido: salvo.pedido,
     modelo: salvo.modelo,
+    ...(salvo.revisada ? { revisada: true } : {}),
   }
 }
 
@@ -757,6 +795,7 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
       const secaoId = pedido.secaoId ?? null
       const instrucao = pedido.instrucao?.trim().slice(0, INSTRUCAO_MAX) || null
       const usarReserva = pedido.usarReserva === true
+      const custoAceito = pedido.custoAceito
       const alvoSec = s.tela?.alvoSec ?? s.alvoSemRoteiro
       const comEventos = r.eventos.length === 0
       pararRelogio()
@@ -779,6 +818,7 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
         recadoDetalhe: null,
         remocao: null,
         reserva: null,
+        custo: null,
       })
       const vivo = (): boolean => get().geracao?.token === token
       const marcar = (patch: Partial<GeracaoEmCurso>): void => {
@@ -832,17 +872,32 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
       if (get().rascunho!.eventos.length > 0) marcar({ etapa: secaoId ? 'secao' : 'roteiro', mensagem: null })
       const ro = await noAr(
         id,
-        ponte.gerarRoteiro(id, { alvoSec, instrucao, secaoId, pedidoId: String(token), aceitouReserva: usarReserva }),
+        ponte.gerarRoteiro(id, {
+          alvoSec,
+          instrucao,
+          secaoId,
+          pedidoId: String(token),
+          aceitouReserva: usarReserva,
+          ...(custoAceito !== undefined ? { custoAceito } : {}),
+        }),
       )
       if (!ainda(id)) return
       if (!ro.ok) return falhou(ro.error)
       if (ehParadaNoReserva(ro.value)) return parou(ro.value)
-      const { rascunho, roteiro, doCache, soNoHistorico, avisos } = ro.value
+      // Escritor pago sem o sim: nada foi gasto nem gravado. A pergunta entra no lugar do andamento.
+      if (ehPerguntaDeCusto(ro.value)) {
+        if (vivo()) set({ geracao: null, custo: { estimativa: ro.value.estimativa, secaoId, instrucao, usarReserva } })
+        return
+      }
+      const { rascunho, roteiro, doCache, soNoHistorico, avisos, escritor } = ro.value
       const consertos = reparos(avisos)
+      const semChave = avisos.find((a) => /sem chave: escrito pelo gratis/.test(a)) ?? null
 
       if (vivo()) {
         const partes = [
           doCache ? 'Do cache, sem gastar cota.' : null,
+          escritor && !doCache ? `Escrito por ${escritor}.` : null,
+          semChave,
           consertos.length > 0
             ? `${consertos.length} ${consertos.length === 1 ? 'ajuste' : 'ajustes'} na resposta da IA.`
             : null,
@@ -856,6 +911,8 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
           recado: partes.length > 0 ? partes.join(' ') : null,
           recadoDetalhe: consertos.length > 0 ? consertos.join('\n') : null,
         })
+        // O revisor: so depois de um roteiro INTEIRO novo (o "Refazer esta parte" nao gasta outra chamada).
+        if (!secaoId) void get().revisar(true)
         return
       }
 
@@ -903,6 +960,100 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
         set({ rascunho: final, recado: `Versao ${roteiro.versao} guardada em Versoes.`, recadoDetalhe: null })
       })
     },
+
+    confirmarCusto: () => {
+      const c = get().custo
+      if (!c) return
+      set({ custo: null })
+      void get().gerar({
+        ...(c.secaoId ? { secaoId: c.secaoId } : {}),
+        ...(c.instrucao ? { instrucao: c.instrucao } : {}),
+        usarReserva: c.usarReserva,
+        custoAceito: c.estimativa.usdMaximo,
+      })
+    },
+
+    desistirCusto: () => {
+      if (get().custo) set({ custo: null, recado: 'Nada gasto.', recadoDetalhe: null })
+    },
+
+    revisar: async (automatico = false) => {
+      const s = get()
+      if (!s.rascunho || !s.tela || s.revisando || s.modo === 'texto') return
+      const id = s.rascunho.id
+      set({ revisando: true })
+      // A edicao pendente vai antes: o main revisa o que esta gravado.
+      pararRelogio()
+      const gravou = await naFila(async () => (ainda(id) ? gravarPendente(id) : false))
+      if (!gravou || !ainda(id)) {
+        if (ainda(id)) set({ revisando: false })
+        return
+      }
+      const r = await ponte.revisarRoteiro(id, automatico)
+      if (!ainda(id)) return
+      if (!r.ok) {
+        set({ revisando: false, recado: `Revisao pulada: ${resumoDaFalha(r.error).curto}.`, recadoDetalhe: r.error })
+        return
+      }
+      const feita = r.value
+      if (feita.pulada !== null) {
+        // Desligado nao e recado; o resto (cota, rede, so reserva) avisa e segue.
+        set(
+          feita.pulada === 'desligada'
+            ? { revisando: false }
+            : { revisando: false, recado: `Revisao pulada: ${resumoDaFalha(feita.nota).curto}.`, recadoDetalhe: feita.nota },
+        )
+        return
+      }
+      const n = feita.revisao.itens.length
+      set({
+        revisando: false,
+        rascunho: maisNovo(get().rascunho, feita.rascunho),
+        recado: n === 0 ? 'Revisado: nada a apontar.' : `Revisado: ${n} ${n === 1 ? 'frase marcada' : 'frases marcadas'}.`,
+        recadoDetalhe: feita.doCache ? 'Do cache, sem gastar cota.' : null,
+      })
+    },
+
+    aplicarRevisao: async () => {
+      const s = get()
+      if (!s.rascunho || !s.tela || s.geracao || s.aprovando) return
+      const id = s.rascunho.id
+      pararRelogio()
+      await naFila(async () => {
+        if (!ainda(id) || !(await gravarPendente(id))) return
+        const r = await ponte.aplicarRevisao(id)
+        if (!ainda(id)) return
+        if (!r.ok) {
+          set({ erro: r.error })
+          return
+        }
+        const tela = roteiroAtual(r.value)
+        set({
+          rascunho: r.value,
+          tela,
+          sujo: false,
+          salvoEm: Date.now(),
+          recado: tela ? `Versao ${tela.versao}: revisada. A anterior fica em Versoes.` : null,
+          recadoDetalhe: null,
+        })
+      })
+    },
+
+    ignorarRevisao: async (fraseIds) => {
+      const s = get()
+      if (!s.rascunho || fraseIds.length === 0) return
+      const id = s.rascunho.id
+      await naFila(async () => {
+        if (!ainda(id) || !(await gravarPendente(id))) return
+        const r = await ponte.ignorarRevisao(id, fraseIds)
+        if (!ainda(id)) return
+        if (!r.ok) set({ erro: r.error })
+        else set({ rascunho: maisNovo(get().rascunho, r.value) })
+      })
+    },
+
+    abrirEstilo: () => set({ estiloAberto: true }),
+    fecharEstilo: () => set({ estiloAberto: false }),
 
     usarReserva: () => {
       const p = get().reserva

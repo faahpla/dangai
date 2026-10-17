@@ -1,5 +1,6 @@
 import { dialog } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { basename, extname } from 'node:path'
 import type { ContextoDoModulo } from '../../../electron/modulos'
 import { CANAIS as C } from '../shared/canais'
 import type { ConfigDoRecapNaTela } from '../shared/config'
@@ -69,6 +70,10 @@ import {
 } from './gerar/rascunho'
 import { religarRoteiro } from './gerar/religar'
 import { cancelarRoteiro, gerarRoteiro } from './gerar/roteiro'
+import { lerEstiloNaTela, salvarEstilo } from './gerar/estilo'
+import { aplicarRevisao, ignorarRevisao, revisarRoteiro } from './gerar/revisor'
+import { NOME_DO_EXEMPLO_MAX, TEXTO_DO_EXEMPLO_MAX, type EstiloNaTela } from '../shared/estilo'
+import type { RevisaoFeita } from '../shared/revisao'
 import { ritmoDe, ritmoPeloId } from './voz/ritmo'
 import { estimarVoz } from './voz/estimar'
 import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from './voz/gerar'
@@ -210,6 +215,34 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[string, PedidoDeReligar], RoteiroReligado>(C.religarRoteiro, async (rascunhoId, pedido) =>
     religarRoteiro(idDoRascunho(rascunhoId), pedidoDeReligarSchema.parse(pedido), progressoDoRoteiro),
   )
+
+  // O "Meu estilo" (estilo.ts) e o revisor (revisor.ts), lote 1 das ideias do Levi.
+  ctx.handle<[], EstiloNaTela>(C.lerEstilo, async () => lerEstiloNaTela())
+  ctx.handle<[unknown], EstiloNaTela>(C.salvarEstilo, async (estilo) => salvarEstilo(estilo))
+  ctx.handle<[], { nome: string; texto: string } | null>(C.importarExemplo, async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Importar roteiro de exemplo',
+      properties: ['openFile'],
+      filters: [{ name: 'Texto', extensions: ['txt', 'md'] }],
+    })
+    const arquivo = r.canceled ? undefined : r.filePaths[0]
+    if (!arquivo) return null
+    // So texto, e pequeno: um roteiro de 90 s tem uns 1.500 caracteres.
+    if (statSync(arquivo).size > 200_000) throw new Error('Arquivo grande demais para um roteiro (mais de 200 KB).')
+    const texto = readFileSync(arquivo, 'utf8').replace(/^\uFEFF/, '').trim()
+    if (!texto) throw new Error('O arquivo esta vazio.')
+    return { nome: basename(arquivo, extname(arquivo)).slice(0, NOME_DO_EXEMPLO_MAX), texto: texto.slice(0, TEXTO_DO_EXEMPLO_MAX) }
+  })
+  ctx.handle<[string, boolean], RevisaoFeita>(C.revisarRoteiro, async (rascunhoId, automatico) =>
+    revisarRoteiro(idDoRascunho(rascunhoId), automatico === true),
+  )
+  ctx.handle<[string], RascunhoDoRecap>(C.aplicarRevisao, async (rascunhoId) => aplicarRevisao(idDoRascunho(rascunhoId)))
+  ctx.handle<[string, string[]], RascunhoDoRecap>(C.ignorarRevisao, async (rascunhoId, fraseIds) => {
+    if (!Array.isArray(fraseIds) || fraseIds.some((id) => typeof id !== 'string' || !/^f\d{2,}$/.test(id))) {
+      throw new Error('Lista de frases invalida.')
+    }
+    return ignorarRevisao(idDoRascunho(rascunhoId), fraseIds)
+  })
 
   ctx.handle<[string, string[]], Record<string, string | null>>(C.miniaturasDasCenas, async (episodioId, planoIds) => {
     if (!Array.isArray(planoIds) || planoIds.some((id) => typeof id !== 'string')) {

@@ -33,6 +33,12 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     miniaturasDasCenas: (episodioId, planoIds) => invocar(C.miniaturasDasCenas, episodioId, planoIds),
     ritmoDaVoz: (rascunhoId, config) => invocar(C.ritmoDaVoz, rascunhoId, config ?? null),
     onRoteiroProgresso: (ouvinte) => assinar(C.roteiroProgresso, ouvinte),
+    lerEstilo: () => invocar(C.lerEstilo),
+    salvarEstilo: (estilo) => invocar(C.salvarEstilo, estilo),
+    importarExemplo: () => invocar(C.importarExemplo),
+    revisarRoteiro: (rascunhoId, automatico) => invocar(C.revisarRoteiro, rascunhoId, automatico === true),
+    aplicarRevisao: (rascunhoId) => invocar(C.aplicarRevisao, rascunhoId),
+    ignorarRevisao: (rascunhoId, fraseIds) => invocar(C.ignorarRevisao, rascunhoId, fraseIds),
 
     estimarVoz: (rascunhoId, pedido) => invocar(C.estimarVoz, rascunhoId, pedido),
     gerarVoz: (rascunhoId, pedido) => invocar(C.gerarVoz, rascunhoId, pedido),
