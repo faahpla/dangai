@@ -18,8 +18,12 @@ import {
   type FiltrosDeCandidatos,
 } from '../../shared/cenas'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
+import { completarDicas } from '../gerar/dicas'
+import { configDoRecap } from '../contexto'
+import type { CamadasDoCasar, SinaisDoCasar } from '../../shared/visao'
 import { comMesclas } from './mesclas'
 import { casarFrases, fichasDe, fichasFortes, janelasDasFrases, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
+import { camadasDaConfig, garantirVisao, sinaisDasFrases, sinaisDoEpisodio } from './visao'
 
 /**
  * O CASAR do passo 4 (agente A): a fita de cada frase, de graca, e a grade da
@@ -89,6 +93,54 @@ export function planosQueAbremEscuro(indice: Pick<EpisodeIndex, 'id' | 'planos' 
   return conta
 }
 
+// ------------------------------------------------- o que se ve (lote 2)
+
+interface SinaisParaOCasar {
+  sinais: SinaisDoCasar
+  camadas: Partial<CamadasDoCasar>
+  /** Recados ASCII para o log ("sem motor: so as regras"). */
+  avisos: string[]
+}
+
+/**
+ * Os sinais do lote 2 para o casar, pela config "Cenas": as dicas que faltam
+ * no roteiro (um pedido de IA so, gratis), o que se ve do episodio (medido
+ * agora se faltar) e os vetores das frases. `soCache` (a grade da tela) nunca
+ * chama o motor nem a IA. Falhou qualquer parte: o casar segue sem ela.
+ */
+async function sinaisParaOCasar(rascunhoId: string, soCache = false): Promise<SinaisParaOCasar> {
+  const cfg = configDoRecap().cenas
+  const camadas = camadasDaConfig(cfg)
+  const avisos: string[] = []
+  if (!cfg.visao && !cfg.etiquetas) return { sinais: {}, camadas, avisos }
+  const t0 = Date.now()
+  try {
+    if (!soCache) {
+      const d = await completarDicas(rascunhoId)
+      if (d.nota) avisos.push(`dicas: ${d.nota}`)
+    }
+    const r = lerRascunhoDoDisco(rascunhoId)
+    const roteiro = roteiroAtual(r)
+    if (!roteiro) return { sinais: {}, camadas, avisos }
+    const aberto = indiceDoRascunho(r)
+    if (!soCache) {
+      const est = await garantirVisao(aberto.indice, aberto.caminho, { motor: cfg.visao, etiquetas: cfg.etiquetas })
+      if (est.motivo) avisos.push(`visao: ${est.motivo}`)
+    }
+    const doEpisodio = sinaisDoEpisodio(aberto.indice, aberto.caminho)
+    const frases = frasesDoRoteiro(roteiro)
+    const dasFrases = cfg.visao ? await sinaisDasFrases(frases, { imagem: true, sentido: true, soCache }) : null
+    if (dasFrases?.falha) avisos.push(`frases: ${dasFrases.falha}`)
+    const tagsDaFrase = new Map(frases.flatMap((f) => (f.tags && f.tags.length > 0 ? [[f.id, f.tags] as const] : [])))
+    const sinais: SinaisDoCasar = { ...doEpisodio, ...(dasFrases?.sinais ?? {}), ...(tagsDaFrase.size > 0 ? { tagsDaFrase } : {}) }
+    if (!soCache) console.log(`[cenas] sinais em ${Date.now() - t0} ms: ${Object.keys(sinais).join(', ') || 'nenhum'}${avisos.length ? ` (${avisos.join(' | ')})` : ''}`)
+    return { sinais, camadas, avisos }
+  } catch (e) {
+    avisos.push(e instanceof Error ? e.message : String(e))
+    return { sinais: {}, camadas, avisos }
+  }
+}
+
 /** O roteiro aprovado e o indice com planos, ou o erro pronto para a tela. */
 function abrirParaCenas(r: RascunhoDoRecap): { indice: EpisodeIndex; roteiro: NonNullable<ReturnType<typeof roteiroAtual>> } {
   const roteiro = roteiroAtual(r)
@@ -105,7 +157,8 @@ function abrirParaCenas(r: RascunhoDoRecap): { indice: EpisodeIndex; roteiro: No
  * frases que sairam do roteiro saem. Nada a fazer = nada gravado.
  */
 export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
-  // A luz dos keyframes antes: entre ler e gravar o rascunho nao ha await.
+  // Os sinais (dicas, motor) e a luz dos keyframes antes: entre ler e gravar o rascunho nao ha await.
+  const { sinais, camadas } = await sinaisParaOCasar(rascunhoId)
   const abremEscuro = await planosQueAbremEscuro(abrirParaCenas(lerRascunhoDoDisco(rascunhoId)).indice)
   const r = lerRascunhoDoDisco(rascunhoId)
   const { indice, roteiro } = abrirParaCenas(r)
@@ -122,7 +175,7 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
 
   const frases = frasesDoRoteiro(roteiro)
   const fixas = new Map(atual.escolhas.filter((e) => !refazer.has(e.fraseId)).map((e) => [e.fraseId, e]))
-  const { casadas, avisos } = casarFrases({ indice, eventos: r.eventos, frases, take, fixas, refazer, abremEscuro })
+  const { casadas, avisos } = casarFrases({ indice, eventos: r.eventos, frases, take, fixas, refazer, abremEscuro, sinais, camadas })
   const quando = agora()
   const cenas = {
     ...aplicarEscolhas(atual, casadas.map((c) => c.escolha), roteiro),
@@ -253,7 +306,8 @@ export async function candidatosDaFrase(
   if (!escolha) {
     const fixas = new Map(cenas.escolhas.map((e): [string, EscolhaDaFrase] => [e.fraseId, e]))
     const abremEscuro = await planosQueAbremEscuro(indice)
-    const { casadas } = casarFrases({ indice, eventos: r.eventos, frases, take: takeAtual(r), fixas, refazer: new Set([fraseId]), abremEscuro })
+    const { sinais, camadas } = await sinaisParaOCasar(rascunhoId, true)
+    const { casadas } = casarFrases({ indice, eventos: r.eventos, frases, take: takeAtual(r), fixas, refazer: new Set([fraseId]), abremEscuro, sinais, camadas })
     sugestoes = casadas[0]?.escolha.fita ?? []
   }
   const naFita = new Set(sugestoes.flatMap((c) => c.planoIds))

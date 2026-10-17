@@ -3,6 +3,7 @@ import type { ModuloDoRenderer } from '@/modulos/api'
 import { AjustesDaEdicaoRapida } from './components/AjustesDaEdicaoRapida'
 import { AjustesDoRecap } from './components/AjustesDoRecap'
 import { AjustesDoRoteiro } from './components/AjustesDoRoteiro'
+import { AjustesDasCenas } from './components/AjustesDasCenas'
 import { SecaoDaVoz } from './components/AjustesDeVoz'
 import { BotaoGerarRecap } from './components/BotaoGerarRecap'
 import { ControleDaMusica } from './components/ControleDaMusica'
@@ -69,6 +70,7 @@ export const recap: ModuloDoRenderer = {
   secoesDasConfiguracoes: [
     { id: 'recap-roteiro', titulo: 'Roteiro do recap', depoisDe: 'ia', Componente: AjustesDoRoteiro },
     { id: 'recap-voz', titulo: 'Voz do recap', depoisDe: 'ia', Componente: SecaoDaVoz },
+    { id: 'recap-cenas', titulo: 'Cenas do recap', depoisDe: 'ia', Componente: AjustesDasCenas },
     { id: 'recap-edicao-rapida', titulo: 'Edicao rapida', depoisDe: 'sons', Componente: AjustesDaEdicaoRapida },
     { id: 'recap-biblioteca', titulo: 'Biblioteca do recap', depoisDe: 'biblioteca', Componente: AjustesDoRecap },
     { id: 'recap-motor', titulo: 'Motor de personagens', depoisDe: 'biblioteca', Componente: SecaoDoMotor },

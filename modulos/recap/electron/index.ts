@@ -7,6 +7,7 @@ import { guardarContexto } from './contexto'
 import { configurarEpisodios } from './episodio/indice'
 import { registrarCanais } from './ipc'
 import { encerrarRostosDoMotor, rostosRodando } from './montar/rostos-motor'
+import { encerrarVisao, visaoRodando } from './cenas/visao'
 import { configurarMotor, encerrarMotor, motorRodando } from './motor'
 import {
   cancelarMotorRuntime,
@@ -104,6 +105,7 @@ export const recap: ModuloDoMain = {
   async desligar() {
     encerrarMotor()
     encerrarRostosDoMotor()
+    encerrarVisao()
     await cancelarMotorRuntime()
   },
 
@@ -116,6 +118,7 @@ export const recap: ModuloDoMain = {
   async antesDeSair() {
     encerrarMotor()
     encerrarRostosDoMotor()
+    encerrarVisao()
     encerrarMotorRuntime()
     await remocaoEmAndamento()?.catch(() => {})
   },
@@ -125,6 +128,7 @@ export const recap: ModuloDoMain = {
     if (remocaoEmAndamento()) return 'O motor de personagens esta sendo removido.'
     if (motorRodando()) return 'O motor de personagens esta cortando. Espere terminar.'
     if (rostosRodando()) return 'O motor esta procurando os rostos.'
+    if (visaoRodando()) return 'O motor esta vendo as cenas. Espere terminar.'
     if (trazendoDoStudio()) return 'Trazendo os dados do AniRecap Studio. Espere terminar.'
     return null
   },

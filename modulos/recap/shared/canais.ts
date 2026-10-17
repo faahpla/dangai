@@ -1,5 +1,5 @@
 import type { IpcResult } from '@shared/channels'
-import type { ConfigDoRecapNaTela } from './config'
+import type { ConfigDasCenas, ConfigDoRecapNaTela } from './config'
 import type {
   EpisodeIndex,
   EpisodioEncontrado,
@@ -211,6 +211,7 @@ export interface PonteDoRecap {
     revisarAoGerar?: boolean
     escritor?: Escritor
     modeloGeminiPro?: string
+    cenas?: Partial<ConfigDasCenas>
   }): Promise<IpcResult<ConfigDoRecapNaTela>>
   /** Dialogo de pasta. null = fechou sem escolher. */
   escolherBiblioteca(): Promise<IpcResult<string | null>>

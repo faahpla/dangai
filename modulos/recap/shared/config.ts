@@ -42,6 +42,35 @@ export interface ConfigDoRecap {
   escritor: Escritor
   /** O modelo do "Gemini Pro" ('' = o apelido do pro atual, MODELO_GEMINI_PRO_PADRAO). */
   modeloGeminiPro: string
+  /** As CENAS (lote 2 das ideias, 17/10): o que o passo 4 usa alem das regras. */
+  cenas: ConfigDasCenas
+}
+
+/** C6: o juiz visual (opcional, desligado por padrao). */
+export const JUIZES = ['desligado', 'gemini', 'haiku'] as const
+export type JuizVisual = (typeof JUIZES)[number]
+
+export interface ConfigDasCenas {
+  /** C1/C2/C7 pelo motor: busca pela imagem (CLIP), por sentido e o melhor quadro. */
+  visao: boolean
+  /** C3: as etiquetas do etiquetador do nucleo (WD-Tagger). */
+  etiquetas: boolean
+  /** C5: a conta do roteiro inteiro (desligada = o guloso com a troca local de antes). */
+  conta: boolean
+  /** C6: o juiz visual. */
+  juiz: JuizVisual
+}
+
+export const CENAS_PADRAO: ConfigDasCenas = { visao: true, etiquetas: true, conta: true, juiz: 'desligado' }
+
+function cenasSalvas(raw: unknown): ConfigDasCenas {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  return {
+    visao: r['visao'] !== false,
+    etiquetas: r['etiquetas'] !== false,
+    conta: r['conta'] !== false,
+    juiz: (JUIZES as readonly unknown[]).includes(r['juiz']) ? (r['juiz'] as JuizVisual) : 'desligado',
+  }
 }
 
 /** O que a tela ve (o paraRenderer): sem segredo nenhum. */
@@ -73,6 +102,7 @@ export const CONFIG_PADRAO: ConfigDoRecap = {
   revisarAoGerar: true,
   escritor: 'gemini',
   modeloGeminiPro: '',
+  cenas: CENAS_PADRAO,
 }
 
 /** O que veio do disco, conferido campo a campo. Campo errado vale o padrao. */
@@ -88,6 +118,7 @@ export function coerceConfig(raw: unknown): ConfigDoRecap {
     revisarAoGerar: r['revisarAoGerar'] !== false,
     escritor: (ESCRITORES_IDS as readonly unknown[]).includes(r['escritor']) ? (r['escritor'] as Escritor) : 'gemini',
     modeloGeminiPro: nomeDeModelo(r['modeloGeminiPro'], ''),
+    cenas: cenasSalvas(r['cenas']),
   }
 }
 
@@ -108,7 +139,9 @@ export function aplicarPatch(atual: ConfigDoRecap, patch: unknown): ConfigDoReca
     voz && typeof voz === 'object' && (voz as Record<string, unknown>)['velocidadeNativa'] === undefined
       ? { ...p, vozPadrao: { ...voz, velocidadeNativa: atual.vozPadrao.velocidadeNativa } }
       : p
-  return coerceConfig({ ...atual, ...comVelocidade })
+  // As cenas por campo: mudar so o juiz nao liga de novo o que estava desligado.
+  const cenas = p['cenas'] && typeof p['cenas'] === 'object' ? { ...atual.cenas, ...(p['cenas'] as object) } : atual.cenas
+  return coerceConfig({ ...atual, ...comVelocidade, cenas })
 }
 
 /**

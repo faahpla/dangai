@@ -4,6 +4,7 @@ import { CANAIS as C } from '../../shared/canais'
 import { pedidoDeInstalacaoSchema, type EstadoDoMotorRuntime } from '../../shared/motor-runtime'
 import { esquecerSondaDoMotor, motorRodando } from '../motor'
 import { rostosRodando } from '../montar/rostos-motor'
+import { visaoRodando } from '../cenas/visao'
 import type { FetchDoMotor } from './baixar'
 import {
   cancelarMotorRuntime,
@@ -35,7 +36,7 @@ export function registrarIpcDoMotorRuntime(ctx: ContextoDoModulo): void {
   definirFetchDoMotorRuntime(((url, init) => net.fetch(url, init)) as FetchDoMotor)
   definirAoMudarORuntime(() => esquecerSondaDoMotor())
   // Reinstalar ou Recomecar com a analise rodando apagavam o venv debaixo dela.
-  definirMotorEmUso(() => motorRodando() || rostosRodando())
+  definirMotorEmUso(() => motorRodando() || rostosRodando() || visaoRodando())
 
   ctx.handle<[], EstadoDoMotorRuntime>(C.estadoDoMotorRuntime, () => estadoDoMotorRuntime())
   ctx.handle<[unknown], EstadoDoMotorRuntime>(C.instalarMotorRuntime, (pedido) =>

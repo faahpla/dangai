@@ -32,6 +32,9 @@ import {
 import { lerPastaDoEpisodio } from './pasta-do-episodio'
 import { gravarJsonAtomico, lembrarIndice } from './perfil'
 import { garantirGravavel } from './protegidas'
+import { abrirIndicePorId } from './abrir-indice'
+import { garantirVisao } from '../cenas/visao'
+import { configDoRecap } from '../contexto'
 
 export { indexarFalas } from './falas'
 
@@ -295,6 +298,7 @@ function terminar(corte: Corte, fim: FimDaAnalise): void {
     try {
       const novo = anexar(id, fim)
       enviar(id, novo.corte!, novo, fim.fotosDoElenco)
+      if (motor === MOTOR_DE_VERDADE) complementar(id)
     } catch (e) {
       const erro = e instanceof Error ? e.message : String(e)
       const estado = atualizar(corte, { status: 'falhou', jobId: null, etapa: null, mensagem: '', erro })
@@ -321,6 +325,43 @@ function terminar(corte: Corte, fim: FimDaAnalise): void {
   // O proximo da fila. O motor ainda segura a vaga ate o processo sair
   // (analisarEpisodio espera ate 15 s por isso).
   setImmediate(() => void proximo())
+}
+
+/** Espera entre olhar de novo se a vaga do motor ja esta livre para complementar. */
+const COMPLEMENTO_ESPERA_MS = 15_000
+
+/**
+ * [lote 2] Depois do corte, em segundo plano, o que se ve das cenas (CLIP,
+ * beleza, sentido das falas, etiquetas: cenas/visao.ts), para o passo 4 nao
+ * esperar. So com a fila de cortes vazia (a GPU e de quem corta). Falhou:
+ * o passo 4 tenta de novo, ou segue com as regras.
+ */
+function complementar(episodioId: string): void {
+  let quer: { motor: boolean; etiquetas: boolean }
+  try {
+    const c = configDoRecap().cenas
+    quer = { motor: c.visao, etiquetas: c.etiquetas }
+  } catch {
+    return
+  }
+  if (!quer.motor && !quer.etiquetas) return
+  const tentar = (): void => {
+    if (saindo) return
+    if (rodando !== null || fila.length > 0) {
+      setTimeout(tentar, COMPLEMENTO_ESPERA_MS)
+      return
+    }
+    try {
+      const { indice, caminho } = abrirIndicePorId(episodioId)
+      const t0 = Date.now()
+      void garantirVisao(indice, caminho, quer).then((e) =>
+        console.log(`[corte] visao de ${episodioId}: ${e.pronta ? 'pronta' : 'incompleta'} em ${Date.now() - t0} ms${e.motivo ? ` (${e.motivo})` : ''}`),
+      )
+    } catch (e) {
+      console.warn(`[corte] visao de ${episodioId}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  setTimeout(tentar, 2000)
 }
 
 function ouvintes(corte: Corte): OuvintesDaAnalise {

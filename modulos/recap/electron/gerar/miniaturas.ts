@@ -5,6 +5,8 @@ import { converterRgbHdr } from '../cor-hdr'
 import { abrirIndicePorId } from '../episodio/abrir-indice'
 import { publish, startMediaServer } from '../media-server'
 import { pastaDosRascunhos } from './rascunho'
+import { melhoresKeyframes } from '../cenas/visao'
+import { configDoRecap } from '../contexto'
 
 /**
  * A miniatura do keyframe das cenas que o roteiro cita, para a tela do passo 2.
@@ -32,15 +34,22 @@ export async function miniaturasDasCenas(
   episodioId: string,
   planoIds: readonly string[],
 ): Promise<Record<string, string | null>> {
-  const { indice } = abrirIndicePorId(episodioId)
+  const { indice, caminho } = abrirIndicePorId(episodioId)
   await startMediaServer()
+  // [lote 2, C7] O keyframe mais bonito e nitido do plano, quando o episodio ja foi medido.
+  let melhores = new Map<string, string>()
+  try {
+    if (configDoRecap().cenas.visao) melhores = melhoresKeyframes(indice, caminho)
+  } catch {
+    // sem medida: o keyframe do meio, como antes
+  }
   const planos = new Map(indice.planos.map((p) => [p.id, p]))
   const pasta = join(pastaDosRascunhos(), 'miniaturas', episodioId)
   const hdr = indice.fonte.hdr
   const saida: Record<string, string | null> = {}
 
   for (const id of [...new Set(planoIds)].slice(0, MAXIMO_POR_PEDIDO)) {
-    const keyframe = planos.get(id)?.keyframe ?? null
+    const keyframe = melhores.get(id) ?? planos.get(id)?.keyframe ?? null
     let mtime = 0
     try {
       mtime = keyframe ? Math.round(statSync(keyframe).mtimeMs) : 0
@@ -52,7 +61,8 @@ export async function miniaturasDasCenas(
       continue
     }
     // O id do plano vem do nome do mp4 ('0025', '0164-0167'): so letra, numero, - e _.
-    const destino = join(pasta, `${id.replace(/[^0-9A-Za-z_-]/g, '_')}@${mtime}${hdr ? '-hdr' : ''}.webp`)
+    const k = /_(\d)\.jpe?g$/i.exec(keyframe)?.[1] ?? ''
+    const destino = join(pasta, `${id.replace(/[^0-9A-Za-z_-]/g, '_')}@${mtime}${k && k !== '1' ? `k${k}` : ''}${hdr ? '-hdr' : ''}.webp`)
     try {
       if (!existsSync(destino)) {
         mkdirSync(pasta, { recursive: true })

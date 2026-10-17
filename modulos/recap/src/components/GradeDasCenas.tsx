@@ -398,7 +398,7 @@ export function GradeDasCenas({
 function motivoComum(candidatos: readonly CandidatoDeCena[]): string | null {
   const conta = new Map<string, number>()
   for (const c of candidatos) {
-    const motivo = c.porque.join(' · ')
+    const motivo = c.porque[0] ?? ''
     if (motivo) conta.set(motivo, (conta.get(motivo) ?? 0) + 1)
   }
   const [motivo, quantos] = [...conta].sort((a, b) => b[1] - a[1])[0] ?? ['', 0]
@@ -792,7 +792,8 @@ export const CartaoDaCena = memo(function CartaoDaCena({
   const dica = [
     `cena ${candidato.planoIds.join('+')} · ${duracao.toFixed(1)}s · ${formatarTempo(candidato.inSec)}`,
     nomes.length > 0 ? nomes.join(', ') : null,
-    candidato.porque.length > 0 ? candidato.porque.join(' · ') : null,
+    // O "por que" curto (1-2 palavras: "Nia + soco", "fala citada"): o casar poe na frente.
+    candidato.porque[0] ?? null,
     emenda ? 'Emenda o plano seguinte' : null,
     usada ? 'Ja usada em outra frase' : null,
     marcado ? 'Clique: tirar desta frase' : 'Clique: usar nesta frase · Shift+clique: mais uma cena',
