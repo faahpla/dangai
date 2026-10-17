@@ -4,7 +4,7 @@ import type { ConfigDoModulo } from '../../../electron/modulos'
 import { aplicarPatch, CONFIG_PADRAO, coerceConfig, type ConfigDoRecap, type ConfigDoRecapNaTela } from '../shared/config'
 import { contexto } from './contexto'
 import { garantirGravavel } from './episodio/protegidas'
-import { pastaDeDocumentos } from './settings'
+import { bibliotecaPadrao } from './settings'
 
 /**
  * [recap] A configuracao do modulo para o nucleo (ConfigDoModulo): o padrao,
@@ -14,9 +14,9 @@ import { pastaDeDocumentos } from './settings'
  * Cenas (protegidas.ts) -- a mesma regra do "Trocar pasta" do Studio.
  */
 
-/** A pasta resolvida de uma config: a escolhida ou o padrao do Studio. */
+/** A pasta resolvida de uma config: a escolhida ou o padrao do modulo. */
 export function bibliotecaEfetiva(c: ConfigDoRecap): string {
-  return c.biblioteca || join(pastaDeDocumentos(), 'AniRecap Studio', 'Biblioteca')
+  return c.biblioteca || bibliotecaPadrao()
 }
 
 export function configNaTela(raw: unknown): ConfigDoRecapNaTela {

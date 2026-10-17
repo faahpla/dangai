@@ -49,12 +49,18 @@ export function pastaDeDocumentos(): string {
 }
 
 /**
- * A biblioteca do recap, ja resolvida: a escolhida ou o padrao
- * <Documentos>/AniRecap Studio/Biblioteca (o do Studio, para quem vem de la
- * achar os mesmos episodios). Nao cria a pasta -- quem grava cria.
+ * O padrao da biblioteca do recap: <Documentos>/Dangai/Recap/Biblioteca. Era o
+ * do Studio (<Documentos>/AniRecap Studio/Biblioteca), e os dois apps no mesmo
+ * PC gravariam na mesma pasta; a parte 5 separou (ninguem usava o modulo, sem
+ * migracao). Os episodios do Studio sao cortados de novo quando abertos.
  */
+export function bibliotecaPadrao(): string {
+  return join(pastaDeDocumentos(), 'Dangai', 'Recap', 'Biblioteca')
+}
+
+/** A biblioteca do recap, ja resolvida: a escolhida ou o padrao. Nao cria a pasta -- quem grava cria. */
 export function pastaDaBibliotecaStudio(): string {
-  return configDoRecap().biblioteca || join(pastaDeDocumentos(), 'AniRecap Studio', 'Biblioteca')
+  return configDoRecap().biblioteca || bibliotecaPadrao()
 }
 
 /**

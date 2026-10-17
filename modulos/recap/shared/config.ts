@@ -24,7 +24,7 @@ import { arrumarVelocidadeNativa, VELOCIDADE_NATIVA_PADRAO } from './voz'
  *   de cor), com os MESMOS nomes do settings do Studio.
  */
 export interface ConfigDoRecap {
-  /** '' = o padrao, <Documentos>/AniRecap Studio/Biblioteca (o mesmo do Studio). */
+  /** '' = o padrao, <Documentos>/Dangai/Recap/Biblioteca (separado do Studio). */
   biblioteca: string
   /** A voz que narra o recap. Sem voz escolhida: provedor ''. */
   vozPadrao: Required<VozPadrao>

@@ -82,7 +82,7 @@ try {
   confere(coerceConfig({ biblioteca: '  D:\\x  ', outro: 1 }).biblioteca === 'D:\\x', 'apara e ignora campo desconhecido')
   confere(coerceConfig({ biblioteca: 42 }).biblioteca === '', 'tipo errado: o padrao')
   const padrao = configNaTela({ biblioteca: '' })
-  confere(/AniRecap Studio[\\/]Biblioteca$/.test(padrao.bibliotecaEfetiva), `padrao do Studio: ${padrao.bibliotecaEfetiva}`)
+  confere(/Dangai[\\/]Recap[\\/]Biblioteca$/.test(padrao.bibliotecaEfetiva), `padrao do modulo: ${padrao.bibliotecaEfetiva}`)
   const validar = configDoRecap.validarPatch!
   confere(lancou(() => validar({ biblioteca }, { biblioteca: '' })) === null, 'aceita uma pasta qualquer do usuario')
   confere(
