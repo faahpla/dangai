@@ -8,6 +8,8 @@ import { ControleDaMusica } from './components/ControleDaMusica'
 import { BotaoDaEdicaoRapida, rodarEdicaoRapida } from './components/EdicaoRapida'
 import { NaBarraDeStatus } from './components/NaBarraDeStatus'
 import { GerarRecap } from './components/GerarRecap'
+import { InstalarMotor } from './components/motor-runtime/InstalarMotor'
+import { SecaoDoMotor } from './components/SecaoDoMotor'
 import { perguntarSeEpisodio, PerguntaDoEpisodio } from './components/PerguntaDoEpisodio'
 import { guardarNucleo, nucleo } from './nucleo'
 import { ouvirOProjeto, rotuloDoClipe } from './projeto'
@@ -30,7 +32,10 @@ import { useEdicaoRapida } from './store/edicao-rapida'
  *   comando na paleta, a secao nas Configuracoes depois dos Sons de
  *   transicao), o andamento na barra de status, o rotulo da camada de cor na
  *   linha do tempo e os eventos do projeto (converter o do Studio, anotar a
- *   musica depois de salvar/renderizar).
+ *   musica depois de salvar/renderizar);
+ * - parte 4: o motor de personagens -- a tela "Instalar motor" (o runtime no
+ *   1o uso), a secao dele nas Configuracoes, o corte por tras e o Reconhecer
+ *   na mao (dentro do assistente).
  */
 export const recap: ModuloDoRenderer = {
   id: 'recap',
@@ -56,6 +61,7 @@ export const recap: ModuloDoRenderer = {
     <>
       <GerarRecap />
       <PerguntaDoEpisodio />
+      <InstalarMotor />
     </>
   ),
 
@@ -63,6 +69,7 @@ export const recap: ModuloDoRenderer = {
     { id: 'recap-voz', titulo: 'Voz do recap', depoisDe: 'ia', Componente: SecaoDaVoz },
     { id: 'recap-edicao-rapida', titulo: 'Edicao rapida', depoisDe: 'sons', Componente: AjustesDaEdicaoRapida },
     { id: 'recap-biblioteca', titulo: 'Biblioteca do recap', depoisDe: 'biblioteca', Componente: AjustesDoRecap },
+    { id: 'recap-motor', titulo: 'Motor de personagens', depoisDe: 'biblioteca', Componente: SecaoDoMotor },
   ],
 
   comandos: () => [

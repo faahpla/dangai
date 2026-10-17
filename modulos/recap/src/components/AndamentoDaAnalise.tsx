@@ -56,7 +56,7 @@ export function AndamentoDaAnalise() {
 
   return (
     <Secao
-      titulo={job.motor === 'studio' ? 'Analisando no Studio' : 'Analisando com o AnCut'}
+      titulo={job.motor === 'studio' ? 'Analisando' : 'Analisando com o AnCut'}
       acao={
         <div className="flex items-center gap-3">
           <span className="tnum text-[11px] text-ink-3" title="Tempo decorrido">

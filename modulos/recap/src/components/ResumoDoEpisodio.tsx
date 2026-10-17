@@ -89,8 +89,8 @@ export function ResumoDoEpisodio() {
 
   const avisos = indice.avisos.filter((a) => !avisoDaLegenda(a))
   const personagensSobram = personagens.length - PERSONAGENS_VISIVEIS
-  // [recap] "Reconhecer agora" roda o motor (parte 4): ate la nao aparece.
-  const podeReconhecer = false
+
+  const podeReconhecer = indice.reconhecimento === 'pulado' && indice.biblioteca.origem === 'studio'
   // Indice so com as falas: as cenas estao sendo cortadas por tras (SecaoDoCorte).
   const comCenas = temPlanos(indice)
   // Sem cenas, a porta do Reconhecer na mao e o "Corte parou" (SecaoDoCorte); aqui, so com cenas.
@@ -279,7 +279,7 @@ function ReconhecerAgora() {
           mudaram
             ? 'Salve ou desfaca as marcacoes de OP/ED antes'
             : !pronto
-              ? (motor?.studio.erro ?? 'O motor do Studio nao esta pronto')
+              ? (motor?.studio.erro ?? 'O motor nao esta pronto')
               : semAnime
                 ? 'Falta o nome do anime'
                 : 'Busca o elenco e reconhece os personagens nas cenas que ja estao cortadas'

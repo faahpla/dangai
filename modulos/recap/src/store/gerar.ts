@@ -23,13 +23,6 @@ import { passoAoRestaurar, type PassoDoAssistente } from './gerar-passos'
 import { recapsParaContinuar, type RecapParaContinuar } from './gerar-continuar'
 import { pedirMotor, quandoAFaseMudar } from './motor-runtime'
 
-/**
- * [recap] O corte das cenas em segundo plano chega com o motor (parte 4). Ate
- * la o episodio novo para nas falas: nada sobe por tras, e a tela diz "Cortar
- * cenas: em breve" no lugar do andamento do corte.
- */
-export const CORTE_NO_FUNDO = false
-
 /*
  * DONOS DESTA STORE (contrato de 14/10, cinco agentes em paralelo):
  * - agente C (navegacao): `passo`, `irParaPasso`, `tomarRascunhoRestaurado` e a
@@ -428,7 +421,6 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
     indice: EpisodeIndex,
     opcoes: { iniciar: boolean; motor?: Motor; reconhecer?: boolean },
   ): Promise<void> => {
-    if (!CORTE_NO_FUNDO) return
     const r = await ponte.estadoDoCorte(indice.id)
     if (get().indice?.id !== indice.id) return
     const estado = r.ok ? r.value : null

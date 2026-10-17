@@ -9,7 +9,7 @@ import { Link, meioDoCaminho, nuvemDoCaminho } from './pecas'
  * [recap] A BIBLIOTECA DO RECAP nas Configuracoes (a secao do modulo, depois
  * da Biblioteca do Dangai): onde o recap grava os indices dos episodios e, na
  * parte 4, as cenas que corta. E o pedaco "Biblioteca do Studio" do
- * AjustesDoStudio; o do motor volta com ele.
+ * AjustesDoStudio; o do motor e a secao seguinte (SecaoDoMotor).
  *
  * O rotulo e a linha de cima sao do nucleo (SecoesDosModulos). Pasta do AnCut
  * ou do Corte Cenas e recusada no main, e a frase dele vira o aviso.

@@ -493,16 +493,3 @@ export function AbrirPasta({ caminho, title }: { caminho: string; title: string 
     </Botao>
   )
 }
-
-/**
- * [recap] O que ainda vai chegar no modulo (o corte das cenas, a voz): uma
- * linha apagada no lugar do botao, para nao haver botao que nao faz nada.
- */
-export function EmBreve({ children, icone }: { children: React.ReactNode; icone?: React.ReactNode }) {
-  return (
-    <p className="flex items-center gap-1.5 text-[11px] text-ink-3">
-      {icone}
-      {children}: em breve
-    </p>
-  )
-}

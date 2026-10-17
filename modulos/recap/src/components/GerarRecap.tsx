@@ -12,7 +12,10 @@ import { classifyFile } from '@shared/channels'
 import { nucleo } from '../nucleo'
 import { ponte } from '../ponte'
 import { AndamentoDaAnalise, Indexando } from './AndamentoDaAnalise'
-import { AndamentoDoCorte } from './AndamentoDoCorte'
+import { AndamentoDoCorte, corteVivo, textoCurtoDoCorte } from './AndamentoDoCorte'
+import { AndamentoDaDescoberta } from './EntradaDaDescoberta'
+import { ReconhecerNaMao } from './ReconhecerNaMao'
+import { escutarDescoberta } from '../store/gerar-descoberta'
 import { AreaDeSoltar, CartaoDoEpisodio } from './CartaoDoEpisodio'
 import { EscolhaDoRecap } from './EscolhaDoRecap'
 import { PassoDaVoz } from './PassoDaVoz'
@@ -41,8 +44,8 @@ import { Botao, COR_DE_AVISO } from './pecas'
  *
  * [recap] No Dangai ele e a tela cheia do modulo (`nucleo.telaCheia`): o
  * nucleo deixa o resto inerte e os atalhos quietos por baixo. Partes 1 a 3:
- * os passos 1 (Episodio), 2 (Roteiro), 3 (Voz) e 4 (Cenas, sobre um indice
- * ja cortado: o corte e da parte 4).
+ * os passos 1 (Episodio), 2 (Roteiro), 3 (Voz) e 4 (Cenas). Parte 4: o corte
+ * em segundo plano, o motor e o Reconhecer na mao.
  */
 export function GerarRecap() {
   const aberto = useGerar((s) => s.aberto)
@@ -54,6 +57,8 @@ export function GerarRecap() {
   useEffect(() => escutarVoz(), [])
   // As sugestoes de cena saem em segundo plano assim que o roteiro e aprovado (com o assistente fechado tambem).
   useEffect(() => escutarCenas(), [])
+  // Reconhecer na mao: o andamento e os grupos chegam com o assistente fechado tambem.
+  useEffect(() => escutarDescoberta(), [])
 
   // [recap] Aberto, avisa o nucleo (o resto da janela fica inerte e quieto).
   useEffect(() => {
@@ -200,8 +205,9 @@ function Assistente() {
       <header className="flex h-[46px] shrink-0 items-center gap-3 border-b border-line px-5">
         <h2 className="text-[15px] font-semibold text-ink">Gerar recap</h2>
         <Passos />
-        {/* O corte em segundo plano, discreto (parte 4). */}
+        {/* O corte em segundo plano, discreto. */}
         <AndamentoDoCorte />
+        <AndamentoDaDescoberta />
         <span className="flex-1" />
         <button
           type="button"
@@ -299,6 +305,9 @@ function Assistente() {
       ) : (
         <Rodape />
       )}
+
+      {/* Reconhecer na mao: a tela de grupos por cima de tudo do assistente (z-36). */}
+      <ReconhecerNaMao />
     </div>
   )
 }
@@ -458,6 +467,7 @@ function useNaBibliotecaDoEditor(): boolean {
 function Rodape() {
   const fase = useGerar((s) => s.fase)
   const totalCenas = useGerar((s) => s.indice?.planos.length ?? 0)
+  const corte = useGerar((s) => s.corte)
   const mudaram = useGerar((s) => s.exclusoesMudaram)
   const erro = useGerar((s) => s.erro)
   const recado = useGerar((s) => s.recado)
@@ -474,9 +484,13 @@ function Rodape() {
     escolha: '',
     analisando: 'Pode fechar: a analise continua',
     indexando: 'Lendo as falas...',
-    // [recap] Sem o corte (parte 4), sem cenas e "Falas prontas": nada de "0 cenas".
+    // As cenas ainda sendo cortadas por tras: "0 cenas" parecia erro; diz onde o corte esta.
     pronto: `${
-      totalCenas === 0 ? 'Falas prontas' : `Pronto · ${totalCenas.toLocaleString('pt-BR')} cenas`
+      totalCenas === 0 && corte && corte.status !== 'pronto'
+        ? `Falas prontas · ${textoCurtoDoCorte(corte)}`
+        : totalCenas === 0
+          ? 'Falas prontas'
+          : `Pronto · ${totalCenas.toLocaleString('pt-BR')} cenas`
     }${mudaram ? ' · OP/ED nao salvos' : ''}`,
   }
 
@@ -505,11 +519,19 @@ function Rodape() {
           <span className="min-w-0 truncate text-[11px] text-ink-3">{texto[fase]}</span>
         )}
       </div>
-      {/* [recap] Sem cenas (o corte e da parte 4) nao ha o que ver: o botao nem aparece. */}
-      {fase === 'pronto' && naBiblioteca && totalCenas > 0 && (
+      {fase === 'pronto' && naBiblioteca && (
         <Botao
           onClick={() => void verNaBiblioteca()}
-          title="Abre a Biblioteca do editor neste episodio. Fechar a Biblioteca volta para ca."
+          // Sem cenas ainda (corte por tras): nada a ver, o botao espera.
+          disabled={totalCenas === 0}
+          title={
+            totalCenas === 0
+              ? // Corte cancelado ou parado (sem fotos do elenco) nao esta "sendo cortado".
+                corteVivo(corte)
+                ? 'As cenas ainda estao sendo cortadas'
+                : 'O corte das cenas parou'
+              : 'Abre a Biblioteca do editor neste episodio. Fechar a Biblioteca volta para ca.'
+          }
         >
           <LibraryIcon size={13} strokeWidth={1.5} className="text-accent" />
           Ver cenas na Biblioteca
