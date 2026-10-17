@@ -4,3 +4,5 @@
  * nucleo promete manter -- importe daqui, e nao de '@/components/painel'.
  */
 export { Botaozinho, Chip, Deslizante, Field, Grupo, Linha, Segmentos, type Segmento } from '@/components/painel'
+/** A onda da narracao (a mesma da linha do tempo): o tocador da voz do recap. */
+export { Waveform } from '@/components/Waveform'
