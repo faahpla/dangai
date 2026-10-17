@@ -2,6 +2,18 @@ import type { Cue, EpisodeIndex, Plano } from '../../shared/episodio'
 import { cuesDoEvento, momentoDaFrase, type Evento, type Frase } from '../../shared/roteiro'
 import { hashDoTexto, type TakeDaVoz } from '../../shared/voz'
 import {
+  CAMADAS_PADRAO,
+  forcaDoDesvio,
+  mediaEDesvio,
+  normalizarTag,
+  produtoInterno,
+  tagEmPortugues,
+  tagUtil,
+  type CamadasDoCasar,
+  type QuadroDaVisao,
+  type SinaisDoCasar,
+} from '../../shared/visao'
+import {
   AVISO_LONGE_DO_MOMENTO,
   AVISO_TRECHO_SEM_CENAS,
   duracaoDaFrase,
@@ -130,7 +142,46 @@ export const PESOS = {
   /** Por plano a mais no span. */
   emenda: -2,
   repetida: -30,
+  // ---- lote 2 das ideias (C1-C4, C7). Escala da nota de sempre; ajustados contra o olho
+  // (Nia Liston E01 e Dr. Stone S4-37, folhas em _capturas/ideias-lote2).
+  /** C2: o plano se destaca no CLIP da `visualEn` (forca 0..1 pelo desvio, ver forcaDoDesvio). */
+  imagem: 12,
+  /** C1: as falas em volta do plano dizem o que a frase diz (forca 0..1 pelo desvio). */
+  sentido: 6,
+  /** C1 na ancora: uma fala muito parecida (forca 1) vale isto na conta da ancoraPelasPalavras (1 = basta). */
+  sentidoNaAncora: 1.2,
+  /** C3: etiquetas da frase no plano, pela confianca (posicao na lista) e pela raridade no episodio. */
+  tags: 9,
+  /** C4: frase que cita alguem, com candidatos bastantes com o rosto dele: plano sem o rosto vai para o fim. */
+  semCitado: -22,
+  /** C4: as duas pessoas citadas no mesmo plano. */
+  juntos: 8,
+  /** C4: frase com duas pessoas, plano so com a MESMA da frase anterior / com a outra. */
+  alternaMesmo: -3,
+  alternaOutro: 3,
+  /** C7: todos os quadros da janela borrados ou apagados (transicao, nevoa, quadro escuro sem nada). */
+  borrado: -10,
+  /**
+   * Com ancora FORTE (a fala do momento ou a citada, que o roteirista escolheu)
+   * o que se ve so desempata: imagem, sentido e etiqueta valem esta fracao. O
+   * plano vizinho parecido tirava a fala certa (Nia f08: a perna da criada no
+   * lugar das armas escondidas).
+   */
+  vistoComAncoraForte: 0.15,
 } as const
+
+/** C4: com pelo menos tantos candidatos com o rosto citado, o rosto vira regra (os outros vao para o fim). */
+const FORTE_MIN = 3
+/** C1 sem evento ("Meu roteiro"): uma fala com este desvio vira a ancora da frase. */
+const SENTIDO_ANCORA_SEM_EVENTO = 2.2
+/** C1: segundos em volta do plano em que uma fala ainda e "dele" (com peso menor). */
+const SENTIDO_PERTO_SEC = 2
+/** C7: o trecho escolhido dentro do plano longo so sai do comeco quando ganha pelo menos isto (desvios). */
+const MELHOR_TRECHO_GANHO = 0.6
+/** C7: nitidez (log) este tanto de desvios abaixo da media do episodio... */
+const BORRADO_DESVIO = -1.3
+/** ...e a beleza este tanto abaixo: o quadro borrado ou apagado (nada para ver). */
+const FEIO_DESVIO = -1.2
 
 /** Plano mais curto que isto nunca e sugerido (pisca). */
 export const PLANO_MIN_SEC = 0.6
@@ -530,6 +581,198 @@ function conceitosDaFrase(palavras: readonly string[]): { pt: string; formas: Se
   return saida
 }
 
+// --------------------------------------------------- o que se ve (lote 2)
+
+/**
+ * O que o lote 2 sabe do episodio, calculado uma vez: as falas perto de cada
+ * plano (C1), a raridade de cada etiqueta (C3) e a qualidade de cada quadro
+ * (C7). Sem sinal nenhum, tudo vazio e o casar fica como era.
+ */
+export interface VisaoDoEpisodio {
+  camadas: CamadasDoCasar
+  sinais: SinaisDoCasar
+  /** C1: as falas perto de cada plano: peso 1 dentro, 0,6 ate SENTIDO_PERTO_SEC. */
+  cuesPerto: Map<string, { id: string; peso: number }[]>
+  /** C3: o idf de cada etiqueta, 0..1 (rara = 1). */
+  idf: Map<string, number>
+  /** C7: a qualidade (desvios de beleza + nitidez) e o borrado de cada quadro, por arquivo. */
+  qualidade: Map<string, { q: number; borrado: boolean }>
+  /** C7: os planos apagados (todos os quadros borrados e feios: nevoa, lustre no escuro). */
+  apagados: Set<string>
+}
+
+export function prepararVisao(
+  todos: readonly PlanoDoCasar[],
+  indice: Pick<EpisodeIndex, 'cues'>,
+  sinais: SinaisDoCasar = {},
+  camadas: Partial<CamadasDoCasar> = {},
+): VisaoDoEpisodio {
+  const c: CamadasDoCasar = { ...CAMADAS_PADRAO, ...camadas }
+  const cuesPerto = new Map<string, { id: string; peso: number }[]>()
+  if (c.sentido && sinais.sentidoDaCue && sinais.sentidoDaCue.size > 0) {
+    const cues = [...indice.cues].sort((a, b) => a.start - b.start)
+    for (const p of todos) {
+      const lista: { id: string; peso: number }[] = []
+      for (const q of cues) {
+        if (q.start > p.plano.end + SENTIDO_PERTO_SEC) break
+        if (q.end < p.plano.start - SENTIDO_PERTO_SEC) continue
+        const dentro = Math.min(q.end, p.plano.end) - Math.max(q.start, p.plano.start) > 0.1
+        lista.push({ id: q.id, peso: dentro ? 1 : 0.6 })
+      }
+      if (lista.length > 0) cuesPerto.set(p.plano.id, lista)
+    }
+  }
+  const idf = new Map<string, number>()
+  if (c.tags && sinais.tagsDoPlano && sinais.tagsDoPlano.size > 0) {
+    const df = new Map<string, number>()
+    for (const tags of sinais.tagsDoPlano.values()) for (const t of new Set(tags.map(normalizarTag))) df.set(t, (df.get(t) ?? 0) + 1)
+    const n = sinais.tagsDoPlano.size
+    for (const [t, k] of df) idf.set(t, Math.log((n + 1) / (k + 1)) / Math.log(n + 1))
+  }
+  const qualidade = new Map<string, { q: number; borrado: boolean }>()
+  if (c.melhorQuadro && sinais.quadros && sinais.quadros.size > 0) {
+    const todosQ = [...sinais.quadros.values()].flat()
+    const belezas = todosQ.flatMap((q) => (q.beleza === null ? [] : [q.beleza]))
+    const nitidez = todosQ.flatMap((q) => (q.nitidez === null ? [] : [Math.log1p(q.nitidez)]))
+    const b = mediaEDesvio(belezas)
+    const n = mediaEDesvio(nitidez)
+    for (const q of todosQ) {
+      const zb = q.beleza === null ? 0 : (q.beleza - b.media) / b.desvio
+      const zn = q.nitidez === null ? 0 : (Math.log1p(q.nitidez) - n.media) / n.desvio
+      // Borrado de verdade = sem nitidez E feio: o CG liso (a Terra, o ceu do S4-37) tem pouca
+      // nitidez mas boa nota de beleza; a nevoa e o lustre no escuro (Nia 0052) tem as duas baixas.
+      qualidade.set(q.arquivo, {
+        q: zb + 0.7 * Math.max(-2, Math.min(2, zn)),
+        borrado: q.nitidez !== null && q.beleza !== null && zn < BORRADO_DESVIO && zb < FEIO_DESVIO,
+      })
+    }
+  }
+  const apagados = new Set<string>()
+  for (const [id, qs] of sinais.quadros ?? []) if (qs.length > 0 && qs.every((q) => qualidade.get(q.arquivo)?.borrado)) apagados.add(id)
+  return { camadas: c, sinais, cuesPerto, idf, qualidade, apagados }
+}
+
+/**
+ * C7: a fala do momento dita sobre um plano APAGADO (o lustre no escuro do
+ * Nia E01, 0052, com a voz do homem por cima): o momento vale para os planos
+ * vizinhos tambem -- o centro vira o trecho dos apagados em volta da ancora.
+ * null = o centro e o ponto, como antes.
+ */
+export function centroAmpliado(
+  ponto: number | null,
+  todos: readonly PlanoDoCasar[],
+  v: VisaoDoEpisodio | null,
+): Intervalo | null {
+  if (ponto === null || !v || v.apagados.size === 0) return null
+  const k = todos.findIndex((p) => ponto >= p.plano.start && ponto < p.plano.end)
+  if (k < 0 || !v.apagados.has(todos[k]!.plano.id)) return null
+  let a = k
+  let b = k
+  while (a > 0 && v.apagados.has(todos[a - 1]!.plano.id)) a--
+  while (b + 1 < todos.length && v.apagados.has(todos[b + 1]!.plano.id)) b++
+  return { de: todos[a]!.plano.start, ate: todos[b]!.plano.end }
+}
+
+/** O que a frase pede, medido em cada plano (forca 0..1). null = a camada nao tem sinal para esta frase. */
+export interface SinaisDaFrase {
+  imagem: Map<string, number> | null
+  sentido: Map<string, number> | null
+  /** cueId -> desvio do sentido da frase contra todas as falas (a ancora le). */
+  zDaCue: Map<string, number> | null
+  /** As etiquetas pedidas pela frase (normalizadas, sem as fracas). */
+  tags: string[]
+}
+
+const SEM_SINAIS: SinaisDaFrase = { imagem: null, sentido: null, zDaCue: null, tags: [] }
+
+export function sinaisDaFrase(fraseId: string, todos: readonly PlanoDoCasar[], v: VisaoDoEpisodio | null): SinaisDaFrase {
+  if (!v) return SEM_SINAIS
+  const { sinais, camadas } = v
+  const validos = todos.filter((p) => p.util && !p.fora)
+  let imagem: Map<string, number> | null = null
+  const vi = camadas.imagem ? sinais.imagemDaFrase?.get(fraseId) : undefined
+  if (vi && sinais.quadros) {
+    const crus = new Map<string, number>()
+    for (const p of validos) {
+      const qs = sinais.quadros.get(p.plano.id)?.filter((q) => q.vetor) ?? []
+      if (qs.length > 0) crus.set(p.plano.id, Math.max(...qs.map((q) => produtoInterno(vi, q.vetor!))))
+    }
+    if (crus.size >= 8) {
+      const { media, desvio } = mediaEDesvio([...crus.values()])
+      imagem = new Map([...crus].map(([id, x]) => [id, forcaDoDesvio((x - media) / desvio)]))
+    }
+  }
+  let sentido: Map<string, number> | null = null
+  let zDaCue: Map<string, number> | null = null
+  const vs = camadas.sentido ? sinais.sentidoDaFrase?.get(fraseId) : undefined
+  if (vs && sinais.sentidoDaCue && sinais.sentidoDaCue.size >= 8) {
+    const crus = [...sinais.sentidoDaCue].map(([id, vc]) => [id, produtoInterno(vs, vc)] as const)
+    const { media, desvio } = mediaEDesvio(crus.map(([, x]) => x))
+    zDaCue = new Map(crus.map(([id, x]) => [id, (x - media) / desvio]))
+    sentido = new Map()
+    for (const p of validos) {
+      const perto = v.cuesPerto.get(p.plano.id)
+      if (!perto) continue
+      const f = Math.max(...perto.map((c) => forcaDoDesvio(zDaCue!.get(c.id) ?? -9) * c.peso))
+      if (f > 0) sentido.set(p.plano.id, f)
+    }
+  }
+  const tags = camadas.tags && v.idf.size > 0 ? [...new Set((sinais.tagsDaFrase?.get(fraseId) ?? []).map(normalizarTag))].filter(tagUtil) : []
+  return { imagem, sentido, zDaCue, tags }
+}
+
+/**
+ * C3: as etiquetas da frase no plano. Cada uma vale pela confianca (a posicao
+ * na lista do WD-Tagger, das 20 mais confiantes: a 1a vale 1, a 20a 0,5) vezes
+ * a raridade no episodio (idf): "1girl" em toda cena nao diz nada.
+ */
+function tagsNoPlano(p: PlanoDoCasar, pedidas: readonly string[], v: VisaoDoEpisodio): { forca: number; melhor: string | null } {
+  const doPlano = v.sinais.tagsDoPlano?.get(p.plano.id)
+  if (!doPlano || pedidas.length === 0) return { forca: 0, melhor: null }
+  const lista = doPlano.map(normalizarTag)
+  let soma = 0
+  let melhor: string | null = null
+  let maior = 0
+  for (const t of pedidas) {
+    const r = lista.indexOf(t)
+    if (r < 0) continue
+    const x = (1 - (0.5 * r) / 20) * (v.idf.get(t) ?? 0)
+    soma += x
+    if (x > maior) {
+      maior = x
+      melhor = t
+    }
+  }
+  return { forca: Math.min(1, soma / 0.8), melhor }
+}
+
+/** C7: os quadros do plano que caem em [de, ate] (segundos do .mkv). */
+function quadrosNaJanela(p: PlanoDoCasar, de: number, ate: number, v: VisaoDoEpisodio | null): QuadroDaVisao[] {
+  const qs = v?.sinais.quadros?.get(p.plano.id) ?? []
+  const dur = p.plano.end - p.plano.start
+  return qs.filter((q) => {
+    const t = p.plano.start + q.pos * dur
+    return t >= de - 0.05 && t <= ate + 0.05
+  })
+}
+
+/** C7: o quadro mais bonito e nitido da janela (a miniatura do candidato). null = sem medida. */
+function melhorQuadroDaJanela(planos: readonly PlanoDoCasar[], inSec: number, fim: number, v: VisaoDoEpisodio | null): string | null {
+  if (!v || v.qualidade.size === 0) return null
+  let melhor: string | null = null
+  let maior = -Infinity
+  for (const p of planos) {
+    for (const q of quadrosNaJanela(p, inSec, fim, v)) {
+      const x = v.qualidade.get(q.arquivo)
+      if (x && x.q > maior) {
+        maior = x.q
+        melhor = q.arquivo
+      }
+    }
+  }
+  return melhor
+}
+
 // ------------------------------------------------------------------- janela
 
 export interface Intervalo {
@@ -608,13 +851,18 @@ function ancoraPelasPalavras(
   citados: readonly Evento[],
   indice: Pick<EpisodeIndex, 'cues' | 'exclusoes'>,
   elenco: Elenco | null,
+  zDaCue: ReadonlyMap<string, number> | null = null,
 ): { evento: Evento; cue: Cue | null } {
   const textoTodo = `${frase.texto} ${frase.intencaoVisual}`
   const daFrase = fichasDeConteudo(textoTodo)
+  // C1: a fala que diz o que a frase diz (o sentido, PT x EN) soma ate PESOS.sentidoNaAncora.
+  const sentidoDa = (c: Pick<Cue, 'id'>): number => (zDaCue ? PESOS.sentidoNaAncora * forcaDoDesvio(zDaCue.get(c.id) ?? -9) : 0)
   let evento = citados[0]!
   let melhor = -1
   for (const e of citados) {
-    const n = emComum(daFrase, fichasDeConteudo(`${e.resumo} ${e.personagens.join(' ')}`))
+    // O sentido so desempata (vale menos que uma palavra em comum).
+    const sentido = zDaCue ? 0.9 * Math.max(0, ...cuesDoEvento(e, indice).map(sentidoDa)) / PESOS.sentidoNaAncora : 0
+    const n = emComum(daFrase, fichasDeConteudo(`${e.resumo} ${e.personagens.join(' ')}`)) + sentido
     if (n > melhor) {
       melhor = n
       evento = e
@@ -636,7 +884,8 @@ function ancoraPelasPalavras(
     const n =
       conceitos.reduce((s, k) => s + ([...k.formas].some((f) => ditas.has(f)) ? (naIntencao.has(k.pt) ? 1.5 : 1) : 0), 0) +
       0.5 * pessoas.filter((p) => fichas.some((f) => bate(p.ficha, f))).length +
-      0.5 * Math.min(2, emComum(semNomes, fichasDeConteudo(c.texto)))
+      0.5 * Math.min(2, emComum(semNomes, fichasDeConteudo(c.texto))) +
+      sentidoDa(c)
     if (n > nota) {
       nota = n
       cue = c
@@ -652,10 +901,11 @@ function janelaPropria(
   indice: Pick<EpisodeIndex, 'cues' | 'planos' | 'exclusoes'>,
   planos: readonly PlanoDoCasar[],
   elenco: Elenco | null,
+  zDaCue: ReadonlyMap<string, number> | null = null,
 ): JanelaDaFrase | null {
   const porId = new Map(eventos.map((e) => [e.id, e]))
   const citados = frase.eventoIds.map((id) => porId.get(id)).filter((e): e is Evento => e !== undefined)
-  if (citados.length === 0) return null
+  if (citados.length === 0) return zDaCue ? janelaPeloSentido(zDaCue, indice, planos) : null
   const m = momentoDaFrase(frase, eventos, indice)
   const cuePorId = new Map(indice.cues.map((c) => [c.id, c]))
   let cue = m ? (cuePorId.get(m.cueId) ?? null) : null
@@ -663,7 +913,7 @@ function janelaPropria(
   const forte = !!cue && (cue.id === frase.citacaoCueId || cue.id === frase.cueDoMomento)
   let estimada = false
   if (!forte && frase.texto !== undefined) {
-    const achada = ancoraPelasPalavras({ texto: frase.texto, intencaoVisual: frase.intencaoVisual ?? '' }, citados, indice, elenco)
+    const achada = ancoraPelasPalavras({ texto: frase.texto, intencaoVisual: frase.intencaoVisual ?? '' }, citados, indice, elenco, zDaCue)
     if (achada.cue) {
       cue = achada.cue
       ancora = (achada.cue.start + achada.cue.end) / 2
@@ -694,9 +944,51 @@ function janelaPropria(
     eventoIds: citados.map((e) => e.id),
     herdada: false,
   }
-  // O indice nao tem cena nenhuma no trecho: a ancora vai para o ponto mais
-  // perto que tem cena (o fim do corte, quando o trecho e o epilogo).
-  const perto = intervalos.map((i) => ({ de: i.de - 8, ate: i.ate + 8 }))
+  return comCenasPerto(base, planos)
+}
+
+/**
+ * C1 sem evento (frase de ligacao, "Meu roteiro"): a fala do episodio que diz
+ * o que a frase diz, se ela se destaca muito (SENTIDO_ANCORA_SEM_EVENTO
+ * desvios), vira a ancora -- estimada, nunca forte. null = herda a vizinha,
+ * como antes.
+ */
+function janelaPeloSentido(
+  zDaCue: ReadonlyMap<string, number>,
+  indice: Pick<EpisodeIndex, 'cues' | 'exclusoes'>,
+  planos: readonly PlanoDoCasar[],
+): JanelaDaFrase | null {
+  let melhor: Cue | null = null
+  let maior = SENTIDO_ANCORA_SEM_EVENTO
+  for (const c of indice.cues) {
+    if (c.tipo !== 'fala') continue
+    if (indice.exclusoes.some((e) => c.start < e.end && c.end > e.start)) continue
+    const z = zDaCue.get(c.id) ?? -9
+    if (z > maior) {
+      maior = z
+      melhor = c
+    }
+  }
+  if (!melhor) return null
+  const base: JanelaDaFrase = {
+    intervalos: [{ de: melhor.start - 8, ate: melhor.end + 8 }],
+    ancora: (melhor.start + melhor.end) / 2,
+    cueAncora: { id: melhor.id, start: melhor.start, end: melhor.end },
+    forte: false,
+    estimada: true,
+    semCenas: false,
+    eventoIds: [],
+    herdada: false,
+  }
+  return comCenasPerto(base, planos)
+}
+
+/**
+ * O indice nao tem cena nenhuma no trecho: a ancora vai para o ponto mais
+ * perto que tem cena (o fim do corte, quando o trecho e o epilogo).
+ */
+function comCenasPerto(base: JanelaDaFrase, planos: readonly PlanoDoCasar[]): JanelaDaFrase {
+  const perto = base.intervalos.map((i) => ({ de: i.de - 8, ate: i.ate + 8 }))
   if (planos.length > 0 && !planos.some((p) => p.util && cruza(p.plano, perto))) {
     const t = base.ancora!
     let melhor: number | null = null
@@ -724,9 +1016,11 @@ export function janelasDasFrases(
   eventos: readonly Evento[],
   indice: Pick<EpisodeIndex, 'cues' | 'planos' | 'exclusoes'>,
   planos: readonly PlanoDoCasar[] = prepararPlanos(indice),
+  /** C1: o desvio do sentido de cada fala para a frase (fraseId). Ausente = so as palavras, como antes. */
+  zDasCues: (fraseId: string) => ReadonlyMap<string, number> | null = () => null,
 ): JanelaDaFrase[] {
   const elenco = elencoDoEpisodio(planos, indice, eventos)
-  const proprias = frases.map((f) => janelaPropria(f, eventos, indice, planos, elenco))
+  const proprias = frases.map((f) => janelaPropria(f, eventos, indice, planos, elenco, zDasCues(f.id)))
   return proprias.map((j, i) => {
     if (j) return j
     for (let d = 1; d < frases.length; d++) {
@@ -801,6 +1095,11 @@ interface ContextoDaFrase {
   cueCitada: Pick<Cue, 'start' | 'end'> | null
   /** Planos cujo primeiro quadro e escuro (keyframe _0): a janela comeca mais tarde se sobrar plano. */
   abremEscuro: ReadonlySet<string>
+  /** Lote 2: o que se ve do episodio (null = nada medido) e o que a frase pede nos planos. */
+  visao: VisaoDoEpisodio | null
+  sinais: SinaisDaFrase
+  /** C7: o centro ampliado quando a ancora cai num plano apagado (centroAmpliado). null = o ponto. */
+  centro: Intervalo | null
 }
 
 /** O que a frase de antes mostrou: a cronologia, a continuidade e a variedade olham. */
@@ -888,7 +1187,7 @@ function montarJanelas(
         ? Math.max(util.de, Math.min(ancoraDentro, util.ate - d))
         : escuro
           ? util.de + Math.min(sobra, ESCURO_PULA_SEC)
-          : util.de
+          : melhorComeco(p, util, d, ctx.visao)
     return [{ planos: [p], inSec, outSec: util.ate }]
   }
   if (!inteiro) return []
@@ -906,6 +1205,41 @@ function montarJanelas(
   }
   const span = { planos, inSec: util.de, outSec: fim }
   return planos.length > 1 ? [span, { planos: [p], inSec: util.de, outSec: util.ate }] : [span]
+}
+
+/**
+ * C7: o comeco do trecho num plano que sobra (sem ancora dentro). Os
+ * candidatos sao o comeco do plano (a montagem original) e cada keyframe um
+ * pouco antes do meio da janela; vale o de quadros mais bonitos e nitidos,
+ * fugindo de quadro borrado (transicao, movimento). Sair do comeco exige
+ * ganhar MELHOR_TRECHO_GANHO: na duvida, fica o corte original.
+ */
+function melhorComeco(p: PlanoDoCasar, util: Intervalo, d: number, v: VisaoDoEpisodio | null): number {
+  if (!v || v.qualidade.size === 0 || util.ate - util.de - d < 0.8) return util.de
+  const qs = v.sinais.quadros?.get(p.plano.id) ?? []
+  if (qs.length === 0) return util.de
+  const dur = p.plano.end - p.plano.start
+  const nota = (inSec: number): number | null => {
+    const dentro = quadrosNaJanela(p, inSec, inSec + d, v).flatMap((q) => {
+      const x = v.qualidade.get(q.arquivo)
+      return x ? [x] : []
+    })
+    if (dentro.length === 0) return null
+    return dentro.reduce((s, x) => s + x.q, 0) / dentro.length - (dentro.some((x) => x.borrado) ? 1.5 : 0)
+  }
+  let melhor = util.de
+  let maior = -Infinity
+  for (const q of qs) {
+    const t = p.plano.start + q.pos * dur
+    const inSec = Math.max(util.de, Math.min(t - 0.3 * d, util.ate - d))
+    const x = nota(inSec)
+    if (x !== null && x > maior) {
+      maior = x
+      melhor = inSec
+    }
+  }
+  const doComeco = nota(util.de)
+  return doComeco !== null && maior < doComeco + MELHOR_TRECHO_GANHO ? util.de : melhor
 }
 
 /** Os trechos ja mostrados de cada plano, por id (segundos do .mkv). */
@@ -948,11 +1282,15 @@ function pontuar(
   // longa, no plano seguinte, que ja e reacao).
   if (j.ancora !== null) {
     const ponto = j.cueAncora ? j.cueAncora.start + 0.2 : j.ancora
-    const dist = distancia(de, ate, ponto)
+    // C7: momento dito sobre um plano apagado -- os vizinhos tambem estao "no momento".
+    const c = ctx.centro
+    const dist = c ? Math.max(0, c.de - ate, de - c.ate) : distancia(de, ate, ponto)
     const nivel = j.forte ? 'forte' : j.estimada ? 'estimada' : 'fraca'
     const peso = { forte: PESOS.centroForte, estimada: PESOS.centroEstimado, fraca: PESOS.centroFraco }[nivel]
     const queda = { forte: PESOS.quedaForte, estimada: PESOS.quedaEstimada, fraca: PESOS.quedaFraca }[nivel]
-    const centro = peso * Math.exp(-dist / queda) * fator
+    // O plano apagado em que a fala cai nao leva o centro: o momento e dos vizinhos (centroAmpliado).
+    const apagado = !!c && planos.every((q) => ctx.visao?.apagados.has(q.plano.id))
+    const centro = apagado ? 0 : peso * Math.exp(-dist / queda) * fator
     const dentro = j.intervalos.reduce((s, i) => s + Math.max(0, Math.min(ate, i.ate) - Math.max(de, i.de)), 0)
     const fracao = Math.min(1, dentro / Math.max(0.01, ate - de))
     const janela = { forte: PESOS.janelaForte, estimada: PESOS.janelaEstimada, fraca: PESOS.janelaFraca }[nivel] * fracao * fator
@@ -1088,38 +1426,38 @@ function pontuar(
     if (falando) add('falando', PESOS.falando, 'falando')
   }
 
-  // 5. Cronologia, continuidade e variedade (desempate). Trecho sem cenas:
-  // a frase nao esta "em frente" de nada (o momento dela nao tem cena), entao
-  // seguir em frente e continuar o plano anterior nao contam.
-  const ant = ctx.anteriores[ctx.anteriores.length - 1]
-  if (ant) {
-    const fraseVaiEmFrente = j.ancora === null || j.ancora >= ant.inSec - 2
-    if (fraseVaiEmFrente) {
-      if (inSec >= ant.fimReal - 0.05) {
-        if (!j.semCenas) add('cronologia', PESOS.emFrente, 'em frente')
-      } else if (fimReal <= ant.inSec + 0.05) add('cronologia', PESOS.volta, 'volta no tempo')
+  // 4b. Lote 2: o que se ve. Num span, cada plano vale pelo tempo dele na tela.
+  const v = ctx.visao
+  if (v) {
+    const media = (forca: (q: PlanoDoCasar) => number): number =>
+      planos.reduce((s, q) => s + forca(q) * tempoNoPlano(q), 0) / tempoTotal
+    const sf = ctx.sinais
+    const k = j.forte && !j.semCenas ? PESOS.vistoComAncoraForte : 1
+    if (sf.imagem) add('imagem', k * PESOS.imagem * media((q) => sf.imagem!.get(q.plano.id) ?? 0), 'parecido')
+    if (sf.sentido) add('sentido', k * PESOS.sentido * media((q) => sf.sentido!.get(q.plano.id) ?? 0), 'mesma ideia')
+    if (sf.tags.length > 0) {
+      let melhor: string | null = null
+      const f = media((q) => {
+        const x = tagsNoPlano(q, sf.tags, v)
+        if (x.melhor && !melhor) melhor = x.melhor
+        return x.forca
+      })
+      if (melhor) add('tag', k * PESOS.tags * f, tagEmPortugues(melhor))
     }
-    const mesmoPlano = planos.some((p) => ant.planoIds.includes(p.plano.id))
-    const colado = mesmoPlano && Math.abs(inSec - ant.fimReal) <= 0.5
-    if (mesmoPlano && !colado) add('mesmoPlano', PESOS.mesmoPlano, 'mesmo plano')
-    else if (reusado && !mesmoPlano) add('reuso', PESOS.reuso, 'plano ja usado')
-    // Continua = o corte original do episodio: a anterior foi ate o fim do
-    // plano dela e esta abre o plano seguinte (ou segue colada na mesma tomada).
-    const abreOPlano = inSec <= primeiro.util!.de + 1
-    if (!j.semCenas && (colado || (primeiro.pos === ant.ultimoPos + 1 && ant.chegouAoFim && abreOPlano))) {
-      add('continua', PESOS.continua, 'continua')
+    // C4: as duas pessoas citadas no mesmo plano (pelo rosto).
+    if (v.camadas.personagemForte && ctx.citados.length >= 2) {
+      const comRosto = ctx.citados.filter((c) => rostosDoSpan.some((r) => r.fichas.some((f) => bate(c.ficha, f))))
+      if (comRosto.length >= 2) add('juntos', PESOS.juntos, `${comRosto[0]!.rotulo} + ${comRosto[1]!.rotulo}`)
     }
-    // Variedade: a mesma gente seguida. Quem so FALA pode ser voz de fora
-    // (a Francois sobre o porto): conta so com um rosto reconhecido no meio.
-    const ant2 = ctx.anteriores[ctx.anteriores.length - 2]
-    if (mesmaGente(primeiro.gente, ant.gente)) {
-      const tres = !!ant2 && mesmaGente(primeiro.gente, ant2.gente)
-      if (tres && (primeiro.genteDoRosto || ant.genteDoRosto || ant2.genteDoRosto)) add('variedade', PESOS.repeteRosto, 'repete rosto')
-      else if (primeiro.gente.length === 1 && !colado && (primeiro.genteDoRosto || ant.genteDoRosto)) {
-        add('variedade', PESOS.repeteRostoSeguido, 'repete rosto')
-      }
+    // C7: a janela inteira em quadro borrado.
+    if (v.qualidade.size > 0) {
+      const qs = planos.flatMap((q) => quadrosNaJanela(q, inSec, fimReal, v)).flatMap((q) => v.qualidade.get(q.arquivo) ?? [])
+      if (qs.length > 0 && qs.every((x) => x.borrado)) add('borrado', PESOS.borrado, 'borrado')
     }
   }
+
+  // 5. Cronologia, continuidade e variedade (desempate).
+  for (const t of termosDaSequencia(planos, inSec, fimReal, ctx, ctx.anteriores, reusado)) termos.push(t)
 
   // 6. Duracao.
   const cobre = outSec - inSec
@@ -1137,6 +1475,77 @@ function pontuar(
 }
 
 /**
+ * Cronologia, continuidade e variedade: o que depende das cenas das frases de
+ * ANTES. No guloso entra na nota de cada candidato; na conta do roteiro
+ * inteiro (C5), na passagem de uma frase para a outra. Trecho sem cenas: a
+ * frase nao esta "em frente" de nada (o momento dela nao tem cena), entao
+ * seguir em frente e continuar o plano anterior nao contam.
+ */
+function termosDaSequencia(
+  planos: readonly PlanoDoCasar[],
+  inSec: number,
+  fimReal: number,
+  ctx: Pick<ContextoDaFrase, 'janela' | 'citados' | 'visao'>,
+  anteriores: readonly CenaAnterior[],
+  reusado: boolean,
+  /**
+   * C5: a ancora da frase de ANTES. Com ela, "a frase vai em frente" compara
+   * as ancoras (a ordem da historia), e nao a cena escolhida antes: na conta do
+   * roteiro inteiro, escolher cedo na anterior "liberava" o bonus da seguinte.
+   * Ausente = o guloso de sempre.
+   */
+  ancoraAnterior?: number | null,
+): Termo[] {
+  const termos: Termo[] = []
+  const add = (chave: string, valor: number, rotulo: string): void => {
+    if (Math.abs(valor) >= 0.05) termos.push({ chave, valor, rotulo })
+  }
+  const j = ctx.janela
+  const primeiro = planos[0]!
+  const ant = anteriores[anteriores.length - 1]
+  if (ant) {
+    const fraseVaiEmFrente =
+      j.ancora === null || (ancoraAnterior !== undefined && ancoraAnterior !== null ? j.ancora >= ancoraAnterior - 2 : j.ancora >= ant.inSec - 2)
+    if (fraseVaiEmFrente) {
+      if (inSec >= ant.fimReal - 0.05) {
+        if (!j.semCenas) add('cronologia', PESOS.emFrente, 'em frente')
+      } else if (fimReal <= ant.inSec + 0.05) add('cronologia', PESOS.volta, 'volta no tempo')
+    }
+    const mesmoPlano = planos.some((p) => ant.planoIds.includes(p.plano.id))
+    const colado = mesmoPlano && Math.abs(inSec - ant.fimReal) <= 0.5
+    if (mesmoPlano && !colado) add('mesmoPlano', PESOS.mesmoPlano, 'mesmo plano')
+    else if (reusado && !mesmoPlano) add('reuso', PESOS.reuso, 'plano ja usado')
+    // Continua = o corte original do episodio: a anterior foi ate o fim do
+    // plano dela e esta abre o plano seguinte (ou segue colada na mesma tomada).
+    const abreOPlano = inSec <= primeiro.util!.de + 1
+    if (!j.semCenas && (colado || (primeiro.pos === ant.ultimoPos + 1 && ant.chegouAoFim && abreOPlano))) {
+      add('continua', PESOS.continua, 'continua')
+    }
+    // Variedade: a mesma gente seguida. Quem so FALA pode ser voz de fora
+    // (a Francois sobre o porto): conta so com um rosto reconhecido no meio.
+    const ant2 = anteriores[anteriores.length - 2]
+    if (mesmaGente(primeiro.gente, ant.gente)) {
+      const tres = !!ant2 && mesmaGente(primeiro.gente, ant2.gente)
+      if (tres && (primeiro.genteDoRosto || ant.genteDoRosto || ant2.genteDoRosto)) add('variedade', PESOS.repeteRosto, 'repete rosto')
+      else if (primeiro.gente.length === 1 && !colado && (primeiro.genteDoRosto || ant.genteDoRosto)) {
+        add('variedade', PESOS.repeteRostoSeguido, 'repete rosto')
+      }
+    }
+    // C4: frase com duas pessoas que mostra uma so: alternar com a anterior.
+    if (ctx.visao?.camadas.personagemForte && ctx.citados.length >= 2) {
+      const soUm = (gente: readonly string[][]): string | null => {
+        const quem = ctx.citados.filter((c) => gente.some((g) => g.some((f) => bate(c.ficha, f))))
+        return quem.length === 1 ? quem[0]!.ficha : null
+      }
+      const agora = primeiro.genteDoRosto ? soUm(primeiro.gente) : null
+      const antes = ant.genteDoRosto ? soUm(ant.gente) : null
+      if (agora && antes) add('alterna', agora === antes ? PESOS.alternaMesmo : PESOS.alternaOutro, 'alterna')
+    }
+  }
+  return termos
+}
+
+/**
  * O "porque" do cartao (ate 4 termos): so os motivos A FAVOR, do maior ao
  * menor. O que pesa contra ("sem Senku", "volta no tempo") lia como motivo no
  * mesmo estilo; o que importa disso vira aviso da frase ("Cena curta").
@@ -1150,13 +1559,36 @@ export function porqueDosTermos(termos: readonly Termo[]): string[] {
   }
   const pos = [...termos].filter((t) => t.valor > 0 && t.chave !== 'herdada').sort((a, b) => b.valor - a.valor)
   const herdada = termos.some((t) => t.chave === 'herdada')
-  const saida: string[] = []
+  // O primeiro e o "por que" curto da dica (1-2 palavras: "Nia + soco", "fala citada").
+  const curto = porqueCurto(pos)
+  const saida: string[] = curto ? [curto] : []
   if (herdada) saida.push('sem evento')
   for (const t of pos) {
     if (saida.length >= PORQUE_MAX) break
-    if (unico(t)) saida.push(t.rotulo)
+    if (unico(t) && t.rotulo !== curto) saida.push(t.rotulo)
   }
   return saida.map((r) => ascii(r).slice(0, 32)).filter(Boolean).slice(0, PORQUE_MAX)
+}
+
+/** O que a tela mostra no rotulo curto, em ordem de forca do argumento. */
+const CHAVES_DO_QUE_SE_VE = ['tag', 'imagem', 'sentido', 'palavra', 'falando', 'paisagem', 'grupo']
+
+/**
+ * O "por que" de 1-2 palavras (lote 2, a dica da sugestao): a fala citada
+ * ganha; senao quem esta na tela + o que se ve ("Nia + soco", "Senku +
+ * parecido"); senao so um dos dois; senao o motivo mais forte ("no momento").
+ */
+export function porqueCurto(positivos: readonly Termo[]): string | null {
+  if (positivos.some((t) => t.chave === 'citada')) return 'fala citada'
+  const juntos = positivos.find((t) => t.chave === 'juntos')
+  const pessoa = juntos ?? positivos.find((t) => t.chave === 'pessoa')
+  const quem = pessoa ? pessoa.rotulo.replace(/ fala$/, '') : null
+  const oQue = positivos.filter((t) => CHAVES_DO_QUE_SE_VE.includes(t.chave) && t.valor >= 2).sort((a, b) => b.valor - a.valor)[0]
+  const rotuloDoQue = oQue ? oQue.rotulo.replace(/^"(.+)" na fala$/, '$1') : null
+  if (quem && rotuloDoQue && !juntos) return `${quem} + ${rotuloDoQue}`
+  if (quem) return quem
+  if (rotuloDoQue) return rotuloDoQue
+  return positivos[0]?.rotulo ?? null
 }
 
 function arred(n: number, casas = 3): number {
@@ -1177,8 +1609,13 @@ function fitaDaFrase(
   eventos: readonly Evento[],
   ocupacao: Ocupacao,
   episodioId: string,
+  /** Quantos candidatos (a fita guarda FITA_MAX; a conta do roteiro inteiro pede mais). */
+  max: number = FITA_MAX,
 ): CandidatoPontuado[] {
   const niveis = niveisDaJanela(ctx.janela, eventos)
+  const forte = !!ctx.visao?.camadas.personagemForte && ctx.citados.length > 0
+  const temCitado = (planos: readonly PlanoDoCasar[]): boolean =>
+    planos.some((q) => q.rostos.some((r) => ctx.citados.some((c) => r.fichas.some((f) => bate(c.ficha, f)))))
   const tentar = (permitirUsados: boolean): CandidatoPontuado[] => {
     // Emendar so plano que ninguem usou (span e a montagem original, inteira).
     const livre = (q: PlanoDoCasar): boolean => permitirUsados || (ocupacao.get(q.plano.id)?.length ?? 0) === 0
@@ -1198,19 +1635,32 @@ function fitaDaFrase(
         const repetido = sobrepoe(ocupacao, w.planos.map((q) => q.plano.id), w.inSec, fimReal)
         const reusado = !repetido && w.planos.some((q) => (ocupacao.get(q.plano.id)?.length ?? 0) > 0)
         const { termos, falta } = pontuar(w.planos, w.inSec, w.outSec, ctx, repetido, reusado)
-        const nota = arred(termos.reduce((s, t) => s + t.valor, 0), 2)
         const candidato: CandidatoDeCena = {
           planoIds: w.planos.map((q) => q.plano.id),
           episodioId,
           inSec: arred(w.inSec),
           outSec: arred(w.outSec),
-          nota,
-          porque: porqueDosTermos(termos),
+          nota: 0,
+          porque: [],
           origem: 'sugestao',
-          keyframe: w.planos[0]!.plano.keyframe,
+          // C7: a miniatura e o quadro mais bonito e nitido da janela.
+          keyframe: melhorQuadroDaJanela(w.planos, w.inSec, fimReal, ctx.visao) ?? w.planos[0]!.plano.keyframe,
         }
         return { candidato, planos: w.planos, termos, repetido, falta }
       })
+      // C4: com candidatos bastantes com o rosto de quem a frase cita, o rosto
+      // vira regra -- os outros vao para o fim da fita (nao somem: sem o
+      // rosto certo ainda pode ser o melhor que ha). Com poucos, so a nota de sempre.
+      if (forte) {
+        const comRosto = new Set(pontuados.filter((c) => temCitado(c.planos)).map((c) => c.candidato.planoIds[0]))
+        if (comRosto.size >= FORTE_MIN) {
+          for (const c of pontuados) if (!temCitado(c.planos)) c.termos.push({ chave: 'forte', valor: PESOS.semCitado, rotulo: 'sem citado' })
+        }
+      }
+      for (const c of pontuados) {
+        c.candidato.nota = arred(c.termos.reduce((s, t) => s + t.valor, 0), 2)
+        c.candidato.porque = porqueDosTermos(c.termos)
+      }
       pontuados.sort((a, b) => b.candidato.nota - a.candidato.nota || a.candidato.inSec - b.candidato.inSec)
       const fita: CandidatoPontuado[] = []
       const ocupados = new Set<string>()
@@ -1218,10 +1668,10 @@ function fitaDaFrase(
         if (c.candidato.planoIds.some((id) => ocupados.has(id))) continue
         fita.push(c)
         for (const id of c.candidato.planoIds) ocupados.add(id)
-        if (fita.length >= FITA_MAX) break
+        if (fita.length >= max) break
       }
       melhor = fita
-      if (fita.length >= FITA_MAX || ultimo) break
+      if (fita.length >= max || ultimo) break
     }
     return melhor
   }
@@ -1251,6 +1701,10 @@ export interface EntradaDoCasar {
    * nenhum (o casar e puro, quem le os JPGs e o servico).
    */
   abremEscuro?: ReadonlySet<string>
+  /** Lote 2: o que o motor e o etiquetador mediram (ausente = so as regras). */
+  sinais?: SinaisDoCasar
+  /** Lote 2: as camadas ligadas. Ausente = CAMADAS_PADRAO. */
+  camadas?: Partial<CamadasDoCasar>
 }
 
 export interface FraseCasada {
@@ -1317,7 +1771,9 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   const todos = prepararPlanos(e.indice)
   const porId = new Map(todos.map((p) => [p.plano.id, p]))
   const elenco = elencoDoEpisodio(todos, e.indice, e.eventos)
-  const janelas = janelasDasFrases(e.frases, e.eventos, e.indice, todos)
+  const visao = prepararVisao(todos, e.indice, e.sinais ?? {}, e.camadas ?? {})
+  const sinaisPorFrase = new Map(e.frases.map((f) => [f.id, sinaisDaFrase(f.id, todos, visao)]))
+  const janelas = janelasDasFrases(e.frases, e.eventos, e.indice, todos, (id) => sinaisPorFrase.get(id)?.zDaCue ?? null)
   const cuePorId = new Map(e.indice.cues.map((c) => [c.id, c]))
   const abremEscuro = e.abremEscuro ?? new Set<string>()
 
@@ -1343,8 +1799,12 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   }
 
   // O que nao muda com as escolhas das outras frases: quem a frase cita, o que pede, quanto dura.
+  // C4: "ele", "ela", "o cara" sem nome herdam o sujeito da frase anterior.
+  let sujeito: Citado[] = []
   const fixo = e.frases.map((frase, i) => {
-    const citados = citadosNoTexto(frase.texto, elenco)
+    const doTexto = citadosNoTexto(frase.texto, elenco)
+    const citados = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(frase.texto, sujeito) : doTexto
+    sujeito = citados
     const daIntencao = citadosNoTexto(frase.intencaoVisual, elenco).filter((c) => !citados.some((x) => bate(x.ficha, c.ficha) || bate(c.ficha, x.ficha)))
     const palavrasIv = palavrasSimples(frase.intencaoVisual)
     const palavrasTx = palavrasSimples(frase.texto)
@@ -1367,6 +1827,11 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
         conceitos: conceitosDaFrase([...palavrasTx, ...palavrasIv]),
         cueCitada: citada ? { start: citada.start, end: citada.end } : null,
         abremEscuro,
+        visao,
+        sinais: sinaisPorFrase.get(frase.id)!,
+        centro: visao.camadas.melhorQuadro
+          ? centroAmpliado(janelas[i]!.cueAncora ? janelas[i]!.cueAncora!.start + 0.2 : janelas[i]!.ancora, todos, visao)
+          : null,
       } satisfies Omit<ContextoDaFrase, 'anteriores'>,
     }
   })
@@ -1457,4 +1922,23 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   const casadas = feitas.filter((x): x is FraseCasada => x !== null)
   const avisos = casadas.flatMap((c) => c.avisos.map((a) => `${c.escolha.fraseId}: ${a.toLowerCase()}`))
   return { casadas, avisos }
+}
+
+// ------------------------------------------------------- C4: o sujeito herdado
+
+/** "ele", "ela", "o cara"...: a frase fala de alguem sem dizer o nome. */
+const PRONOME_SINGULAR = /\b(ele|ela|dele|dela|o cara|a garota|o garoto|a menina|o menino|o velho|a velha|o moleque|a mocinha|o rapaz|a moca|a mulher|o homem|o sujeito|a pequena|o pequeno)\b/i
+const PRONOME_PLURAL = /\b(eles|elas|deles|delas|os dois|as duas|a dupla)\b/i
+
+/**
+ * C4: frase sem nome com pronome herda o SUJEITO da anterior (o roteiro so usa
+ * "ele/ela" para retomar o sujeito da frase de antes -- regra do prompt):
+ * no singular, o primeiro citado; no plural, ate dois. Sem pronome, ninguem.
+ */
+export function sujeitoHerdado(texto: string, anteriores: readonly Citado[]): Citado[] {
+  if (anteriores.length === 0) return []
+  const sem = texto.normalize('NFD').replace(/\p{Mn}/gu, '')
+  if (PRONOME_PLURAL.test(sem)) return anteriores.slice(0, 2)
+  if (PRONOME_SINGULAR.test(sem)) return anteriores.slice(0, 1)
+  return []
 }
