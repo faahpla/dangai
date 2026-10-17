@@ -71,7 +71,7 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
   `desligar`; `antesDeSair` segura a saída (teto de 11 min); `motivoParaNaoAtualizar`
   veta o "Atualizar". Tudo em try/catch: módulo que quebra fica de fora e o Dangai abre.
   O `ctx` recusa canal fora de `<id>:` e dá `config`/`salvarConfig`, `chave`/`salvarChave`
-  (cofre), `pasta(...)`, `enviar` e `ia` (o `gerarJson` do núcleo e o `provedor()` — o
+  (cofre), `pasta(...)`, `enviar` e `ia` (o `gerarJson` do núcleo, o `provedor()` e o `modelo()` — o
   módulo nunca vê as chaves de IA). Os leitores de pasta do `library.ts` (`episodiosEm`,
   `arquivosEm`, `acharKeyframe`, `nomesCanonicos`, `abrangidas`, `naturalmente`) são públicos.
 - **Ponte:** `window.dangai.modulos.<id>`, montada pelo preload do núcleo com um

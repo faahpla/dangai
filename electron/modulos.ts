@@ -64,6 +64,12 @@ export interface ContextoDoModulo {
     gerarJson: typeof gerarJson
     /** Quem atenderia agora (ou o forcado, se tiver chave). null = nenhuma chave. */
     provedor(forcado?: Provedor): Provedor | null
+    /**
+     * O modelo escolhido nas Configuracoes para um provedor (para entrar numa
+     * chave de cache, por exemplo). '' = automatico (o Gemini escolhe o flash
+     * na hora da chamada).
+     */
+    modelo(provedor: Provedor): string
   }
 }
 
@@ -214,6 +220,7 @@ function criarContexto(def: ModuloDoMain, base: BaseDosModulos): ContextoDoModul
     ia: {
       gerarJson,
       provedor: (forcado) => escolherProvedor(getSettings(), forcado),
+      modelo: (provedor) => (provedor === 'gemini' ? getSettings().geminiModelo : getSettings().anthropicModelo),
     },
   }
 }
