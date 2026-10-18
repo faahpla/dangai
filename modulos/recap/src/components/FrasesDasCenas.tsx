@@ -1,12 +1,13 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Reorder, useDragControls } from 'motion/react'
-import { Check, Copy, GripVertical, Link2, LocateFixed, Lock, LockOpen, Pause, Play, TriangleAlert, X } from 'lucide-react'
+import { Check, Copy, GripVertical, Link2, LocateFixed, Lock, LockOpen, Merge, Pause, Play, TriangleAlert, X } from 'lucide-react'
 import type { Plano } from '../../shared/episodio'
 import { nomeNatural } from '@shared/nomes'
 import { ROTULO_DO_PAPEL, type Frase, type Roteiro } from '../../shared/roteiro'
 import { palavrasDaFrase, type TakeDaVoz } from '../../shared/voz'
 import {
   AVISO_TRECHO_SEM_CENAS,
+  divididaPeloCasar,
   duracaoDaFrase,
   escolhaDaFrase,
   temposDasCenas,
@@ -219,7 +220,8 @@ const LinhaDaFrase = memo(function LinhaDaFrase({
               ) : (
                 <span
                   className="tnum flex items-center gap-1 text-[10px] text-accent"
-                  title={`${lista.length} ${lista.length === 1 ? 'cena' : 'cenas'} dividindo ${d.duracao.toFixed(1)}s${escolha?.avisos.length ? `\n${escolha.avisos.join('\n')}` : ''}`}
+                  title={`${lista.length} ${lista.length === 1 ? 'cena' : 'cenas'} dividindo ${d.duracao.toFixed(1)}s${divididaPeloCasar(escolha) ? `
+dividida: ${lista.length} cenas` : ''}${escolha?.avisos.length ? `\n${escolha.avisos.join('\n')}` : ''}`}
                 >
                   <Check size={10} strokeWidth={2} />
                   {lista.length === 1 ? `1 cena · ${d.duracao.toFixed(1)}s` : `${lista.length} cenas · ${d.duracao.toFixed(1)}s`}
@@ -445,6 +447,7 @@ function FitaDaFrase({
 }) {
   const cenaAlvo = useCenas((s) => s.cenaAlvo)
   const reordenarCenas = useCenas((s) => s.reordenarCenas)
+  const juntarCenas = useCenas((s) => s.juntarCenas)
   const cenas = escolha?.cenas ?? []
 
   if (cenas.length === 0) {
@@ -472,37 +475,54 @@ function FitaDaFrase({
   const alvo = Math.min(cenaAlvo, cenas.length - 1)
 
   return (
-    <Reorder.Group
-      axis="y"
-      values={itens}
-      onReorder={(novos) =>
-        reordenarCenas(
-          frase.id,
-          novos.map((k) => posicaoDe.get(k) ?? 0),
-        )
-      }
-      as="ul"
-      className="mt-2 flex flex-col gap-0.5"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {cenas.map((c, i) => (
-        <LinhaDaCena
-          key={itens[i]}
-          chave={itens[i]!}
-          fraseId={frase.id}
-          posicao={i}
-          cena={c}
-          alvo={i === alvo}
-          multipla={cenas.length > 1}
-          segundos={(tempos[i]?.fim ?? 0) - (tempos[i]?.inicio ?? 0)}
-          plano={planos.porId.get(c.candidato.planoIds[0] ?? '') ?? null}
-          janela={trechosDoCandidato(
-            c.candidato,
-            c.candidato.planoIds.map((id) => planos.porId.get(id)).filter((p): p is Plano => p !== undefined),
-          ).reduce((s, t) => s + (t.ate - t.de), 0)}
-        />
-      ))}
-    </Reorder.Group>
+    <>
+      <Reorder.Group
+        axis="y"
+        values={itens}
+        onReorder={(novos) =>
+          reordenarCenas(
+            frase.id,
+            novos.map((k) => posicaoDe.get(k) ?? 0),
+          )
+        }
+        as="ul"
+        className="mt-2 flex flex-col gap-0.5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {cenas.map((c, i) => (
+          <LinhaDaCena
+            key={itens[i]}
+            chave={itens[i]!}
+            fraseId={frase.id}
+            posicao={i}
+            cena={c}
+            alvo={i === alvo}
+            multipla={cenas.length > 1}
+            segundos={(tempos[i]?.fim ?? 0) - (tempos[i]?.inicio ?? 0)}
+            plano={planos.porId.get(c.candidato.planoIds[0] ?? '') ?? null}
+            janela={trechosDoCandidato(
+              c.candidato,
+              c.candidato.planoIds.map((id) => planos.porId.get(id)).filter((p): p is Plano => p !== undefined),
+            ).reduce((s, t) => s + (t.ate - t.de), 0)}
+          />
+        ))}
+      </Reorder.Group>
+      {/* A divisao automatica se desfaz aqui: volta a uma cena so, a melhor para a frase inteira. */}
+      {divididaPeloCasar(escolha) && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            juntarCenas(frase.id)
+          }}
+          title="Dividida pelo app. Juntar volta a uma cena so (a melhor para a frase inteira)"
+          className="mt-1 flex items-center gap-1 rounded-sm px-1 py-0.5 text-[11px] text-ink-3 transition-colors duration-150 hover:bg-elevated hover:text-ink"
+        >
+          <Merge size={11} strokeWidth={1.75} />
+          Juntar em 1
+        </button>
+      )}
+    </>
   )
 }
 

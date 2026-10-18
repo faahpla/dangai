@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { JUIZES, type ConfigDasCenas, type ConfigDoRecapNaTela, type JuizVisual } from '../../shared/config'
+import { LIMIAR_DE_DIVISAO_PADRAO_SEC, LIMIARES_DE_DIVISAO } from '../../shared/divisao'
 import { Segmentos, type Segmento } from '@/modulos/kit'
 import { ponte } from '../ponte'
 import { Caixinha, COR_DE_AVISO } from './pecas'
@@ -74,6 +75,30 @@ export function AjustesDasCenas() {
       >
         Conta do roteiro inteiro
       </Caixinha>
+      <Caixinha
+        ligada={c?.duasCenas ?? true}
+        onChange={(v) => void salvar({ duasCenas: v })}
+        disabled={!config}
+        title="Frase longa, com duas acoes ou dois personagens ganha 2 cenas (3 so se for muito longa), cortadas na virgula, no 'e' ou no 'mas'. Cada cena casa com as palavras do pedaco dela. As frases que voce mexeu ficam como estao."
+      >
+        Ate 2 cenas por frase
+      </Caixinha>
+      {(c?.duasCenas ?? true) && (
+        <div className="flex items-center gap-2 pl-6">
+          <span className="shrink-0 text-[11px] text-ink-3" title="Frase mais longa que isto (no tempo da voz) ganha 2 cenas">
+            Acima de
+          </span>
+          <Segmentos
+            opcoes={LIMIARES_DE_DIVISAO.map((v) => ({
+              valor: v,
+              rotulo: `${String(v).replace('.', ',')}s`,
+              title: `Divide a frase com mais de ${String(v).replace('.', ',')} s de voz`,
+            }))}
+            ativo={(v) => v === (c?.limiarDuasCenas ?? LIMIAR_DE_DIVISAO_PADRAO_SEC)}
+            onChange={(v) => void salvar({ limiarDuasCenas: v })}
+          />
+        </div>
+      )}
       <div className="flex flex-col gap-1.5 pt-1">
         <span className="text-[11px] font-medium text-ink-2" title="Opcional. O nucleo do Dangai ainda nao manda imagem para a IA: por enquanto o juiz nao roda.">
           Juiz visual

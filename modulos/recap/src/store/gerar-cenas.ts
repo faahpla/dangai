@@ -13,6 +13,7 @@ import {
   escolhasDesatualizadas,
   escolhasForaDoIndice,
   frasesDoRoteiro,
+  juntarEmUma,
   palavrasNaFrase,
   temposDasCenas,
   type CandidatoDeCena,
@@ -175,6 +176,8 @@ interface EstadoDasCenasNaTela {
   reordenarCenas: (fraseId: string, ordem: readonly number[]) => void
   /** A barrinha rosa: a cena k (>= 1) passa a comecar na palavra `palavra`. */
   moverCorte: (fraseId: string, k: number, palavra: number) => void
+  /** "Juntar em 1": a frase que o casar dividiu volta a uma cena (a melhor para a frase inteira). */
+  juntarCenas: (fraseId: string) => void
   /** O cadeado da frase: travada, "Sugerir de novo" (todas) nao mexe nela. */
   travar: (fraseId: string, travada: boolean) => void
   /** "Sugerir de novo": uma frase (mesmo travada) ou, com null, todas as nao travadas. */
@@ -731,6 +734,14 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
         const alvo = Math.min(maximo, Math.max(minimo, palavra))
         if (alvo === atual.cenas[k]!.palavraInicio || maximo < minimo) return null
         return { ...atual, cenas: atual.cenas.map((c, i) => (i === k ? { ...c, palavraInicio: alvo } : c)) }
+      })
+    },
+
+    juntarCenas: (fraseId) => {
+      mudarEscolha(fraseId, (atual) => {
+        const junta = atual ? juntarEmUma(atual) : null
+        if (junta) set({ cenaAlvo: 0 })
+        return junta
       })
     },
 
