@@ -4,6 +4,9 @@ import type { ConfigDoModulo } from '../../../electron/modulos'
 import { aplicarPatch, CONFIG_PADRAO, coerceConfig, modeloGeminiProDe, type ConfigDoRecap, type ConfigDoRecapNaTela } from '../shared/config'
 import { ESCRITORES, ESCRITORES_IDS, type Escritor } from '../shared/escritor'
 import { contexto } from './contexto'
+import { RECADO_BIBLIOTECA_DO_ANCUT } from '../shared/ancut'
+import { acharAncut } from './ancut/enviar'
+import { dentroDe } from './ancut/pasta'
 import { garantirGravavel } from './episodio/protegidas'
 import { bibliotecaPadrao } from './settings'
 
@@ -61,6 +64,11 @@ export const configDoRecap: ConfigDoModulo = {
     const nova = aplicarPatch(coerceConfig(atual), patch)
     if (nova.biblioteca) {
       if (!isAbsolute(nova.biblioteca)) throw new Error('Escolha uma pasta inteira (com a letra do disco).')
+      // A do AnCut continua recusada (o recap nunca corta direto la: o index.db
+      // dele nao conheceria o episodio), mas quem escolhe ela quer uma
+      // biblioteca so -- a tela oferece o "Enviar sempre" com este recado.
+      const ancut = acharAncut()
+      if (ancut && dentroDe(nova.biblioteca, ancut.saida)) throw new Error(RECADO_BIBLIOTECA_DO_ANCUT)
       garantirGravavel(nova.biblioteca)
     }
     // A pasta de musicas so e lida (o historico mora no perfil): basta ser inteira.

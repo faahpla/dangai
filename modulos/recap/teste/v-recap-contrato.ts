@@ -86,7 +86,8 @@ try {
   const validar = configDoRecap.validarPatch!
   confere(lancou(() => validar({ biblioteca }, { biblioteca: '' })) === null, 'aceita uma pasta qualquer do usuario')
   confere(
-    /nao grava/.test(lancou(() => validar({ biblioteca: 'G:\\App Corte Cenas\\Output' }, { biblioteca: '' })) ?? ''),
+    // Nesta maquina a saida do Corte Cenas pode ser a do AnCut instalado: ai a recusa vem com o recado do "Enviar sempre".
+    /nao grava|Essa e a biblioteca do AnCut/.test(lancou(() => validar({ biblioteca: 'G:\\App Corte Cenas\\Output' }, { biblioteca: '' })) ?? ''),
     'recusa a saida do Corte Cenas (so leitura)',
   )
   confere(/pasta inteira/.test(lancou(() => validar({ biblioteca: 'relativa\\x' }, { biblioteca: '' })) ?? ''), 'recusa caminho sem disco')
