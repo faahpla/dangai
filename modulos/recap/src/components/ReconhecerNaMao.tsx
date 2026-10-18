@@ -21,6 +21,7 @@ import { useGerar } from '../store/gerar'
 import { opcoesDoResumo, useDescoberta } from '../store/gerar-descoberta'
 import { nucleo } from '../nucleo'
 import { Barra, useRelogio } from './AndamentoDaAnalise'
+import { BuscarElenco } from './BuscarElenco'
 import { CartaoDoGrupo, GrupoAmpliado } from './GrupoDeRostos'
 import { LinhaDoMotor } from './ResultadoDaBusca'
 import { Botao, COR_DE_AVISO, focarBotao, formatarTempo, Secao } from './pecas'
@@ -637,6 +638,8 @@ function Grupos({
   const alternarRosto = useDescoberta((s) => s.alternarRosto)
   const [selecionados, setSelecionados] = useState<number[]>([])
   const [ampliado, setAmpliado] = useState<number | null>(null)
+  // O nome com que as analises chamam o anime: e para ele que a escolha fica guardada.
+  const animeDasAnalises = useGerar((s) => s.palpite?.anime.trim() || s.indice?.anime || '')
 
   const { principais, figurantes } = useMemo(() => arrumar(pronta.grupos, decisao.juntar), [pronta.grupos, decisao.juntar])
   const naTela = useMemo(
@@ -828,6 +831,12 @@ function Grupos({
           {/* "offline" mentia com internet e o nome do anime errado: o motor so diz que nao achou. */}
           {!pronta.online && ' · anime nao achado online'}
         </span>
+        {/* A1: o anime nao achado sozinho (ou o elenco errado): ele escolhe e as sugestoes chegam. */}
+        <BuscarElenco
+          episodioId={pronta.episodioId}
+          anime={animeDasAnalises}
+          principal={!pronta.online || pronta.elenco.length === 0}
+        />
         {selecionados.length > 0 && (
           <span className="enter flex shrink-0 items-center gap-2">
             <span className="tnum text-[11px] text-ink-2">

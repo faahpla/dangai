@@ -107,13 +107,10 @@ def _cache_id_for(bundle) -> str:
     Todas as temporadas dividem o mesmo banco de referências, e é esta mesma
     chave que amarra as temporadas numa pasta só de saída.
     """
-    if bundle.cache_id_override:
-        return bundle.cache_id_override   # banco local (Modo Descoberta)
-    if bundle.franchise_root_id:
-        return f"al{bundle.franchise_root_id}"
-    if bundle.anilist_id:
-        return f"al{bundle.anilist_id}"
-    return f"mal{bundle.mal_id}"
+    # [recap] A regra mora em pipeline_types (sem torch): o elenco_escolhido usa.
+    from .pipeline_types import cache_id_do_bundle
+
+    return cache_id_do_bundle(bundle)
 
 
 #: A partir de quantas cenas um grupo descoberto deixa de ser figurante.
@@ -1741,6 +1738,22 @@ class Pipeline:
             for row in self.db.get_characters_for_anime(anime_id):
                 if row.get("embedding"):
                     known_centroids.append((row["name"], from_bytes(row["embedding"])))
+            # [recap] A1: os nomes que ele batizou quando o anime NAO era achado
+            # online (banco local deste nome) entram com a grafia oficial: os
+            # rostos deles ja sao conhecidos, e nada se perde.
+            local_id = self.db.anime_local_por_titulo(info.anime)
+            if local_id is not None and local_id != anime_id:
+                from .naming import find_token_match
+
+                mapa = dict(getattr(provider, "ultimo_juntado", {}) or {})
+                oficiais = [c.name for c in online_bundle.characters]
+                for row in self.db.get_characters_for_anime(local_id):
+                    if not row.get("embedding"):
+                        continue
+                    nome_ = mapa.get(row["name"]) or find_token_match(row["name"], oficiais) or row["name"]
+                    known_centroids.append((nome_, from_bytes(row["embedding"])))
+                    if nome_ not in oficiais and nome_ not in roster_local:
+                        roster_local.append(nome_)
             cb("fetch_characters", 1.0,
                f"{anime_title} — descoberta reforçando o banco existente")
         else:
@@ -2011,6 +2024,7 @@ class Pipeline:
                 len(positions) < _MIN_CENAS_RELEVANTE or pouco_rosto
             )
             groups.append(DiscoveredGroup(
+                suggestions=[(n, round(float(sv), 4)) for sv, n in ranking[:9]],
                 key=key,
                 n_faces=len(cl.members),
                 n_shots=len(positions),
@@ -2058,7 +2072,8 @@ class Pipeline:
             total_faces=len(observations),
             online=online_bundle is not None,
             roster=(
-                [ch.name for ch in online_bundle.characters]
+                # [recap] A1: o elenco oficial + os batizados que nao estao nele.
+                [ch.name for ch in online_bundle.characters] + roster_local
                 if online_bundle is not None else roster_local
             ),
         )

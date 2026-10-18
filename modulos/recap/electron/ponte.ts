@@ -92,6 +92,8 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     confirmarDescoberta: (jobId, decisao) => invocar(C.confirmarDescoberta, jobId, decisao),
     cancelarDescoberta: (jobId) => invocar(C.cancelarDescoberta, jobId),
     onDescobertaProgresso: (ouvinte) => assinar(C.descobertaProgresso, ouvinte),
+    buscarAnime: (termo) => invocar(C.buscarAnime, termo),
+    escolherAnime: (pedido) => invocar(C.escolherAnime, pedido),
     estadoDoMotorRuntime: () => invocar(C.estadoDoMotorRuntime),
     instalarMotorRuntime: (pedido) => invocar(C.instalarMotorRuntime, pedido),
     cancelarMotorRuntime: () => invocar(C.cancelarMotorRuntime),

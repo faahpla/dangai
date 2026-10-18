@@ -62,6 +62,9 @@ import { fichasDoNome } from '@shared/nomes'
 
 // ===================================================================== numeros
 
+/** A1: quantas sugestoes de nome por grupo (as teclas 1-9). */
+export const SUGESTOES_MAX = 9
+
 /** O motor grava ate 8 recortes por grupo (`reps[:8]` em run_discovery). */
 export const ROSTOS_POR_GRUPO_MAX = 8
 /** Ate 10 fotos viram referencia por NOME (commit_discovery), somando os grupos juntados. */
@@ -149,6 +152,8 @@ export const grupoDoMotorSchema = z.object({
   suggestedSim: z.number().default(0),
   /** Reconhecido com folga (face_clustering.reconhece): o nome vem preenchido. */
   known: z.boolean().default(false),
+  /** A1: os nomes mais parecidos (ate 9), do mais ao menos. As teclas 1-9 da tela. */
+  suggestions: z.array(z.object({ name: z.string(), sim: z.number() })).default([]),
 })
 export type GrupoDoMotor = z.infer<typeof grupoDoMotorSchema>
 
@@ -219,6 +224,12 @@ export const grupoDeRostosSchema = z.object({
    * nunca campo preenchido. null = sem palpite.
    */
   sugestao: z.object({ nome: z.string().min(1), similaridade: z.number() }).nullable(),
+  /**
+   * A1: os nomes mais parecidos com o grupo (ate SUGESTOES_MAX, do mais ao
+   * menos), do elenco e dos ja batizados. As teclas 1-9 escolhem daqui.
+   * Vazio = sem elenco (digitar).
+   */
+  sugestoes: z.array(z.object({ nome: z.string().min(1), similaridade: z.number() })).default([]),
   /** Batizado em outro episodio (`known`): a decisao inicial ja traz o nome. */
   conhecido: z.boolean(),
   /** Figurante (`minor`): fica atras do "Figurantes (N)"; sem nome, e ignorado. */
@@ -292,6 +303,74 @@ export const pedidoDaDescobertaSchema = z.object({
   anime: z.string().trim().min(1).max(200).optional(),
 })
 export type PedidoDaDescoberta = z.infer<typeof pedidoDaDescobertaSchema>
+
+// ===================================================== A1: buscar o elenco
+
+/**
+ * "BUSCAR ELENCO" (A1, pedido do Levi em 18/10): ele digita o nome do anime,
+ * escolhe da lista (com a capa) e o elenco do anime escolhido vira o elenco da
+ * tela: as fotos, as sugestoes de nome dos grupos e, nas proximas analises, o
+ * reconhecimento automatico (a escolha fica guardada para este nome no motor).
+ * O motor busca na AniList, no site do MyAnimeList (sem o Jikan) e na Kitsu
+ * (motor/app/providers/busca_anime.py).
+ */
+export const candidatoDeAnimeSchema = z.object({
+  fonte: z.string(),
+  titulo: z.string().min(1),
+  tituloIngles: z.string().nullable(),
+  anilistId: z.number().int().positive().nullable(),
+  malId: z.number().int().positive().nullable(),
+  kitsuId: z.number().int().positive().nullable(),
+  ano: z.number().int().nullable(),
+  formato: z.string().nullable(),
+  /** A capa no servidor de midia local (a tela so mostra imagem local), ou null. */
+  capa: z.string().nullable(),
+  /** 0..1: o quanto o titulo bate com o que ele digitou. */
+  nota: z.number(),
+})
+export type CandidatoDeAnime = z.infer<typeof candidatoDeAnimeSchema>
+
+/** O que a busca devolve para a tela. `avisos`: fonte fora do ar, em ASCII. */
+export interface BuscaDeAnime {
+  termo: string
+  candidatos: CandidatoDeAnime[]
+  avisos: string[]
+}
+
+/** renderer -> main: ele escolheu este anime para o elenco do episodio. */
+export const pedidoDeElencoSchema = z.object({
+  episodioId: z.string().regex(/^ep_[0-9a-f]{40}$/),
+  /** O nome do anime como as analises chamam (o campo do passo 1, ou o do indice). */
+  anime: z.string().trim().min(1).max(200),
+  escolha: candidatoDeAnimeSchema.pick({ fonte: true, titulo: true, tituloIngles: true, anilistId: true, malId: true, kitsuId: true }),
+})
+export type PedidoDeElenco = z.infer<typeof pedidoDeElencoSchema>
+
+/** O elenco montado. */
+export interface ElencoEscolhido {
+  /** O titulo do anime na fonte. */
+  titulo: string
+  /** Quantos personagens o elenco tem (com os batizados juntados). */
+  personagens: number
+  /** Os nomes batizados antes (banco local) que entraram no elenco. */
+  juntados: string[]
+  /** Os grupos da tela ganharam sugestoes novas. */
+  comSugestoes: boolean
+}
+
+/** A1: as sugestoes do motor ({name, sim}) no formato da tela, sem repetir nome, ate SUGESTOES_MAX. */
+export function sugestoesDoMotor(lista: readonly { name: string; sim: number }[] | undefined): { nome: string; similaridade: number }[] {
+  const vistos = new Set<string>()
+  const saida: { nome: string; similaridade: number }[] = []
+  for (const s of lista ?? []) {
+    const nome = s.name.trim()
+    if (!nome || vistos.has(nome) || !Number.isFinite(s.sim)) continue
+    vistos.add(nome)
+    saida.push({ nome, similaridade: s.sim })
+    if (saida.length >= SUGESTOES_MAX) break
+  }
+  return saida
+}
 
 // ============================================================ estado e eventos
 

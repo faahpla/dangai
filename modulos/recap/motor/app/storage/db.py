@@ -310,6 +310,16 @@ class Database:
             )
             return cur.lastrowid
 
+    def anime_local_por_titulo(self, title: str) -> int | None:
+        """[recap] A1: o anime SEM id online com este titulo (o banco do
+        Reconhecer na mao com o anime nao achado), ou None."""
+        with self.connect() as c:
+            row = c.execute(
+                "SELECT id FROM anime WHERE anilist_id IS NULL AND title = ? COLLATE NOCASE",
+                (title,),
+            ).fetchone()
+            return row["id"] if row else None
+
     def upsert_episode(
         self,
         anime_id: int,

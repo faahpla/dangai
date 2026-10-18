@@ -9,6 +9,7 @@ from typing import Callable
 from ..pipeline_types import AnimeNotFoundError
 from ..storage.anime_folders import resolver_franquia
 from .anilist import AniListAnime, AniListClient, AniListRelation
+from .busca_anime import BuscaDeAnime, Candidato
 from .danbooru import DanbooruClient, character_tag_candidates
 from .jikan import JikanClient
 from .kitsu import KitsuClient
@@ -26,46 +27,6 @@ _FRANCHISE_RELATIONS = {
 # Bump when the cached metadata schema changes so old caches are rebuilt.
 # v4: characters/refs pooled across the whole franchise graph.
 METADATA_VERSION = 4
-
-# Partículas de romaji que fansubs grudam/separam de formas diferentes do
-# título canônico ("dewa Gozaimasu" vs "de wa Gozaimasu" — caso real que
-# derrubava a busca). Cada par gera variantes nas duas direções.
-_PARTICLE_SWAPS = [("dewa", "de wa"), ("niwa", "ni wa"), ("ewa", "e wa")]
-
-
-def _search_variants(anime_name: str, season: int = 1) -> list[str]:
-    """Variantes de busca em ordem de preferência: nome exato (com Season N
-    quando aplicável), trocas de partícula, e truncamentos progressivos do
-    fim (fuzzy do AniList acha 'Futsutsuka na Akujo' mesmo sem o subtítulo).
-    """
-    bases = [anime_name]
-    if season and season > 1:
-        bases.insert(0, f"{anime_name} Season {season}")
-
-    out: list[str] = []
-
-    def add(q: str) -> None:
-        q = " ".join(q.split())
-        if q and q not in out:
-            out.append(q)
-
-    for base in bases:
-        add(base)
-        low = base.lower()
-        for a, b in _PARTICLE_SWAPS:
-            for src, dst in ((a, b), (b, a)):
-                if f" {src} " in f" {low} ":
-                    swapped = re.sub(rf"(?i)\b{src}\b", dst, " ".join(base.split()))
-                    add(swapped)
-
-    # Truncamentos: derruba palavras do fim até sobrar 3 (máx. 3 tentativas
-    # extras — cada query custa uma chamada de API).
-    words = anime_name.split()
-    for cut in range(len(words) - 1, max(2, len(words) - 4), -1):
-        if cut >= 3:
-            add(" ".join(words[:cut]))
-    return out
-
 
 @dataclass
 class CharacterRef:
@@ -132,6 +93,15 @@ def _name_tokens(name: str) -> frozenset[str]:
     return frozenset(re.sub(r"[^a-z0-9 ]+", " ", name.lower()).split())
 
 
+def _bate_com_escolha(bundle: AnimeBundle, esc: Candidato) -> bool:
+    """[recap] O banco guardado e do anime que a pessoa escolheu?"""
+    if esc.anilist_id and (esc.anilist_id == bundle.anilist_id or esc.anilist_id in (bundle.franchise_ids or [])):
+        return True
+    if esc.mal_id and esc.mal_id == bundle.mal_id:
+        return True
+    return bool(esc.kitsu_id) and bundle.cache_id_override == f"kitsu{esc.kitsu_id}"
+
+
 class AnimeProvider:
     """Resolves an anime name into a character list with multiple reference URLs.
 
@@ -149,10 +119,16 @@ class AnimeProvider:
         self.jikan = JikanOuMal(JikanClient(), MalDireto(self.cache_root / "_mal_direto"))
         self.kitsu = KitsuClient()
         self.danbooru = DanbooruClient()
+        # [recap] A1: achar o anime em tres fontes sem o Jikan (busca_anime.py).
+        self.busca = BuscaDeAnime(
+            self.cache_root / "_busca", self.anilist, self.jikan.mal, self.kitsu, jikan=self.jikan
+        )
         # Problemas de fonte na ÚLTIMA resolve() (ex.: MyAnimeList fora do
         # ar). O pipeline lê isto pra avisar o usuário — "tenta de novo mais
         # tarde" só é um bom conselho quando a gente CONFIRMA que foi a fonte.
         self.source_warnings: list[str] = []
+        #: [recap] {nome local: nome online} do ultimo juntar_banco_local.
+        self.ultimo_juntado: dict[str, str] = {}
 
     def close(self) -> None:
         self.anilist.close()
@@ -235,6 +211,11 @@ class AnimeProvider:
                 partial=bool(data.get("partial", False)),
                 missing_gallery=data.get("missing_gallery") or [],
                 fetched_at=data.get("fetched_at"),
+                # [recap] A1: banco sem id da AniList nem do MAL (Kitsu, local):
+                # a pasta e a do proprio cache_id.
+                cache_id_override=(
+                    cache_id if not (data.get("anilist_id") or data.get("mal_id") or data.get("franchise_root_id")) else None
+                ),
             )
         except Exception:
             return None
@@ -317,6 +298,22 @@ class AnimeProvider:
         except OSError:
             pass  # atalho é conveniência: falhar aqui não pode parar a análise
 
+    def esquecer_atalho(self, anime_name: str, season: int) -> None:
+        """[recap] A1: tira nome -> banco do atalho (a pessoa escolheu outro anime
+        no "Buscar elenco"). A proxima resolucao passa pela escolha."""
+        caminho = self._atalho_path()
+        try:
+            dados = json.loads(caminho.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(dados, dict) or self._atalho_chave(anime_name, season) not in dados:
+            return
+        dados.pop(self._atalho_chave(anime_name, season), None)
+        try:
+            caminho.write_text(json.dumps(dados, indent=2, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+
     def _completar_galerias(
         self,
         cache_id: str,
@@ -377,6 +374,140 @@ class AnimeProvider:
         )
         return bundle
 
+    # ------------------------------------------------------------------
+    # [recap] A1: o candidato da busca vira o anime do resto do fluxo, e os
+    # nomes batizados num banco LOCAL entram no banco online.
+    # ------------------------------------------------------------------
+    def _anime_do_candidato(
+        self, cand: Candidato, status: Callable[[str], None]
+    ) -> tuple[AniListAnime | None, int | None]:
+        """(anime, kitsu_id quando SO a Kitsu conhece o anime).
+
+        Achado no MAL ou na Kitsu: o id da AniList vem pelo id do MAL (um
+        pedido, sem ambiguidade) -- e com ele o agrupamento de temporadas."""
+        al_id, mal_id, kitsu_id = cand.anilist_id, cand.mal_id, cand.kitsu_id
+        titulo, ingles, capa = cand.titulo, cand.titulo_ingles, cand.capa
+        if al_id is None and mal_id is None and kitsu_id:
+            try:
+                mal_id = self.kitsu.mal_id_do_anime(kitsu_id)
+            except Exception:  # noqa: BLE001 -- a Kitsu e reserva
+                mal_id = None
+        if al_id is None and mal_id is not None:
+            try:
+                al = self.anilist.get_by_mal_id(mal_id)
+            except Exception:  # noqa: BLE001 -- AniList fora: segue so com o MAL
+                al = None
+            if al is not None:
+                al_id = al.anilist_id
+                titulo = al.titulo or titulo
+                ingles = al.titulo_ingles or ingles
+                capa = capa or al.capa
+                status(f"AniList pelo id do MyAnimeList: {titulo}")
+        if al_id is None and mal_id is None and not kitsu_id:
+            return None, None
+        anime = AniListAnime(id=al_id or 0, mal_id=mal_id, title=titulo, title_english=ingles, cover=capa)
+        return anime, (kitsu_id if (al_id is None and mal_id is None) else None)
+
+    def _bundle_da_kitsu(
+        self, kitsu_id: int | None, title: str, title_en: str | None, max_characters: int
+    ) -> AnimeBundle:
+        chars: list[tuple[str, str | None]] = []
+        if kitsu_id:
+            try:
+                chars = self.kitsu.characters_by_kitsu_id(int(kitsu_id))
+            except Exception:  # noqa: BLE001
+                chars = []
+        vistos: set[str] = set()
+        resolved: list[CharacterRef] = []
+        for nome, img in chars:
+            if not nome or nome.lower() in vistos:
+                continue
+            vistos.add(nome.lower())
+            resolved.append(CharacterRef(mal_id=None, anilist_id=None, name=nome, role="Supporting",
+                                         image_urls=[img] if img else []))
+            if len(resolved) >= max_characters:
+                break
+        return AnimeBundle(
+            anilist_id=None, mal_id=None, title=title, title_english=title_en,
+            characters=resolved, cache_id_override=f"kitsu{kitsu_id}",
+        )
+
+    def _pasta_do_banco(self, cache_id: str) -> Path:
+        return self._meta_path(cache_id).parent
+
+    def juntar_banco_local(
+        self,
+        anime_name: str,
+        cache_id: str,
+        bundle: AnimeBundle,
+        status: Callable[[str], None] | None = None,
+    ) -> dict[str, str]:
+        """Os nomes que ele batizou no banco LOCAL deste nome (o Reconhecer na mao
+        com o anime nao achado online: anime_db/local-<nome>/characters/<nome>/)
+        entram no banco ONLINE do anime, com as fotos dele.
+
+        - nome que e o mesmo de um personagem oficial (mesmas palavras, ou
+          contido em UM nome so: naming.find_token_match) -> as fotos vao para a
+          pasta do oficial, como batismo_<arquivo> (a grafia oficial vence);
+        - nome que nao bate -> uma pasta com o nome dele no banco online (a
+          analise ja le pastas locais fora do elenco: _local_only_characters).
+
+        NUNCA apaga nem move: o banco local fica como esta. Copia so o que falta
+        (pode rodar em toda analise). Devolve {nome local: nome no banco online}.
+        """
+        self.ultimo_juntado = {}
+        if not cache_id or cache_id.startswith("local-"):
+            return {}
+        origem = self._pasta_do_banco(local_cache_id(anime_name)) / "characters"
+        if not origem.is_dir():
+            return {}
+        import shutil
+
+        from ..naming import find_token_match
+        from ..references.reference_store import ReferenceStore
+
+        store = ReferenceStore(self.cache_root.parent)
+        oficiais = [c.name for c in bundle.characters]
+        mapa: dict[str, str] = {}
+        copiadas = 0
+        try:
+            pastas = sorted(origem.iterdir())
+        except OSError:
+            return {}
+        for d in pastas:
+            if not d.is_dir() or d.name.startswith("_"):
+                continue
+            alvo = find_token_match(d.name, oficiais) or d.name
+            destino = store.character_dir(cache_id, alvo)
+            for f in sorted(d.iterdir()):
+                if not f.is_file() or f.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+                    continue
+                novo = destino / f"batismo_{f.name}"
+                if novo.exists():
+                    continue
+                try:
+                    destino.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, novo)
+                    copiadas += 1
+                except OSError:
+                    continue
+            mapa[d.name] = alvo
+        if mapa:
+            marca = self._pasta_do_banco(cache_id) / "juntado_do_local.json"
+            try:
+                marca.parent.mkdir(parents=True, exist_ok=True)
+                marca.write_text(
+                    json.dumps({"de": local_cache_id(anime_name), "nomes": mapa, "quando": _agora()},
+                               indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+            except OSError:
+                pass
+            if status and copiadas:
+                status(f"Nomes batizados juntados ao elenco: {', '.join(sorted(set(mapa.values())))}")
+        self.ultimo_juntado = mapa
+        return mapa
+
     def resolve(
         self,
         anime_name: str,
@@ -397,124 +528,100 @@ class AnimeProvider:
         # Atalho: este nome + temporada já foi resolvido antes? Então o banco
         # está no disco e não há por que consultar ninguém.
         atalho = self._atalho_ler(anime_name, season)
+        # [recap] A1: o anime ESCOLHIDO no "Buscar elenco" ganha do atalho
+        # quando os dois discordam (o atalho e um palpite pelo nome).
+        escolha = self.busca.escolha_guardada(anime_name, season)
         if atalho:
             guardado = self.load_cached(atalho)
-            if guardado is not None and guardado.characters:
+            if guardado is not None and guardado.characters and (
+                escolha is None or _bate_com_escolha(guardado, escolha)
+            ):
                 status(
                     f"Banco já conhecido deste anime "
                     f"({len(guardado.characters)} personagens)."
                 )
+                self.juntar_banco_local(anime_name, atalho, guardado, status)
                 return self._completar_galerias(atalho, guardado, status)
 
-        # For season > 1 we have to disambiguate on AniList, because the
-        # plain search picks the most popular entry (usually S1). AniList
-        # understands "Season N" as a semantic hint. Além disso, variantes
-        # de grafia (dewa/de wa) e truncamentos cobrem títulos de fansub
-        # que não batem com o canônico.
-        queries = _search_variants(anime_name, season)
-
+        # [recap] A1: a busca nas TRES fontes (AniList, o site do MyAnimeList
+        # sem o Jikan, Kitsu), encurtando o nome e ficando com o titulo mais
+        # parecido (busca_anime.py). Antes: so a AniList com o nome inteiro (e
+        # 3 cortes do fim) e o Jikan de reserva -- o Magic Repo Man nao era
+        # achado em nenhuma e o Reconhecer na mao vinha sem nome nenhum.
         anime: AniListAnime | None = None
         used_query: str | None = None
         anilist_error: Exception | None = None
-        for q in queries:
-            status(f"Buscando '{q}' na AniList...")
-            try:
-                anime = self.anilist.search_anime(q)
-            except Exception as e:
-                # AniList API has been down for extended periods (2026 outage);
-                # keep the last error so we can log it before falling back.
-                anilist_error = e
-                anime = None
-            if anime is not None:
-                used_query = q
-                break
+        candidato = self.busca.resolver(anime_name, season, status)
+        if self.busca.erros.get("anilist"):
+            anilist_error = RuntimeError(self.busca.erros["anilist"])
+        kitsu_id_so: int | None = None
+        if candidato is not None:
+            anime, kitsu_id_so = self._anime_do_candidato(candidato, status)
+            used_query = candidato.titulo
 
-        # Jikan (MyAnimeList) fallback when AniList doesn't hit — either the
-        # anime isn't there, or the API itself is down. We lose franchise-graph
-        # traversal (no relations endpoint on Jikan search), but the core
-        # single-season flow keeps working.
         if anime is None:
+            # Última cartada: banco LOCAL criado pelo Modo Descoberta
+            # numa análise anterior deste mesmo anime.
+            local = self.load_cached(local_cache_id(anime_name))
+            if local is not None and local.characters:
+                status(
+                    f"Usando banco local descoberto "
+                    f"({len(local.characters)} personagens batizados)."
+                )
+                local.cache_id_override = local_cache_id(anime_name)
+                return local
+            # "Confira o nome que você digitou" é conselho ruim quando
+            # o problema é a fonte estar fora do ar — e as duas caem
+            # juntas mais do que parece (set/2026: a AniList desligou a
+            # API e o MyAnimeList devolvia 504). Dizer QUAL delas falhou
+            # é o que separa "erro meu" de "espera passar".
+            fora = []
             if anilist_error is not None:
-                status(
-                    f"⚠️ AniList indisponível ({type(anilist_error).__name__}). "
-                    "Usando MyAnimeList (sem agrupamento de temporadas)..."
-                )
-            else:
-                status(
-                    "⚠️ AniList sem resultado. Tentando MyAnimeList "
-                    "(sem agrupamento de temporadas)..."
-                )
-            jikan_hit = None
-            fails_pre_search = self.jikan.failures
-            for q in queries:
-                jikan_hit = self.jikan.search_anime(q)
-                if jikan_hit is not None:
-                    used_query = q
-                    break
-            if jikan_hit is None:
-                # Última cartada: banco LOCAL criado pelo Modo Descoberta
-                # numa análise anterior deste mesmo anime.
-                local = self.load_cached(local_cache_id(anime_name))
-                if local is not None and local.characters:
-                    status(
-                        f"Usando banco local descoberto "
-                        f"({len(local.characters)} personagens batizados)."
-                    )
-                    local.cache_id_override = local_cache_id(anime_name)
-                    return local
-                # "Confira o nome que você digitou" é conselho ruim quando
-                # o problema é a fonte estar fora do ar — e as duas caem
-                # juntas mais do que parece (set/2026: a AniList desligou a
-                # API e o MyAnimeList devolvia 504). Dizer QUAL delas falhou
-                # é o que separa "erro meu" de "espera passar".
-                fora = []
-                if anilist_error is not None:
-                    fora.append(str(anilist_error).rstrip("."))
-                if self.jikan.failures > fails_pre_search:
-                    fora.append("MyAnimeList não respondeu (erro de servidor)")
-                fonte_fora = (
-                    "\n\n⚠️ Detalhe importante: "
-                    + "; ".join(fora)
-                    + ". Pode ser instabilidade da fonte, não o nome que "
-                    "você digitou — vale tentar de novo mais tarde."
-                    if fora
-                    else ""
-                )
-                raise AnimeNotFoundError(
-                    f"Anime '{anime_name}' não foi encontrado na AniList nem no "
-                    "MyAnimeList. Verifique o nome (sem tags de fansub ou "
-                    "qualidade) — ou use o Modo Descoberta pra identificar os "
-                    "personagens pelo próprio episódio." + fonte_fora
-                )
-            # Fake an AniListAnime so the rest of the flow keeps working. We
-            # use the MAL id for anilist_id too — cache paths will look like
-            # `mal<ID>` instead of `al<ID>`, which is fine (documented layout).
-            anime = AniListAnime(
-                id=0,  # sentinel: no AniList id
-                mal_id=jikan_hit.mal_id,
-                title=jikan_hit.title,
-                title_english=jikan_hit.title_english,
-                cover=jikan_hit.cover,
+                fora.append(str(anilist_error).rstrip("."))
+            if self.busca.erros.get("mal"):
+                fora.append("MyAnimeList não respondeu")
+            fonte_fora = (
+                "\n\n⚠️ Detalhe importante: "
+                + "; ".join(fora)
+                + ". Pode ser instabilidade da fonte, não o nome que "
+                "você digitou — vale tentar de novo mais tarde."
+                if fora
+                else ""
+            )
+            raise AnimeNotFoundError(
+                f"Anime '{anime_name}' não foi encontrado na AniList, no "
+                "MyAnimeList nem na Kitsu. Use o 'Buscar elenco' para escolher "
+                "o anime — ou o Modo Descoberta pra identificar os "
+                "personagens pelo próprio episódio." + fonte_fora
             )
         if used_query and used_query != anime_name:
-            status(f"Resolvido: '{used_query}' -> {anime.title}")
+            status(f"Resolvido: '{anime_name}' -> {anime.title}")
         anilist_id = anime.id if anime.id else None
         mal_id = anime.mal_id
         title = anime.title
         title_en = anime.title_english
 
-        cache_id = self._cache_id(anilist_id, mal_id)
+        cache_id = self._cache_id(anilist_id, mal_id) if (anilist_id or mal_id) else f"kitsu{kitsu_id_so}"
         cached = self.load_cached(cache_id)
         if cached is not None and cached.characters:
             status(f"Reusando banco cacheado ({len(cached.characters)} personagens).")
             self._atalho_gravar(anime_name, season, cache_id)
+            self.juntar_banco_local(anime_name, cache_id, cached, status)
             return self._completar_galerias(cache_id, cached, status)
 
-        if mal_id is None:
-            raise RuntimeError(
-                f"Não foi possível obter MAL id para '{anime_name}'. "
-                "O banco de personagens depende de Jikan (MyAnimeList)."
-            )
+        if mal_id is None and anilist_id is None:
+            # [recap] A1: so a Kitsu conhece este anime. O elenco vem dela.
+            bundle = self._bundle_da_kitsu(kitsu_id_so, title, title_en, max_characters)
+            if not bundle.characters:
+                raise AnimeNotFoundError(
+                    f"'{title}' foi achado na Kitsu, mas sem elenco cadastrado. "
+                    "Use o Modo Descoberta pra identificar os personagens."
+                )
+            bundle.fetched_at = _agora()
+            self.save_cache(cache_id, bundle)
+            self._atalho_gravar(anime_name, season, cache_id)
+            self.juntar_banco_local(anime_name, cache_id, bundle, status)
+            return bundle
 
         # 1) Traverse the franchise graph so we pool characters from all
         # related seasons (Dr. Stone S4 alone has almost no refs on MAL;
@@ -524,7 +631,8 @@ class AnimeProvider:
         if anilist_id is not None:
             status("Mapeando temporadas relacionadas...")
             relations = self._collect_franchise(anilist_id, on_status=status)
-            franchise_mal_ids = [mal_id] + [r.mal_id for r in relations if r.mal_id]
+            # [recap] A1: anime so da AniList (sem id do MAL) entra sem o MAL.
+            franchise_mal_ids = [m for m in [mal_id, *(r.mal_id for r in relations)] if m]
             franchise_anilist_ids = sorted({anilist_id, *(r.anilist_id for r in relations)})
             # Use the smallest AniList id as the franchise root — for long-running
             # series that's usually the earliest aired / canonical root.
@@ -547,9 +655,10 @@ class AnimeProvider:
         if cached is not None and cached.characters:
             status(f"Reusando banco cacheado ({len(cached.characters)} personagens).")
             self._atalho_gravar(anime_name, season, cache_id)
+            self.juntar_banco_local(anime_name, cache_id, cached, status)
             return self._completar_galerias(cache_id, cached, status)
 
-        status(f"Baixando personagens de {len(franchise_mal_ids)} temporada(s)...")
+        status(f"Baixando personagens de {max(1, len(franchise_mal_ids))} temporada(s)...")
         self.source_warnings = []
         fails_start = self.jikan.failures
 
@@ -795,6 +904,7 @@ class AnimeProvider:
         bundle.fetched_at = _agora()
         self.save_cache(cache_id, bundle)
         self._atalho_gravar(anime_name, season, cache_id)
+        self.juntar_banco_local(anime_name, cache_id, bundle, status)
         if bundle.partial:
             status(
                 f"Banco salvo PARCIAL: {len(sem_galeria)} personagens sem "

@@ -1590,8 +1590,15 @@ def _discovery_naming_round(
                 # Batizado em outro episódio: o nome vem preenchido. Sem
                 # isto, `suggestedName` é só a dica "parece X".
                 "known": g.known,
+                # [recap] A1: os 9 nomes mais parecidos (teclas 1-9 da tela).
+                "suggestions": [{"name": n, "sim": float(sv)} for n, sv in g.suggestions],
             }
         )
+    # [recap] A1: os centroides dos grupos ficam no disco: escolher o anime no
+    # "Buscar elenco" depois (elenco_escolhido.py) recalcula as sugestoes.
+    from .elenco_escolhido import gravar_grupos
+
+    gravar_grupos(disc.episode_root, [g.key for g in disc.groups], [g.centroid_bytes for g in disc.groups])
 
     _emit(
         {
@@ -1768,6 +1775,14 @@ def main(argv: list[str] | None = None) -> int:
             return _rostos()
         if mode == "cenas":  # [recap] app/cenas.py (lote 2 das ideias)
             return _cenas()
+        if mode == "buscar-anime":  # [recap] A1: app/elenco_escolhido.py
+            from .elenco_escolhido import buscar
+
+            return buscar(args[1] if len(args) > 1 else "", _emit)
+        if mode == "escolher-anime":  # [recap] A1: app/elenco_escolhido.py
+            from .elenco_escolhido import escolher, json_do_argumento
+
+            return escolher(json_do_argumento(args[1]), _emit)
         _emit({"type": "failed", "message": f"modo desconhecido: {mode}"})
         return 2
     except Exception as e:  # noqa: BLE001 — a fronteira do processo

@@ -8,6 +8,7 @@ import {
 } from '../../shared/episodio'
 import { useGerar } from '../store/gerar'
 import { Barra, useRelogio } from './AndamentoDaAnalise'
+import { BuscarElenco } from './BuscarElenco'
 import { BotaoReconhecerNaMao, LinhaDaDescoberta, useDescobertaViva } from './EntradaDaDescoberta'
 import { LinhaDoMotor } from './ResultadoDaBusca'
 import { Botao, Caixinha, CAMPO_PEQUENO, CLASSE_DO_CAMPO, formatarTempo, Secao } from './pecas'
@@ -283,6 +284,8 @@ function Parou({ corte }: { corte: EstadoDoCorte }) {
   const motor = useGerar((s) => s.motor)
   const erro = corte.erro ?? 'O corte parou sem dizer por que.'
   const descobrindo = useDescobertaViva()
+  const episodioId = useGerar((s) => s.indice?.id ?? null)
+  const animeDasAnalises = useGerar((s) => s.palpite?.anime.trim() || s.indice?.anime || '')
   const tentar = (): void => {
     if (!pedindo && !semAnime && !descobrindo) void cortarNoFundo()
   }
@@ -304,6 +307,16 @@ function Parou({ corte }: { corte: EstadoDoCorte }) {
       <LinhaDaDescoberta />
       <div className={['flex flex-wrap items-center gap-2', descobrindo ? 'hidden' : ''].join(' ')}>
         {corte.descoberta === 'anime-nao-encontrado' && <CampoDoAnime onEnter={tentar} />}
+        {/* A1: escolher o anime da lista; o corte recomeca com o elenco dele. */}
+        {semElenco && episodioId && (
+          <BuscarElenco
+            episodioId={episodioId}
+            anime={animeDasAnalises}
+            depois={() => {
+              if (!pedindo && !descobrindo) void cortarNoFundo()
+            }}
+          />
+        )}
         <Botao
           pequeno
           onClick={tentar}

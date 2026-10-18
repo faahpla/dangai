@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join, resolve, sep } from 'node:path'
 import {
   ROSTOS_POR_GRUPO_MAX,
+  sugestoesDoMotor,
   type DescobertaPronta,
   type DiscoveryReadyDoMotor,
   type ElencoDaDescoberta,
@@ -133,6 +134,8 @@ export async function gruposDaTela(
       totalDeRostos: g.faces,
       cenas: g.shots,
       sugestao: nome ? { nome, similaridade: g.suggestedSim } : null,
+      // A1: as teclas 1-9. Sem nome repetido, na ordem do motor.
+      sugestoes: sugestoesDoMotor(g.suggestions),
       // `known` sem nome nao acontece no motor; se vier, nao preenche nada.
       conhecido: g.known && nome !== '',
       figurante: g.minor && !g.known,

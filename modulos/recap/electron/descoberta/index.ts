@@ -12,6 +12,7 @@ import {
   PRAZO_DO_SALVAR_MS,
   progressoDaDescoberta,
   resumoDaDecisao,
+  sugestoesDoMotor,
   type DecisaoDaDescoberta,
   type DescobertaPronta,
   type EstadoDaDescoberta,
@@ -590,6 +591,45 @@ export async function confirmarDescoberta(jobId: string, decisao: DecisaoDaDesco
   atualizar(s, { status: 'salvando', etapa: 'organizando', progresso: null, mensagem: 'Salvando os personagens...', erro: null })
   enviar(s)
   return promessa
+}
+
+/** A1: a pasta do episodio da descoberta aberta deste episodio (os grupos no disco), ou null. */
+export function pastaDaSessao(episodioId: string): string | null {
+  const s = sessao
+  return s && s.episodioId === episodioId && s.pronta ? s.pronta.pastaDoEpisodio : null
+}
+
+/**
+ * A1: o elenco do anime escolhido no "Buscar elenco" entra na descoberta
+ * aberta deste episodio: o elenco com as fotos, o titulo, `online` e, nos
+ * grupos, as sugestoes novas (o palpite do grupo nao conhecido vira a 1a).
+ * Vai pelo evento de sempre com o MESMO jobId: a tela guarda o que ele ja
+ * decidiu. false = nenhuma descoberta deste episodio esperando nomes, ou
+ * nenhuma sugestao nova.
+ */
+export function aplicarElencoNaSessao(
+  episodioId: string,
+  novo: { titulo: string; elenco: DescobertaPronta['elenco']; sugestoes: Record<string, { nome: string; sim: number }[]> },
+): boolean {
+  const s = sessao
+  if (!s || s.episodioId !== episodioId || !s.pronta || s.estado.status !== 'pronta') return false
+  let comSugestoes = false
+  const grupos = s.pronta.grupos.map((g) => {
+    const lista = sugestoesDoMotor((novo.sugestoes[String(g.key)] ?? []).map((x) => ({ name: x.nome, sim: x.sim })))
+    if (lista.length === 0) return g
+    comSugestoes = true
+    const primeira = lista[0]!
+    return { ...g, sugestoes: lista, sugestao: g.conhecido ? g.sugestao : { nome: primeira.nome, similaridade: primeira.similaridade } }
+  })
+  s.pronta = descobertaProntaSchema.parse({
+    ...s.pronta,
+    anime: novo.titulo || s.pronta.anime,
+    online: true,
+    elenco: novo.elenco.length ? novo.elenco : s.pronta.elenco,
+    grupos,
+  })
+  enviar(s)
+  return comSugestoes
 }
 
 /**

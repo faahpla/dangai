@@ -18,6 +18,53 @@ query ($search: String) {
 }
 """
 
+# [recap] A1: a pagina de resultados (nao so o 1o), com os titulos
+# alternativos e os sinonimos, para escolher pelo titulo mais parecido.
+_SEARCH_PAGE_QUERY = """
+query ($search: String, $perPage: Int) {
+  Page(perPage: $perPage) {
+    media(search: $search, type: ANIME) {
+      id
+      idMal
+      title { romaji english native }
+      synonyms
+      format
+      seasonYear
+      coverImage { medium large }
+    }
+  }
+}
+"""
+
+# [recap] A1: o anime pelo id do MyAnimeList (achado no site do MAL ou na Kitsu).
+_BY_MAL_QUERY = """
+query ($idMal: Int) {
+  Media(idMal: $idMal, type: ANIME) {
+    id
+    idMal
+    title { romaji english native }
+    synonyms
+    format
+    seasonYear
+    coverImage { medium large }
+  }
+}
+"""
+
+_BY_ID_QUERY = """
+query ($id: Int) {
+  Media(id: $id, type: ANIME) {
+    id
+    idMal
+    title { romaji english native }
+    synonyms
+    format
+    seasonYear
+    coverImage { medium large }
+  }
+}
+"""
+
 _CHARACTERS_QUERY = """
 query ($id: Int, $page: Int) {
   Media(id: $id) {
@@ -131,6 +178,46 @@ class AniListClient:
             title_english=m["title"].get("english"),
             cover=(m.get("coverImage") or {}).get("large"),
         )
+
+    # ------------------------------------------------------------ [recap] A1
+    @staticmethod
+    def _candidato(m: dict):
+        from .busca_anime import Candidato
+
+        t = m.get("title") or {}
+        titulo = t.get("romaji") or t.get("english") or t.get("native") or f"AniList {m.get('id')}"
+        capa = (m.get("coverImage") or {}).get("large") or (m.get("coverImage") or {}).get("medium")
+        outros = [x for x in [t.get("native"), *(m.get("synonyms") or [])] if x]
+        return Candidato(
+            fonte="anilist",
+            titulo=titulo,
+            titulo_ingles=t.get("english"),
+            anilist_id=m.get("id"),
+            mal_id=m.get("idMal"),
+            titulos=outros,
+            ano=m.get("seasonYear"),
+            formato=m.get("format"),
+            capa=capa,
+        )
+
+    def search_page(self, name: str, per_page: int = 8) -> list:
+        """[recap] Os resultados da busca (Candidato), na ordem da AniList.
+        Levanta com a AniList fora do ar (o _post diz qual erro)."""
+        data = self._post(_SEARCH_PAGE_QUERY, {"search": name, "perPage": per_page})
+        midias = ((data or {}).get("Page") or {}).get("media") or []
+        return [self._candidato(m) for m in midias if m and m.get("id")]
+
+    def get_by_mal_id(self, mal_id: int):
+        """[recap] O anime da AniList com este id do MAL (Candidato), ou None."""
+        data = self._post(_BY_MAL_QUERY, {"idMal": int(mal_id)})
+        m = (data or {}).get("Media")
+        return self._candidato(m) if m and m.get("id") else None
+
+    def get_by_id(self, anilist_id: int):
+        """[recap] O anime da AniList por id (Candidato), ou None."""
+        data = self._post(_BY_ID_QUERY, {"id": int(anilist_id)})
+        m = (data or {}).get("Media")
+        return self._candidato(m) if m and m.get("id") else None
 
     def get_relations(self, anilist_id: int) -> list[AniListRelation]:
         """Return anime-type relations (sequels, prequels, side stories, etc.)."""

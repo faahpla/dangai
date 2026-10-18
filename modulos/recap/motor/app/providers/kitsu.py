@@ -53,6 +53,60 @@ class KitsuClient:
         except (httpx.HTTPError, ValueError):
             return None
 
+    # ------------------------------------------------------------ [recap] A1
+    def buscar_anime(self, termo: str, limite: int = 8) -> list | None:
+        """Os animes da busca por texto (filter[text]) como Candidato, com os
+        titulos (os "abbreviatedTitles" trazem o ingles) e a capa. None = a
+        Kitsu nao respondeu."""
+        from urllib.parse import quote
+
+        from .busca_anime import Candidato
+
+        termo = " ".join((termo or "").split())
+        if not termo:
+            return []
+        data = self._get(
+            f"/anime?filter[text]={quote(termo)}&page[limit]={int(limite)}"
+            "&fields[anime]=canonicalTitle,titles,abbreviatedTitles,posterImage,startDate,subtype"
+        )
+        if data is None:
+            return None
+        saida = []
+        for no in data.get("data") or []:
+            a = no.get("attributes") or {}
+            titulos = a.get("titles") or {}
+            principal = a.get("canonicalTitle") or titulos.get("en_jp") or titulos.get("en")
+            if not principal:
+                continue
+            outros = [t for t in [*titulos.values(), *(a.get("abbreviatedTitles") or [])] if t and t != principal]
+            ingles = titulos.get("en") or titulos.get("en_us")
+            ano = None
+            if isinstance(a.get("startDate"), str) and a["startDate"][:4].isdigit():
+                ano = int(a["startDate"][:4])
+            poster = a.get("posterImage") or {}
+            try:
+                kid = int(no.get("id"))
+            except (TypeError, ValueError):
+                continue
+            saida.append(Candidato(
+                fonte="kitsu", titulo=principal, titulo_ingles=ingles, kitsu_id=kid,
+                titulos=outros, ano=ano, formato=a.get("subtype"),
+                capa=poster.get("medium") or poster.get("small") or poster.get("original"),
+            ))
+        return saida
+
+    def mal_id_do_anime(self, kitsu_id: int) -> int | None:
+        """O id do MyAnimeList pelo mapeamento da Kitsu, ou None."""
+        data = self._get(f"/anime/{int(kitsu_id)}/mappings?page[limit]=20")
+        for no in (data or {}).get("data") or []:
+            a = no.get("attributes") or {}
+            if a.get("externalSite") == "myanimelist/anime":
+                try:
+                    return int(a.get("externalId"))
+                except (TypeError, ValueError):
+                    return None
+        return None
+
     def characters_by_mal_id(
         self, mal_id: int, max_pages: int = 3
     ) -> list[tuple[str, str | None]]:
@@ -74,7 +128,13 @@ class KitsuClient:
         kitsu_id = item["data"].get("id")
         if not kitsu_id:
             return []
+        return self.characters_by_kitsu_id(int(kitsu_id), max_pages=max_pages)
 
+    def characters_by_kitsu_id(
+        self, kitsu_id: int, max_pages: int = 3
+    ) -> list[tuple[str, str | None]]:
+        """[(nome, retrato)] do anime pelo id da propria Kitsu ([recap] A1:
+        o anime achado so na busca da Kitsu, sem mapeamento para o MAL)."""
         out: list[tuple[str, str | None]] = []
         offset = 0
         for _ in range(max_pages):

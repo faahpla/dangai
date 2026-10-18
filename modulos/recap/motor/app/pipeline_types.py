@@ -20,6 +20,18 @@ class AIMode(str, Enum):
     HYBRID = "hybrid"   # send only YOLO face crops
 
 
+def cache_id_do_bundle(bundle) -> str:
+    """[recap] A chave de cache do anime (a da FRANQUIA quando existe). Mesma
+    regra do `_cache_id_for` do pipeline, aqui para quem nao quer o torch."""
+    if getattr(bundle, "cache_id_override", None):
+        return bundle.cache_id_override
+    if getattr(bundle, "franchise_root_id", None):
+        return f"al{bundle.franchise_root_id}"
+    if getattr(bundle, "anilist_id", None):
+        return f"al{bundle.anilist_id}"
+    return f"mal{bundle.mal_id}"
+
+
 class AnimeNotFoundError(RuntimeError):
     """O anime não existe (ou não foi achado) na AniList nem no MAL, e não
     há banco local descoberto. A UI oferece o Modo Descoberta como saída."""
@@ -48,6 +60,9 @@ class DiscoveredGroup:
     # Fica atrás do botão de figurantes na tela: poucas cenas, ou um grupo
     # que é mais nuca e cabelo do que rosto. Decidido no pipeline.
     minor: bool = False
+    # [recap] A1: os nomes mais parecidos (ate 9, do mais ao menos), para as
+    # teclas 1-9 do Reconhecer na mao. (nome, similaridade).
+    suggestions: list[tuple[str, float]] = field(default_factory=list)
 
 
 @dataclass

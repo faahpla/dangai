@@ -3,7 +3,11 @@ import { CANAIS as C } from '../shared/canais'
 import {
   decisaoDaDescobertaSchema,
   pedidoDaDescobertaSchema,
+  pedidoDeElencoSchema,
+  type BuscaDeAnime,
   type DecisaoDaDescoberta,
+  type ElencoEscolhido,
+  type PedidoDeElenco,
   type EstadoDaDescoberta,
   type EventoDaDescoberta,
   type PedidoDaDescoberta,
@@ -18,6 +22,7 @@ import {
   type StatusDoMotor,
 } from '../shared/episodio'
 import { cancelarDescoberta, confirmarDescoberta, descobertaAtual, iniciarDescoberta, type AvisosDaDescoberta } from './descoberta'
+import { buscarAnime, escolherAnime } from './descoberta/elenco'
 import { cancelarCorte, estadoDoCorte, iniciarCorte } from './episodio/corte-fundo'
 import { analisarEpisodio, cancelarAnalise, statusDoMotor } from './motor'
 import { registrarIpcDoMotorRuntime } from './motor-runtime/ipc'
@@ -65,6 +70,12 @@ export function registrarCanaisDoMotor(ctx: ContextoDoModulo): void {
     confirmarDescoberta(idDoJob(jobId), decisaoDaDescobertaSchema.parse(decisao)),
   )
   ctx.handle<[string], boolean>(C.cancelarDescoberta, async (jobId) => cancelarDescoberta(idDoJob(jobId)))
+
+  // A1: "Buscar elenco". O termo vira argumento do motor: string curta, sem controle.
+  ctx.handle<[string], BuscaDeAnime>(C.buscarAnime, async (termo) =>
+    buscarAnime(typeof termo === 'string' ? termo.replace(/[\u0000-\u001f\u007f]/g, ' ') : ''),
+  )
+  ctx.handle<[PedidoDeElenco], ElencoEscolhido>(C.escolherAnime, async (pedido) => escolherAnime(pedidoDeElencoSchema.parse(pedido)))
 }
 
 /** 'ep_' + 40 hex, como o EpisodeIndex.id. Qualquer outra coisa e recusada. */

@@ -281,6 +281,8 @@ class MalDireto:
         # slug do personagem achado no elenco: a URL da galeria fica igual a
         # do site (com "_" no lugar tambem abre, mas e melhor nao depender).
         self._slugs: dict[int, str] = {}
+        #: [recap] A URL final do ultimo pedido (depois dos redirecionamentos).
+        self.ultima_url = ""
 
     def close(self) -> None:
         self.client.close()
@@ -349,6 +351,9 @@ class MalDireto:
                 break
             self._ultimo = time.monotonic()
             self.respondeu = True
+            # [recap] A1: o anime.php?q= com um resultado so redireciona para a
+            # pagina do anime; quem chama olha a URL final.
+            self.ultima_url = str(r.url)
             if r.status_code in (200, 404):
                 self.seguidas = 0
                 return r.status_code, r.text
@@ -430,6 +435,174 @@ class MalDireto:
             return None
         self._cache_gravar(chave, fotos)
         return fotos
+
+
+    # -- [recap] A1: achar o ANIME no site, sem o Jikan ---------------------
+    def buscar_anime(self, termo: str) -> list | None:
+        """Os animes que a busca publica do site acha para `termo` (Candidato).
+
+        1o a busca do campo do site (/search/prefix.json, JSON, so o romaji e a
+        capa); se ela nao responder com JSON, o anime.php?q= (HTML), que com um
+        resultado so redireciona para a pagina do anime. None = o site nao
+        respondeu (quem chama anota a falha); lista vazia = nada achado.
+        """
+        from urllib.parse import quote
+
+        from .busca_anime import Candidato
+
+        termo = " ".join((termo or "").split())
+        if not termo:
+            return []
+        chave = "busca-" + re.sub(r"[^a-z0-9]+", "-", termo.lower()).strip("-")[:80]
+        guardado = self._cache_ler(chave)
+        if isinstance(guardado, list):
+            return [Candidato.de_json(x) for x in guardado]
+
+        cands: list | None = None
+        resp = self._pagina(f"/search/prefix.json?type=anime&keyword={quote(termo)}&v=1")
+        if resp is not None and resp[0] == 200:
+            cands = ler_busca_json(resp[1])
+        if cands is None:
+            resp = self._pagina(f"/anime.php?q={quote(termo)}&cat=anime")
+            if resp is None:
+                return None
+            status, html = resp
+            m = re.search(r"/anime/(\d+)(?:/|$)", self.ultima_url or "")
+            if status == 200 and m and "anime.php" not in (self.ultima_url or ""):
+                # Um resultado so: o site ja abriu a pagina do anime.
+                titulos = ler_titulos_do_anime(html)
+                cands = [
+                    Candidato(fonte="mal", titulo=titulos.get("titulo") or termo, mal_id=int(m.group(1)),
+                              titulo_ingles=titulos.get("ingles"), titulos=titulos.get("outros") or [],
+                              capa=titulos.get("capa"))
+                ] if titulos else []
+            else:
+                cands = ler_busca_html(html) if status == 200 else []
+            if cands is None:
+                self._pagina_estranha(f"busca do anime '{termo}'")
+                return None
+        self._cache_gravar(chave, [c.para_json() for c in cands])
+        return cands
+
+    def titulos_do_anime(self, mal_id: int) -> dict | None:
+        """{titulo, ingles, outros, capa} da pagina do anime (o romaji, o ingles,
+        os sinonimos e o japones). None = nao deu para ler."""
+        chave = f"anime-{int(mal_id)}-titulos"
+        guardado = self._cache_ler(chave)
+        if isinstance(guardado, dict):
+            return guardado
+        resp = self._pagina(f"/anime/{int(mal_id)}")
+        if resp is None:
+            return None
+        status, html = resp
+        if status == 404:
+            return None
+        titulos = ler_titulos_do_anime(html)
+        if not titulos:
+            self._pagina_estranha(f"pagina do anime {mal_id}")
+            return None
+        self._cache_gravar(chave, titulos)
+        return titulos
+
+
+def capa_inteira(url: str | None) -> str | None:
+    """[recap] A capa do anime sem o redimensionamento do CDN (/r/116x180/...)."""
+    if not url:
+        return None
+    url = url.strip().replace("\\/", "/")
+    if url.startswith("//"):
+        url = "https:" + url
+    if "/images/anime/" not in url:
+        return None
+    return _RE_TAMANHO.sub("/", url.split("?", 1)[0])
+
+
+def ler_busca_json(texto: str) -> list | None:
+    """[recap] Os animes do /search/prefix.json. None = nao e o JSON esperado."""
+    from .busca_anime import Candidato
+
+    try:
+        dados = json.loads(texto)
+    except ValueError:
+        return None
+    if not isinstance(dados, dict) or "categories" not in dados:
+        return None
+    saida = []
+    for cat in dados.get("categories") or []:
+        if not isinstance(cat, dict) or cat.get("type") != "anime":
+            continue
+        for it in cat.get("items") or []:
+            try:
+                mid = int(it.get("id"))
+            except (TypeError, ValueError):
+                continue
+            nome = html_unescape(str(it.get("name") or "")).strip()
+            if not nome:
+                continue
+            carga = it.get("payload") or {}
+            ano = carga.get("start_year")
+            saida.append(Candidato(
+                fonte="mal", titulo=nome, mal_id=mid,
+                capa=capa_inteira(it.get("image_url")),
+                ano=int(ano) if isinstance(ano, (int, float)) or (isinstance(ano, str) and ano.isdigit()) else None,
+                formato=(carga.get("media_type") or None),
+            ))
+    return saida
+
+
+_RE_RESULTADO = re.compile(
+    r'href="https://myanimelist\.net/anime/(\d+)/[^"]*"[^>]*>\s*<strong>([^<]+)</strong>', re.IGNORECASE
+)
+
+
+def ler_busca_html(html: str) -> list | None:
+    """[recap] Os resultados da pagina anime.php?q= (lista). None = nao e a pagina."""
+    from .busca_anime import Candidato
+
+    vistos: set[int] = set()
+    saida = []
+    for m in _RE_RESULTADO.finditer(html):
+        mid = int(m.group(1))
+        if mid in vistos:
+            continue
+        vistos.add(mid)
+        saida.append(Candidato(fonte="mal", titulo=html_unescape(m.group(2)).strip(), mal_id=mid))
+    if saida:
+        return saida
+    if re.search(r"No titles that matched your query were found", html, re.IGNORECASE):
+        return []
+    return None
+
+
+def html_unescape(s: str) -> str:
+    import html as _html
+
+    return _html.unescape(s or "")
+
+
+def ler_titulos_do_anime(html: str) -> dict:
+    """[recap] {titulo, ingles, outros, capa} da pagina do anime. {} = nao achou."""
+    out: dict = {}
+    m = re.search(r'<h1 class="title-name[^"]*"[^>]*>\s*<strong>([^<]+)</strong>', html)
+    if m:
+        out["titulo"] = html_unescape(m.group(1)).strip()
+    outros: list[str] = []
+    for rotulo, texto in re.findall(r'<span class="dark_text">\s*([A-Za-z]+):\s*</span>\s*([^<]*)', html):
+        valor = html_unescape(texto).strip()
+        if not valor:
+            continue
+        if rotulo == "English":
+            out["ingles"] = valor
+        elif rotulo == "Synonyms":
+            outros.extend(s.strip() for s in valor.split(",") if s.strip())
+        elif rotulo in ("Japanese", "German", "Spanish", "French"):
+            outros.append(valor)
+    if outros:
+        out["outros"] = outros
+    c = re.search(r'<img[^>]+(?:data-src|src)="(https://cdn\.myanimelist\.net/images/anime/[^"]+)"', html)
+    if c:
+        out["capa"] = capa_inteira(c.group(1))
+    return out if out.get("titulo") or out.get("ingles") else {}
 
 
 class JikanOuMal:

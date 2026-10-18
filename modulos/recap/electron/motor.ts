@@ -369,6 +369,22 @@ function rodarCurto(backend: Backend, motor: Motor, args: string[], limiteMs: nu
   })
 }
 
+/**
+ * [recap] A1: um modo curto do headless no motor do Studio (buscar-anime,
+ * escolher-anime) e os eventos dele. Lanca com a frase para a tela quando o
+ * motor nao esta pronto, falhou ou nao respondeu no prazo. Nao usa a vaga do
+ * motor (`atual`): roda ao lado de um corte ou de uma descoberta esperando nomes.
+ */
+export async function rodarNoMotor(args: string[], limiteMs: number, padrao: string): Promise<Record<string, unknown>[]> {
+  const backend = backendDoStudio()
+  if ('erro' in backend) throw new Error(backend.erro)
+  const saida = await rodarCurto(backend, 'studio', args, limiteMs)
+  if (saida.eventos.some((e) => e.type === 'failed') || (saida.falha && saida.eventos.length === 0)) {
+    throw new Error(explicar(saida, padrao))
+  }
+  return saida.eventos
+}
+
 function explicar(saida: SaidaCurta, padrao: string): string {
   const falhou = saida.eventos.find((e) => e.type === 'failed')
   if (falhou && typeof falhou['message'] === 'string') return `${padrao}: ${ascii(falhou['message'])}`
