@@ -237,10 +237,32 @@ export function fichasDe(nome: string): string[] {
     .map(semVogalLonga)
 }
 
-/** As fichas que identificam a pessoa (3+ letras, nao genericas). */
-export function fichasFortes(nome: string): string[] {
-  return fichasDe(nome).filter((f) => f.length >= 3 && !FICHAS_FRACAS.has(f) && !/^\d+$/.test(f))
+/**
+ * As fichas que identificam a pessoa (3+ letras, nao genericas). `proprios`:
+ * as palavras fracas que NESTE episodio sao o nome de um rosto (o "Guy" do
+ * Magic Repo Man), ver nomesPropriosFracos.
+ */
+export function fichasFortes(nome: string, proprios?: ReadonlySet<string>): string[] {
+  return fichasDe(nome).filter((f) => f.length >= 3 && (!FICHAS_FRACAS.has(f) || !!proprios?.has(f)) && !/^\d+$/.test(f))
 }
+
+/**
+ * Os rostos reconhecidos cujo nome INTEIRO e uma palavra fraca ("Guy", o rival
+ * do Lent no Magic Repo Man): neste episodio a palavra e um nome, e "o Guy" no
+ * roteiro e ele. Onde nenhum rosto tem esse nome, o rotulo continua generico
+ * (o falante "Guy", figurante do Dr. Stone S4 - 37).
+ */
+export function nomesPropriosFracos(indice: Pick<EpisodeIndex, 'planos'>): Set<string> {
+  const saida = new Set<string>()
+  for (const p of indice.planos) {
+    for (const x of p.personagens) {
+      const f = fichasDe(x.nome)
+      if (f.length === 1 && f[0]!.length >= 3 && FICHAS_FRACAS.has(f[0]!)) saida.add(f[0]!)
+    }
+  }
+  return saida
+}
+
 
 /** A ficha do texto bate com a do nome: igual, ou comeco de uma longa ("whyman" em "whymanchan"). */
 function bate(doTexto: string, doNome: string): boolean {
@@ -346,6 +368,7 @@ function mesmaGente(a: readonly string[][], b: readonly string[][]): boolean {
 /** Os planos do episodio com o que o casar usa: parte util, motivo de fora, rostos e falantes. */
 export function prepararPlanos(indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'exclusoes'>): PlanoDoCasar[] {
   const cuePorId = new Map(indice.cues.map((c) => [c.id, c]))
+  const proprios = nomesPropriosFracos(indice)
   return indice.planos.map((plano, pos) => {
     const temFala = plano.cueIds.some((id) => {
       const c = cuePorId.get(id)
@@ -363,8 +386,8 @@ export function prepararPlanos(indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'e
         : temPlaca
           ? 'placa'
           : null
-    const rostos = plano.personagens.map((x) => ({ nome: x.nome, fichas: fichasFortes(x.nome), conf: x.conf }))
-    const falas = plano.falantes.flatMap(falantesDe).map((nome) => ({ nome, fichas: fichasFortes(nome), conf: 1 }))
+    const rostos = plano.personagens.map((x) => ({ nome: x.nome, fichas: fichasFortes(x.nome, proprios), conf: x.conf }))
+    const falas = plano.falantes.flatMap(falantesDe).map((nome) => ({ nome, fichas: fichasFortes(nome, proprios), conf: 1 }))
     // Quem esta na tela para a variedade: os rostos; sem rosto reconhecido, o
     // falante unico do plano (o close do Gen sem rosto reconhecido ainda e o Gen).
     // Figurante sem nome forte ("Scientist A") conta como mais uma pessoa: o
@@ -391,6 +414,8 @@ export interface Citado {
 export interface Elenco {
   /** ficha -> nomes crus que a contem. */
   nomesDaFicha: Map<string, Set<string>>
+  /** As palavras fracas que sao nome de rosto neste episodio (nomesPropriosFracos). */
+  proprios: ReadonlySet<string>
 }
 
 export function elencoDoEpisodio(planos: readonly PlanoDoCasar[], indice: Pick<EpisodeIndex, 'cues'>, eventos: readonly Pick<Evento, 'personagens'>[]): Elenco {
@@ -401,15 +426,17 @@ export function elencoDoEpisodio(planos: readonly PlanoDoCasar[], indice: Pick<E
   }
   for (const c of indice.cues) if (c.falante) for (const f of falantesDe(c.falante)) nomes.add(f)
   for (const e of eventos) for (const n of e.personagens) nomes.add(n)
+  // Os nomes de rosto que sao palavra fraca ("Guy"): as fichas dos rostos ja vem com eles.
+  const proprios = new Set(planos.flatMap((p) => p.rostos.flatMap((r) => r.fichas.filter((f) => FICHAS_FRACAS.has(f)))))
   const nomesDaFicha = new Map<string, Set<string>>()
   for (const nome of nomes) {
-    for (const f of fichasFortes(nome)) {
+    for (const f of fichasFortes(nome, proprios)) {
       const s = nomesDaFicha.get(f) ?? new Set<string>()
       s.add(nome)
       nomesDaFicha.set(f, s)
     }
   }
-  return { nomesDaFicha }
+  return { nomesDaFicha, proprios }
 }
 
 /**
@@ -425,7 +452,7 @@ export function citadosNoTexto(texto: string, elenco: Elenco): Citado[] {
     const fichas = fichasDe(palavra)
     if (fichas.length !== 1) continue
     const f = fichas[0]!
-    if (f.length < 3 || FICHAS_FRACAS.has(f)) continue
+    if (f.length < 3 || (FICHAS_FRACAS.has(f) && !elenco.proprios.has(f))) continue
     const conhecida = elenco.nomesDaFicha.has(f) || [...elenco.nomesDaFicha.keys()].some((k) => bate(f, k))
     if (!conhecida || achados.some((a) => a.ficha === f)) continue
     achados.push({ ficha: f, rotulo: ascii(palavra) })
@@ -437,7 +464,7 @@ export function citadosNoTexto(texto: string, elenco: Elenco): Citado[] {
   }
   // A ficha e de mais de uma pessoa ("Ishigami": Senku e Byakuya).
   const ambigua = (f: string): boolean => {
-    const nomes = [...nomesDe(f)].map(fichasFortes)
+    const nomes = [...nomesDe(f)].map((n) => fichasFortes(n, elenco.proprios))
     return nomes.some((a, i) => nomes.some((b, j) => j > i && !mesmoNome(a, b)))
   }
   // Mesma pessoa citada por duas fichas ("Senku Ishigami"): as duas aparecem
