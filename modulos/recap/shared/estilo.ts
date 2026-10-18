@@ -19,11 +19,20 @@ import { similaridadeDeTexto } from './roteiro'
  *  (c) o teste (teste/v-ideias-roteiro.ts) prova que o nome de um exemplo nao
  *      chega no prompt.
  *
- * O bloco so entra no prompt quando ha estilo: sem estilo, o pedido e o mesmo
- * de antes, byte a byte (e o cache continua valendo).
+ * O bloco so entra no prompt quando ha estilo. Desde 18/10 (pedido A4 do
+ * Levi) ele MANDA no tom e na estrutura: vai no comeco do sistema do
+ * roteirista, antes do tom padrao, e as regras do app que brigavam com ele
+ * (o "Mano" banido, o pedido ao espectador...) saem. As regras fixas ficam so
+ * para o que nao pode quebrar: fidelidade, nomes e formato (prompts.ts).
+ *
+ * As INSTRUCOES tambem passam pela mascara (instrucoesParaPrompt): o guia do
+ * GPT dele (Kiumaz) cita personagens nos exemplos ("o Senku", "o Will").
  */
 
-export const INSTRUCOES_MAX = 4000
+/** O guia do GPT dele tem ~10 mil caracteres; 4 mil (o teto ate a 1.68) cortava no meio. */
+export const INSTRUCOES_MAX = 12000
+/** O teto antigo: instrucoes com exatamente este tamanho foram cortadas pela versao de antes. */
+export const INSTRUCOES_MAX_ANTIGO = 4000
 export const NOME_DO_EXEMPLO_MAX = 40
 export const TEXTO_DO_EXEMPLO_MAX = 8000
 /** Os exemplos que ele cola ou importa ("de 3 a 10"). */
@@ -135,7 +144,7 @@ const ABREVIACOES = new Set(['dr', 'dra', 'sr', 'sra', 'srta', 'prof', 'profa', 
  * palavras que a gente escreve com maiuscula. Pouca coisa: a duvida vai para
  * a mascara (mascarar demais so tira um pouco de sabor do exemplo).
  */
-const NAO_E_NOME = new Set(['eu', 'tv', 'ok', 'ep', 'eps', 'anime', 'deus', 'plot', 'twist'])
+const NAO_E_NOME = new Set(['eu', 'tv', 'ok', 'ep', 'eps', 'anime', 'deus', 'plot', 'twist', 'wikipedia', 'shorts', 'hook', 'build', 'cta', 'youtube', 'tiktok'])
 
 const forma = (palavra: string): string =>
   palavra
@@ -147,6 +156,18 @@ const forma = (palavra: string): string =>
 function maiuscula(palavra: string): boolean {
   const primeira = palavra[0] ?? ''
   return primeira !== primeira.toLowerCase() && primeira === primeira.toUpperCase()
+}
+
+/**
+ * Pode ser nome: maiuscula so na primeira letra. Palavra toda em CAIXA ALTA e
+ * enfase do editor ("um segredo que muda TUDO", "PORCO IMORTAL") e nao entra
+ * na lista -- mas um nome achado em outro lugar continua mascarado em caixa
+ * alta tambem (mascararNomes so olha a primeira letra).
+ */
+function pareceNome(palavra: string): boolean {
+  if (!maiuscula(palavra) || NAO_E_NOME.has(forma(palavra))) return false
+  const letras = palavra.replace(/[^\p{L}]/gu, '')
+  return !(letras.length >= 2 && letras === letras.toUpperCase())
 }
 
 interface Pedaco {
@@ -173,8 +194,26 @@ function pedacos(texto: string): Pedaco[] {
 }
 
 /**
+ * As formas que aparecem com MINUSCULA em algum dos textos: palavra comum que
+ * as vezes vem com maiuscula ("Shorts" no titulo e "anime shorts" nas tags,
+ * o "A" de "Mano, A Frieren"), e nao nome. Sem isto a mascara trocava o "A"
+ * do comeco de toda frase por "[PERSONAGEM n]".
+ */
+function formasMinusculas(textos: readonly string[]): Set<string> {
+  const formas = new Set<string>()
+  for (const texto of textos) {
+    for (const m of texto.matchAll(PALAVRA)) {
+      const primeira = m[0][0] ?? ''
+      if (primeira !== primeira.toUpperCase() && primeira === primeira.toLowerCase()) formas.add(forma(m[0]))
+    }
+  }
+  return formas
+}
+
+/**
  * Os NOMES de um conjunto de textos: toda palavra com maiuscula fora do
- * comeco da frase (a mesma palavra no comeco de outra frase tambem e nome), e
+ * comeco da frase (a mesma palavra no comeco de outra frase tambem e nome),
+ * menos as que aparecem com minuscula em algum dos textos (palavra comum), e
  * os nomes do elenco (cada palavra deles, onde quer que aparecam). Devolve as
  * formas (sem acento, minusculas).
  */
@@ -182,13 +221,53 @@ export function nomesNosTextos(textos: readonly string[], elenco: readonly strin
   const nomes = new Set<string>()
   for (const texto of textos) {
     for (const p of pedacos(texto)) {
-      if (!p.comecoDeFrase && maiuscula(p.palavra) && !NAO_E_NOME.has(forma(p.palavra))) nomes.add(forma(p.palavra))
+      if (!p.comecoDeFrase && pareceNome(p.palavra)) nomes.add(forma(p.palavra))
     }
   }
+  for (const comum of formasMinusculas(textos)) nomes.delete(comum)
   for (const nome of elenco) {
     for (const m of nome.matchAll(PALAVRA)) {
       const f = forma(m[0])
       // "o", "da", "de": parte de nome composto que e palavra comum.
+      if (f.length >= 3 && !NAO_E_NOME.has(f)) nomes.add(f)
+    }
+  }
+  return nomes
+}
+
+/**
+ * Linha de TITULO (quase toda palavra com maiuscula): "Ele Despertou o Maior
+ * Poder da Historia", "PODER SECRETO", "## Estilo de Roteiro". Nas instrucoes
+ * ela nao diz quem e nome -- senao o exemplo de titulo do guia virava mascara.
+ */
+function linhaDeTitulo(linha: string): boolean {
+  const palavras = [...linha.matchAll(PALAVRA)].map((m) => m[0]).filter((p) => p.length >= 3)
+  if (palavras.length < 2) return false
+  return palavras.filter(maiuscula).length / palavras.length >= 0.6
+}
+
+/**
+ * Os nomes do ESTILO INTEIRO, para a mascara dos exemplos e das instrucoes
+ * (o mesmo conjunto e o mesmo numero nos dois): toda palavra com maiuscula
+ * no meio da frase dos exemplos e das instrucoes -- nas instrucoes, fora das
+ * linhas de titulo ("Ele Despertou o Maior Poder" e exemplo de titulo, nao
+ * nome) --, menos as que aparecem com minuscula em algum texto, mais o elenco.
+ * O "Senku" e o "Will" do guia dele saem; o "Kiumaz" (que tambem aparece como
+ * "kiumaz" nas tags) e o "Shorts" ficam.
+ */
+export function nomesDoEstilo(instrucoes: string, exemplos: readonly string[], elenco: readonly string[] = []): Set<string> {
+  const nomes = new Set<string>()
+  const juntar = (texto: string): void => {
+    for (const p of pedacos(texto)) {
+      if (!p.comecoDeFrase && pareceNome(p.palavra)) nomes.add(forma(p.palavra))
+    }
+  }
+  for (const texto of exemplos) juntar(texto)
+  for (const linha of instrucoes.split('\n')) if (!linhaDeTitulo(linha)) juntar(linha)
+  for (const comum of formasMinusculas([instrucoes, ...exemplos])) nomes.delete(comum)
+  for (const nome of elenco) {
+    for (const m of nome.matchAll(PALAVRA)) {
+      const f = forma(m[0])
       if (f.length >= 3 && !NAO_E_NOME.has(f)) nomes.add(f)
     }
   }
@@ -245,6 +324,16 @@ export interface ExemplosNoPrompt {
   cortados: string[]
 }
 
+/** A mascara dividida entre exemplos e instrucoes: o mesmo nome, o mesmo numero. */
+export interface MascaraDoEstilo {
+  nomes: ReadonlySet<string>
+  mapa: Map<string, number>
+}
+
+export function mascaraDoEstilo(estilo: Pick<EstiloDoRecap, 'instrucoes' | 'exemplos'>, elenco: readonly string[] = []): MascaraDoEstilo {
+  return { nomes: nomesDoEstilo(estilo.instrucoes, estilo.exemplos.map((e) => e.texto), elenco), mapa: new Map() }
+}
+
 /**
  * Os exemplos que vao ao prompt: mascarados, do mais novo ao mais antigo,
  * ate o teto de tokens. O primeiro que nao cabe inteiro sai (e os mais
@@ -255,18 +344,14 @@ export function exemplosParaPrompt(
   estilo: EstiloDoRecap,
   elenco: readonly string[] = [],
   teto = TETO_DE_TOKENS_DOS_EXEMPLOS,
+  mascara: MascaraDoEstilo = mascaraDoEstilo(estilo, elenco),
 ): ExemplosNoPrompt {
   const ordem = [...estilo.exemplos].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
-  const nomes = nomesNosTextos(
-    ordem.map((e) => e.texto),
-    elenco,
-  )
-  const mapa = new Map<string, number>()
   const textos: { id: string; texto: string }[] = []
   const cortados: string[] = []
   let tokens = 0
   for (const e of ordem) {
-    const mascarado = mascararNomes(e.texto, nomes, mapa)
+    const mascarado = mascararNomes(e.texto, mascara.nomes, mascara.mapa)
     const custo = estimarTokens(mascarado)
     if (cortados.length > 0 || tokens + custo > teto) {
       if (textos.length === 0) {
@@ -285,20 +370,36 @@ export function exemplosParaPrompt(
 }
 
 /**
- * O BLOCO "ESTILO DO EDITOR" que vai no fim do prompt do roteirista. null =
- * sem estilo (o prompt fica como era). As regras de fidelidade e de formato
- * mandam sobre o estilo: o bloco diz isso.
+ * As INSTRUCOES dele como vao ao prompt: com os nomes de personagem
+ * mascarados (o guia do GPT dele cita "o Senku", "o Will"). Vazio = sem.
+ */
+export function instrucoesParaPrompt(
+  estilo: Pick<EstiloDoRecap, 'instrucoes' | 'exemplos'>,
+  elenco: readonly string[] = [],
+  mascara: MascaraDoEstilo = mascaraDoEstilo(estilo, elenco),
+): string {
+  const texto = estilo.instrucoes.trim()
+  return texto ? mascararNomes(texto, mascara.nomes, mascara.mapa) : ''
+}
+
+/**
+ * O BLOCO "ESTILO DO EDITOR". null = sem estilo. Vai no COMECO do sistema do
+ * roteirista (prompts.ts), antes do tom padrao, e diz que o estilo MANDA no
+ * tom e na estrutura; as regras fixas (fidelidade, nomes, formato) vem
+ * depois e valem com qualquer estilo.
  */
 export function blocoDoEstilo(estilo: EstiloDoRecap, elenco: readonly string[] = []): string | null {
   if (!temEstilo(estilo)) return null
+  const mascara = mascaraDoEstilo(estilo, elenco)
   const linhas = [
-    'ESTILO DO EDITOR — escreva do JEITO dele. O estilo manda no TOM, no RITMO, no vocabulário e em como abrir e fechar; nunca nas regras de fidelidade, de formato e de tamanho acima.',
+    'ESTILO DO EDITOR — ELE MANDA NO TOM E NA ESTRUTURA. Escreva do JEITO dele: como ele abre (o gancho), o contexto, como a tensão cresce, o momento chave, como ele fecha, os conectivos, as gírias e o tamanho das frases. Onde o estilo dele e o tom padrão do app discordarem, vale o DELE. Só as REGRAS FIXAS do fim (fidelidade, nomes e formato) valem acima dele: o estilo muda o jeito de contar, nunca os fatos.',
   ]
-  if (estilo.instrucoes.trim()) linhas.push(`INSTRUÇÕES DELE: ${estilo.instrucoes.trim()}`)
-  const ex = exemplosParaPrompt(estilo, elenco)
+  const instrucoes = instrucoesParaPrompt(estilo, elenco, mascara)
+  if (instrucoes) linhas.push(`INSTRUÇÕES DELE: ${instrucoes}`)
+  const ex = exemplosParaPrompt(estilo, elenco, TETO_DE_TOKENS_DOS_EXEMPLOS, mascara)
   if (ex.textos.length > 0) {
     linhas.push(
-      `ROTEIROS DE EXEMPLO QUE ELE APROVOU (${ex.textos.length}; de OUTROS episódios e de OUTRAS séries, com os nomes trocados por [PERSONAGEM n]). Use SÓ como referência de TOM, RITMO e ESTRUTURA: como ele abre, o tamanho das frases, as gírias, os conectivos, como ele fecha. NUNCA copie deles fatos, nomes, lugares, termos, acontecimentos nem frases inteiras — os fatos vêm só dos ACONTECIMENTOS deste episódio, e os nomes só do ELENCO dele. Nunca escreva "[PERSONAGEM n]" no roteiro.`,
+      `ROTEIROS DE EXEMPLO QUE ELE APROVOU (${ex.textos.length}; de OUTROS episódios e de OUTRAS séries, com os nomes trocados por [PERSONAGEM n]). Use como referência de TOM, RITMO e ESTRUTURA: como ele abre, o tamanho das frases, as gírias, os conectivos, como ele fecha. NUNCA copie deles fatos, nomes, lugares, termos, acontecimentos nem frases inteiras — os fatos vêm só dos ACONTECIMENTOS deste episódio, e os nomes só do ELENCO dele. Nunca escreva "[PERSONAGEM n]" no roteiro.`,
     )
     ex.textos.forEach((t, i) => linhas.push(`--- EXEMPLO ${i + 1} ---`, t.texto))
     linhas.push('--- FIM DOS EXEMPLOS ---')

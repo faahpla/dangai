@@ -29,7 +29,7 @@ function dividirFrase(f: FraseDaIa): FraseDaIa[] {
 }
 
 export function umaFrasePorItem(bruto: RoteiroDaIa): RoteiroDaIa {
-  return { secoes: bruto.secoes.map((s) => ({ ...s, frases: s.frases.flatMap(dividirFrase) })) }
+  return { ...bruto, secoes: bruto.secoes.map((s) => ({ ...s, frases: s.frases.flatMap(dividirFrase) })) }
 }
 
 export function umaFrasePorItemDaSecao(bruto: SecaoDaIa): SecaoDaIa {

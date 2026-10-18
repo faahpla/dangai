@@ -46,7 +46,7 @@ import { lerEstilo } from './estilo'
 import { umaFrasePorItem, umaFrasePorItemDaSecao } from './frases'
 import { estaNoCache, gerarComCache, nomeDoProvedor, paradaDoPasso } from './ia'
 import { acertarNomesDaSecao, acertarNomesDoRoteiro, elencoDoEpisodio, nomesDoElenco, type Elenco } from './nomes'
-import { frasesDoAlvo, promptDaSecao, promptDoRoteiro, SISTEMA_ROTEIRO, SISTEMA_SECAO } from './prompts'
+import { frasesDoAlvo, promptDaSecao, promptDoRoteiro, sistemaDaSecao, sistemaDoRoteiro } from './prompts'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from './rascunho'
 import { ritmoDoRascunho } from '../voz/ritmo'
 
@@ -80,10 +80,13 @@ import { ritmoDoRascunho } from '../voz/ritmo'
  *   gravar versao (a atual e a aprovacao ficam como estavam) e a tela
  *   pergunta. Na segunda tentativa, se ja ha uma resposta boa, fica ela.
  *
- * Lote 1 das ideias do Levi (17/10):
- * - MEU ESTILO: o bloco do estilo (shared/estilo.ts, nomes dos exemplos
- *   mascarados, teto de tokens) vai no fim do prompt do roteiro inteiro e do
- *   "Refazer esta parte". Sem estilo, o prompt e o de sempre;
+ * Lote 1 das ideias do Levi (17/10), com a inversao de 18/10 (A4):
+ * - MEU ESTILO: o bloco do estilo (shared/estilo.ts, nomes dos exemplos e das
+ *   instrucoes mascarados, teto de tokens) vai no COMECO do sistema do roteiro
+ *   inteiro e do "Refazer esta parte" (sistemaDoRoteiro): o tom e a estrutura
+ *   sao dele. A conferencia segue (validarRoteiro com `estilo`): o pedido de
+ *   comentario e o "Mano" dele nao pedem outra resposta, e o tamanho volta so
+ *   no total (a divisao e a dele). Sem estilo: a estrutura de short (A3);
  * - ESCRITOR PAGO (shared/escritor.ts): com Claude Sonnet ou Gemini Pro na
  *   config, SO a escrita vai forcada para ele (os eventos ficam no padrao).
  *   Antes de cada chamada paga: resposta no cache = de graca; senao a conta
@@ -290,7 +293,7 @@ async function gerar(
   const rascunho = soNoHistorico ? guardarNoHistorico(fresco, roteiro, quando) : adicionarVersao(fresco, roteiro, quando)
   gravarRascunho(rascunho)
 
-  avisos.push(...feito.candidato.reparos, ...resumirAvisos(validarRoteiro(roteiro, rascunho.eventos, indice, ctx.ritmo)))
+  avisos.push(...feito.candidato.reparos, ...resumirAvisos(validarRoteiro(roteiro, rascunho.eventos, indice, ctx.ritmo, { estilo: ctx.estilo !== null })))
   return { rascunho, roteiro, doCache, soNoHistorico, avisos, ...(escritor.pago ? { escritor: escritor.rotulo } : {}) }
 }
 
@@ -366,7 +369,8 @@ function motivoDoTamanho(roteiro: Roteiro, palavrasNoTotal: number, c: Contexto)
   for (const s of roteiro.secoes) porPapel.set(s.papel, (porPapel.get(s.papel) ?? 0) + s.frases.length)
   const frases = roteiro.secoes.reduce((n, s) => n + s.frases.length, 0)
   const curto = palavrasNoTotal < faixa.min
-  const desvios = PAPEIS.flatMap((p) => {
+  // Com estilo a divisao e a dele: o recado fala so do total.
+  const desvios = (c.estilo ? [] : PAPEIS).flatMap((p) => {
     const tem = porPapel.get(p) ?? 0
     const quer = pedidas[p]
     // A virada e opcional: sem ela, as frases foram para o desenvolvimento.
@@ -433,7 +437,7 @@ async function escreverInteiro(c: Contexto): Promise<Feito | ParadoNoReserva | P
     const pedidoIa = comEscritor(
       {
         schema: roteiroDaIaSchema,
-        sistema: SISTEMA_ROTEIRO,
+        sistema: sistemaDoRoteiro(c.estilo),
         prompt: promptDoRoteiro({
           indice: c.indice,
           eventos: c.r.eventos,
@@ -475,7 +479,7 @@ async function escreverInteiro(c: Contexto): Promise<Feito | ParadoNoReserva | P
         derivadoDe: null,
       }),
     )
-    const problemas = validarRoteiro(roteiro, c.r.eventos, c.indice, c.ritmo)
+    const problemas = validarRoteiro(roteiro, c.r.eventos, c.indice, c.ritmo, { estilo: c.estilo !== null })
     const erros = problemas.filter((p) => p.nivel === 'erro')
     if (erros.length > 0) {
       ultimoErro = erros[0]!.mensagem
@@ -542,7 +546,7 @@ async function refazerSecao(c: Contexto, secaoId: string): Promise<Feito | Parad
     const pedidoIa = comEscritor(
       {
         schema: secaoDaIaSchema,
-        sistema: SISTEMA_SECAO,
+        sistema: sistemaDaSecao(c.estilo),
         prompt: promptDaSecao({
           indice: c.indice,
           eventos: c.r.eventos,
@@ -591,7 +595,7 @@ async function refazerSecao(c: Contexto, secaoId: string): Promise<Feito | Parad
     }
     // So o que e DESTA parte: uma frase vazia que o Levi deixou em outra parte
     // barra a aprovacao, nao o "Refazer" (antes falhava sempre, gastando 2 chamadas).
-    const daParte = validarRoteiro(trocado.roteiro, c.r.eventos, c.indice, c.ritmo).filter((p) => p.secaoId === secaoId)
+    const daParte = validarRoteiro(trocado.roteiro, c.r.eventos, c.indice, c.ritmo, { estilo: c.estilo !== null }).filter((p) => p.secaoId === secaoId)
     const erros = daParte.filter((p) => p.nivel === 'erro')
     if (erros.length > 0) {
       aviso = `ela veio com problema de formato (${[...new Set(erros.map((e) => e.mensagem))].join('; ')}).`

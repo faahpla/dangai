@@ -104,6 +104,7 @@ function contextoFalso(): ContextoDoModulo {
 interface Chamada {
   etapa: string
   prompt: string
+  sistema: string
   provedor: string | undefined
   modelo: string | undefined
 }
@@ -134,11 +135,13 @@ function roteiroFalso(): RoteiroDaIa {
         visualEn: f.visualEn ?? '',
       })),
     })),
+    titulos: ['Um Titulo de Teste'],
+    textosDeThumb: ['THUMB DE TESTE'],
   }
 }
 
 async function iaFalsa<S extends z.ZodType>(pedido: PedidoJson<S>): Promise<RespostaJson<z.infer<S>>> {
-  chamadas.push({ etapa: pedido.etapa, prompt: pedido.prompt, provedor: pedido.provedor, modelo: pedido.modelo })
+  chamadas.push({ etapa: pedido.etapa, prompt: pedido.prompt, sistema: pedido.sistema, provedor: pedido.provedor, modelo: pedido.modelo })
   if (falhar && pedido.etapa === 'revisao') {
     const nota = falhar
     falhar = null
@@ -207,8 +210,10 @@ async function principal(): Promise<void> {
     confere(bloco.includes('TOM, RITMO e ESTRUTURA') && bloco.includes('NUNCA copie') && bloco.includes('Nunca escreva "[PERSONAGEM n]"'), 'o bloco diz: referencia de tom, nunca fatos nem nomes')
     salvarEstilo(estilo1)
     const g1 = pronto(await gerarRoteiro(RC, { alvoSec: 60 }, nada))
-    const promptComEstilo = chamadas.filter((c) => c.etapa === 'roteiro').at(-1)!.prompt
-    confere(promptComEstilo.includes('ESTILO DO EDITOR') && promptComEstilo.includes('INSTRUÇÕES DELE: Tom de amigo'), 'o prompt do roteiro leva o estilo')
+    // Desde o A4 o estilo mora no SISTEMA (antes do tom padrao); o pedido leva o lembrete.
+    const chamadaComEstilo = chamadas.filter((c) => c.etapa === 'roteiro').at(-1)!
+    const promptComEstilo = `${chamadaComEstilo.sistema}\n${chamadaComEstilo.prompt}`
+    confere(chamadaComEstilo.sistema.includes('ESTILO DO EDITOR') && chamadaComEstilo.sistema.includes('INSTRUÇÕES DELE: Tom de amigo') && chamadaComEstilo.prompt.includes('LEMBRETE'), 'o prompt do roteiro leva o estilo')
     confere(!/Coco|Qifrey|Agathe|Brushbuddy/.test(promptComEstilo), 'NENHUM nome do exemplo chega no prompt do roteiro')
     confere(g1.roteiro.versao === 9 && g1.escritor === undefined, `versao nova v${g1.roteiro.versao}, escrita pelo gratis`)
     // Sem estilo: o prompt de sempre, byte a byte (e o cache de antes continua valendo).

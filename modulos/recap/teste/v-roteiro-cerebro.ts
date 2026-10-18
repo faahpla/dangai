@@ -202,6 +202,9 @@ function roteiroFalso(palavras: number, gancho: string): RoteiroDaIa {
       { papel: 'fechamento', frases: [...frases(resto - Math.round(resto * 0.3) - Math.round(resto * 0.5) - 2, 'e09', 'Fim'), frase('E agora? Vai.', [], { textoDeTela: 'muitas palavras demais aqui' })] },
       { papel: 'virada', frases: [] },
     ],
+    // [A4] O titulo e a thumb vem no mesmo pedido.
+    titulos: ['O Senku Fez Algo Enorme', 'O Plano Final Comecou'],
+    textosDeThumb: ['FEZ ALGO ENORME', 'PLANO FINAL'],
   }
 }
 
@@ -349,9 +352,9 @@ async function principal(): Promise<void> {
     confere(ritmo.origem === 'inicial' && faixa.alvo === 171, `sem voz escolhida: alvo ${faixa.alvo} palavras em 60 s (${ritmo.ritmo.toFixed(2)} p/s)`)
     const pal1 = palavrasDoRoteiro(r1.roteiro)
     confere(contar('roteiro') - antes === 2, '60 palavras na primeira resposta: 1 nova tentativa')
-    confere(new RegExp(`tinha 6\\d palavras faladas em \\d+ frases, e o alvo é ${faixa.alvo} palavras`).test(chamadas.at(-1)!.prompt) && /Faltam frases em: .*desenvolvimento \(tem \d+, o pedido é 7\)/.test(chamadas.at(-1)!.prompt) && chamadas.at(-1)!.prompt.includes('[s1 · gancho]'), 'a tentativa leva a resposta anterior e o motivo (em frases por parte)')
+    confere(new RegExp(`tinha 6\\d palavras faladas em \\d+ frases, e o alvo é ${faixa.alvo} palavras`).test(chamadas.at(-1)!.prompt) && /Faltam frases em: .*desenvolvimento \(tem \d+, o pedido é 6\)/.test(chamadas.at(-1)!.prompt) && chamadas.at(-1)!.prompt.includes('[s1 · gancho]'), 'a tentativa leva a resposta anterior e o motivo (em frases por parte)')
     const pRot = chamadas.at(-1)!.prompt
-    confere(pRot.includes('DIVISÃO (frases por seção): gancho 2, contexto 2, desenvolvimento 7') && pRot.includes('SALTO DE TEMPO: placa na tela (11:31) "A Few Years Later"') && pRot.includes('   (sem cena no episódio)') && /\n   em cena: /.test(pRot), 'prompt do roteiro: frases por parte, salto de tempo, sem cena, em cena')
+    confere(pRot.includes('DIVISÃO (frases por seção, nesta ordem): gancho 2, contexto 3, virada 2, desenvolvimento 6, clímax 3, fechamento 2') && pRot.includes('SALTO DE TEMPO: placa na tela (11:31) "A Few Years Later"') && pRot.includes('   (sem cena no episódio)') && /\n   em cena: /.test(pRot), 'prompt do roteiro: frases por parte, salto de tempo, sem cena, em cena')
     confere(pal1 >= faixa.min && pal1 <= faixa.max, `ficou a que acertou o tamanho: ${pal1} palavras (${faixa.min}-${faixa.max})`)
     confere(r1.roteiro.versao === 1 && r1.rascunho.atual === 1 && r1.roteiro.origem === 'ia' && r1.roteiro.pedido?.tipo === 'inteiro', 'versao 1 da IA, atual')
     confere(r1.roteiro.secoes.every((s) => s.frases.length > 0) && !r1.roteiro.secoes.some((s) => s.papel === 'virada'), 'secao vazia removida')

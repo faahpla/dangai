@@ -149,11 +149,22 @@ export const ROTULO_DO_PAPEL: Record<PapelDaSecao, string> = {
  * Quantas FRASES pedir por papel. O modelo nao conta palavras, conta frases:
  * pedindo so "243 palavras" o de 90 s saia com 149 e, no ajuste, 196 (18
  * frases contra ~25). Frase media de ~9-10 palavras: 18 frases ~ 162, 25 ~ 243.
+ *
+ * Desde 18/10 (A3) a estrutura de short pede a injustica em 3-4 frases e a
+ * virada ANTES da metade (ORDEM_DO_SHORT): o contexto cresce, o desenvolvimento
+ * encolhe, e o total fica o mesmo.
  */
 export const FRASES_POR_PAPEL: Record<AlvoSec, Record<PapelDaSecao, number>> = {
-  60: { gancho: 2, contexto: 2, desenvolvimento: 7, virada: 2, climax: 3, fechamento: 2 },
-  90: { gancho: 2, contexto: 3, desenvolvimento: 11, virada: 3, climax: 4, fechamento: 2 },
+  60: { gancho: 2, contexto: 3, desenvolvimento: 6, virada: 2, climax: 3, fechamento: 2 },
+  90: { gancho: 2, contexto: 4, desenvolvimento: 10, virada: 3, climax: 4, fechamento: 2 },
 }
+
+/**
+ * A ordem da ESTRUTURA DE SHORT (sem estilo): gancho -> injustica (contexto)
+ * -> virada antes da metade -> o que ela causa -> resultado -> gancho final.
+ * Com 60 s a virada cai na 6a das 18 frases.
+ */
+export const ORDEM_DO_SHORT: readonly PapelDaSecao[] = ['gancho', 'contexto', 'virada', 'desenvolvimento', 'climax', 'fechamento']
 
 /**
  * As frases por papel no `ritmo` da voz. Os moldes acima sao do 2,7 p/s (~9
@@ -261,8 +272,17 @@ export const roteiroSchema = z.object({
    * das sugestoes, derivada da versao revisada. Ausente = nao.
    */
   revisada: z.boolean().optional(),
+  /** Saiu do "Melhorar texto" do revisor: 'ia', derivada da versao melhorada. Ausente = nao. */
+  melhorada: z.boolean().optional(),
+  /**
+   * [A4] Titulos e textos de thumbnail que a IA sugeriu junto com o roteiro
+   * (no mesmo pedido). Ausente = roteiro de antes, colado, ou editado (a tela
+   * procura na versao de onde ele saiu: sugestoesDaVersao).
+   */
+  sugestoes: z.object({ titulos: z.array(z.string()), thumbs: z.array(z.string()) }).optional(),
 })
 export type Roteiro = z.infer<typeof roteiroSchema>
+export type SugestoesDoRoteiro = NonNullable<Roteiro['sugestoes']>
 
 // ------------------------------------------------------------------ rascunho
 
@@ -580,6 +600,9 @@ export type FraseDaIa = z.infer<typeof fraseDaIaSchema>
 
 export const roteiroDaIaSchema = z.object({
   secoes: z.array(z.object({ papel: papelDaSecaoSchema, frases: z.array(fraseDaIaSchema) })),
+  /** [A4] 3 titulos e 3 textos de thumb, no mesmo pedido do roteiro. */
+  titulos: z.array(z.string()),
+  textosDeThumb: z.array(z.string()),
 })
 export type RoteiroDaIa = z.infer<typeof roteiroDaIaSchema>
 
@@ -1057,6 +1080,7 @@ export function roteiroDaIa(bruto: RoteiroDaIa, ctx: ContextoDaVersao): { roteir
     }
     secoes.push({ id: `s${secoes.length + 1}`, papel: s.papel, frases })
   }
+  const sugestoes = sugestoesDaIa(bruto)
   return {
     roteiro: {
       versao: ctx.versao,
@@ -1067,9 +1091,66 @@ export function roteiroDaIa(bruto: RoteiroDaIa, ctx: ContextoDaVersao): { roteir
       origem: 'ia',
       derivadoDe: ctx.derivadoDe,
       pedido: ctx.pedido,
+      ...(sugestoes ? { sugestoes } : {}),
     },
     avisos: avisosDosReparos(contar),
   }
+}
+
+/** Quantos titulos e textos de thumb ficam. */
+export const SUGESTOES_MAX = 3
+
+/**
+ * [A4] Os titulos e textos de thumb da resposta: uma linha cada, sem aspas,
+ * markdown nem hashtag, sem repetir, ate SUGESTOES_MAX. O texto de thumb vai
+ * em CAIXA ALTA e so fica com 2 a 5 palavras (a regra do guia dele).
+ * undefined = a resposta nao trouxe nada que sirva.
+ */
+export function sugestoesDaIa(bruto: { titulos?: readonly string[] | null; textosDeThumb?: readonly string[] | null }): SugestoesDoRoteiro | undefined {
+  const limpar = (t: unknown): string =>
+    String(t ?? '')
+      .replace(/[*_`#]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^["“”'‘’]+|["“”'‘’]+$/g, '')
+      .trim()
+  const unicos = (lista: string[]): string[] => {
+    const vistos = new Set<string>()
+    return lista.filter((t) => {
+      const k = semAcentos(t)
+      if (!t || vistos.has(k)) return false
+      vistos.add(k)
+      return true
+    })
+  }
+  const titulos = unicos((bruto.titulos ?? []).map(limpar).filter((t) => t.length <= 100)).slice(0, SUGESTOES_MAX)
+  const thumbs = unicos(
+    (bruto.textosDeThumb ?? [])
+      .map((t) => limpar(t).toLocaleUpperCase('pt-BR'))
+      .filter((t) => t.length <= 40 && contarPalavras(t) >= 2 && contarPalavras(t) <= 5),
+  ).slice(0, SUGESTOES_MAX)
+  return titulos.length > 0 || thumbs.length > 0 ? { titulos, thumbs } : undefined
+}
+
+/**
+ * As sugestoes de titulo e thumb que valem para a versao `versao`: as dela,
+ * ou as da versao mais proxima de onde ela saiu (derivadoDe) -- a edicao, o
+ * "Refazer esta parte" e o revisor nao pedem titulo de novo.
+ */
+export function sugestoesDaVersao(
+  r: { roteiros: readonly Pick<Roteiro, 'versao' | 'derivadoDe' | 'sugestoes'>[] },
+  versao: number,
+): SugestoesDoRoteiro | null {
+  const vistas = new Set<number>()
+  let v: number | null = versao
+  while (v !== null && !vistas.has(v)) {
+    vistas.add(v)
+    const atual = r.roteiros.find((x) => x.versao === v)
+    if (!atual) return null
+    if (atual.sugestoes && (atual.sugestoes.titulos.length > 0 || atual.sugestoes.thumbs.length > 0)) return atual.sugestoes
+    v = atual.derivadoDe
+  }
+  return null
 }
 
 /**
@@ -1110,6 +1191,8 @@ export function trocarSecao(
       origem: 'ia',
       derivadoDe: ctx.derivadoDe,
       pedido: ctx.pedido,
+      // O titulo e a thumb sao do roteiro inteiro: refazer uma parte fica com os da base.
+      ...(base.sugestoes ? { sugestoes: base.sugestoes } : {}),
     },
     avisos: avisosDosReparos(contar),
   }
@@ -1143,6 +1226,7 @@ export type CodigoDoProblema =
   | 'sem-cena'
   | 'tela-fora-do-evento'
   | 'tela-impossivel'
+  | 'lista-de-fatos'
 
 /**
  * Um problema do roteiro. `erro` bloqueia "Aprovar roteiro"; `aviso` so
@@ -1251,6 +1335,55 @@ function nomesNoTexto(texto: string, nomes: readonly NomeNoTexto[]): NomeNoTexto
   return nomes.filter((n) => t.includes(` ${n.forma} `))
 }
 
+/** Abre com conectivo de virada ou de ritmo (texto sem acento): a frase costura, nao e mais um item da lista. */
+const ABRE_COM_VIRADA =
+  /^(e|so que|mas|ate que|ai|entao|o pior|pra piorar|do nada|nisso|olha so|so|porem|agora|depois disso|enquanto isso|so pra|tipo)\b/
+
+/** Frases seguidas no mesmo molde a partir das quais o roteiro vira "lista de acontecimentos". */
+export const LISTA_DE_FATOS_MIN = 5
+
+/**
+ * [A3] Os trechos "LISTA DE ACONTECIMENTOS": LISTA_DE_FATOS_MIN ou mais
+ * frases seguidas (atravessando as partes) no mesmo molde -- afirmacao com
+ * ponto final, de 6 a 14 palavras, sem abrir com conectivo de virada.
+ * Pergunta, exclamacao, reticencia, frase curta de impacto (ate 5 palavras)
+ * ou conectivo quebram o trecho. No Magic Repo Man E01 (v1 do Levi, 18/10)
+ * acha f03-f07 e f14-f21: a expulsao contada como ata. Os ids de cada trecho.
+ */
+export function trechosChapados(roteiro: Pick<Roteiro, 'secoes'>): string[][] {
+  const trechos: string[][] = []
+  let atual: string[] = []
+  const fechar = (): void => {
+    if (atual.length >= LISTA_DE_FATOS_MIN) trechos.push(atual)
+    atual = []
+  }
+  for (const s of roteiro.secoes) {
+    for (const f of s.frases) {
+      const t = f.texto.trim()
+      const n = contarPalavras(t)
+      const chapada = n >= 6 && n <= 14 && /[.]$/.test(t) && !/[?!…]/.test(t) && !ABRE_COM_VIRADA.test(semAcentos(t))
+      if (chapada) atual.push(f.id)
+      else fechar()
+    }
+  }
+  fechar()
+  return trechos
+}
+
+/** "f03-f07, f14-f21": os trechos chapados, curto, para o aviso e para o prompt do "Melhorar texto". */
+export function textoDosTrechos(trechos: readonly (readonly string[])[]): string {
+  return trechos.map((t) => (t.length > 1 ? `${t[0]}-${t[t.length - 1]}` : (t[0] ?? ''))).join(', ')
+}
+
+/** O que muda no validarRoteiro quando ele tem estilo. */
+export interface OpcoesDaValidacao {
+  /**
+   * Com o "Meu estilo" ligado, o tom e dele (A4): pedido de comentario no
+   * fechamento e o "Mano" abrindo nao sao problema (nem pedem outra resposta).
+   */
+  estilo?: boolean
+}
+
 /**
  * Confere um roteiro (da IA ou editado) contra os eventos do rascunho e, se
  * vier, o indice (para conferir a citacao e a cena de cada frase).
@@ -1274,7 +1407,9 @@ export function validarRoteiro(
   indice?: Pick<EpisodeIndex, 'cues'> & Partial<Pick<EpisodeIndex, 'exclusoes' | 'planos'>>,
   /** Palavras por segundo da voz (ritmoDaConfig): o "Curto/Longo" mede o tempo, nao as palavras. */
   ritmo: number = PALAVRAS_POR_SEGUNDO,
+  opcoes: OpcoesDaValidacao = {},
 ): ProblemaDoRoteiro[] {
+  const tomDoApp = opcoes.estilo !== true
   const problemas: ProblemaDoRoteiro[] = []
   const eventoExiste = new Set(eventos.map((e) => e.id))
   const cueExiste = indice ? new Set(indice.cues.map((c) => c.id)) : null
@@ -1341,8 +1476,9 @@ export function validarRoteiro(
 
       if (dividirEmFrases(frase.texto).length > 1) aviso('duas-frases', 'Duas frases: o ponto vira duas cenas')
       if (/^\s*(\.\.\.|…)/.test(frase.texto)) aviso('frase-partida', 'Comeca com reticencias')
-      if (CTA.test(texto)) aviso('cta', 'Pedido de like ou comentario')
-      if (/^(mano|cara)\b/.test(texto)) muletas += 1
+      // Tom: com o estilo dele, o pedido de comentario e o "Mano" abrindo sao do jeito dele.
+      if (tomDoApp && CTA.test(texto)) aviso('cta', 'Pedido de like ou comentario')
+      if (tomDoApp && /^(mano|cara)\b/.test(texto)) muletas += 1
 
       // Termo que o prompt veta pelo nome, sem o evento dizer o mesmo.
       const resumos = semAcentos(citados.map((e) => e.resumo).join(' \n '))
@@ -1414,6 +1550,12 @@ export function validarRoteiro(
     }
   }
   if (muletas > 1) problemas.push({ nivel: 'aviso', codigo: 'muleta', mensagem: `"Mano"/"cara" abrindo ${muletas} frases` })
+  // [A3] Frases seguidas no mesmo molde: o caminho e o "Revisar > Melhorar texto".
+  const chapados = trechosChapados(roteiro)
+  if (chapados.length > 0) {
+    const n = chapados.reduce((t, x) => t + x.length, 0)
+    problemas.push({ nivel: 'aviso', codigo: 'lista-de-fatos', mensagem: `Lista de fatos: ${n} frases iguais (${textoDosTrechos(chapados)})` })
+  }
 
   const palavras = palavrasDoRoteiro(roteiro)
   const faixa = faixaDePalavras(roteiro.alvoSec, ritmo)
@@ -1617,12 +1759,137 @@ export function similaridadeDeTexto(a: string, b: string): number {
 }
 
 /** O texto do modo Texto -> partes (linha em branco) -> frases (ponto final). Parte vazia sai. */
-export function partesDoTexto(texto: string): string[][] {
+function partesPorLinhaEmBranco(texto: string): string[][] {
   return texto
     .replace(/\r\n?/g, '\n')
     .split(/\n[ \t]*\n/)
     .map((parte) => dividirEmFrases(parte))
     .filter((frases) => frases.length > 0)
+}
+
+/**
+ * As partes do texto colado (ou do modo Texto) e as frases de cada uma. Com
+ * os cabecalhos do estilo dele, as partes sao os blocos (partesComPapel); sem,
+ * a linha em branco separa as partes.
+ */
+export function partesDoTexto(texto: string): string[][] {
+  return partesComPapel(texto).map((p) => p.frases)
+}
+
+/** Uma parte do texto e o papel que o cabecalho dela diz. */
+export interface ParteDoTexto {
+  frases: string[]
+  /** O papel do cabecalho. null = sem cabecalho, ou rotulo livre ("MISSAO DA ESTATUA"): vale a posicao. */
+  papel: PapelDaSecao | null
+}
+
+/**
+ * [A4] O ROTULO de um bloco da estrutura dele -> o papel do app: "HOOK" ->
+ * gancho, "CONTEXTO" -> contexto, "BUILD 1" / "CONFLITO" -> desenvolvimento,
+ * "PLOT TWIST" / "REVELACAO" -> virada, "MOMENTO CHAVE" -> climax,
+ * "FECHAMENTO" / "CTA" / "CLIMAX + FECHAMENTO" -> fechamento. Os nomes do app
+ * (gancho, virada...) tambem valem. null = rotulo livre.
+ */
+export function papelDoRotulo(rotulo: string): PapelDaSecao | null {
+  const r = ` ${semAcentos(rotulo).replace(/[^a-z0-9]+/g, ' ').trim()} `
+  if (/ (fechamento|final|cta|desfecho|conclusao|encerramento) /.test(r)) return 'fechamento'
+  if (/ (momento chave|climax|auge|payoff) /.test(r)) return 'climax'
+  if (/ (virada|plot twist|twist|revelacao|reviravolta) /.test(r)) return 'virada'
+  if (/ (build|desenvolvimento|conflito|escalada|complicacao) /.test(r)) return 'desenvolvimento'
+  if (/ (contexto|setup|apresentacao) /.test(r)) return 'contexto'
+  if (/ (hook|gancho|abertura) /.test(r)) return 'gancho'
+  return null
+}
+
+/** Emoji (e o seletor de variacao, a juncao e o keycap que vem com ele). */
+const EMOJI = /[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{20E3}]/gu
+/** O tempo do bloco no cabecalho: "(0–4s)", "| 8–25s", "1:25–1:40". */
+const TEMPO_DO_BLOCO = /\(?\s*\d+(?::\d+)?\s*[–—-]\s*\d+(?::\d+)?\s*(?:s|seg|segundos)?\s*\)?/gi
+
+/** A linha sem negrito, emoji nem o ">" de citacao. */
+function semMarcacao(linha: string): string {
+  return linha
+    .replace(EMOJI, '')
+    .replace(/[*_`]+/g, '')
+    .replace(/^\s*>\s?/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+type LinhaDoTexto =
+  | { tipo: 'nada' }
+  | { tipo: 'cabecalho'; rotulo: string }
+  /** "[TITULO]": a proxima linha de texto e o titulo do video, nao fala. */
+  | { tipo: 'marca-de-titulo' }
+  /** O titulo do roteiro ("## 🎬 ROTEIRO SHORTS"): nao e bloco nem fala. */
+  | { tipo: 'titulo' }
+  | { tipo: 'texto'; texto: string }
+
+function lerLinha(linha: string): LinhaDoTexto {
+  const t = linha.trim()
+  if (!t || /^[-*_=~]{3,}$/.test(t)) return { tipo: 'nada' }
+  const limpa = semMarcacao(t)
+  if (!limpa) return { tipo: 'nada' }
+  const md = /^#{1,6}\s+(.*)$/.exec(t)
+  const colchete = /^\[([^\]]{1,60})\]$/.exec(limpa)
+  let rotulo: string | null = md ? semMarcacao(md[1] ?? '') : colchete ? (colchete[1] ?? '') : null
+  if (rotulo === null) {
+    // A linha inteira e um rotulo conhecido, curto e em caixa alta ("HOOK (0-3s)", "MOMENTO CHAVE:").
+    const semTempo = limpa.replace(TEMPO_DO_BLOCO, ' ').replace(/[:|]+/g, ' ').trim()
+    if (semTempo && semTempo === semTempo.toUpperCase() && contarPalavras(semTempo) <= 4 && papelDoRotulo(semTempo)) rotulo = semTempo
+  }
+  if (rotulo === null) return { tipo: 'texto', texto: limpa }
+  const r = rotulo.replace(TEMPO_DO_BLOCO, ' ').replace(/[|:]+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (/^t[ií]tulo$/i.test(r)) return { tipo: 'marca-de-titulo' }
+  if (/roteiro/i.test(r) && !papelDoRotulo(r)) return { tipo: 'titulo' }
+  return { tipo: 'cabecalho', rotulo: r }
+}
+
+/**
+ * [A4] As partes de um texto com a ESTRUTURA DO ESTILO DELE: os roteiros do
+ * GPT dele (Kiumaz) vem com cabecalhos -- "### **HOOK (0–4s)**", "**[BUILD |
+ * 8–25s]**", "[MOMENTO CHAVE | 25–50s]", "### 🟡 HOOK" -- e o texto de cada
+ * bloco em linhas soltas, com negrito e emoji. Cada cabecalho abre uma parte
+ * com o papel do rotulo (papelDoRotulo); as linhas do bloco se juntam e o
+ * ponto final separa as frases (a regra do Dangai). Cabecalho, "---", o
+ * "[TITULO]" com a linha do titulo e o titulo do roteiro nao viram fala; o
+ * negrito e o emoji saem do texto (vao para a voz e a legenda). Sem cabecalho
+ * nenhum: o de sempre (linha em branco separa as partes, papel pela posicao).
+ */
+export function partesComPapel(texto: string): ParteDoTexto[] {
+  const linhas = texto.replace(/\r\n?/g, '\n').split('\n').map(lerLinha)
+  if (!linhas.some((l) => l.tipo === 'cabecalho')) return partesPorLinhaEmBranco(texto).map((frases) => ({ frases, papel: null }))
+  const partes: ParteDoTexto[] = []
+  let atual: { papel: PapelDaSecao | null; linhas: string[] } | null = null
+  let pularTitulo = false
+  const fechar = (): void => {
+    if (atual) {
+      const frases = dividirEmFrases(atual.linhas.join(' '))
+      if (frases.length > 0) partes.push({ frases, papel: atual.papel })
+    }
+    atual = null
+  }
+  for (const l of linhas) {
+    if (l.tipo === 'nada' || l.tipo === 'titulo') continue
+    if (l.tipo === 'marca-de-titulo') {
+      pularTitulo = true
+      continue
+    }
+    if (l.tipo === 'cabecalho') {
+      fechar()
+      pularTitulo = false
+      atual = { papel: papelDoRotulo(l.rotulo), linhas: [] }
+      continue
+    }
+    if (pularTitulo) {
+      pularTitulo = false
+      continue
+    }
+    atual ??= { papel: null, linhas: [] }
+    atual.linhas.push(l.texto)
+  }
+  fechar()
+  return partes
 }
 
 /** O papel de uma parte sem par no roteiro antigo, pela posicao. */
@@ -1644,7 +1911,9 @@ export function redividirRoteiro(
   opcoes: OpcoesDaRedivisao = {},
 ): Redivisao {
   const casar = opcoes.casar !== false
-  const partes = partesDoTexto(texto)
+  // Com os cabecalhos do estilo dele ("HOOK", "BUILD"...), cada bloco ja traz o papel.
+  const comPapel = partesComPapel(texto)
+  const partes = comPapel.map((p) => p.frases)
   const novas = partes.flatMap((frases, parte) => frases.map((t) => ({ texto: t, parte })))
   const antigas = base.secoes.flatMap((s) => s.frases.map((f) => ({ frase: f, secao: s })))
 
@@ -1726,13 +1995,14 @@ export function redividirRoteiro(
   const secoes: Secao[] = porParte.map((lista, k) => {
     const mesmaPosicao = casar ? base.secoes[k] : undefined
     const eleita = herdadas[k] ?? (mesmaPosicao && !tomadas.has(mesmaPosicao.id) ? mesmaPosicao : null)
+    const doCabecalho = comPapel[k]?.papel ?? null
     if (eleita) {
       tomadas.add(eleita.id)
-      return { id: eleita.id, papel: eleita.papel, frases: lista }
+      return { id: eleita.id, papel: doCabecalho ?? eleita.papel, frases: lista }
     }
     const id = proximoId('s', usadosS)
     usadosS.add(id)
-    return { id, papel: casar && base.secoes.length > 0 ? 'desenvolvimento' : papelPelaPosicao(k, porParte.length), frases: lista }
+    return { id, papel: doCabecalho ?? (casar && base.secoes.length > 0 ? 'desenvolvimento' : papelPelaPosicao(k, porParte.length)), frases: lista }
   })
 
   const casadas = new Set(frases.flatMap((f) => (f.deId ? [f.deId] : [])))

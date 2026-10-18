@@ -273,7 +273,12 @@ function acertarFrases<T extends SecaoDaIa['frases'][number]>(frases: readonly T
 }
 
 export function acertarNomesDoRoteiro(bruto: RoteiroDaIa, elenco: Elenco): RoteiroDaIa {
-  return { secoes: bruto.secoes.map((s) => ({ ...s, frases: acertarFrases(s.frases, elenco) })) }
+  return {
+    ...bruto,
+    secoes: bruto.secoes.map((s) => ({ ...s, frases: acertarFrases(s.frases, elenco) })),
+    // [A4] Os titulos sugeridos tambem com o nome do elenco (o texto de thumb e caixa alta: fica).
+    titulos: (bruto.titulos ?? []).map((t) => acertarNomesNoTexto(t, elenco)),
+  }
 }
 
 export function acertarNomesDaSecao(bruto: SecaoDaIa, elenco: Elenco): SecaoDaIa {

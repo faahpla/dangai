@@ -4,6 +4,7 @@ import {
   APRENDIDOS_OPCOES,
   EXEMPLOS_MAX,
   INSTRUCOES_MAX,
+  INSTRUCOES_MAX_ANTIGO,
   NOME_DO_EXEMPLO_MAX,
   TEXTO_DO_EXEMPLO_MAX,
   novoIdDeExemplo,
@@ -131,7 +132,24 @@ export function AjustesDoRoteiro() {
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <span className="text-[11px] font-medium text-ink-2">Instrucoes</span>
+        <div className="flex min-h-5 flex-wrap items-center gap-2">
+          <span className="text-[11px] font-medium text-ink-2">Instrucoes</span>
+          <span
+            className="tnum text-[11px] text-ink-3"
+            title="O seu guia: o tom e a estrutura dele mandam no roteiro. Vai inteiro no prompt, com os nomes de personagem trocados por [PERSONAGEM n]."
+          >
+            {estilo.instrucoes.length.toLocaleString('pt-BR')}/{INSTRUCOES_MAX.toLocaleString('pt-BR')}
+          </span>
+          {/* A 1.68 cortava em 4 mil: guia com exatamente esse tamanho chegou cortado. */}
+          {estilo.instrucoes.length === INSTRUCOES_MAX_ANTIGO && (
+            <span
+              className={`text-[11px] ${COR_DE_AVISO}`}
+              title={`A versao anterior guardava so ${INSTRUCOES_MAX_ANTIGO.toLocaleString('pt-BR')} caracteres. Cole o guia inteiro de novo.`}
+            >
+              Cortadas: cole de novo
+            </span>
+          )}
+        </div>
         <textarea
           value={estilo.instrucoes}
           onChange={(ev) => mudar((e) => ({ ...e, instrucoes: ev.target.value.slice(0, INSTRUCOES_MAX) }))}
