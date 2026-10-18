@@ -116,7 +116,10 @@ class AnimeProvider:
         # [Studio] O Jikan com o MyAnimeList DIRETO de reserva (mal_direto.py):
         # quando o api.jikan.moe falha, o elenco e as galerias saem das paginas
         # do proprio myanimelist.net, com cache em anime_db/_mal_direto.
-        self.jikan = JikanOuMal(JikanClient(), MalDireto(self.cache_root / "_mal_direto"))
+        self.jikan = JikanOuMal(
+            JikanClient(marca_fora=self.cache_root / "_mal_direto" / "jikan-fora.json"),
+            MalDireto(self.cache_root / "_mal_direto"),
+        )
         self.kitsu = KitsuClient()
         self.danbooru = DanbooruClient()
         # [recap] A1: achar o anime em tres fontes sem o Jikan (busca_anime.py).

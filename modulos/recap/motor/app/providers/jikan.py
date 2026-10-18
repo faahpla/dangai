@@ -30,10 +30,16 @@ class JikanAnime:
     cover: str | None
 
 
+#: [recap] O1: por quanto tempo o "Jikan fora do ar" (sem resposta nenhuma)
+#: vale entre uma analise e outra. Na rede do Levi o api.jikan.moe nao abre
+#: conexao: cada analise pagava os 8 s do prazo de conexao so para descobrir.
+FORA_DO_AR_POR_H = 6
+
+
 class JikanClient:
     """Thin wrapper around Jikan v4. Rate-limit respectful (~3 req/s)."""
 
-    def __init__(self, timeout: float = 30.0, min_interval: float = 0.4) -> None:
+    def __init__(self, timeout: float = 30.0, min_interval: float = 0.4, marca_fora=None) -> None:
         # Accept-Encoding: gzip EXATO — descoberta de produção (jul/2026): o
         # cache nginx do api.jikan.moe guarda variantes por Accept-Encoding.
         # Com "gzip" a resposta vem do cache (até STALE, servida mesmo com o
@@ -67,6 +73,13 @@ class JikanClient:
         # inteira, ate dos pedidos `essencial`, sem retry.
         self.respondeu = False
         self.fora_do_ar = False
+        # [recap] O1: a marca (arquivo) de uma analise anterior que achou o
+        # Jikan fora do ar ha menos de FORA_DO_AR_POR_H horas: nem tenta.
+        self._marca_fora = marca_fora
+        if marca_fora is not None and _marca_recente(marca_fora):
+            self.fora_do_ar = True
+            self.gave_up = True
+            print("[Jikan] fora do ar ha pouco (marca da analise anterior): direto no MyAnimeList.", flush=True)
 
     def close(self) -> None:
         self.client.close()
@@ -128,6 +141,7 @@ class JikanClient:
                 "do ar, desistindo dele nesta analise.",
                 flush=True,
             )
+            _gravar_marca(self._marca_fora)
         elif self.streak >= self.give_up_after and not self.gave_up:
             self.gave_up = True
             print(
@@ -191,3 +205,36 @@ class JikanClient:
             if url:
                 urls.append(url)
         return urls
+
+
+def _marca_recente(marca) -> bool:
+    """[recap] O1: a marca existe e tem menos de FORA_DO_AR_POR_H horas."""
+    import json
+    from datetime import datetime, timedelta, timezone
+    from pathlib import Path
+
+    try:
+        dados = json.loads(Path(marca).read_text(encoding="utf-8"))
+        quando = datetime.fromisoformat(dados["quando"])
+        if quando.tzinfo is None:
+            quando = quando.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - quando < timedelta(hours=FORA_DO_AR_POR_H)
+    except Exception:  # noqa: BLE001 -- sem marca (ou torta) = tenta o Jikan
+        return False
+
+
+def _gravar_marca(marca) -> None:
+    import json
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    if marca is None:
+        return
+    try:
+        Path(marca).parent.mkdir(parents=True, exist_ok=True)
+        Path(marca).write_text(
+            json.dumps({"quando": datetime.now(timezone.utc).isoformat(timespec="seconds")}),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass

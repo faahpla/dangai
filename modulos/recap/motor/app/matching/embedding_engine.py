@@ -70,6 +70,14 @@ class EmbeddingEngine:
         return self._forward(torch.stack(tensors))
 
     @torch.no_grad()
+    def embed_prontos(self, tensors: list) -> np.ndarray:
+        """[recap] O1: os vetores de tensores JA preparados (self.preprocess),
+        para quem prepara em paralelo. O mesmo _forward do embed_images."""
+        if not tensors:
+            return np.zeros((0, self._dim()), dtype=np.float32)
+        return self._forward(torch.stack(tensors))
+
+    @torch.no_grad()
     def embed_texts(self, texts: list[str]) -> np.ndarray:
         """Frases no MESMO espaço das imagens (L2-normalizado).
 

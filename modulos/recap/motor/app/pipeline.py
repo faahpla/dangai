@@ -161,6 +161,216 @@ def _noop(stage: str, frac: float, msg: str) -> None:
     pass
 
 
+def _so_na_thread_principal(cb: ProgressCb) -> ProgressCb:
+    """[recap] O1: o aviso dos modelos ("Baixando modelo CLIP...") vai para a
+    tela so quando vem da thread principal; da previa (por tras, durante o
+    corte) fica so no log -- a etapa da tela nao pula para tras."""
+    import threading
+
+    def aviso(stage: str, frac: float, msg: str) -> None:
+        print(f"[modelos] {msg}", flush=True)
+        if threading.current_thread() is threading.main_thread():
+            cb(stage, frac, msg)
+
+    return aviso
+
+
+# ---------------------------------------------------------------------------
+# [recap] O1: o que roda POR TRAS durante a analise, sem mudar o resultado.
+# ---------------------------------------------------------------------------
+class _Deteccao:
+    """A deteccao dos cortes numa thread (daemon: um cancelamento ou um erro no
+    elenco nao segura o processo). O progresso fica num numero que o
+    _prepare_shots le e manda para a tela quando chega a vez dela."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.parar = threading.Event()
+        self.feito = threading.Event()
+        self.fracao = 0.0
+        self.shots: list[ShotBounds] | None = None
+        self.erro: BaseException | None = None
+
+    @classmethod
+    def comecar(cls, fonte: Path, cfg) -> "_Deteccao":
+        import threading
+
+        d = cls()
+
+        def progresso(f: float) -> None:
+            d.fracao = f
+            if d.parar.is_set():
+                raise _DeteccaoParada()
+
+        def rodar() -> None:
+            try:
+                d.shots = detect_shots(
+                    fonte,
+                    min_content_val=cfg.scene_min_content,
+                    adaptive_ratio=cfg.scene_adaptive_ratio,
+                    min_seconds=cfg.min_shot_seconds,
+                    on_progress=progresso,
+                )
+            except BaseException as e:  # noqa: BLE001 -- quem espera decide
+                d.erro = e
+            finally:
+                d.feito.set()
+
+        threading.Thread(target=rodar, name="deteccao", daemon=True).start()
+        return d
+
+    def esperar(self, cb: ProgressCb) -> list[ShotBounds] | None:
+        """Os cortes (None = a deteccao por tras falhou: quem chama detecta de
+        novo). O cancelamento chega pelo cb, como sempre."""
+        try:
+            while not self.feito.wait(0.25):
+                f = self.fracao
+                cb("detect_shots", f, f"Analisando mudanças de cena... {int(f * 100)}%")
+        except BaseException:
+            self.parar.set()
+            raise
+        if self.erro is not None or self.shots is None:
+            if self.erro is not None and not isinstance(self.erro, _DeteccaoParada):
+                print(f"[CorteCenas] deteccao por tras falhou ({self.erro}); de novo aqui.", flush=True)
+            return None
+        return self.shots
+
+
+class _DeteccaoParada(Exception):
+    pass
+
+
+class _CcipPorTras:
+    """A segunda opiniao (CCIP, onnxruntime na CPU) carregando por tras desde o
+    comeco da analise, e mais duas sessoes para embedar os rostos em paralelo
+    (medido: 1 sessao 83 ms/rosto, 3 sessoes x 4 threads 62 ms; os vetores
+    saem iguais)."""
+
+    SESSOES = 3
+
+    def __init__(self) -> None:
+        self._futuro = None
+        self._extras: list | None = None
+
+    @classmethod
+    def comecar(cls, cfg) -> "_CcipPorTras":
+        from concurrent.futures import ThreadPoolExecutor
+
+        from .matching.ccip import CcipEngine
+
+        c = cls()
+
+        def subir():
+            e = CcipEngine(threads=4)
+            _ = e.disponivel  # carrega as sessoes (e baixa na 1a vez)
+            return e
+
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ccip")
+        c._futuro = pool.submit(subir)
+        pool.shutdown(wait=False)
+        return c
+
+    def engine(self):
+        try:
+            return self._futuro.result()
+        except Exception:  # noqa: BLE001
+            from .matching.ccip import CcipEngine
+
+            return CcipEngine()
+
+    def motores(self, principal) -> list:
+        """A sessao principal e mais SESSOES-1 (com menos threads cada)."""
+        if self._extras is None:
+            from .matching.ccip import CcipEngine
+
+            extras = []
+            for _ in range(self.SESSOES - 1):
+                e = CcipEngine(threads=4)
+                if e.disponivel:
+                    extras.append(e)
+            self._extras = extras
+        return [principal, *self._extras]
+
+
+def _embed_em_paralelo(motores: list, rostos_por_pos: dict) -> dict:
+    """{pos: vetores CCIP dos rostos da cena}, as cenas divididas entre as
+    sessoes. Cada cena e embedada inteira numa sessao, em lote de 1 (o mais
+    rapido na CPU e o mesmo numero de qualquer lote)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    itens = [(pos, rostos) for pos, rostos in rostos_por_pos.items() if rostos]
+    if not itens:
+        return {}
+    grupos = [itens[i::len(motores)] for i in range(len(motores))]
+
+    def fazer(args):
+        motor, lote = args
+        return {pos: motor.embed(rostos, batch=1) for pos, rostos in lote}
+
+    saida: dict = {}
+    with ThreadPoolExecutor(max_workers=len(motores)) as pool:
+        for parte in pool.map(fazer, zip(motores, grupos)):
+            saida.update(parte)
+    return saida
+
+
+class _Previa:
+    """A previa das features do reconhecimento enquanto o NVENC corta: comeca
+    quando os keyframes ficam prontos (cut_all_shots chama `comecar`), numa
+    thread com os modelos da analise. `terminar` espera e devolve o cache."""
+
+    def __init__(self, pipeline: "Pipeline", get_engine, get_face_det, feat_meta: dict) -> None:
+        import threading
+
+        self.pipeline = pipeline
+        self.get_engine = get_engine
+        self.get_face_det = get_face_det
+        self.feat_meta = feat_meta
+        self.parar = threading.Event()
+        self.thread = None
+        self.cache: FeatureCache | None = None
+        self.feitas = 0
+        #: As features ficaram prontas.
+        self.features_prontas = threading.Event()
+
+    def comecar(self, metadata_dir: Path, shots: list, kfs_por_idx: dict) -> None:
+        import threading
+
+        if self.thread is not None:
+            return
+        self.cache = FeatureCache(metadata_dir / "face_cache.npz", self.feat_meta)
+        ordem = [list(kfs_por_idx.get(s.idx, [])) for s in shots]
+
+        def rodar() -> None:
+            import time as _t
+
+            t0 = _t.perf_counter()
+            try:
+                self.feitas = self.pipeline._previa_das_features(
+                    [k for k in ordem if k], self.cache, self.get_engine, self.get_face_det, self.parar
+                )
+                print(f"[CorteCenas] previa das features: {self.feitas} cenas em "
+                      f"{_t.perf_counter() - t0:.1f}s (durante o corte)", flush=True)
+            except Exception as e:  # noqa: BLE001 -- a analise calcula o que faltar
+                print(f"[CorteCenas] previa das features falhou: {e}", flush=True)
+                return
+            finally:
+                self.features_prontas.set()
+
+        self.thread = threading.Thread(target=rodar, name="previa", daemon=True)
+        self.thread.start()
+
+    def parar_ja(self) -> None:
+        self.parar.set()
+
+    def terminar(self) -> FeatureCache | None:
+        if self.thread is not None:
+            self.features_prontas.wait()
+            self.thread.join()
+        return self.cache
+
+
 class Pipeline:
     def __init__(self, config: Config) -> None:
         self.cfg = config
@@ -206,6 +416,13 @@ class Pipeline:
         # do cache em ~0s (ver o disjuntor e o banco parcial na v1.8.1).
         fonte = "TMDB" if cfg.media_kind == "live" else "AniList + Jikan"
         cb("fetch_characters", -1.0, f"Consultando {fonte}...")
+        # [recap] O1: a deteccao dos cortes (CPU) comeca JA, por tras, enquanto o
+        # elenco (rede) e consultado; o _prepare_shots espera por ela. A segunda
+        # opiniao (CCIP, ~1-8 s para subir) tambem sobe por tras.
+        deteccao = self._deteccao_por_tras(info)
+        self._ccip_por_tras = _CcipPorTras.comecar(cfg) if (
+            cfg.ccip_veto and cfg.media_kind != "live" and not use_ai_recognition
+        ) else None
         provider = _provider_para(cfg)
         # Ano e "é série?" só existem no TMDB — o AniList não tem onde pôr.
         extra = (
@@ -224,6 +441,10 @@ class Pipeline:
                 season=info.season,
                 **extra,
             )
+        except BaseException:
+            if deteccao is not None:
+                deteccao.parar.set()
+            raise
         finally:
             provider.close()
         # Fonte fora do ar? Guarda pra avisar — no progresso agora e, se a
@@ -253,9 +474,23 @@ class Pipeline:
                 flush=True,
             )
 
-        episode_root, metadata_dir, cut_results = self._prepare_shots(
-            info, cb, pasta_anime
-        )
+        # [recap] O1: os modelos sobem uma vez so, e a previa das features
+        # (YOLO + CLIP) roda enquanto os clipes ainda estao sendo cortados.
+        get_engine, get_face_det = self._lazy_models(_so_na_thread_principal(cb))
+        feat_meta = self._feature_meta()
+        previa = _Previa(self, get_engine, get_face_det, feat_meta) if (
+            not use_ai_recognition and not cfg.skip_credit_shots
+        ) else None
+        try:
+            episode_root, metadata_dir, cut_results = self._prepare_shots(
+                info, cb, pasta_anime, deteccao=deteccao,
+                ao_ter_keyframes=previa.comecar if previa else None,
+            )
+        except BaseException:
+            if previa:
+                previa.parar_ja()
+            raise
+        kf_cache_previo = previa.terminar() if previa else None
         # Só depois do corte dar certo: uma análise que morreu no meio não
         # deve deixar combinação de pasta pra trás.
         pastas.remember(info.anime, pasta_anime, cache_id)
@@ -371,12 +606,11 @@ class Pipeline:
         # 5) Embeddings — modelos LAZY: com os caches de features cheios
         # (reanálise típica), nem o CLIP nem o YOLO chegam a ser carregados
         # e a análise vira só a matemática do matcher.
-        get_engine, get_face_det = self._lazy_models(cb)
-        feat_meta = self._feature_meta()
+        # [recap] O1: os mesmos modelos da previa (lá em cima).
         ref_cache = FeatureCache(
             ref_store.anime_dir(cache_id) / "ref_features.npz", feat_meta
         )
-        kf_cache = FeatureCache(metadata_dir / "face_cache.npz", feat_meta)
+        kf_cache = kf_cache_previo or FeatureCache(metadata_dir / "face_cache.npz", feat_meta)
 
         db_chars = {c["name"]: c for c in self.db.get_characters_for_anime(anime_id)}
         db_por_id = {c["id"]: c for c in db_chars.values()}  # [Studio]
@@ -573,52 +807,11 @@ class Pipeline:
             # que faltam. boxes (brutos) e embeddings (crops com padding)
             # ficam pareados 1:1 — é o que permite rematerializar os crops
             # dos duvidosos depois sem guardar JPEG nenhum.
-            feats: dict[Path, tuple[np.ndarray, np.ndarray | None]] = {}
-            missing: list[Path] = []
-            for kf_path in kfs:
-                kf_total += 1
-                boxes = kf_cache.get(kf_path, "boxes")
-                embs_c = kf_cache.get(kf_path, "embs")
-                if boxes is not None and (len(boxes) == 0 or embs_c is not None):
-                    kf_hits += 1
-                    feats[kf_path] = (boxes, embs_c)
-                else:
-                    missing.append(kf_path)
-            if missing:
-                good = [(p, _img(p)) for p in missing]
-                good = [(p, im) for p, im in good if im is not None]
-                if good:
-                    batch = get_face_det().crop_faces_batch(
-                        [im for _, im in good], pad=cfg.face_crop_padding
-                    )
-                    flat: list[np.ndarray] = []
-                    spans: list[tuple[Path, list, int]] = []
-                    for (p, _im), (crops, kept) in zip(good, batch):
-                        spans.append((p, kept, len(crops)))
-                        flat.extend(crops)
-                    embs_all = (
-                        get_engine().embed_images(flat)
-                        if flat
-                        else np.zeros((0, 1), dtype=np.float32)
-                    )
-                    if flat and len(embs_all) != len(flat):
-                        # Pareamento quebrou — refaz keyframe a keyframe
-                        # (caro, mas raro) pra não gravar cache torto.
-                        for (p, _im), (crops, kept) in zip(good, batch):
-                            e = (
-                                get_engine().embed_images(crops)
-                                if crops
-                                else np.zeros((0, 1), dtype=np.float32)
-                            )
-                            if len(e) != len(kept):
-                                continue
-                            self._store_kf(kf_cache, feats, p, kept, e)
-                    else:
-                        off = 0
-                        for p, kept, n_crops in spans:
-                            e = embs_all[off:off + n_crops]
-                            off += n_crops
-                            self._store_kf(kf_cache, feats, p, kept, e)
+            # [recap] O1: o mesmo calculo agora mora em _features_do_shot e,
+            # com a previa (_previa_das_features), ja vem do cache aqui.
+            feats, h_, t_ = self._features_do_shot(kfs, kf_cache, get_engine, get_face_det, _img)
+            kf_hits += h_
+            kf_total += t_
 
             # Per-keyframe face-based assignments. Tracking votes across
             # keyframes lets us filter out single-frame cameos (a character
@@ -1300,7 +1493,9 @@ class Pipeline:
             # barra fica parada num "conferindo" que na verdade é download.
             cb("second_pass", -1.0,
                "Carregando a segunda opinião (só baixa na primeira vez)...")
-            engine = CcipEngine()
+            # [recap] O1: o modelo ja subiu por tras (_CcipPorTras), no comeco.
+            por_tras = getattr(self, "_ccip_por_tras", None)
+            engine = por_tras.engine() if por_tras is not None else CcipEngine()
             if not engine.disponivel:
                 return None
             juiz = CcipJuiz(engine)
@@ -1310,7 +1505,9 @@ class Pipeline:
         #    partir dos boxes que o cache de refs já guarda.
         alvos = {cid for _, cid, _ in apertadas}
         for e in entries:
-            if e.id not in alvos:
+            # [recap] O1: personagem ja registrado (a 1a chamada) tem os MESMOS
+            # rostos de referencia: nao embeda de novo.
+            if e.id not in alvos or juiz.conhece(e.id):
                 continue
             rostos: list[np.ndarray] = []
             for p in refs_per_char.get(e.name, []):
@@ -1328,16 +1525,35 @@ class Pipeline:
 
         # 3) Julga. Os rostos da cena são rematerializados dos mesmos boxes.
         por_pos = {sf.pos: sf for sf in shot_faces}
+        # [recap] O1: os vetores dos rostos de cada cena, UMA vez por cena (a
+        # cena conferida para dois personagens, ou nas duas chamadas, nao
+        # embeda de novo) e em 3 sessoes em paralelo. Vetor por vetor, igual.
+        vetores_da_cena = getattr(juiz, "_vetores_da_cena", None)
+        if vetores_da_cena is None:
+            vetores_da_cena = {}
+            juiz._vetores_da_cena = vetores_da_cena
+        faltam = sorted({
+            pos for pos, cid, _ in apertadas
+            if pos not in vetores_da_cena and pos in por_pos and juiz.conhece(cid)
+        })
+        if faltam:
+            rostos_por_pos = {
+                pos: self._crops_de(kf_cache, por_pos[pos].face_refs, cfg.face_crop_padding,
+                                    cfg.ccip_max_faces)
+                for pos in faltam
+            }
+            por_tras = getattr(self, "_ccip_por_tras", None)
+            motores = por_tras.motores(engine) if por_tras is not None else [engine]
+            vetores_da_cena.update(_embed_em_paralelo(motores, rostos_por_pos))
         derrubadas = 0
         for pos, cid, conf in apertadas:
             sf = por_pos.get(pos)
             if sf is None or not juiz.conhece(cid):
                 continue
-            rostos = self._crops_de(kf_cache, sf.face_refs, cfg.face_crop_padding,
-                                    cfg.ccip_max_faces)
-            if not rostos:
+            vetores = vetores_da_cena.get(pos)
+            if vetores is None or not len(vetores):
                 continue
-            ok, dif = juiz.aprova(engine.embed(rostos), cid)
+            ok, dif = juiz.aprova(vetores, cid)
             if ok:
                 continue
             nome = por_id[cid].name
@@ -2226,8 +2442,50 @@ class Pipeline:
             refs_dir=str(store.anime_dir(result.cache_id) / "characters"),
         )
 
+    def _deteccao_por_tras(self, info: EpisodeInfo) -> "_Deteccao | None":
+        """[recap] O1: comeca a deteccao dos cortes numa thread, antes de a pasta
+        do episodio estar decidida (ela depende do elenco). None quando o corte
+        ja esta no cache da pasta provavel (a de sempre deste nome)."""
+        cfg = self.cfg
+        try:
+            pastas = AnimeFolderStore(cfg.cache_path)
+            provavel = pastas.decide(
+                typed=info.anime,
+                explicit=info.output_folder,
+                franchise_key=pastas.franchise_for_name(info.anime, info.season, cfg.cache_path),
+            )
+            bounds = cfg.output_path / (provavel or sanitize(info.anime)) / info.slug / "metadata" / "shot_bounds.json"
+            if self._bounds_do_cache(bounds, info) is not None:
+                return None
+        except Exception:  # noqa: BLE001 -- so um atalho
+            pass
+        return _Deteccao.comecar(info.source, cfg)
+
+    def _bounds_do_cache(self, bounds_cache: Path, info: EpisodeInfo) -> list[ShotBounds] | None:
+        """Os cortes guardados no shot_bounds.json, se valem para este video e detector."""
+        cfg = self.cfg
+        if not bounds_cache.exists():
+            return None
+        try:
+            data = json.loads(bounds_cache.read_text(encoding="utf-8"))
+            if (
+                isinstance(data, dict)
+                and data.get("source") == str(info.source)
+                and data.get("detector") == DETECTOR_ID
+                and abs(float(data.get("min_seconds", -1)) - cfg.min_shot_seconds) < 1e-6
+            ):
+                return [
+                    ShotBounds(idx=int(s["idx"]), start=float(s["start"]), end=float(s["end"]))
+                    for s in data.get("shots", [])
+                ]
+        except (json.JSONDecodeError, ValueError, KeyError, OSError) as e:
+            print(f"[CorteCenas] Shot bounds cache inválido, recomputando: {e}")
+        return None
+
     def _prepare_shots(
-        self, info: EpisodeInfo, cb: ProgressCb, pasta_anime: str = ""
+        self, info: EpisodeInfo, cb: ProgressCb, pasta_anime: str = "",
+        deteccao: "_Deteccao | None" = None,
+        ao_ter_keyframes=None,
     ):
         """Estágios comuns a TODAS as análises (normal e descoberta):
         layout de pastas, detecção de shots (com cache) e corte+keyframes.
@@ -2249,42 +2507,31 @@ class Pipeline:
             d.mkdir(parents=True, exist_ok=True)
 
         bounds_cache = metadata_dir / "shot_bounds.json"
-        shots: list[ShotBounds] | None = None
-        if bounds_cache.exists():
-            try:
-                data = json.loads(bounds_cache.read_text(encoding="utf-8"))
-                # `detector` entrou junto com a detecção adaptativa. Cache
-                # gravado antes disso não tem a chave, não bate com o
-                # DETECTOR_ID de hoje, e é recomputado — que é exatamente o
-                # que precisa acontecer: senão a reanálise de um episódio
-                # antigo reusaria os cortes ruins e nada mudaria.
-                if (
-                    isinstance(data, dict)
-                    and data.get("source") == str(info.source)
-                    and data.get("detector") == DETECTOR_ID
-                    and abs(float(data.get("min_seconds", -1)) - cfg.min_shot_seconds) < 1e-6
-                ):
-                    shots = [
-                        ShotBounds(idx=int(s["idx"]), start=float(s["start"]), end=float(s["end"]))
-                        for s in data.get("shots", [])
-                    ]
-            except (json.JSONDecodeError, ValueError, KeyError, OSError) as e:
-                print(f"[CorteCenas] Shot bounds cache inválido, recomputando: {e}")
-                shots = None
+        # `detector` entrou junto com a detecção adaptativa. Cache gravado
+        # antes disso não tem a chave, não bate com o DETECTOR_ID de hoje, e é
+        # recomputado — que é exatamente o que precisa acontecer: senão a
+        # reanálise de um episódio antigo reusaria os cortes ruins e nada mudaria.
+        shots: list[ShotBounds] | None = self._bounds_do_cache(bounds_cache, info)
 
         if shots:
+            if deteccao is not None:
+                deteccao.parar.set()
             cb("detect_shots", 1.0, f"{len(shots)} shots (cache)")
         else:
             cb("detect_shots", -1.0, "Analisando mudanças de cena...")
-            shots = detect_shots(
-                info.source,
-                min_content_val=cfg.scene_min_content,
-                adaptive_ratio=cfg.scene_adaptive_ratio,
-                min_seconds=cfg.min_shot_seconds,
-                on_progress=lambda f: cb(
-                    "detect_shots", f, f"Analisando mudanças de cena... {int(f * 100)}%"
-                ),
-            )
+            # [recap] O1: a deteccao que ja comecou por tras (enquanto o elenco
+            # era consultado); sem ela, ou se ela falhou, a de sempre aqui.
+            shots = deteccao.esperar(cb) if deteccao is not None else None
+            if shots is None:
+                shots = detect_shots(
+                    info.source,
+                    min_content_val=cfg.scene_min_content,
+                    adaptive_ratio=cfg.scene_adaptive_ratio,
+                    min_seconds=cfg.min_shot_seconds,
+                    on_progress=lambda f: cb(
+                        "detect_shots", f, f"Analisando mudanças de cena... {int(f * 100)}%"
+                    ),
+                )
             bounds_cache.write_text(
                 json.dumps(
                     {
@@ -2327,6 +2574,11 @@ class Pipeline:
             reencode=cfg.reencode_shots,
             on_progress=cut_cb,
             render_mode=cfg.render_export_mode,
+            # [recap] O1: os keyframes prontos (antes dos clipes) liberam a
+            # previa das features do reconhecimento.
+            ao_ter_keyframes=(
+                (lambda kfs: ao_ter_keyframes(metadata_dir, shots, kfs)) if ao_ter_keyframes else None
+            ),
         )
         return episode_root, metadata_dir, cut_results
 
@@ -2575,6 +2827,80 @@ class Pipeline:
             if len(out) >= max_imgs:
                 break
         return out
+
+    def _features_do_shot(self, kfs, kf_cache: FeatureCache, get_engine, get_face_det, ler_imagem):
+        """[recap] O1: os boxes + embeddings (YOLO + CLIP) dos keyframes de UMA
+        cena que faltam no cache, no MESMO lote de sempre (os keyframes da cena
+        juntos: os numeros saem iguais aos de antes). Devolve (feats, achados
+        no cache, total). `ler_imagem(p)` le (e guarda) a imagem."""
+        cfg = self.cfg
+        feats: dict[Path, tuple[np.ndarray, np.ndarray | None]] = {}
+        missing: list[Path] = []
+        hits = 0
+        for kf_path in kfs:
+            boxes = kf_cache.get(kf_path, "boxes")
+            embs_c = kf_cache.get(kf_path, "embs")
+            if boxes is not None and (len(boxes) == 0 or embs_c is not None):
+                hits += 1
+                feats[kf_path] = (boxes, embs_c)
+            else:
+                missing.append(kf_path)
+        if missing:
+            good = [(p, ler_imagem(p)) for p in missing]
+            good = [(p, im) for p, im in good if im is not None]
+            if good:
+                batch = get_face_det().crop_faces_batch(
+                    [im for _, im in good], pad=cfg.face_crop_padding
+                )
+                flat: list[np.ndarray] = []
+                spans: list[tuple[Path, list, int]] = []
+                for (p, _im), (crops, kept) in zip(good, batch):
+                    spans.append((p, kept, len(crops)))
+                    flat.extend(crops)
+                embs_all = (
+                    get_engine().embed_images(flat)
+                    if flat
+                    else np.zeros((0, 1), dtype=np.float32)
+                )
+                if flat and len(embs_all) != len(flat):
+                    # Pareamento quebrou — refaz keyframe a keyframe
+                    # (caro, mas raro) pra não gravar cache torto.
+                    for (p, _im), (crops, kept) in zip(good, batch):
+                        e = (
+                            get_engine().embed_images(crops)
+                            if crops
+                            else np.zeros((0, 1), dtype=np.float32)
+                        )
+                        if len(e) != len(kept):
+                            continue
+                        self._store_kf(kf_cache, feats, p, kept, e)
+                else:
+                    off = 0
+                    for p, kept, n_crops in spans:
+                        e = embs_all[off:off + n_crops]
+                        off += n_crops
+                        self._store_kf(kf_cache, feats, p, kept, e)
+        return feats, hits, len(kfs)
+
+    def _previa_das_features(self, kfs_por_cena: list[list[Path]], kf_cache: FeatureCache,
+                             get_engine, get_face_det, parar) -> int:
+        """[recap] O1: as features de TODAS as cenas, cena por cena (o mesmo lote
+        do _features_do_shot), rodando ENQUANTO o NVENC ainda corta os clipes:
+        o reconhecimento usa a GPU de calculo e o corte, o codificador -- um
+        nao espera o outro. As imagens chegam antes por uma fila de leitura.
+        Devolve quantas cenas fez (parar.is_set() interrompe)."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        feitas = 0
+        with ThreadPoolExecutor(max_workers=4) as leitores:
+            futuros = [leitores.submit(lambda ks=ks: {p: cv2.imread(str(p)) for p in ks}) for ks in kfs_por_cena]
+            for ks, fut in zip(kfs_por_cena, futuros):
+                if parar.is_set():
+                    break
+                imagens = fut.result()
+                self._features_do_shot(ks, kf_cache, get_engine, get_face_det, lambda p, im=imagens: im.get(p))
+                feitas += 1
+        return feitas
 
     @staticmethod
     def _store_kf(

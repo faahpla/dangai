@@ -66,6 +66,8 @@ SENTIDO_MAX_TOKENS = 128
 NITIDEZ_LARGURA = 640
 LOTE_CLIP = 32
 LOTE_SENTIDO = 32
+#: [recap] O1: threads que abrem e preparam os quadros para o CLIP.
+LEITORES = 6
 
 
 def _gravar_matriz(pasta: Path, nome: str, ids: list[str], m: np.ndarray, extra: dict[str, Any] | None = None) -> None:
@@ -165,27 +167,46 @@ def rodar(req: dict[str, Any], emitir: Callable[[dict[str, Any]], None], cancela
         vetores: list[np.ndarray] = []
         estetica: list[float] = []
         nitidez: list[float | None] = []
-        for k in range(0, len(imagens), LOTE_CLIP):
-            if cancelado():
-                return 1
-            lote = imagens[k : k + LOTE_CLIP]
-            # embed_images pula o que nao abre: um por um no lote, para nao perder o alinhamento dos ids.
-            from PIL import Image
+        # [recap] O1: abrir o JPEG, preparar o tensor do CLIP e medir a nitidez
+        # sao CPU, um quadro por vez (37 s nos 1266 keyframes do Magic Repo
+        # Man, a GPU parada esperando). Agora em LEITORES threads, o lote
+        # seguinte sendo preparado enquanto a GPU calcula este. O lote que vai
+        # a GPU e o MESMO de antes (os mesmos 32, na mesma ordem): os vetores
+        # saem iguais.
+        from concurrent.futures import ThreadPoolExecutor
 
-            abertos: list[tuple[dict[str, Any], Any]] = []
-            for item in lote:
-                try:
-                    abertos.append((item, Image.open(str(item["arquivo"])).convert("RGB")))
-                except Exception:  # noqa: BLE001 -- keyframe sumido fica de fora
-                    puladas += 1
-            if abertos:
-                m = engine.embed_images([img for _, img in abertos])
-                for (item, _), v in zip(abertos, m):
-                    ids.append(str(item["id"]))
-                    vetores.append(v)
-                    estetica.append(round(float(v @ peso + vies), 4))
-                    nitidez.append(_nitidez(str(item["arquivo"])))
-            emitir({"type": "progresso", "etapa": "imagens", "feitas": min(k + LOTE_CLIP, len(imagens)), "total": len(imagens)})
+        from PIL import Image
+
+        def preparar(item: dict[str, Any]):
+            try:
+                img = Image.open(str(item["arquivo"])).convert("RGB")
+                tensor = engine.preprocess(img)
+            except Exception:  # noqa: BLE001 -- keyframe sumido fica de fora
+                return item, None, None
+            return item, tensor, _nitidez(str(item["arquivo"]))
+
+        lotes = [imagens[k : k + LOTE_CLIP] for k in range(0, len(imagens), LOTE_CLIP)]
+        with ThreadPoolExecutor(max_workers=LEITORES) as pool:
+            proximo = [pool.submit(preparar, it) for it in lotes[0]] if lotes else []
+            for n, lote in enumerate(lotes):
+                if cancelado():
+                    for f in proximo:
+                        f.cancel()
+                    return 1
+                agora = proximo
+                proximo = [pool.submit(preparar, it) for it in lotes[n + 1]] if n + 1 < len(lotes) else []
+                prontos = [f.result() for f in agora]
+                validos = [(it, t, nit) for it, t, nit in prontos if t is not None]
+                puladas += len(prontos) - len(validos)
+                if validos:
+                    m = engine.embed_prontos([t for _, t, _ in validos])
+                    for (item, _t, nit), v in zip(validos, m):
+                        ids.append(str(item["id"]))
+                        vetores.append(v)
+                        estetica.append(round(float(v @ peso + vies), 4))
+                        nitidez.append(nit)
+                feitas = min((n + 1) * LOTE_CLIP, len(imagens))
+                emitir({"type": "progresso", "etapa": "imagens", "feitas": feitas, "total": len(imagens)})
         dim = int(vetores[0].shape[0]) if vetores else 768
         _gravar_matriz(
             saida,
