@@ -5,7 +5,7 @@
   "description": "Maquina de fazer shorts de recap de anime",
   "main": "out/main/main.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev -w",
     "remotion:bundle": "remotion bundle src/remotion/index.ts --out-dir=out/remotion",
     "build": "npm run typecheck && electron-vite build && npm run remotion:bundle",
     "start": "electron-vite preview",

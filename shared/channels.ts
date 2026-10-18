@@ -842,6 +842,8 @@ export interface DangaiBridge {
   listarModulos(): Promise<IpcResult<ModuloPublico[]>>
   /** Liga ou desliga um modulo. Devolve a lista de novo. */
   ligarModulo(id: string, ligado: boolean): Promise<IpcResult<ModuloPublico[]>>
+  /** As configuracoes foram gravadas (por qualquer um). Devolve a funcao que para. */
+  onConfiguracoesMudaram(listener: () => void): () => void
   /** A ponte de cada modulo, por id. Ver modulos/registro.preload.ts. */
   modulos: PontesDosModulos
 }

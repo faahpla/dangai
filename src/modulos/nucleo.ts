@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import type { CaptionStyle } from '@shared/contract'
 import { useProject, type ProjectState } from '@/store/project'
 import { fotografar, type Documento } from '@/store/documento'
-import { fecharPassoAgora } from '@/store/undo'
+import { desfazer, fecharPassoAgora, refazer } from '@/store/undo'
+import { semSujar } from '@/store/quiet'
 import { aplicarEstiloSemVirarPadrao } from '@/store/estilo-legenda'
 import { ouvir, type EventosDoNucleo } from './ganchos'
 import { useModulos } from './lista'
@@ -103,6 +104,21 @@ export interface Nucleo {
    */
   travarTranscript(travado: boolean): void
 
+  /** O Ctrl+Z e o Ctrl+Y do projeto. Devolvem se havia o que fazer. */
+  desfazer(): boolean
+  refazer(): boolean
+  /**
+   * Muda o projeto SEM sujar e sem passo de Ctrl+Z: o que se refaz sozinho ao
+   * abrir (converter o formato antigo do proprio modulo, por exemplo). Nao ha
+   * "marcar limpo" de proposito: um modulo dizendo que esta salvo o que nao
+   * esta faria o app fechar sem perguntar.
+   */
+  semSujar<T>(fn: () => T | Promise<T>): Promise<T>
+  /**
+   * Tira um campo DESCONHECIDO da raiz do arquivo (o `studio` do Studio, ja
+   * convertido para modulos.<id>). Campo do nucleo nao sai por aqui.
+   */
+  esquecerDoProjeto(campo: string): void
   marcarSujo(): void
   mostrarErro(mensagem: string): void
   /** Avisa que uma tela cheia DESTE modulo abriu ou fechou. */
@@ -149,6 +165,15 @@ export function criarNucleo(id: string): Nucleo {
     aplicarEstiloDeLegenda: (estilo) => aplicarEstiloSemVirarPadrao(estilo, true),
     travarTranscript: (travado) => store().travarTranscript(travado),
 
+    desfazer: () => desfazer(),
+    refazer: () => refazer(),
+    semSujar: (fn) => semSujar(async () => fn()),
+    esquecerDoProjeto: (campo) =>
+      useProject.setState((s) => {
+        if (!(campo in s.extrasDoProjeto)) return s
+        const { [campo]: _fora, ...resto } = s.extrasDoProjeto
+        return { extrasDoProjeto: resto }
+      }),
     marcarSujo: () => useProject.setState({ projectDirty: true }),
     mostrarErro: (mensagem) => useProject.setState({ error: mensagem }),
     telaCheia: (aberta) =>

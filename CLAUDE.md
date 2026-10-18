@@ -69,10 +69,12 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
 
 - **Main:** `configurar` → `registrarIpc` → `ligar` (depois da janela, só ligado) →
   `desligar`; `antesDeSair` segura a saída (teto de 11 min); `motivoParaNaoAtualizar`
-  veta o "Atualizar". Tudo em try/catch: módulo que quebra fica de fora e o Dangai abre.
+  veta o "Atualizar" (só para módulo ligado). O `ligar` é o "depois da janela". Tudo em try/catch: módulo que quebra fica de fora e o Dangai abre.
   O `ctx` recusa canal fora de `<id>:` e dá `config`/`salvarConfig`, `chave`/`salvarChave`
-  (cofre), `pasta(...)`, `enviar` e `ia` (o `gerarJson` do núcleo, o `provedor()` e o `modelo()` — o
-  módulo nunca vê as chaves de IA).
+  (cofre), `pasta(...)` (inclusive `local`: %LOCALAPPDATA%, para dado grande), `enviar`,
+  `preencherDoNucleo` (migração: só campos ainda no padrão) e `ia` (o `gerarJson` do núcleo — com `imagens`, `modelo` forçado e o `uso` de
+  tokens na resposta —, o `provedor()`, o `modelo()` e os `modelos()` — o módulo nunca vê as
+  chaves de IA). O etiquetador tem `etiquetarComConfianca` (confiança por tag, cache do módulo).
   `transcribe` (whisper) e `alinharAoAudio` aceitam `signal`: o pedido sai na hora e o
   processo morre quando ninguém mais espera a mesma transcrição. Os leitores de pasta do `library.ts` (`episodiosEm`,
   `arquivosEm`, `acharKeyframe`, `nomesCanonicos`, `abrangidas`, `naturalmente`) são públicos.
@@ -87,8 +89,11 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
   direto; mudar os dois é combinar antes. Cada módulo tem uma fronteira de erro sempre
   montada: erro de componente — inclusive na limpeza, ao desligar — some com ele, não com a janela.
 - **Ligar/desligar:** Configurações > Módulos (`Settings.modulosLigados`); desligado por padrão.
-- **Eventos:** `abrirProjeto`, `depoisDeSalvar`, `depoisDeRenderizar`, `narracaoTrocada`
-  (`src/modulos/ganchos.ts`). `aplicarNoDocumento`/`gravarNoProjeto` = um passo de Ctrl+Z.
+- **Eventos:** `abrirProjeto`, `depoisDeSalvar`, `depoisDeRenderizar`, `narracaoTrocada`,
+  `configuracoesMudaram` (`src/modulos/ganchos.ts`). `aplicarNoDocumento`/`gravarNoProjeto` =
+  um passo de Ctrl+Z; a fachada também tem `desfazer`/`refazer`, `semSujar` (mudar sem sujar e
+  sem passo — conversão ao abrir) e `esquecerDoProjeto` (tirar um campo desconhecido da raiz).
+  Não há "marcar limpo" de propósito.
 - **Transcrição travada** (`transcriptTravado`, `nucleo.travarTranscript`): com os tempos
   vindos da voz gerada, análise, Biblioteca e "montar sozinho" não rodam o Whisper — o
   roteiro novo é casado por texto sobre esses tempos. Trocar a narração destrava.

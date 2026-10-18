@@ -18,6 +18,11 @@ export interface EventosDoNucleo {
   depoisDeRenderizar: { outputPath: string | null }
   /** A narracao do projeto foi trocada por outra. */
   narracaoTrocada: { anterior: string | null; nova: string }
+  /**
+   * As configuracoes foram gravadas (pela tela, por um modulo, pelo dialogo).
+   * O `euMesmo()` de cada modulo ja vem relido quando isto chega.
+   */
+  configuracoesMudaram: Record<string, never>
 }
 
 type Ouvinte<K extends keyof EventosDoNucleo> = (dados: EventosDoNucleo[K]) => void

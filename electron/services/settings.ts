@@ -212,7 +212,26 @@ export function getSettings(): Settings {
   return cache
 }
 
+/** Quem quer saber que as configuracoes mudaram (o main avisa a janela). */
+const aoMudar = new Set<() => void>()
+export function aoMudarAsConfiguracoes(ouvinte: () => void): () => void {
+  aoMudar.add(ouvinte)
+  return () => aoMudar.delete(ouvinte)
+}
+
 export function saveSettings(patch: Partial<Settings>): Settings {
+  const salvas = gravarSettings(patch)
+  for (const ouvinte of aoMudar) {
+    try {
+      ouvinte()
+    } catch (err) {
+      console.warn('[settings] ouvinte falhou:', err)
+    }
+  }
+  return salvas
+}
+
+function gravarSettings(patch: Partial<Settings>): Settings {
   if (!filePath) throw new Error('Settings nao configurado')
 
   const next = coerce({ ...getSettings(), ...patch })

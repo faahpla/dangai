@@ -1,11 +1,11 @@
 import { BrowserWindow } from 'electron'
 import { mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { ID_DE_MODULO, prefixoDoModulo, type ModuloPublico } from '@shared/modulos'
 import { handle } from './handle'
 import { dicaDaChave, getSettings, registrarCampoDeChave, saveSettings, type Settings } from './services/settings'
-import { escolherProvedor, gerarJson, type Provedor } from './services/llm'
+import { escolherProvedor, gerarJson, listarModelos, type Provedor } from './services/llm'
 
 /**
  * OS MODULOS NO MAIN: o Gerar recap do Levi, e o que vier depois.
@@ -52,7 +52,14 @@ export interface ContextoDoModulo {
    * criada), `temp` (no temp do sistema, criada), `recursos` (o que ele
    * empacota: resources/modulos/<id>, ou modulos/<id>/recursos em dev) e `app`.
    */
-  pasta(tipo: 'userData' | 'dados' | 'temp' | 'recursos' | 'app'): string
+  pasta(tipo: 'userData' | 'dados' | 'local' | 'temp' | 'recursos' | 'app'): string
+  /**
+   * PREENCHE campos do nucleo que ainda estao no padrao (a migracao do
+   * AniRecap Studio): chave do Gemini e da Anthropic, a IA escolhida, a pasta
+   * de SFX e presets de cor. Nada que ele ja escolheu e trocado; preset com
+   * nome que ja existe fica de fora. Devolve o que entrou.
+   */
+  preencherDoNucleo(campos: CamposQueOModuloPreenche): (keyof CamposQueOModuloPreenche)[]
   /** Ligado agora nas Configuracoes. */
   ligado(): boolean
   /**
@@ -70,7 +77,17 @@ export interface ContextoDoModulo {
      * na hora da chamada).
      */
     modelo(provedor: Provedor): string
+    /** Os modelos de texto que a chave alcanca agora (vazio sem chave). */
+    modelos(provedor: Provedor): Promise<string[]>
   }
+}
+
+export interface CamposQueOModuloPreenche {
+  geminiApiKey?: string
+  anthropicApiKey?: string
+  iaProvedor?: Settings['iaProvedor']
+  sfxDir?: string
+  presetsDeCor?: Record<string, unknown>[]
 }
 
 export interface ConfigVistaPeloModulo {
@@ -206,6 +223,12 @@ function criarContexto(def: ModuloDoMain, base: BaseDosModulos): ContextoDoModul
           return base.userData
         case 'dados':
           return criada(join(base.userData, 'modulos', def.id))
+        case 'local':
+          // Dado GRANDE e desta maquina (um runtime de GBs): fora do perfil que
+          // viaja com a conta. %LOCALAPPDATA%\<app>\<id>.
+          return criada(
+            join(process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local'), basename(base.userData), def.id),
+          )
         case 'temp':
           return criada(join(tmpdir(), `dangai-${def.id}`))
         case 'recursos':
@@ -216,11 +239,45 @@ function criarContexto(def: ModuloDoMain, base: BaseDosModulos): ContextoDoModul
           return base.appPath
       }
     },
+    preencherDoNucleo(campos) {
+      const s = getSettings()
+      const patch: Partial<Settings> = {}
+      const entrou: (keyof CamposQueOModuloPreenche)[] = []
+      const vazio = (v: unknown): boolean => typeof v !== 'string' || v.trim() === ''
+      if (campos.geminiApiKey?.trim() && vazio(s.geminiApiKey)) {
+        patch.geminiApiKey = campos.geminiApiKey.trim()
+        entrou.push('geminiApiKey')
+      }
+      if (campos.anthropicApiKey?.trim() && vazio(s.anthropicApiKey)) {
+        patch.anthropicApiKey = campos.anthropicApiKey.trim()
+        entrou.push('anthropicApiKey')
+      }
+      // A IA escolhida so entra em quem ainda nao tinha chave nenhuma.
+      if (campos.iaProvedor && vazio(s.geminiApiKey) && vazio(s.anthropicApiKey)) {
+        patch.iaProvedor = campos.iaProvedor
+        entrou.push('iaProvedor')
+      }
+      if (campos.sfxDir?.trim() && vazio(s.sfxDir)) {
+        patch.sfxDir = campos.sfxDir.trim()
+        entrou.push('sfxDir')
+      }
+      if (campos.presetsDeCor?.length) {
+        const nomes = new Set(s.presetsDeCor.map((p) => p['nome']))
+        const novos = campos.presetsDeCor.filter((p) => typeof p['nome'] === 'string' && !nomes.has(p['nome']))
+        if (novos.length > 0) {
+          patch.presetsDeCor = [...s.presetsDeCor, ...novos]
+          entrou.push('presetsDeCor')
+        }
+      }
+      if (entrou.length > 0) saveSettings(patch)
+      return entrou
+    },
     ligado: () => estaLigado(def),
     ia: {
       gerarJson,
       provedor: (forcado) => escolherProvedor(getSettings(), forcado),
       modelo: (provedor) => (provedor === 'gemini' ? getSettings().geminiModelo : getSettings().anthropicModelo),
+      modelos: (provedor) => listarModelos(provedor),
     },
   }
 }
@@ -348,7 +405,8 @@ export function motivoParaNaoAtualizar(): string | null {
 let saindo = false
 export function segurarSaida(evento: { preventDefault(): void }, sair: () => void): void {
   if (saindo) return
-  const comSaida = instalados.filter((m) => m.def.antesDeSair && !m.falhou)
+  // So quem esta LIGADO e rodando: desligado, o modulo nao tem o que terminar.
+  const comSaida = instalados.filter((m) => m.def.antesDeSair && !m.falhou && m.rodando)
   if (comSaida.length === 0) return
   saindo = true
   evento.preventDefault()

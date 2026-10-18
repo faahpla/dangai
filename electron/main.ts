@@ -5,7 +5,7 @@ import { registerIpc } from './ipc'
 import { startMediaServer } from './services/media-server'
 import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
-import { configureSettings } from './services/settings'
+import { aoMudarAsConfiguracoes, configureSettings } from './services/settings'
 import { configureLibrary } from './services/library'
 import { configureNicknames } from './services/nicknames'
 import { configureFavorites } from './services/favorites'
@@ -197,6 +197,11 @@ app.whenReady().then(async () => {
 
   registerIpc()
   registrarIpcDosModulos()
+  // Configuracoes gravadas (pela tela, por um modulo, pelo dialogo da
+  // biblioteca): a janela fica sabendo -- os modulos ouvem pela fachada.
+  aoMudarAsConfiguracoes(() => {
+    for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send('nucleo:configuracoes-mudaram')
+  })
   createWindow()
   void ligarModulosNoInicio()
 

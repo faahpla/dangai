@@ -2,7 +2,7 @@ import { Component, useMemo, type ReactNode } from 'react'
 import type { ModuloPublico } from '@shared/modulos'
 import { MODULOS_DO_RENDERER } from '../../modulos/registro.renderer'
 import type { AncoraDasConfiguracoes, ComandoDoModulo, ModuloDoRenderer, PropsDosBotoesDaTelaInicial } from './api'
-import { definirModulosAtivos } from './ganchos'
+import { definirModulosAtivos, emitir } from './ganchos'
 import { criarNucleo, useTelaCheia, type Nucleo } from './nucleo'
 import { useModulos } from './lista'
 
@@ -70,7 +70,15 @@ export function startModulos(): () => void {
   }
   const parar = useModulos.subscribe(sincronizar)
   void useModulos.getState().carregar()
+  // Configuracoes gravadas: relê a lista (config publica, dica das chaves) e avisa.
+  const pararDeOuvir = window.dangai.onConfiguracoesMudaram(() => {
+    void useModulos
+      .getState()
+      .carregar()
+      .finally(() => emitir('configuracoesMudaram', {}))
+  })
   return () => {
+    pararDeOuvir()
     parar()
     for (const limpar of limpezas.values()) limpar()
     limpezas.clear()

@@ -264,6 +264,13 @@ const bridge: DangaiBridge = {
   listarModulos: () => ipcRenderer.invoke('modulos:listar') as Promise<IpcResult<ModuloPublico[]>>,
   ligarModulo: (id, ligado) =>
     ipcRenderer.invoke('modulos:ligar', id, ligado) as Promise<IpcResult<ModuloPublico[]>>,
+  onConfiguracoesMudaram: (listener) => {
+    const handler = (): void => listener()
+    ipcRenderer.on('nucleo:configuracoes-mudaram', handler)
+    return () => {
+      ipcRenderer.off('nucleo:configuracoes-mudaram', handler)
+    }
+  },
   modulos: pontesDosModulos(),
 }
 
