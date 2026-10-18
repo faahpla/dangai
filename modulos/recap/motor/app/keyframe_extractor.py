@@ -171,6 +171,16 @@ def cut_shot(
             out_file.unlink()
         except OSError:
             pass
+    # [recap] O2: o ffmpeg escreve num arquivo PARCIAL, que so vira o clipe
+    # quando ele termina. Com o app fechado (ou morto) no meio do corte, o
+    # clipe pela metade ficava com o nome final e tamanho > 0, e o corte
+    # retomado o reaproveitava como pronto (MP4 sem o moov, que nao abre).
+    # O clipe e o mesmo: as duas saidas ja pedem o muxer mp4 (-f mp4).
+    parcial = parcial_do_clipe(out_file)
+    try:
+        parcial.unlink(missing_ok=True)
+    except OSError:
+        pass
 
     # O "fim" do shot é o timestamp do PRIMEIRO frame do shot seguinte (fim
     # exclusivo, convenção do PySceneDetect). Cortar com "-to fim" na ENTRADA
@@ -194,20 +204,79 @@ def cut_shot(
             entrada = {"hwaccel": "cuda", "hwaccel_output_format": "cuda"}
             params = {k: v for k, v in params.items() if k != "pix_fmt"}
         stream = ffmpeg.input(str(video_path), ss=shot.start, **entrada).output(
-            str(out_file),
+            str(parcial),
             t=duration,
             loglevel="error",
             **params,
         )
     else:
         stream = ffmpeg.input(str(video_path), ss=shot.start, to=shot.end).output(
-            str(out_file),
+            str(parcial),
             c="copy",
             format="mp4",
             avoid_negative_ts="make_zero",
             loglevel="error",
         )
-    run_ffmpeg_hidden(stream)
+    try:
+        run_ffmpeg_hidden(stream)
+        parcial.replace(out_file)
+    except BaseException:
+        try:
+            parcial.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def clipe_inteiro(arquivo: Path) -> bool:
+    """[recap] O2: o MP4 terminou de ser escrito (tem a caixa moov)? Um clipe
+    de um ffmpeg morto no meio (antes do arquivo parcial, ou de outra versao)
+    tem o mdat e nao tem o moov: nao abre em lugar nenhum. Le so os
+    cabecalhos das caixas de cima (uns poucos bytes)."""
+    try:
+        tamanho = arquivo.stat().st_size
+        achou = False
+        with arquivo.open("rb") as f:
+            pos = 0
+            while pos + 8 <= tamanho:
+                f.seek(pos)
+                cab = f.read(16)
+                if len(cab) < 8:
+                    return False
+                n = int.from_bytes(cab[:4], "big")
+                achou = achou or cab[4:8] == b"moov"
+                if n == 1:  # tamanho de 64 bits
+                    if len(cab) < 16:
+                        return False
+                    n = int.from_bytes(cab[8:16], "big")
+                if n < 8:  # 0 = "ate o fim" (o mdat de um arquivo pela metade) ou torto
+                    return False
+                pos += n
+        # Inteiro: tem o moov e as caixas cobrem o arquivo certinho (cortado
+        # no meio, a ultima caixa promete mais bytes do que ha).
+        return achou and pos == tamanho
+    except OSError:
+        return False
+
+
+def jpg_inteiro(arquivo: Path) -> bool:
+    """[recap] O2: o JPEG terminou de ser escrito (termina no FFD9)?"""
+    try:
+        with arquivo.open("rb") as f:
+            f.seek(0, 2)
+            if f.tell() < 4:
+                return False
+            f.seek(-2, 2)
+            return f.read(2) == bytes((0xFF, 0xD9))
+    except OSError:
+        return False
+
+
+def parcial_do_clipe(out_file: Path) -> Path:
+    """[recap] O2: onde o ffmpeg escreve o clipe antes de ele ficar pronto
+    (0012.mp4 -> 0012.mp4.parcial). Nao termina em .mp4: quem lista os clipes
+    da pasta (a Biblioteca, o AnCut) nunca ve um pela metade."""
+    return out_file.with_name(out_file.name + ".parcial")
 
 
 def extract_keyframes(
@@ -496,6 +565,12 @@ def cut_all_shots(
     """
     shots_dir.mkdir(parents=True, exist_ok=True)
     keyframes_dir.mkdir(parents=True, exist_ok=True)
+    # [recap] O2: clipes pela metade de um corte interrompido (cut_shot): fora.
+    for sobra in shots_dir.glob("*.mp4.parcial"):
+        try:
+            sobra.unlink()
+        except OSError:
+            pass
 
     # Clipe cortado noutro modo tem OUTRO formato, então reaproveitá-lo do
     # cache faria ligar a opção não mudar nada — o pior tipo de falha, a
@@ -586,7 +661,7 @@ def cut_all_shots(
     faltando = [
         s for s in shots
         if refazer_kfs or not (skip_existing and all(
-            p.exists() and p.stat().st_size > 0 for p in esperados[s.idx]
+            jpg_inteiro(p) for p in esperados[s.idx]  # [recap] O2: pela metade nao conta
         ))
     ]
     if refazer_kfs:
@@ -621,7 +696,7 @@ def cut_all_shots(
         prontos: dict[int, list[Path]] = {}
         for s_ in shots:
             lista = extraidos_agora.get(s_.idx) or [
-                p for p in esperados[s_.idx] if p.exists() and p.stat().st_size > 0
+                p for p in esperados[s_.idx] if jpg_inteiro(p)
             ]
             if lista:
                 prontos[s_.idx] = sorted(lista)
@@ -645,8 +720,10 @@ def cut_all_shots(
         out_file = shots_dir / f"{shot.idx:04d}.mp4"
         expected_kfs = esperados[shot.idx]
 
-        have_cut = out_file.exists() and out_file.stat().st_size > 0
-        have_kfs = all(p.exists() and p.stat().st_size > 0 for p in expected_kfs)
+        # [recap] O2: clipe ou keyframe pela metade (o app fechou no meio do
+        # corte) nao e reaproveitado: e refeito.
+        have_cut = out_file.exists() and out_file.stat().st_size > 0 and clipe_inteiro(out_file)
+        have_kfs = all(jpg_inteiro(p) for p in expected_kfs)
 
         if not (reuse_cuts and have_cut):
             if not _cortar_com_reserva(video_path, shot, out_file, reencode, video_fps,

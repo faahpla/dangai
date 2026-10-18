@@ -1,3 +1,8 @@
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import type { VozInterrompida } from '../../shared/voz'
+import { pastaDaVoz } from './pastas'
+
 /**
  * Os pedidos de voz em andamento (gerar, regravar, ajustar, importar), para o
  * Cancelar e para nao rodar dois no mesmo rascunho.
@@ -40,6 +45,61 @@ export function cancelarPedido(rascunhoId: string, pedidoId: string): boolean {
   if (!p || p.pedidoId !== pedidoId) return false
   p.controle.abort()
   return true
+}
+
+// ------------------------------------------------- O2: a marca no disco
+
+function arquivoNoAr(rascunhoId: string): string {
+  return join(pastaDaVoz(rascunhoId), 'no-ar.json')
+}
+
+/**
+ * O2: o pedido comecou -- a marca vai ao disco. Com o app fechado (ou morto)
+ * no meio, ela fica, e o passo 3 avisa ao reabrir (pedidoInterrompido).
+ */
+export function marcarNoAr(rascunhoId: string, pedidoId: string, tipo: VozInterrompida['tipo']): void {
+  try {
+    const arquivo = arquivoNoAr(rascunhoId)
+    mkdirSync(dirname(arquivo), { recursive: true })
+    writeFileSync(arquivo, JSON.stringify({ pedidoId, tipo, inicio: new Date().toISOString() }), 'utf8')
+  } catch {
+    /* sem a marca, so falta o aviso ao reabrir */
+  }
+}
+
+/** O pedido terminou (bem, mal ou cancelado): a marca DELE sai. */
+export function desmarcarNoAr(rascunhoId: string, pedidoId: string): void {
+  try {
+    const arquivo = arquivoNoAr(rascunhoId)
+    const d = JSON.parse(readFileSync(arquivo, 'utf8')) as { pedidoId?: unknown }
+    if (d.pedidoId === pedidoId) rmSync(arquivo, { force: true })
+  } catch {
+    /* ja saiu */
+  }
+}
+
+const TIPOS: readonly VozInterrompida['tipo'][] = ['gerar', 'regravar', 'ajustar', 'importar']
+
+/**
+ * O2: o pedido que o app largou no meio: a marca ficou e nada roda neste
+ * rascunho agora. Le e APAGA (o aviso aparece uma vez). null = nenhum.
+ */
+export function pedidoInterrompido(rascunhoId: string): VozInterrompida | null {
+  if (emAndamento.has(rascunhoId)) return null
+  const arquivo = arquivoNoAr(rascunhoId)
+  let d: { tipo?: unknown; inicio?: unknown }
+  try {
+    d = JSON.parse(readFileSync(arquivo, 'utf8')) as { tipo?: unknown; inicio?: unknown }
+  } catch {
+    return null
+  }
+  try {
+    rmSync(arquivo, { force: true })
+  } catch {
+    /* presa: aparece de novo na proxima */
+  }
+  const tipo = TIPOS.find((t) => t === d.tipo)
+  return tipo && typeof d.inicio === 'string' ? { tipo, inicio: d.inicio } : null
 }
 
 /** Ha pedido rodando neste rascunho? */

@@ -3,10 +3,12 @@ import { dirname } from 'node:path'
 import { app } from 'electron'
 import {
   anexarPlanos,
+  corteParado,
   episodeIndexSchema,
   ROTULO_DA_ETAPA,
   statusDoCorte,
   temPlanos,
+  type CorteParado,
   type EpisodeIndex,
   type EstadoDoCorte,
   type EtapaDaAnalise,
@@ -563,6 +565,16 @@ export async function estadoDoCorte(episodioId: string): Promise<EstadoDoCorte |
   if (vivo) return vivo.estado
   const lido = lerAgora(episodioId)
   return lido ? estadoLido(lido.indice) : null
+}
+
+/**
+ * O2: o corte deste episodio que nao acabou -- o .mkv reaberto pelo dialogo
+ * volta ao resumo com ele (regra em corteParado, shared/episodio.ts). null =
+ * nada a retomar.
+ */
+export function corteParadoDoEpisodio(episodioId: string): CorteParado | null {
+  const lido = lerAgora(episodioId)
+  return lido ? corteParado(lido.indice, vivos.has(episodioId)) : null
 }
 
 /** O estado gravado num indice, sem job vivo no main. Puro, para o teste. */

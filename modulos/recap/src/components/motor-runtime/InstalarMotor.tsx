@@ -322,7 +322,9 @@ function Parou({ estado }: { estado: EstadoDoMotorRuntime }) {
       <Etapas estado={estado} />
       <Barra fracao={fracao} />
       <p className="text-[13px] text-ink">
-        {estado.erro ? 'Parou' : 'Cancelado'} em {Math.round(fracao * 100)}%{etapa ? ` (${etapa})` : ''}.
+        {/* O2: o app fechado no meio (sem erro e sem Cancelar) e "Parou", nao "Cancelado" (o main diz qual). */}
+        {estado.erro || estado.andamento?.mensagem !== 'Cancelado' ? 'Parou' : 'Cancelado'} em {Math.round(fracao * 100)}%
+        {etapa ? ` (${etapa})` : ''}.
       </p>
       {estado.erro && (
         <p className="flex items-start gap-1.5 text-[12px] text-danger" title={estado.erro.detalhe}>

@@ -583,6 +583,13 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
         set({ fraseAtiva: (sem ?? frases[0])?.id ?? null, cenaAlvo: 0 })
       }
       set({ recado: null, confirmando: null })
+      // O2: o app fechou no meio do "Abrir no editor": o rodape avisa (uma vez).
+      const rascunhoId = rascunho.id
+      void ponte.montagemInterrompida(rascunhoId).then((r) => {
+        if (r.ok && r.value && useRoteiro.getState().rascunho?.id === rascunhoId && !get().montando) {
+          set({ recado: 'O Abrir no editor parou no meio: o app fechou. Abra de novo.' })
+        }
+      })
       // Entrar no passo e um pedido explicito: o automatico que falhou antes tenta de novo, uma vez.
       ultimaSugestao = null
       ultimoEncaixe = null
@@ -1059,10 +1066,30 @@ export function escutarCenas(): () => void {
     }
   })
   agendarConferencia()
+  /*
+   * O2: fechar o app com a ultima escolha ainda no relogio do autosave (ou na
+   * fila): grava JA, direto, fora da fila -- como o passo 2 (gerar-roteiro.ts).
+   * Gravar duas vezes a mesma escolha nao muda nada; perder o ultimo clique, sim.
+   */
+  const antesDeFechar = (): void => {
+    if (relogioDaGravacao) {
+      clearTimeout(relogioDaGravacao)
+      relogioDaGravacao = null
+    }
+    const s = useCenas.getState()
+    const rascunho = useRoteiro.getState().rascunho
+    const roteiro = rascunho ? roteiroAtual(rascunho) : null
+    if (!s.rascunhoId || !rascunho || rascunho.id !== s.rascunhoId || !roteiro) return
+    const noRoteiro = new Set(frasesDoRoteiro(roteiro).map((f) => f.id))
+    const enviadas = Object.values(s.pendentes).filter((e) => noRoteiro.has(e.fraseId))
+    if (enviadas.length > 0) void ponte.salvarCenas(s.rascunhoId, enviadas)
+  }
+  window.addEventListener('beforeunload', antesDeFechar)
   return () => {
     tirarRoteiro()
     tirarGerar()
     tirarCorte()
+    window.removeEventListener('beforeunload', antesDeFechar)
     if (conferindo) clearTimeout(conferindo)
     conferindo = null
   }

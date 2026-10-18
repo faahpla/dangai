@@ -2,6 +2,7 @@ import type { IpcResult } from '@shared/channels'
 import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDoEnvio } from './ancut'
 import type { ConfigDasCenas, ConfigDoRecapNaTela } from './config'
 import type {
+  CorteParado,
   EpisodeIndex,
   EpisodioEncontrado,
   EstadoDoCorte,
@@ -74,6 +75,7 @@ import type {
   PedidoDeRegravar,
   ProgressoDaVoz,
   VozGerada,
+  VozInterrompida,
 } from './voz'
 
 /**
@@ -138,6 +140,8 @@ export const CANAIS = {
   ajustarVoz: 'recap:voz:ajustar',
   importarAudio: 'recap:voz:importar',
   cancelarVoz: 'recap:voz:cancelar',
+  /** O2: o pedido de voz que o app largou no meio (le e apaga a marca). */
+  vozInterrompida: 'recap:voz:interrompida',
   escolherTake: 'recap:voz:escolher-take',
   aprovarVoz: 'recap:voz:aprovar',
   desaprovarVoz: 'recap:voz:desaprovar',
@@ -159,6 +163,8 @@ export const CANAIS = {
   encaixarNaVoz: 'recap:cenas:encaixar',
   mesclasDoEpisodio: 'recap:cenas:mesclas',
   montarProjeto: 'recap:montar:projeto',
+  /** O2: a montagem (Abrir no editor) que o app largou no meio. */
+  montagemInterrompida: 'recap:montar:interrompida',
   /** main -> renderer, EtapaDaMontagem */
   montarProgresso: 'recap:montar:progresso',
 
@@ -182,6 +188,8 @@ export const CANAIS = {
   analiseFim: 'recap:motor:fim',
   iniciarCorte: 'recap:corte:iniciar',
   estadoDoCorte: 'recap:corte:estado',
+  /** O2: o corte que o app largou no meio (o .mkv reaberto volta onde estava). */
+  corteParado: 'recap:corte:parado',
   cancelarCorte: 'recap:corte:cancelar',
   /** main -> renderer, EventoDoCorte */
   corteProgresso: 'recap:corte:progresso',
@@ -290,6 +298,8 @@ export interface PonteDoRecap {
   /** Take novo do audio que ele gravou: Whisper + alinhador do nucleo. Nao gasta. */
   importarAudio(rascunhoId: string, pedido: PedidoDeImportacao): Promise<IpcResult<VozGerada>>
   cancelarVoz(rascunhoId: string, pedidoId: string): Promise<IpcResult<boolean>>
+  /** O2: o pedido de voz deste rascunho que o app largou no meio. null = nenhum (le e apaga: avisa uma vez). */
+  vozInterrompida(rascunhoId: string): Promise<IpcResult<VozInterrompida | null>>
   escolherTake(rascunhoId: string, takeId: string): Promise<IpcResult<RascunhoDoRecap>>
   aprovarVoz(rascunhoId: string): Promise<IpcResult<RascunhoDoRecap>>
   desaprovarVoz(rascunhoId: string): Promise<IpcResult<RascunhoDoRecap>>
@@ -316,6 +326,8 @@ export interface PonteDoRecap {
   mesclasDoEpisodio(episodioId: string): Promise<IpcResult<Record<string, PlanoNoMesclado>>>
   /** Grava o .dangai em <biblioteca do recap>/_projetos/. A tela abre pelo abrirProjeto do nucleo. */
   montarProjeto(rascunhoId: string, pedido?: PedidoDeMontagem): Promise<IpcResult<ProjetoMontado>>
+  /** O2: o "Abrir no editor" que o app largou no meio (avisa uma vez). null = nenhum. */
+  montagemInterrompida(rascunhoId: string): Promise<IpcResult<{ inicio: string } | null>>
   onMontarProgresso(listener: (etapa: EtapaDaMontagem) => void): () => void
 
   // Edicao rapida
@@ -338,6 +350,8 @@ export interface PonteDoRecap {
   onAnaliseFim(listener: (fim: FimDaAnalise) => void): () => void
   iniciarCorte(pedido: PedidoDeCorte): Promise<IpcResult<EstadoDoCorte>>
   estadoDoCorte(episodioId: string): Promise<IpcResult<EstadoDoCorte | null>>
+  /** O2: o corte deste .mkv que nao acabou (CorteParado). null = nada a retomar. */
+  corteParado(episodioId: string): Promise<IpcResult<CorteParado | null>>
   cancelarCorte(episodioId: string): Promise<IpcResult<boolean>>
   onCorteProgresso(listener: (evento: EventoDoCorte) => void): () => void
   iniciarDescoberta(pedido: PedidoDaDescoberta): Promise<IpcResult<EstadoDaDescoberta>>

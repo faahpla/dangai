@@ -50,6 +50,7 @@ import {
   type PedidoDeRegravar,
   type ProgressoDaVoz,
   type VozGerada,
+  type VozInterrompida,
 } from '../shared/voz'
 import { CAMPOS_DE_CHAVE_DA_VOZ, type AjustesDaVoz, type CampoDeChaveDaVoz, type TesteDeVoz } from '../shared/tipos-da-voz'
 import { AUDIO_EXTENSIONS, classifyFile } from '@shared/channels'
@@ -78,6 +79,8 @@ import { NOME_DO_EXEMPLO_MAX, TEXTO_DO_EXEMPLO_MAX, type EstiloNaTela } from '..
 import type { RevisaoFeita } from '../shared/revisao'
 import { ritmoDe, ritmoPeloId } from './voz/ritmo'
 import { estimarVoz } from './voz/estimar'
+import { esperaDaVozFalsa } from './voz/provedor'
+import { pedidoInterrompido } from './voz/pedidos'
 import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from './voz/gerar'
 import { aprovarVoz, audioDoTake, desaprovarVoz, escolherTakeDoRascunho } from './voz/takes'
 import { testarEleven, testarFish } from './voz-chaves'
@@ -107,7 +110,7 @@ import {
 import { candidatosDaFrase, salvarCenas, sugerirCenas } from './cenas'
 import { mesclasDoEpisodio } from './cenas/mesclas'
 import type { PlanoNoMesclado } from '../shared/mesclas'
-import { encaixarNaVoz, montarProjeto } from './montar'
+import { encaixarNaVoz, montagemInterrompida, montarProjeto } from './montar'
 import { rostosDosPedacos } from './montar/rostos-motor'
 import { registrarCanaisDoMotor } from './ipc-motor'
 import { registrarCanaisDaMigracao } from './migracao/ipc'
@@ -307,6 +310,8 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[string, string], boolean>(C.cancelarVoz, async (rascunhoId, pedidoId) =>
     cancelarVoz(idDoRascunho(rascunhoId), String(pedidoId).slice(0, 64)),
   )
+  // O2: a marca do pedido que o app largou no meio (le e apaga).
+  ctx.handle<[string], VozInterrompida | null>(C.vozInterrompida, async (rascunhoId) => pedidoInterrompido(idDoRascunho(rascunhoId)))
 
   ctx.handle<[string, string], RascunhoDoRecap>(C.escolherTake, async (rascunhoId, takeId) =>
     escolherTakeDoRascunho(idDoRascunho(rascunhoId), idDoTake(takeId)),
@@ -380,6 +385,7 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
       aoAndar: (texto) => ctx.enviar(C.montarProgresso, { rascunhoId: id, texto }),
     })
   })
+  ctx.handle<[string], { inicio: string } | null>(C.montagemInterrompida, async (rascunhoId) => montagemInterrompida(idDoRascunho(rascunhoId)))
 
   // ----------------------------------------------------------- Edicao rapida
   // Contrato em shared/edicao-rapida.ts; o som em som/. O rosto pelo motor
@@ -414,7 +420,9 @@ function idDaFrase(valor: unknown): string {
 /** O que a tela sabe da voz: das chaves, so o `chaves` do ModuloPublico (tem, dica). */
 function ajustesDaVoz(): AjustesDaVoz {
   const chaves = listarModulos().find((m) => m.id === 'recap')?.chaves ?? {}
-  const eleven = chaves['elevenlabsApiKey'] ?? { tem: false, dica: '' }
+  // TESTE (O2): com a voz falsa (RECAP_TESTE_VOZ_FALSA) o ElevenLabs aparece com chave; nada sai para a rede.
+  const falsa = esperaDaVozFalsa() !== null ? { tem: true, dica: 'teste' } : null
+  const eleven = falsa ?? chaves['elevenlabsApiKey'] ?? { tem: false, dica: '' }
   const fish = chaves['fishApiKey'] ?? { tem: false, dica: '' }
   return {
     hasElevenKey: eleven.tem,

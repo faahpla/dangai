@@ -675,6 +675,48 @@ export function temPlanos(indice: Pick<EpisodeIndex, 'planos'>): boolean {
   return indice.planos.length > 0
 }
 
+/**
+ * O2: o .mkv reaberto pelo dialogo (sem rascunho: o passo 1) cujo corte por
+ * tras nao acabou. Em vez do "Episodio novo / Analisar" de novo, o passo 1
+ * volta onde estava: o resumo com as falas e o corte seguindo (`retomar`), ou
+ * o "Corte parou" com os botoes dele (o anime nao achado: Buscar elenco e
+ * Reconhecer na mao, sem cortar de novo). O nome e a legenda sao os do indice
+ * (o nome corrigido na tela nao volta ao do arquivo).
+ */
+export interface CorteParado {
+  palpite: PalpiteDoEpisodio
+  faixaLegenda: number | null
+  motor: Motor
+  reconhecer: boolean
+  /** true = o corte recomeca (ou segue, se ainda vivo no main); false = so abre. */
+  retomar: boolean
+}
+
+/**
+ * A regra do CorteParado, pura (o teste). `vivo` = o main ainda corta (ou tem
+ * na fila) este episodio. null = nada a retomar: ja tem as cenas, nunca pediu
+ * corte, ou ele cancelou (Cancelar nao volta sozinho, como no "Continuar").
+ */
+export function corteParado(
+  indice: Pick<EpisodeIndex, 'planos' | 'corte' | 'anime' | 'temporada' | 'episodio' | 'kind' | 'faixaLegenda'>,
+  vivo: boolean,
+): CorteParado | null {
+  const c = indice.corte
+  if (!c || temPlanos(indice)) return null
+  const base = {
+    palpite: { anime: indice.anime, temporada: indice.temporada, episodio: indice.episodio, kind: indice.kind },
+    faixaLegenda: indice.faixaLegenda?.index ?? null,
+    motor: c.motor,
+    reconhecer: c.reconhecer,
+  }
+  if (vivo) return { ...base, retomar: true }
+  // 'cortando' no disco sem job vivo: o app fechou (ou caiu) no meio.
+  if (c.status === 'cortando') return { ...base, retomar: true }
+  // Parou pedindo o elenco: os grupos de rostos estao gravados; nada de cortar de novo.
+  if (c.status === 'falhou' && c.descoberta) return { ...base, retomar: false }
+  return null
+}
+
 /** O que o corte traz para anexar ao indice que nasceu so com as falas. */
 export interface PlanosDoCorte {
   /** Ja cruzados com as cues DESTE indice (montarPlanos do main, com as mesmas cues). */

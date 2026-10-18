@@ -51,6 +51,7 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     ajustarVoz: (rascunhoId, pedido) => invocar(C.ajustarVoz, rascunhoId, pedido),
     importarAudio: (rascunhoId, pedido) => invocar(C.importarAudio, rascunhoId, pedido),
     cancelarVoz: (rascunhoId, pedidoId) => invocar(C.cancelarVoz, rascunhoId, pedidoId),
+    vozInterrompida: (rascunhoId) => invocar(C.vozInterrompida, rascunhoId),
     escolherTake: (rascunhoId, takeId) => invocar(C.escolherTake, rascunhoId, takeId),
     aprovarVoz: (rascunhoId) => invocar(C.aprovarVoz, rascunhoId),
     desaprovarVoz: (rascunhoId) => invocar(C.desaprovarVoz, rascunhoId),
@@ -69,6 +70,7 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     encaixarNaVoz: (rascunhoId) => invocar(C.encaixarNaVoz, rascunhoId),
     mesclasDoEpisodio: (episodioId) => invocar(C.mesclasDoEpisodio, episodioId),
     montarProjeto: (rascunhoId, pedido) => invocar(C.montarProjeto, rascunhoId, pedido ?? {}),
+    montagemInterrompida: (rascunhoId) => invocar(C.montagemInterrompida, rascunhoId),
     onMontarProgresso: (ouvinte) => assinar(C.montarProgresso, ouvinte),
 
     listarMusicas: () => invocar(C.listarMusicas),
@@ -85,6 +87,7 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     onAnaliseFim: (ouvinte) => assinar(C.analiseFim, ouvinte),
     iniciarCorte: (pedido) => invocar(C.iniciarCorte, pedido),
     estadoDoCorte: (episodioId) => invocar(C.estadoDoCorte, episodioId),
+    corteParado: (episodioId) => invocar(C.corteParado, episodioId),
     cancelarCorte: (episodioId) => invocar(C.cancelarCorte, episodioId),
     onCorteProgresso: (ouvinte) => assinar(C.corteProgresso, ouvinte),
     iniciarDescoberta: (pedido) => invocar(C.iniciarDescoberta, pedido),

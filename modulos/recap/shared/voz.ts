@@ -664,6 +664,26 @@ export interface VozGerada {
   avisos: string[]
 }
 
+/**
+ * O2: o pedido de voz que o app largou no meio (fechou ou caiu com ele no ar).
+ * A marca fica no disco (<recaps>/<rascunho>/voz/no-ar.json) do comeco ao fim
+ * do pedido; reabrindo, o passo 3 avisa uma vez. Voz paga nao recomeca
+ * sozinha: o Gerar mostra o custo antes, como sempre.
+ */
+export interface VozInterrompida {
+  tipo: 'gerar' | 'regravar' | 'ajustar' | 'importar'
+  /** ISO de quando o pedido comecou. */
+  inicio: string
+}
+
+/** O recado do cartao da narracao (ASCII, curto: a primeira frase vira o resumo). */
+export function notaDaVozInterrompida(v: Pick<VozInterrompida, 'tipo'>): string {
+  if (v.tipo === 'regravar') return 'A regravacao parou no meio: o app fechou. Regrave de novo.'
+  if (v.tipo === 'ajustar') return 'O ajuste parou no meio: o app fechou. Aplique de novo.'
+  if (v.tipo === 'importar') return 'A importacao parou no meio: o app fechou. Importe de novo.'
+  return 'A voz parou no meio: o app fechou. Gere de novo.'
+}
+
 /** O audio de um take publicado no servidor de midia local, com a onda para a Waveform. */
 export interface AudioDoTake {
   takeId: string

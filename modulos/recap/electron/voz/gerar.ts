@@ -23,6 +23,7 @@ import {
   type ProgressoDaVoz,
   type TakeDaVoz,
   type VozGerada,
+  type VozInterrompida,
 } from '../../shared/voz'
 import { gravarRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
 import { alinharPeloAudio } from './alinhamento'
@@ -33,7 +34,7 @@ import { importarAudioDoLevi, traduzirAndamento } from './importado'
 import { brutoPeloSom, emendar, montarTake, type BrutoMontado, type PedacoNovo } from './montar'
 import { palavrasPeloRoteiro, palavrasPeloTexto, palavrasDosCaracteres, type PalavrasCasadas } from './palavras'
 import { arquivoDaVoz } from './pastas'
-import { cancelarPedido, comecarPedido, terminarPedido } from './pedidos'
+import { cancelarPedido, comecarPedido, desmarcarNoAr, marcarNoAr, terminarPedido } from './pedidos'
 import { creditosPorCaractere, cumprirPlano, type VozDoProvedor } from './provedor'
 import { aprenderRitmo } from './ritmo'
 import { lerWavDoDisco, wavDoPcm } from './wav'
@@ -77,12 +78,22 @@ function avisador(progresso: AvisarProgressoDaVoz, rascunhoId: string, pedidoId:
   }
 }
 
-/** O pedido inteiro dentro do registro de pedidos (Cancelar, um por rascunho). */
-async function comPedido<T>(rascunhoId: string, pedidoId: string, fazer: (signal: AbortSignal) => Promise<T>): Promise<T> {
+/**
+ * O pedido inteiro dentro do registro de pedidos (Cancelar, um por rascunho).
+ * O2: e com a marca no disco enquanto roda (o app fechado no meio avisa ao reabrir).
+ */
+async function comPedido<T>(
+  rascunhoId: string,
+  pedidoId: string,
+  tipo: VozInterrompida['tipo'],
+  fazer: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const signal = comecarPedido(rascunhoId, pedidoId)
+  marcarNoAr(rascunhoId, pedidoId, tipo)
   try {
     return await fazer(signal)
   } finally {
+    desmarcarNoAr(rascunhoId, pedidoId)
     terminarPedido(rascunhoId, pedidoId)
   }
 }
@@ -208,7 +219,7 @@ export async function gerarVoz(
   pedido: PedidoDeGeracao,
   progresso: AvisarProgressoDaVoz,
 ): Promise<VozGerada> {
-  return comPedido(rascunhoId, pedido.pedidoId, async (signal) => {
+  return comPedido(rascunhoId, pedido.pedidoId, 'gerar', async (signal) => {
     const avisar = avisador(progresso, rascunhoId, pedido.pedidoId)
     avisar('preparando', 'Preparando...')
     if (pedido.config.fonte === 'importado') throw new Error('Para usar um audio gravado, use Importar audio.')
@@ -264,7 +275,7 @@ export async function regravarFrases(
   pedido: PedidoDeRegravar,
   progresso: AvisarProgressoDaVoz,
 ): Promise<VozGerada> {
-  return comPedido(rascunhoId, pedido.pedidoId, async (signal) => {
+  return comPedido(rascunhoId, pedido.pedidoId, 'regravar', async (signal) => {
     const avisar = avisador(progresso, rascunhoId, pedido.pedidoId)
     avisar('preparando', 'Preparando...')
     const r = lerRascunhoDoDisco(rascunhoId)
@@ -384,7 +395,7 @@ export async function ajustarVoz(
   pedido: PedidoDeAjuste,
   progresso: AvisarProgressoDaVoz,
 ): Promise<VozGerada> {
-  return comPedido(rascunhoId, pedido.pedidoId, async (signal) => {
+  return comPedido(rascunhoId, pedido.pedidoId, 'ajustar', async (signal) => {
     const avisar = avisador(progresso, rascunhoId, pedido.pedidoId)
     avisar('preparando', 'Preparando...')
     const r = lerRascunhoDoDisco(rascunhoId)
@@ -448,7 +459,7 @@ export async function importarAudio(
   pedido: PedidoDeImportacao,
   progresso: AvisarProgressoDaVoz,
 ): Promise<VozGerada> {
-  return comPedido(rascunhoId, pedido.pedidoId, async (signal) => {
+  return comPedido(rascunhoId, pedido.pedidoId, 'importar', async (signal) => {
     const avisar = avisador(progresso, rascunhoId, pedido.pedidoId)
     const take = await importarAudioDoLevi(rascunhoId, pedido, avisar, signal)
     if (signal.aborted) throw new Cancelado()

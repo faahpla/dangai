@@ -17,7 +17,7 @@ import { formatoFish, sintetizarFish } from './fish'
 import type { AlinhamentoDeCaracteres } from './palavras'
 import { pastaDoCacheDaVoz } from './pastas'
 import { aprenderTaxa } from './taxa'
-import { lerWav, type Pcm } from './wav'
+import { lerWav, wavDoPcm, type Pcm } from './wav'
 
 /**
  * Um pedido de voz de ponta a ponta: cache -> provedor -> cache -> PCM.
@@ -49,8 +49,64 @@ export function creditosPorCaractere(config: ConfigPaga): number {
   return config.fonte === 'elevenlabs' ? modeloEleven(config.modelId).creditosPorCaractere : 1
 }
 
+/**
+ * TESTE (O2): RECAP_TESTE_VOZ_FALSA=<ms> troca o provedor pago por uma voz
+ * FALSA, local: um tom baixo do tamanho do texto, com o alinhamento por
+ * caractere, depois de <ms> de espera (o "no ar" de uma chamada de verdade).
+ * Nunca chama a rede nem pede chave: e o teste de fechar o app no meio da voz
+ * sem gastar credito. Sem a variavel, nada muda. null = desligada.
+ */
+export function esperaDaVozFalsa(): number | null {
+  const v = process.env['RECAP_TESTE_VOZ_FALSA']
+  if (!v) return null
+  const ms = Number(v)
+  return Number.isFinite(ms) && ms >= 0 ? ms : 0
+}
+
+/** A voz falsa do teste (ver esperaDaVozFalsa). ~16 caracteres por segundo, pausa nas pontuacoes. */
+export async function sintetizarFalso(texto: string, formato: string, esperaMs: number, signal?: AbortSignal): Promise<RespostaDoProvedor> {
+  await new Promise<void>((ok, falha) => {
+    if (signal?.aborted) {
+      falha(new Error('Cancelado'))
+      return
+    }
+    const relogio = setTimeout(ok, esperaMs)
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(relogio)
+        falha(new Error('Cancelado'))
+      },
+      { once: true },
+    )
+  })
+  const taxa = Number(/^wav_(\d+)$/.exec(formato)?.[1] ?? 44_100) || 44_100
+  const letras = [...texto]
+  const porLetra = 1 / 16
+  const amostras = new Int16Array(Math.max(1, Math.round(letras.length * porLetra * taxa)))
+  for (const [i, letra] of letras.entries()) {
+    if (/[\s.,!?;:]/.test(letra)) continue
+    const de = Math.round(i * porLetra * taxa)
+    const ate = Math.min(amostras.length, Math.round((i + 1) * porLetra * taxa))
+    for (let j = de; j < ate; j++) amostras[j] = Math.round(1200 * Math.sin((2 * Math.PI * 180 * j) / taxa))
+  }
+  return {
+    bytes: wavDoPcm({ taxa, amostras }),
+    formato,
+    alignment: {
+      characters: letras,
+      character_start_times_seconds: letras.map((_, i) => i * porLetra),
+      character_end_times_seconds: letras.map((_, i) => (i + 1) * porLetra),
+    },
+    normalizado: null,
+    requestId: 'teste-voz-falsa',
+    custo: null,
+  }
+}
+
 /** A chave da API salva (cifrada) nas Configuracoes. Nunca vai para erro nem log. */
 export function chaveDaApi(fonte: ConfigPaga['fonte']): string {
+  if (esperaDaVozFalsa() !== null) return 'teste-voz-falsa'
   const s = getSettings()
   const chave = fonte === 'elevenlabs' ? s.elevenlabsApiKey : s.fishApiKey
   if (!chave) throw new Error(`Cole a chave do ${ROTULO_DA_FONTE[fonte]} em Configuracoes > Voz.`)
@@ -115,6 +171,8 @@ export async function pcmDosBytes(bytes: Buffer, taxa: number | null, signal?: A
 
 function sintetizar(chave: string, plano: PlanoDoPedido, formato: string, signal?: AbortSignal): Promise<RespostaDoProvedor> {
   const p = plano.pedido
+  const falsa = esperaDaVozFalsa()
+  if (falsa !== null) return sintetizarFalso(p.texto, formato, falsa, signal)
   if (p.config.fonte === 'elevenlabs') return sintetizarEleven(chave, { ...p, config: p.config }, formato, signal)
   return sintetizarFish(chave, { ...p, config: p.config }, formato, signal)
 }

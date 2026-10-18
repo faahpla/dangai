@@ -13,6 +13,7 @@ import {
   fraseNoTempo,
   frasesParaRegravar,
   modeloEleven,
+  notaDaVozInterrompida,
   palavraNoTempo,
   settingsElevenSchema,
   settingsFishSchema,
@@ -704,6 +705,11 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
       // O pedido de outro rascunho segue no main; a resposta dele nao entra aqui (trocarRascunho confere o id).
       set({ ...LIMPO, rascunhoId, pedido: null })
       get().sincronizar()
+      // O2: o app fechou com um pedido de voz no ar: o cartao da narracao avisa (uma vez).
+      void ponte.vozInterrompida(rascunhoId).then((r) => {
+        const s = get()
+        if (r.ok && r.value && s.rascunhoId === rascunhoId && !s.pedido) set({ falha: notaDaVozInterrompida(r.value) })
+      })
     },
 
     sincronizar: () => {

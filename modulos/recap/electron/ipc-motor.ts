@@ -16,6 +16,7 @@ import {
 import {
   pedidoDeAnaliseSchema,
   pedidoDeCorteSchema,
+  type CorteParado,
   type EstadoDoCorte,
   type PedidoDeAnalise,
   type PedidoDeCorte,
@@ -23,7 +24,7 @@ import {
 } from '../shared/episodio'
 import { cancelarDescoberta, confirmarDescoberta, descobertaAtual, iniciarDescoberta, salvarDecisao, type AvisosDaDescoberta } from './descoberta'
 import { buscarAnime, escolherAnime } from './descoberta/elenco'
-import { cancelarCorte, estadoDoCorte, iniciarCorte } from './episodio/corte-fundo'
+import { cancelarCorte, corteParadoDoEpisodio, estadoDoCorte, iniciarCorte } from './episodio/corte-fundo'
 import { analisarEpisodio, cancelarAnalise, statusDoMotor } from './motor'
 import { registrarIpcDoMotorRuntime } from './motor-runtime/ipc'
 
@@ -55,6 +56,8 @@ export function registrarCanaisDoMotor(ctx: ContextoDoModulo): void {
     iniciarCorte(pedidoDeCorteSchema.parse(pedido), (evento) => ctx.enviar(C.corteProgresso, evento)),
   )
   ctx.handle<[string], EstadoDoCorte | null>(C.estadoDoCorte, async (episodioId) => estadoDoCorte(idDoEpisodio(episodioId)))
+  // O2: o .mkv reaberto com o corte pela metade volta onde estava.
+  ctx.handle<[string], CorteParado | null>(C.corteParado, async (episodioId) => corteParadoDoEpisodio(idDoEpisodio(episodioId)))
   ctx.handle<[string], boolean>(C.cancelarCorte, async (episodioId) => cancelarCorte(idDoEpisodio(episodioId)))
 
   // Reconhecer na mao. O fim leva o indice novo pelos DOIS canais: o do corte e o da descoberta.

@@ -441,7 +441,7 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
    * segundos (indexarFalas), a tela vai para o resumo e o "Proximo: Roteiro"
    * libera; o corte sobe por tras.
    */
-  const comecarSemEsperar = async (motor: Motor, reconhecer: boolean): Promise<void> => {
+  const comecarSemEsperar = async (motor: Motor, reconhecer: boolean, iniciar = true): Promise<void> => {
     const { arquivo, palpite, faixaLegenda } = get()
     if (!arquivo || !palpite) return
     const minhaGeracao = geracao
@@ -465,7 +465,22 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
     })
     // Ja tinha cenas (cortado antes, e a busca nao viu): nada a esperar.
     if (corteDoIndice(indice) === null) return
-    await acompanharCorte(indice, { iniciar: true, motor, reconhecer })
+    await acompanharCorte(indice, { iniciar, motor, reconhecer })
+  }
+
+  /**
+   * O2: o .mkv reaberto pelo dialogo com o corte pela metade (o app fechou ou
+   * caiu no meio, ou ele segue por tras): o passo 1 volta onde estava -- as
+   * falas e o corte seguindo, ou o "Corte parou" com os botoes dele -- em vez
+   * do "Episodio novo" e de outro "Analisar". Regra em corteParado.
+   */
+  const retomarCorteParado = async (minhaGeracao: number): Promise<void> => {
+    const { sonda, busca, indice, job } = get()
+    if (!sonda || indice || job || busca === null || busca.length > 0) return
+    const r = await ponte.corteParado(sonda.id)
+    if (minhaGeracao !== geracao || !r.ok || !r.value || get().fase !== 'escolha') return
+    set({ palpite: r.value.palpite, faixaLegenda: r.value.faixaLegenda })
+    await comecarSemEsperar(r.value.motor, r.value.reconhecer, r.value.retomar)
   }
 
   /** As cenas chegaram (ou o corte mudou de estado). */
@@ -889,6 +904,7 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
         faixaLegenda: r.value.legendaSugerida,
       })
       await procurar(minhaGeracao)
+      await retomarCorteParado(minhaGeracao)
     },
 
     recomecar: () => {

@@ -2319,14 +2319,18 @@ export function desmarcarAprovado(r: RascunhoDoRecap, agoraIso: string): Rascunh
 /**
  * Onde o rascunho reabre (o "Continuar" do Gerar recap): no 4 quando a voz
  * esta aprovada e em dia com o roteiro (o mesmo que libera o passo 4); no 3
- * quando o roteiro aprovado ja tem voz; senao no 2. Mora aqui, e nao so na
- * tela (passoAoRestaurar, gerar-passos.ts, que usa esta), porque a lista de
+ * quando o roteiro esta aprovado; senao no 2. Mora aqui, e nao so na tela
+ * (passoAoRestaurar, gerar-passos.ts, que usa esta), porque a lista de
  * rascunhos do main ja sai com o passo de cada um.
+ *
+ * O2 (18/10): o roteiro aprovado ainda sem take reabre no 3, e nao no 2: e
+ * onde ele estava (o "Proximo: Voz" vem logo depois do aprovar), e onde fica o
+ * aviso da voz que parou no meio com o app fechado (pedidoInterrompido).
  */
 export function passoDoRascunho(r: Pick<RascunhoDoRecap, 'aprovado' | 'voz' | 'roteiros' | 'atual'>): 2 | 3 | 4 {
   if (!r.aprovado) return 2
   if (situacaoDaVoz(r, roteiroAtual(r)) === 'aprovada') return 4
-  return (r.voz?.takes.length ?? 0) > 0 ? 3 : 2
+  return 3
 }
 
 /** A linha da lista de rascunhos. */

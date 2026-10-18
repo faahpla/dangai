@@ -1,5 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { roteiroAtual, type RascunhoDoRecap } from '../../shared/roteiro'
 import { podeIrParaCenas, takeAtual } from '../../shared/voz'
 import {
@@ -15,7 +15,7 @@ import type { EpisodeIndex } from '../../shared/episodio'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
 import { comMesclas } from '../cenas/mesclas'
 import { saveProjectFile } from '../project'
-import { arquivoDaVoz } from '../voz/pastas'
+import { arquivoDaVoz, pastaDaVoz } from '../voz/pastas'
 import { secoesDoTake, type RostosDoLote } from '../../shared/edicao-rapida'
 import { aquecerMiniaturas } from './abertura'
 import {
@@ -122,10 +122,96 @@ export interface OpcoesDaMontagem {
   aoAndar?: (texto: string) => void
 }
 
+// ------------------------------------------------- O2: a montagem no ar
+
+/** As montagens rodando nesta sessao (a marca no disco de uma delas nao e de um app que fechou). */
+const montandoAgora = new Set<string>()
+
+interface MontagemNoAr {
+  pasta: string
+  inicio: string
+  /** O passo 4 ja avisou ("a montagem parou no meio"): nao avisa de novo. */
+  avisado?: boolean
+}
+
+/** <recaps>/<rascunho>/montagem-no-ar.json (pastaDaVoz confere o id). */
+function arquivoDaMontagemNoAr(rascunhoId: string): string {
+  return join(dirname(pastaDaVoz(rascunhoId)), 'montagem-no-ar.json')
+}
+
+function lerMontagemNoAr(rascunhoId: string): MontagemNoAr | null {
+  try {
+    const d = JSON.parse(readFileSync(arquivoDaMontagemNoAr(rascunhoId), 'utf8')) as Partial<MontagemNoAr>
+    return typeof d.pasta === 'string' && typeof d.inicio === 'string' ? { pasta: d.pasta, inicio: d.inicio, avisado: d.avisado === true } : null
+  } catch {
+    return null
+  }
+}
+
+function gravarMontagemNoAr(rascunhoId: string, m: MontagemNoAr): void {
+  try {
+    const arquivo = arquivoDaMontagemNoAr(rascunhoId)
+    mkdirSync(dirname(arquivo), { recursive: true })
+    writeFileSync(arquivo, JSON.stringify(m), 'utf8')
+  } catch {
+    /* sem a marca, so falta o aviso (e a pasta nova sai com outro carimbo) */
+  }
+}
+
+/**
+ * O2: a montagem que o app largou no meio (fechou ou caiu no "Abrir no
+ * editor"): o passo 4 avisa UMA vez. null = nenhuma (ou ja avisada).
+ */
+export function montagemInterrompida(rascunhoId: string): { inicio: string } | null {
+  if (montandoAgora.has(rascunhoId)) return null
+  const m = lerMontagemNoAr(rascunhoId)
+  if (!m || m.avisado) return null
+  gravarMontagemNoAr(rascunhoId, { ...m, avisado: true })
+  return { inicio: m.inicio }
+}
+
+/**
+ * A pasta da montagem largada no meio, ainda sem o projeto: o "Abrir no
+ * editor" de novo usa a MESMA (e nao deixa uma pasta so com a narracao para
+ * tras). Com o projeto la dentro, ela e de outra montagem que terminou.
+ */
+function pastaLargada(rascunhoId: string): string | null {
+  if (montandoAgora.has(rascunhoId)) return null
+  const m = lerMontagemNoAr(rascunhoId)
+  if (!m || !existsSync(m.pasta)) return null
+  try {
+    const comProjeto = readdirSync(m.pasta).some((f) => /\.(dangai|anirecap)$/i.test(f))
+    return comProjeto ? null : m.pasta
+  } catch {
+    return null
+  }
+}
+
 export async function montarProjeto(
   rascunhoId: string,
   pedido: PedidoDeMontagem,
   opcoes: OpcoesDaMontagem = {},
+): Promise<ProjetoMontado> {
+  const largada = pedido.pasta ? null : pastaLargada(rascunhoId)
+  montandoAgora.add(rascunhoId)
+  try {
+    return await montarAqui(rascunhoId, pedido, opcoes, largada)
+  } finally {
+    montandoAgora.delete(rascunhoId)
+    // Terminou (bem ou mal): a marca sai. So o app fechado no meio a deixa.
+    try {
+      rmSync(arquivoDaMontagemNoAr(rascunhoId), { force: true })
+    } catch {
+      /* presa: o aviso e a pasta saem na proxima */
+    }
+  }
+}
+
+async function montarAqui(
+  rascunhoId: string,
+  pedido: PedidoDeMontagem,
+  opcoes: OpcoesDaMontagem,
+  largada: string | null,
 ): Promise<ProjetoMontado> {
   // 1. Ler, conferir e encaixar no take aprovado -- sem await ate gravar.
   const r = lerRascunhoDoDisco(rascunhoId)
@@ -152,10 +238,12 @@ export async function montarProjeto(
 
   // 2. A pasta: a pedida (conferida) ou a padrao; nunca numa biblioteca externa.
   const nome = nomeDoProjeto(indice)
-  const pasta = conferirPastaPedida(pedido.pasta ?? pastaPadraoDoProjeto(nome, new Date()))
+  // O2: a pasta de uma montagem largada no meio (sem o projeto) volta a ser usada.
+  const pasta = conferirPastaPedida(pedido.pasta ?? largada ?? pastaPadraoDoProjeto(nome, new Date()))
   const origem = arquivoDaVoz(r.id, take.arquivo)
   if (!existsSync(origem)) throw new Error('O audio da voz aprovada sumiu. Gere ou importe a voz de novo.')
   mkdirSync(pasta, { recursive: true })
+  gravarMontagemNoAr(r.id, { pasta, inicio: new Date().toISOString() })
 
   // 3. A narracao vai junto do projeto (o projeto nao aponta para o userData),
   // com o NOME do projeto: o render do Dangai grava ao lado do audio, com o
