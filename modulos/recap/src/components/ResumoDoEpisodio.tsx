@@ -11,7 +11,8 @@ import {
 } from '../../shared/episodio'
 import { nomeNatural } from '@shared/nomes'
 import { nomesDeUmaArte, ORIGEM_DO_BATISMO, podeReconhecerNaMao } from '../../shared/descoberta'
-import { TRECHO_MINIMO, useGerar } from '../store/gerar'
+import { devolverAoAncutNoFim, TRECHO_MINIMO, useGerar } from '../store/gerar'
+import { useAncut } from '../store/ancut'
 import { useDescoberta } from '../store/gerar-descoberta'
 import { SecaoDoCorte } from './AndamentoDoCorte'
 import { EnviarAoAncut } from './EnviarAoAncut'
@@ -91,7 +92,9 @@ export function ResumoDoEpisodio() {
   const avisos = indice.avisos.filter((a) => !avisoDaLegenda(a))
   const personagensSobram = personagens.length - PERSONAGENS_VISIVEIS
 
-  const podeReconhecer = indice.reconhecimento === 'pulado' && indice.biblioteca.origem === 'studio'
+  // Cortado pelo recap: aqui, ou movido para o AnCut (o "Reconhecer agora" traz de volta, reconhece e devolve).
+  const doRecap = indice.biblioteca.origem === 'studio' || indice.biblioteca.movidoDoRecap === true
+  const podeReconhecer = indice.reconhecimento === 'pulado' && doRecap
   // Indice so com as falas: as cenas estao sendo cortadas por tras (SecaoDoCorte).
   const comCenas = temPlanos(indice)
   // Sem cenas, a porta do Reconhecer na mao e o "Corte parou" (SecaoDoCorte); aqui, so com cenas.
@@ -119,8 +122,8 @@ export function ResumoDoEpisodio() {
                 </span>
               )}
             </span>
-            {/* L1: so o episodio cortado pelo recap vai para o AnCut, e so com o clique. */}
-            {comCenas && indice.biblioteca.origem === 'studio' && <EnviarAoAncut episodioId={indice.id} />}
+            {/* L1: so o episodio cortado pelo recap muda para o AnCut, e so com o clique. */}
+            {comCenas && doRecap && <EnviarAoAncut indice={indice} />}
             {/* Sem cenas ainda, a pasta do indice so tem o episodio.json: nada a ver no Explorer. */}
             {comCenas && (
               <AbrirPasta
@@ -256,8 +259,21 @@ function ReconhecerAgora() {
   const editarPalpite = useGerar((s) => s.editarPalpite)
   const pronto = motor?.studio.pronto === true
   const semAnime = !anime.trim()
-  const reconhecer = (): void => {
-    if (!mudaram && pronto && !semAnime) void analisar('studio', true)
+  const indiceId = useGerar((s) => s.indice?.id ?? null)
+  const trazendo = useAncut((s) => (indiceId ? s.porEpisodio[indiceId]?.fase === 'trazendo' : false))
+  const reconhecer = async (): Promise<void> => {
+    if (mudaram || !pronto || semAnime || trazendo) return
+    // Mora no AnCut (movido pelo recap): volta antes -- o motor do recap so
+    // grava na biblioteca dele, e la reaproveita o corte. No fim, volta para la.
+    const atual = useGerar.getState().indice
+    if (atual?.biblioteca.origem === 'ancut' && atual.biblioteca.movidoDoRecap) {
+      const deVolta = await useAncut.getState().trazer(atual.id)
+      if (!deVolta) return
+      // O indice de volta ja na tela: a analise manda a pasta do anime dele (o corte e reaproveitado).
+      if (useGerar.getState().indice?.id === deVolta.id) useGerar.setState({ indice: deVolta })
+      devolverAoAncutNoFim(atual.id)
+    }
+    void analisar('studio', true)
   }
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -266,7 +282,7 @@ function ReconhecerAgora() {
         value={anime}
         onChange={(e) => editarPalpite({ anime: e.target.value })}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') reconhecer()
+          if (e.key === 'Enter') void reconhecer()
           if (e.key === 'Escape') e.currentTarget.blur()
         }}
         aria-label="Anime"
@@ -276,8 +292,8 @@ function ReconhecerAgora() {
         className={`${CLASSE_DO_CAMPO} ${CAMPO_NORMAL} w-[260px]`}
       />
       <Botao
-        onClick={reconhecer}
-        disabled={mudaram || !pronto || semAnime}
+        onClick={() => void reconhecer()}
+        disabled={mudaram || !pronto || semAnime || trazendo}
         title={
           mudaram
             ? 'Salve ou desfaca as marcacoes de OP/ED antes'

@@ -348,6 +348,30 @@ let sincronizando: Promise<void> | null = null
 let lendoAPorta = false
 
 /**
+ * L1: o episodio que veio do AnCut para o "Reconhecer agora" (ResumoDoEpisodio
+ * traz de volta antes): no fim da analise -- deu certo, falhou ou foi
+ * cancelada -- ele volta para la. Uma copia so o tempo todo.
+ */
+let devolverAoAncut: string | null = null
+
+/** Marca o episodio que volta para o AnCut quando a analise em primeiro plano acabar. */
+export function devolverAoAncutNoFim(episodioId: string | null): void {
+  devolverAoAncut = episodioId
+}
+
+/**
+ * O fim de uma analise em primeiro plano ("Analisar de novo", "Reconhecer
+ * agora"): o que veio do AnCut volta; o resto segue o "Enviar sempre" (o main
+ * confere a opcao). O resultado chega pelo evento do AnCut (store/ancut.ts).
+ */
+function depoisDaAnalise(episodioId: string | undefined, cortou: boolean): void {
+  if (!episodioId) return
+  const devolver = devolverAoAncut === episodioId
+  if (devolver) devolverAoAncut = null
+  if (devolver || cortou) void ponte.depoisDaAnaliseNoAncut(episodioId, devolver)
+}
+
+/**
  * Os receptores do progresso e do fim, preenchidos dentro do create (precisam
  * do set/get da store). Declarados ANTES dele: o create roda na hora.
  */
@@ -705,7 +729,10 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
         // depois nao apaga de onde vieram as fotos de antes.
         ...(f.fotosDoElenco ? { fotosDoElenco: f.fotosDoElenco } : {}),
       })
-      if (!arquivo || !palpite) return
+      if (!arquivo || !palpite) {
+        depoisDaAnalise(get().indice?.id, false)
+        return
+      }
       void indexar({
         path: arquivo,
         pastaDoEpisodio: f.pastaDoEpisodio,
@@ -714,9 +741,10 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
         faixaLegenda,
         // Acabou de cortar: um indice antigo desta pasta falaria de outras cenas.
         refazer: true,
-      })
+      }).then(() => depoisDaAnalise(get().indice?.id, f.motor === 'studio'))
       return
     }
+    depoisDaAnalise(get().indice?.id, false)
     /*
      * Volta para onde estava: a escolha, ou o resumo quando a analise foi um
      * "reconhecer agora" sobre um episodio ja pronto -- o indice dele continua
@@ -1018,6 +1046,7 @@ export const useGerar = create<EstadoDoGerar>((set, get) => {
         // A mesma regra do receberFim: um "reconhecer agora" sobre um
         // episodio pronto volta para o resumo, que continua valendo.
         set({ fase: get().indice ? 'pronto' : 'escolha', job: null, erro })
+        depoisDaAnalise(get().indice?.id, false)
         return
       }
       const atual = get().job
