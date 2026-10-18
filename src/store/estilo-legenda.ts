@@ -9,6 +9,7 @@ import {
 } from '@shared/contract'
 import { useProject } from './project'
 import { estaCarregando } from './quiet'
+import { estaDesfazendo } from './undo'
 import { exportarPreset, importarPreset, nomeLivre } from './arquivo-de-preset'
 
 /**
@@ -90,9 +91,19 @@ export function aplicarEstiloSemVirarPadrao(e: CaptionStyle, comFonte: boolean):
   }
 }
 
+/**
+ * O estilo que ESTA gravado como padrao agora (o ultimo que este observador
+ * mandou gravar). Serve para o Ctrl+Z: desfazer so mexe no padrao quando o que
+ * se desfaz ERA o padrao -- a mudanca dele mesmo. Desfazer um estilo que um
+ * modulo pos (e que nunca virou padrao) gravava o estilo antigo do projeto
+ * como padrao do usuario.
+ */
+let padraoGravado: string | null = null
+
 export function startEstiloLegenda(): () => void {
   const unsubscribe = useProject.subscribe((state, anterior) => {
     if (semVirarPadrao > 0) return
+    if (estaDesfazendo() && JSON.stringify(estiloDe(anterior)) !== padraoGravado) return
     // Abrir projeto e recuperar autosave escrevem nestes campos pela mesma
     // porta que ele usa. Sem esta guarda, abrir um video antigo trocaria o
     // padrao pelo estilo daquele video.
@@ -103,6 +114,7 @@ export function startEstiloLegenda(): () => void {
     // 600 ms de espera (o estilo salvo aplicado na abertura do app, e logo em
     // seguida o autosave) gravava o estilo DAQUELE video como padrao.
     const estilo = estiloDe(state)
+    padraoGravado = JSON.stringify(estilo)
     if (timer) clearTimeout(timer)
     timer = setTimeout(() => {
       timer = null

@@ -4780,7 +4780,12 @@ export const useProject = create<ProjectState>((set, get) => ({
       await get().refreshTrilhas()
       await get().refreshSobreposicoes()
     })
-    get().refazerLegendasNaoEditadas()
+    /*
+     * As legendas que ele NAO editou sao refeitas pelas regras de agora -- e
+     * isso ainda e abrir: nao suja o projeto (todo projeto com legenda nao
+     * editada abria como "nao salvo") nem vira passo de Ctrl+Z.
+     */
+    await semSujar(async () => get().refazerLegendasNaoEditadas())
     await get().migrarSonsAntigos()
     // Abriu com ressalva (um clipe mesclado no lugar do pedaco): avisa, sem impedir.
     if (result.value.avisos?.length) set({ error: result.value.avisos.join(' ') })
@@ -4815,7 +4820,12 @@ export const useProject = create<ProjectState>((set, get) => ({
       await get().refreshTrilhas()
       await get().refreshSobreposicoes()
     })
-    get().refazerLegendasNaoEditadas()
+    /*
+     * As legendas que ele NAO editou sao refeitas pelas regras de agora -- e
+     * isso ainda e abrir: nao suja o projeto (todo projeto com legenda nao
+     * editada abria como "nao salvo") nem vira passo de Ctrl+Z.
+     */
+    await semSujar(async () => get().refazerLegendasNaoEditadas())
     await get().migrarSonsAntigos()
     // Abriu com ressalva (um clipe mesclado no lugar do pedaco): avisa, sem impedir.
     if (result.value.avisos?.length) set({ error: result.value.avisos.join(' ') })

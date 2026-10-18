@@ -126,6 +126,11 @@ function aplicar(foto: Documento): void {
   }
 }
 
+/** Um Ctrl+Z/Ctrl+Y aplicando uma fotografia agora (para quem observa o store). */
+export function estaDesfazendo(): boolean {
+  return aplicando
+}
+
 export function podeDesfazer(): boolean {
   return pilha.atras.length > 0 || antesDoGesto !== null
 }
