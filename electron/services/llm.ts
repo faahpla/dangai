@@ -61,6 +61,27 @@ export interface PedidoJson<S extends z.ZodType> {
    * configuracoes nao e afetado: foi escolha dele.
    */
   permitirReserva?: boolean
+  /**
+   * IMAGENS junto do prompt (o juiz de cenas do modulo recap olha os
+   * keyframes). Vao antes do texto, na ordem dada. Os dois provedores aceitam
+   * jpeg, png e webp em base64.
+   */
+  imagens?: readonly ImagemDoPedido[]
+}
+
+export interface ImagemDoPedido {
+  mime: 'image/jpeg' | 'image/png' | 'image/webp'
+  /** O arquivo em base64, sem o prefixo `data:`. */
+  base64: string
+}
+
+/**
+ * Quanto o pedido gastou, como o provedor contou -- para o custo de verdade.
+ * `saida` inclui o pensamento do Gemini (cobrado como saida).
+ */
+export interface UsoDeTokens {
+  entrada: number
+  saida: number
 }
 
 /** Falha comum: a nota pronta e o erro tecnico. */
@@ -98,7 +119,10 @@ export interface SoReserva {
   porCota: boolean
 }
 
-export type RespostaJson<T> = { ok: true; valor: T; provedor: Provedor; modelo: string } | FalhaDeIa | SoReserva
+export type RespostaJson<T> =
+  | { ok: true; valor: T; provedor: Provedor; modelo: string; uso?: UsoDeTokens }
+  | FalhaDeIa
+  | SoReserva
 
 /**
  * Falha de IA para quem precisa lancar (o planner, cujo chamador espera
@@ -303,14 +327,30 @@ async function viaAnthropic<S extends z.ZodType>(
       max_tokens: pedido.maxTokens ?? 4096,
       output_config: { format: zodOutputFormat(pedido.schema) },
       system: pedido.sistema,
-      messages: [{ role: 'user', content: pedido.prompt }],
+      messages: [
+        {
+          role: 'user',
+          content: pedido.imagens?.length
+            ? [
+                ...pedido.imagens.map((i) => ({
+                  type: 'image' as const,
+                  source: { type: 'base64' as const, media_type: i.mime, data: i.base64 },
+                })),
+                { type: 'text' as const, text: pedido.prompt },
+              ]
+            : pedido.prompt,
+        },
+      ],
     })
 
     const output = message.parsed_output
     if (output === null || output === undefined) {
       return falha('A IA nao devolveu a resposta.', 'parsed_output vazio', 'anthropic')
     }
-    return { ok: true, valor: output, provedor: 'anthropic', modelo }
+    const uso = message.usage
+      ? { entrada: message.usage.input_tokens ?? 0, saida: message.usage.output_tokens ?? 0 }
+      : undefined
+    return { ok: true, valor: output, provedor: 'anthropic', modelo, ...(uso ? { uso } : {}) }
   } catch (err) {
     const bruto = err instanceof Error ? err.message : String(err)
     return falha(notaDaAnthropic(err, bruto, modelo), bruto, 'anthropic')
@@ -466,7 +506,15 @@ function corpoDoPedido(
 ): unknown {
   return {
     systemInstruction: { parts: [{ text: pedido.sistema }] },
-    contents: [{ role: 'user', parts: [{ text: pedido.prompt }] }],
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          ...(pedido.imagens ?? []).map((i) => ({ inlineData: { mimeType: i.mime, data: i.base64 } })),
+          { text: pedido.prompt },
+        ],
+      },
+    ],
     // Sem temperature e sem maxOutputTokens: o padrao de cada modelo serve, e
     // nos 2.5 o pensamento conta no teto -- um teto baixo cortaria o JSON.
     generationConfig:
@@ -505,7 +553,13 @@ function lerResposta<S extends z.ZodType>(
       finishReason?: unknown
     }[]
     promptFeedback?: { blockReason?: unknown }
+    usageMetadata?: { promptTokenCount?: unknown; candidatesTokenCount?: unknown; thoughtsTokenCount?: unknown }
   }
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  const meta = corpo?.usageMetadata
+  const uso = meta
+    ? { entrada: n(meta.promptTokenCount), saida: n(meta.candidatesTokenCount) + n(meta.thoughtsTokenCount) }
+    : undefined
 
   const bloqueio = corpo?.promptFeedback?.blockReason
   if (typeof bloqueio === 'string') {
@@ -548,7 +602,7 @@ function lerResposta<S extends z.ZodType>(
       'gemini',
     )
   }
-  return { ok: true, valor: conferido.data, provedor: 'gemini', modelo }
+  return { ok: true, valor: conferido.data, provedor: 'gemini', modelo, ...(uso ? { uso } : {}) }
 }
 
 async function chamarComRetentativa(
@@ -937,6 +991,22 @@ export function melhorFlash(ids: readonly string[], soBons = false): string | nu
  * Lanca ErroDeIa com a nota pronta: listar e o primeiro contato com a chave, e
  * a falha aqui quase sempre e a chave ou a rede.
  */
+/**
+ * Os modelos de TEXTO que a chave de agora alcanca, para quem quer escolher
+ * um (o modulo recap escolhe o Gemini Pro sozinho). Sem chave: lista vazia.
+ */
+export async function listarModelos(provedor: Provedor): Promise<string[]> {
+  const s = getSettings()
+  if (provedor === 'gemini') {
+    return s.geminiApiKey ? modelosDeTexto(await listarModelosGemini(s.geminiApiKey)) : []
+  }
+  if (!s.anthropicApiKey) return []
+  const client = new Anthropic({ apiKey: s.anthropicApiKey, maxRetries: 1 })
+  const ids: string[] = []
+  for await (const m of client.models.list()) ids.push(m.id)
+  return ids
+}
+
 export async function listarModelosGemini(chave: string): Promise<string[]> {
   const ids: string[] = []
   let pagina = ''

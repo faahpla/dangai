@@ -786,6 +786,28 @@ async function main(): Promise<void> {
     esquecerModelos()
   }
 
+  console.log('Gemini: tokens gastos e imagens no pedido')
+  {
+    zerar(null)
+    // Modelo escolhido a mao: vai direto, sem listar os modelos antes.
+    saveSettings({ geminiApiKey: 'AIza-falsa-de-teste-0010', iaProvedor: 'gemini', geminiModelo: 'gemini-escolhido' })
+    const comUso = respostaDoGemini({ ok: true })
+    ;(comUso.json as Record<string, unknown>)['usageMetadata'] = { promptTokenCount: 1200, candidatesTokenCount: 30, thoughtsTokenCount: 70 }
+    preparar([comUso])
+    const r = await gerarJson({
+      schema: z.object({ ok: z.boolean() }), sistema: 's', prompt: 'qual cena?', etapa: 'teste',
+      imagens: [{ mime: 'image/webp', base64: 'R0hJ' }],
+    })
+    conferir('Gemini devolve os tokens (pensamento conta como saida)', r.ok && JSON.stringify(r.uso), JSON.stringify({ entrada: 1200, saida: 100 }))
+    const partes = (pedidos[0]?.corpo?.['contents'] as { parts: Record<string, unknown>[] }[] | undefined)?.[0]?.parts
+    conferir('Gemini: a imagem antes do texto', partes?.map((p) => Object.keys(p)[0]).join(','), 'inlineData,text')
+    conferir('Gemini: inlineData com o tipo', JSON.stringify(partes?.[0]), JSON.stringify({ inlineData: { mimeType: 'image/webp', data: 'R0hJ' } }))
+    preparar([respostaDoGemini({ ok: true })])
+    const semUso = await gerarJson({ schema: z.object({ ok: z.boolean() }), sistema: 's', prompt: 'p', etapa: 'teste' })
+    conferir('sem usageMetadata: sem uso, e sem imagem o pedido e so texto', semUso.ok && semUso.uso === undefined && (pedidos[0]?.corpo?.['contents'] as { parts: unknown[] }[])[0]!.parts.length, 1)
+    esquecerModelos()
+  }
+
   console.log('Anthropic pelo mesmo ponto unico')
   {
     zerar(null)
@@ -824,6 +846,28 @@ async function main(): Promise<void> {
     const forcado = await gerarJson({ schema: z.object({ ok: z.boolean() }), sistema: 's', prompt: 'p', etapa: 'teste', provedor: 'anthropic', modelo: 'claude-forcado' })
     conferir('modelo forcado vai no pedido', pedidos[0]?.corpo?.['model'], 'claude-forcado')
     conferir('e volta como o modelo que respondeu', forcado.ok && forcado.modelo, 'claude-forcado')
+    conferir('a Anthropic devolve os tokens gastos', forcado.ok && JSON.stringify(forcado.uso), JSON.stringify({ entrada: 10, saida: 10 }))
+
+    // Imagens no pedido (o juiz de cenas): blocos de imagem antes do texto.
+    preparar([
+      json(200, {
+        id: 'msg_teste3',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-forcado',
+        content: [{ type: 'text', text: JSON.stringify({ ok: true }) }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 1500, output_tokens: 20 },
+      }),
+    ])
+    await gerarJson({
+      schema: z.object({ ok: z.boolean() }), sistema: 's', prompt: 'qual cena?', etapa: 'teste', provedor: 'anthropic',
+      imagens: [{ mime: 'image/jpeg', base64: 'QUJD' }, { mime: 'image/png', base64: 'REVG' }],
+    })
+    const conteudo = (pedidos[0]?.corpo?.['messages'] as { content: unknown }[] | undefined)?.[0]?.content as { type: string; source?: { media_type: string; data: string }; text?: string }[]
+    conferir('Anthropic: duas imagens e o texto, nessa ordem', conteudo?.map((c) => c.type).join(','), 'image,image,text')
+    conferir('Anthropic: a imagem vai em base64 com o tipo', conteudo?.[1]?.source?.media_type + ':' + conteudo?.[1]?.source?.data, 'image/png:REVG')
 
     preparar([json(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } })])
     {
