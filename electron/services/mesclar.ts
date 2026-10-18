@@ -36,8 +36,11 @@ export interface ResultadoDaMescla {
   path: string
   /** Os caminhos que sairam (foram para a lixeira). */
   pedacos: string[]
-  /** O que aconteceu no banco do AnCut. */
-  ancut: 'atualizado' | 'sem-banco' | 'episodio-nao-encontrado'
+  /**
+   * O que aconteceu no banco do AnCut. 'erro' = o banco existe, mas a
+   * gravacao falhou (o AnCut aberto e travando, por exemplo).
+   */
+  ancut: 'atualizado' | 'sem-banco' | 'episodio-nao-encontrado' | 'erro'
   segundos: number
 }
 
@@ -80,8 +83,11 @@ function rodarFfmpeg(args: string[]): Promise<void> {
   })
 }
 
-/** Onde mora o index.db do AnCut: o cache_dir da config dele, ou o padrao. */
-function bancoDoAncut(): string | null {
+/**
+ * Onde mora o index.db do AnCut: o cache_dir da config dele, ou o padrao.
+ * Publico: o modulo recap ("Enviar para o AnCut") usa o mesmo.
+ */
+export function bancoDoAncut(): string | null {
   const base = process.env['LOCALAPPDATA']
   if (!base) return null
   const pasta = join(base, 'CorteCenas', 'CorteCenas')
@@ -98,6 +104,45 @@ function bancoDoAncut(): string | null {
 
 const normal = (p: string): string => p.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase()
 
+/**
+ * QUAL EPISODIO DO BANCO e esta pasta.
+ *
+ * O AnCut de hoje guarda a pasta (`output_root`). O antigo nao tinha a coluna
+ * -- e pedir uma coluna que nao existe lancava, a mescla caia em "sem-banco"
+ * e o AnCut ficava mostrando os pedacos que ja tinham ido para a lixeira.
+ * Sem a coluna (ou sem a pasta gravada), vale a regra do proprio AnCut
+ * (_backfill_episode_roots): o SxxEyy do nome da pasta e, havendo mais de um
+ * anime com o mesmo SxxEyy, o video de origem do shot_bounds.json.
+ */
+export function episodioNoBanco(db: DatabaseSync, episodio: string): { id: number } | null {
+  const colunas = (db.prepare('PRAGMA table_info(episode)').all() as { name: string }[]).map((c) => c.name)
+  const temRaiz = colunas.includes('output_root')
+  if (temRaiz) {
+    const ep = (db.prepare('SELECT id, output_root FROM episode').all() as { id: number; output_root: string | null }[]).find(
+      (e) => e.output_root && normal(e.output_root) === normal(episodio),
+    )
+    if (ep) return { id: ep.id }
+  }
+  const m = /^S(\d+)E(\d+)$/i.exec(basename(episodio))
+  if (!m) return null
+  const filtro = temRaiz ? ' AND output_root IS NULL' : ''
+  let candidatos = db
+    .prepare(`SELECT id, source_file FROM episode WHERE season = ? AND episode = ?${filtro}`)
+    .all(Number(m[1]), Number(m[2])) as { id: number; source_file: string | null }[]
+  if (candidatos.length > 1) {
+    let fonte: string | null = null
+    try {
+      const b = JSON.parse(readFileSync(join(episodio, 'metadata', 'shot_bounds.json'), 'utf8')) as { source?: unknown }
+      fonte = typeof b.source === 'string' ? b.source : null
+    } catch {
+      /* sem o cache de cortes: nao da para desempatar */
+    }
+    candidatos = fonte ? candidatos.filter((c) => c.source_file && normal(c.source_file) === normal(fonte)) : []
+  }
+  // Com mais de um e nada para desempatar, adivinhar erraria em silencio.
+  return candidatos.length === 1 ? { id: candidatos[0]!.id } : null
+}
+
 function atualizarAncut(
   episodio: string,
   pedacos: readonly string[],
@@ -109,8 +154,7 @@ function atualizarAncut(
   try {
     db.exec('PRAGMA foreign_keys = ON')
     db.exec('PRAGMA busy_timeout = 5000')
-    const ep = (db.prepare('SELECT id, output_root FROM episode').all() as { id: number; output_root: string | null }[])
-      .find((e) => e.output_root && normal(e.output_root) === normal(episodio))
+    const ep = episodioNoBanco(db, episodio)
     if (!ep) return 'episodio-nao-encontrado'
     const rels = pedacos.map((p) => relative(episodio, p))
     const linhas = (db.prepare('SELECT id, idx, file, keyframe, start, duration FROM shot WHERE episode_id = ?').all(ep.id) as {
@@ -250,7 +294,7 @@ export async function mesclarClipes(paths: readonly string[]): Promise<Resultado
   } catch (err) {
     // O clipe ja esta pronto; o banco do AnCut e o que nao deu (aberto e travado?).
     console.warn('[mesclar] banco do AnCut nao atualizado:', err)
-    ancut = 'sem-banco'
+    ancut = 'erro'
   }
 
   return { path: destino, pedacos: movidos, ancut, segundos: await duracao(destino) }

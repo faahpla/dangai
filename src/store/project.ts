@@ -3990,7 +3990,9 @@ export const useProject = create<ProjectState>((set, get) => ({
         ? 'O AnCut ja ve o mesmo.'
         : r.value.ancut === 'episodio-nao-encontrado'
           ? 'O AnCut nao conhece este episodio, entao so os arquivos mudaram.'
-          : 'Nao deu para atualizar o banco do AnCut (ele esta aberto?); os arquivos ja mudaram.'
+          : r.value.ancut === 'sem-banco'
+            ? 'O AnCut nao esta instalado aqui; so os arquivos mudaram.'
+            : 'Nao deu para atualizar o banco do AnCut (ele esta aberto?); os arquivos ja mudaram.'
     return {
       ok: true,
       path: novo,
