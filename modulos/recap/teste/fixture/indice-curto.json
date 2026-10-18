@@ -1,0 +1,255 @@
+{
+ "versao": 1,
+ "id": "ep_5eb9381cd218262a1b509def908a73a54cf0d28c",
+ "fonte": {
+  "path": "X:\\fixture\\Anime de Teste S01E01.mkv",
+  "tamanho": 1000,
+  "duracaoSec": 300.0,
+  "fps": 24.0,
+  "startTimeSec": 0,
+  "largura": 1920,
+  "altura": 1080,
+  "hdr": false,
+  "codec": "h264"
+ },
+ "anime": "Anime de Teste",
+ "temporada": 1,
+ "episodio": 1,
+ "kind": "",
+ "faixaLegenda": {
+  "index": 2,
+  "idioma": "por",
+  "nome": "Portugues",
+  "codec": "ass",
+  "default": true,
+  "forced": false
+ },
+ "cues": [
+  {
+   "id": "c0001",
+   "start": 50,
+   "end": 53,
+   "texto": "Eu carrego os suprimentos da guilda faz tres anos.",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0002",
+   "start": 54,
+   "end": 57,
+   "texto": "E mesmo assim voce e lento demais.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0003",
+   "start": 58,
+   "end": 61,
+   "texto": "Desculpa, a mochila esta pesada hoje.",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0004",
+   "start": 62,
+   "end": 65,
+   "texto": "Olha essa mochila velha, que vergonha.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0005",
+   "start": 66,
+   "end": 69,
+   "texto": "Para com isso, Bram. Ele carrega tudo pra gente.",
+   "falante": "Rina",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0006",
+   "start": 70,
+   "end": 73,
+   "texto": "Carregar peso nao e talento.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0007",
+   "start": 74,
+   "end": 77,
+   "texto": "Achei alguma coisa no fundo da caverna!",
+   "falante": "Rina",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0008",
+   "start": 78,
+   "end": 81,
+   "texto": "Uma chave dourada? Deve valer uma fortuna.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0009",
+   "start": 82,
+   "end": 85,
+   "texto": "Talvez ela abra alguma porta da masmorra.",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0010",
+   "start": 86,
+   "end": 89,
+   "texto": "Kaito, voce esta fora da guilda.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0011",
+   "start": 90,
+   "end": 93,
+   "texto": "Compramos uma bolsa magica que leva tudo sozinha.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0012",
+   "start": 94,
+   "end": 97,
+   "texto": "Mas eu sempre fiz tudo por voces!",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0013",
+   "start": 98,
+   "end": 101,
+   "texto": "Por favor, me deixa ficar. Eu carrego mais.",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0014",
+   "start": 102,
+   "end": 105,
+   "texto": "Nao. Nao precisamos mais de voce.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0015",
+   "start": 106,
+   "end": 109,
+   "texto": "Some daqui antes que a chuva piore.",
+   "falante": "Bram",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0016",
+   "start": 110,
+   "end": 113,
+   "texto": "Eu nunca fui inutil!",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0017",
+   "start": 114,
+   "end": 117,
+   "texto": "Eu carreguei essa guilda nas costas!",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0018",
+   "start": 118,
+   "end": 121,
+   "texto": "Ninguem nunca agradeceu.",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0019",
+   "start": 122,
+   "end": 125,
+   "texto": "Habilidade evoluida: Cofre Dimensional.",
+   "falante": "Voz",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0020",
+   "start": 126,
+   "end": 129,
+   "texto": "A minha mochila... esta brilhando?",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0021",
+   "start": 130,
+   "end": 133,
+   "texto": "Capacidade sem limite.",
+   "falante": "Voz",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0022",
+   "start": 134,
+   "end": 137,
+   "texto": "Kaito! Eu vi tudo.",
+   "falante": "Rina",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0023",
+   "start": 138,
+   "end": 141,
+   "texto": "Eu vou com voce.",
+   "falante": "Rina",
+   "estilo": "Main",
+   "tipo": "fala"
+  },
+  {
+   "id": "c0024",
+   "start": 142,
+   "end": 145,
+   "texto": "Rina... obrigado.",
+   "falante": "Kaito",
+   "estilo": "Main",
+   "tipo": "fala"
+  }
+ ],
+ "exclusoes": [],
+ "planos": [],
+ "biblioteca": {
+  "origem": "cortecenas",
+  "pasta": "X:\\fixture\\Anime de Teste\\S01E01"
+ },
+ "reconhecimento": "feito",
+ "avisos": [],
+ "criadoEm": "2026-10-18T10:00:00.000Z",
+ "atualizadoEm": "2026-10-18T10:00:00.000Z"
+}

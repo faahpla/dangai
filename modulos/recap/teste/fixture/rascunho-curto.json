@@ -1,0 +1,346 @@
+{
+ "versao": 3,
+ "id": "rc_5eb9381cd218_mvcurto1",
+ "episodioId": "ep_5eb9381cd218262a1b509def908a73a54cf0d28c",
+ "indicePath": "X:\\fixture\\Anime de Teste\\S01E01\\episodio.json",
+ "titulo": "Anime de Teste S01E01",
+ "alvoSec": 60,
+ "eventos": [
+  {
+   "id": "e01",
+   "cueIds": [
+    "c0001",
+    "c0002",
+    "c0003"
+   ],
+   "t0": 50,
+   "t1": 61,
+   "resumo": "Kaito conta que carrega os suprimentos da guilda faz tres anos, e Bram reclama que ele e lento.",
+   "personagens": [
+    "Kaito",
+    "Bram"
+   ],
+   "peso": 3
+  },
+  {
+   "id": "e02",
+   "cueIds": [
+    "c0004",
+    "c0005",
+    "c0006"
+   ],
+   "t0": 62,
+   "t1": 73,
+   "resumo": "Bram zomba da mochila velha de Kaito, e Rina defende Kaito.",
+   "personagens": [
+    "Bram",
+    "Rina",
+    "Kaito"
+   ],
+   "peso": 3
+  },
+  {
+   "id": "e03",
+   "cueIds": [
+    "c0007",
+    "c0008",
+    "c0009"
+   ],
+   "t0": 74,
+   "t1": 85,
+   "resumo": "Rina acha uma chave dourada no fundo da caverna, e Kaito cogita que ela abra uma porta da masmorra.",
+   "personagens": [
+    "Rina",
+    "Bram",
+    "Kaito"
+   ],
+   "peso": 2
+  },
+  {
+   "id": "e04",
+   "cueIds": [
+    "c0010",
+    "c0011"
+   ],
+   "t0": 86,
+   "t1": 93,
+   "resumo": "Bram expulsa Kaito da guilda porque compraram uma bolsa magica que leva tudo sozinha.",
+   "personagens": [
+    "Bram",
+    "Kaito"
+   ],
+   "peso": 5
+  },
+  {
+   "id": "e05",
+   "cueIds": [
+    "c0012",
+    "c0013",
+    "c0014",
+    "c0015"
+   ],
+   "t0": 94,
+   "t1": 109,
+   "resumo": "Kaito implora para ficar, e Bram recusa e manda ele embora na chuva.",
+   "personagens": [
+    "Kaito",
+    "Bram"
+   ],
+   "peso": 4
+  },
+  {
+   "id": "e06",
+   "cueIds": [
+    "c0016",
+    "c0017",
+    "c0018"
+   ],
+   "t0": 110,
+   "t1": 121,
+   "resumo": "Sozinho, Kaito grita que nunca foi inutil e que ninguem agradeceu.",
+   "personagens": [
+    "Kaito"
+   ],
+   "peso": 4
+  },
+  {
+   "id": "e07",
+   "cueIds": [
+    "c0019",
+    "c0020",
+    "c0021"
+   ],
+   "t0": 122,
+   "t1": 133,
+   "resumo": "Uma voz anuncia que a habilidade de Kaito evoluiu para Cofre Dimensional, e a mochila dele brilha.",
+   "personagens": [
+    "Kaito"
+   ],
+   "peso": 5
+  },
+  {
+   "id": "e08",
+   "cueIds": [
+    "c0022",
+    "c0023",
+    "c0024"
+   ],
+   "t0": 134,
+   "t1": 145,
+   "resumo": "Rina aparece, diz que viu tudo e que vai com Kaito.",
+   "personagens": [
+    "Rina",
+    "Kaito"
+   ],
+   "peso": 4
+  }
+ ],
+ "eventosMeta": {
+  "modelo": "gemini-falso",
+  "criadoEm": "2026-10-18T10:00:00.000Z"
+ },
+ "roteiros": [
+  {
+   "versao": 1,
+   "alvoSec": 60,
+   "secoes": [
+    {
+     "id": "s1",
+     "papel": "gancho",
+     "frases": [
+      {
+       "id": "f01",
+       "texto": "O Kaito carregou a guilda inteira nas costas por anos.",
+       "eventoIds": [
+        "e01"
+       ],
+       "cueDoMomento": "c0001",
+       "intencaoVisual": "close no Kaito com a mochila",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      },
+      {
+       "id": "f02",
+       "texto": "Mas foi expulso assim que compraram uma bolsa magica.",
+       "eventoIds": [
+        "e04"
+       ],
+       "cueDoMomento": "c0011",
+       "intencaoVisual": "Bram apontando para o Kaito",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      }
+     ]
+    },
+    {
+     "id": "s2",
+     "papel": "contexto",
+     "frases": [
+      {
+       "id": "f03",
+       "texto": "O Kaito levava todos os suprimentos da guilda.",
+       "eventoIds": [
+        "e01"
+       ],
+       "cueDoMomento": "c0001",
+       "intencaoVisual": "Kaito carregando caixas",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      },
+      {
+       "id": "f04",
+       "texto": "O Bram sempre reclamava que ele era lento demais.",
+       "eventoIds": [
+        "e01"
+       ],
+       "cueDoMomento": "c0002",
+       "intencaoVisual": "Bram de bracos cruzados",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      },
+      {
+       "id": "f05",
+       "texto": "Ele tambem zombava da mochila velha do Kaito.",
+       "eventoIds": [
+        "e02"
+       ],
+       "cueDoMomento": "c0004",
+       "intencaoVisual": "Bram rindo da mochila",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      }
+     ]
+    },
+    {
+     "id": "s3",
+     "papel": "desenvolvimento",
+     "frases": [
+      {
+       "id": "f06",
+       "texto": "A Rina defendia o Kaito na frente de todos.",
+       "eventoIds": [
+        "e02"
+       ],
+       "cueDoMomento": "c0005",
+       "intencaoVisual": "Rina encarando o Bram",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      },
+      {
+       "id": "f07",
+       "texto": "O grupo encontrou uma chave dourada na caverna.",
+       "eventoIds": [
+        "e03"
+       ],
+       "cueDoMomento": "c0007",
+       "intencaoVisual": "Rina segurando a chave",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      },
+      {
+       "id": "f08",
+       "texto": "Na taverna, o Bram anunciou a expulsao do Kaito.",
+       "eventoIds": [
+        "e04"
+       ],
+       "cueDoMomento": "c0010",
+       "intencaoVisual": "Bram falando com o Kaito",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      },
+      {
+       "id": "f09",
+       "texto": "O Kaito implorou para continuar no grupo.",
+       "eventoIds": [
+        "e05"
+       ],
+       "cueDoMomento": "c0013",
+       "intencaoVisual": "Kaito de joelhos",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      }
+     ]
+    },
+    {
+     "id": "s4",
+     "papel": "virada",
+     "frases": [
+      {
+       "id": "f10",
+       "texto": "Sozinho na chuva, ele gritou que nunca foi inutil.",
+       "eventoIds": [
+        "e06"
+       ],
+       "cueDoMomento": "c0016",
+       "intencaoVisual": "Kaito gritando na chuva",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      }
+     ]
+    },
+    {
+     "id": "s5",
+     "papel": "climax",
+     "frases": [
+      {
+       "id": "f11",
+       "texto": "A mochila dele brilhou e virou um cofre dimensional.",
+       "eventoIds": [
+        "e07"
+       ],
+       "cueDoMomento": "c0020",
+       "intencaoVisual": "a mochila brilhando",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      }
+     ]
+    },
+    {
+     "id": "s6",
+     "papel": "fechamento",
+     "frases": [
+      {
+       "id": "f12",
+       "texto": "A Rina apareceu e disse que ia com ele.",
+       "eventoIds": [
+        "e08"
+       ],
+       "cueDoMomento": "c0023",
+       "intencaoVisual": "Rina sorrindo para o Kaito",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      },
+      {
+       "id": "f13",
+       "texto": "E agora, o que a guilda vai fazer sem ele?",
+       "eventoIds": [
+        "e08"
+       ],
+       "cueDoMomento": "c0024",
+       "intencaoVisual": "Kaito e Rina na chuva",
+       "textoDeTela": null,
+       "citacaoCueId": null
+      }
+     ]
+    }
+   ],
+   "modelo": "gemini-falso",
+   "criadoEm": "2026-10-18T10:01:00.000Z",
+   "origem": "ia",
+   "derivadoDe": null,
+   "pedido": {
+    "tipo": "inteiro",
+    "secaoId": null,
+    "instrucao": null
+   }
+  }
+ ],
+ "atual": 1,
+ "aprovado": false,
+ "aprovadoEm": null,
+ "criadoEm": "2026-10-18T10:00:00.000Z",
+ "atualizadoEm": "2026-10-18T10:01:00.000Z",
+ "voz": null,
+ "cenas": null,
+ "revisoes": []
+}
