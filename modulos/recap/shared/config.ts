@@ -6,6 +6,7 @@ import {
 import type { VozPadrao } from './tipos-da-voz'
 import { ESCRITORES_IDS, MODELO_GEMINI_PRO_PADRAO, type Escritor } from './escritor'
 import { arrumarVelocidadeNativa, VELOCIDADE_NATIVA_PADRAO } from './voz'
+import { LIMIAR_DE_DIVISAO_PADRAO_SEC, limiarDeDivisao } from './divisao'
 
 /**
  * [recap] A CONFIGURACAO DO MODULO, em `Settings.modulos.recap` (o nucleo
@@ -71,9 +72,20 @@ export interface ConfigDasCenas {
   conta: boolean
   /** C6: o juiz visual. */
   juiz: JuizVisual
+  /** Ate 2 cenas por frase (shared/divisao.ts): frase longa ou com dois momentos ganha uma cena por pedaco. */
+  duasCenas: boolean
+  /** Acima de quantos segundos no take a frase e longa (divide). */
+  limiarDuasCenas: number
 }
 
-export const CENAS_PADRAO: ConfigDasCenas = { visao: true, etiquetas: true, conta: true, juiz: 'desligado' }
+export const CENAS_PADRAO: ConfigDasCenas = {
+  visao: true,
+  etiquetas: true,
+  conta: true,
+  juiz: 'desligado',
+  duasCenas: true,
+  limiarDuasCenas: LIMIAR_DE_DIVISAO_PADRAO_SEC,
+}
 
 function cenasSalvas(raw: unknown): ConfigDasCenas {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
@@ -82,6 +94,8 @@ function cenasSalvas(raw: unknown): ConfigDasCenas {
     etiquetas: r['etiquetas'] !== false,
     conta: r['conta'] !== false,
     juiz: (JUIZES as readonly unknown[]).includes(r['juiz']) ? (r['juiz'] as JuizVisual) : 'desligado',
+    duasCenas: r['duasCenas'] !== false,
+    limiarDuasCenas: limiarDeDivisao(r['limiarDuasCenas']),
   }
 }
 

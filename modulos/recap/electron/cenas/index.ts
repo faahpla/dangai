@@ -21,6 +21,8 @@ import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/r
 import { completarDicas } from '../gerar/dicas'
 import { configDoRecap } from '../contexto'
 import type { CamadasDoCasar, SinaisDoCasar } from '../../shared/visao'
+import type { ConfigDasCenas } from '../../shared/config'
+import { corteDaFrase, idDoPedaco, type OpcoesDaDivisao } from '../../shared/divisao'
 import { comMesclas } from './mesclas'
 import { casarFrases, fichasDe, fichasFortes, janelasDasFrases, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
 import { camadasDaConfig, garantirVisao, sinaisDasFrases, sinaisDoEpisodio } from './visao'
@@ -102,6 +104,11 @@ interface SinaisParaOCasar {
   avisos: string[]
 }
 
+/** "Ate 2 cenas por frase" e o limiar, da config "Cenas". */
+export function divisaoDaConfig(c: Pick<ConfigDasCenas, 'duasCenas' | 'limiarDuasCenas'>): OpcoesDaDivisao {
+  return { ligada: c.duasCenas, limiarSec: c.limiarDuasCenas }
+}
+
 /**
  * Os sinais do lote 2 para o casar, pela config "Cenas": as dicas que faltam
  * no roteiro (um pedido de IA so, gratis), o que se ve do episodio (medido
@@ -129,7 +136,13 @@ async function sinaisParaOCasar(rascunhoId: string, soCache = false): Promise<Si
     }
     const doEpisodio = sinaisDoEpisodio(aberto.indice, aberto.caminho)
     const frases = frasesDoRoteiro(roteiro)
-    const dasFrases = cfg.visao ? await sinaisDasFrases(frases, { imagem: true, sentido: true, soCache }) : null
+    // Ate 2 cenas: o sentido de cada pedaco possivel (o casar pontua cada um com o que ELE diz).
+    const divisao = divisaoDaConfig(cfg)
+    const take = takeAtual(r)
+    const pedacos = divisao.ligada
+      ? frases.flatMap((f) => (corteDaFrase(f, take, divisao)?.pedacos ?? []).map((p, k) => ({ id: idDoPedaco(f.id, k), texto: p.texto })))
+      : []
+    const dasFrases = cfg.visao ? await sinaisDasFrases([...frases, ...pedacos], { imagem: true, sentido: true, soCache }) : null
     if (dasFrases?.falha) avisos.push(`frases: ${dasFrases.falha}`)
     const tagsDaFrase = new Map(frases.flatMap((f) => (f.tags && f.tags.length > 0 ? [[f.id, f.tags] as const] : [])))
     const sinais: SinaisDoCasar = { ...doEpisodio, ...(dasFrases?.sinais ?? {}), ...(tagsDaFrase.size > 0 ? { tagsDaFrase } : {}) }
@@ -175,7 +188,8 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
 
   const frases = frasesDoRoteiro(roteiro)
   const fixas = new Map(atual.escolhas.filter((e) => !refazer.has(e.fraseId)).map((e) => [e.fraseId, e]))
-  const { casadas, avisos } = casarFrases({ indice, eventos: r.eventos, frases, take, fixas, refazer, abremEscuro, sinais, camadas })
+  const divisao = divisaoDaConfig(configDoRecap().cenas)
+  const { casadas, avisos } = casarFrases({ indice, eventos: r.eventos, frases, take, fixas, refazer, abremEscuro, sinais, camadas, divisao })
   const quando = agora()
   const cenas = {
     ...aplicarEscolhas(atual, casadas.map((c) => c.escolha), roteiro),
@@ -307,7 +321,8 @@ export async function candidatosDaFrase(
     const fixas = new Map(cenas.escolhas.map((e): [string, EscolhaDaFrase] => [e.fraseId, e]))
     const abremEscuro = await planosQueAbremEscuro(indice)
     const { sinais, camadas } = await sinaisParaOCasar(rascunhoId, true)
-    const { casadas } = casarFrases({ indice, eventos: r.eventos, frases, take: takeAtual(r), fixas, refazer: new Set([fraseId]), abremEscuro, sinais, camadas })
+    const divisao = divisaoDaConfig(configDoRecap().cenas)
+    const { casadas } = casarFrases({ indice, eventos: r.eventos, frases, take: takeAtual(r), fixas, refazer: new Set([fraseId]), abremEscuro, sinais, camadas, divisao })
     sugestoes = casadas[0]?.escolha.fita ?? []
   }
   const naFita = new Set(sugestoes.flatMap((c) => c.planoIds))

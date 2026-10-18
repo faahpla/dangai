@@ -156,6 +156,12 @@ export const escolhaDaFraseSchema = z
     duracao: z.number().nonnegative(),
     /** Recados curtos, ASCII: "Cena emendada", "Cena curta". */
     avisos: z.array(z.string()).default([]),
+    /**
+     * O casar DIVIDIU a frase sozinho (2 cenas, raramente 3: shared/divisao.ts):
+     * a fita da frase inteira, do jeito que seria com uma cena so. E o "Juntar
+     * em 1" da tela (juntarEmUma). Ausente = a frase nao foi dividida pelo casar.
+     */
+    inteira: z.array(candidatoDeCenaSchema).max(FITA_MAX).optional(),
   })
   .superRefine((e, ctx) => {
     for (const [i, c] of e.cenas.entries()) {
@@ -355,18 +361,45 @@ export function temposDasCenas(
   take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null,
 ): { inicio: number; fim: number }[] {
   if (escolha.cenas.length === 0) return []
+  return temposDosCortes(
+    escolha.cenas.map((c) => c.palavraInicio),
+    frase,
+    take,
+  )
+}
+
+/**
+ * A mesma conta de temposDasCenas, so com as palavras de inicio (a 1a vale 0):
+ * o casar usa para medir os pedacos de uma frase antes de haver escolha.
+ */
+export function temposDosCortes(
+  palavrasDeInicio: readonly number[],
+  frase: Pick<Frase, 'id' | 'texto'>,
+  take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null,
+): { inicio: number; fim: number }[] {
+  if (palavrasDeInicio.length === 0) return []
   const d = duracaoDaFrase(frase, take)
-  const n = Math.max(1, palavrasNaFrase(frase.texto))
-  const palavras = d.real && take ? take.palavras.filter((p) => p.fraseId === frase.id) : []
-  const inicioDaPalavra = (i: number): number => {
-    const p = palavras[i]
-    if (p && d.offset !== null) return p.start - d.offset
-    return (Math.min(i, n) / n) * d.duracao
-  }
-  const inicios = escolha.cenas.map((c, k) => (k === 0 ? 0 : Math.min(d.duracao, Math.max(0, inicioDaPalavra(c.palavraInicio)))))
+  const inicios = palavrasDeInicio.map((p, k) => (k === 0 ? 0 : Math.min(d.duracao, Math.max(0, inicioDaPalavra(p, frase, take, d)))))
   // Monotono mesmo com palavra fora da frase (texto editado): nunca cena de duracao negativa.
   for (let k = 1; k < inicios.length; k++) inicios[k] = Math.max(inicios[k]!, inicios[k - 1]!)
   return inicios.map((inicio, k) => ({ inicio, fim: inicios[k + 1] ?? d.duracao }))
+}
+
+/**
+ * Onde a palavra `i` da frase comeca, em segundos relativos ao inicio do trecho:
+ * o `start` dela no take (tempo real) ou, sem take, as palavras repartidas por
+ * igual na duracao estimada.
+ */
+export function inicioDaPalavra(
+  i: number,
+  frase: Pick<Frase, 'id' | 'texto'>,
+  take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null,
+  d: DuracaoDaFrase = duracaoDaFrase(frase, take),
+): number {
+  const n = Math.max(1, palavrasNaFrase(frase.texto))
+  const p = d.real && take ? take.palavras.filter((x) => x.fraseId === frase.id)[i] : undefined
+  if (p && d.offset !== null) return p.start - d.offset
+  return (Math.min(i, n) / n) * d.duracao
 }
 
 /**
@@ -383,6 +416,25 @@ export function normalizarCortes<T extends Pick<EscolhaDaFrase, 'cenas'>>(escolh
     cenas.push({ ...c, palavraInicio: palavra })
   }
   return { ...escolha, cenas }
+}
+
+/** A frase foi dividida pelo casar e ainda mostra 2+ cenas (o "dividida: 2 cenas" do tooltip). */
+export function divididaPeloCasar(escolha: Pick<EscolhaDaFrase, 'cenas' | 'inteira'> | null): boolean {
+  return !!escolha && (escolha.inteira?.length ?? 0) > 0 && escolha.cenas.length > 1
+}
+
+/**
+ * "Juntar em 1": a frase que o casar dividiu volta a ter UMA cena, a melhor da
+ * fita da frase inteira (`inteira`), e essa fita volta a ser a dela. Frase nao
+ * dividida pelo casar (ou ja com uma cena so): null, nada a juntar.
+ */
+export function juntarEmUma(escolha: EscolhaDaFrase): EscolhaDaFrase | null {
+  const inteira = escolha.inteira ?? []
+  const primeira = inteira[0]
+  if (!primeira || escolha.cenas.length < 2) return null
+  const junta: EscolhaDaFrase = { ...escolha, cenas: [{ candidato: primeira, palavraInicio: 0 }], fita: inteira }
+  delete junta.inteira
+  return junta
 }
 
 /** Um pedaco de mp4 de plano: o que o player encadeia e o que vira cena no projeto. */

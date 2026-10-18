@@ -19,9 +19,19 @@ import {
   duracaoDaFrase,
   FITA_MAX,
   PORQUE_MAX,
+  temposDasCenas,
   type CandidatoDeCena,
   type EscolhaDaFrase,
 } from '../../shared/cenas'
+import { FOLGA_SEM_EMENDA_SEC } from '../../shared/encaixe'
+import {
+  corteDaFrase,
+  dividirFrase,
+  idDoPedaco,
+  type CorteDaFrase,
+  type MotivoDaDivisao,
+  type OpcoesDaDivisao,
+} from '../../shared/divisao'
 
 /**
  * O CASAR v0 (PLANO.md, "Escolha de cenas", F1): para cada frase do roteiro
@@ -64,6 +74,8 @@ import {
  *      frente), a continuidade e a variedade pesam pouco: so desempatam
  *      dentro da janela. Depois, a TROCA LOCAL: frase que pegou o plano do
  *      momento da seguinte tenta outra, e fica se a soma das duas melhorar.
+ *   6. ATE 2 CENAS POR FRASE (18/10): a frase longa ou com dois momentos vira
+ *      um item por pedaco (shared/divisao.ts decide e corta; casarFrases).
  */
 
 // ------------------------------------------------------------------ pesos
@@ -262,7 +274,6 @@ export function nomesPropriosFracos(indice: Pick<EpisodeIndex, 'planos'>): Set<s
   }
   return saida
 }
-
 
 /** A ficha do texto bate com a do nome: igual, ou comeco de uma longa ("whyman" em "whymanchan"). */
 function bate(doTexto: string, doNome: string): boolean {
@@ -1717,7 +1728,7 @@ export interface EntradaDoCasar {
   /** TODAS as frases do roteiro, na ordem (a cronologia olha a anterior). */
   frases: readonly FraseDoCasar[]
   /** takeAtual do rascunho. null = estimativa pelas palavras. */
-  take: Pick<TakeDaVoz, 'trechos'> | null
+  take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null
   /** As escolhas que FICAM (travadas, ou em dia): os trechos delas nao se repetem. */
   fixas: ReadonlyMap<string, EscolhaDaFrase>
   /** As frases a sugerir agora. As outras so dao contexto. */
@@ -1732,14 +1743,35 @@ export interface EntradaDoCasar {
   sinais?: SinaisDoCasar
   /** Lote 2: as camadas ligadas. Ausente = CAMADAS_PADRAO. */
   camadas?: Partial<CamadasDoCasar>
+  /**
+   * Ate 2 cenas por frase (shared/divisao.ts): a frase longa ou com dois
+   * momentos ganha uma cena por pedaco. Ausente ou desligada = uma cena por
+   * frase, como antes. O sentido de cada pedaco vem em `sinais.sentidoDaFrase`
+   * pela chave idDoPedaco (o servico mede); sem ele, o pedaco fica sem C1.
+   */
+  divisao?: OpcoesDaDivisao | null
+}
+
+/** Um pedaco de uma frase dividida, como o casar o escolheu. */
+export interface PedacoCasado {
+  texto: string
+  palavraInicio: number
+  /** Segundos do pedaco no take (ou na estimativa). */
+  duracao: number
+  janela: JanelaDaFrase
+  /** A fita pontuada do pedaco: a escolhida primeiro. */
+  fita: CandidatoPontuado[]
 }
 
 export interface FraseCasada {
   escolha: EscolhaDaFrase
-  /** A fita pontuada inteira, com os termos (o teste e a depuracao leem). */
+  /** A fita pontuada inteira, com os termos (o teste e a depuracao leem). Dividida: a do 1o pedaco. */
   fita: CandidatoPontuado[]
   janela: JanelaDaFrase
   avisos: string[]
+  /** A frase foi dividida: os pedacos e por que (o teste e a medicao leem). */
+  pedacos?: PedacoCasado[]
+  motivos?: MotivoDaDivisao[]
 }
 
 export interface ResultadoDoCasar {
@@ -1747,6 +1779,8 @@ export interface ResultadoDoCasar {
   casadas: FraseCasada[]
   /** Recados ASCII ("f07: cena repetida"). */
   avisos: string[]
+  /** Ate 2 cenas: as frases que a regra dividia mas a guarda deixou com uma (metade fraca). A medicao le. */
+  guarda?: string[]
 }
 
 /** 0..1: quao ancorada esta a 1a (nota) e quanto ela ganha da 2a (margem). */
@@ -1793,42 +1827,55 @@ function copiarEstado(s: EstadoDoCasar): EstadoDoCasar {
  * Depois, a TROCA LOCAL: quando a frase pegou o plano do MOMENTO da seguinte
  * (o 0270 do S4 - 37, uma tomada de 27 s com as duas falas), tenta a anterior
  * sem ele e refaz dali em diante; fica a troca so se a soma das duas melhorar.
+ *
+ * ATE 2 CENAS POR FRASE (`divisao`, shared/divisao.ts): a frase que dividirFrase
+ * divide vira um item por pedaco, cada um pontuado com as PROPRIAS palavras,
+ * pessoas e sentido (a intencao, a imagem e as etiquetas da frase vao para o
+ * pedaco que elas descrevem; a fala do momento fica com o primeiro, e os
+ * seguintes acham o deles pelas palavras, depois dele). Dentro da frase vale
+ * a ordem do episodio, sem plano repetido, cada pedaco coberto pelo proprio
+ * plano e sem o plano do momento da frase seguinte. Pedaco sem saida boa
+ * (forcado, repetido ou longe do momento) desfaz a divisao daquela frase (a
+ * guarda, `ResultadoDoCasar.guarda`).
  */
 export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   const todos = prepararPlanos(e.indice)
   const porId = new Map(todos.map((p) => [p.plano.id, p]))
   const elenco = elencoDoEpisodio(todos, e.indice, e.eventos)
-  const visao = prepararVisao(todos, e.indice, e.sinais ?? {}, e.camadas ?? {})
+  const fraseDe = new Map(e.frases.map((f) => [f.id, f]))
+  // Os pedacos possiveis de cada frase a refazer: o corte (dividir ou nao, so mais adiante).
+  const divisao = e.divisao?.ligada ? e.divisao : null
+  const cortes = new Map<number, CorteDaFrase>()
+  if (divisao) {
+    for (const [i, f] of e.frases.entries()) {
+      if (!e.refazer.has(f.id)) continue
+      const c = corteDaFrase(f, e.take, divisao)
+      if (c) cortes.set(i, c)
+    }
+  }
+  // A imagem (C2) e as etiquetas (C3) da frase vao para o pedaco que a intencao descreve.
+  const intencaoDe = new Map([...cortes].map(([i, c]) => [i, pedacoDaIntencao(e.frases[i]!.intencaoVisual, c, elenco)]))
+  const visao = prepararVisao(todos, e.indice, sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe), e.camadas ?? {})
   const sinaisPorFrase = new Map(e.frases.map((f) => [f.id, sinaisDaFrase(f.id, todos, visao)]))
   const janelas = janelasDasFrases(e.frases, e.eventos, e.indice, todos, (id) => sinaisPorFrase.get(id)?.zDaCue ?? null)
   const cuePorId = new Map(e.indice.cues.map((c) => [c.id, c]))
   const abremEscuro = e.abremEscuro ?? new Set<string>()
 
   const lembrar = (s: EstadoDoCasar, c: Pick<CandidatoDeCena, 'planoIds' | 'inSec' | 'outSec'>, duracao: number): void => {
-    const primeiro = porId.get(c.planoIds[0] ?? '')
-    const ultimo = porId.get(c.planoIds[c.planoIds.length - 1] ?? '')
-    const fimReal = Math.min(c.outSec, c.inSec + duracao)
-    s.anteriores.push({
-      planoIds: [...c.planoIds],
-      inSec: c.inSec,
-      fimReal,
-      ultimoPos: ultimo?.pos ?? -10,
-      chegouAoFim: !!ultimo?.util && fimReal >= ultimo.util.ate - 1,
-      gente: primeiro?.gente ?? [],
-      genteDoRosto: primeiro?.genteDoRosto ?? false,
-    })
+    s.anteriores.push(cenaAnterior(porId, c, duracao))
   }
 
   const inicial: EstadoDoCasar = { ocupacao: new Map(), anteriores: [] }
   for (const [fraseId, esc] of e.fixas) {
     if (e.refazer.has(fraseId)) continue
-    for (const c of esc.cenas) ocupar(inicial.ocupacao, c.candidato, esc.duracao)
+    for (const c of cenasDaFixa(esc, fraseDe.get(fraseId), e.take)) ocupar(inicial.ocupacao, c.candidato, c.duracao)
   }
 
   // O que nao muda com as escolhas das outras frases: quem a frase cita, o que pede, quanto dura.
   // C4: "ele", "ela", "o cara" sem nome herdam o sujeito da frase anterior.
   let sujeito: Citado[] = []
   const fixo = e.frases.map((frase, i) => {
+    const sujeitoAntes = sujeito
     const doTexto = citadosNoTexto(frase.texto, elenco)
     const citados = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(frase.texto, sujeito) : doTexto
     sujeito = citados
@@ -1842,6 +1889,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     const d = duracaoDaFrase(frase, e.take)
     return {
       d,
+      sujeitoAntes,
       ctx: {
         frase,
         janela: janelas[i]!,
@@ -1863,7 +1911,164 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     }
   })
 
-  if (visao.camadas.conta) return casarPelaConta(e, todos, porId, janelas, fixo, inicial)
+  // ---- Ate 2 cenas por frase: o contexto de cada pedaco e a decisao.
+
+  /** A fita da frase INTEIRA (sem as anteriores): a conta usa, a decisao olha (plano curto) e o "Juntar em 1" guarda. */
+  const inteiras = new Map<number, CandidatoPontuado[]>()
+  const inteiraDe = (i: number): CandidatoPontuado[] => {
+    let x = inteiras.get(i)
+    if (!x) {
+      x = fitaDaFrase(todos, { ...fixo[i]!.ctx, anteriores: [] }, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA)
+      inteiras.set(i, x)
+    }
+    return x
+  }
+
+  const feitos = new Map<number, PedacoNoCasar[]>()
+  /** Os pedacos da frase i: cada um com as palavras, as pessoas, o sentido e o momento DELE. */
+  const pedacosDe = (i: number, corte: CorteDaFrase): PedacoNoCasar[] => {
+    const pronto = feitos.get(i)
+    if (pronto) return pronto
+    const frase = e.frases[i]!
+    const kIntencao = intencaoDe.get(i) ?? -1
+    const sinaisK = corte.pedacos.map((_, k) => sinaisDaFrase(idDoPedaco(frase.id, k), todos, visao))
+    // Quem cada pedaco cita: o nome dito, ou o sujeito herdado ("ele", "o rapaz").
+    let sujeitoK = fixo[i]!.sujeitoAntes
+    const citadosK = corte.pedacos.map((p) => {
+      const doTexto = citadosNoTexto(p.texto, elenco)
+      const c = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(p.texto, sujeitoK) : doTexto
+      if (c.length > 0) sujeitoK = c
+      return c
+    })
+    // A fala do momento fica com o PRIMEIRO pedaco: a frase comeca no momento dela, como a cena
+    // unica comecaria (dar o momento ao pedaco que "diz" a fala empurrava o primeiro para tras, no
+    // trecho da frase anterior). Os seguintes acham o deles pelas palavras, depois dele.
+    const kMomento = 0
+    const js = emOrdem(
+      corte.pedacos.map(
+        (p, k) =>
+          janelaPropria(
+            {
+              eventoIds: frase.eventoIds,
+              citacaoCueId: null,
+              cueDoMomento: k === kMomento ? frase.cueDoMomento : null,
+              texto: p.texto,
+              intencaoVisual: k === kIntencao ? frase.intencaoVisual : '',
+            },
+            e.eventos,
+            e.indice,
+            todos,
+            elenco,
+            sinaisK[k]!.zDaCue,
+          ) ?? janelas[i]!,
+      ),
+      kMomento,
+    )
+    const palavrasIv = palavrasSimples(frase.intencaoVisual)
+    const ninguemNaTela = citadosNoTexto(frase.intencaoVisual, elenco).length === 0
+    const saida = corte.pedacos.map((p, k): PedacoNoCasar => {
+      const comIntencao = k === kIntencao
+      const citados = citadosK[k]!
+      const iv = comIntencao ? palavrasIv : []
+      const palavrasTx = palavrasSimples(p.texto)
+      const janela = js[k]!
+      const duracao = Math.max(0.05, p.fim - p.inicio)
+      return {
+        texto: p.texto,
+        palavraInicio: p.palavraInicio,
+        duracao,
+        janela,
+        ctx: {
+          frase: { id: frase.id, texto: p.texto, intencaoVisual: comIntencao ? frase.intencaoVisual : '', citacaoCueId: null },
+          janela,
+          duracao,
+          citados,
+          daIntencao: comIntencao
+            ? citadosNoTexto(frase.intencaoVisual, elenco).filter((c) => !citados.some((x) => bate(x.ficha, c.ficha) || bate(c.ficha, x.ficha)))
+            : [],
+          pedePaisagem: comIntencao && ninguemNaTela && iv.some((w) => PALAVRAS_PAISAGEM.has(w)),
+          pedeGrupo: [...iv, ...palavrasTx].some((w) => PALAVRAS_GRUPO.has(w)),
+          pedeFala: iv.some((w) => PALAVRAS_FALANDO.has(w)),
+          conceitos: conceitosDaFrase([...palavrasTx, ...iv]),
+          cueCitada: null,
+          abremEscuro,
+          visao,
+          sinais: sinaisK[k]!,
+          centro: visao.camadas.melhorQuadro ? centroAmpliado(janela.cueAncora ? janela.cueAncora.start + 0.2 : janela.ancora, todos, visao) : null,
+        },
+      }
+    })
+    feitos.set(i, saida)
+    return saida
+  }
+
+  /** Frases cuja divisao saiu fraca (a guarda): ficam com uma cena so. */
+  const naoDividir = new Set<number>()
+  const divididas = (): Map<number, FraseDividida> => {
+    const saida = new Map<number, FraseDividida>()
+    if (!divisao) return saida
+    for (const i of cortes.keys()) {
+      if (naoDividir.has(i)) continue
+      const top = inteiraDe(i)[0]
+      // d. plano curto: a melhor cena unica emenda o plano seguinte ou congela o ultimo quadro.
+      const planoCurto = !!top && (top.planos.length > 1 || top.falta > FOLGA_SEM_EMENDA_SEC)
+      const dv = dividirFrase(e.frases[i]!, e.take, divisao, { citados: (t) => citadosNoTexto(t, elenco).map((c) => c.ficha), planoCurto })
+      if (dv) saida.set(i, { motivos: dv.motivos, pedacos: pedacosDe(i, dv) })
+    }
+    return saida
+  }
+
+  /** O plano do momento da frase SEGUINTE (o pedaco de depois nao o pega). null = nao ha, ou a seguinte e fixa. */
+  const momentoSeguinte = (i: number): string | null => {
+    const prox = e.frases[i + 1]
+    const jb = janelas[i + 1]
+    if (!prox || !jb || !e.refazer.has(prox.id) || !jb.cueAncora || !(jb.forte || jb.estimada) || jb.semCenas || jb.herdada) return null
+    const t = jb.cueAncora.start + 0.2
+    return todos.find((p) => p.util && t >= p.plano.start && t < p.plano.end)?.plano.id ?? null
+  }
+
+  if (visao.camadas.conta) {
+    const ctxDaConta: ContextoDaConta = { e, todos, porId, janelas, fixo, fraseDe, inteiraDe, momentoSeguinte, ocupacaoInicial: inicial.ocupacao }
+    // A guarda: frase com pedaco fraco volta a ter uma cena so, e a conta refaz.
+    const comGuarda = (r: ResultadoDoCasar): ResultadoDoCasar => (divisao ? { ...r, guarda: [...naoDividir].map((i) => e.frases[i]!.id) } : r)
+    for (let rodada = 0; ; rodada++) {
+      const r = casarPelaConta(ctxDaConta, divididas())
+      const fracas = r.fracas.filter((i) => !naoDividir.has(i))
+      if (fracas.length === 0) return comGuarda(r.resultado)
+      for (const i of fracas) naoDividir.add(i)
+      if (rodada >= 4) {
+        for (const i of cortes.keys()) naoDividir.add(i)
+        return comGuarda(casarPelaConta(ctxDaConta, divididas()).resultado)
+      }
+    }
+  }
+
+  const divididasDoGuloso = divididas()
+
+  /**
+   * A frase dividida, pedaco a pedaco, no estado `s` (que ela atualiza so se
+   * todos os pedacos acharem cena boa). null = metade fraca: fica uma cena so.
+   */
+  const casarDividida = (i: number, dv: FraseDividida, s: EstadoDoCasar): FraseCasada | null => {
+    const frase = e.frases[i]!
+    const copia = copiarEstado(s)
+    const evitar = momentoSeguinte(i)
+    const escolhidos: { c: CandidatoPontuado; duracao: number; fita: CandidatoPontuado[]; janela: JanelaDaFrase; palavraInicio: number; texto: string }[] = []
+    for (const [k, p] of dv.pedacos.entries()) {
+      const fita = fitaDaFrase(todos, { ...p.ctx, anteriores: copia.anteriores }, e.eventos, copia.ocupacao, e.indice.id)
+      const ok = fita.filter((c) => cobreOPedaco(c) && dentroDaFrase(c, escolhidos) && !(k > 0 && evitar !== null && c.candidato.planoIds.includes(evitar)))
+      const primeira = ok[0]
+      if (!primeira || primeira.repetido || longeDoEvento(primeira.candidato, p.janela)) return null
+      ocupar(copia.ocupacao, primeira.candidato, p.duracao)
+      lembrar(copia, primeira.candidato, p.duracao)
+      escolhidos.push({ c: primeira, duracao: p.duracao, fita: ok, janela: p.janela, palavraInicio: p.palavraInicio, texto: p.texto })
+    }
+    const inteira = inteiraDe(i).filter((c) => !sobrepoe(s.ocupacao, c.candidato.planoIds, c.candidato.inSec, Math.min(c.candidato.outSec, c.candidato.inSec + fixo[i]!.d.duracao)))
+    s.ocupacao.clear()
+    for (const [k, v] of copia.ocupacao) s.ocupacao.set(k, v)
+    s.anteriores.splice(0, s.anteriores.length, ...copia.anteriores)
+    return escolhaDividida(frase, janelas[i]!, fixo[i]!.d, escolhidos, inteira, dv.motivos)
+  }
 
   /**
    * Uma frase no estado `s` (que ela atualiza). `evitar` = a troca local: a
@@ -1874,9 +2079,14 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     const janela = janelas[i]!
     if (!e.refazer.has(frase.id)) {
       const fixa = e.fixas.get(frase.id)
-      const ultima = fixa?.cenas[fixa.cenas.length - 1]
-      if (fixa && ultima) lembrar(s, ultima.candidato, fixa.duracao)
+      if (fixa) for (const c of cenasDaFixa(fixa, frase, e.take)) lembrar(s, c.candidato, c.duracao)
       return null
+    }
+    const dv = evitar ? undefined : divididasDoGuloso.get(i)
+    if (dv) {
+      const feita = casarDividida(i, dv, s)
+      if (feita) return feita
+      naoDividir.add(i)
     }
     const { d, ctx: base } = fixo[i]!
     const ctx: ContextoDaFrase = { ...base, anteriores: s.anteriores }
@@ -1884,33 +2094,11 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     const k = evitar ? pontuada.findIndex((c) => !c.candidato.planoIds.includes(evitar)) : 0
     const fita = k > 0 ? [pontuada[k]!, ...pontuada.filter((_, x) => x !== k)] : pontuada
     const primeira = fita[0]
-    const longe = !!primeira && longeDoEvento(primeira.candidato, janela)
-    const avisosDaFrase: string[] = []
-    if (!primeira) avisosDaFrase.push('Sem cena no episodio')
-    else {
+    if (primeira) {
       ocupar(s.ocupacao, primeira.candidato, d.duracao)
       lembrar(s, primeira.candidato, d.duracao)
-      if (primeira.repetido) avisosDaFrase.push('Cena repetida')
-      if (primeira.planos.length > 1) avisosDaFrase.push('Cena emendada')
-      if (primeira.falta > CONGELA_SEC) avisosDaFrase.push('Cena curta')
-      if (janela.semCenas && !janela.herdada) avisosDaFrase.push(AVISO_TRECHO_SEM_CENAS)
-      else if (longe && !janela.herdada) avisosDaFrase.push(AVISO_LONGE_DO_MOMENTO)
     }
-    if (janela.herdada) avisosDaFrase.push('Sem evento: perto da vizinha')
-    else if (janela.intervalos.length === 0) avisosDaFrase.push('Sem evento')
-    if (primeira && fita.length < FITA_MAX) avisosDaFrase.push(`So ${fita.length} opcoes`)
-
-    const escolha: EscolhaDaFrase = {
-      fraseId: frase.id,
-      cenas: primeira ? [{ candidato: primeira.candidato, palavraInicio: 0 }] : [],
-      fita: fita.map((c) => c.candidato),
-      confianca: confiancaDaFita(fita, janela, longe),
-      travada: false,
-      hashTexto: hashDoTexto(frase.texto),
-      duracao: d.duracao,
-      avisos: avisosDaFrase,
-    }
-    return { escolha, fita, janela, avisos: avisosDaFrase }
+    return escolhaComAvisos(frase, janela, fita, d)
   }
 
   // O guloso, guardando o estado de antes de cada frase (a troca local recomeca dele).
@@ -1927,13 +2115,13 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   antesDe[0] = inicial
   refazerDesde(0, null)
 
-  // A troca local, frase a frase.
+  // A troca local, frase a frase (frase dividida fica como esta: os pedacos ja evitam o momento da seguinte).
   const notaDe = (x: FraseCasada | null): number => x?.fita[0]?.candidato.nota ?? 0
   for (let i = 0; i + 1 < n; i++) {
     const a = feitas[i]
     const b = feitas[i + 1]
     const jb = janelas[i + 1]!
-    if (!a?.fita[0] || !b || !jb.cueAncora || !(jb.forte || jb.estimada) || jb.semCenas || jb.herdada) continue
+    if (!a?.fita[0] || !b || a.pedacos || b.pedacos || !jb.cueAncora || !(jb.forte || jb.estimada) || jb.semCenas || jb.herdada) continue
     const t = jb.cueAncora.start + 0.2
     const doMomento = todos.find((p) => p.util && t >= p.plano.start && t < p.plano.end)?.plano.id
     if (!doMomento || !a.fita[0].candidato.planoIds.includes(doMomento)) continue
@@ -1950,7 +2138,189 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
 
   const casadas = feitas.filter((x): x is FraseCasada => x !== null)
   const avisos = casadas.flatMap((c) => c.avisos.map((a) => `${c.escolha.fraseId}: ${a.toLowerCase()}`))
-  return { casadas, avisos }
+  const guarda = [...naoDividir].filter((i) => !casadas.some((c) => c.escolha.fraseId === e.frases[i]!.id && c.pedacos)).map((i) => e.frases[i]!.id)
+  return { casadas, avisos, ...(divisao ? { guarda } : {}) }
+}
+
+// ------------------------------------------------- ate 2 cenas: os pedacos
+
+/** Um pedaco de uma frase dividida, pronto para a conta: o contexto DELE e o tempo dele. */
+interface PedacoNoCasar {
+  texto: string
+  palavraInicio: number
+  duracao: number
+  janela: JanelaDaFrase
+  ctx: Omit<ContextoDaFrase, 'anteriores'>
+}
+
+interface FraseDividida {
+  motivos: MotivoDaDivisao[]
+  pedacos: PedacoNoCasar[]
+}
+
+/** As cenas de uma escolha fixa, cada uma com o tempo dela na frase (o trecho que ela ocupa de verdade). */
+function cenasDaFixa(
+  esc: EscolhaDaFrase,
+  frase: Pick<Frase, 'id' | 'texto'> | undefined,
+  take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null,
+): { candidato: CandidatoDeCena; duracao: number }[] {
+  if (!frase || esc.cenas.length <= 1) return esc.cenas.map((c) => ({ candidato: c.candidato, duracao: esc.duracao }))
+  const tempos = temposDasCenas(esc, frase, take)
+  return esc.cenas.map((c, k) => ({ candidato: c.candidato, duracao: Math.max(0.05, (tempos[k]?.fim ?? esc.duracao) - (tempos[k]?.inicio ?? 0)) }))
+}
+
+/**
+ * O pedaco que a intencao visual descreve: mais nomes dela no pedaco (vale 2)
+ * e mais palavras em comum. Empate: o ULTIMO (a oracao principal: "Quando o
+ * Lent implorou pra ficar, o Guy asfixiou o rapaz" -- a intencao e o Guy
+ * sufocando o Lent). -1 = frase sem intencao.
+ */
+export function pedacoDaIntencao(intencao: string, corte: Pick<CorteDaFrase, 'pedacos'>, elenco: Elenco): number {
+  if (!intencao.trim() || corte.pedacos.length === 0) return -1
+  const quem = citadosNoTexto(intencao, elenco)
+  const conteudo = fichasDeConteudo(intencao)
+  let melhor = corte.pedacos.length - 1
+  let maior = -Infinity
+  for (let k = corte.pedacos.length - 1; k >= 0; k--) {
+    const p = corte.pedacos[k]!
+    const nomes = citadosNoTexto(p.texto, elenco)
+    const v =
+      2 * quem.filter((c) => nomes.some((x) => bate(c.ficha, x.ficha) || bate(x.ficha, c.ficha))).length +
+      emComum(fichasDeConteudo(p.texto), conteudo)
+    if (v > maior) {
+      maior = v
+      melhor = k
+    }
+  }
+  return melhor
+}
+
+/**
+ * As ancoras dos pedacos na ordem do episodio: o pedaco depois do momento que
+ * acharia a dele ANTES (ou o de antes, depois) fica com a do vizinho,
+ * rebaixada a estimada -- a conta escolhe o plano em volta, em ordem.
+ */
+function emOrdem(js: readonly JanelaDaFrase[], kMomento: number): JanelaDaFrase[] {
+  const saida = [...js]
+  const rebaixada = (j: JanelaDaFrase): JanelaDaFrase => ({ ...j, forte: false, estimada: j.forte || j.estimada })
+  for (let k = kMomento + 1; k < saida.length; k++) {
+    const a = saida[k - 1]!.ancora
+    const b = saida[k]!.ancora
+    if (a !== null && b !== null && b < a - 2) saida[k] = rebaixada(saida[k - 1]!)
+  }
+  for (let k = kMomento - 1; k >= 0; k--) {
+    const a = saida[k]!.ancora
+    const b = saida[k + 1]!.ancora
+    if (a !== null && b !== null && a > b + 2) saida[k] = rebaixada(saida[k + 1]!)
+  }
+  return saida
+}
+
+/** Os sinais com os pedacos: a imagem e as etiquetas da frase vao para o pedaco da intencao (idDoPedaco). */
+function sinaisComPedacos(
+  s: SinaisDoCasar,
+  frases: readonly Pick<Frase, 'id'>[],
+  cortes: ReadonlyMap<number, CorteDaFrase>,
+  intencaoDe: ReadonlyMap<number, number>,
+): SinaisDoCasar {
+  if (cortes.size === 0) return s
+  const imagem = new Map(s.imagemDaFrase ?? [])
+  const tags = new Map(s.tagsDaFrase ?? [])
+  for (const i of cortes.keys()) {
+    const f = frases[i]!
+    const k = intencaoDe.get(i) ?? -1
+    if (k < 0) continue
+    const id = idDoPedaco(f.id, k)
+    const v = s.imagemDaFrase?.get(f.id)
+    if (v) imagem.set(id, v)
+    const t = s.tagsDaFrase?.get(f.id)
+    if (t) tags.set(id, t)
+  }
+  return { ...s, ...(imagem.size > 0 ? { imagemDaFrase: imagem } : {}), ...(tags.size > 0 ? { tagsDaFrase: tags } : {}) }
+}
+
+/**
+ * O candidato cobre o pedaco inteiro (no maximo a folga que o encaixe segura
+ * sem emendar): senao o encaixe emendaria o plano seguinte -- que muitas vezes
+ * e justamente o do pedaco seguinte.
+ */
+function cobreOPedaco(c: CandidatoPontuado): boolean {
+  return c.falta <= FOLGA_SEM_EMENDA_SEC
+}
+
+/** Dentro da frase vale a ordem do episodio: o pedaco seguinte depois do anterior, sem plano dele. */
+function dentroDaFrase(c: CandidatoPontuado, antes: readonly { c: CandidatoPontuado; duracao: number }[]): boolean {
+  const ult = antes[antes.length - 1]
+  if (!ult) return true
+  const planos = new Set(antes.flatMap((x) => x.c.candidato.planoIds))
+  if (c.candidato.planoIds.some((id) => planos.has(id))) return false
+  const fim = Math.min(ult.c.candidato.outSec, ult.c.candidato.inSec + ult.duracao)
+  return c.candidato.inSec >= fim - 0.05
+}
+
+/**
+ * A escolha da frase dividida: uma cena por pedaco (na palavra dele), a fita
+ * com as melhores de cada pedaco intercaladas (a escolhida de cada um
+ * primeiro), a confianca do pedaco mais fraco, os avisos de todos e a fita da
+ * frase inteira para o "Juntar em 1".
+ */
+function escolhaDividida(
+  frase: FraseDoCasar,
+  janela: JanelaDaFrase,
+  d: DuracaoDaFraseDoCasar,
+  pedacos: readonly { fita: readonly CandidatoPontuado[]; janela: JanelaDaFrase; palavraInicio: number; texto: string; duracao: number }[],
+  inteira: readonly CandidatoPontuado[],
+  motivos: MotivoDaDivisao[],
+): FraseCasada {
+  const fita: CandidatoDeCena[] = []
+  const vistos = new Set<string>()
+  for (let r = 0; fita.length < FITA_MAX && pedacos.some((p) => p.fita[r]); r++) {
+    for (const p of pedacos) {
+      const c = p.fita[r]
+      if (!c || fita.length >= FITA_MAX || vistos.has(c.candidato.planoIds[0]!)) continue
+      vistos.add(c.candidato.planoIds[0]!)
+      fita.push(c.candidato)
+    }
+  }
+  const avisos: string[] = []
+  for (const p of pedacos) {
+    const c = p.fita[0]
+    if (!c) continue
+    if (c.planos.length > 1) avisos.push('Cena emendada')
+    if (c.falta > CONGELA_SEC) avisos.push('Cena curta')
+    if (p.janela.semCenas && !p.janela.herdada) avisos.push(AVISO_TRECHO_SEM_CENAS)
+    else if (longeDoEvento(c.candidato, p.janela) && !p.janela.herdada) avisos.push(AVISO_LONGE_DO_MOMENTO)
+  }
+  if (janela.herdada) avisos.push('Sem evento: perto da vizinha')
+  else if (janela.intervalos.length === 0) avisos.push('Sem evento')
+  const inteiraLivre: CandidatoDeCena[] = []
+  const planosDaInteira = new Set<string>()
+  for (const c of inteira) {
+    if (inteiraLivre.length >= FITA_MAX) break
+    if (c.candidato.planoIds.some((id) => planosDaInteira.has(id))) continue
+    inteiraLivre.push(c.candidato)
+    for (const id of c.candidato.planoIds) planosDaInteira.add(id)
+  }
+  const confianca = Math.min(...pedacos.map((p) => confiancaDaFita(p.fita, p.janela, !!p.fita[0] && longeDoEvento(p.fita[0].candidato, p.janela))))
+  const escolha: EscolhaDaFrase = {
+    fraseId: frase.id,
+    cenas: pedacos.flatMap((p) => (p.fita[0] ? [{ candidato: p.fita[0].candidato, palavraInicio: p.palavraInicio }] : [])),
+    fita,
+    confianca: arred(Math.max(0, Math.min(1, confianca)), 2),
+    travada: false,
+    hashTexto: hashDoTexto(frase.texto),
+    duracao: d.duracao,
+    avisos: [...new Set(avisos)],
+    ...(inteiraLivre.length > 0 ? { inteira: inteiraLivre } : {}),
+  }
+  return {
+    escolha,
+    fita: [...(pedacos[0]?.fita ?? [])],
+    janela,
+    avisos: escolha.avisos,
+    pedacos: pedacos.map((p) => ({ texto: p.texto, palavraInicio: p.palavraInicio, duracao: p.duracao, janela: p.janela, fita: [...p.fita] })),
+    motivos,
+  }
 }
 
 // ------------------------------------------------------- C4: o sujeito herdado
@@ -1988,8 +2358,11 @@ interface TrechoUsado {
 
 interface Caminho {
   nota: number
-  /** Por frase (indice no roteiro): o candidato escolhido e os termos da passagem. null = fixa ou sem cena. */
-  escolhas: ({ c: CandidatoPontuado; passagem: Termo[] } | null)[]
+  /**
+   * Por item da conta (frase inteira ou pedaco, na ordem): o candidato, os
+   * termos da passagem e se entrou forcado (sem saida). null = sem cena.
+   */
+  escolhas: ({ c: CandidatoPontuado; passagem: Termo[]; forcado: boolean } | null)[]
   usados: TrechoUsado[]
   anteriores: CenaAnterior[]
 }
@@ -2058,6 +2431,38 @@ function escolhaComAvisos(frase: FraseDoCasar, janela: JanelaDaFrase, fita: Cand
   return { escolha, fita, janela, avisos }
 }
 
+/** O que a conta precisa do casarFrases (calculado uma vez por chamada). */
+interface ContextoDaConta {
+  e: EntradaDoCasar
+  todos: readonly PlanoDoCasar[]
+  porId: ReadonlyMap<string, PlanoDoCasar>
+  janelas: readonly JanelaDaFrase[]
+  fixo: readonly { d: DuracaoDaFraseDoCasar; ctx: Omit<ContextoDaFrase, 'anteriores'> }[]
+  fraseDe: ReadonlyMap<string, FraseDoCasar>
+  /** A fita da frase inteira (sem as anteriores), CANDIDATOS_DA_CONTA. */
+  inteiraDe: (i: number) => CandidatoPontuado[]
+  /** O plano do momento da frase seguinte, que o pedaco de depois nao pega. */
+  momentoSeguinte: (i: number) => string | null
+  /** Os trechos das fixas (as listas dos pedacos comecam sem eles). */
+  ocupacaoInicial: Ocupacao
+}
+
+/** Um item da conta: uma frase inteira ou um pedaco de uma frase dividida. */
+interface ItemDaConta {
+  /** A frase (indice no roteiro). */
+  i: number
+  /** O pedaco (0 = o primeiro, ou a frase inteira). */
+  k: number
+  /** Quantos pedacos a frase tem (1 = inteira). */
+  n: number
+  duracao: number
+  janela: JanelaDaFrase
+  ctx: Omit<ContextoDaFrase, 'anteriores'>
+  lista: CandidatoPontuado[]
+  palavraInicio: number
+  texto: string
+}
+
 /**
  * C5: o melhor conjunto de uma vez. Uma programacao dinamica em FEIXE (Viterbi
  * com os FEIXE melhores caminhos): "sem repetir" e "nao 3x a mesma gente"
@@ -2068,104 +2473,182 @@ function escolhaComAvisos(frase: FraseDoCasar, janela: JanelaDaFrase, fita: Cand
  * custa), a continuidade, a variedade e o reuso de plano. Trecho ja mostrado
  * no caminho nao entra -- so quando a frase nao tem outra saida, com
  * "repetida". As escolhas que ficam (travadas, feitas a mao, em dia) sao
- * pontos FIXOS: entram no caminho como estao. Substitui a troca local.
+ * pontos FIXOS: entram no caminho como estao (todas as cenas delas). Substitui
+ * a troca local.
+ *
+ * Frase dividida (ate 2 cenas): cada pedaco e um ITEM da sequencia, com a
+ * propria lista; a variedade e a cronologia valem entre os pedacos tambem. O
+ * pedaco seguinte vem depois do anterior no episodio, sem plano dele e sem o
+ * plano do momento da frase seguinte. `fracas` = as frases cujo pedaco ficou
+ * sem saida boa (forcado, repetido, longe do momento): a guarda desfaz.
  */
 function casarPelaConta(
-  e: EntradaDoCasar,
-  todos: readonly PlanoDoCasar[],
-  porId: ReadonlyMap<string, PlanoDoCasar>,
-  janelas: readonly JanelaDaFrase[],
-  fixo: readonly { d: DuracaoDaFraseDoCasar; ctx: Omit<ContextoDaFrase, 'anteriores'> }[],
-  inicial: EstadoDoCasar,
-): ResultadoDoCasar {
+  x: ContextoDaConta,
+  divididas: ReadonlyMap<number, FraseDividida>,
+): { resultado: ResultadoDoCasar; fracas: number[] } {
+  const { e, porId, janelas, fixo, inteiraDe } = x
   const n = e.frases.length
   // Os trechos das fixas ocupam desde o comeco (como no guloso).
   const usadosFixos: TrechoUsado[] = []
   for (const [fraseId, esc] of e.fixas) {
     if (e.refazer.has(fraseId)) continue
-    for (const c of esc.cenas) usadosFixos.push(trechoDe(c.candidato, esc.duracao))
+    for (const c of cenasDaFixa(esc, x.fraseDe.get(fraseId), e.take)) usadosFixos.push(trechoDe(c.candidato, c.duracao))
   }
-  // Os candidatos de cada frase a refazer, sem as anteriores (a passagem conta a parte).
-  const candidatos: CandidatoPontuado[][] = e.frases.map((frase, i) => {
-    if (!e.refazer.has(frase.id)) return []
-    const ctx: ContextoDaFrase = { ...fixo[i]!.ctx, anteriores: [] }
-    return fitaDaFrase(todos, ctx, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA)
-  })
-
-  let feixe: Caminho[] = [{ nota: 0, escolhas: [], usados: usadosFixos, anteriores: [] }]
+  // Os itens, na ordem: a frase inteira, ou um por pedaco; a lista de cada um sem as anteriores (a passagem conta a parte).
+  const itens: ItemDaConta[] = []
+  const passos: ({ fixa: number } | { item: number })[] = []
   for (let i = 0; i < n; i++) {
     const frase = e.frases[i]!
-    const { d, ctx } = fixo[i]!
     if (!e.refazer.has(frase.id)) {
+      passos.push({ fixa: i })
+      continue
+    }
+    const dv = divididas.get(i)
+    if (dv) {
+      dv.pedacos.forEach((p, k) => {
+        passos.push({ item: itens.length })
+        itens.push({
+          i,
+          k,
+          n: dv.pedacos.length,
+          duracao: p.duracao,
+          janela: p.janela,
+          ctx: p.ctx,
+          lista: listaDoPedaco(x, i, k, p),
+          palavraInicio: p.palavraInicio,
+          texto: p.texto,
+        })
+      })
+    } else {
+      passos.push({ item: itens.length })
+      itens.push({ i, k: 0, n: 1, duracao: fixo[i]!.d.duracao, janela: janelas[i]!, ctx: fixo[i]!.ctx, lista: inteiraDe(i), palavraInicio: 0, texto: frase.texto })
+    }
+  }
+
+  let feixe: Caminho[] = [{ nota: 0, escolhas: [], usados: usadosFixos, anteriores: [] }]
+  // A ancora do item anterior que tem cena (fixa ou a refazer).
+  let ancoraAntes: number | null = null
+  for (const passo of passos) {
+    if ('fixa' in passo) {
+      const frase = e.frases[passo.fixa]!
       const fixa = e.fixas.get(frase.id)
-      const ultima = fixa?.cenas[fixa.cenas.length - 1]
-      feixe = feixe.map((k) => ({
-        ...k,
-        escolhas: [...k.escolhas, null],
-        anteriores: fixa && ultima ? [...k.anteriores, cenaAnterior(porId, ultima.candidato, fixa.duracao)] : k.anteriores,
-      }))
+      if (!fixa) continue
+      const cenas = cenasDaFixa(fixa, frase, e.take)
+      feixe = feixe.map((k) => ({ ...k, anteriores: [...k.anteriores, ...cenas.map((c) => cenaAnterior(porId, c.candidato, c.duracao))] }))
+      ancoraAntes = janelas[passo.fixa]!.ancora
       continue
     }
-    const lista = candidatos[i]!
-    // A ancora da frase anterior que tem cena (fixa ou a refazer).
-    let ancoraAntes: number | null = null
-    for (let a = i - 1; a >= 0; a--) {
-      if (e.refazer.has(e.frases[a]!.id) || e.fixas.has(e.frases[a]!.id)) {
-        ancoraAntes = janelas[a]!.ancora
-        break
-      }
-    }
-    if (lista.length === 0) {
+    const x0 = passo.item
+    const item = itens[x0]!
+    if (item.lista.length === 0) {
       feixe = feixe.map((k) => ({ ...k, escolhas: [...k.escolhas, null] }))
+      ancoraAntes = item.janela.ancora
       continue
     }
+    const evitar = item.n > 1 && item.k > 0 ? x.momentoSeguinte(item.i) : null
     const proximos: Caminho[] = []
     for (const k of feixe) {
-      const livres = lista.filter((c) => !cruzaUsado(k.usados, trechoDe(c.candidato, d.duracao)))
-      const opcoes = livres.length > 0 ? livres.map((c) => ({ c, forcado: false })) : lista.map((c) => ({ c, forcado: true }))
+      // Os pedacos anteriores DESTA frase neste caminho.
+      const daFrase = item.k === 0 ? [] : k.escolhas.slice(x0 - item.k, x0).flatMap((y, j) => (y ? [{ c: y.c, duracao: itens[x0 - item.k + j]!.duracao }] : []))
+      const pode = (c: CandidatoPontuado): boolean => dentroDaFrase(c, daFrase) && !(evitar !== null && c.candidato.planoIds.includes(evitar))
+      const livres = item.lista.filter((c) => pode(c) && !cruzaUsado(k.usados, trechoDe(c.candidato, item.duracao)))
+      const opcoes =
+        livres.length > 0
+          ? livres.map((c) => ({ c, forcado: false }))
+          : (item.n > 1 && item.lista.some(pode) ? item.lista.filter(pode) : item.lista).map((c) => ({ c, forcado: true }))
       for (const { c, forcado } of opcoes) {
         const repetido = c.repetido || forcado
-        const fimReal = Math.min(c.candidato.outSec, c.candidato.inSec + d.duracao)
+        const fimReal = Math.min(c.candidato.outSec, c.candidato.inSec + item.duracao)
         const reusado = !repetido && k.usados.some((u) => u.planoIds.some((id) => c.candidato.planoIds.includes(id)))
-        const passagem = termosDaSequencia(c.planos, c.candidato.inSec, fimReal, ctx, k.anteriores, reusado, ancoraAntes)
+        const passagem = termosDaSequencia(c.planos, c.candidato.inSec, fimReal, item.ctx, k.anteriores, reusado, ancoraAntes)
         if (forcado && !c.repetido) passagem.push({ chave: 'repetida', valor: PESOS.repetida, rotulo: 'repetida' })
         proximos.push({
           nota: k.nota + c.candidato.nota + passagem.reduce((s, t) => s + t.valor, 0),
-          escolhas: [...k.escolhas, { c: forcado && !c.repetido ? { ...c, repetido: true } : c, passagem }],
-          usados: [...k.usados, trechoDe(c.candidato, d.duracao)],
-          anteriores: [...k.anteriores, cenaAnterior(porId, c.candidato, d.duracao)],
+          escolhas: [...k.escolhas, { c: forcado && !c.repetido ? { ...c, repetido: true } : c, passagem, forcado }],
+          usados: [...k.usados, trechoDe(c.candidato, item.duracao)],
+          anteriores: [...k.anteriores, cenaAnterior(porId, c.candidato, item.duracao)],
         })
       }
     }
     proximos.sort((a, b) => b.nota - a.nota)
     feixe = proximos.slice(0, FEIXE)
+    ancoraAntes = item.janela.ancora
   }
 
   const melhor = feixe[0]!
+  /** Os trechos que os itens mostram no caminho escolhido (o resto da fita de cada um nao cruza os dos outros). */
+  const trechoDoItem = (y: number): TrechoUsado | null => {
+    const esc = melhor.escolhas[y]
+    return esc ? trechoDe(esc.c.candidato, itens[y]!.duracao) : null
+  }
+  /** A fita do item: a escolhida (com a passagem) e os outros candidatos que nenhum outro item mostra. */
+  const fitaDoItem = (y: number): CandidatoPontuado[] => {
+    const esc = melhor.escolhas[y] ?? null
+    const item = itens[y]!
+    const fita: CandidatoPontuado[] = []
+    if (!esc) return fita
+    const termos = [...esc.c.termos, ...esc.passagem]
+    const nota = arred(termos.reduce((s, t) => s + t.valor, 0), 2)
+    fita.push({ ...esc.c, termos, candidato: { ...esc.c.candidato, nota, porque: porqueDosTermos(termos) } })
+    const dosOutros = itens.flatMap((_, z) => (z !== y ? [trechoDoItem(z)] : [])).filter((t): t is TrechoUsado => t !== null)
+    const ocupados = new Set(esc.c.candidato.planoIds)
+    for (const c of item.lista) {
+      if (fita.length >= FITA_MAX) break
+      if (c.candidato.planoIds.some((id) => ocupados.has(id))) continue
+      if (cruzaUsado([...usadosFixos, ...dosOutros], trechoDe(c.candidato, item.duracao))) continue
+      fita.push(c)
+      for (const id of c.candidato.planoIds) ocupados.add(id)
+    }
+    return fita
+  }
+
   const casadas: FraseCasada[] = []
+  const fracas: number[] = []
   for (let i = 0; i < n; i++) {
     const frase = e.frases[i]!
     if (!e.refazer.has(frase.id)) continue
-    const esc = melhor.escolhas[i] ?? null
+    const ys = itens.flatMap((it, y) => (it.i === i ? [y] : []))
     const d = fixo[i]!.d
-    const fita: CandidatoPontuado[] = []
-    if (esc) {
-      const termos = [...esc.c.termos, ...esc.passagem]
-      const nota = arred(termos.reduce((s, t) => s + t.valor, 0), 2)
-      fita.push({ ...esc.c, termos, candidato: { ...esc.c.candidato, nota, porque: porqueDosTermos(termos) } })
-      // O resto da fita: os outros candidatos da frase que nenhuma OUTRA frase mostra.
-      const dosOutros = melhor.escolhas.flatMap((x, k) => (x && k !== i ? [trechoDe(x.c.candidato, fixo[k]!.d.duracao)] : []))
-      const ocupados = new Set(esc.c.candidato.planoIds)
-      for (const c of candidatos[i]!) {
-        if (fita.length >= FITA_MAX) break
-        if (c.candidato.planoIds.some((id) => ocupados.has(id))) continue
-        if (cruzaUsado([...usadosFixos, ...dosOutros], trechoDe(c.candidato, d.duracao))) continue
-        fita.push(c)
-        for (const id of c.candidato.planoIds) ocupados.add(id)
-      }
+    const dv = divididas.get(i)
+    if (!dv) {
+      casadas.push(escolhaComAvisos(frase, janelas[i]!, fitaDoItem(ys[0]!), d))
+      continue
     }
-    casadas.push(escolhaComAvisos(frase, janelas[i]!, fita, d))
+    // Pedaco sem cena, forcado (repetido ou fora da ordem) ou longe do momento: metade fraca.
+    const fraca = ys.some((y) => {
+      const esc = melhor.escolhas[y]
+      return !esc || esc.forcado || esc.c.repetido || longeDoEvento(esc.c.candidato, itens[y]!.janela)
+    })
+    if (fraca) fracas.push(i)
+    const pedacos = ys.map((y) => ({
+      fita: fitaDoItem(y),
+      janela: itens[y]!.janela,
+      palavraInicio: itens[y]!.palavraInicio,
+      texto: itens[y]!.texto,
+      duracao: itens[y]!.duracao,
+    }))
+    // O "Juntar em 1": a fita da frase inteira, sem o que as OUTRAS frases mostram.
+    const dosOutros = itens.flatMap((it, z) => (it.i !== i ? [trechoDoItem(z)] : [])).filter((t): t is TrechoUsado => t !== null)
+    const inteira = inteiraDe(i).filter((c) => !cruzaUsado([...usadosFixos, ...dosOutros], trechoDe(c.candidato, d.duracao)))
+    casadas.push(escolhaDividida(frase, janelas[i]!, d, pedacos, inteira, dv.motivos))
   }
   const avisos = casadas.flatMap((c) => c.avisos.map((a) => `${c.escolha.fraseId}: ${a.toLowerCase()}`))
-  return { casadas, avisos }
+  return { resultado: { casadas, avisos }, fracas }
+}
+
+/** A lista de um pedaco na conta (uma vez por frase e pedaco: a guarda roda a conta de novo). */
+const listasDosPedacos = new WeakMap<ContextoDaConta, Map<string, CandidatoPontuado[]>>()
+function listaDoPedaco(x: ContextoDaConta, i: number, k: number, p: PedacoNoCasar): CandidatoPontuado[] {
+  let mapa = listasDosPedacos.get(x)
+  if (!mapa) {
+    mapa = new Map()
+    listasDosPedacos.set(x, mapa)
+  }
+  const chave = `${i}/${k}`
+  const pronta = mapa.get(chave)
+  if (pronta) return pronta
+  // As fixas ja ocupam: a fita do pedaco comeca sem os trechos delas, como a da frase inteira.
+  const lista = fitaDaFrase(x.todos, { ...p.ctx, anteriores: [] }, x.e.eventos, x.ocupacaoInicial, x.e.indice.id, CANDIDATOS_DA_CONTA).filter(cobreOPedaco)
+  mapa.set(chave, lista)
+  return lista
 }
