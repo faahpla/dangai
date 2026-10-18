@@ -46,6 +46,13 @@ import { acharCandidatos } from '../electron/voz/casar-fala'
 import { arquivoDaVoz } from '../electron/voz/pastas'
 import { lerWavDoDisco, sha256 } from '../electron/voz/wav'
 
+// Fora do Electron (tsx/node puro) o `app` nao existe: pular com aviso em vez de
+// quebrar -- e nunca cair num userData na raiz do repo. Rode pelo electron (ver acima).
+if (!process.versions.electron) {
+  console.log('v-voz-erros: pulado (precisa do Electron: npx electron <bundle>)')
+  process.exit(0)
+}
+
 let falhas = 0
 let total = 0
 function ok(nome: string, cond: boolean, detalhe = ''): void {

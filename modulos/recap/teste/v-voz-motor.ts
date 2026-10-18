@@ -77,6 +77,13 @@ import { aprovarVoz } from '../electron/voz/takes'
 import { lerMedidas, ritmoDoRascunho } from '../electron/voz/ritmo'
 import { chaveDoRitmo } from '../shared/ritmo'
 
+// Fora do Electron (tsx/node puro) o `app` nao existe: pular com aviso em vez de
+// quebrar -- e nunca cair num userData na raiz do repo. Rode pelo electron (ver acima).
+if (!process.versions.electron) {
+  console.log('v-voz-motor: pulado (precisa do Electron: npx electron <bundle>)')
+  process.exit(0)
+}
+
 // ------------------------------------------------------------------ conferir
 let falhas = 0
 let total = 0

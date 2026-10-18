@@ -43,6 +43,13 @@ import {
 } from '../electron/ancut/enviar'
 import { CONFIG_PADRAO, type ConfigDoRecap } from '../shared/config'
 
+// Fora do Electron (tsx/node puro) o `app` nao existe: pular com aviso em vez de
+// quebrar -- e nunca cair num userData na raiz do repo. Rode pelo electron (ver acima).
+if (!process.versions.electron) {
+  console.log('v-ancut-enviar: pulado (precisa do Electron: npx electron <bundle>)')
+  process.exit(0)
+}
+
 let falhas = 0
 let total = 0
 function ok(nome: string, cond: boolean, detalhe = ''): void {

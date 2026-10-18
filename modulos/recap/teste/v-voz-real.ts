@@ -46,6 +46,13 @@ import { estimarVoz } from '../electron/voz/estimar'
 import { gerarVoz } from '../electron/voz/gerar'
 import { pastaDoCacheDaVoz } from '../electron/voz/pastas'
 
+// Fora do Electron (tsx/node puro) o `app` nao existe: pular com aviso em vez de
+// quebrar -- e nunca cair num userData na raiz do repo. Rode pelo electron (ver acima).
+if (!process.versions.electron) {
+  console.log('v-voz-real: pulado (precisa do Electron: npx electron <bundle>)')
+  process.exit(0)
+}
+
 const PERFIL_REAL = join(process.env['APPDATA'] ?? '', 'AniRecap Studio')
 const ID = 'rc_25d63d4babd6_realp2'
 const ID2 = 'rc_25d63d4babd6_realp2b'
