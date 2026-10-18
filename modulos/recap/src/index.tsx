@@ -109,6 +109,9 @@ export const recap: ModuloDoRenderer = {
 
   rotuloDoClipe,
 
+  // A etiqueta no card de "Projetos recentes": projeto com `modulos.recap`.
+  rotuloDoProjeto: { texto: 'Recap' },
+
   /*
    * Como no Studio: so na TELA INICIAL (nada aberto) um video longo pergunta.
    * Com um projeto aberto, o video segue sendo clipe, sem pergunta.
