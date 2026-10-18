@@ -2,6 +2,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -181,7 +182,8 @@ function writeAtomic(path: string, conteudo: string): void {
 
 export function openProjectFile(path: string): OpenedProject {
   const file = parse(readFileSync(path, 'utf8'), basename(path))
-  return { path, file: relocate(file, dirname(path), basename(path)) }
+  const avisos: string[] = []
+  return { path, file: relocate(file, dirname(path), basename(path), avisos), avisos }
 }
 
 /**
@@ -228,11 +230,12 @@ export function readAutosave(): OpenedProject | null {
       // seria transformar uma recuperacao possivel em perda total.
       try {
         const base = guardado.projectPath ? dirname(guardado.projectPath) : null
-        const recuperado = relocate(guardado.file, base, 'o trabalho recuperado')
+        const avisos: string[] = []
+        const recuperado = relocate(guardado.file, base, 'o trabalho recuperado', avisos)
         // Consumida: o trabalho volta ao estado, e dali o autosave normal
         // assume. Manter a copia a faria reaparecer a cada abertura.
         rmSync(anteriorPath(), { force: true })
-        return { path: guardado.projectPath, file: recuperado }
+        return { path: guardado.projectPath, file: recuperado, avisos }
       } catch {
         /* segue para o autosave atual */
       }
@@ -242,7 +245,8 @@ export function readAutosave(): OpenedProject | null {
     // A pasta base e a do .dangai de origem, quando havia um: o autosave em si
     // mora no userData, e resolver relativo a ele apontaria para o nada.
     const base = projectPath ? dirname(projectPath) : null
-    return { path: projectPath, file: relocate(file, base, 'o trabalho recuperado') }
+    const avisos: string[] = []
+    return { path: projectPath, file: relocate(file, base, 'o trabalho recuperado', avisos), avisos }
   } catch {
     return null
   }
@@ -288,7 +292,7 @@ function parse(raw: string, nome: string): ProjectFile {
  * existir, ele aponta para o original, e o usuario editaria a pasta errada sem
  * perceber.
  */
-function relocate(file: ProjectFile, base: string | null, nome: string): ProjectFile {
+function relocate(file: ProjectFile, base: string | null, nome: string, avisos: string[] = []): ProjectFile {
   const faltando: string[] = []
 
   const achar = (ref: FileReference): FileReference => {
@@ -297,8 +301,29 @@ function relocate(file: ProjectFile, base: string | null, nome: string): Project
     return encontrado ? { ...ref, path: encontrado } : ref
   }
 
+  /*
+   * Um clipe da biblioteca que uma MESCLA tirou do lugar (0011.mp4 virou parte
+   * de 0010-0012.mp4) nao pode deixar o projeto sem abrir -- era o que
+   * acontecia com todo projeto que usava um pedaco mesclado depois.
+   */
+  const acharClipe = (ref: FileReference): FileReference => {
+    const encontrado = locate(ref, base)
+    if (encontrado) return { ...ref, path: encontrado }
+    const mesclado = acharDepoisDaMescla(ref, base)
+    if (!mesclado) {
+      faltando.push(ref.fileName)
+      return ref
+    }
+    if (!mesclado.exato) {
+      avisos.push(
+        `${ref.fileName} foi mesclado em ${basename(mesclado.path)} e a lixeira do episodio ja foi esvaziada: o bloco usa o clipe mesclado, confira o trecho dele.`,
+      )
+    }
+    return { ...ref, path: mesclado.path }
+  }
+
   const audio = achar(file.audio)
-  const images = file.images.map((image) => ({ ...image, ...achar(image) }))
+  const images = file.images.map((image) => ({ ...image, ...acharClipe(image) }))
   // Legenda .srt e musica sao acessorios: somem sem quebrar o projeto, ao
   // contrario da narracao e das imagens, que o plano referencia por posicao.
   // Voltam como null e a interface mostra o campo vazio -- melhor que recusar
@@ -321,6 +346,51 @@ function relocate(file: ProjectFile, base: string | null, nome: string): Project
     subtitle: subtitle ? { ...file.subtitle!, path: subtitle } : null,
     music: music ? { ...file.music!, path: music } : null,
   }
+}
+
+/**
+ * ONDE FOI PARAR um NNNN.mp4 que uma mescla tirou do lugar.
+ *
+ * 1. O mesclado que COMECA nele (0010 dentro de 0010-0012): mesmo inicio, o
+ *    trecho do bloco continua certo -- exato.
+ * 2. O proprio pedaco na lixeira do episodio (`_lixeira/<data>/shots/`, a da
+ *    mescla do Dangai e a do AnCut), o mais novo primeiro -- exato.
+ * 3. O mesclado que o contem no meio: o trecho comeca em outro ponto. Abre,
+ *    mas com aviso (exato = false).
+ */
+function acharDepoisDaMescla(ref: FileReference, base: string | null): { path: string; exato: boolean } | null {
+  const m = /^(\d+)\.(mp4|mkv|mov|webm|m4v)$/i.exec(ref.fileName)
+  if (!m) return null
+  const n = Number(m[1])
+  const pastas = [...new Set([dirname(ref.path), ...(base && ref.rel ? [dirname(resolve(base, ref.rel))] : [])])]
+  let noMeio: string | null = null
+  for (const shots of pastas) {
+    if (!existsSync(shots)) continue
+    let nomes: string[] = []
+    try {
+      nomes = readdirSync(shots)
+    } catch {
+      continue
+    }
+    for (const outro of nomes) {
+      const faixa = /^(\d+)-(\d+)\.(mp4|mkv|mov|webm|m4v)$/i.exec(outro)
+      if (!faixa) continue
+      const a = Number(faixa[1])
+      const b = Number(faixa[2])
+      if (n === a) return { path: join(shots, outro), exato: true }
+      if (n > a && n <= b) noMeio ??= join(shots, outro)
+    }
+    const lixeira = join(dirname(shots), '_lixeira')
+    try {
+      for (const vez of readdirSync(lixeira).sort().reverse()) {
+        const pedaco = join(lixeira, vez, basename(shots), ref.fileName)
+        if (existsSync(pedaco)) return { path: pedaco, exato: true }
+      }
+    } catch {
+      /* sem lixeira */
+    }
+  }
+  return noMeio ? { path: noMeio, exato: false } : null
 }
 
 function locate(ref: FileReference, base: string | null): string | null {

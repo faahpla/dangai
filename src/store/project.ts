@@ -4782,6 +4782,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
     get().refazerLegendasNaoEditadas()
     await get().migrarSonsAntigos()
+    // Abriu com ressalva (um clipe mesclado no lugar do pedaco): avisa, sem impedir.
+    if (result.value.avisos?.length) set({ error: result.value.avisos.join(' ') })
     emitir('abrirProjeto', { path: get().projectPath })
   },
 
@@ -4815,6 +4817,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
     get().refazerLegendasNaoEditadas()
     await get().migrarSonsAntigos()
+    // Abriu com ressalva (um clipe mesclado no lugar do pedaco): avisa, sem impedir.
+    if (result.value.avisos?.length) set({ error: result.value.avisos.join(' ') })
     emitir('abrirProjeto', { path: get().projectPath })
   },
 

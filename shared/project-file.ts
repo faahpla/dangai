@@ -362,4 +362,10 @@ export interface OpenedProject {
   path: string | null
   /** Ja com os caminhos reescritos para onde os arquivos estao AGORA. */
   file: ProjectFile
+  /**
+   * O que abriu com ressalva -- um clipe que uma mescla juntou com outros e
+   * cuja lixeira ja foi esvaziada: entrou o mesclado, e o trecho pode ter
+   * mudado. A tela mostra; o projeto abre do mesmo jeito.
+   */
+  avisos?: string[]
 }
