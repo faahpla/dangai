@@ -486,6 +486,7 @@ export function toRenderProps(
         ...(o.tipo === 'ajuste' ? { cor: o.cor ?? AJUSTE_DE_COR_PADRAO } : {}),
         espelhar: o.espelhar ?? false,
         preencher: o.preencher ?? false,
+        aspecto: o.aspecto > 0 ? o.aspecto : 16 / 9,
         fadeInFrames: Math.round((o.fadeInSec ?? 0) * VIDEO_FPS),
         fadeOutFrames: Math.round((o.fadeOutSec ?? 0) * VIDEO_FPS),
         chaves: o.chaves && o.chaves.length > 0 ? o.chaves : null,

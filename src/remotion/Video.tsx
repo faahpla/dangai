@@ -10,6 +10,7 @@ import {
   OffthreadVideo,
   Sequence,
   useCurrentFrame,
+  useVideoConfig,
 } from 'remotion'
 import { rampaDoFade, resolverTransicao, VIDEO_FPS, type RenderProps } from '@shared/contract'
 import { transformNoTempo } from '@shared/transform'
@@ -322,7 +323,17 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
   })
   const m = o.efeito === 'nenhum' ? { scale: 1, x: 0, y: 0 } : motionFor(o.efeito, o.intensidade, t)
   // Inteiro na tela (contain) ou cobrindo o quadro todo (cover, "preencher").
-  const cobre = { width: '100%', height: '100%', objectFit: o.preencher ? ('cover' as const) : ('contain' as const) }
+  /*
+   * PREENCHER A TELA = AUMENTAR ATE COBRIR, sem recortar. Era `object-fit:
+   * cover`, que corta o arquivo no tamanho do quadro: movendo depois, a parte
+   * cortada nao voltava -- "ele simplesmente corta a imagem e o resto eu nao
+   * posso usar". Agora o arquivo entra inteiro (contain) e cresce ate cobrir; o
+   * que passa da tela continua la, e aparece se ele mover.
+   */
+  const { width: W, height: H } = useVideoConfig()
+  const quadro = W / H
+  const cobrir = o.preencher ? (o.aspecto > quadro ? o.aspecto / quadro : quadro / o.aspecto) : 1
+  const cobre = { width: '100%', height: '100%', objectFit: 'contain' as const }
   const fade = rampaDoFade(frame, o.durationInFrames, o.fadeInFrames, o.fadeOutFrames)
   // Fixo, ou animado pelos quadros-chave (o tempo da chave e desde o inicio do clipe).
   const v = transformNoTempo(o, o.chaves, frame / VIDEO_FPS, o.curvaDasChaves)
@@ -335,7 +346,7 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
       }}
     >
       <AbsoluteFill
-        style={{ transform: `translate(${m.x}%, ${m.y}%) scale(${m.scale})`, transformOrigin: 'center center' }}
+        style={{ transform: `translate(${m.x}%, ${m.y}%) scale(${m.scale * cobrir})`, transformOrigin: 'center center' }}
       >
         {o.tipo === 'video' ? (
           <OffthreadVideo

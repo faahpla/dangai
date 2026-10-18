@@ -1,4 +1,4 @@
-import { VIDEO_FPS, type SobreposicaoSalva } from '@shared/contract'
+import { ESCALA_MAXIMA, ESCALA_MINIMA, POSICAO_LIVRE, VIDEO_FPS, type SobreposicaoSalva } from '@shared/contract'
 import { chaveEm, gravarChave, transformNoTempo, type Transform2D } from '@shared/transform'
 
 /**
@@ -36,9 +36,9 @@ export function patchDoTransform(
   valores: Partial<Transform2D>,
 ): Partial<SobreposicaoSalva> {
   const v: Partial<Transform2D> = {}
-  if (valores.x !== undefined) v.x = Math.round(limita(valores.x, -100, 100) * 10) / 10
-  if (valores.y !== undefined) v.y = Math.round(limita(valores.y, -100, 100) * 10) / 10
-  if (valores.escala !== undefined) v.escala = Math.round(limita(valores.escala, 0.05, 4) * 1000) / 1000
+  if (valores.x !== undefined) v.x = Math.round(limita(valores.x, -POSICAO_LIVRE, POSICAO_LIVRE) * 10) / 10
+  if (valores.y !== undefined) v.y = Math.round(limita(valores.y, -POSICAO_LIVRE, POSICAO_LIVRE) * 10) / 10
+  if (valores.escala !== undefined) v.escala = Math.round(limita(valores.escala, ESCALA_MINIMA, ESCALA_MAXIMA) * 1000) / 1000
   if (animado(o)) {
     if (valores.rotacao !== undefined) v.rotacao = Math.round(limita(valores.rotacao, -3600, 3600) * 10) / 10
     const base = transformNaAgulha(o, playhead)

@@ -1,4 +1,4 @@
-import type { MotionCurve } from './contract'
+import { POSICAO_LIVRE, type MotionCurve } from './contract'
 
 /**
  * O TRANSFORM ANIMADO de um clipe da faixa de video -- e da camada de ajuste.
@@ -119,7 +119,7 @@ export function compensarPivo(
   const my = dy * v.escala
   const ax = mx * Math.cos(r) - my * Math.sin(r)
   const ay = mx * Math.sin(r) + my * Math.cos(r)
-  const limita = (n: number): number => Math.round(Math.min(Math.max(n, -100), 100) * 10) / 10
+  const limita = (n: number): number => Math.round(Math.min(Math.max(n, -POSICAO_LIVRE), POSICAO_LIVRE) * 10) / 10
   return { x: limita(v.x + ((ax - dx) / W) * 100), y: limita(v.y + ((ay - dy) / H) * 100) }
 }
 

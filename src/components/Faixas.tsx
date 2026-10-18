@@ -1,3 +1,4 @@
+import { ValorDigitavel } from './painel'
 import { createContext, useContext, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
@@ -874,6 +875,7 @@ export function ControleDoClipe({
   texto,
   padrao,
   onChange,
+  digitar,
 }: {
   rotulo: string
   titulo: string
@@ -885,6 +887,8 @@ export function ControleDoClipe({
   /** Duplo clique volta para este valor. */
   padrao: number
   onChange: (v: number) => void
+  /** Dois cliques no numero: digitar (vale fora da faixa do slider). Ver ValorDigitavel. */
+  digitar?: { numero: number; aplicar: (n: number) => void }
 }) {
   return (
     <label className="flex items-center gap-1" title={`${titulo} (duplo clique volta ao padrao)`}>
@@ -900,7 +904,11 @@ export function ControleDoClipe({
         onDoubleClick={() => onChange(padrao)}
         className="dangai-range w-[56px]"
       />
-      <span className="tnum w-[36px] text-right text-[10px] text-ink-2">{texto}</span>
+      {digitar ? (
+        <ValorDigitavel texto={texto} numero={digitar.numero} aplicar={digitar.aplicar} className="w-[40px] text-[10px] text-ink-2" />
+      ) : (
+        <span className="tnum w-[36px] text-right text-[10px] text-ink-2">{texto}</span>
+      )}
     </label>
   )
 }

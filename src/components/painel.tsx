@@ -1,3 +1,4 @@
+import { useState } from 'react'
 /**
  * As pecas dos paineis de edicao de bloco.
  *
@@ -185,6 +186,7 @@ export function Deslizante({
   texto,
   padrao,
   dica,
+  digitar,
 }: {
   valor: number
   min: number
@@ -196,6 +198,12 @@ export function Deslizante({
   padrao?: number
   /** O que o slider faz, no tooltip (junto do "duplo clique volta ao padrao"). */
   dica?: string
+  /**
+   * DIGITAR O VALOR: dois cliques no numero viram um campo. O que ele digita
+   * vale mesmo fora da faixa do slider -- e o jeito de chegar num 1200% ou num
+   * -250% que o arrastar nao alcanca. `numero` e o valor na unidade mostrada.
+   */
+  digitar?: { numero: number; aplicar: (n: number) => void }
 }) {
   return (
     <>
@@ -210,7 +218,60 @@ export function Deslizante({
         title={[dica, padrao === undefined ? null : 'Duplo clique volta ao padrao'].filter(Boolean).join(' · ') || undefined}
         className="dangai-range min-w-0 flex-1"
       />
-      <span className="tnum w-9 shrink-0 text-right text-[11px] text-ink-3">{texto}</span>
+      {digitar ? (
+        <ValorDigitavel texto={texto} numero={digitar.numero} aplicar={digitar.aplicar} className="w-12 text-[11px] text-ink-3" />
+      ) : (
+        <span className="tnum w-9 shrink-0 text-right text-[11px] text-ink-3">{texto}</span>
+      )}
     </>
+  )
+}
+
+/**
+ * Um numero que, com dois cliques, vira campo de digitar. Enter (ou sair do
+ * campo) aplica; Esc desiste. Aceita virgula.
+ */
+export function ValorDigitavel({
+  texto,
+  numero,
+  aplicar,
+  className = '',
+}: {
+  texto: string
+  numero: number
+  aplicar: (n: number) => void
+  className?: string
+}) {
+  const [editando, setEditando] = useState<string | null>(null)
+  if (editando === null) {
+    return (
+      <span
+        onDoubleClick={() => setEditando(String(Math.round(numero * 10) / 10))}
+        title="Dois cliques para digitar o valor"
+        className={`tnum shrink-0 cursor-text text-right hover:text-ink ${className}`}
+      >
+        {texto}
+      </span>
+    )
+  }
+  const confirmar = (): void => {
+    const n = Number(editando.replace(',', '.').replace(/[^0-9.+-]/g, ''))
+    if (editando.trim() !== '' && Number.isFinite(n)) aplicar(n)
+    setEditando(null)
+  }
+  return (
+    <input
+      autoFocus
+      value={editando}
+      onChange={(e) => setEditando(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={confirmar}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') confirmar()
+        else if (e.key === 'Escape') setEditando(null)
+      }}
+      className={`tnum shrink-0 rounded-sm border border-line-strong bg-elevated px-1 text-right text-ink outline-none ${className}`}
+    />
   )
 }

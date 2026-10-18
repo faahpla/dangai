@@ -8,6 +8,7 @@ import { useProject } from '@/store/project'
 import { useAjusteDasFaixas, useDucking } from './som-do-preview'
 import { Video } from '@/remotion/Video'
 import { TransformNoPreview } from './TransformNoPreview'
+import { useVisor, ZOOM_DO_VISOR_MIN } from '@/store/layout'
 import { create } from 'zustand'
 
 /*
@@ -35,6 +36,23 @@ function useTocando(): boolean {
  * O plano vem de shared/plan, tambem o mesmo que o main usa no render.
  */
 export function Preview() {
+  const zoomDoVisor = useVisor((s) => s.zoom)
+  const quadroRef = useRef<HTMLDivElement | null>(null)
+  const visorRef = useRef<HTMLDivElement | null>(null)
+  // Ctrl+roda no preview: o zoom do visor (a roda sozinha, em cima de um
+  // insert escolhido, continua escalando o insert).
+  useEffect(() => {
+    const el = visorRef.current
+    if (!el) return
+    const roda = (e: WheelEvent): void => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      const v = useVisor.getState()
+      v.definir(v.zoom * Math.exp(-e.deltaY * 0.0015))
+    }
+    el.addEventListener('wheel', roda, { passive: false })
+    return () => el.removeEventListener('wheel', roda)
+  }, [])
   const audio = useProject((s) => s.audio)
   const images = useProject((s) => s.images)
   const music = useProject((s) => s.music)
@@ -210,9 +228,11 @@ export function Preview() {
      * largura, presa numa faixa, e a altura sai dela.
      */
     <div
+      ref={visorRef}
       style={{ aspectRatio: `${quadro.width} / ${quadro.height}` }}
       className={[
-        'relative shrink-0 overflow-hidden rounded-md border border-line bg-surface',
+        'relative shrink-0 overflow-hidden rounded-md border border-line',
+        zoomDoVisor < 1 ? 'bg-bg' : 'bg-surface',
         quadro.width > quadro.height
           ? 'w-[clamp(320px,32vw,560px)] self-start'
           : 'h-full',
@@ -220,23 +240,39 @@ export function Preview() {
     >
       {images.length > 0 && audio ? (
         <>
-          <Player
-            ref={setPlayer}
-            component={Video}
-            inputProps={inputProps}
-            durationInFrames={durationInFrames}
-            fps={VIDEO_FPS}
-            compositionWidth={quadro.width}
-            compositionHeight={quadro.height}
-            style={{ width: '100%', height: '100%' }}
-            // Sem controles proprios: a timeline do app e o unico transporte.
-            controls={false}
-            clickToPlay={false}
-            doubleClickToFullscreen={false}
-            acknowledgeRemotionLicense
-          />
+          {/*
+            O QUADRO dentro do visor: no zoom 100% ocupa tudo; menor, fica no
+            meio com a margem escura em volta (ver useVisor).
+          */}
+          <div
+            ref={quadroRef}
+            className={['absolute', zoomDoVisor < 1 ? 'outline outline-1 outline-line-strong' : ''].join(' ')}
+            style={{
+              left: `${((1 - zoomDoVisor) / 2) * 100}%`,
+              top: `${((1 - zoomDoVisor) / 2) * 100}%`,
+              width: `${zoomDoVisor * 100}%`,
+              height: `${zoomDoVisor * 100}%`,
+            }}
+          >
+            <Player
+              ref={setPlayer}
+              component={Video}
+              inputProps={inputProps}
+              durationInFrames={durationInFrames}
+              fps={VIDEO_FPS}
+              compositionWidth={quadro.width}
+              compositionHeight={quadro.height}
+              style={{ width: '100%', height: '100%' }}
+              // Sem controles proprios: a timeline do app e o unico transporte.
+              controls={false}
+              clickToPlay={false}
+              doubleClickToFullscreen={false}
+              acknowledgeRemotionLicense
+            />
+          </div>
           {/* A caixa do insert escolhido: mover, escalar e girar no proprio preview. */}
-          <TransformNoPreview />
+          <TransformNoPreview quadroRef={quadroRef} />
+          <ZoomDoVisor />
           {/*
             A narracao toca por fora da composicao porque o Remotion entrega
             video puro e o audio so entra no mux -- ver Video.tsx.
@@ -256,6 +292,34 @@ export function Preview() {
       <span className="tnum pointer-events-none absolute bottom-2 right-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
         {quadro.width} x {quadro.height}
       </span>
+    </div>
+  )
+}
+
+/**
+ * O ZOOM DO VISOR, no canto de baixo do preview: menos, o valor (clique volta
+ * a 100%) e mais. Ctrl+roda faz o mesmo.
+ */
+function ZoomDoVisor() {
+  const zoom = useVisor((s) => s.zoom)
+  const definir = useVisor((s) => s.definir)
+  // Le o zoom de AGORA (e nao o do render): cliques seguidos somam todos.
+  const passo = (sinal: 1 | -1): void => definir(Math.round((useVisor.getState().zoom + sinal * 0.1) * 10) / 10)
+  const botao = 'grid h-5 w-5 place-items-center text-white/70 hover:text-white disabled:opacity-30'
+  return (
+    <div
+      className="absolute bottom-2 left-2 z-20 flex items-center rounded-[6px] bg-black/60 text-[10px]"
+      title="Zoom do visor (Ctrl+roda): menor, sobra espaco em volta para as alcas de um insert grande"
+    >
+      <button type="button" className={botao} disabled={zoom <= ZOOM_DO_VISOR_MIN} onClick={() => passo(-1)} aria-label="Diminuir o zoom do visor">
+        −
+      </button>
+      <button type="button" className="tnum px-1 text-white/70 hover:text-white" onClick={() => definir(1)} title="Voltar a 100%">
+        {Math.round(zoom * 100)}%
+      </button>
+      <button type="button" className={botao} disabled={zoom >= 1} onClick={() => passo(1)} aria-label="Aumentar o zoom do visor">
+        +
+      </button>
     </div>
   )
 }

@@ -1370,15 +1370,26 @@ export const temDadosDeModulo = (m: Modulos | undefined | null): boolean =>
   m !== undefined && m !== null && Object.keys(m).length > 0
 
 /**
+ * OS LIMITES DO TRANSFORM -- largos de proposito. "Quero que tudo isso seja
+ * livre para eu posicionar onde quiser": a posicao ia so ate a borda (100%) e
+ * o tamanho ate 400%, e uma imagem aumentada nao chegava onde ele queria. Os
+ * tetos daqui so existem para um valor absurdo (digitado errado) nao virar
+ * um numero que quebra o render.
+ */
+export const POSICAO_LIVRE = 1000
+export const ESCALA_MINIMA = 0.01
+export const ESCALA_MAXIMA = 50
+
+/**
  * Um QUADRO-CHAVE do transform de um clipe da faixa de video (ou da camada de
  * ajuste). `t` em segundos desde o inicio do clipe. O giro aqui pode passar de
  * 180 graus: de 0 a 360 e uma volta inteira. Ver shared/transform.ts.
  */
 export const chaveDeTransformSchema = z.object({
   t: z.number().min(0),
-  x: z.number().min(-100).max(100),
-  y: z.number().min(-100).max(100),
-  escala: z.number().min(0.05).max(4),
+  x: z.number().min(-POSICAO_LIVRE).max(POSICAO_LIVRE),
+  y: z.number().min(-POSICAO_LIVRE).max(POSICAO_LIVRE),
+  escala: z.number().min(ESCALA_MINIMA).max(ESCALA_MAXIMA),
   rotacao: z.number().min(-3600).max(3600),
 })
 
@@ -1397,9 +1408,9 @@ export const sobreposicaoSchema = z.object({
   durationSec: z.number().positive(),
   inicioSec: z.number().nonnegative().default(0),
   usarSec: z.number().positive().nullable().default(null),
-  x: z.number().min(-100).max(100).default(0),
-  y: z.number().min(-100).max(100).default(0),
-  escala: z.number().min(0.05).max(4).default(1),
+  x: z.number().min(-POSICAO_LIVRE).max(POSICAO_LIVRE).default(0),
+  y: z.number().min(-POSICAO_LIVRE).max(POSICAO_LIVRE).default(0),
+  escala: z.number().min(ESCALA_MINIMA).max(ESCALA_MAXIMA).default(1),
   opacidade: z.number().min(0).max(1).default(1),
   /** Aspecto do arquivo, para a miniatura da faixa. */
   aspecto: z.number().positive().default(16 / 9),
@@ -1677,6 +1688,8 @@ export const renderPropsSchema = z.object({
         cor: ajusteDeCorSchema.optional(),
         espelhar: z.boolean().default(false),
         preencher: z.boolean().default(false),
+        /** Largura/altura do arquivo: o "preencher" aumenta ate cobrir o quadro. */
+        aspecto: z.number().positive().default(16 / 9),
         /** A transicao de entrada e de saida do clipe, resolvidas. */
         entrada: transicaoResolvidaSchema.nullable().default(null),
         saida: transicaoResolvidaSchema.nullable().default(null),

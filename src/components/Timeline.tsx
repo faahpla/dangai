@@ -1,3 +1,4 @@
+import { patchDoTransform, transformNaAgulha } from '@/store/transform-do-clipe'
 import { rotuloDoClipe } from '@/modulos/ganchos'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Columns2, Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
@@ -1795,12 +1796,22 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
   const ajustarUm = useProject((s) => s.ajustarSobreposicao)
   const sobreposicoes = useProject((s) => s.sobreposicoes)
   const escolhidos = useProject(useShallow((s) => idsEscolhidos(s, 'video')))
+  const playhead = useProject((s) => s.playhead)
   if (!o) return null
+  // O que se ve na agulha (com quadros-chave, anda junto com o video).
+  const vt = transformNaAgulha(o, playhead)
   // Os alvos sao os escolhidos do MESMO tipo do principal: mexer na posicao
   // de uma seta nao deve empurrar uma camada de ajuste junto.
   const alvos = escolhidos.filter((x) => (sobreposicoes.find((y) => y.id === x)?.tipo === 'ajuste') === (o.tipo === 'ajuste'))
   const ajustar = (_id: string, patch: Parameters<typeof ajustarUm>[1]): void => {
     for (const alvo of alvos.length > 0 ? alvos : [id]) ajustarUm(alvo, patch)
+  }
+  const transformar = (valores: Parameters<typeof patchDoTransform>[2]): void => {
+    const todos = useProject.getState().sobreposicoes
+    for (const alvo of alvos.length > 0 ? alvos : [id]) {
+      const x = todos.find((y) => y.id === alvo)
+      if (x) ajustarUm(alvo, patchDoTransform(x, useProject.getState().playhead, valores))
+    }
   }
   const fades = (
     <>
@@ -1834,14 +1845,22 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
       <span className="max-w-[80px] truncate text-[10px] text-ink-3">
         {alvos.length > 1 ? `${alvos.length} clipes` : o.fileName}
       </span>
-      <ControleDoClipe rotulo="x" titulo="Posicao horizontal" valor={o.x} min={-60} max={60} passo={1} padrao={0}
-        texto={`${Math.round(o.x)}%`} onChange={(v) => ajustar(id, { x: v })} />
-      <ControleDoClipe rotulo="y" titulo="Posicao vertical" valor={o.y} min={-60} max={60} passo={1} padrao={0}
-        texto={`${Math.round(o.y)}%`} onChange={(v) => ajustar(id, { y: v })} />
-      <ControleDoClipe rotulo="tam" titulo="Escala" valor={o.escala} min={0.1} max={3} passo={0.05} padrao={1}
-        texto={`${Math.round(o.escala * 100)}%`} onChange={(v) => ajustar(id, { escala: v })} />
-      <ControleDoClipe rotulo="rot" titulo="Rotacao" valor={o.rotacao} min={-180} max={180} passo={1} padrao={0}
-        texto={`${Math.round(o.rotacao)}°`} onChange={(v) => ajustar(id, { rotacao: v })} />
+      {/*
+        Posicao, tamanho e giro passam pela MESMA conta do painel e do preview
+        (patchDoTransform): livres, e com quadros-chave gravam a chave na agulha.
+      */}
+      <ControleDoClipe rotulo="x" titulo="Posicao horizontal" valor={vt.x} min={-150} max={150} passo={1} padrao={0}
+        texto={`${Math.round(vt.x)}%`} onChange={(v) => transformar({ x: v })}
+        digitar={{ numero: vt.x, aplicar: (v) => transformar({ x: v }) }} />
+      <ControleDoClipe rotulo="y" titulo="Posicao vertical" valor={vt.y} min={-150} max={150} passo={1} padrao={0}
+        texto={`${Math.round(vt.y)}%`} onChange={(v) => transformar({ y: v })}
+        digitar={{ numero: vt.y, aplicar: (v) => transformar({ y: v }) }} />
+      <ControleDoClipe rotulo="tam" titulo="Escala" valor={vt.escala} min={0.1} max={8} passo={0.05} padrao={1}
+        texto={`${Math.round(vt.escala * 100)}%`} onChange={(v) => transformar({ escala: v })}
+        digitar={{ numero: vt.escala * 100, aplicar: (v) => transformar({ escala: v / 100 }) }} />
+      <ControleDoClipe rotulo="rot" titulo="Rotacao" valor={vt.rotacao} min={-180} max={180} passo={1} padrao={0}
+        texto={`${Math.round(vt.rotacao)}°`} onChange={(v) => transformar({ rotacao: v })}
+        digitar={{ numero: vt.rotacao, aplicar: (v) => transformar({ rotacao: v }) }} />
       <ControleDoClipe rotulo="opac" titulo="Opacidade" valor={o.opacidade} min={0} max={1} passo={0.05} padrao={1}
         texto={`${Math.round(o.opacidade * 100)}%`} onChange={(v) => ajustar(id, { opacidade: v })} />
       {fades}

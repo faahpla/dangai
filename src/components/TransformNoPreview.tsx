@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { compensarPivo, type Transform2D } from '@shared/transform'
 import { useProject } from '@/store/project'
 import { animado, patchDoTransform, transformNaAgulha } from '@/store/transform-do-clipe'
@@ -40,7 +39,7 @@ const CURSOR_GIRAR = `url("data:image/svg+xml,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round"><g stroke="#000" stroke-width="4"><path d="M5 12a7 7 0 1 0 2.05-4.95"/><path d="M4 4v4.5h4.5"/></g><g stroke="#fff" stroke-width="2"><path d="M5 12a7 7 0 1 0 2.05-4.95"/><path d="M4 4v4.5h4.5"/></g></svg>',
 )}") 12 12, crosshair`
 
-export function TransformNoPreview() {
+export function TransformNoPreview({ quadroRef }: { quadroRef: React.RefObject<HTMLDivElement | null> }) {
   const escolhido = useProject((s) => (s.clipeSelecionado?.tipo === 'video' ? s.clipeSelecionado.id : null))
   const o = useProject((s) => (escolhido ? s.sobreposicoes.find((x) => x.id === escolhido) : undefined))
   const playhead = useProject((s) => s.playhead)
@@ -77,6 +76,8 @@ export function TransformNoPreview() {
     medir()
     const observer = new ResizeObserver(medir)
     observer.observe(el)
+    // O quadro muda de tamanho com o zoom do visor: a caixa acompanha.
+    if (quadroRef.current) observer.observe(quadroRef.current)
     window.addEventListener('resize', medir)
     window.addEventListener('scroll', medir, true)
     return () => {
@@ -111,7 +112,8 @@ export function TransformNoPreview() {
    * conta e a do CSS do Remotion: p' = pivo + T + A(p - pivo).
    */
   const geometria = (v: Transform2D, pivo: { x: number; y: number } | undefined) => {
-    const r = ancora.current!.getBoundingClientRect()
+    // O QUADRO do video (que encolhe com o zoom do visor), e nao o visor inteiro.
+    const r = (quadroRef.current ?? ancora.current!).getBoundingClientRect()
     const c = conteudo()
     const px = r.left + r.width * (pivo?.x ?? 0.5)
     const py = r.top + r.height * (pivo?.y ?? 0.5)
@@ -170,6 +172,8 @@ export function TransformNoPreview() {
     const el = ancora.current
     if (!el || !ativo) return
     const roda = (e: WheelEvent): void => {
+      // Ctrl+roda e o zoom do visor (o Preview cuida): deixa passar.
+      if (e.ctrlKey) return
       let x = atual.current
       if (!x || !dentroDaCaixa(e.clientX, e.clientY)) return
       e.preventDefault()
@@ -294,13 +298,13 @@ export function TransformNoPreview() {
           if (ativo && dentroDaCaixa(e.clientX, e.clientY)) arrastar(e, 'mover')
         }}
       />
-      {g &&
-        quadroNaTela &&
-        createPortal(
-          <div
-            className="pointer-events-none fixed z-[45] overflow-visible"
-            style={{ left: quadroNaTela.left, top: quadroNaTela.top, width: quadroNaTela.width, height: quadroNaTela.height }}
-          >
+      {/*
+        A caixa e desenhada DENTRO do visor, como no DaVinci: o que passa da
+        borda dele e cortado junto, e nada fica por cima do resto do programa.
+        Para alcancar uma alca fora da tela, diminua o zoom do visor.
+      */}
+      {g && quadroNaTela && (
+          <div className="pointer-events-none absolute inset-0 z-[15]">
             <div
               className={[
                 'absolute border border-accent shadow-[0_0_0_1px_rgba(0,0,0,0.5)]',
@@ -336,9 +340,8 @@ export function TransformNoPreview() {
                 style={{ left: g.ox - quadroNaTela.left, top: g.oy - quadroNaTela.top }}
               />
             )}
-          </div>,
-          document.body,
-        )}
+          </div>
+      )}
     </>
   )
 }

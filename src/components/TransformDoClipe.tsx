@@ -67,20 +67,22 @@ export function TransformDoClipe({
   return (
     <>
       <Linha label="Posicao X">
-        <Deslizante valor={v.x} min={-100} max={100} step={0.5} padrao={0} texto={`${Math.round(v.x)}%`}
-          onChange={(x) => mudar({ x })} />
+        <Deslizante valor={v.x} min={-150} max={150} step={0.5} padrao={0} texto={`${Math.round(v.x)}%`}
+          onChange={(x) => mudar({ x })} digitar={{ numero: v.x, aplicar: (x) => mudar({ x }) }} />
       </Linha>
       <Linha label="Posicao Y">
-        <Deslizante valor={v.y} min={-100} max={100} step={0.5} padrao={0} texto={`${Math.round(v.y)}%`}
-          onChange={(y) => mudar({ y })} />
+        <Deslizante valor={v.y} min={-150} max={150} step={0.5} padrao={0} texto={`${Math.round(v.y)}%`}
+          onChange={(y) => mudar({ y })} digitar={{ numero: v.y, aplicar: (y) => mudar({ y }) }} />
       </Linha>
       <Linha label="Tamanho">
-        <Deslizante valor={v.escala} min={0.1} max={4} step={0.01} padrao={1}
-          texto={`${Math.round(v.escala * 100)}%`} onChange={(escala) => mudar({ escala })} />
+        <Deslizante valor={v.escala} min={0.1} max={8} step={0.01} padrao={1}
+          texto={`${Math.round(v.escala * 100)}%`} onChange={(escala) => mudar({ escala })}
+          digitar={{ numero: v.escala * 100, aplicar: (n) => mudar({ escala: n / 100 }) }} />
       </Linha>
       <Linha label="Rotacao" title="Duplo clique no slider volta para 0°. Com chaves, passa de 180° para dar voltas.">
         <Deslizante valor={v.rotacao} min={tem ? -720 : -180} max={tem ? 720 : 180} step={1} padrao={0}
-          texto={`${Math.round(v.rotacao)}°`} onChange={(rotacao) => mudar({ rotacao })} />
+          texto={`${Math.round(v.rotacao)}°`} onChange={(rotacao) => mudar({ rotacao })}
+          digitar={{ numero: v.rotacao, aplicar: (rotacao) => mudar({ rotacao }) }} />
       </Linha>
       {comPresetsDeGiro && (
         <Linha label="">

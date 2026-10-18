@@ -57,6 +57,37 @@ export const useLayout = create<Layout & { mudar: (patch: Partial<Layout>) => vo
  * O IMA da linha do tempo, ligado ou nao. Mora fora da Timeline porque agora
  * um atalho (N, como no DaVinci) liga e desliga, e o atalho vive no App.
  */
+/**
+ * O ZOOM DO VISOR (o preview), como no DaVinci: "porque o preview voce nao deixa
+ * algo parecido com o DaVinci?". Em 100% o video ocupa o visor inteiro; abaixo
+ * disso sobra uma margem escura em volta, onde aparecem as alcas da caixa de
+ * um insert maior que a tela -- antes elas passavam por cima do resto do app.
+ * Fica guardado entre as sessoes. Ctrl+roda no preview muda.
+ */
+export const ZOOM_DO_VISOR_MIN = 0.3
+
+function lerZoomDoVisor(): number {
+  try {
+    const v = Number(localStorage.getItem('dangai.visor.zoom'))
+    return Number.isFinite(v) && v >= ZOOM_DO_VISOR_MIN && v <= 1 ? v : 1
+  } catch {
+    return 1
+  }
+}
+
+export const useVisor = create<{ zoom: number; definir: (zoom: number) => void }>((set) => ({
+  zoom: lerZoomDoVisor(),
+  definir: (zoom) => {
+    const z = Math.round(Math.min(1, Math.max(ZOOM_DO_VISOR_MIN, zoom)) * 100) / 100
+    try {
+      localStorage.setItem('dangai.visor.zoom', String(z))
+    } catch {
+      /* sem armazenamento: vale so nesta sessao */
+    }
+    set({ zoom: z })
+  },
+}))
+
 function lerIma(): boolean {
   try {
     return localStorage.getItem('dangai.ima') !== 'nao'
