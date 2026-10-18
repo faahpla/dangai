@@ -82,9 +82,10 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
   `invocar`/`assinar` presos ao prefixo. A ponte roda no sandbox: só `import type` e constantes.
 - **Renderer:** telas cheias (`nucleo.telaCheia` deixa o resto inerte e os atalhos quietos),
   botões na tela inicial, seções nas Configurações (com âncora e "abrir numa seção"),
-  comandos na paleta, barra de render, barra de status, rótulo do clipe na timeline e
-  `interceptarArquivos` (soltar/diálogo). O módulo usa a **fachada** (`src/modulos/nucleo.ts`)
-  (com `usarEuMesmo`/`reler`: o `ModuloPublico` do próprio módulo — config pública e tem/dica
+  comandos na paleta, barra de render, barra de status, rótulo do clipe na timeline,
+  etiqueta no card dos "Projetos recentes" (`rotuloDoProjeto`: o recente guarda os ids com
+  `modulos.<id>` no projeto) e `interceptarArquivos` (soltar/diálogo). O módulo usa a
+  **fachada** (`src/modulos/nucleo.ts`) (com `usarEuMesmo`/`reler`: o `ModuloPublico` do próprio módulo — config pública e tem/dica
   das chaves) e o **kit de interface** (`src/modulos/kit.ts`), nunca o `useProject` nem `@/components`
   direto; mudar os dois é combinar antes. Cada módulo tem uma fronteira de erro sempre
   montada: erro de componente — inclusive na limpeza, ao desligar — some com ele, não com a janela.

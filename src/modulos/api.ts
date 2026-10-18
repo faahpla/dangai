@@ -37,6 +37,11 @@ export interface ModuloDoRenderer {
   /** O nome que aparece no clipe da linha do tempo. null = o nome do arquivo. */
   rotuloDoClipe?(clipe: ClipeDaFaixa): string | null
   /**
+   * A etiqueta no card de "Projetos recentes" quando o projeto tem dado deste
+   * modulo (`modulos.<id>` na raiz ou num item). Texto curto, ASCII ("Recap").
+   */
+  rotuloDoProjeto?: { texto: string }
+  /**
    * Arquivos que ele soltou na janela ou escolheu no dialogo de abrir, ANTES
    * de o nucleo ver. Devolve os que o modulo CONSUMIU (o nucleo segue so com o
    * resto). Ex.: um episodio .mkv de 24 min vira "Gerar recap".

@@ -25,6 +25,7 @@ import {
   sobreposicaoSchema,
   modulosSchema,
   temDadosDeModulo,
+  type Modulos,
   PLAN_ORIGINS,
   scenePlanSchema,
   transcriptSchema,
@@ -330,6 +331,30 @@ export function projetoTemModulos(file: Pick<ProjectFile, 'modulos' | 'trilhas' 
     file.trilhas.some((t) => temDadosDeModulo(t.modulos)) ||
     file.sobreposicoes.some((o) => temDadosDeModulo(o.modulos))
   )
+}
+
+/** null, '' e objeto ou lista sem nada dentro nao contam como dado de modulo. */
+const vazio = (v: unknown): boolean =>
+  v === undefined || v === null || v === '' || (typeof v === 'object' && Object.keys(v).length === 0)
+
+/**
+ * QUAIS modulos tem dado no projeto: os ids com `modulos.<id>` nao vazio na
+ * raiz, num trecho de audio ou num clipe. Vai para o card de "Projetos
+ * recentes" (a etiqueta do modulo). Em ordem alfabetica, sem repetir.
+ */
+export function modulosDoProjeto(file: {
+  modulos?: Modulos | undefined
+  trilhas: readonly { modulos?: Modulos | undefined }[]
+  sobreposicoes: readonly { modulos?: Modulos | undefined }[]
+}): string[] {
+  const ids = new Set<string>()
+  const juntar = (m: Modulos | undefined): void => {
+    for (const [id, dado] of Object.entries(m ?? {})) if (!vazio(dado)) ids.add(id)
+  }
+  juntar(file.modulos)
+  for (const t of file.trilhas) juntar(t.modulos)
+  for (const o of file.sobreposicoes) juntar(o.modulos)
+  return [...ids].sort()
 }
 
 /** A versao com que o arquivo e gravado: 2 so quando ha dados de modulo. */

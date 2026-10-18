@@ -9,11 +9,12 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { BotoesDosModulosNaTelaInicial } from "@/modulos";
+import { BotoesDosModulosNaTelaInicial, useModulosLigados } from "@/modulos";
 import { useProject } from "@/store/project";
 import { classifyFile } from "@shared/channels";
 import { useRecentes } from "@/store/recentes";
 import { FORMATOS, medidasDo, type Formato } from "@shared/contract";
+import { CartaoRecente, rotulosDoRecente } from "./CartaoRecente";
 
 interface DropzoneProps {
   isDragging: boolean;
@@ -125,6 +126,8 @@ function Recentes() {
   const esquecer = useRecentes((s) => s.esquecer);
   const openProject = useProject((s) => s.openProject);
   const busy = useProject((s) => s.busy);
+  // A etiqueta de um modulo ("Recap") so aparece com ele ligado.
+  const ligados = useModulosLigados();
 
   useEffect(() => void carregar(), [carregar]);
 
@@ -136,85 +139,19 @@ function Recentes() {
         Projetos recentes
       </h2>
       <div className="flex gap-3 overflow-x-auto pb-1">
-        {lista.map((r) => {
-          const sumiu = existe[r.path] === false;
-          return (
-            <div
-              key={r.path}
-              className="group/recente relative w-[168px] shrink-0"
-            >
-              <button
-                type="button"
-                disabled={sumiu}
-                onClick={() => void openProject(r.path)}
-                title={sumiu ? `Nao encontrado: ${r.path}` : r.path}
-                className="lift flex w-full flex-col overflow-hidden rounded-md border border-line bg-surface text-left transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-45"
-              >
-                <div className="h-[86px] w-full bg-elevated">
-                  {r.capa && (
-                    <img
-                      src={r.capa}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      draggable={false}
-                    />
-                  )}
-                </div>
-                <div className="flex flex-col gap-0.5 px-2.5 py-2">
-                  <span className="line-clamp-2 text-[12px] leading-snug text-ink">
-                    {r.nome}
-                  </span>
-                  <span className="tnum text-[10px] text-ink-3">
-                    {sumiu
-                      ? "arquivo nao encontrado"
-                      : [
-                          r.blocos > 0 ? `${r.blocos} blocos` : null,
-                          r.duracaoSec > 0 ? duracao(r.duracaoSec) : null,
-                          quando(r.em),
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                  </span>
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => void esquecer(r.path)}
-                aria-label={`Tirar ${r.nome} dos recentes`}
-                title="Tirar da lista (o arquivo continua onde esta)"
-                className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-sm bg-bg/80 text-ink-3 opacity-0 transition-opacity hover:text-ink group-hover/recente:opacity-100"
-              >
-                <X size={11} strokeWidth={1.75} />
-              </button>
-            </div>
-          );
-        })}
+        {lista.map((r) => (
+          <CartaoRecente
+            key={r.path}
+            recente={r}
+            sumiu={existe[r.path] === false}
+            rotulos={rotulosDoRecente(r, ligados)}
+            abrir={() => void openProject(r.path)}
+            esquecer={() => void esquecer(r.path)}
+          />
+        ))}
       </div>
     </section>
   );
-}
-
-function duracao(seg: number): string {
-  const m = Math.floor(seg / 60);
-  const s = Math.round(seg % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-/** "ha 5 min", "ontem", "ha 3 dias" -- ou a data, depois de uma semana. */
-function quando(ms: number): string {
-  if (!ms) return "";
-  const min = Math.round((Date.now() - ms) / 60_000);
-  if (min < 1) return "agora";
-  if (min < 60) return `ha ${min} min`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `ha ${h} h`;
-  const d = Math.round(h / 24);
-  if (d === 1) return "ontem";
-  if (d < 7) return `ha ${d} dias`;
-  return new Date(ms).toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-  });
 }
 
 /**

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { semExtensaoDeProjeto } from '@shared/project-file'
+import { modulosDoProjeto, semExtensaoDeProjeto } from '@shared/project-file'
 import { useProject } from './project'
 
 /**
@@ -21,6 +21,12 @@ export interface Recente {
   em: number
   blocos: number
   duracaoSec: number
+  /**
+   * Os modulos com dado no projeto (ids, ver modulosDoProjeto): o card mostra a
+   * etiqueta dos que estao ligados. Ausente = sem dado de modulo, ou entrada de
+   * antes disto (ganha o campo quando o projeto abrir ou salvar de novo).
+   */
+  modulos?: string[]
 }
 
 const MAXIMO = 12
@@ -36,6 +42,9 @@ function conferir(bruto: readonly Record<string, unknown>[]): Recente[] {
       em: typeof r['em'] === 'number' ? r['em'] : 0,
       blocos: typeof r['blocos'] === 'number' ? r['blocos'] : 0,
       duracaoSec: typeof r['duracaoSec'] === 'number' ? r['duracaoSec'] : 0,
+      ...(Array.isArray(r['modulos'])
+        ? { modulos: r['modulos'].filter((id): id is string => typeof id === 'string') }
+        : {}),
     })
   }
   return ok
@@ -71,6 +80,7 @@ export const useRecentes = create<EstadoDosRecentes>((set, get) => {
       const p = useProject.getState()
       const primeira = p.plan?.scenes[0]
       const capa = primeira ? (p.images[primeira.imageIndex]?.thumbnail ?? null) : (p.images[0]?.thumbnail ?? null)
+      const modulos = modulosDoProjeto(p)
       const novo: Recente = {
         path,
         nome: semExtensaoDeProjeto(path.split(/[\\/]/).pop() ?? path),
@@ -79,6 +89,8 @@ export const useRecentes = create<EstadoDosRecentes>((set, get) => {
         em: Date.now(),
         blocos: p.plan?.scenes.length ?? 0,
         duracaoSec: p.audio?.durationSec ?? 0,
+        // So com dado de modulo: projeto do Dangai grava a entrada de sempre.
+        ...(modulos.length > 0 ? { modulos } : {}),
       }
       // Le de novo antes de gravar: a lista do settings pode ter mudado noutra tela.
       const r = await window.dangai.getSettings()
