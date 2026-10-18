@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, Loader2, Search, TriangleAlert } from 'lucide-react'
 import type { BuscaDeAnime, CandidatoDeAnime, ElencoEscolhido } from '../../shared/descoberta'
 import { ponte } from '../ponte'
@@ -14,6 +15,9 @@ import { Botao, CAMPO_PEQUENO, CLASSE_DO_CAMPO } from './pecas'
  * Um botao que abre uma caixinha por baixo: o campo (Enter busca), a lista
  * (setas andam, Enter ou clique escolhe) e Esc fecha. A escolha fica guardada
  * no motor para este nome: as proximas analises ja acham o anime.
+ *
+ * A caixinha mora no body (portal, posicao fixa medida do botao): no passo 1
+ * o cartao de baixo (outra camada, pela animacao de entrada) a cobria.
  */
 
 const ROTULO_DA_FONTE: Record<string, string> = { anilist: 'AniList', mal: 'MAL', kitsu: 'Kitsu', jikan: 'MAL' }
@@ -58,7 +62,27 @@ export function BuscarElenco({
   const [erro, setErro] = useState<string | null>(null)
   const [feito, setFeito] = useState<ElencoEscolhido | null>(null)
   const caixa = useRef<HTMLDivElement>(null)
+  const janela = useRef<HTMLDivElement>(null)
   const campo = useRef<HTMLInputElement>(null)
+  const [lugar, setLugar] = useState<{ top: number; left: number } | null>(null)
+
+  // A caixinha segue o botao (rolou a tela, mudou o tamanho da janela).
+  useLayoutEffect(() => {
+    if (!aberta) return
+    const medir = (): void => {
+      const r = caixa.current?.getBoundingClientRect()
+      if (!r) return
+      const largura = Math.min(440, window.innerWidth * 0.8)
+      setLugar({ top: r.bottom + 4, left: Math.max(8, Math.min(r.left, window.innerWidth - largura - 8)) })
+    }
+    medir()
+    window.addEventListener('resize', medir)
+    window.addEventListener('scroll', medir, true)
+    return () => {
+      window.removeEventListener('resize', medir)
+      window.removeEventListener('scroll', medir, true)
+    }
+  }, [aberta])
 
   // Abriu: o nome do anime no campo, ja buscado (o motor encurta o nome do arquivo sozinho).
   const buscarAoAbrir = useRef(false)
@@ -78,7 +102,9 @@ export function BuscarElenco({
     if (!aberta) return
     const fora = (e: MouseEvent): void => {
       if (escolhendo) return
-      if (caixa.current && !caixa.current.contains(e.target as Node)) setAberta(false)
+      const alvo = e.target as Node
+      if (caixa.current?.contains(alvo) || janela.current?.contains(alvo)) return
+      setAberta(false)
     }
     window.addEventListener('mousedown', fora, true)
     return () => window.removeEventListener('mousedown', fora, true)
@@ -159,11 +185,13 @@ export function BuscarElenco({
         </span>
       )}
 
-      {aberta && (
+      {aberta && lugar && createPortal(
         <div
+          ref={janela}
           role="dialog"
           aria-label="Buscar elenco"
-          className="absolute left-0 top-full z-40 mt-1 flex w-[440px] max-w-[80vw] flex-col gap-2 rounded-sm border border-line-strong bg-elevated p-2 shadow-lg shadow-black/40"
+          style={{ top: lugar.top, left: lugar.left }}
+          className="fixed z-[70] flex w-[440px] max-w-[80vw] flex-col gap-2 rounded-sm border border-line-strong bg-elevated p-2 shadow-lg shadow-black/40"
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               e.preventDefault()
@@ -197,6 +225,10 @@ export function BuscarElenco({
               }}
               placeholder="Nome do anime"
               aria-label="Nome do anime"
+              // O Esc e da caixinha (a tela por baixo deixa um campo com lista aberta em paz).
+              aria-expanded
+              role="combobox"
+              aria-controls="buscar-elenco-lista"
               spellCheck={false}
               className={`${CLASSE_DO_CAMPO} ${CAMPO_PEQUENO} flex-1`}
             />
@@ -220,7 +252,7 @@ export function BuscarElenco({
             </p>
           ) : busca && !desatualizada ? (
             lista.length ? (
-              <ul role="listbox" aria-label="Animes" className="flex max-h-[320px] flex-col overflow-y-auto">
+              <ul id="buscar-elenco-lista" role="listbox" aria-label="Animes" className="flex max-h-[320px] flex-col overflow-y-auto">
                 {lista.map((c, i) => (
                   <li
                     key={`${c.fonte}-${c.anilistId ?? ''}-${c.malId ?? ''}-${c.kitsuId ?? ''}-${i}`}
@@ -263,7 +295,8 @@ export function BuscarElenco({
           {busca && busca.avisos.length > 0 && !desatualizada && (
             <p className="px-1 text-[10px] text-ink-3">{busca.avisos.join(' · ')}</p>
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
