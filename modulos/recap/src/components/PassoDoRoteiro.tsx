@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Check, ClipboardPaste, History, Loader2, Palette, Settings2, TriangleAlert, WandSparkles, X } from 'lucide-react'
+import { ArrowLeft, Check, ClipboardPaste, Columns2, History, Loader2, Palette, Settings2, TriangleAlert, WandSparkles, X } from 'lucide-react'
 import {
-  ROTULO_DO_PAPEL,
   cuesElegiveis,
   duracaoEstimada,
   ehModeloReserva,
@@ -29,6 +28,9 @@ import { useRitmo, useRitmoDaVoz, useSeguirRitmo } from '../store/ritmo'
 import { textoDoRitmo } from '../../shared/ritmo'
 import { Segmentos, type Segmento } from '@/modulos/kit'
 import { AjustesDoRoteiro } from './AjustesDoRoteiro'
+import { CompararVersoes, origemDaVersao } from './CompararVersoes'
+import { BotaoRevisar, ResumoDasMudancas, useMudancasDaRevisao } from './RevisarRoteiro'
+import { TituloEThumb } from './TituloEThumb'
 import { AndamentoDoRoteiro } from './AndamentoDoRoteiro'
 import { PerguntaDoEscritor } from './PerguntaDoEscritor'
 import { CartaoDoEpisodio } from './CartaoDoEpisodio'
@@ -52,7 +54,7 @@ const MODOS: readonly Segmento<ModoDoRoteiro>[] = [
 ]
 
 /** Avisos do roteiro inteiro que a barra mostra (o tamanho ja esta na contagem). */
-const AVISOS_DA_BARRA = new Set<ProblemaDoRoteiro['codigo']>(['sem-gancho', 'sem-fechamento', 'muleta'])
+const AVISOS_DA_BARRA = new Set<ProblemaDoRoteiro['codigo']>(['sem-gancho', 'sem-fechamento', 'muleta', 'lista-de-fatos'])
 
 /**
  * O PASSO 2 DO ASSISTENTE: o roteiro do short, em partes, para ler, editar,
@@ -103,6 +105,7 @@ function Conteudo() {
   const modo = useRoteiro((s) => s.modo)
   const colando = useRoteiro((s) => s.colando)
   const estiloAberto = useRoteiro((s) => s.estiloAberto)
+  const comparando = useRoteiro((s) => s.comparando)
   const custo = useRoteiro((s) => s.custo)
   const indice = useIndiceDoRoteiro()
 
@@ -144,12 +147,14 @@ function Conteudo() {
       {/* Sem roteiro na tela a barra nao tem o que mostrar: o 60/90 mora no cartao "Roteiro". */}
       {tela && <BarraDoRoteiro />}
       {estiloAberto && <PainelDoEstilo />}
+      {tela && comparando !== null && modo !== 'texto' && <CompararVersoes />}
       {andamento && andamento.secaoId === null && <AndamentoDoRoteiro geracao={andamento} cancelado={!geracao} />}
       {pergunta && <PerguntaDoReserva pergunta={pergunta} />}
       {perguntaDeCusto && <PerguntaDoEscritor />}
       {colando && <MeuRoteiro />}
       {!tela && !andamento && !pergunta && !perguntaDeCusto && !colando && (semFalas ? <SemFalas /> : <SemRoteiro />)}
       {tela && (modo === 'texto' ? <RoteiroEmTexto /> : <ListaDoRoteiro tela={tela} />)}
+      {tela && modo !== 'texto' && !andamento && <TituloEThumb tela={tela} />}
     </>
   )
 }
@@ -206,6 +211,9 @@ function BarraDoRoteiro() {
   const abrirColar = useRoteiro((s) => s.abrirColar)
   const ligarFrases = useRoteiro((s) => s.ligarFrases)
   const problemas = useProblemasDoRoteiro()
+  // A versao na tela ja foi conferida e nao sobrou marca: o check verde no "Revisar".
+  const marcasDaTela = useMarcasDaRevisao()
+  const revisado = marcasDaTela.existe && marcasDaTela.atualizada && marcasDaTela.marcas.length === 0
 
   const alvo = tela?.alvoSec ?? alvoSemRoteiro
   const travado = geracao !== null
@@ -250,7 +258,6 @@ function BarraDoRoteiro() {
             Ligar {porLigar} {porLigar === 1 ? 'frase' : 'frases'}
           </Link>
         )}
-        {tela && <ResumoDaRevisao travado={travado || aprovando || noTexto} />}
         <span className="flex-1" />
         <BotaoDoEstilo />
         {tela && !colando && (
@@ -266,6 +273,7 @@ function BarraDoRoteiro() {
           </Botao>
         )}
         <Versoes />
+        {tela && <BotaoRevisar travado={travado || aprovando || noTexto} revisado={revisado} />}
         {tela && (
           <Botao
             pequeno
@@ -279,10 +287,14 @@ function BarraDoRoteiro() {
           </Botao>
         )}
       </div>
-      {doRoteiro.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
+      {(doRoteiro.length > 0 || tela) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 empty:hidden">
+          {tela && <ResumoDaRevisao travado={travado || aprovando || noTexto} />}
+          {tela && !noTexto && <ResumoDasMudancas travado={travado || aprovando} />}
           {doRoteiro.map((p) => (
-            <Aviso key={p.codigo}>{p.mensagem}</Aviso>
+            <Aviso key={p.codigo} title={p.codigo === 'lista-de-fatos' ? 'Frases seguidas no mesmo molde. Revisar > Melhorar texto reescreve esses trechos com virada e ritmo.' : undefined}>
+              {p.mensagem}
+            </Aviso>
           ))}
         </div>
       )}
@@ -358,18 +370,20 @@ export function useMarcasDaRevisao(): { marcas: ItemDaRevisao[]; atualizada: boo
 }
 
 /**
- * A REVISAO na barra: "Revisando" enquanto a IA confere; com marcas, quantas
- * e o "Aplicar todas" (versao nova) e o "Ignorar"; sem marca, o "Revisado";
- * e o "Revisar" quando a versao na tela ainda nao foi conferida.
+ * As MARCAS da revisao na barra (as do revisor automatico, depois de gerar):
+ * quantas, o "Aplicar todas" (versao nova) e o "Ignorar". O "Revisar" de
+ * pedir mora no botao (BotaoRevisar, A2: o link apagado de antes ninguem
+ * achava), e o "Revisado" virou o check verde dele.
  */
 function ResumoDaRevisao({ travado }: { travado: boolean }) {
   const revisando = useRoteiro((s) => s.revisando)
-  const revisar = useRoteiro((s) => s.revisar)
+  const modoNoAr = useRoteiro((s) => s.revisandoModo)
   const aplicar = useRoteiro((s) => s.aplicarRevisao)
   const ignorar = useRoteiro((s) => s.ignorarRevisao)
-  const { marcas, atualizada, existe } = useMarcasDaRevisao()
+  const { marcas } = useMarcasDaRevisao()
 
-  if (revisando) {
+  // O automatico no ar (o do botao mostra no proprio botao).
+  if (revisando && modoNoAr === null) {
     return (
       <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
         <Loader2 size={11} strokeWidth={1.75} className="animate-spin text-accent" />
@@ -378,40 +392,24 @@ function ResumoDaRevisao({ travado }: { travado: boolean }) {
     )
   }
   const comSugestao = marcas.filter((m) => m.sugestao).length
+  if (marcas.length === 0) return null
   return (
     <span className="flex shrink-0 items-center gap-2">
-      {marcas.length > 0 ? (
-        <>
-          <span
-            className={`flex items-center gap-1 text-[11px] ${COR_DE_AVISO}`}
-            title={marcas.map((m) => `${m.fraseId}: ${m.motivo}`).join('\n')}
-          >
-            <TriangleAlert size={11} strokeWidth={1.75} />
-            Revisao {marcas.length}
-          </span>
-          {comSugestao > 0 && (
-            <Link onClick={() => void aplicar()} disabled={travado} title={`Versao nova com ${comSugestao === 1 ? 'a sugestao' : `as ${comSugestao} sugestoes`}. Esta fica em Versoes.`}>
-              Aplicar todas
-            </Link>
-          )}
-          <Link onClick={() => void ignorar(marcas.map((m) => m.fraseId))} disabled={travado} title="Tira todas as marcas">
-            Ignorar
-          </Link>
-        </>
-      ) : (
-        existe &&
-        atualizada && (
-          <span className="flex items-center gap-1 text-[11px] text-ink-3" title="A IA conferiu cada frase contra as falas">
-            <Check size={11} strokeWidth={2} className={COR_DE_OK} />
-            Revisado
-          </span>
-        )
-      )}
-      {!atualizada && (
-        <Link onClick={() => void revisar()} disabled={travado} title="A IA confere cada frase contra as falas (1 pedido, gratis no Gemini)">
-          Revisar
+      <span
+        className={`flex items-center gap-1 text-[11px] ${COR_DE_AVISO}`}
+        title={marcas.map((m) => `${m.fraseId}: ${m.motivo}`).join('\n')}
+      >
+        <TriangleAlert size={11} strokeWidth={1.75} />
+        Revisao {marcas.length}
+      </span>
+      {comSugestao > 0 && (
+        <Link onClick={() => void aplicar()} disabled={travado} title={`Versao nova com ${comSugestao === 1 ? 'a sugestao' : `as ${comSugestao} sugestoes`}. Esta fica em Versoes.`}>
+          Aplicar todas
         </Link>
       )}
+      <Link onClick={() => void ignorar(marcas.map((m) => m.fraseId))} disabled={travado} title="Tira todas as marcas">
+        Ignorar
+      </Link>
     </span>
   )
 }
@@ -467,17 +465,6 @@ function ModeloReserva({ modelo }: { modelo: string }) {
   )
 }
 
-/** "IA", "Editada", "Refeita: Gancho". O pedido inteiro vai no tooltip. */
-function origemDaVersao(v: Roteiro): string {
-  if (v.origem === 'editado') return 'Editada'
-  if (v.revisada) return 'Revisada'
-  if (v.pedido?.tipo === 'secao') {
-    const papel = v.secoes.find((s) => s.id === v.pedido?.secaoId)?.papel
-    return papel ? `Refeita: ${ROTULO_DO_PAPEL[papel]}` : 'Parte refeita'
-  }
-  return 'IA'
-}
-
 /** "14:32" hoje; "12/10 14:32" em outro dia. (O passo 3 usa o mesmo nos Takes.) */
 export function quando(iso: string): string {
   const d = new Date(iso)
@@ -500,6 +487,7 @@ function Versoes() {
   const geracao = useRoteiro((s) => s.geracao)
   const aprovando = useRoteiro((s) => s.aprovando)
   const escolherVersao = useRoteiro((s) => s.escolherVersao)
+  const abrirComparar = useRoteiro((s) => s.abrirComparar)
   const noTexto = useRoteiro((s) => s.modo === 'texto')
   const [aberto, setAberto] = useState(false)
   const caixa = useRef<HTMLDivElement>(null)
@@ -573,7 +561,7 @@ function Versoes() {
               .filter(Boolean)
               .join(' · ')
             return (
-              <li key={v.versao}>
+              <li key={v.versao} className="group/versao flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => {
@@ -583,7 +571,7 @@ function Versoes() {
                   title={detalhe}
                   aria-current={atual ? 'true' : undefined}
                   className={[
-                    'flex w-full items-center gap-2 rounded-sm px-2.5 py-2 text-left text-[12px]',
+                    'flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2.5 py-2 text-left text-[12px]',
                     atual ? 'bg-accent-dim text-ink' : 'text-ink-2 hover:bg-accent-dim hover:text-ink',
                   ].join(' ')}
                 >
@@ -602,6 +590,23 @@ function Versoes() {
                     {atual && !aprovada && <Check size={12} strokeWidth={2} className="text-accent" />}
                   </span>
                 </button>
+                {/* [A2] Comparar esta com a da tela, lado a lado. */}
+                {atual ? (
+                  <span className="size-7 shrink-0" />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAberto(false)
+                      abrirComparar(v.versao)
+                    }}
+                    aria-label={`Comparar a v${v.versao} com a da tela`}
+                    title={`Comparar a v${v.versao} com a da tela`}
+                    className="grid size-7 shrink-0 place-items-center rounded-sm text-ink-3 opacity-0 transition-opacity hover:text-ink focus-visible:opacity-100 group-hover/versao:opacity-100"
+                  >
+                    <Columns2 size={12} strokeWidth={1.5} />
+                  </button>
+                )}
               </li>
             )
           })}
@@ -730,6 +735,7 @@ function ListaDoRoteiro({ tela }: { tela: Roteiro }) {
   const inteiro = geracao !== null && geracao.secaoId === null
   const { marcas } = useMarcasDaRevisao()
   const marcasPorFrase = useMemo(() => new Map(marcas.map((m) => [m.fraseId, m] as const)), [marcas])
+  const mudancas = useMudancasDaRevisao()
 
   // Todas as partes removidas a mao: o rodape diz o erro, e aqui fica o caminho.
   if (tela.secoes.length === 0) {
@@ -757,6 +763,7 @@ function ListaDoRoteiro({ tela }: { tela: Roteiro }) {
           ordem={ordem}
           geracao={geracao}
           marcas={marcasPorFrase}
+          mudancas={mudancas}
         />
       ))}
     </div>

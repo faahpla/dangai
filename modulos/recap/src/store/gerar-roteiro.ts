@@ -29,6 +29,8 @@ import {
   type Secao,
 } from '../../shared/roteiro'
 import { ehPerguntaDeCusto, type EstimativaDoEscritor } from '../../shared/escritor'
+import { resumoDaRevisao, type ModoDaRevisao } from '../../shared/revisao'
+import { temEstilo } from '../../shared/estilo'
 import { ponte } from '../ponte'
 import { useGerar } from './gerar'
 import { useRitmoDaVoz } from './ritmo'
@@ -179,8 +181,14 @@ interface EstadoDoRoteiro {
   custo: PerguntaDeCustoNaTela | null
   /** O revisor esta no ar (sozinho depois de gerar, ou o "Revisar"). */
   revisando: boolean
+  /** O modo do "Revisar" no ar (o botao mostra "Revisando"/"Melhorando"). null = o automatico, ou nada. */
+  revisandoModo: ModoDaRevisao | null
   /** O painel "Meu estilo" esta aberto no passo 2. */
   estiloAberto: boolean
+  /** Ha "Meu estilo" (instrucoes ou exemplos): o tom e dele, e a conferencia nao cobra o tom do app. */
+  comEstilo: boolean
+  /** O "Comparar" aberto: a versao da esquerda (a da direita e a da tela). null = fechado. */
+  comparando: number | null
 
   /** Abre (ou reabre) o rascunho do episodio e, sem roteiro, gera sozinho uma vez. */
   entrar: (episodioId: string) => Promise<void>
@@ -248,14 +256,21 @@ interface EstadoDoRoteiro {
   confirmarCusto: () => void
   /** O nao: fecha a pergunta, nada gasto. */
   desistirCusto: () => void
-  /** Revisa a versao atual (grava antes). `automatico` = depois de gerar (respeita o "Revisar depois de gerar"). */
-  revisar: (automatico?: boolean) => Promise<void>
+  /**
+   * Revisa a versao atual (grava antes). `automatico` = depois de gerar
+   * (respeita o "Revisar depois de gerar" e so marca). `modo` = o do botao:
+   * "Corrigir erros" ou "Melhorar texto"; na mao, a versao nova vira a da tela.
+   */
+  revisar: (automatico?: boolean, modo?: ModoDaRevisao) => Promise<void>
   /** "Aplicar todas": versao nova com as sugestoes. */
   aplicarRevisao: () => Promise<void>
   /** "Ignorar": as marcas dessas frases somem. */
   ignorarRevisao: (fraseIds: readonly string[]) => Promise<void>
   abrirEstilo: () => void
   fecharEstilo: () => void
+  /** "Comparar": a versao `versao` (padrao: a de antes da da tela) ao lado da da tela. */
+  abrirComparar: (versao?: number) => void
+  fecharComparar: () => void
 }
 
 /** Espera depois da ultima tecla antes de gravar. */
@@ -335,7 +350,10 @@ const LIMPO = {
   textoColado: '',
   custo: null,
   revisando: false,
+  revisandoModo: null,
   estiloAberto: false,
+  comEstilo: false,
+  comparando: null,
 } satisfies Partial<EstadoDoRoteiro>
 
 /** Fora do modo Texto (a tela volta as partes). */
@@ -388,7 +406,7 @@ function reparos(avisos: readonly string[]): string[] {
  * dados do que acabou de ser gravado.
  */
 function comDadosDoDisco(tela: Roteiro, salvo: Roteiro): Roteiro {
-  const { revisada: _revisada, ...resto } = tela
+  const { revisada: _revisada, melhorada: _melhorada, sugestoes: _sugestoes, ...resto } = tela
   return {
     ...resto,
     versao: salvo.versao,
@@ -398,7 +416,17 @@ function comDadosDoDisco(tela: Roteiro, salvo: Roteiro): Roteiro {
     pedido: salvo.pedido,
     modelo: salvo.modelo,
     ...(salvo.revisada ? { revisada: true } : {}),
+    ...(salvo.melhorada ? { melhorada: true } : {}),
+    ...(salvo.sugestoes ? { sugestoes: salvo.sugestoes } : {}),
   }
+}
+
+/** A versao de antes da `versao`: a de onde ela saiu, ou a anterior no historico. */
+export function versaoParaComparar(r: Pick<RascunhoDoRecap, 'roteiros'>, versao: number): number | null {
+  const atual = r.roteiros.find((v) => v.versao === versao)
+  if (atual?.derivadoDe != null && r.roteiros.some((v) => v.versao === atual.derivadoDe)) return atual.derivadoDe
+  const antes = r.roteiros.filter((v) => v.versao < versao)
+  return antes.length > 0 ? antes[antes.length - 1]!.versao : (r.roteiros.find((v) => v.versao !== versao)?.versao ?? null)
 }
 
 /**
@@ -424,6 +452,12 @@ function maisNovo(a: RascunhoDoRecap | null, b: RascunhoDoRecap): RascunhoDoReca
 export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
   /** O rascunho na tela ainda e este (o usuario nao trocou de episodio no meio). */
   const ainda = (id: string): boolean => get().rascunho?.id === id
+
+  /** Ha "Meu estilo"? (A conferencia do tom do app sai com ele: validarRoteiro com `estilo`.) */
+  const lerSeTemEstilo = async (): Promise<void> => {
+    const r = await ponte.lerEstilo()
+    if (r.ok) set({ comEstilo: temEstilo(r.value.estilo) })
+  }
 
   const agendar = (): void => {
     pararRelogio()
@@ -749,6 +783,7 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
         return
       }
       aplicarAberto(r.value)
+      void lerSeTemEstilo()
       gerarSozinho()
     },
 
@@ -782,6 +817,7 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
         return
       }
       aplicarAberto(r.value)
+      void lerSeTemEstilo()
       gerarSozinho()
     },
 
@@ -977,22 +1013,24 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
       if (get().custo) set({ custo: null, recado: 'Nada gasto.', recadoDetalhe: null })
     },
 
-    revisar: async (automatico = false) => {
+    revisar: async (automatico = false, modo = 'corrigir') => {
       const s = get()
       if (!s.rascunho || !s.tela || s.revisando || s.modo === 'texto') return
+      // Na mao, com a IA escrevendo ou aprovando: o botao ja esta desligado; aqui so por garantia.
+      if (!automatico && (s.geracao || s.aprovando)) return
       const id = s.rascunho.id
-      set({ revisando: true })
+      set({ revisando: true, revisandoModo: automatico ? null : modo })
       // A edicao pendente vai antes: o main revisa o que esta gravado.
       pararRelogio()
       const gravou = await naFila(async () => (ainda(id) ? gravarPendente(id) : false))
       if (!gravou || !ainda(id)) {
-        if (ainda(id)) set({ revisando: false })
+        if (ainda(id)) set({ revisando: false, revisandoModo: null })
         return
       }
-      const r = await ponte.revisarRoteiro(id, automatico)
+      const r = await ponte.revisarRoteiro(id, automatico, modo)
       if (!ainda(id)) return
       if (!r.ok) {
-        set({ revisando: false, recado: `Revisao pulada: ${resumoDaFalha(r.error).curto}.`, recadoDetalhe: r.error })
+        set({ revisando: false, revisandoModo: null, recado: `Revisao pulada: ${resumoDaFalha(r.error).curto}.`, recadoDetalhe: r.error })
         return
       }
       const feita = r.value
@@ -1000,17 +1038,32 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
         // Desligado nao e recado; o resto (cota, rede, so reserva) avisa e segue.
         set(
           feita.pulada === 'desligada'
-            ? { revisando: false }
-            : { revisando: false, recado: `Revisao pulada: ${resumoDaFalha(feita.nota).curto}.`, recadoDetalhe: feita.nota },
+            ? { revisando: false, revisandoModo: null }
+            : { revisando: false, revisandoModo: null, recado: `Revisao pulada: ${resumoDaFalha(feita.nota).curto}.`, recadoDetalhe: feita.nota },
         )
         return
       }
-      const n = feita.revisao.itens.length
+      const detalhe = feita.doCache ? 'Do cache, sem gastar cota.' : null
+      // A versao nova (Revisada/Melhorada) vira a da tela, se ele nao digitou nada no meio.
+      if (feita.versaoNova !== null && !get().sujo && !get().geracao) {
+        set({
+          revisando: false,
+          revisandoModo: null,
+          rascunho: feita.rascunho,
+          tela: roteiroAtual(feita.rascunho),
+          sujo: false,
+          salvoEm: Date.now(),
+          recado: resumoDaRevisao(feita),
+          recadoDetalhe: detalhe,
+        })
+        return
+      }
       set({
         revisando: false,
+        revisandoModo: null,
         rascunho: maisNovo(get().rascunho, feita.rascunho),
-        recado: n === 0 ? 'Revisado: nada a apontar.' : `Revisado: ${n} ${n === 1 ? 'frase marcada' : 'frases marcadas'}.`,
-        recadoDetalhe: feita.doCache ? 'Do cache, sem gastar cota.' : null,
+        recado: resumoDaRevisao(feita),
+        recadoDetalhe: detalhe,
       })
     },
 
@@ -1028,13 +1081,16 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
           return
         }
         const tela = roteiroAtual(r.value)
+        const base = tela?.derivadoDe != null ? r.value.roteiros.find((v) => v.versao === tela.derivadoDe) : undefined
+        const antes = new Map(base?.secoes.flatMap((x) => x.frases.map((f) => [f.id, f.texto] as const)) ?? [])
+        const n = tela ? tela.secoes.reduce((t, x) => t + x.frases.filter((f) => antes.has(f.id) && antes.get(f.id) !== f.texto).length, 0) : 0
         set({
           rascunho: r.value,
           tela,
           sujo: false,
           salvoEm: Date.now(),
-          recado: tela ? `Versao ${tela.versao}: revisada. A anterior fica em Versoes.` : null,
-          recadoDetalhe: null,
+          recado: tela ? resumoDaRevisao({ modo: 'corrigir', trocadas: n, marcadas: n, versaoNova: tela.versao }) : null,
+          recadoDetalhe: tela ? `Versao ${tela.versao}. A anterior fica em Versoes.` : null,
         })
       })
     },
@@ -1053,7 +1109,19 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
     },
 
     abrirEstilo: () => set({ estiloAberto: true }),
-    fecharEstilo: () => set({ estiloAberto: false }),
+    fecharEstilo: () => {
+      set({ estiloAberto: false })
+      // O estilo pode ter mudado no painel: a conferencia do tom segue o de agora.
+      void lerSeTemEstilo()
+    },
+    abrirComparar: (versao) => {
+      const s = get()
+      if (!s.rascunho || !s.tela) return
+      const esquerda = versao ?? versaoParaComparar(s.rascunho, s.tela.versao)
+      if (esquerda === null) return
+      set({ comparando: esquerda })
+    },
+    fecharComparar: () => set({ comparando: null }),
 
     usarReserva: () => {
       const p = get().reserva
@@ -1448,6 +1516,7 @@ let ultimaConta: {
   eventos: readonly Evento[]
   indice: EpisodeIndex | null
   ritmo: number
+  comEstilo: boolean
   problemas: ProblemaDoRoteiro[]
 } | null = null
 
@@ -1461,15 +1530,24 @@ export function useProblemasDoRoteiro(): ProblemaDoRoteiro[] {
   const indice = useIndiceDoRoteiro()
   // O "Curto/Longo" mede o TEMPO na voz que vai narrar (shared/ritmo.ts), nao palavras a 2,7.
   const ritmo = useRitmoDaVoz()
+  // Com o "Meu estilo", o tom e dele: pedido de comentario e "Mano" nao viram aviso.
+  const comEstilo = useRoteiro((s) => s.comEstilo)
   return useMemo(() => {
     if (!tela || !eventos) return []
-    if (ultimaConta && ultimaConta.tela === tela && ultimaConta.eventos === eventos && ultimaConta.indice === indice && ultimaConta.ritmo === ritmo) {
+    if (
+      ultimaConta &&
+      ultimaConta.tela === tela &&
+      ultimaConta.eventos === eventos &&
+      ultimaConta.indice === indice &&
+      ultimaConta.ritmo === ritmo &&
+      ultimaConta.comEstilo === comEstilo
+    ) {
       return ultimaConta.problemas
     }
-    const problemas = validarRoteiro(tela, eventos, indice ?? undefined, ritmo)
-    ultimaConta = { tela, eventos, indice, ritmo, problemas }
+    const problemas = validarRoteiro(tela, eventos, indice ?? undefined, ritmo, { estilo: comEstilo })
+    ultimaConta = { tela, eventos, indice, ritmo, comEstilo, problemas }
     return problemas
-  }, [tela, eventos, indice, ritmo])
+  }, [tela, eventos, indice, ritmo, comEstilo])
 }
 
 /** O roteiro aprovado esta na tela, sem nada digitado depois. */

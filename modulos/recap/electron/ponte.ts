@@ -41,7 +41,7 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     lerEstilo: () => invocar(C.lerEstilo),
     salvarEstilo: (estilo) => invocar(C.salvarEstilo, estilo),
     importarExemplo: () => invocar(C.importarExemplo),
-    revisarRoteiro: (rascunhoId, automatico) => invocar(C.revisarRoteiro, rascunhoId, automatico === true),
+    revisarRoteiro: (rascunhoId, automatico, modo) => invocar(C.revisarRoteiro, rascunhoId, automatico === true, modo ?? 'corrigir'),
     aplicarRevisao: (rascunhoId) => invocar(C.aplicarRevisao, rascunhoId),
     ignorarRevisao: (rascunhoId, fraseIds) => invocar(C.ignorarRevisao, rascunhoId, fraseIds),
 

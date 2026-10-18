@@ -246,8 +246,8 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
     if (!texto) throw new Error('O arquivo esta vazio.')
     return { nome: basename(arquivo, extname(arquivo)).slice(0, NOME_DO_EXEMPLO_MAX), texto: texto.slice(0, TEXTO_DO_EXEMPLO_MAX) }
   })
-  ctx.handle<[string, boolean], RevisaoFeita>(C.revisarRoteiro, async (rascunhoId, automatico) =>
-    revisarRoteiro(idDoRascunho(rascunhoId), automatico === true),
+  ctx.handle<[string, boolean, unknown], RevisaoFeita>(C.revisarRoteiro, async (rascunhoId, automatico, modo) =>
+    revisarRoteiro(idDoRascunho(rascunhoId), automatico === true, modo === 'melhorar' ? 'melhorar' : 'corrigir'),
   )
   ctx.handle<[string], RascunhoDoRecap>(C.aplicarRevisao, async (rascunhoId) => aplicarRevisao(idDoRascunho(rascunhoId)))
   ctx.handle<[string, string[]], RascunhoDoRecap>(C.ignorarRevisao, async (rascunhoId, fraseIds) => {

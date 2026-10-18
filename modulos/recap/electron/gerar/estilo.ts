@@ -63,6 +63,34 @@ export function versaoDaIa(r: Pick<RascunhoDoRecap, 'roteiros'>, roteiro: Roteir
 }
 
 /**
+ * O roteiro sem o que veio do REVISOR frase a frase (o "Aplicar" de uma
+ * marca): a frase que ainda tem o texto da sugestao volta ao texto que foi
+ * revisado. E o que separa a edicao DELE da do revisor no "aprender" (A2):
+ * so o que ele digitou conta. O "Aplicar todas", o "Corrigir erros" e o
+ * "Melhorar texto" ja fazem versao da IA (versaoDaIa).
+ */
+export function semOAplicarDoRevisor(r: Pick<RascunhoDoRecap, 'revisoes'>, roteiro: Pick<Roteiro, 'secoes'>): Pick<Roteiro, 'secoes'> {
+  const sugeridas = new Map<string, Map<string, string>>()
+  for (const rv of r.revisoes) {
+    for (const i of rv.itens) {
+      if (!i.sugestao) continue
+      const porTexto = sugeridas.get(i.fraseId) ?? new Map<string, string>()
+      porTexto.set(i.sugestao, i.texto)
+      sugeridas.set(i.fraseId, porTexto)
+    }
+  }
+  return {
+    secoes: roteiro.secoes.map((s) => ({
+      ...s,
+      frases: s.frases.map((f) => {
+        const antes = sugeridas.get(f.id)?.get(f.texto)
+        return antes === undefined ? f : { ...f, texto: antes }
+      }),
+    })),
+  }
+}
+
+/**
  * Depois de aprovar: aprende, se for o caso. Nunca lanca (aprender e extra; a
  * aprovacao ja foi gravada). true = virou exemplo.
  */
@@ -74,7 +102,8 @@ export function aprenderDoAprovado(r: RascunhoDoRecap): boolean {
     if (!estilo.aprender) return false
     const texto = textoDoRoteiro(aprovado)
     const daIa = versaoDaIa(r, aprovado)
-    if (daIa && mesmoTextoDoRoteiro(textoDoRoteiro(daIa), texto)) return false
+    // So o que ELE digitou conta: o "Aplicar" de uma sugestao do revisor nao e edicao dele.
+    if (daIa && mesmoTextoDoRoteiro(textoDoRoteiro(daIa), textoDoRoteiro(semOAplicarDoRevisor(r, aprovado)))) return false
     const novo = aprenderExemplo(estilo, { texto, nome: r.titulo, rascunhoId: r.id, agoraIso: new Date().toISOString() })
     if (novo === estilo) return false
     gravarJsonAtomico(arquivo(), novo)

@@ -40,7 +40,7 @@ import type {
 } from './roteiro'
 import type { RitmoDaVoz } from './ritmo'
 import type { EstiloDoRecap, EstiloNaTela } from './estilo'
-import type { RevisaoFeita } from './revisao'
+import type { ModoDaRevisao, RevisaoFeita } from './revisao'
 import type { Escritor } from './escritor'
 import type { PlanoNoMesclado } from './mesclas'
 import type {
@@ -259,8 +259,12 @@ export interface PonteDoRecap {
   salvarEstilo(estilo: EstiloDoRecap): Promise<IpcResult<EstiloNaTela>>
   /** Dialogo de .txt: o nome (do arquivo) e o texto. null = fechou sem escolher. */
   importarExemplo(): Promise<IpcResult<{ nome: string; texto: string } | null>>
-  /** Revisa a versao atual (gravada). `automatico` = depois de gerar: respeita o "Revisar depois de gerar". */
-  revisarRoteiro(rascunhoId: string, automatico: boolean): Promise<IpcResult<RevisaoFeita>>
+  /**
+   * Revisa a versao atual (gravada). `automatico` = depois de gerar: respeita o
+   * "Revisar depois de gerar" e so marca. `modo` (o botao "Revisar"): corrigir
+   * erros (padrao) ou melhorar texto; na mao, os dois ja fazem a versao nova.
+   */
+  revisarRoteiro(rascunhoId: string, automatico: boolean, modo?: ModoDaRevisao): Promise<IpcResult<RevisaoFeita>>
   /** "Aplicar todas": versao nova a partir da atual, com as sugestoes da revisao. */
   aplicarRevisao(rascunhoId: string): Promise<IpcResult<RascunhoDoRecap>>
   /** "Ignorar": tira as marcas dessas frases da revisao que vale para a versao atual. */

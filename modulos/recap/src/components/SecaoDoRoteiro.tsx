@@ -17,11 +17,12 @@ import {
   type ProblemaDoRoteiro,
   type Secao,
 } from '../../shared/roteiro'
-import { ROTULO_DO_PROBLEMA, type ItemDaRevisao } from '../../shared/revisao'
+import { ROTULO_DO_PROBLEMA, type ItemDaRevisao, type MudancaDaRevisao } from '../../shared/revisao'
 import { useRoteiro, type GeracaoEmCurso } from '../store/gerar-roteiro'
 import { useRitmoDaVoz } from '../store/ritmo'
 import { Linha } from '@/modulos/kit'
 import { AndamentoDoRoteiro } from './AndamentoDoRoteiro'
+import { MarcaDaMudanca } from './RevisarRoteiro'
 import { PerguntaDoEscritor } from './PerguntaDoEscritor'
 import { PerguntaDoReserva } from './PerguntaDoReserva'
 import { Botao, CAMPO_PEQUENO, CLASSE_DO_CAMPO, COR_DE_AVISO, focarBotao, Link, Secao as Cartao } from './pecas'
@@ -56,6 +57,7 @@ export function SecaoDoRoteiro({
   ordem,
   geracao,
   marcas,
+  mudancas,
 }: {
   secao: Secao
   eventos: readonly Evento[]
@@ -69,6 +71,8 @@ export function SecaoDoRoteiro({
   geracao: GeracaoEmCurso | null
   /** As marcas do revisor que valem para a tela, por frase. */
   marcas: ReadonlyMap<string, ItemDaRevisao>
+  /** [A2] As frases que o revisor trocou (Revisada/Melhorada), com o texto de antes. */
+  mudancas: ReadonlyMap<string, MudancaDaRevisao>
 }) {
   const gerar = useRoteiro((s) => s.gerar)
   const inserirFrase = useRoteiro((s) => s.inserirFrase)
@@ -187,6 +191,7 @@ export function SecaoDoRoteiro({
                   avisos={avisos.length > 0 ? avisos.join('\n') : null}
                   travado={travado}
                   marca={marcas.get(frase.id) ?? null}
+                  mudanca={mudancas.get(frase.id) ?? null}
                   anterior={lugar > 0 ? (ordem[lugar - 1] ?? null) : null}
                   proxima={lugar >= 0 ? (ordem[lugar + 1] ?? null) : null}
                 />
@@ -302,6 +307,7 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   avisos,
   travado,
   marca,
+  mudanca,
   anterior,
   proxima,
 }: {
@@ -319,6 +325,8 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   travado: boolean
   /** A marca do revisor nesta frase (com o mesmo texto revisado), ou null. */
   marca: ItemDaRevisao | null
+  /** A frase foi trocada pelo revisor e esta como ele deixou: a marca discreta, com o texto de antes. */
+  mudanca: MudancaDaRevisao | null
   anterior: string | null
   proxima: string | null
 }) {
@@ -451,6 +459,7 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
             <span className="truncate">{frase.textoDeTela}</span>
           </span>
         )}
+        {mudanca && <MarcaDaMudanca mudanca={mudanca} />}
         {marca && <MarcaDaRevisao marca={marca} travado={travado} />}
         {mostrarAvisos && (
           <span title={avisos ?? undefined} aria-label={avisos ?? undefined} className={`grid size-5 shrink-0 place-items-center ${COR_DE_AVISO}`}>

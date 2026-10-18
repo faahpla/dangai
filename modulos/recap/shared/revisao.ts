@@ -76,14 +76,51 @@ export const REVISOES_MAX = 20
 /** Marcas por roteiro, no maximo: revisor que marca tudo nao ajuda. */
 export const MARCAS_MAX = 10
 
+/**
+ * [A2] Os dois modos do botao "Revisar":
+ * - corrigir: o de sempre (sem prova, contradiz, confusa, fraca, repetida).
+ *   Na mao, ja aplica as sugestoes numa versao 'Revisada'; o automatico,
+ *   depois de gerar, so marca (o "Aplicar todas" faz a versao);
+ * - melhorar: reescreve os trechos chapados (lista de fatos, gancho fraco,
+ *   final seco) com gancho e ritmo, no Estilo, SEM fato novo: versao 'Melhorada'.
+ * Um pedido cada um, gratis no Gemini.
+ */
+export const MODOS_DA_REVISAO = ['corrigir', 'melhorar'] as const
+export type ModoDaRevisao = (typeof MODOS_DA_REVISAO)[number]
+
 /** O que revisarRoteiro devolve. */
 export type RevisaoFeita =
-  | { pulada: null; revisao: Revisao; doCache: boolean; rascunho: import('./roteiro').RascunhoDoRecap }
+  | {
+      pulada: null
+      modo: ModoDaRevisao
+      /** A revisao gravada (corrigir). null no melhorar (nao guarda marcas: a versao nova ja e o resultado). */
+      revisao: Revisao | null
+      doCache: boolean
+      rascunho: import('./roteiro').RascunhoDoRecap
+      /** A versao Revisada/Melhorada criada agora. null = nada a trocar (ou o automatico, que so marca). */
+      versaoNova: number | null
+      /** Frases trocadas na versao nova. */
+      trocadas: number
+      /** Frases marcadas pelo revisor (corrigir), com ou sem sugestao. */
+      marcadas: number
+    }
   | {
       /** desligada = automatica com o revisor desligado (nada a dizer); falhou = cota, rede, so reserva. */
       pulada: 'desligada' | 'falhou'
       nota: string
     }
+
+/** O recado curto depois de revisar: "1 frase corrigida", "6 frases melhoradas", "Nada a corrigir". */
+export function resumoDaRevisao(feita: { modo: ModoDaRevisao; trocadas: number; marcadas: number; versaoNova: number | null }): string {
+  const n = feita.trocadas
+  if (feita.modo === 'melhorar') return n === 0 ? 'Nada a melhorar' : `${n} ${n === 1 ? 'frase melhorada' : 'frases melhoradas'}`
+  if (n > 0) {
+    const semSugestao = feita.marcadas - n
+    return `${n} ${n === 1 ? 'frase corrigida' : 'frases corrigidas'}${semSugestao > 0 ? ` · ${semSugestao} ${semSugestao === 1 ? 'marcada' : 'marcadas'}` : ''}`
+  }
+  if (feita.marcadas > 0) return `${feita.marcadas} ${feita.marcadas === 1 ? 'frase marcada' : 'frases marcadas'}`
+  return 'Nada a corrigir'
+}
 
 /** Uma frase so: uma linha, sem aspas de enfeite em volta, com ponto no fim. */
 function sugestaoLimpa(s: string | null): string | null {
@@ -188,5 +225,131 @@ export function roteiroRevisado(
     derivadoDe: base.versao,
     pedido: null,
     revisada: true,
+    ...(base.sugestoes ? { sugestoes: base.sugestoes } : {}),
   }
+}
+
+// ------------------------------------------------------- melhorar texto
+
+/** O que o LLM devolve no "Melhorar texto": FECHADO e frouxo, como os outros. */
+export const melhoriaDaIaSchema = z.object({
+  frases: z.array(
+    z.object({
+      fraseId: z.string(),
+      /** Por que mudou, curto ("lista de fatos", "gancho fraco", "final seco"). */
+      motivo: z.string(),
+      /** O texto novo: uma frase (ou duas curtas). */
+      sugestao: z.string(),
+    }),
+  ),
+})
+export type MelhoriaDaIa = z.infer<typeof melhoriaDaIaSchema>
+
+// ------------------------------------------------------- o que mudou
+
+/** Uma frase que o revisor trocou e que continua como ele deixou. */
+export interface MudancaDaRevisao {
+  /** O texto de antes ('' = frase nova, a 2a metade de uma frase dividida). */
+  antes: string
+  modo: ModoDaRevisao
+}
+
+/**
+ * [A2] AS FRASES QUE O REVISOR TROCOU, para a marca discreta na tela: na
+ * versao Revisada/Melhorada e nas edicoes dela, a frase que ainda tem o texto
+ * que o revisor deixou e que era outro na versao de onde ela saiu. Mexeu na
+ * frase, a marca sai. Mapa fraseId -> o texto de antes.
+ */
+export function mudancasNaTela(
+  r: { roteiros: readonly Pick<Roteiro, 'versao' | 'derivadoDe' | 'origem' | 'revisada' | 'melhorada' | 'secoes'>[] },
+  tela: Pick<Roteiro, 'versao' | 'secoes'> | null,
+): Map<string, MudancaDaRevisao> {
+  const saida = new Map<string, MudancaDaRevisao>()
+  if (!tela) return saida
+  // Sobe pelas edicoes ate a versao que o revisor fez; outra versao da IA no caminho corta.
+  const vistas = new Set<number>()
+  let v: number | null = tela.versao
+  let revisora: (typeof r.roteiros)[number] | undefined
+  while (v !== null && !vistas.has(v)) {
+    vistas.add(v)
+    const atual = r.roteiros.find((x) => x.versao === v)
+    if (!atual) return saida
+    if (atual.revisada || atual.melhorada) {
+      revisora = atual
+      break
+    }
+    if (atual.origem !== 'editado') return saida
+    v = atual.derivadoDe
+  }
+  if (!revisora || revisora.derivadoDe === null) return saida
+  const base = r.roteiros.find((x) => x.versao === revisora!.derivadoDe)
+  if (!base) return saida
+  const modo: ModoDaRevisao = revisora.melhorada ? 'melhorar' : 'corrigir'
+  const dele = new Map(revisora.secoes.flatMap((s) => s.frases.map((f) => [f.id, f.texto] as const)))
+  const antes = new Map(base.secoes.flatMap((s) => s.frases.map((f) => [f.id, f.texto] as const)))
+  for (const s of tela.secoes) {
+    for (const f of s.frases) {
+      const texto = dele.get(f.id)
+      if (texto === undefined || texto !== f.texto) continue
+      const velho = antes.get(f.id)
+      if (velho === texto) continue
+      saida.set(f.id, { antes: velho ?? '', modo })
+    }
+  }
+  return saida
+}
+
+/** Uma linha do "Comparar": a mesma frase (pelo id) nas duas versoes. */
+export interface LinhaDaComparacao {
+  /** O papel da parte (da direita, ou da esquerda quando so ela tem a frase). */
+  papel: Roteiro['secoes'][number]['papel']
+  /** Primeira linha da parte: a tela poe o rotulo. */
+  abreParte: boolean
+  fraseId: string
+  esquerda: string | null
+  direita: string | null
+  igual: boolean
+}
+
+/**
+ * [A2] O "COMPARAR": as duas versoes lado a lado, frase por frase, casadas
+ * pelo id (o revisor, o refazer e a edicao mantem o id da frase). Na ordem da
+ * DIREITA; a frase que so a esquerda tem entra logo depois da vizinha que
+ * as duas tem. Versoes sem nada em comum (outra versao inteira) se alinham
+ * pela posicao do id.
+ */
+export function compararVersoes(esquerda: Pick<Roteiro, 'secoes'>, direita: Pick<Roteiro, 'secoes'>): LinhaDaComparacao[] {
+  type Item = { id: string; texto: string; papel: LinhaDaComparacao['papel']; secaoId: string }
+  const lista = (r: Pick<Roteiro, 'secoes'>): Item[] =>
+    r.secoes.flatMap((s) => s.frases.map((f) => ({ id: f.id, texto: f.texto, papel: s.papel, secaoId: s.id })))
+  const a = lista(esquerda)
+  const b = lista(direita)
+  const daEsquerda = new Map(a.map((x) => [x.id, x] as const))
+  const naDireita = new Set(b.map((x) => x.id))
+  const linhas: (Omit<LinhaDaComparacao, 'abreParte'> & { secaoId: string })[] = []
+  // As que so a esquerda tem, agrupadas atras da ultima vizinha comum.
+  const sobras = new Map<string, Item[]>()
+  let vizinha = ''
+  for (const x of a) {
+    if (naDireita.has(x.id)) vizinha = x.id
+    else sobras.set(vizinha, [...(sobras.get(vizinha) ?? []), x])
+  }
+  const soltar = (depoisDe: string): void => {
+    // A frase que saiu fica na parte da vizinha (sem abrir rotulo novo no meio).
+    for (const x of sobras.get(depoisDe) ?? []) {
+      const anterior = linhas[linhas.length - 1]
+      linhas.push({ papel: anterior?.papel ?? x.papel, secaoId: anterior?.secaoId ?? `e-${x.secaoId}`, fraseId: x.id, esquerda: x.texto, direita: null, igual: false })
+    }
+    sobras.delete(depoisDe)
+  }
+  soltar('')
+  for (const x of b) {
+    const e = daEsquerda.get(x.id)
+    linhas.push({ papel: x.papel, secaoId: x.secaoId, fraseId: x.id, esquerda: e?.texto ?? null, direita: x.texto, igual: e !== undefined && e.texto === x.texto })
+    soltar(x.id)
+  }
+  return linhas.map((l, i) => {
+    const { secaoId, ...resto } = l
+    return { ...resto, abreParte: i === 0 || linhas[i - 1]!.secaoId !== secaoId }
+  })
 }
