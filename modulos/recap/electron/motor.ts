@@ -519,6 +519,13 @@ interface Job {
   conferindo: boolean
 }
 
+/** O1: o commit da descoberta gravada no disco (motor/app/descoberta_salva.py). */
+export interface CommitDoDisco {
+  episodeRoot: string
+  names: Record<string, string>
+  removed: Record<string, number[]>
+}
+
 /** O job da vez. Um por vez: o motor ocupa a GPU inteira. */
 let atual: Job | null = null
 
@@ -674,6 +681,8 @@ function tratarEvento(job: Job, ev: Evento): void {
           ? `Nao achei "${job.anime}" no AniList nem no MyAnimeList.`
           : `Nenhum personagem de "${job.anime}" ficou com fotos suficientes, nem com as do Corte Cenas (as fontes de imagem podem estar fora do ar).`,
         precisaDescoberta: semAnime ? 'anime-nao-encontrado' : 'sem-referencias',
+        // O1: o motor seguiu, cortou e agrupou os rostos antes de pedir o elenco.
+        pastaDaDescoberta: typeof ev['discoveryRoot'] === 'string' && ev['discoveryRoot'] ? ev['discoveryRoot'] : null,
       }
       // Sem fotos: antes de desistir, a reserva do elenco. O motor ja resolveu
       // o id da franquia (esta no nome da refsDir) e o corte ja esta no disco,
@@ -695,6 +704,22 @@ function tratarEvento(job: Job, ev: Evento): void {
       entregar(job, fim)
       return
     }
+    case 'discovery-saved': {
+      // O1: a descoberta gravou os grupos e saiu. O fim ok so diz "acabou":
+      // os nomes vao depois, num commit a parte (discoveryCommit).
+      const pasta = typeof ev['episodeRoot'] === 'string' ? ev['episodeRoot'] : ''
+      entregar(job, {
+        jobId: job.id,
+        ok: true,
+        motor: job.motor,
+        pastaDoEpisodio: pasta,
+        totalCenas: 0,
+        personagens: [],
+        segundos: segundosDesde(job.inicio),
+        fotosDoElenco: null,
+      })
+      return
+    }
     case 'cancelled':
       entregar(job, cancelou(job))
       return
@@ -710,8 +735,10 @@ function tratarEvento(job: Job, ev: Evento): void {
       // Reconhecer na mao: os grupos vao para a descoberta e o processo fica
       // vivo, SEM relogio, esperando a linha de nomes (comandarDescoberta). O
       // cancelamento e o de sempre; o app fechando mata a arvore (encerrarMotor).
+      // O1: com `discoverySaveOnly` os grupos ja estao no disco e o processo
+      // sai sozinho (discovery-saved): nao espera nome nenhum.
       if (job.ouvintes.descobertaPronta && !job.entregue && !job.cancelado) {
-        job.esperandoNomes = true
+        job.esperandoNomes = job.requisicao['discoverySaveOnly'] !== true
         const grupos = Array.isArray(ev['groups']) ? ev['groups'].length : 0
         job.log?.write(`\n[studio] discovery-ready: ${grupos} grupos, ${String(ev['totalFaces'])} rostos; esperando os nomes\n`)
         try {
@@ -952,9 +979,10 @@ function iniciar(job: Job, repeticao: boolean): void {
 export async function analisarEpisodio(
   pedido: PedidoDeAnalise,
   ouvintes: OuvintesDaAnalise,
-  opcoes?: { descoberta?: true },
+  opcoes?: { descoberta?: true; commitDoDisco?: CommitDoDisco },
 ): Promise<string> {
   const descoberta = opcoes?.descoberta === true
+  const commit = opcoes?.commitDoDisco ?? null
   if (descoberta && (pedido.motor !== 'studio' || !ouvintes.descobertaPronta)) {
     throw new Error('Reconhecer na mao so roda no motor de personagens.')
   }
@@ -1013,10 +1041,16 @@ export async function analisarEpisodio(
     episode: pedido.episodio,
     kind: pedido.kind,
     outputDir,
-    cutOnly: !pedido.reconhecer && !descoberta,
+    cutOnly: !pedido.reconhecer && !descoberta && !commit,
     renderExportMode: 'compat',
     aiReview: false,
     discovery: descoberta,
+    // O1: a descoberta grava os grupos no disco e sai (o motor nao segura a
+    // vaga esperando os nomes); o corte com personagens deixa a descoberta
+    // PRONTA no fim (o Reconhecer na mao abre na hora); o commit le do disco.
+    discoverySaveOnly: descoberta,
+    precomputeDiscovery: pedido.motor === 'studio' && pedido.reconhecer && !descoberta && !commit,
+    ...(commit ? { discoveryCommit: commit } : {}),
     mergePrevious: false,
     skipCreditShots: false,
     useDanbooru: false,

@@ -45,12 +45,12 @@ def gravar_grupos(episode_root: str | Path, chaves: list[int], centroides: list[
     sugestoes depois que o anime for escolhido. Nunca levanta."""
     import numpy as np
 
-    from .matching.embedding_engine import from_bytes
+    from .descoberta_salva import de_bytes
 
     try:
         if not chaves:
             return
-        m = np.stack([from_bytes(b) for b in centroides]).astype(np.float32)
+        m = np.stack([de_bytes(b) for b in centroides]).astype(np.float32)
         destino = pasta_da_descoberta(episode_root)
         destino.mkdir(parents=True, exist_ok=True)
         tmp = destino / "grupos.tmp.npz"
@@ -192,6 +192,31 @@ def _sugestoes(cfg, chaves: list[int], centroides, refs: dict[str, list[Path]],
     return saida
 
 
+def _gravar_na_descoberta(episode_root: Path, sugestoes: dict[str, list[dict]], roster: list[str]) -> None:
+    """[recap] O1/A1: a descoberta gravada (descoberta_salva.py) guarda as
+    sugestoes e o elenco do anime escolhido: reabrindo o Reconhecer na mao (o
+    app fechou), as teclas 1-9 continuam as deste anime. O resto (o corte, os
+    grupos, online/cacheId do commit) fica como estava."""
+    from . import descoberta_salva
+
+    dados = descoberta_salva.ler(episode_root)
+    if dados is None:
+        return
+    for g in dados.get("groups") or []:
+        lista = sugestoes.get(str(g.get("key")))
+        if lista is not None:
+            g["suggestions"] = [{"name": s["nome"], "sim": float(s["sim"])} for s in lista]
+    if roster:
+        dados["roster"] = roster
+    arquivo = descoberta_salva.pasta(episode_root) / descoberta_salva.ARQUIVO
+    tmp = arquivo.with_name(arquivo.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(dados, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(arquivo)
+    except OSError as e:
+        print(f"[recap] descoberta gravada sem as sugestoes novas: {e}", flush=True)
+
+
 def escolher(req: dict[str, Any], emit: Callable[[dict[str, Any]], None]) -> int:
     from .config import Config
     from .providers.anime_provider import AnimeProvider
@@ -258,7 +283,7 @@ def escolher(req: dict[str, Any], emit: Callable[[dict[str, Any]], None]) -> int
         # grafia do elenco oficial: eles conhecem os rostos DESTE anime.
         extras: list[tuple[str, Any]] = []
         try:
-            from .matching.embedding_engine import from_bytes
+            from .descoberta_salva import de_bytes as from_bytes
 
             db = Database(cfg.cache_path / "index.db")
             local_id = db.anime_local_por_titulo(anime)
@@ -272,6 +297,8 @@ def escolher(req: dict[str, Any], emit: Callable[[dict[str, Any]], None]) -> int
             sugestoes = _sugestoes(cfg, chaves, centroides, refs, extras, status)
         except Exception as e:  # noqa: BLE001 -- sem sugestao a tela ainda tem o elenco
             print(f"[recap] sugestoes falharam: {e}", flush=True)
+        if sugestoes:
+            _gravar_na_descoberta(episode_root, sugestoes, [e["nome"] for e in elenco])
 
     emit({
         "type": "anime-escolhido",

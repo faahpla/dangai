@@ -207,10 +207,10 @@ function Acoes({ achado }: { achado: EpisodioEncontrado }) {
   )
 }
 
-/** Quanto a analise leva, numa linha, pelo que vai ser feito. */
+/** Quanto a analise leva, numa linha, pelo que vai ser feito (O1, 18/10: ~3 min medidos no MRM e no Nia E01). */
 function tempoEstimado(reconhecer: boolean, jaCortado: boolean): string {
   if (jaCortado) return reconhecer ? 'So falta o elenco' : 'Segundos, sem personagens'
-  return reconhecer ? 'Cerca de 5 min (1a vez do anime: +9 min)' : 'Cerca de 1 min, sem personagens'
+  return reconhecer ? 'Cerca de 3 min (1a vez do anime: +9 min)' : 'Cerca de 1 min, sem personagens'
 }
 
 /**
@@ -218,7 +218,7 @@ function tempoEstimado(reconhecer: boolean, jaCortado: boolean): string {
  * em segundos e o roteiro libera; as cenas vem por tras.
  */
 function tempoSemEsperar(reconhecer: boolean): string {
-  return reconhecer ? 'Falas na hora; cenas em ~5 min, por tras' : 'Falas na hora; cenas em ~1 min, por tras'
+  return reconhecer ? 'Falas na hora; cenas em ~3 min, por tras' : 'Falas na hora; cenas em ~1 min, por tras'
 }
 
 /** (c) sem achado: o episodio e novo e precisa ser cortado. */

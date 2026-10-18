@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Circle, Link2, Loader2, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Circle, Keyboard, Link2, Loader2, TriangleAlert, X } from 'lucide-react'
 import {
   CENAS_MINIMAS_POR_PERSONAGEM,
   chaveDaPessoa,
@@ -16,6 +16,7 @@ import {
   type PersonagemDaDecisao,
   type ResumoDaDecisao,
 } from '../../shared/descoberta'
+import { acaoDaTecla, aplicarAtalho, cartaoVizinho, LISTA_DE_ATALHOS } from '../../shared/atalhos'
 import { ROTULO_DA_ETAPA, slugDoEpisodio, type EtapaDaAnalise } from '../../shared/episodio'
 import { useGerar } from '../store/gerar'
 import { opcoesDoResumo, useDescoberta } from '../store/gerar-descoberta'
@@ -80,6 +81,24 @@ const ROTULO_CURTO: Record<EtapaDaAnalise, string> = {
 function digitando(alvo: EventTarget | null): boolean {
   if (!(alvo instanceof HTMLElement)) return false
   return alvo.isContentEditable || alvo.closest('input, textarea, select') !== null
+}
+
+/** O1: poe o foco no CARTAO do grupo (o cursor do teclado: 1-9, Enter, I, J). false = nao esta na tela. */
+function focarCartao(key: number): boolean {
+  const cartao = document.querySelector<HTMLElement>(`[data-cartao-grupo="${key}"]`)
+  if (!cartao) return false
+  cartao.focus({ preventScroll: true })
+  cartao.scrollIntoView({ block: 'nearest' })
+  return true
+}
+
+/** O1: quantos cartoes cabem numa linha da grade (para as setas de cima e de baixo). */
+function colunasDaGrade(): number {
+  const cartoes = [...document.querySelectorAll<HTMLElement>('[data-cartao-grupo]')]
+  if (cartoes.length === 0) return 1
+  const topo = cartoes[0]!.offsetTop
+  const n = cartoes.findIndex((c) => c.offsetTop !== topo)
+  return n < 0 ? cartoes.length : Math.max(1, n)
 }
 
 /** Poe o foco no campo do nome do grupo (rolando ate ele). false = nao esta na tela. */
@@ -255,7 +274,8 @@ function Tela() {
         return
       }
       // O grupo ampliado trata o proprio teclado (registrado depois, mas olha antes: ver Grupos).
-      if (document.querySelector('[data-grupo-ampliado]')) return
+      // O1: a lista dos atalhos aberta tambem (o Esc fecha ela, nao a tela).
+      if (document.querySelector('[data-grupo-ampliado], [data-lista-de-atalhos]')) return
       if (e.key === 'Escape') {
         // A lista do elenco aberta: o Esc e do campo (fecha a lista).
         if (e.target instanceof HTMLElement && e.target.getAttribute('aria-expanded') === 'true') return
@@ -677,13 +697,17 @@ function Grupos({
     setAmpliado(null)
   }, [pronta.jobId])
 
-  // Os grupos chegaram (ou a tela reabriu): o foco vai ao primeiro sem nome e
+  // Os grupos chegaram (ou a tela reabriu): o cursor vai ao primeiro sem nome e
   // nao ignorado (os conhecidos ja tem nome; o ignorado ja foi decidido).
+  // O1: o foco vai ao CARTAO (1-9 escolhe a sugestao; uma letra comeca o nome).
+  const [atual, setAtual] = useState<number | null>(null)
+  const [ajuda, setAjuda] = useState(false)
   useEffect(() => {
     const primeiro =
       principais.find((g) => !decisao.ignorados.includes(g.key) && !(decisao.nomes[String(g.key)] ?? '').trim()) ?? principais[0]
     if (!primeiro) return
-    requestAnimationFrame(() => focarCampo(primeiro.key))
+    setAtual(primeiro.key)
+    requestAnimationFrame(() => focarCartao(primeiro.key))
     // So na chegada dos grupos, nao a cada nome.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pronta.jobId])
@@ -697,6 +721,34 @@ function Grupos({
     const alvo = fila.current[i + direcao]
     return alvo !== undefined && focarCampo(alvo)
   }, [])
+  // O1: o cursor do teclado. Ir a um cartao = foco nele (o foco marca o "atual").
+  const irAoCartao = useCallback((key: number | null): void => {
+    if (key === null) return
+    setAtual(key)
+    requestAnimationFrame(() => focarCartao(key))
+  }, [])
+  const onEscolher = useCallback(
+    (key: number, nome: string): void => {
+      nomear(key, nome)
+      const d = useDescoberta.getState().decisao
+      const ordem = fila.current
+      const r = aplicarAtalho({ tipo: 'confirmar' }, d, new Map(pronta.grupos.map((g) => [g.key, g])), ordem, key)
+      irAoCartao(r.proximo)
+    },
+    [nomear, pronta.grupos, irAoCartao],
+  )
+  // Enter no campo aceitou o nome: o cursor vai ao proximo cartao (onde as teclas valem).
+  const onAceito = useCallback(
+    (key: number): void => {
+      const ordem = fila.current
+      const i = ordem.indexOf(key)
+      irAoCartao(ordem[i + 1] ?? key)
+    },
+    [irAoCartao],
+  )
+  // Esc no campo: volta ao cartao (o segundo Esc fecha a tela).
+  const onSair = useCallback((key: number): void => irAoCartao(key), [irAoCartao])
+
   const onSelecionar = useCallback((key: number): void => {
     setSelecionados((s) => (s.includes(key) ? s.filter((k) => k !== key) : [...s, key]))
   }, [])
@@ -777,6 +829,76 @@ function Grupos({
     return () => window.removeEventListener('keydown', tecla, true)
   }, [ampliado])
 
+  // O1: os atalhos do cartao (shared/atalhos.ts). Valem com o foco num cartao;
+  // no campo do nome as teclas sao do campo. O "?" abre a lista.
+  const ajudaAberta = useRef(false)
+  ajudaAberta.current = ajuda
+  const teclasDaGrade = useRef({ atual, salvando, decisao, pronta, ampliado })
+  teclasDaGrade.current = { atual, salvando, decisao, pronta, ampliado }
+  // Fechou a lista (Esc, "?" ou o botao): o cursor volta ao cartao atual.
+  const ajudaAntes = useRef(false)
+  useEffect(() => {
+    if (ajudaAntes.current && !ajuda) irAoCartao(teclasDaGrade.current.atual)
+    ajudaAntes.current = ajuda
+  }, [ajuda, irAoCartao])
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent): void => {
+      if (nucleo().haModalPorCima()) return
+      const t = teclasDaGrade.current
+      // A lista dos atalhos aberta: o Esc fecha ela (e nao a tela).
+      if (e.key === 'Escape' && ajudaAberta.current) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        setAjuda(false)
+        return
+      }
+      if (t.ampliado !== null || t.salvando || t.atual === null) return
+      const alvo = e.target
+      if (!(alvo instanceof HTMLElement)) return
+      let cartaoAlvo: HTMLElement | null = alvo.closest('[data-cartao-grupo]') === alvo ? alvo : null
+      if (!cartaoAlvo) {
+        if (digitando(alvo)) return
+        // O "?" vale tambem com o foco fora dos cartoes (na tela), menos num campo.
+        if (e.key === '?') {
+          e.preventDefault()
+          setAjuda((a) => !a)
+          return
+        }
+        // O foco caiu na propria tela (um botao que sumiu, a lista fechada): a
+        // tecla vale para o cartao atual. Num botao ou num link, e do botao.
+        if (alvo.closest('button, a, [role="listbox"], [role="option"], [data-cartao-grupo]')) return
+        if (!acaoDaTecla(e)) return
+        cartaoAlvo = document.querySelector<HTMLElement>(`[data-cartao-grupo="${t.atual}"]`)
+        if (!cartaoAlvo) return
+        cartaoAlvo.focus({ preventScroll: true })
+      }
+      const acao = acaoDaTecla(e)
+      if (!acao) return
+      const key = Number(cartaoAlvo.dataset['cartaoGrupo'])
+      const ordem = fila.current
+      if (acao.tipo === 'digitar') {
+        // A letra cai no campo: o foco muda antes de o caractere chegar.
+        focarCampo(key)
+        return
+      }
+      e.preventDefault()
+      e.stopPropagation()
+      if (acao.tipo === 'ajuda') setAjuda((a) => !a)
+      else if (acao.tipo === 'campo') focarCampo(key)
+      else if (acao.tipo === 'ampliar') setAmpliado(key)
+      else if (acao.tipo === 'andar') irAoCartao(cartaoVizinho(ordem, key, acao.para, colunasDaGrade()))
+      else {
+        const grupos = new Map(t.pronta.grupos.map((g) => [g.key, g]))
+        const r = aplicarAtalho(acao, t.decisao, grupos, ordem, key)
+        if (r.decisao !== t.decisao) useDescoberta.setState({ decisao: r.decisao, erro: null, perguntaForaDoElenco: null })
+        if (r.campo) focarCampo(key)
+        else irAoCartao(r.proximo)
+      }
+    }
+    window.addEventListener('keydown', tecla, true)
+    return () => window.removeEventListener('keydown', tecla, true)
+  }, [irAoCartao])
+
   const cartao = (g: GrupoDeRostos) => {
     const k = String(g.key)
     const c = conjuntoDe(decisao, g.key)
@@ -803,6 +925,10 @@ function Grupos({
         onSelecionar={onSelecionar}
         onAmpliar={onAmpliar}
         onProximo={onProximo}
+        atual={atual === g.key}
+        onEscolher={onEscolher}
+        onAceito={onAceito}
+        onSair={onSair}
       />
     )
   }
@@ -859,12 +985,57 @@ function Grupos({
         )}
         <span className="flex-1" />
         <span className="hidden truncate text-[11px] text-ink-3 lg:inline" title="Shift+Enter amplia o grupo do campo">
-          Tab completa · Enter aceita · Ctrl+Enter confirma
+          1-9 sugestao · Enter confirma · I ignora · J junta
+        </span>
+        {/* O1: a lista dos atalhos ("?"). */}
+        <span className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setAjuda((a) => !a)}
+            aria-expanded={ajuda}
+            aria-label="Atalhos do teclado"
+            title="Atalhos (?)"
+            className={[
+              'grid size-6 place-items-center rounded-sm border text-[11px] transition-colors duration-150',
+              ajuda ? 'border-line-strong bg-surface text-ink' : 'border-line bg-elevated text-ink-3 hover:text-ink',
+            ].join(' ')}
+          >
+            ?
+          </button>
+          {ajuda && (
+            <div
+              data-lista-de-atalhos
+              role="dialog"
+              aria-label="Atalhos"
+              className="absolute right-0 top-full z-40 mt-1 w-[240px] rounded-sm border border-line-strong bg-elevated p-2.5 shadow-lg shadow-black/40"
+            >
+              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-ink-2">
+                <Keyboard size={12} strokeWidth={1.75} />
+                No cartao
+              </p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+                {LISTA_DE_ATALHOS.map(([k, o]) => (
+                  <Fragment key={k}>
+                    <dt className="tnum whitespace-nowrap text-ink">{k}</dt>
+                    <dd className="text-ink-3">{o}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </div>
+          )}
         </span>
       </div>
 
       {/* A grade usa a largura toda, como a Biblioteca e a grade do passo 4. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 [scrollbar-gutter:stable]" aria-busy={salvando}>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4 [scrollbar-gutter:stable]"
+        aria-busy={salvando}
+        // O1: o cursor do teclado segue o foco (clique num cartao, Tab num campo).
+        onFocusCapture={(e) => {
+          const c = e.target instanceof HTMLElement ? e.target.closest<HTMLElement>('[data-cartao-grupo]') : null
+          if (c) setAtual(Number(c.dataset['cartaoGrupo']))
+        }}
+      >
         <div className="flex w-full flex-col gap-4">
           {principais.length > 0 ? (
             <div className="grid gap-2.5" style={COLUNAS}>

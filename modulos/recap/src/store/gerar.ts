@@ -1295,3 +1295,7 @@ export function escutarGerar(): () => void {
     tirarMotorPronto()
   }
 }
+
+// Em dev, alcancavel pelo console e pelo teste por CDP, como o descobertaStore.
+// (O teste em node importa este arquivo: sem o import.meta.env do Vite, nada.)
+if (import.meta.env?.DEV && typeof window !== 'undefined') Reflect.set(window, 'gerarStore', useGerar)

@@ -131,6 +131,13 @@ export interface PropsDoCampo {
   onProximo: (key: number, direcao: 1 | -1) => boolean
   /** Shift+Enter: o grupo ampliado. */
   onAmpliar?: (key: number) => void
+  /**
+   * O1 (atalhos): o Enter aceitou o nome. Com ele, o foco vai ao CARTAO
+   * seguinte (onde 1-9, I e J valem); sem ele, ao campo seguinte, como antes.
+   */
+  onAceito?: (key: number) => void
+  /** O1: Esc com a lista fechada devolve o foco ao cartao (sem ele, o Esc fecha a tela). */
+  onSair?: (key: number) => void
 }
 
 /**
@@ -158,6 +165,8 @@ export function CampoDoNome({
   onNome,
   onProximo,
   onAmpliar,
+  onAceito,
+  onSair,
 }: PropsDoCampo) {
   const [aberta, setAberta] = useState(false)
   const [marcado, setMarcado] = useState(-1)
@@ -203,7 +212,7 @@ export function CampoDoNome({
         : `Talvez ${palpite} (${pct}%, palpite fraco). Confira e escolha na lista.`
       : null,
     nomeConhecido ? 'Conhecido de outro episodio.' : null,
-    'Enter: aceita e vai ao proximo · Tab: completa e vai ao proximo · Shift+Enter: ver o grupo · Vazio = ignorar',
+    'Enter: aceita e vai ao proximo · Tab: completa e vai ao proximo · Esc: volta ao cartao · Shift+Enter: ver o grupo',
   ]
     .filter(Boolean)
     .join('\n')
@@ -262,7 +271,8 @@ export function CampoDoNome({
             // So o palpite FORTE entra com o Enter; o fraco e so dica.
             else if (tocou && palpite && forte) onNome(grupoKey, palpite)
             fechar()
-            onProximo(grupoKey, 1)
+            if (onAceito) onAceito(grupoKey)
+            else onProximo(grupoKey, 1)
           } else if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
             const o = escolhida()
             if (o) onNome(grupoKey, o.nome)
@@ -271,6 +281,11 @@ export function CampoDoNome({
           } else if (e.key === 'Escape' && mostra) {
             e.preventDefault()
             fechar()
+          } else if (e.key === 'Escape' && onSair) {
+            // O1: Esc no campo volta ao cartao; o segundo Esc fecha a tela.
+            e.preventDefault()
+            e.stopPropagation()
+            onSair(grupoKey)
           }
         }}
         className={[CLASSE_DO_CAMPO, grande ? CAMPO_NORMAL : CAMPO_PEQUENO, 'w-full', (tocou && forte) || nomeConhecido ? 'pr-[68px]' : ''].join(' ')}
@@ -446,6 +461,57 @@ export interface PropsDoGrupo {
   onSelecionar: (key: number) => void
   onAmpliar: (key: number) => void
   onProximo: (key: number, direcao: 1 | -1) => boolean
+  /** O1: o cartao com o cursor do teclado (onde 1-9, Enter, I e J valem). */
+  atual?: boolean
+  /** O1: escolher a sugestao (o chip numerado, ou a tecla). */
+  onEscolher?: (key: number, nome: string) => void
+  onAceito?: (key: number) => void
+  onSair?: (key: number) => void
+}
+
+/** O1: as sugestoes numeradas (1-9) do cartao com o cursor: chip com a foto e o numero da tecla. */
+function SugestoesNumeradas({
+  grupo,
+  elenco,
+  nome,
+  desligado,
+  onEscolher,
+}: {
+  grupo: GrupoDeRostos
+  elenco: readonly ElencoDaDescoberta[]
+  nome: string
+  desligado: boolean
+  onEscolher: (key: number, nome: string) => void
+}) {
+  const lista = grupo.sugestoes.length ? grupo.sugestoes : grupo.sugestao ? [grupo.sugestao] : []
+  if (lista.length === 0) return null
+  const fotos = new Map(elenco.map((e) => [e.nome, e.foto]))
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1" role="list" aria-label="Sugestoes">
+      {lista.slice(0, 9).map((sug, i) => {
+        const escolhido = limparNome(nome) === sug.nome
+        return (
+          <button
+            key={sug.nome}
+            type="button"
+            role="listitem"
+            disabled={desligado}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onEscolher(grupo.key, sug.nome)}
+            title={`${sug.nome} (${Math.round(sug.similaridade * 100)}%) - tecla ${i + 1}`}
+            className={[
+              'flex h-6 max-w-[140px] items-center gap-1 rounded-sm border pl-0.5 pr-1.5 text-[11px] transition-colors duration-150',
+              escolhido ? 'border-accent bg-accent-dim text-ink' : 'border-line bg-elevated text-ink-2 hover:text-ink',
+            ].join(' ')}
+          >
+            <span className="tnum grid size-4 shrink-0 place-items-center rounded-[3px] bg-surface text-[10px] text-ink-3">{i + 1}</span>
+            <Avatar foto={fotos.get(sug.nome) ?? null} nome={sug.nome} />
+            <span className="min-w-0 truncate">{sug.nome}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 /**
@@ -473,6 +539,10 @@ export const CartaoDoGrupo = memo(function CartaoDoGrupo({
   onSelecionar,
   onAmpliar,
   onProximo,
+  atual = false,
+  onEscolher,
+  onAceito,
+  onSair,
 }: PropsDoGrupo) {
   const tira = grupo.rostos.slice(0, ROSTOS_NA_TIRA)
   const fora = new Set(removidos)
@@ -481,9 +551,14 @@ export const CartaoDoGrupo = memo(function CartaoDoGrupo({
   return (
     <div
       data-grupo={grupo.key}
+      data-cartao-grupo={grupo.key}
+      tabIndex={-1}
+      aria-current={atual ? 'true' : undefined}
       className={[
-        'flex min-w-0 flex-col gap-2 rounded-sm border p-2 transition-[border-color,background-color,opacity] duration-150',
+        'flex min-w-0 flex-col gap-2 rounded-sm border p-2 outline-none transition-[border-color,background-color,opacity,box-shadow] duration-150',
         selecionado ? 'border-accent bg-accent-dim' : nomeado && !ignorado ? 'border-line-strong bg-surface' : 'border-line bg-surface',
+        // O1: o cursor do teclado (1-9, Enter, I, J): um contorno neutro, o rosa e do "escolhido".
+        atual ? 'shadow-[0_0_0_1px_var(--color-ink-3)]' : '',
         // So o campo do nome reacende o ignorado: com o foco no botao Ignorar ele apagava so quando o foco saia.
         ignorado && !selecionado ? 'opacity-45 hover:opacity-100 has-[input:focus]:opacity-100' : '',
       ].join(' ')}
@@ -535,7 +610,13 @@ export const CartaoDoGrupo = memo(function CartaoDoGrupo({
         onNome={onNome}
         onProximo={onProximo}
         onAmpliar={onAmpliar}
+        onAceito={onAceito}
+        onSair={onSair}
       />
+
+      {atual && onEscolher && !ignorado && (
+        <SugestoesNumeradas grupo={grupo} elenco={elenco} nome={nome} desligado={desligado} onEscolher={onEscolher} />
+      )}
 
       <div className="flex min-h-6 min-w-0 items-center gap-1.5 text-[11px] text-ink-3">
         <span className="shrink-0" title={`${grupo.cenas} ${grupo.cenas === 1 ? 'cena' : 'cenas'} · ${grupo.totalDeRostos} rostos`}>

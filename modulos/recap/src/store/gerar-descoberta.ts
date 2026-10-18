@@ -43,7 +43,9 @@ import { ponte } from '../ponte'
  * episodio com ela viva (agrupando ou esperando nomes) CANCELA: ela segura a
  * vaga do motor, e o corte do episodio novo ficaria esperando calado. Refazer
  * e rapido (o corte e os rostos ficam em cache no disco). Salvando nunca e
- * interrompido.
+ * interrompido. O2: os grupos e a decisao ficam no disco (salvarDecisao):
+ * trocar de episodio, ou o app fechar, nao perde os nomes -- voltando, a
+ * descobertaAtual reabre do disco com eles.
  *
  * Confirmado, a tela fecha e o resumo volta no passo 1: os chips de
  * personagens saem do indice novo (corteProgresso) e a linha do resultado
@@ -183,7 +185,7 @@ export const useDescoberta = create<EstadoDaTelaDaDescoberta>((set, get) => ({
     // Trocou de episodio enquanto o pedido estava no ar: o job novo nao e desta tela.
     if (useGerar.getState().indice?.id !== indice.id) {
       set({ pedindo: false })
-      if (r.ok && r.value.jobId) void ponte.cancelarDescoberta(r.value.jobId)
+      if (r.ok && r.value.jobId) void ponte.cancelarDescoberta(r.value.jobId, true)
       return
     }
     if (!r.ok) {
@@ -362,7 +364,8 @@ function receber(e: EventoDaDescoberta): void {
     patch.pronta = e.pronta
     if (!mesmos) {
       // Rodada refeita depois de cair: o que ele ja tinha decidido volta nos grupos iguais.
-      const volta = guardada && guardada.episodioId === e.episodioId ? guardada : null
+      // O2: e com o app reaberto, o que ficou gravado no disco (decisaoSalva).
+      const volta = guardada && guardada.episodioId === e.episodioId ? guardada : (e.decisaoSalva ?? null)
       patch.decisao = volta ? reaplicarDecisao(volta, e.pronta) : decisaoInicial(e.pronta)
       guardada = null
       patch.perguntaForaDoElenco = null
@@ -387,8 +390,50 @@ function receber(e: EventoDaDescoberta): void {
  * Liga a escuta. Devolve a funcao que desliga. Monta junto com o assistente
  * (GerarRecap, ao lado do escutarGerar), aberto ou nao.
  */
+/** O2: quanto a decisao espera parada antes de ir ao disco (cada letra digitada nao vira uma gravacao). */
+const ESPERA_PARA_GRAVAR_MS = 250
+
+/**
+ * O2: a decisao vai ao disco a cada mudanca (os nomes, juntar, ignorar, rostos
+ * tirados), com os grupos na tela. Fechar o app no meio -- de proposito ou
+ * nao -- nao perde o que ele ja fez: reabrindo, os grupos voltam com ela.
+ */
+function gravarDecisaoAoMudar(): () => void {
+  let relogio: ReturnType<typeof setTimeout> | null = null
+  let pendente: { episodioId: string; decisao: DecisaoDaDescoberta } | null = null
+  const gravar = (): void => {
+    relogio = null
+    const p = pendente
+    pendente = null
+    if (p) void ponte.salvarDecisao(p.episodioId, p.decisao)
+  }
+  const tirar = useDescoberta.subscribe((s, antes) => {
+    if (s.decisao === antes.decisao || !s.episodioId || !s.pronta) return
+    if (s.estado?.status !== 'pronta') return
+    // Os grupos acabaram de chegar (decisaoInicial): nada a gravar ainda.
+    if (s.pronta !== antes.pronta && mudancasDaDecisao(s.pronta, s.decisao).total === 0) return
+    pendente = { episodioId: s.episodioId, decisao: s.decisao }
+    if (relogio) clearTimeout(relogio)
+    relogio = setTimeout(gravar, ESPERA_PARA_GRAVAR_MS)
+  })
+  // A janela fechando com uma gravacao na espera: vai agora.
+  const aoSair = (): void => {
+    if (relogio) {
+      clearTimeout(relogio)
+      gravar()
+    }
+  }
+  window.addEventListener('beforeunload', aoSair)
+  return () => {
+    tirar()
+    window.removeEventListener('beforeunload', aoSair)
+    aoSair()
+  }
+}
+
 export function escutarDescoberta(): () => void {
   const tirar = ponte.onDescobertaProgresso((e) => receber(e))
+  const tirarGravacao = gravarDecisaoAoMudar()
   const tirarDepois = escutarDepoisDoCorte()
   const tirarGerar = useGerar.subscribe((s, antes) => {
     const agora = s.indice?.id ?? null
@@ -397,7 +442,8 @@ export function escutarDescoberta(): () => void {
     const d = useDescoberta.getState()
     // Trocou de episodio com a descoberta viva: cancela (ver o comentario da store).
     if (d.episodioId && d.episodioId !== agora && d.estado?.jobId && (d.estado.status === 'agrupando' || d.estado.status === 'pronta')) {
-      void ponte.cancelarDescoberta(d.estado.jobId)
+      // O2: os nomes ja dados ficam no disco (voltando ao episodio, voltam).
+      void ponte.cancelarDescoberta(d.estado.jobId, true)
     }
     if (d.episodioId !== agora) useDescoberta.setState({ ...LIMPA })
     if (agora) void useDescoberta.getState().restaurar(agora)
@@ -408,6 +454,7 @@ export function escutarDescoberta(): () => void {
     tirar()
     tirarGerar()
     tirarDepois()
+    tirarGravacao()
   }
 }
 

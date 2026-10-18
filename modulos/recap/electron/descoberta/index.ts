@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import {
   CENAS_MINIMAS_POR_PERSONAGEM,
@@ -13,7 +14,9 @@ import {
   progressoDaDescoberta,
   resumoDaDecisao,
   sugestoesDoMotor,
+  guardarDecisao,
   type DecisaoDaDescoberta,
+  type DecisaoGuardada,
   type DescobertaPronta,
   type EstadoDaDescoberta,
   type EventoDaDescoberta,
@@ -38,7 +41,8 @@ import { pastaDaBibliotecaStudio } from '../settings'
 import { aplicarNoIndice, personagensDoIndice } from './aplicar'
 import { erroNaTela } from './erro'
 import { limparCopiasVelhas, montarPronta } from './recortes'
-import { marcarViva } from './vivas'
+import { apagarDecisaoSalva, gravarDecisaoSalva, lerDecisaoSalva, lerDescobertaGravada } from './salva'
+import { marcarProcesso, marcarViva } from './vivas'
 
 export { haDescobertaViva } from './vivas'
 
@@ -65,6 +69,16 @@ export { haDescobertaViva } from './vivas'
  * vale. O app fechando mata o processo (encerrarMotor, no
  * before-quit), e o Python tambem se cancela sozinho quando o pipe do host
  * fecha: nada fica orfao segurando a GPU.
+ *
+ * O1 e O2 (18/10): a descoberta GRAVADA NO DISCO (salva.ts e
+ * motor/app/descoberta_salva.py). O fim do corte deixa os grupos prontos na
+ * pasta do episodio; com eles (e o corte e os nomes do banco iguais), o
+ * iniciar abre a sessao DIRETO do disco, sem motor, na hora. Sem eles, o motor
+ * agrupa, GRAVA e sai (discoverySaveOnly): ninguem segura a vaga do motor
+ * esperando os nomes. O Confirmar sobe um commit curto que le do disco. A
+ * DECISAO (os nomes dados ate agora) e gravada a cada mudanca
+ * (salvarDecisao): fechar o app no meio nao perde nada, e o descobertaAtual
+ * de um app reaberto devolve os grupos com o que ele ja tinha feito.
  *
  * O que o commit grava no MOTOR DO STUDIO (nunca no do Corte Cenas):
  * <dados>/cache/anime_db/<titulo> [al<id>]/characters/<nome>/auto_disc_NN.jpg
@@ -141,6 +155,20 @@ interface Sessao {
   confirmacao: Confirmacao | null
   /** O `refsDir` do done. */
   refsDir: string | null
+  /**
+   * O1: um processo do motor desta sessao esta vivo (agrupando, esperando os
+   * nomes no protocolo antigo, ou salvando). A sessao do disco espera os nomes
+   * SEM processo: nao segura a vaga do motor.
+   */
+  processo: boolean
+  /** O job do motor agora (o da descoberta ou o do commit). null sem processo. */
+  jobDoMotor: string | null
+  /** Os grupos estao sendo montados (recortes copiados): o fim do processo nao derruba a sessao. */
+  montando: boolean
+  /** O2: o que ele ja tinha decidido (disco), para a tela reaplicar nos grupos. */
+  decisaoSalva: DecisaoGuardada | null
+  /** O nome do anime das analises (para o commit achar o elenco online). */
+  anime: string
 }
 
 /** A descoberta da vez (viva) ou a ultima (terminada). Uma so. */
@@ -156,6 +184,7 @@ function evento(s: Sessao, comPronta = s.estado.status === 'pronta'): EventoDaDe
     estado: s.estado,
     pronta: comPronta ? s.pronta : null,
     resultado: s.estado.status === 'feita' ? s.resultado : null,
+    decisaoSalva: comPronta ? s.decisaoSalva : null,
   }
 }
 
@@ -171,6 +200,7 @@ function enviar(s: Sessao): void {
 function atualizar(s: Sessao, patch: Partial<EstadoDaDescoberta>): EstadoDaDescoberta {
   s.estado = { ...s.estado, ...patch, atualizadoEm: agora() }
   marcarViva(descobertaViva(s.estado) ? s.episodioId : null)
+  marcarProcesso(s.processo && descobertaViva(s.estado))
   return s.estado
 }
 
@@ -223,6 +253,8 @@ function frase(mensagem: string): string {
 
 function terminarMal(s: Sessao, status: 'falhou' | 'cancelada', erro: string | null, detalhe: string | null = null): void {
   pararRelogio(s)
+  s.processo = false
+  s.jobDoMotor = null
   atualizar(s, {
     status,
     etapa: null,
@@ -239,8 +271,12 @@ function terminarMal(s: Sessao, status: 'falhou' | 'cancelada', erro: string | n
 
 function terminarBem(s: Sessao, fim: Extract<FimDaAnalise, { ok: true }>): void {
   pararRelogio(s)
+  s.processo = false
+  s.jobDoMotor = null
   const c = s.confirmacao
   s.confirmacao = null
+  // O2: salvou, a decisao do disco nao serve mais.
+  apagarDecisaoSalva(pastaDeDadosDoMotor(), s.episodioId)
   try {
     const indice = aplicarNoIndice(s.episodioId, fim.pastaDoEpisodio, agora())
     const personagens = personagensDoIndice(indice)
@@ -328,7 +364,14 @@ function ouvintes(s: Sessao): OuvintesDaAnalise {
       if (sessao !== s) return
       if (f.ok) {
         if (s.estado.status === 'salvando') terminarBem(s, f)
-        else terminarMal(s, 'falhou', 'O motor terminou sem pedir os nomes.')
+        else if (s.montando || s.estado.status === 'pronta') {
+          // O1: a descoberta gravou os grupos e saiu. A sessao segue SEM
+          // motor, esperando os nomes quanto tempo for (nada de prazo).
+          s.processo = false
+          s.jobDoMotor = null
+          pararRelogio(s)
+          atualizar(s, {})
+        } else terminarMal(s, 'falhou', 'O motor terminou sem pedir os nomes.')
       } else if (s.erroForcado) {
         terminarMal(s, 'falhou', s.erroForcado)
       } else if (f.cancelado) {
@@ -350,10 +393,20 @@ function abortar(s: Sessao, erro: string): void {
   s.erroForcado = erro
   s.encerrando = true
   pararRelogio(s)
-  if (s.jobId) void cancelarAnalise(s.jobId)
+  if (s.jobDoMotor) void cancelarAnalise(s.jobDoMotor)
+  else terminarMal(s, 'falhou', erro)
 }
 
 async function receberGrupos(s: Sessao, cru: Record<string, unknown>): Promise<void> {
+  s.montando = true
+  try {
+    await montarGrupos(s, cru)
+  } finally {
+    s.montando = false
+  }
+}
+
+async function montarGrupos(s: Sessao, cru: Record<string, unknown>): Promise<void> {
   const lido = discoveryReadyDoMotorSchema.safeParse(cru)
   if (!lido.success || !s.jobId) {
     abortar(s, 'O motor mandou os grupos num formato que o recap nao entende.')
@@ -380,17 +433,23 @@ async function receberGrupos(s: Sessao, cru: Record<string, unknown>): Promise<v
     if (sessao !== s || s.estado.status !== 'agrupando' || s.erroForcado) return
     s.pronta = descobertaProntaSchema.parse(pronta)
     if (faltaram > 0) console.warn(`[descoberta] ${faltaram} recortes sumiram do disco`)
+    // O2: o que ele ja tinha decidido nestes grupos (o app fechou no meio).
+    s.decisaoSalva = lerDecisaoSalva(pastaDeDadosDoMotor(), s.episodioId)
     const n = pronta.grupos.length
     atualizar(s, { status: 'pronta', etapa: null, progresso: 1, mensagem: `${n} ${n === 1 ? 'grupo' : 'grupos'}`, erro: null })
     // Sem resposta no prazo: libera a vaga do motor (os cortes de outros
     // episodios esperam por ela). unref: o relogio nao segura o processo vivo.
+    // O1: so com um processo segurando a vaga (o protocolo antigo); a
+    // descoberta do disco espera sem prazo.
     pararRelogio(s)
-    s.relogio = setTimeout(() => {
-      if (sessao !== s || s.estado.status !== 'pronta') return
-      const min = Math.max(1, Math.round(esperaDosNomesMs / 60_000))
-      abortar(s, `Os grupos expiraram (${min} min sem resposta). Reconheca de novo: e rapido, o corte e os rostos ficaram salvos.`)
-    }, esperaDosNomesMs)
-    s.relogio.unref?.()
+    if (s.processo && ev.saved === undefined) {
+      s.relogio = setTimeout(() => {
+        if (sessao !== s || s.estado.status !== 'pronta') return
+        const min = Math.max(1, Math.round(esperaDosNomesMs / 60_000))
+        abortar(s, `Os grupos expiraram (${min} min sem resposta). Reconheca de novo: e rapido, o corte e os rostos ficaram salvos.`)
+      }, esperaDosNomesMs)
+      s.relogio.unref?.()
+    }
     enviar(s)
   } catch (e) {
     abortar(s, `Nao deu para preparar os grupos: ${e instanceof Error ? e.message : String(e)}`)
@@ -460,6 +519,16 @@ export async function iniciarDescoberta(pedido: PedidoDaDescoberta, avisar: Avis
   }
 
   const motivo: MotivoDaDescoberta = oferta.motivo
+  const anime = pedido.anime?.trim() || indice.anime
+  // O1: os grupos ja gravados no disco (o fim do corte, ou uma rodada
+  // anterior): a tela abre na hora, sem motor.
+  const pastaGravada = pastaEsperada ?? corte?.pastaDaDescoberta ?? indice.corte?.pastaDaDescoberta ?? null
+  if (pastaGravada) {
+    const gravada = lerDescobertaGravada(pastaGravada, pastaDeDadosDoMotor())
+    if (gravada?.fresca) return abrirDoDisco(id, motivo, anime, pastaGravada, gravada.ev, avisar)
+    if (gravada) console.log(`[descoberta] grupos gravados de ${id} nao servem (${gravada.porque}): o motor agrupa de novo`)
+  }
+
   const inicio = agora()
   const s: Sessao = {
     episodioId: id,
@@ -489,11 +558,17 @@ export async function iniciarDescoberta(pedido: PedidoDaDescoberta, avisar: Avis
     encerrando: false,
     confirmacao: null,
     refsDir: null,
+    processo: true,
+    jobDoMotor: null,
+    montando: false,
+    decisaoSalva: null,
+    anime,
   }
   // A vaga e marcada ANTES do await: um corte do mesmo episodio pedido agora
   // ja e recusado (corte-fundo.ts, haDescobertaViva).
   sessao = s
   marcarViva(id)
+  marcarProcesso(true)
 
   let jobId: string
   try {
@@ -529,6 +604,7 @@ export async function iniciarDescoberta(pedido: PedidoDaDescoberta, avisar: Avis
     if (sessao === s) {
       sessao = null
       marcarViva(null)
+      marcarProcesso(false)
     }
     const msg = e instanceof Error ? e.message : String(e)
     throw new Error(
@@ -538,6 +614,7 @@ export async function iniciarDescoberta(pedido: PedidoDaDescoberta, avisar: Avis
     )
   }
   s.jobId = jobId
+  s.jobDoMotor = jobId
   atualizar(s, { jobId })
   // As copias de recortes de rodadas velhas saem agora (a desta nasce no 'pronta').
   void limparCopiasVelhas(pastaDeDadosDoMotor(), jobId)
@@ -546,15 +623,107 @@ export async function iniciarDescoberta(pedido: PedidoDaDescoberta, avisar: Avis
 }
 
 /**
+ * O1: a sessao aberta DIRETO do disco (os grupos gravados): sem motor, na hora.
+ * Um id de rodada no formato dos jobs (a tela e o ipc conferem o formato).
+ */
+async function abrirDoDisco(
+  episodioId: string,
+  motivo: MotivoDaDescoberta,
+  anime: string,
+  pasta: string,
+  ev: Record<string, unknown> & { episodeRoot: string },
+  avisar: AvisosDaDescoberta,
+): Promise<EstadoDaDescoberta> {
+  const jobId = `job_${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`
+  const inicio = agora()
+  const s: Sessao = {
+    episodioId,
+    jobId,
+    estado: {
+      episodioId,
+      jobId,
+      motivo,
+      status: 'agrupando',
+      etapa: 'organizando',
+      progresso: 1,
+      mensagem: 'Abrindo os grupos...',
+      erro: null,
+      comCorte: false,
+      inicio,
+      atualizadoEm: inicio,
+    },
+    pronta: null,
+    resultado: null,
+    avisar,
+    pastaEsperada: pasta,
+    inicio: Date.now(),
+    ultimoEnvio: 0,
+    ultimoSinal: Date.now(),
+    relogio: null,
+    erroForcado: null,
+    encerrando: false,
+    confirmacao: null,
+    refsDir: null,
+    processo: false,
+    jobDoMotor: null,
+    montando: false,
+    decisaoSalva: null,
+    anime,
+  }
+  sessao = s
+  marcarViva(episodioId)
+  marcarProcesso(false)
+  void limparCopiasVelhas(pastaDeDadosDoMotor(), jobId)
+  await receberGrupos(s, ev)
+  return s.estado
+}
+
+/**
  * A descoberta viva deste episodio (a tela reabrindo, ou o renderer
  * recarregado com o processo esperando os nomes): o mesmo formato do evento,
  * com `pronta` enquanto ela estiver de pe (inclusive salvando). null = nenhuma
  * viva (ou de outro episodio).
+ *
+ * O2: com o app REABERTO (nenhuma sessao no main) e uma decisao gravada deste
+ * episodio, os grupos voltam do disco com o que ele ja tinha feito -- a tela
+ * mostra "Dar nomes" de novo, sem o motor.
  */
-export async function descobertaAtual(episodioId: string): Promise<EventoDaDescoberta | null> {
+export async function descobertaAtual(episodioId: string, avisar?: AvisosDaDescoberta): Promise<EventoDaDescoberta | null> {
   const s = sessao
-  if (!s || s.episodioId !== episodioId || !descobertaViva(s.estado)) return null
-  return evento(s, s.estado.status === 'pronta' || s.estado.status === 'salvando')
+  if (s && s.episodioId === episodioId && descobertaViva(s.estado)) {
+    return evento(s, s.estado.status === 'pronta' || s.estado.status === 'salvando')
+  }
+  if (!avisar || (s && descobertaViva(s.estado))) return null
+  if (!lerDecisaoSalva(pastaDeDadosDoMotor(), episodioId)) return null
+  try {
+    const { indice } = abrirIndicePorId(episodioId)
+    const corte = await estadoDoCorte(episodioId)
+    const oferta = podeReconhecerNaMao(indice, corte)
+    if (!oferta.pode || !oferta.motivo || corte?.jobId) return null
+    const pasta = temPlanos(indice) ? indice.biblioteca.pasta : (corte?.pastaDaDescoberta ?? indice.corte?.pastaDaDescoberta ?? null)
+    if (!pasta) return null
+    const gravada = lerDescobertaGravada(pasta, pastaDeDadosDoMotor())
+    if (!gravada?.fresca) return null
+    await abrirDoDisco(episodioId, oferta.motivo, indice.anime, pasta, gravada.ev, avisar)
+    const nova = sessao
+    return nova && nova.episodioId === episodioId && nova.estado.status === 'pronta' ? evento(nova, true) : null
+  } catch (e) {
+    console.warn(`[descoberta] nao deu para voltar os grupos de ${episodioId}: ${e instanceof Error ? e.message : String(e)}`)
+    return null
+  }
+}
+
+/**
+ * O2: grava a decisao de agora (a cada mudanca, da tela). false = nenhuma
+ * descoberta deste episodio com os grupos na tela.
+ */
+export function salvarDecisao(episodioId: string, decisao: DecisaoDaDescoberta): boolean {
+  const s = sessao
+  if (!s || s.episodioId !== episodioId || !s.pronta || (s.estado.status !== 'pronta' && s.estado.status !== 'salvando')) return false
+  const guardada = guardarDecisao(episodioId, s.pronta, decisao)
+  gravarDecisaoSalva(pastaDeDadosDoMotor(), guardada)
+  s.decisaoSalva = guardada
+  return true
 }
 
 /**
@@ -576,7 +745,39 @@ export async function confirmarDescoberta(jobId: string, decisao: DecisaoDaDesco
   const opcoes = { elenco: s.pronta.elenco.map((e) => e.nome) }
   const comando = paraOMotor(s.pronta.grupos, decisao, opcoes)
   const resumo = resumoDaDecisao(s.pronta.grupos, decisao, opcoes)
-  if (!comandarDescoberta(jobId, comando)) throw expirou
+  // O2: a decisao fica no disco ate o commit dar certo (o app pode fechar no meio).
+  try {
+    salvarDecisao(s.episodioId, decisao)
+  } catch (e) {
+    console.warn('[descoberta] decisao nao gravada:', e)
+  }
+  if (!(s.processo && comandarDescoberta(jobId, comando))) {
+    // O1: os grupos estao no disco: um commit curto le de la.
+    const pronta = s.pronta
+    const { indice } = abrirIndicePorId(s.episodioId)
+    try {
+      s.jobDoMotor = await analisarEpisodio(
+        {
+          path: indice.fonte.path,
+          anime: s.anime || indice.anime,
+          temporada: indice.temporada,
+          episodio: indice.episodio,
+          kind: indice.kind,
+          motor: 'studio',
+          reconhecer: true,
+          pastaDoAnime: basename(dirname(pronta.pastaDoEpisodio)),
+        },
+        ouvintes(s),
+        { commitDoDisco: { episodeRoot: pronta.pastaDoEpisodio, names: comando.names, removed: comando.removed } },
+      )
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      throw new Error(
+        /ja existe uma analise rodando/i.test(msg) ? 'O motor esta ocupado cortando outro episodio. Confirme quando ele acabar.' : msg,
+      )
+    }
+    s.processo = true
+  }
 
   s.ultimoSinal = Date.now()
   armarRelogioDoSalvar(s)
@@ -638,7 +839,7 @@ export function aplicarElencoNaSessao(
  * (travou: o "Parar" da tela); falando, lanca -- ele esta gravando as fotos e o
  * shots.json, e o commit leva segundos.
  */
-export async function cancelarDescoberta(jobId: string): Promise<boolean> {
+export async function cancelarDescoberta(jobId: string, manterDecisao = false): Promise<boolean> {
   const s = sessao
   if (!s || s.jobId !== jobId || !descobertaViva(s.estado)) return false
   if (s.estado.status === 'salvando') {
@@ -651,9 +852,17 @@ export async function cancelarDescoberta(jobId: string): Promise<boolean> {
     abortar(s, 'Parado: o motor nao respondia ao salvar. As cenas ficaram como estavam.')
     return true
   }
+  // O2: parar de proposito (Descartar, ou sair sem mudanca) esquece a decisao.
+  // Trocar de episodio nao: voltando a ele, os grupos voltam com os nomes.
+  if (!manterDecisao) apagarDecisaoSalva(pastaDeDadosDoMotor(), s.episodioId)
+  if (!s.processo || !s.jobDoMotor) {
+    // O1: a sessao do disco nao tem motor: so fecha (os grupos ficam gravados).
+    terminarMal(s, 'cancelada', null)
+    return true
+  }
   s.encerrando = true
   atualizar(s, { mensagem: 'Cancelando...' })
   enviar(s)
-  await cancelarAnalise(jobId)
+  await cancelarAnalise(s.jobDoMotor)
   return true
 }

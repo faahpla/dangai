@@ -171,6 +171,8 @@ export const discoveryReadyDoMotorSchema = z.object({
   /** Nomes do elenco (AniList), ou os do banco local quando offline. Sem fotos. */
   roster: z.array(z.string()),
   groups: z.array(grupoDoMotorSchema),
+  /** O1: os grupos foram gravados no disco (descoberta.json): o processo sai sem esperar nomes. */
+  saved: z.string().optional(),
 })
 export type DiscoveryReadyDoMotor = z.infer<typeof discoveryReadyDoMotorSchema>
 
@@ -440,6 +442,11 @@ export interface EventoDaDescoberta {
   pronta: DescobertaPronta | null
   /** So no 'feita'. */
   resultado: ResultadoDaDescoberta | null
+  /**
+   * O2: com `pronta`, o que ele ja tinha decidido nestes grupos e ficou gravado
+   * (o app fechou no meio). A tela reaplica nos grupos iguais (reaplicarDecisao).
+   */
+  decisaoSalva?: DecisaoGuardada | null
 }
 
 export const ROTULO_DO_STATUS_DA_DESCOBERTA: Record<StatusDaDescoberta, string> = {

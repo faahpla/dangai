@@ -194,6 +194,8 @@ export const CANAIS = {
   /** A1: "Buscar elenco" (o motor busca na AniList, no site do MAL e na Kitsu). */
   buscarAnime: 'recap:descoberta:buscar-anime',
   escolherAnime: 'recap:descoberta:escolher-anime',
+  /** O2: a decisao do Reconhecer na mao, gravada a cada mudanca (fechar o app nao perde). */
+  salvarDecisao: 'recap:descoberta:salvar-decisao',
   estadoDoMotorRuntime: 'recap:motor-runtime:estado',
   instalarMotorRuntime: 'recap:motor-runtime:instalar',
   cancelarMotorRuntime: 'recap:motor-runtime:cancelar',
@@ -341,12 +343,15 @@ export interface PonteDoRecap {
   iniciarDescoberta(pedido: PedidoDaDescoberta): Promise<IpcResult<EstadoDaDescoberta>>
   descobertaAtual(episodioId: string): Promise<IpcResult<EventoDaDescoberta | null>>
   confirmarDescoberta(jobId: string, decisao: DecisaoDaDescoberta): Promise<IpcResult<ResultadoDaDescoberta>>
-  cancelarDescoberta(jobId: string): Promise<IpcResult<boolean>>
+  /** O2: `manterDecisao` = trocar de episodio (os nomes ja dados ficam no disco); sem ele, Descartar esquece. */
+  cancelarDescoberta(jobId: string, manterDecisao?: boolean): Promise<IpcResult<boolean>>
   onDescobertaProgresso(listener: (evento: EventoDaDescoberta) => void): () => void
   /** A1: os animes que batem com o termo, com a capa local. */
   buscarAnime(termo: string): Promise<IpcResult<BuscaDeAnime>>
   /** A1: o elenco do anime escolhido (guarda a escolha; com a descoberta aberta, as sugestoes chegam pelo evento). */
   escolherAnime(pedido: PedidoDeElenco): Promise<IpcResult<ElencoEscolhido>>
+  /** O2: grava o que ele decidiu ate agora (os nomes, juntar, ignorar). false = sem grupos na tela. */
+  salvarDecisao(episodioId: string, decisao: DecisaoDaDescoberta): Promise<IpcResult<boolean>>
   /** O runtime do motor (Python + torch, instalado pela tela no 1o uso). */
   estadoDoMotorRuntime(): Promise<IpcResult<EstadoDoMotorRuntime>>
   instalarMotorRuntime(pedido: PedidoDeInstalacao): Promise<IpcResult<EstadoDoMotorRuntime>>

@@ -288,6 +288,12 @@ export const fimDaAnaliseSchema = z.union([
      * de descoberta com nomes fica para depois.
      */
     precisaDescoberta: z.enum(['anime-nao-encontrado', 'sem-referencias']).nullable(),
+    /**
+     * O1: a pasta do episodio em que o motor ja deixou a descoberta GRAVADA
+     * (o corte seguiu e os rostos foram agrupados antes de pedir o elenco): o
+     * Reconhecer na mao abre na hora. null/ausente = nao gravou.
+     */
+    pastaDaDescoberta: z.string().nullable().optional(),
   }),
 ])
 export type FimDaAnalise = z.infer<typeof fimDaAnaliseSchema>
@@ -374,6 +380,8 @@ export const estadoDoCorteSchema = z.object({
    * anime nao foi achado, o nome para corrigir. null fora disso.
    */
   descoberta: z.enum(['anime-nao-encontrado', 'sem-referencias']).nullable().default(null),
+  /** O1: com `descoberta`, a pasta em que o motor deixou os grupos de rostos gravados (FimDaAnalise). */
+  pastaDaDescoberta: z.string().nullable().optional(),
 })
 export type EstadoDoCorte = z.infer<typeof estadoDoCorteSchema>
 

@@ -1873,7 +1873,8 @@ class Pipeline:
     # ================= Modo Descoberta =================
 
     def run_discovery(
-        self, info: EpisodeInfo, on_progress: ProgressCb | None = None
+        self, info: EpisodeInfo, on_progress: ProgressCb | None = None,
+        gravar_no_banco: bool = True,
     ) -> DiscoveryResult:
         """Análise SEM banco online: corta o episódio, detecta e embedda os
         rostos, e agrupa por identidade. Retorna os grupos anônimos pra tela
@@ -2055,7 +2056,11 @@ class Pipeline:
         # resultados caía na análise anterior como se a nova nunca tivesse
         # existido.
         self.db.set_episode_root(episode_id, str(episode_root))
-        self.db.clear_episode_shots(episode_id)
+        # [recap] O1: a descoberta GRAVADA (fim do corte) nao mexe nas cenas do
+        # banco -- elas sao as da analise que acabou de rodar. O commit le do
+        # disco e grava as cenas ali (descoberta_salva.para_resultado).
+        if gravar_no_banco:
+            self.db.clear_episode_shots(episode_id)
 
         observations: list[FaceObservation] = []
         shots_out: list[DiscoveryShot] = []
@@ -2071,7 +2076,7 @@ class Pipeline:
                 keyframe=str(main_kf.relative_to(episode_root)) if main_kf else None,
                 start=shot.start,
                 end=shot.end,
-            )
+            ) if gravar_no_banco else -1
             shots_out.append(DiscoveryShot(
                 pos=i - 1, shot_id=shot_id, idx=shot.idx,
                 file=str(shot_file), keyframes=[str(k) for k in kfs],
@@ -2089,50 +2094,10 @@ class Pipeline:
             # keyframe, YOLO+CLIP em lote só nos que faltam. A descoberta
             # ainda relê a imagem quando há rosto (precisa do JPEG do crop
             # pra tela de batismo), mas a parte cara de GPU é pulada.
-            feats: dict[Path, tuple[np.ndarray, np.ndarray | None]] = {}
-            missing: list[Path] = []
-            for kf_path in kfs:
-                kf_total += 1
-                boxes = kf_cache.get(kf_path, "boxes")
-                embs_c = kf_cache.get(kf_path, "embs")
-                if boxes is not None and (len(boxes) == 0 or embs_c is not None):
-                    kf_hits += 1
-                    feats[kf_path] = (boxes, embs_c)
-                else:
-                    missing.append(kf_path)
-            if missing:
-                good = [(p, _img(p)) for p in missing]
-                good = [(p, im) for p, im in good if im is not None]
-                if good:
-                    batch = get_face_det().crop_faces_batch(
-                        [im for _, im in good], pad=cfg.face_crop_padding
-                    )
-                    flat: list[np.ndarray] = []
-                    spans: list[tuple[Path, list, int]] = []
-                    for (p, _im), (crops, kept) in zip(good, batch):
-                        spans.append((p, kept, len(crops)))
-                        flat.extend(crops)
-                    embs_all = (
-                        get_engine().embed_images(flat)
-                        if flat
-                        else np.zeros((0, 1), dtype=np.float32)
-                    )
-                    if flat and len(embs_all) != len(flat):
-                        for (p, _im), (crops, kept) in zip(good, batch):
-                            e = (
-                                get_engine().embed_images(crops)
-                                if crops
-                                else np.zeros((0, 1), dtype=np.float32)
-                            )
-                            if len(e) != len(kept):
-                                continue
-                            self._store_kf(kf_cache, feats, p, kept, e)
-                    else:
-                        off = 0
-                        for p, kept, n_crops in spans:
-                            e = embs_all[off:off + n_crops]
-                            off += n_crops
-                            self._store_kf(kf_cache, feats, p, kept, e)
+            # [recap] O1: o mesmo _features_do_shot da analise.
+            feats, h_, t_ = self._features_do_shot(kfs, kf_cache, get_engine, get_face_det, _img)
+            kf_hits += h_
+            kf_total += t_
 
             for kf_path in kfs:
                 boxes, embs = feats.get(kf_path, (None, None))
@@ -2268,13 +2233,23 @@ class Pipeline:
 
         reconhecidos = sum(1 for g in groups if g.known)
         novos = sum(1 for g in groups if not g.known and not g.minor)
+        # [recap] O1: a descoberta gravada no fim do corte tem os tempos dela
+        # (timings-descoberta.json): o timings.json e o da analise.
+        if not gravar_no_banco:
+            print(f"[Tempos] descoberta pronta: {timer.report()}", flush=True)
         cb("organize", 1.0, f"{len(groups)} personagens descobertos")
         print(f"[Descoberta] {len(observations)} rostos → {len(groups)} grupos: "
               f"{reconhecidos} reconhecidos, {novos} novos pra batizar, "
               f"{len(groups) - reconhecidos - novos} figurantes "
               f"(cenas: {', '.join(str(g.n_shots) for g in groups[:10])}...)", flush=True)
 
-        self._report_timings(timer, metadata_dir)
+        if gravar_no_banco:
+            self._report_timings(timer, metadata_dir)
+        else:
+            try:
+                (metadata_dir / "timings-descoberta.json").write_text(json.dumps(timer.to_json(), indent=2), encoding="utf-8")
+            except OSError:
+                pass
         return DiscoveryResult(
             anime_title=anime_title,
             season=info.season,
@@ -2293,6 +2268,82 @@ class Pipeline:
                 if online_bundle is not None else roster_local
             ),
         )
+
+    def precompute_discovery(self, info: EpisodeInfo, on_progress: ProgressCb | None = None) -> Path | None:
+        """[recap] O1: a descoberta PRONTA no disco no fim do corte (os grupos
+        de rostos, os recortes e os centroides), para o Reconhecer na mao abrir
+        na hora. Corta antes se o corte ainda nao existe (o anime nao achado).
+        None = nenhum rosto agrupado. As cenas do banco nao sao tocadas."""
+        from . import descoberta_salva
+
+        disc = self.run_discovery(info, on_progress=on_progress, gravar_no_banco=False)
+        if not disc.groups:
+            return None
+        caminho = descoberta_salva.gravar(disc, self.cfg.cache_path, info.source, info.kind, anime_digitado=info.anime)
+        print(f"[Descoberta] {len(disc.groups)} grupos gravados em {caminho}", flush=True)
+        return caminho
+
+    def commit_da_descoberta_salva(
+        self,
+        episode_root: Path,
+        names: dict[int, str],
+        removed: dict[int, list[int]] | None = None,
+        on_progress: ProgressCb | None = None,
+    ) -> PipelineResult:
+        """[recap] O1: o commit dos nomes LENDO a descoberta gravada (a tela
+        esperou sem motor). Se ela foi gravada sem o anime achado online e
+        agora ele e achado (o "Buscar elenco" escolheu, ou o banco ja sabe), os
+        nomes vao para o banco ONLINE do anime (A1: nada fica preso no local)."""
+        from . import descoberta_salva
+
+        cb = on_progress or _noop
+        cfg = self.cfg
+        dados = descoberta_salva.ler(episode_root)
+        if dados is None:
+            raise RuntimeError("Os grupos gravados sumiram (ou sao de outra versao). Reconheca de novo.")
+        titulo = dados["animeTitle"]
+        online = bool(dados["online"])
+        cache_id = dados["cacheId"]
+        roster = list(dados.get("roster") or [])
+        digitado = dados.get("animeDigitado") or titulo
+        anime_id = None
+        if not online:
+            cb("fetch_characters", -1.0, "Conferindo o elenco do anime...")
+            provider = _provider_para(cfg)
+            try:
+                bundle = provider.resolve(
+                    digitado,
+                    max_characters=cfg.max_characters_per_anime,
+                    images_per_character=cfg.references_per_character,
+                    on_status=lambda m: print(f"[Descoberta] {m}", flush=True),
+                    use_danbooru=False,
+                    gallery_for_top=cfg.gallery_for_top_characters,
+                    season=int(dados["season"]),
+                )
+            except Exception as e:  # noqa: BLE001 -- sem fonte: o banco local de sempre
+                print(f"[Descoberta] commit sem o anime online ({type(e).__name__})", flush=True)
+                bundle = None
+            finally:
+                provider.close()
+            if bundle is not None and not (bundle.cache_id_override or "").startswith("local-"):
+                online = True
+                cache_id = _cache_id_for(bundle)
+                titulo = bundle.title
+                roster = [c.name for c in bundle.characters]
+                anime_id = self.db.upsert_anime(
+                    anilist_id=bundle.anilist_id, mal_id=bundle.mal_id,
+                    title=bundle.title, title_english=bundle.title_english,
+                )
+        if anime_id is None:
+            # A linha do anime pelo titulo (a online tem o titulo da fonte; a
+            # local, o nome digitado): o upsert acha a que ja existe.
+            anime_id = self.db.upsert_anime(anilist_id=None, mal_id=None, title=titulo, title_english=None)
+        disc = descoberta_salva.para_resultado(dados, self.db, cache_id, anime_id, online, roster)
+        disc.anime_title = titulo
+        result = self.commit_discovery(disc, names, on_progress=cb, removed=removed)
+        descoberta_salva.usada(episode_root)
+        descoberta_salva.somar_batismo(cfg.cache_path)
+        return result
 
     def commit_discovery(
         self,
@@ -2616,7 +2667,10 @@ class Pipeline:
         quando alguma feature NÃO está no cache. Reanálise com cache cheio
         não paga o load do CLIP (~5s + VRAM) nem o do YOLO."""
         cfg = self.cfg
-        holder: dict[str, object] = {"engine": None, "face_det": None}
+        # [recap] O1: os mesmos modelos para a vida do Pipeline: a descoberta
+        # gravada no fim do corte nao paga o CLIP e o YOLO de novo.
+        holder: dict[str, object] = getattr(self, "_modelos", None) or {"engine": None, "face_det": None}
+        self._modelos = holder
 
         def get_engine() -> EmbeddingEngine:
             if holder["engine"] is None and cfg.media_kind == "live":

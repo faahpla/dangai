@@ -1507,9 +1507,26 @@ def _run() -> int:
             _emit({"type": "done", "result": _result_payload(result)})
             return 0
 
+        # [recap] O1: o commit dos nomes LENDO a descoberta gravada no disco.
+        commit = req.get("discoveryCommit")
+        if isinstance(commit, dict):
+            names = {int(k): str(v) for k, v in (commit.get("names") or {}).items()}
+            removed = {int(k): [int(i) for i in v] for k, v in (commit.get("removed") or {}).items()}
+            result = pipeline.commit_da_descoberta_salva(
+                Path(str(commit["episodeRoot"])), names, removed, on_progress=on_progress
+            )
+            timings = _read_timings(Path(result.episode_root))
+            if timings:
+                _emit({"type": "timings", **timings})
+            _emit({"type": "done", "result": _result_payload(result)})
+            return 0
+
         if req.get("discovery"):
             disc = pipeline.run_discovery(info, on_progress=on_progress)
-            return _discovery_naming_round(pipeline, disc, on_progress, cancel)
+            return _discovery_naming_round(
+                pipeline, disc, on_progress, cancel, info=info,
+                salvar_e_sair=bool(req.get("discoverySaveOnly")),
+            )
 
         result = pipeline.run(
             info,
@@ -1523,15 +1540,27 @@ def _run() -> int:
         _emit({"type": "cancelled"})
         return 0
     except AnimeNotFoundError as e:
-        _emit({"type": "needs-input", "kind": "anime-not-found", "message": str(e)})
+        # [recap] O1: sem o elenco, o corte segue e os rostos sao agrupados e
+        # GRAVADOS antes de pedir ajuda: o Reconhecer na mao abre na hora.
+        pasta = _precalcular(pipeline, info, on_progress, req)
+        if pasta == "cancelado":
+            _emit({"type": "cancelled"})
+            return 0
+        _emit({"type": "needs-input", "kind": "anime-not-found", "message": str(e),
+               **({"discoveryRoot": pasta} if pasta else {})})
         return 0
     except InsufficientRefsError as e:
+        pasta = _precalcular(pipeline, info, on_progress, req)
+        if pasta == "cancelado":
+            _emit({"type": "cancelled"})
+            return 0
         _emit(
             {
                 "type": "needs-input",
                 "kind": "refs-missing",
                 "message": str(e),
                 "refsDir": e.refs_dir,
+                **({"discoveryRoot": pasta} if pasta else {}),
             }
         )
         return 0
@@ -1543,12 +1572,35 @@ def _run() -> int:
     if timings:
         _emit({"type": "timings", **timings})
 
-    _emit({"type": "done", "result": _result_payload(result)})
+    # [recap] O1: a descoberta pronta para o Reconhecer na mao (os rostos sem
+    # nome agrupados e gravados). Cancelar aqui nao desfaz a analise feita.
+    pasta = _precalcular(pipeline, info, on_progress, req)
+    resultado = _result_payload(result)
+    if pasta and pasta != "cancelado":
+        resultado["discoveryRoot"] = pasta
+    _emit({"type": "done", "result": resultado})
     return 0
 
 
+def _precalcular(pipeline: Any, info: Any, on_progress: Any, req: dict[str, Any]) -> str | None:
+    """[recap] O1: grava a descoberta (precomputeDiscovery). A pasta do
+    episodio, None (nao pedida, sem rosto, ou falhou) ou "cancelado"."""
+    if not req.get("precomputeDiscovery"):
+        return None
+    try:
+        caminho = pipeline.precompute_discovery(info, on_progress=on_progress)
+    except _Cancelled:
+        return "cancelado"
+    except Exception as e:  # noqa: BLE001 -- sem a descoberta pronta, o Reconhecer na mao agrupa na hora
+        print(f"[recap] descoberta pronta falhou: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        traceback.print_exc()
+        return None
+    return str(caminho.parent.parent.parent) if caminho else None
+
+
 def _discovery_naming_round(
-    pipeline: Any, disc: Any, on_progress: Any, cancel: _CancelFlag
+    pipeline: Any, disc: Any, on_progress: Any, cancel: _CancelFlag,
+    info: Any = None, salvar_e_sair: bool = False,
 ) -> int:
     """Descoberta: publica os grupos, ESPERA os nomes e faz o commit.
 
@@ -1559,60 +1611,29 @@ def _discovery_naming_round(
     `media://`; mandar base64 no canal de eventos inflaria o JSON em dezenas
     de megabytes.
     """
-    # 1) Grava os recortes que a tela de batismo vai mostrar.
-    crops_dir = Path(disc.episode_root) / "metadata" / "discovery"
-    crops_dir.mkdir(parents=True, exist_ok=True)
-    for old in crops_dir.glob("*.jpg"):
-        old.unlink(missing_ok=True)  # sobras de uma descoberta anterior
+    # 1) Grava os recortes que a tela de batismo vai mostrar -- e [recap] O1
+    #    a descoberta INTEIRA (descoberta_salva.py: recortes, centroides e o
+    #    descoberta.json): o commit pode ler do disco, sem este processo.
+    #    Cada grupo vai no evento com: faces/shots, `minor` (figurante: atras
+    #    de um botao), os recortes (o indice e o que volta em `removed`), o
+    #    palpite e `known` (batizado em outro episodio: o nome vem preenchido)
+    #    e as 9 sugestoes (A1: as teclas 1-9 da tela).
+    from . import descoberta_salva
 
-    groups_payload = []
-    for g in disc.groups:
-        crop_files = []
-        for i, jpg in enumerate(g.ref_crops_jpg):
-            name = f"g{g.key:03d}_{i:03d}.jpg"
-            (crops_dir / name).write_bytes(jpg)
-            crop_files.append(f"metadata/discovery/{name}")
-        groups_payload.append(
-            {
-                "key": g.key,
-                "faces": g.n_faces,
-                "shots": g.n_shots,
-                # Figurante: aparece em menos cenas do que o piso. A tela
-                # esconde estes atrás de um botão em vez de perguntar o nome
-                # de duzentos NPCs de fundo. Decidido no pipeline, que também
-                # manda pra cá o grupo que é mais nuca do que rosto.
-                "minor": g.minor,
-                # Índice em ref_crops_jpg == índice nesta lista: é o que o
-                # host devolve em `removed`.
-                "crops": crop_files,
-                "suggestedName": g.suggested_name,
-                "suggestedSim": round(g.suggested_sim, 3),
-                # Batizado em outro episódio: o nome vem preenchido. Sem
-                # isto, `suggestedName` é só a dica "parece X".
-                "known": g.known,
-                # [recap] A1: os 9 nomes mais parecidos (teclas 1-9 da tela).
-                "suggestions": [{"name": n, "sim": float(sv)} for n, sv in g.suggestions],
-            }
-        )
-    # [recap] A1: os centroides dos grupos ficam no disco: escolher o anime no
-    # "Buscar elenco" depois (elenco_escolhido.py) recalcula as sugestoes.
-    from .elenco_escolhido import gravar_grupos
-
-    gravar_grupos(disc.episode_root, [g.key for g in disc.groups], [g.centroid_bytes for g in disc.groups])
-
-    _emit(
-        {
-            "type": "discovery-ready",
-            "episodeRoot": str(disc.episode_root),
-            "animeTitle": disc.anime_title,
-            "season": disc.season,
-            "episode": disc.episode,
-            "totalFaces": disc.total_faces,
-            "online": disc.online,
-            "roster": list(disc.roster),
-            "groups": groups_payload,
-        }
-    )
+    fonte = getattr(info, "source", "") if info is not None else ""
+    kind = getattr(info, "kind", "") if info is not None else ""
+    digitado = getattr(info, "anime", "") if info is not None else ""
+    caminho = descoberta_salva.gravar(disc, pipeline.cfg.cache_path, fonte, kind, anime_digitado=digitado)
+    dados = descoberta_salva.ler(disc.episode_root)
+    if dados is None:
+        _emit({"type": "failed", "message": f"a descoberta nao foi gravada em {caminho}"})
+        return 1
+    _emit(descoberta_salva.evento(dados))
+    if salvar_e_sair:
+        # [recap] O1: os nomes vem depois, num commit que le do disco
+        # (discoveryCommit). Ninguem segura a GPU esperando.
+        _emit({"type": "discovery-saved", "episodeRoot": str(disc.episode_root)})
+        return 0
 
     # 2) Espera o batismo, pela fila alimentada pela thread de stdin. O host
     #    manda:
@@ -1640,6 +1661,8 @@ def _discovery_naming_round(
     result = pipeline.commit_discovery(
         disc, names, on_progress=on_progress, removed=removed
     )
+    descoberta_salva.usada(disc.episode_root)
+    descoberta_salva.somar_batismo(pipeline.cfg.cache_path)
     timings = _read_timings(Path(result.episode_root))
     if timings:
         _emit({"type": "timings", **timings})

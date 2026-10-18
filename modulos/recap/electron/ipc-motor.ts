@@ -21,7 +21,7 @@ import {
   type PedidoDeCorte,
   type StatusDoMotor,
 } from '../shared/episodio'
-import { cancelarDescoberta, confirmarDescoberta, descobertaAtual, iniciarDescoberta, type AvisosDaDescoberta } from './descoberta'
+import { cancelarDescoberta, confirmarDescoberta, descobertaAtual, iniciarDescoberta, salvarDecisao, type AvisosDaDescoberta } from './descoberta'
 import { buscarAnime, escolherAnime } from './descoberta/elenco'
 import { cancelarCorte, estadoDoCorte, iniciarCorte } from './episodio/corte-fundo'
 import { analisarEpisodio, cancelarAnalise, statusDoMotor } from './motor'
@@ -65,11 +65,17 @@ export function registrarCanaisDoMotor(ctx: ContextoDoModulo): void {
   ctx.handle<[PedidoDaDescoberta], EstadoDaDescoberta>(C.iniciarDescoberta, async (pedido) =>
     iniciarDescoberta(pedidoDaDescobertaSchema.parse(pedido), avisos),
   )
-  ctx.handle<[string], EventoDaDescoberta | null>(C.descobertaAtual, async (episodioId) => descobertaAtual(idDoEpisodio(episodioId)))
+  // O2: com o app reaberto, os grupos voltam do disco (com a decisao gravada) e avisam pelos canais de sempre.
+  ctx.handle<[string], EventoDaDescoberta | null>(C.descobertaAtual, async (episodioId) => descobertaAtual(idDoEpisodio(episodioId), avisos))
+  ctx.handle<[string, DecisaoDaDescoberta], boolean>(C.salvarDecisao, async (episodioId, decisao) =>
+    salvarDecisao(idDoEpisodio(episodioId), decisaoDaDescobertaSchema.parse(decisao)),
+  )
   ctx.handle<[string, DecisaoDaDescoberta], ResultadoDaDescoberta>(C.confirmarDescoberta, async (jobId, decisao) =>
     confirmarDescoberta(idDoJob(jobId), decisaoDaDescobertaSchema.parse(decisao)),
   )
-  ctx.handle<[string], boolean>(C.cancelarDescoberta, async (jobId) => cancelarDescoberta(idDoJob(jobId)))
+  ctx.handle<[string, boolean?], boolean>(C.cancelarDescoberta, async (jobId, manterDecisao) =>
+    cancelarDescoberta(idDoJob(jobId), manterDecisao === true),
+  )
 
   // A1: "Buscar elenco". O termo vira argumento do motor: string curta, sem controle.
   ctx.handle<[string], BuscaDeAnime>(C.buscarAnime, async (termo) =>

@@ -321,6 +321,8 @@ function terminar(corte: Corte, fim: FimDaAnalise): void {
       mensagem: '',
       erro: fim.erro || 'O corte parou sem dizer por que.',
       descoberta: fim.precisaDescoberta,
+      // O1: os grupos de rostos ja gravados (o Reconhecer na mao abre na hora).
+      pastaDaDescoberta: fim.precisaDescoberta ? (fim.pastaDaDescoberta ?? null) : null,
     })
     gravarEstado(id, estado)
     enviar(id, estado)
@@ -455,6 +457,7 @@ async function comecar(corte: Corte): Promise<void> {
     mensagem: corte.estado.mensagem && corte.estado.mensagem !== 'Na fila' ? corte.estado.mensagem : 'Preparando...',
     erro: null,
     descoberta: null,
+    pastaDaDescoberta: null,
     inicio: agora(),
   })
   gravarEstado(id, estado, corte.pedido.palpite)

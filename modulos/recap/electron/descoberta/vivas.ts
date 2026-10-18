@@ -3,14 +3,23 @@
  * ou salvando). Modulo sem import nenhum de proposito: o corte-fundo.ts le
  * daqui sem criar ciclo com descoberta/index.ts (que le o estado do corte de la).
  *
- * Uma descoberta por vez: ela usa a mesma vaga do motor (motor.ts, `atual`).
+ * Uma descoberta por vez. O1: ela so segura a vaga do motor (motor.ts, `atual`)
+ * enquanto um processo dela esta vivo (agrupando ou salvando); esperando os
+ * nomes com os grupos gravados no disco, a vaga fica livre.
  */
 
 let viva: string | null = null
+let comProcesso = false
 
 /** index.ts marca a cada troca de status. null = nenhuma viva. */
 export function marcarViva(episodioId: string | null): void {
   viva = episodioId
+  if (episodioId === null) comProcesso = false
+}
+
+/** O1: um processo do motor da descoberta esta vivo (segura a vaga). */
+export function marcarProcesso(vivo: boolean): void {
+  comProcesso = vivo
 }
 
 /** Ha descoberta viva deste episodio? O corte-fundo recusa cortar por cima dela. */
@@ -23,5 +32,5 @@ export function haDescobertaViva(episodioId: string): boolean {
  * OUTRO episodio espera na fila ("Esperando o motor") em vez de voltar erro.
  */
 export function motorComADescoberta(): boolean {
-  return viva !== null
+  return viva !== null && comProcesso
 }
