@@ -13,8 +13,11 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     escolherBiblioteca: () => invocar(C.escolherBiblioteca),
 
     ancutAchado: () => invocar(C.ancutAchado),
-    conferirAncut: (episodioId) => invocar(C.ancutConferir, episodioId),
+    conferirAncut: (episodioId, rapido) => invocar(C.ancutConferir, episodioId, rapido === true),
     enviarAoAncut: (episodioId, substituir) => invocar(C.ancutEnviar, episodioId, substituir === true),
+    unificarComOAncut: (episodioId) => invocar(C.ancutUnificar, episodioId),
+    trazerDoAncut: (episodioId) => invocar(C.ancutTrazer, episodioId),
+    depoisDaAnaliseNoAncut: (episodioId, devolver) => invocar(C.ancutDepoisDaAnalise, episodioId, devolver === true),
     onEnvioAutomatico: (ouvinte) => assinar(C.ancutAutomatico, ouvinte),
 
     escolherEpisodio: () => invocar(C.escolherEpisodio),

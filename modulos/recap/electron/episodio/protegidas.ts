@@ -14,9 +14,10 @@ import { pastaDeDocumentos } from '../settings'
  *
  * A excecao e "Analisar com o AnCut": ali quem grava e o PROPRIO CorteCenas.exe
  * do AnCut, na saida dele, e essa escolha e do usuario. O Studio so le depois.
- * E o "Enviar para o AnCut" (L1, electron/ancut/enviar.ts): a UNICA escrita do
+ * E o "Mover para o AnCut" (L1, electron/ancut/enviar.ts): a UNICA escrita do
  * recap no AnCut, so com o clique do Levi (ou o "Enviar sempre" ligado por ele),
- * com o AnCut fechado, o esquema conferido e backup do index.db antes.
+ * com o AnCut fechado, o esquema conferido e backup do index.db antes. Depois
+ * dele o episodio mora so la, e o recap continua so lendo a pasta.
  */
 
 function localAppData(): string {
@@ -55,6 +56,9 @@ export function pastasSoLeitura(): string[] {
   ]
   const saida = saidaDoCorteCenas()
   if (saida) lista.push(saida)
+  // O "AnCut" temporario do teste (electron/ancut/enviar.ts) vale como o de verdade.
+  const deTeste = process.env['RECAP_TESTE_ANCUT_SAIDA']
+  if (deTeste) lista.push(deTeste)
   return lista
 }
 

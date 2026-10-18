@@ -1,5 +1,5 @@
 import type { IpcResult } from '@shared/channels'
-import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDoEnvio } from './ancut'
+import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDaVolta, ResultadoDoEnvio } from './ancut'
 import type { ConfigDasCenas, ConfigDoRecapNaTela } from './config'
 import type {
   CorteParado,
@@ -92,10 +92,13 @@ export const CANAIS = {
   salvarConfig: 'recap:config:salvar',
   escolherBiblioteca: 'recap:config:escolher-biblioteca',
 
-  // L1: enviar para o AnCut. Tipos em shared/ancut.ts.
+  // L1: mover para o AnCut. Tipos em shared/ancut.ts.
   ancutAchado: 'recap:ancut:achado',
   ancutConferir: 'recap:ancut:conferir',
   ancutEnviar: 'recap:ancut:enviar',
+  ancutUnificar: 'recap:ancut:unificar',
+  ancutTrazer: 'recap:ancut:trazer',
+  ancutDepoisDaAnalise: 'recap:ancut:depois-da-analise',
   /** main -> renderer, EnvioAutomatico (o "Enviar sempre" ao fim de um corte) */
   ancutAutomatico: 'recap:ancut:automatico',
 
@@ -243,10 +246,20 @@ export interface PonteDoRecap {
 
   /** L1: o AnCut esta nesta maquina (config e index.db)? */
   ancutAchado(): Promise<IpcResult<boolean>>
-  /** L1: as conferencias, sem escrever nada. */
-  conferirAncut(episodioId: string): Promise<IpcResult<ConferenciaDoEnvio>>
-  /** L1: envia (ou substitui) o episodio no AnCut. So com o clique. */
+  /** L1: as conferencias, sem escrever nada. `rapido` = sem conferir se o AnCut esta aberto. */
+  conferirAncut(episodioId: string, rapido?: boolean): Promise<IpcResult<ConferenciaDoEnvio>>
+  /** L1: MOVE (ou substitui) o episodio para o AnCut; igual la = unifica. So com o clique. */
   enviarAoAncut(episodioId: string, substituir: boolean): Promise<IpcResult<ResultadoDoEnvio>>
+  /** L1: ja esta igual no AnCut (a versao antiga copiava): usa a de la e manda a daqui para a Lixeira. */
+  unificarComOAncut(episodioId: string): Promise<IpcResult<ResultadoDoEnvio>>
+  /** L1: o "Reconhecer agora" de um episodio que mora no AnCut: ele volta para o recap antes. */
+  trazerDoAncut(episodioId: string): Promise<IpcResult<ResultadoDaVolta>>
+  /**
+   * L1: o fim de uma analise em primeiro plano (Reconhecer agora, Analisar de
+   * novo): o "Enviar sempre", ou `devolver` o episodio que veio do AnCut. O
+   * resultado tambem chega pelo onEnvioAutomatico.
+   */
+  depoisDaAnaliseNoAncut(episodioId: string, devolver: boolean): Promise<IpcResult<EnvioAutomatico | null>>
   onEnvioAutomatico(listener: (aviso: EnvioAutomatico) => void): () => void
 
   escolherEpisodio(): Promise<IpcResult<string | null>>

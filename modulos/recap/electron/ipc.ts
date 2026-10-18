@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import type { ContextoDoModulo } from '../../../electron/modulos'
 import { CANAIS as C } from '../shared/canais'
-import type { ConferenciaDoEnvio, ResultadoDoEnvio } from '../shared/ancut'
+import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDaVolta, ResultadoDoEnvio } from '../shared/ancut'
 import type { ConfigDoRecapNaTela } from '../shared/config'
 import {
   indexarEpisodioArgsSchema,
@@ -55,7 +55,7 @@ import {
 import { CAMPOS_DE_CHAVE_DA_VOZ, type AjustesDaVoz, type CampoDeChaveDaVoz, type TesteDeVoz } from '../shared/tipos-da-voz'
 import { AUDIO_EXTENSIONS, classifyFile } from '@shared/channels'
 import { listarModulos } from '../../../electron/modulos'
-import { acharAncut, conferirEnvio, enviarAoAncut } from './ancut/enviar'
+import { acharAncut, conferirEnvio, enviarAoAncut, enviarSempreAoAncut, trazerDoAncut, unificarComOAncut } from './ancut/enviar'
 import { configNaTela } from './config'
 import { indexarFalas } from './episodio/falas'
 import { indexarEpisodio, salvarExclusoes } from './episodio/indice'
@@ -143,15 +143,25 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0]!
   })
 
-  // ------------------------------------------------- L1: enviar para o AnCut
+  // ------------------------------------------------- L1: mover para o AnCut
   // A UNICA escrita do recap no AnCut (electron/ancut/enviar.ts), so com o clique.
 
   ctx.handle<[], boolean>(C.ancutAchado, async () => acharAncut() !== null)
 
-  ctx.handle<[string], ConferenciaDoEnvio>(C.ancutConferir, async (episodioId) => conferirEnvio(idDoEpisodio(episodioId)))
+  ctx.handle<[string, boolean], ConferenciaDoEnvio>(C.ancutConferir, async (episodioId, rapido) =>
+    conferirEnvio(idDoEpisodio(episodioId), rapido === true),
+  )
 
   ctx.handle<[string, boolean], ResultadoDoEnvio>(C.ancutEnviar, async (episodioId, substituir) =>
     enviarAoAncut(idDoEpisodio(episodioId), substituir === true),
+  )
+
+  ctx.handle<[string], ResultadoDoEnvio>(C.ancutUnificar, async (episodioId) => unificarComOAncut(idDoEpisodio(episodioId)))
+
+  ctx.handle<[string], ResultadoDaVolta>(C.ancutTrazer, async (episodioId) => trazerDoAncut(idDoEpisodio(episodioId)))
+
+  ctx.handle<[string, boolean], EnvioAutomatico | null>(C.ancutDepoisDaAnalise, async (episodioId, devolver) =>
+    enviarSempreAoAncut(idDoEpisodio(episodioId), { forcar: devolver === true }),
   )
 
   // ------------------------------------------------------- passo 1 (Episodio)

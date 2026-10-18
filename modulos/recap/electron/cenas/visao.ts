@@ -303,6 +303,11 @@ export interface EstadoDaVisao {
 
 const emAndamento = new Map<string, Promise<EstadoDaVisao>>()
 
+/** A visao deste episodio esta sendo medida agora (o mover para o AnCut espera). */
+export function visaoDoEpisodioRodando(episodioId: string): boolean {
+  return [...emAndamento.keys()].some((k) => k.startsWith(`${episodioId}|`))
+}
+
 /**
  * Mede o episodio (o que faltar): CLIP + beleza + nitidez dos keyframes e o
  * sentido das falas pelo motor; as etiquetas pelo etiquetador do nucleo. Um

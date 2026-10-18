@@ -507,6 +507,13 @@ export const bibliotecaDoEpisodioSchema = z.object({
   origem: origemDaBibliotecaSchema,
   /** A pasta do episodio onde moram shots/, keyframes/ e metadata/. */
   pasta: z.string().min(1),
+  /**
+   * L1: cortado pelo recap e MOVIDO para a biblioteca do AnCut (origem
+   * 'ancut'): uma copia so, a de la, e o indice em _indices/<id>. O banco do
+   * motor do recap segue com as linhas dele (o "Reconhecer agora" traz de
+   * volta, reconhece e devolve). Ausente = nao foi movido.
+   */
+  movidoDoRecap: z.boolean().optional(),
 })
 export type BibliotecaDoEpisodio = z.infer<typeof bibliotecaDoEpisodioSchema>
 

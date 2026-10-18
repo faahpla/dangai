@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { lerIndice, type EpisodeIndex } from '../../shared/episodio'
+import { dirname, join } from 'node:path'
+import { lerIndice, temPlanos, type EpisodeIndex } from '../../shared/episodio'
 import { acharIndice } from './indice'
 import { indiceMovido, relocarIndice } from './relocar'
 
@@ -51,6 +51,12 @@ export function abrirIndicePorId(id: string, dica?: string | null): IndiceAberto
   }
   if (indiceMovido(indice, caminho)) {
     return { indice: relocarIndice(indice, dirname(caminho)), caminho, movido: true }
+  }
+  // O episodio que o recap moveu para o AnCut (L1) e o AnCut apagou depois: e
+  // o mesmo caso do indice que sumiu -- precisa ser cortado de novo (o roteiro
+  // e a voz continuam no rascunho).
+  if (indice.biblioteca.movidoDoRecap && temPlanos(indice) && !existsSync(join(indice.biblioteca.pasta, 'metadata', 'shots.json'))) {
+    throw new Error('Nao achei os dados desse episodio. Abra o episodio de novo no passo 1.')
   }
   return { indice, caminho, movido: false }
 }

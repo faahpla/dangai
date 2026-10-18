@@ -352,7 +352,12 @@ export async function indexarEpisodio(
     cues,
     exclusoes: [...herdadas, ...sugeridas].sort((a, b) => a.start - b.start),
     planos,
-    biblioteca: { origem: args.origem, pasta: args.pastaDoEpisodio },
+    // O episodio que o recap moveu para o AnCut continua sendo dele (a busca
+    // pode ter achado a pasta como Corte Cenas ou como a Biblioteca do AnCut).
+    biblioteca:
+      anterior?.biblioteca.movidoDoRecap && mesmoCaminho(anterior.biblioteca.pasta, args.pastaDoEpisodio)
+        ? anterior.biblioteca
+        : { origem: args.origem, pasta: args.pastaDoEpisodio },
     reconhecimento: reconhecimentoDaPasta(dados, planos),
     avisos: [...avisosDaLegenda(faixa, cues, formato), ...avisosDeTempo(sonda, dados, args.path, conferidoAntes)],
     criadoEm: agora,
