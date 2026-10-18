@@ -151,6 +151,80 @@ export async function tagClips(
   const faltando = clips.filter((c) => !tags[c.id])
   if (faltando.length === 0) return tags
 
+  await etiquetar(
+    faltando,
+    onProgress,
+    (clip, probs, etiquetas) => {
+      tags[clip.id] = melhoresComConfianca(probs, etiquetas).map((t) => t.tag)
+    },
+    () => gravarCache(tags),
+  )
+  return tags
+}
+
+/** Uma etiqueta e o quanto o modelo confia nela (0..1). */
+export interface TagComConfianca {
+  tag: string
+  p: number
+}
+
+/**
+ * ETIQUETAR PARA UM MODULO: as mesmas etiquetas, com a CONFIANCA de cada uma,
+ * num cache que e do modulo (`arquivoDoCache`, na pasta dele). Os ids do
+ * modulo (recap/<indice>/<plano>) nao entram no etiquetas.json da Biblioteca,
+ * e o cache dela segue no formato de sempre -- nada a reetiquetar.
+ */
+export async function etiquetarComConfianca(
+  clips: readonly LibraryClip[],
+  onProgress: TaggerProgress,
+  arquivoDoCache: string,
+): Promise<Record<string, TagComConfianca[]>> {
+  await baixarModelo(onProgress)
+
+  const tags = lerCacheComConfianca(arquivoDoCache)
+  const faltando = clips.filter((c) => !tags[c.id])
+  if (faltando.length === 0) return tags
+
+  const gravar = (): void => {
+    mkdirSync(dirname(arquivoDoCache), { recursive: true })
+    const temp = arquivoDoCache + '.tmp'
+    writeFileSync(temp, JSON.stringify({ version: CACHE_COM_CONFIANCA, tags }), 'utf8')
+    renameSync(temp, arquivoDoCache)
+  }
+  await etiquetar(
+    faltando,
+    onProgress,
+    (clip, probs, etiquetas) => {
+      tags[clip.id] = melhoresComConfianca(probs, etiquetas)
+    },
+    gravar,
+  )
+  return tags
+}
+
+const CACHE_COM_CONFIANCA = 1
+
+function lerCacheComConfianca(arquivo: string): Record<string, TagComConfianca[]> {
+  try {
+    const cru = JSON.parse(readFileSync(arquivo, 'utf8')) as { version?: unknown; tags?: unknown }
+    return cru.version === CACHE_COM_CONFIANCA && typeof cru.tags === 'object' && cru.tags !== null
+      ? (cru.tags as Record<string, TagComConfianca[]>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * O MOTOR das duas: abre o modelo, passa cada cena e entrega as
+ * probabilidades a quem pediu. `gravar` e chamado de tempos em tempos e no fim.
+ */
+async function etiquetar(
+  faltando: readonly LibraryClip[],
+  onProgress: TaggerProgress,
+  guardar: (clip: LibraryClip, probs: Float32Array, etiquetas: readonly Etiqueta[]) => void,
+  gravar: () => void,
+): Promise<void> {
   onProgress(`Preparando o etiquetador...`)
   const etiquetas = lerEtiquetas()
   const ort = await import('onnxruntime-node')
@@ -180,7 +254,7 @@ export async function tagClips(
       try {
         const tensor = await prepararTensor(clip, ort)
         const saida = await sessao.run({ [entrada]: tensor })
-        tags[clip.id] = melhores(saida[saidaNome]!.data as Float32Array, etiquetas)
+        guardar(clip, saida[saidaNome]!.data as Float32Array, etiquetas)
       } catch {
         /*
          * Cena que nao abre nao pode derrubar a etiquetagem inteira. Ela fica
@@ -201,16 +275,15 @@ export async function tagClips(
       }
       // Gravar de tempos em tempos: fechar o app no meio nao joga fora o que
       // ja custou GPU.
-      if (feitas % 500 === 0) gravarCache(tags)
+      if (feitas % 500 === 0) gravar()
     }
   }
 
   await Promise.all(Array.from({ length: PREPARO_PARALELO }, trabalhar))
-  gravarCache(tags)
+  gravar()
 
   const segundos = ((Date.now() - t0) / 1000).toFixed(0)
   onProgress(`${faltando.length} cenas etiquetadas em ${segundos}s.`)
-  return tags
 }
 
 /**
@@ -252,7 +325,7 @@ async function prepararTensor(
  * So a categoria 0. A 4 e nome de personagem (o AnCut ja resolve isso, e melhor
  * que o modelo) e a 9 e classificacao etaria, que nao serve para achar cena.
  */
-function melhores(probs: Float32Array, etiquetas: readonly Etiqueta[]): string[] {
+function melhoresComConfianca(probs: Float32Array, etiquetas: readonly Etiqueta[]): TagComConfianca[] {
   const achadas: { name: string; p: number }[] = []
   for (let i = 0; i < etiquetas.length; i++) {
     const e = etiquetas[i]!
@@ -262,7 +335,7 @@ function melhores(probs: Float32Array, etiquetas: readonly Etiqueta[]): string[]
   return achadas
     .sort((a, b) => b.p - a.p)
     .slice(0, POR_CENA)
-    .map((t) => t.name.replaceAll('_', ' '))
+    .map((t) => ({ tag: t.name.replaceAll('_', ' '), p: Math.round(t.p * 1000) / 1000 }))
 }
 
 function lerEtiquetas(): Etiqueta[] {
