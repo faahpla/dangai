@@ -7,6 +7,7 @@
  * 2. a raiz `recap:` da Biblioteca so existe com o modulo LIGADO (e pasta com
  *    episodio); desligado, a lista de raizes e a do Dangai;
  * 3. canais: todos `recap:<area>:<acao>`, sem repetir, e a ponte chama cada um;
+ *    o da boas-vindas responde o `ctx.ia.provedor()` (so o nome, null sem chave);
  * 4. o ritmo do "~Xs" sem voz: o inicial calibrado;
  * 5. o perfil do recap mora na pasta de dados do modulo, e so nasce quando grava.
  *
@@ -56,14 +57,19 @@ saveSettings({ libraryDir: '' })
 let ligado = false
 let configDoModulo: unknown = { biblioteca }
 const canaisRegistrados: string[] = []
+const tratadores = new Map<string, (...args: unknown[]) => Promise<unknown>>()
+let provedorFalso: 'gemini' | 'anthropic' | null = null
+const pendentes: Promise<unknown>[] = []
 const ctx = {
   id: 'recap',
   prefixo: 'recap:',
   empacotado: false,
   versaoDoApp: 'teste',
-  handle: (canal: string) => {
+  handle: (canal: string, fn: (...args: unknown[]) => Promise<unknown>) => {
     canaisRegistrados.push(canal)
+    tratadores.set(canal, fn)
   },
+  ia: { provedor: () => provedorFalso },
   enviar: () => {},
   config: () => ({ libraryDir: '', iaProvedor: 'gemini', whisperModel: 'small', modulo: configDoModulo }),
   pasta: (tipo: string) => {
@@ -149,6 +155,18 @@ try {
     `a ponte alcanca cada canal (${Object.keys(ponte).length} metodos), so com o prefixo`,
   )
 
+  // O canal responde uma promessa: conferida no fim (o tsx em cjs recusa await no topo).
+  const provedorDaIa = tratadores.get(CANAIS.provedorDaIa)!
+  const respostasDaIa = (['gemini', 'anthropic', null] as const).map((p) => {
+    provedorFalso = p
+    return provedorDaIa()
+  })
+  pendentes.push(
+    Promise.all(respostasDaIa).then((r) =>
+      confere(JSON.stringify(r) === '["gemini","anthropic",null]', 'a boas-vindas pergunta a IA pelo ctx.ia.provedor() (null sem chave)'),
+    ),
+  )
+
   confere(JSON.stringify(recap.camposDeChave) === '["elevenlabsApiKey","fishApiKey"]', 'as chaves de voz com os nomes do Studio (camposDeChave)')
 
   console.log('\n== 4. O ritmo do "~Xs" sem voz')
@@ -162,5 +180,7 @@ try {
 } finally {
   rmSync(temp, { recursive: true, force: true })
 }
-console.log(falhas === 0 ? '\ntudo certo' : `\n${falhas} falha(s)`)
-process.exit(falhas === 0 ? 0 : 1)
+void Promise.all(pendentes).then(() => {
+  console.log(falhas === 0 ? '\ntudo certo' : `\n${falhas} falha(s)`)
+  process.exit(falhas === 0 ? 0 : 1)
+})

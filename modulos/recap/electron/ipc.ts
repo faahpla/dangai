@@ -2,7 +2,7 @@ import { dialog } from 'electron'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import type { ContextoDoModulo } from '../../../electron/modulos'
-import { CANAIS as C } from '../shared/canais'
+import { CANAIS as C, type ProvedorDaIa } from '../shared/canais'
 import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDaVolta, ResultadoDoEnvio } from '../shared/ancut'
 import type { ConfigDoRecapNaTela } from '../shared/config'
 import {
@@ -142,6 +142,9 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
     })
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0]!
   })
+
+  // A boas-vindas: ha IA para o roteiro? So o nome de quem atende (o nucleo nunca da a chave).
+  ctx.handle<[], ProvedorDaIa | null>(C.provedorDaIa, async () => ctx.ia.provedor())
 
   // ------------------------------------------------- L1: mover para o AnCut
   // A UNICA escrita do recap no AnCut (electron/ancut/enviar.ts), so com o clique.

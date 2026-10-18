@@ -78,6 +78,9 @@ import type {
   VozInterrompida,
 } from './voz'
 
+/** As IAs do nucleo (o `Provedor` do llm.ts, que a ponte nao importa). */
+export type ProvedorDaIa = 'gemini' | 'anthropic'
+
 /**
  * [recap] OS CANAIS DO MODULO: `recap:<area>:<acao>`, o prefixo que o nucleo
  * exige (electron/modulos.ts recusa qualquer outro). No Studio eram canais do
@@ -91,6 +94,8 @@ export const CANAIS = {
   lerConfig: 'recap:config:ler',
   salvarConfig: 'recap:config:salvar',
   escolherBiblioteca: 'recap:config:escolher-biblioteca',
+  /** Quem atende a IA agora (o `ctx.ia.provedor()`): null = nenhuma chave. A boas-vindas. */
+  provedorDaIa: 'recap:ia:provedor',
 
   // L1: mover para o AnCut. Tipos em shared/ancut.ts.
   ancutAchado: 'recap:ancut:achado',
@@ -240,9 +245,16 @@ export interface PonteDoRecap {
     modeloGeminiPro?: string
     cenas?: Partial<ConfigDasCenas>
     enviarSempreAoAncut?: boolean
+    naoPerguntarChave?: boolean
   }): Promise<IpcResult<ConfigDoRecapNaTela>>
   /** Dialogo de pasta. null = fechou sem escolher. */
   escolherBiblioteca(): Promise<IpcResult<string | null>>
+  /**
+   * A IA que atenderia agora, pelo nucleo (Gemini ou Anthropic; so o nome,
+   * nunca a chave). null = sem chave de IA nenhuma: a boas-vindas pede a do
+   * Gemini.
+   */
+  provedorDaIa(): Promise<IpcResult<ProvedorDaIa | null>>
 
   /** L1: o AnCut esta nesta maquina (config e index.db)? */
   ancutAchado(): Promise<IpcResult<boolean>>

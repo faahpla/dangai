@@ -50,6 +50,12 @@ export interface ConfigDoRecap {
    * padrao: e a unica escrita no AnCut que nao e um clique.
    */
   enviarSempreAoAncut: boolean
+  /**
+   * A BOAS-VINDAS (src/components/BoasVindas.tsx): "Nao perguntar mais" --
+   * ligar o modulo (ou clicar "Gerar recap") sem chave de IA nao abre mais a
+   * tela que pede a chave. O nome e o do settings do Studio.
+   */
+  naoPerguntarChave: boolean
 }
 
 /** C6: o juiz visual (opcional, desligado por padrao). */
@@ -110,6 +116,7 @@ export const CONFIG_PADRAO: ConfigDoRecap = {
   modeloGeminiPro: '',
   cenas: CENAS_PADRAO,
   enviarSempreAoAncut: false,
+  naoPerguntarChave: false,
 }
 
 /** O que veio do disco, conferido campo a campo. Campo errado vale o padrao. */
@@ -127,6 +134,7 @@ export function coerceConfig(raw: unknown): ConfigDoRecap {
     modeloGeminiPro: nomeDeModelo(r['modeloGeminiPro'], ''),
     cenas: cenasSalvas(r['cenas']),
     enviarSempreAoAncut: r['enviarSempreAoAncut'] === true,
+    naoPerguntarChave: r['naoPerguntarChave'] === true,
   }
 }
 

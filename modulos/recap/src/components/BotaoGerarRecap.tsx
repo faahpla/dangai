@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2, WandSparkles } from 'lucide-react'
 import { nucleo } from '../nucleo'
 import { ehEpisodio, useGerar } from '../store/gerar'
+import { gerarRecap } from './BoasVindas'
 
 /**
  * A porta do assistente "Gerar recap" na tela inicial -- a funcao principal do
@@ -13,7 +14,8 @@ import { ehEpisodio, useGerar } from '../store/gerar'
  * Levi em 15/10): comecar outro episodio ou voltar a um dos ultimos recaps
  * onde parou. Sem recap nenhum, vai direto ao dialogo do .mkv -- um clique a
  * menos. Com um episodio ja no assistente (ou uma analise rodando), clicar so
- * reabre onde parou. Quem decide e o abrirOuEscolher (gerar.ts).
+ * reabre onde parou. Quem decide e o abrirOuEscolher (gerar.ts). Sem chave
+ * de IA, a boas-vindas vem antes, uma vez por sessao (gerarRecap).
  *
  * Soltar o .mkv EM CIMA do botao vai direto para um recap NOVO, sem a
  * escolha, como no "Legendar video pronto":
@@ -31,7 +33,6 @@ export function BotaoGerarRecap({
 }) {
   const busy = nucleo().usar((s) => s.busy)
   const rodando = useGerar((s) => s.job !== null || s.fase === 'indexando')
-  const abrirOuEscolher = useGerar((s) => s.abrirOuEscolher)
   const [sobre, setSobre] = useState(false)
   // Entrar num filho (icone, texto) dispara leave no pai: conta a profundidade.
   const profundidade = useRef(0)
@@ -47,7 +48,7 @@ export function BotaoGerarRecap({
   return (
     <button
       type="button"
-      onClick={() => void abrirOuEscolher()}
+      onClick={() => void gerarRecap()}
       onDragEnter={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return
         profundidade.current += 1

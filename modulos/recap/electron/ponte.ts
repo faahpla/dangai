@@ -11,6 +11,7 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     lerConfig: () => invocar(C.lerConfig),
     salvarConfig: (patch) => invocar(C.salvarConfig, patch),
     escolherBiblioteca: () => invocar(C.escolherBiblioteca),
+    provedorDaIa: () => invocar(C.provedorDaIa),
 
     ancutAchado: () => invocar(C.ancutAchado),
     conferirAncut: (episodioId, rapido) => invocar(C.ancutConferir, episodioId, rapido === true),

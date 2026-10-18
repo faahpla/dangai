@@ -5,6 +5,7 @@ import { AjustesDoRecap } from './components/AjustesDoRecap'
 import { AjustesDoRoteiro } from './components/AjustesDoRoteiro'
 import { AjustesDasCenas } from './components/AjustesDasCenas'
 import { SecaoDaVoz } from './components/AjustesDeVoz'
+import { BoasVindas, boasVindasAoLigar, gerarRecap } from './components/BoasVindas'
 import { BotaoGerarRecap } from './components/BotaoGerarRecap'
 import { ControleDaMusica } from './components/ControleDaMusica'
 import { BotaoDaEdicaoRapida, rodarEdicaoRapida } from './components/EdicaoRapida'
@@ -15,6 +16,7 @@ import { SecaoDoMotor } from './components/SecaoDoMotor'
 import { perguntarSeEpisodio, PerguntaDoEpisodio } from './components/PerguntaDoEpisodio'
 import { guardarNucleo, nucleo } from './nucleo'
 import { ouvirOProjeto, rotuloDoClipe } from './projeto'
+import { useBoasVindas } from './store/boas-vindas'
 import { useGerar } from './store/gerar'
 import { partesLigadas, nadaLigado, CONFIG_DA_EDICAO_RAPIDA_PADRAO } from '../shared/edicao-rapida'
 import { useEdicaoRapida } from './store/edicao-rapida'
@@ -38,6 +40,8 @@ import { useEdicaoRapida } from './store/edicao-rapida'
  * - parte 4: o motor de personagens -- a tela "Instalar motor" (o runtime no
  *   1o uso), a secao dele nas Configuracoes, o corte por tras e o Reconhecer
  *   na mao (dentro do assistente).
+ * - a boas-vindas (18/10): ligar o modulo, ou clicar "Gerar recap", sem
+ *   chave de IA abre a tela que pede a do Gemini (BoasVindas), na tela inicial.
  */
 export const recap: ModuloDoRenderer = {
   id: 'recap',
@@ -45,8 +49,12 @@ export const recap: ModuloDoRenderer = {
   iniciar(n) {
     guardarNucleo(n)
     const pararDeOuvir = ouvirOProjeto()
+    // Ligou (abrindo o app ou nas Configuracoes) sem chave de IA: a boas-vindas.
+    boasVindasAoLigar()
     return () => {
       pararDeOuvir()
+      // Desligar e ligar de novo e outra sessao do modulo: ligar volta a perguntar.
+      useBoasVindas.getState().reiniciar()
       // Desligado com a tela aberta: ela fecha (o nucleo ja solta o inerte).
       // A fachada fica guardada: a limpeza das telas (o telaCheia(false) ao
       // desmontar) ainda fala com ela, e um erro numa limpeza de componente
@@ -63,6 +71,7 @@ export const recap: ModuloDoRenderer = {
     <>
       <GerarRecap />
       <PerguntaDoEpisodio />
+      <BoasVindas />
       <InstalarMotor />
     </>
   ),
@@ -82,7 +91,8 @@ export const recap: ModuloDoRenderer = {
       label: 'Gerar recap',
       hint: 'Novo recap ou continuar um',
       icon: WandSparkles,
-      run: () => void useGerar.getState().abrirOuEscolher(),
+      // Sem chave de IA, a boas-vindas antes (so na tela inicial).
+      run: () => void gerarRecap(),
     },
     comandoDaEdicaoRapida(),
   ],
