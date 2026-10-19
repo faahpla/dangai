@@ -29,6 +29,12 @@ import { limitesNaturais, pareceVerbo } from './divisao'
  *     DIFERENTES: outro plano, outro visual (o CLIP dos keyframes: acao e
  *     reacao, ou pessoas diferentes), do mesmo momento do episodio;
  *     reforco quando a frase cita duas pessoas;
+ *   - (polimento, o Levi) pessoas DIFERENTES em cada metade, nenhuma em
+ *     comum (o MRM E02 f21, o Lent e o Lent; o f12, o Guy nas duas); cada
+ *     metade com o seu sujeito legivel, rosto visivel ou o personagem inteiro
+ *     e claro, nunca de costas ou sem rosto; bonus para rostos de pessoas
+ *     diferentes (o Nia E01 f07, a criada e a Nia) ou rosto + o outro citado
+ *     em acao (o MRM E02 f07, o Lent e a fadinha voando): avaliarPar;
  *   - cada metade e UM plano que cobre o bloco inteiro desde o comeco dela,
  *     sem congelar; o bloco tem pelo menos GRID_MIN_SEC;
  *   - comeca e termina na fronteira de um bloco de LEGENDA; o comeco da frase
@@ -84,6 +90,14 @@ export const PREFIXO_MIN_SEC = 1
  * humilhando o Lent e o grupo indo embora, 48 s depois).
  */
 export const PERTO_NO_EPISODIO_SEC = 60
+/**
+ * O rosto legivel na metade: pelo menos isto da altura do quadro (a metade
+ * mostra a altura inteira do 16:9). A Nia na cama ao longe (0055 do Nia E01)
+ * tem 0,06; a Nia de corpo inteiro na parede (0272), 0,17.
+ */
+export const ROSTO_LEGIVEL = 0.1
+/** O bonus do par bom: rostos de pessoas diferentes, ou rosto + o outro citado em acao. */
+export const BONUS_DO_PAR = 3
 /** No grid na mao, o bloco pode ser mais curto, ate isto. */
 export const GRID_NA_MAO_MIN_SEC = 1
 /** Folga da cobertura: menos que um quadro parado nao se ve. */
@@ -221,6 +235,8 @@ export interface QuemNoGrid {
   citados: ReadonlyMap<string, readonly { palavra: number; quem: string }[]>
   /** As pessoas (as mesmas chaves de `citados`) que o plano mostra (rosto ou fala). */
   noPlano: (planoId: string) => ReadonlySet<string>
+  /** So as de ROSTO reconhecido no plano (sem a fala). Ausente = as de noPlano. */
+  peloRosto?: (planoId: string) => ReadonlySet<string>
 }
 
 export interface EntradaDoGrid {
@@ -236,6 +252,14 @@ export interface EntradaDoGrid {
   /** As duas metades mostram a MESMA cena (o CLIP dos keyframes). Ausente = so o mesmo plano. */
   mesmaCena?: (a: string, b: string) => boolean
   quem?: QuemNoGrid
+  /**
+   * A altura do maior ROSTO (fracao do quadro) em cada instante que o detector
+   * do motor olhou no plano; null = nenhum rosto ali (de costas, so a cabeca,
+   * ninguem). Plano fora do mapa, ou sem o mapa: nao se sabe.
+   */
+  rostos?: ReadonlyMap<string, readonly (number | null)[]>
+  /** Os planos que o etiquetador marca "de costas" (from behind). */
+  deCostas?: ReadonlySet<string>
   /** As regras da legenda (os blocos). Ausente = as de fabrica do nucleo. */
   regras?: RegrasDaLegenda
   /** O minimo na tela (config Cenas): o pedaco em tela cheia antes do grid. */
@@ -367,6 +391,93 @@ function mesmaCenaVisual(ctx: ContextoDaFrase, a: string, b: string): boolean {
   return a === b || (ctx.e.mesmaCena?.(a, b) ?? false)
 }
 
+/** Quem a frase cita, na ordem do texto, uma vez cada. */
+function citadosEmOrdem(ctx: ContextoDaFrase): string[] {
+  const saida: string[] = []
+  for (const c of [...(ctx.e.quem?.citados.get(ctx.f.fraseId) ?? [])].sort((a, b) => a.palavra - b.palavra)) {
+    if (!saida.includes(c.quem)) saida.push(c.quem)
+  }
+  return saida
+}
+
+/** As pessoas que o indice reconhece no plano pelo ROSTO (sem quem.peloRosto: noPlano). */
+function reconhecidos(ctx: ContextoDaFrase, planoId: string): ReadonlySet<string> {
+  const q = ctx.e.quem
+  if (!q) return new Set()
+  return q.peloRosto?.(planoId) ?? q.noPlano(planoId)
+}
+
+/**
+ * Quem a metade MOSTRA. A montagem enquadra cada metade em quem a FRASE cita,
+ * na ordem (porFrase na Edicao rapida): em cima o 1o citado que o plano tem,
+ * embaixo o 2o (a lista girada). O outro rosto do plano em geral fica fora da
+ * janela de 9:8: no MRM E02 f07 a fadinha tambem esta no plano do Lent (0096),
+ * mas a metade de cima enquadra o Lent. Sem citado da frase no plano: todos os
+ * reconhecidos.
+ */
+function quemAMetadeMostra(ctx: ContextoDaFrase, planoId: string, lado: 'cima' | 'baixo'): ReadonlySet<string> {
+  const noPlano = reconhecidos(ctx, planoId)
+  const citados = citadosEmOrdem(ctx)
+  const lista = lado === 'cima' ? citados : [...citados.slice(1), ...citados.slice(0, 1)]
+  const enquadrado = lista.find((p) => noPlano.has(p))
+  return enquadrado !== undefined ? new Set([enquadrado]) : noPlano
+}
+
+/**
+ * (a) Alguma pessoa reconhecida nas DUAS metades: o grid bom junta pessoas
+ * diferentes (o MRM E02 f21, o Lent e o Lent; o f12, o Guy indo embora e o Guy
+ * do lado do Lent caido). Sem reconhecimento: nao se sabe, vale.
+ */
+function pessoaEmComum(ctx: ContextoDaFrase, cima: string, baixo: string): boolean {
+  const b = quemAMetadeMostra(ctx, baixo, 'baixo')
+  return [...quemAMetadeMostra(ctx, cima, 'cima')].some((p) => b.has(p))
+}
+
+/**
+ * (b) A metade mostra o seu sujeito LEGIVEL?
+ *   - 'rosto': o detector do motor acha um rosto de pelo menos ROSTO_LEGIVEL
+ *     da altura do quadro em 2 dos 3 instantes do plano (a cabeca de costas
+ *     nao conta);
+ *   - 'personagem': sem esse rosto, o personagem inteiro e claro: o indice
+ *     reconhece no plano quem a frase cita, o detector ve o rosto dele em
+ *     algum instante (pequeno que seja) e o etiquetador nao diz "de costas"
+ *     (a fadinha voando no 0105 do MRM E02);
+ *   - 'nao': de costas ou sem rosto (o Guy e a bruxa indo embora, 0199);
+ *   - null: o detector nao olhou o plano: nao se sabe, vale.
+ */
+function legivel(ctx: ContextoDaFrase, planoId: string): 'rosto' | 'personagem' | 'nao' | null {
+  const alturas = ctx.e.rostos?.get(planoId)
+  if (!alturas || alturas.length === 0) return null
+  const comRosto = alturas.filter((h) => h !== null && h >= ROSTO_LEGIVEL - 1e-9).length
+  if (comRosto >= Math.min(2, alturas.length)) return 'rosto'
+  if (ctx.e.deCostas?.has(planoId) || !alturas.some((h) => h !== null)) return 'nao'
+  const noPlano = reconhecidos(ctx, planoId)
+  return citadosEmOrdem(ctx).some((p) => noPlano.has(p)) ? 'personagem' : 'nao'
+}
+
+/**
+ * O par do grid AUTOMATICO: null = vetado (pessoa em comum, ou uma metade
+ * sem rosto ou de costas); senao o bonus (BONUS_DO_PAR) quando as duas tem
+ * rosto visivel (pessoas diferentes: a pessoa em comum ja saiu; o Nia E01
+ * f07, a criada sorrindo e a Nia) ou rosto + o outro citado em acao (o MRM
+ * E02 f07, o close do Lent e a fadinha voando). O grid na mao nao passa
+ * por aqui: continua livre.
+ */
+function avaliarPar(ctx: ContextoDaFrase, cima: string, baixo: string): { bonus: number } | null {
+  if (pessoaEmComum(ctx, cima, baixo)) return null
+  const lc = legivel(ctx, cima)
+  const lb = legivel(ctx, baixo)
+  if (lc === 'nao' || lb === 'nao') return null
+  if (lc === 'rosto' && lb === 'rosto') return { bonus: BONUS_DO_PAR }
+  const emAcao = lc === 'personagem' && lb === 'rosto' ? 'cima' : lc === 'rosto' && lb === 'personagem' ? 'baixo' : null
+  if (emAcao) {
+    const citados = citadosEmOrdem(ctx)
+    const mostra = quemAMetadeMostra(ctx, emAcao === 'cima' ? cima : baixo, emAcao)
+    if ([...mostra].some((p) => citados.includes(p))) return { bonus: BONUS_DO_PAR }
+  }
+  return { bonus: 0 }
+}
+
 /** A palavra j da frase e o comeco de um bloco de legenda (o fim da frase tambem conta). */
 function naFronteira(ctx: ContextoDaFrase, j: number): boolean {
   if (ctx.forcado) return true
@@ -447,7 +558,9 @@ function mesmoMomento(a: Pick<CandidatoDeCena, 'inSec' | 'outSec'>, b: Pick<Cand
 /**
  * A melhor parceira de `x` (a metade que ja esta na cena; `origem` = o
  * candidato de onde ela saiu, para a nota) num bloco de `dura` segundos.
- * `nota` = a media das duas na mesma escala (notasDoPar).
+ * `nota` = a media das duas na mesma escala (notasDoPar) mais o bonus do par
+ * (avaliarPar, so no automatico). `xEmCima`: a metade `x` fica em cima (o grid
+ * que entra no meio da cena); senao a ordem e a de emOrdem.
  */
 function melhorParceira(
   ctx: ContextoDaFrase,
@@ -455,9 +568,11 @@ function melhorParceira(
   x: CandidatoDeCena,
   dura: number,
   origem: CandidatoDeCena = x,
-): { metade: CandidatoDeCena; nota: number; notas: [number, number] } | null {
+  xEmCima = false,
+): ParDoGrid | null {
   const idX = x.planoIds[0]!
-  let melhor: { metade: CandidatoDeCena; nota: number; notas: [number, number] } | null = null
+  const n = palavrasDaFrase(ctx.f.texto).length
+  let melhor: ParDoGrid | null = null
   for (const c of parceiras(ctx)) {
     if (vetado(ctx, c)) continue
     const metade = metadeDoCandidato(c, dura, ctx.planos)
@@ -471,10 +586,25 @@ function melhorParceira(
       const perto = Math.max(NOTA_PERTO, NOTA_PERTO_FRACAO * notas[0])
       if (Math.min(notas[0], notas[1]) < NOTA_MIN || notas[1] < notas[0] - perto) continue
     }
-    const nota = (notas[0] + notas[1]) / 2
-    if (!melhor || nota > melhor.nota) melhor = { metade, nota, notas }
+    let bonus = 0
+    if (!ctx.forcado) {
+      const [a, b] = xEmCima ? [x, metade] : emOrdem(ctx, x, metade, [0, n])
+      const par = avaliarPar(ctx, a.planoIds[0]!, b.planoIds[0]!)
+      if (!par) continue
+      bonus = par.bonus
+    }
+    const nota = (notas[0] + notas[1]) / 2 + bonus
+    if (!melhor || nota > melhor.nota) melhor = { metade, nota, notas, bonus }
   }
   return melhor
+}
+
+/** A parceira achada: a metade, a nota de escolha, as duas notas na mesma escala e o bonus do par. */
+interface ParDoGrid {
+  metade: CandidatoDeCena
+  nota: number
+  notas: [number, number]
+  bonus: number
 }
 
 /** A nota de uma opcao: a media das duas metades, menos a distancia entre elas, mais o reforco. */
@@ -523,7 +653,7 @@ function opcoesDaFrase(ctx: ContextoDaFrase): OpcaoDoGrid[] {
           de: f.offset + t.inicio,
           ate: f.offset + t.fim,
           planos: [a.planoIds[0]!, b.planoIds[0]!],
-          nota: notaDoPar(ctx, par.notas, extra),
+          nota: notaDoPar(ctx, par.notas, extra + par.bonus),
           como: 'cena',
         })
       }
@@ -552,7 +682,7 @@ function opcoesDaFrase(ctx: ContextoDaFrase): OpcaoDoGrid[] {
           de: f.offset + tw,
           ate: f.offset + t.fim,
           planos: [a.planoIds[0]!, b.planoIds[0]!],
-          nota: notaDoPar(ctx, par.notas, -0.5),
+          nota: notaDoPar(ctx, par.notas, -0.5 + par.bonus),
           como: 'antes',
         })
       }
@@ -568,7 +698,7 @@ function opcoesDaFrase(ctx: ContextoDaFrase): OpcaoDoGrid[] {
       // Em cima, a cena de antes continua (o plano dela que toca nesse instante).
       const cima = continuacao(cena.candidato, prefixo, resto, ctx.planos)
       if (!cima || vetado(ctx, cima)) continue
-      const par = nX === null || nX >= NOTA_MIN || ctx.forcado ? melhorParceira(ctx, k, cima, resto, cena.candidato) : null
+      const par = nX === null || nX >= NOTA_MIN || ctx.forcado ? melhorParceira(ctx, k, cima, resto, cena.candidato, true) : null
       if (!par) continue
       const cenas: CenaDaFrase[] = []
       for (const [j, c] of x.cenas.entries()) {
@@ -586,7 +716,7 @@ function opcoesDaFrase(ctx: ContextoDaFrase): OpcaoDoGrid[] {
         ate: f.offset + t.fim,
         planos: [cima.planoIds[0]!, par.metade.planoIds[0]!],
         // Entrar no meio corta a cena de antes: vale um pouco menos que o grid da cena inteira.
-        nota: notaDoPar(ctx, par.notas, -1),
+        nota: notaDoPar(ctx, par.notas, -1 + par.bonus),
         como: 'meio',
       })
     }
@@ -609,14 +739,16 @@ function opcoesDaFrase(ctx: ContextoDaFrase): OpcaoDoGrid[] {
       const fortes = ctx.forcado || ((n0 ?? 0) >= NOTA_MIN && (n1 ?? 0) >= NOTA_MIN && mesmoMomento(c0.candidato, c1.candidato))
       const livres = cima !== null && baixo !== null && !vetado(ctx, cima) && !vetado(ctx, baixo)
       const diferentes = cima !== null && baixo !== null && !mesmaCenaVisual(ctx, cima.planoIds[0]!, baixo.planoIds[0]!)
-      if (cima && baixo && livres && fortes && diferentes) {
+      // Pessoa em comum ou metade sem rosto tambem nao vira grid aqui (so na mao).
+      const par = cima !== null && baixo !== null && !ctx.forcado ? avaliarPar(ctx, cima.planoIds[0]!, baixo.planoIds[0]!) : { bonus: 0 }
+      if (cima && baixo && livres && fortes && diferentes && par) {
         opcoes.push({
           fraseId: f.fraseId,
           cenas: [{ candidato: cima, palavraInicio: 0, baixo }],
           de: f.offset,
           ate: f.offset + dura,
           planos: [cima.planoIds[0]!, baixo.planoIds[0]!],
-          nota: notaDoPar(ctx, [n0 ?? 0, n1 ?? 0], 1),
+          nota: notaDoPar(ctx, [n0 ?? 0, n1 ?? 0], 1 + par.bonus),
           como: 'pedacos',
         })
       }

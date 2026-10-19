@@ -832,8 +832,8 @@ function personagensPorArquivo(indice: Pick<EpisodeIndex, 'planos'> | null): (ar
   return (arquivo) => mapa.get(norm(arquivo)) ?? []
 }
 
-/** As larguras ja medidas por indice (a sugestao de cenas pede de novo a cada frase). */
-const largurasPorIndice = new Map<string, Promise<Map<string, number>>>()
+/** As deteccoes ja medidas por indice (a sugestao de cenas pede de novo a cada frase). */
+const deteccoesPorIndice = new Map<string, Promise<Map<string, RostosDoPedaco>>>()
 
 /**
  * (19/10, 3a rodada) A LARGURA DO MAIOR ROSTO de cada plano (fracao do quadro),
@@ -844,12 +844,54 @@ const largurasPorIndice = new Map<string, Promise<Map<string, number>>>()
  * instantes do maior rosto de cada um. Sem motor ou teto: o que chegou (o
  * casar fica sem a regra nos outros).
  */
-export function largurasDosRostos(
+export async function largurasDosRostos(
   indice: Pick<EpisodeIndex, 'id' | 'anime' | 'temporada' | 'planos' | 'atualizadoEm'>,
   o: OpcoesDoRostoPeloMotor & { tetoMs?: number } = {},
 ): Promise<Map<string, number>> {
+  const saida = new Map<string, number>()
+  for (const [id, achado] of await deteccoesDosPlanos(indice, o)) {
+    const w = larguraDoMaiorRosto(achado)
+    if (w !== null) saida.set(id, w)
+  }
+  return saida
+}
+
+/**
+ * (rodada 4) A ALTURA DO MAIOR ROSTO (fracao do quadro) em cada instante que o
+ * motor olhou de cada plano, as mesmas deteccoes do largurasDosRostos: null =
+ * nenhum rosto naquele instante (so a cabeca, de costas, ou ninguem). O grid
+ * confere se a metade mostra um rosto legivel. Plano fora do mapa: nao se sabe.
+ */
+export async function alturasDosRostos(
+  indice: Pick<EpisodeIndex, 'id' | 'anime' | 'temporada' | 'planos' | 'atualizadoEm'>,
+  o: OpcoesDoRostoPeloMotor & { tetoMs?: number } = {},
+): Promise<Map<string, (number | null)[]>> {
+  const saida = new Map<string, (number | null)[]>()
+  for (const [id, achado] of await deteccoesDosPlanos(indice, o)) {
+    const alturas = alturasDoMaiorRosto(achado)
+    if (alturas.length > 0) saida.set(id, alturas)
+  }
+  return saida
+}
+
+/** Em cada instante que abriu, a altura (fracao) do maior ROSTO (a cabeca nao conta); null = nenhum rosto. */
+export function alturasDoMaiorRosto(achado: RostosDoPedaco): (number | null)[] {
+  if (!(achado.altura > 0)) return []
+  return achado.quadros
+    .filter((q) => q.ok)
+    .map((q) => {
+      const rostos = q.rostos.filter((r) => r.tipo === 'rosto')
+      return rostos.length > 0 ? Math.max(...rostos.map((r) => r.h)) / achado.altura : null
+    })
+}
+
+/** O modo rostos do motor em cada plano (3 instantes, so detectando), pelo cache; o que falta vai ao motor. */
+function deteccoesDosPlanos(
+  indice: Pick<EpisodeIndex, 'id' | 'anime' | 'temporada' | 'planos' | 'atualizadoEm'>,
+  o: OpcoesDoRostoPeloMotor & { tetoMs?: number },
+): Promise<Map<string, RostosDoPedaco>> {
   const chave = `${indice.id}|${indice.planos.length}|${indice.atualizadoEm}`
-  const pronta = largurasPorIndice.get(chave)
+  const pronta = deteccoesPorIndice.get(chave)
   if (pronta) return pronta
   const conta = (async () => {
     const itens: ItemDoMotor[] = indice.planos
@@ -881,14 +923,9 @@ export function largurasDosRostos(
       }
       if (r.resultados.size > 0) gravarCache(arquivoCache, cache)
     }
-    const saida = new Map<string, number>()
-    for (const [id, achado] of resultados) {
-      const w = larguraDoMaiorRosto(achado)
-      if (w !== null) saida.set(id, w)
-    }
-    return saida
-  })().catch(() => new Map<string, number>())
-  largurasPorIndice.set(chave, conta)
+    return resultados
+  })().catch(() => new Map<string, RostosDoPedaco>())
+  deteccoesPorIndice.set(chave, conta)
   return conta
 }
 

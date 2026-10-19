@@ -8,7 +8,7 @@ import { palavrasDaFrase, takeAtual, type TakeDaVoz } from '../../shared/voz'
 import { produtoInterno } from '../../shared/visao'
 import { configDoRecap } from '../contexto'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
-import { largurasDosRostos } from '../montar/rostos-motor'
+import { alturasDosRostos, largurasDosRostos } from '../montar/rostos-motor'
 import { citadosNoTexto, elencoDoEpisodio, fichasDe, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
 import { comMesclas } from './mesclas'
 import { sinaisDoEpisodio } from './visao'
@@ -23,7 +23,10 @@ import { sinaisDoEpisodio } from './visao'
  *   ponta, o 0193 do Nia E01);
  * - a MESMA CENA: os vetores CLIP dos keyframes (o visao.json do episodio);
  *   as duas metades parecidas demais (MESMA_CENA) sao um plano so;
- * - QUEM a frase cita e quem cada plano mostra: a ordem cima/baixo.
+ * - QUEM a frase cita e quem cada plano mostra (o rosto separado da fala): a
+ *   ordem cima/baixo e o veto da pessoa em comum nas duas metades;
+ * - o ROSTO de cada plano (o detector do motor, o mesmo cache do close
+ *   extremo) e o "de costas" do etiquetador: a metade sem sujeito legivel.
  *
  * O passo roda no fim do encaixarNaVoz (montar/index.ts) e no "Grid"/"Tela
  * cheia" do passo 4 (gridDaFrase). Os sinais saem ANTES de ler o rascunho:
@@ -168,7 +171,14 @@ export interface SinaisDoGrid {
   vetados: Map<string, string>
   mesmaCena: (a: string, b: string) => boolean
   quem: QuemNoGrid
+  /** (polimento) O maior rosto de cada plano em cada instante (o detector do motor, o cache do casar). */
+  rostos?: Map<string, (number | null)[]>
+  /** (polimento) Os planos "de costas" (from behind) pelo etiquetador. */
+  deCostas?: Set<string>
 }
+
+/** A etiqueta "de costas" vale com pelo menos esta confianca. */
+const DE_COSTAS = 0.5
 
 /** Os planos que podem virar metade: os das cenas e os das fitas de cada frase. */
 function planosCandidatos(escolhas: readonly EscolhaDaFrase[]): Set<string> {
@@ -205,12 +215,28 @@ export async function sinaisDoGrid(
   } catch {
     // keyframes que nao abrem: sem esse veto
   }
-  let vetores = new Map<string, Float32Array[]>()
+  let rostos: Map<string, (number | null)[]> | undefined
   try {
-    const quadros = sinaisDoEpisodio(indice, aberto.caminho).quadros
-    if (quadros) vetores = new Map([...quadros].map(([id, qs]) => [id, qs.flatMap((q) => (q.vetor ? [q.vetor] : []))]))
+    const todas = await alturasDosRostos(indice)
+    if (todas.size > 0) rostos = new Map([...todas].filter(([id]) => candidatos.has(id)))
   } catch {
-    // sem a visao: a mesma cena fica so pelo plano
+    // sem o motor: sem a regra do rosto legivel
+  }
+  let vetores = new Map<string, Float32Array[]>()
+  let deCostas: Set<string> | undefined
+  try {
+    const visao = sinaisDoEpisodio(indice, aberto.caminho)
+    if (visao.quadros) vetores = new Map([...visao.quadros].map(([id, qs]) => [id, qs.flatMap((q) => (q.vetor ? [q.vetor] : []))]))
+    if (visao.tagsDoPlano) {
+      deCostas = new Set<string>()
+      for (const [id, tags] of visao.tagsDoPlano) {
+        if (!candidatos.has(id) || !tags.includes('from behind')) continue
+        const conf = visao.confiancaDasTags?.get(id)?.get('from behind')
+        if (conf === undefined || conf >= DE_COSTAS) deCostas.add(id)
+      }
+    }
+  } catch {
+    // sem a visao: a mesma cena fica so pelo plano, e sem o "de costas"
   }
   const mesmaCena = (a: string, b: string): boolean => {
     if (a === b) return true
@@ -219,7 +245,7 @@ export async function sinaisDoGrid(
     for (const x of va) for (const y of vb) if (produtoInterno(x, y) >= MESMA_CENA) return true
     return false
   }
-  return { vetados, mesmaCena, quem: quemNoGrid(indice, roteiro, eventos) }
+  return { vetados, mesmaCena, quem: quemNoGrid(indice, roteiro, eventos), ...(rostos ? { rostos } : {}), ...(deCostas ? { deCostas } : {}) }
 }
 
 /** Quem cada frase cita (a palavra de cada um) e quem cada plano mostra, pelas fichas do casar. */
@@ -244,21 +270,24 @@ export function quemNoGrid(
     if (lista.length > 0) citados.set(f.id, lista)
   }
   const porId = new Map<string, PlanoDoCasar>(todos.map((p) => [p.plano.id, p]))
-  const cache = new Map<string, Set<string>>()
-  const noPlano = (planoId: string): Set<string> => {
+  const cache = new Map<string, { todos: Set<string>; rostos: Set<string> }>()
+  const doPlano = (planoId: string): { todos: Set<string>; rostos: Set<string> } => {
     const pronto = cache.get(planoId)
     if (pronto) return pronto
     const p = porId.get(planoId)
-    const saida = new Set<string>()
+    const saida = { todos: new Set<string>(), rostos: new Set<string>() }
     if (p) {
       for (const f of fichasCitadas) {
-        if ([...p.rostos, ...p.falas].some((n) => mesmoNome(n.fichas, [f]))) saida.add(f)
+        const peloRosto = p.rostos.some((n) => mesmoNome(n.fichas, [f]))
+        if (peloRosto) saida.rostos.add(f)
+        if (peloRosto || p.falas.some((n) => mesmoNome(n.fichas, [f]))) saida.todos.add(f)
       }
     }
     cache.set(planoId, saida)
     return saida
   }
-  return { citados, noPlano }
+  // (rodada 4) O rosto separado da fala: quem so fala no plano pode estar fora do quadro ou de costas.
+  return { citados, noPlano: (id) => doPlano(id).todos, peloRosto: (id) => doPlano(id).rostos }
 }
 
 // ----------------------------------------------------------------- o passo
@@ -281,6 +310,8 @@ function entradaDoGrid(
     modo,
     minimoSec,
     ...(sinais ? { vetados: sinais.vetados, mesmaCena: sinais.mesmaCena, quem: sinais.quem } : {}),
+    ...(sinais?.rostos ? { rostos: sinais.rostos } : {}),
+    ...(sinais?.deCostas ? { deCostas: sinais.deCostas } : {}),
   }
 }
 
