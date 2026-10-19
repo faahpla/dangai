@@ -506,8 +506,10 @@ interface FocoNovo {
   focusX: number
   focusY: number
   focusAuto: boolean
-  /** O recorte 9:16 novo. Ausente = o recorte falhou (o foco nao entra). */
+  /** O recorte 9:16 novo. Ausente = o recorte falhou (o foco nao entra) -- ou e metade do grid, que nao usa recorte. */
   url?: string
+  /** (rodada 4) Imagem de uma metade do grid: o foco vale na janela dela e nao ha recorte 9:16 a refazer. */
+  metade?: boolean
   /** O foco de quando comecou: se mudar ate o fim, a mao dele ganha. */
   antes: { focusX: number; focusY: number }
 }
@@ -517,7 +519,9 @@ interface FocoNovo {
  * o motor, parte 4). Olha o trecho que o bloco MAIS LONGO daquela imagem
  * toca, e manda quem a frase daquele trecho cita (para o motor).
  *
- * Fica de fora: foco que ele pos a mao (focoDaMao) e tela dividida.
+ * Fica de fora: foco que ele pos a mao (focoDaMao). (rodada 4) A tela
+ * dividida (o grid) entra: cada metade enquadra na janela DELA (1080x960),
+ * e o de baixo prefere o segundo citado.
  */
 async function prepararRostos(
   e: EstadoParaEdicaoRapida,
@@ -525,17 +529,15 @@ async function prepararRostos(
 ): Promise<{ porImagem: Map<string, FocoNovo>; comRosto: number; total: number; fonte: RostosDoLote['fonte'] } | null> {
   const plan = e.plan
   if (!plan || e.images.length === 0) return null
-  const divididas = new Set<number>()
-  const maisLonga = new Map<number, { de: number; dura: number; start: number; end: number }>()
-  for (const s of plan.scenes) {
-    if (s.imageIndexB !== null) {
-      divididas.add(s.imageIndex)
-      divididas.add(s.imageIndexB)
-      continue
-    }
+  const maisLonga = new Map<number, { de: number; dura: number; start: number; end: number; metade: boolean; deBaixo: boolean }>()
+  const guardar = (i: number, de: number, s: (typeof plan.scenes)[number], metade: boolean, deBaixo: boolean): void => {
     const dura = Math.max(s.end - s.start, 0)
-    const antes = maisLonga.get(s.imageIndex)
-    if (!antes || dura > antes.dura) maisLonga.set(s.imageIndex, { de: s.sourceStart, dura, start: s.start, end: s.end })
+    const antes = maisLonga.get(i)
+    if (!antes || dura > antes.dura) maisLonga.set(i, { de, dura, start: s.start, end: s.end, metade, deBaixo })
+  }
+  for (const s of plan.scenes) {
+    guardar(s.imageIndex, s.sourceStart, s, s.imageIndexB !== null, false)
+    if (s.imageIndexB !== null) guardar(s.imageIndexB, s.sourceStartB ?? 0, s, true, true)
   }
   const recap = recapDoProjeto(e.modulos)
   const frases = (recap?.secoes ?? []).flatMap((sec) => sec.frases)
@@ -552,13 +554,16 @@ async function prepararRostos(
   const imagensDaChave = new Map<string, number[]>()
   for (const [i, alvo] of maisLonga) {
     const img = e.images[i]
-    if (!img || divididas.has(i) || focoDaMao(img)) continue
+    if (!img || focoDaMao(img)) continue
     const video = img.kind === 'video'
     const arquivo = img.invertido && img.caminhoInvertido ? img.caminhoInvertido : img.path
     const de = video ? Math.max(alvo.de, 0) : 0
     const ate = video ? de + alvo.dura : 0
-    const chave = chaveDoPedidoDeRosto(arquivo, de)
-    if (!pedidos.has(chave)) pedidos.set(chave, { chave, arquivo, de, ate, personagens: nomesDoTrecho(alvo.start, alvo.end) })
+    const chave = chaveDoPedidoDeRosto(arquivo, de, alvo.metade)
+    const nomes = nomesDoTrecho(alvo.start, alvo.end)
+    // A metade de baixo prefere o segundo citado (o primeiro vai em cima).
+    const personagens = alvo.deBaixo ? [...nomes.slice(1), ...nomes.slice(0, 1)] : nomes
+    if (!pedidos.has(chave)) pedidos.set(chave, { chave, arquivo, de, ate, personagens, ...(alvo.metade ? { metade: true } : {}) })
     imagensDaChave.set(chave, [...(imagensDaChave.get(chave) ?? []), i])
   }
   if (pedidos.size === 0) return { porImagem: new Map(), comRosto: 0, total: 0, fonte: 'nenhum' }
@@ -585,7 +590,13 @@ async function prepararRostos(
     for (const i of imagensDaChave.get(f.chave) ?? []) {
       const img = e.images[i]
       if (!img || (img.focusX === f.focusX && img.focusY === f.focusY && img.focusAuto === f.focusAuto)) continue
-      porImagem.set(img.id, { focusX: f.focusX, focusY: f.focusY, focusAuto: f.focusAuto, antes: { focusX: img.focusX, focusY: img.focusY } })
+      porImagem.set(img.id, {
+        focusX: f.focusX,
+        focusY: f.focusY,
+        focusAuto: f.focusAuto,
+        antes: { focusX: img.focusX, focusY: img.focusY },
+        ...(f.chave.endsWith('|metade') ? { metade: true } : {}),
+      })
     }
   }
   // O recorte 9:16 e refeito agora para TODO bloco: o preview e o render leem
@@ -597,6 +608,8 @@ async function prepararRostos(
       porImagem.delete(id)
       return
     }
+    // A metade do grid toca o original (urlSource) com o foco ao vivo: nao ha recorte a refazer.
+    if (foco.metade) return
     const feito = await window.dangai.reframeImage({
       id: img.invertido ? `${img.id}-inv` : img.id,
       path: img.invertido && img.caminhoInvertido ? img.caminhoInvertido : img.path,
