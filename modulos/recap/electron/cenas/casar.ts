@@ -12,6 +12,8 @@ import {
   posDoKeyframe,
   produtoInterno,
   tagEmPortugues,
+  tagsComPeso,
+  tagsDoAssunto,
   tagUtil,
   type CamadasDoCasar,
   type QuadroDaVisao,
@@ -908,8 +910,14 @@ export interface VisaoDoEpisodio {
   sinais: SinaisDoCasar
   /** C1: as falas perto de cada plano: peso 1 dentro, 0,6 ate SENTIDO_PERTO_SEC. */
   cuesPerto: Map<string, { id: string; peso: number }[]>
-  /** C3: o idf de cada etiqueta, 0..1 (rara = 1). */
+  /** C3: o idf de cada etiqueta, 0..1 (rara = 1), contado so com as que valem (pesoDasTags). */
   idf: Map<string, number>
+  /**
+   * C3 (19/10): as etiquetas que valem em cada plano (normalizadas) e o peso
+   * 0..1 de cada uma: pela confianca, quando o visao.json tem (a fraca nao
+   * entra), ou pela posicao na lista (pesoDaTag).
+   */
+  pesoDasTags: Map<string, Map<string, number>>
   /** C7: a qualidade (desvios de beleza + nitidez) e o borrado de cada quadro, por arquivo. */
   qualidade: Map<string, { q: number; borrado: boolean }>
   /** C7: os planos apagados (todos os quadros borrados e feios: nevoa, lustre no escuro). */
@@ -934,12 +942,20 @@ export interface AssuntoDoPlano {
   objetos: string[]
 }
 
-/** Os assuntos dos planos com rosto reconhecido E objeto nas etiquetas (os outros nao repetem assunto). */
-export function assuntosDosPlanos(todos: readonly PlanoDoCasar[], tagsDoPlano: ReadonlyMap<string, readonly string[]> | undefined): Map<string, AssuntoDoPlano> {
+/**
+ * Os assuntos dos planos com rosto reconhecido E objeto nas etiquetas (os
+ * outros nao repetem assunto). Com a confianca, o objeto conta a partir de
+ * TAG_CORTE_DO_ASSUNTO (tagsDoAssunto).
+ */
+export function assuntosDosPlanos(
+  todos: readonly PlanoDoCasar[],
+  tagsDoPlano: ReadonlyMap<string, readonly string[]> | undefined,
+  confianca?: ReadonlyMap<string, ReadonlyMap<string, number>>,
+): Map<string, AssuntoDoPlano> {
   const saida = new Map<string, AssuntoDoPlano>()
   if (!tagsDoPlano || tagsDoPlano.size === 0) return saida
   for (const p of todos) {
-    const objetos = objetosDasTags(tagsDoPlano.get(p.plano.id) ?? [])
+    const objetos = objetosDasTags(tagsDoAssunto(tagsDoPlano.get(p.plano.id) ?? [], confianca?.get(p.plano.id)))
     const pessoas = [...new Set(p.rostos.map((r) => r.fichas.join(' ') || r.nome))]
     if (objetos.length > 0 && pessoas.length > 0) saida.set(p.plano.id, { pessoas, objetos })
   }
@@ -1011,9 +1027,11 @@ export function prepararVisao(
     }
   }
   const idf = new Map<string, number>()
+  const pesoDasTags = new Map<string, Map<string, number>>()
   if (c.tags && sinais.tagsDoPlano && sinais.tagsDoPlano.size > 0) {
+    for (const [id, tags] of sinais.tagsDoPlano) pesoDasTags.set(id, tagsComPeso(tags, sinais.confiancaDasTags?.get(id)))
     const df = new Map<string, number>()
-    for (const tags of sinais.tagsDoPlano.values()) for (const t of new Set(tags.map(normalizarTag))) df.set(t, (df.get(t) ?? 0) + 1)
+    for (const pesos of pesoDasTags.values()) for (const t of pesos.keys()) df.set(t, (df.get(t) ?? 0) + 1)
     const n = sinais.tagsDoPlano.size
     for (const [t, k] of df) idf.set(t, Math.log((n + 1) / (k + 1)) / Math.log(n + 1))
   }
@@ -1042,11 +1060,12 @@ export function prepararVisao(
     sinais,
     cuesPerto,
     idf,
+    pesoDasTags,
     qualidade,
     apagados,
     grupoVisual: gruposVisuais(todos, sinais.quadros),
     leitura,
-    assunto: c.tags ? assuntosDosPlanos(todos, sinais.tagsDoPlano) : new Map(),
+    assunto: c.tags ? assuntosDosPlanos(todos, sinais.tagsDoPlano, sinais.confiancaDasTags) : new Map(),
     closes: new Set([...rostos].filter(([, w]) => w > CLOSE_EXTREMO).map(([id]) => id)),
   }
 }
@@ -1121,21 +1140,21 @@ export function sinaisDaFrase(fraseId: string, todos: readonly PlanoDoCasar[], v
 }
 
 /**
- * C3: as etiquetas da frase no plano. Cada uma vale pela confianca (a posicao
- * na lista do WD-Tagger, das 20 mais confiantes: a 1a vale 1, a 20a 0,5) vezes
- * a raridade no episodio (idf): "1girl" em toda cena nao diz nada.
+ * C3: as etiquetas da frase no plano. Cada uma vale pela confianca do
+ * WD-Tagger (pesoDaTag: 0,5 a 1, a fraca nem entra; sem confianca gravada, a
+ * posicao na lista) vezes a raridade no episodio (idf): "1girl" em toda cena
+ * nao diz nada.
  */
 function tagsNoPlano(p: PlanoDoCasar, pedidas: readonly string[], v: VisaoDoEpisodio): { forca: number; melhor: string | null } {
-  const doPlano = v.sinais.tagsDoPlano?.get(p.plano.id)
+  const doPlano = v.pesoDasTags.get(p.plano.id)
   if (!doPlano || pedidas.length === 0) return { forca: 0, melhor: null }
-  const lista = doPlano.map(normalizarTag)
   let soma = 0
   let melhor: string | null = null
   let maior = 0
   for (const t of pedidas) {
-    const r = lista.indexOf(t)
-    if (r < 0) continue
-    const x = (1 - (0.5 * r) / 20) * (v.idf.get(t) ?? 0)
+    const peso = doPlano.get(t)
+    if (peso === undefined) continue
+    const x = peso * (v.idf.get(t) ?? 0)
     soma += x
     if (x > maior) {
       maior = x

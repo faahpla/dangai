@@ -33,6 +33,12 @@ export interface SinaisDoCasar {
   sentidoDaCue?: ReadonlyMap<string, Float32Array>
   /** C3: as etiquetas do WD-Tagger de cada plano (da mais confiante para a menos) e as da frase. */
   tagsDoPlano?: ReadonlyMap<string, readonly string[]>
+  /**
+   * C3 (19/10): a CONFIANCA (0..1) de cada etiqueta do plano, planoId -> tag
+   * normalizada -> p (etiquetarComConfianca do nucleo). Plano ausente = o
+   * visao.json de antes, sem confianca: a etiqueta vale pela posicao na lista.
+   */
+  confiancaDasTags?: ReadonlyMap<string, ReadonlyMap<string, number>>
   tagsDaFrase?: ReadonlyMap<string, readonly string[]>
 }
 
@@ -115,6 +121,80 @@ const TAGS_FRACAS = new Set([
 
 export function tagUtil(t: string): boolean {
   return t.length > 1 && !TAGS_FRACAS.has(t)
+}
+
+// ------------------------------------------ a confianca da etiqueta (19/10)
+
+/**
+ * Abaixo desta confianca a etiqueta nao conta na escolha (C3). O etiquetador
+ * guarda tudo acima de 0,35 (o corte do autor do modelo). Conferido olhando os
+ * keyframes do MRM E02 e do Nia E01, nas etiquetas que as frases pedem: de
+ * 0,35 a 0,40 acertam ~2 em 3 (os erros: "bed" numa tela de cristal, "lying"
+ * na cama vazia, "close-up" no quadro borrado da transicao, "sunlight" no
+ * ceu); de 0,40 a 0,45, ~3 em 4; de 0,45 a 0,5, ~85%; acima, quase todas.
+ * Mais alto joga fora etiqueta que ainda acerta e mexe na conta do roteiro:
+ * a 0,45 (e a 0,50 e 0,55) o f06 do Nia trocava o corredor da mansao por um
+ * lustre no escuro; a 0,35 e 0,40 nenhuma cena muda nos dois.
+ */
+export const TAG_CORTE = 0.4
+/** A partir daqui a etiqueta vale inteira. */
+export const TAG_CHEIA = 0.85
+/**
+ * O corte do ASSUNTO (o objeto na mao, objetosDasTags): o do proprio
+ * etiquetador, sem corte a mais. Os objetos acertam ate com pouca confianca
+ * ("paper" de 0,41 a 0,49 e o "holding" do Lent com o papel, 0,35 e 0,39: todos
+ * certos) e perder um traz a repeticao de volta: a 0,40 o 0133 deixa de ser
+ * "Lent com o papel" e o f10 do MRM E02 vira a 3a cena seguida com o papel.
+ */
+export const TAG_CORTE_DO_ASSUNTO = 0.35
+
+/**
+ * O peso 0..1 de uma etiqueta do plano na escolha. Com a confianca `p`: 0
+ * abaixo de TAG_CORTE, de 0,5 (no corte) a 1 (TAG_CHEIA). Sem ela (o visao.json
+ * de antes): pela posicao na lista das 20 mais confiantes, a 1a vale 1 e a 20a
+ * ~0,5 -- a conta de sempre.
+ */
+export function pesoDaTag(p: number | undefined, posicao: number): number {
+  if (p === undefined || !Number.isFinite(p)) return 1 - (0.5 * posicao) / 20
+  if (p < TAG_CORTE) return 0
+  return 0.5 + 0.5 * Math.min(1, (p - TAG_CORTE) / (TAG_CHEIA - TAG_CORTE))
+}
+
+/** As etiquetas do plano que contam, normalizadas, com o peso (pesoDaTag > 0). A 1a vez de cada uma vale. */
+export function tagsComPeso(tags: readonly string[], confianca: ReadonlyMap<string, number> | undefined): Map<string, number> {
+  const saida = new Map<string, number>()
+  tags.forEach((bruta, i) => {
+    const t = normalizarTag(bruta)
+    if (saida.has(t)) return
+    const peso = pesoDaTag(confianca?.get(t), i)
+    if (peso > 0) saida.set(t, peso)
+  })
+  return saida
+}
+
+/** As etiquetas do plano para o ASSUNTO: todas sem confianca; com ela, so a partir de TAG_CORTE_DO_ASSUNTO. */
+export function tagsDoAssunto(tags: readonly string[], confianca: ReadonlyMap<string, number> | undefined): string[] {
+  if (!confianca) return [...tags]
+  return tags.filter((t) => (confianca.get(normalizarTag(t)) ?? 1) >= TAG_CORTE_DO_ASSUNTO)
+}
+
+/** A confianca gravada (tags e p na mesma ordem) no formato do casar. Listas tortas ficam de fora. */
+export function confiancaDasTagsGravadas(
+  tags: Readonly<Record<string, readonly string[]>>,
+  confiancas: Readonly<Record<string, readonly number[]>>,
+): Map<string, Map<string, number>> {
+  const saida = new Map<string, Map<string, number>>()
+  for (const [id, lista] of Object.entries(tags)) {
+    const ps = confiancas[id]
+    if (!Array.isArray(ps) || ps.length !== lista.length) continue
+    const m = new Map<string, number>()
+    lista.forEach((t, i) => {
+      const k = normalizarTag(t)
+      if (!m.has(k)) m.set(k, Number(ps[i]))
+    })
+    saida.set(id, m)
+  }
+  return saida
 }
 
 /** O rotulo do "porque" para as etiquetas mais comuns de acao, objeto e lugar. O resto vai em ingles. */
