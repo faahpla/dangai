@@ -1,10 +1,21 @@
 import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import sharp from 'sharp'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
 import { medidasDo, type Formato } from '@shared/contract'
 import type { FocoDoRosto, FonteDoRosto, LoteDeRostos, PedidoDeRosto, RostosDoLote } from '../../shared/edicao-rapida'
-import type { EpisodeIndex } from '../../shared/episodio'
+import type { EpisodeIndex, Plano } from '../../shared/episodio'
+import {
+  descritorDoRecorte,
+  janelaVisivel,
+  RECORTE_ALTURA,
+  RECORTE_IGUAL,
+  RECORTE_LARGURA,
+  semelhancaDosRecortes,
+  type DescritorDoRecorte,
+} from '../../shared/recorte'
+import { posDoKeyframe } from '../../shared/visao'
 import { fichasDoNome } from '@shared/nomes'
 import { abrirIndicePorId } from '../episodio/abrir-indice'
 import { pastaDoPerfil } from '../episodio/perfil'
@@ -115,6 +126,8 @@ export type ComoEscolheu = 'citado' | 'janela' | 'indice' | 'maior' | 'nenhum'
 export interface EscolhaNoPedaco {
   /** Ponto do quadro (fracao 0..1) que vai ao centro da janela. null = centro, sem rosto. */
   centro: { centroX: number; centroY: number } | null
+  /** (3a rodada) Close extremo: o recorte mira um olho (os dois nao cabem na janela). */
+  olho?: 'esquerdo' | 'direito'
   /** O personagem citado que ficou enquadrado. null = o maior rosto (ou nenhum). */
   personagem: string | null
   como: ComoEscolheu
@@ -132,6 +145,8 @@ interface Deteccao {
   h: number
   peso: number
   personagem: string | null
+  /** (3a rodada) Quem e o rosto, citado ou nao (RostoDoMotor.pessoa). */
+  pessoa: string | null
 }
 
 /** A cabeca (rosto + cabelo) tem ~2x a area do rosto: pesa metade, para nao ganhar so por ser cabeca. */
@@ -224,52 +239,8 @@ export function escolherNoPedaco(
     return i >= 0 ? i : Infinity
   }
 
-  // 1. Trilhas: o mesmo rosto de um instante ao outro (guloso, do maior ao menor).
-  const trilhas: Deteccao[][] = []
-  quadros.forEach((quadro, q) => {
-    if (!quadro.ok) return
-    const dets: Deteccao[] = quadro.rostos
-      .filter((r) => r.w > 0 && r.h > 0)
-      .map((r) => {
-        const w = r.w / largura
-        const h = r.h / altura
-        return {
-          q,
-          cx: (r.x + r.w / 2) / largura,
-          cy: (r.y + r.h / 2) / altura,
-          w,
-          h,
-          peso: w * h * (r.tipo === 'cabeca' ? PESO_DA_CABECA : 1),
-          personagem: r.personagem,
-        }
-      })
-      .sort((a, b) => b.peso - a.peso)
-    const usadas = new Set<Deteccao[]>()
-    for (const d of dets) {
-      let melhor: Deteccao[] | null = null
-      let menor = Infinity
-      for (const t of trilhas) {
-        if (usadas.has(t)) continue
-        const u = t[t.length - 1]!
-        if (u.q >= q) continue
-        const escala = (d.w * d.h) / (u.w * u.h)
-        if (escala > ESCALA_NO_MAXIMO || escala < 1 / ESCALA_NO_MAXIMO) continue
-        const anda = Math.hypot((d.cx - u.cx) / Math.max(d.w, u.w), (d.cy - u.cy) / Math.max(d.h, u.h))
-        if (anda < ANDA_NO_MAXIMO && anda < menor) {
-          menor = anda
-          melhor = t
-        }
-      }
-      if (melhor) {
-        melhor.push(d)
-        usadas.add(melhor)
-      } else {
-        const nova = [d]
-        trilhas.push(nova)
-        usadas.add(nova)
-      }
-    }
-  })
+  // 1. Trilhas: o mesmo rosto de um instante ao outro (trilhasDoPedaco).
+  const trilhas = trilhasDoPedaco(pedaco)
 
   const pesoDa = (t: readonly Deteccao[]): number => t.reduce((s, d) => s + d.peso, 0)
   const rankDa = (t: readonly Deteccao[]): number => Math.min(Infinity, ...t.map((d) => rankDe(d.personagem)))
@@ -319,12 +290,7 @@ export function escolherNoPedaco(
   }
 
   // 4. Onde: a mediana da trilha (suaviza o pedaco inteiro num foco so).
-  const caixa = (t: readonly Deteccao[]): { cx: number; cy: number; w: number; h: number } => ({
-    cx: medianaPonderada(t.map((d) => ({ v: d.cx, p: d.peso }))),
-    cy: medianaPonderada(t.map((d) => ({ v: d.cy, p: d.peso }))),
-    w: medianaPonderada(t.map((d) => ({ v: d.w, p: d.peso }))),
-    h: medianaPonderada(t.map((d) => ({ v: d.h, p: d.peso }))),
-  })
+  const caixa = caixaDaTrilha
   const base = caixa(escolhida)
   let x0 = base.cx - base.w / 2
   let x1 = base.cx + base.w / 2
@@ -349,14 +315,166 @@ export function escolherNoPedaco(
     if (t === escolhida || citadas.some((c) => c.t === t) || pesoDa(t) < JUNTO_PESO_MIN * pesoEscolhida) continue
     juntar(t)
   }
+  // (3a rodada) A reserva do close extremo (o casar evita, mas ele entra sem outra saida ou travado):
+  // os dois olhos nao cabem na janela -> o recorte mira UM olho, nunca o nariz e a boca.
+  const olho = juntos === 0 ? centroNumOlho(base, janela) : null
   return {
-    centro: { centroX: (x0 + x1) / 2, centroY: (y0 + y1) / 2 },
+    centro: olho ? { centroX: olho.centroX, centroY: (y0 + y1) / 2 } : { centroX: (x0 + x1) / 2, centroY: (y0 + y1) / 2 },
     personagem,
     como,
     juntos,
     instantesComRosto,
     instantes,
+    ...(olho ? { olho: olho.olho } : {}),
   }
+}
+
+/** Em rosto de anime, os olhos ficam a ~30% e ~70% da largura da caixa: +-OLHO_X do centro. */
+const OLHO_X = 0.2
+/** O olho fica a esta fracao da janela, do lado de fora: o resto do rosto entra pelo lado de dentro. */
+const OLHO_NA_JANELA = 0.3
+
+/**
+ * (19/10, 3a rodada) O CLOSE EXTREMO na tela (o Nia E01, bloco 1: o rosto
+ * maior que a janela, os olhos perto das bordas do 16:9, e o recorte no meio
+ * mostrava so o nariz e a boca): quando os dois olhos (estimados pela caixa,
+ * OLHO_X) nao cabem na janela, o recorte mira o olho que esta dentro do quadro
+ * e mais perto do meio dele, com o olho a OLHO_NA_JANELA da borda de fora. A
+ * caixa cortada pela borda do quadro vale pela parte visivel. null = cabem (o
+ * de sempre: o meio dos olhos e o meio da caixa).
+ */
+export function centroNumOlho(caixa: { cx: number; w: number }, janela: number): { centroX: number; olho: 'esquerdo' | 'direito' } | null {
+  if (!(janela > 0) || 2 * OLHO_X * caixa.w <= janela) return null
+  const esq = caixa.cx - OLHO_X * caixa.w
+  const dir = caixa.cx + OLHO_X * caixa.w
+  const dentro = (x: number): boolean => x >= 0.02 && x <= 0.98
+  const opcoes = [
+    { x: esq, olho: 'esquerdo' as const },
+    { x: dir, olho: 'direito' as const },
+  ].filter((o) => dentro(o.x))
+  if (opcoes.length === 0) return null
+  const o = opcoes.sort((a, b) => Math.abs(a.x - 0.5) - Math.abs(b.x - 0.5))[0]!
+  // O resto do rosto fica para dentro: o olho esquerdo na parte esquerda da janela, o direito na direita.
+  const desvio = (0.5 - OLHO_NA_JANELA) * janela
+  const centroX = o.olho === 'esquerdo' ? o.x + desvio : o.x - desvio
+  return { centroX: Math.min(1 - janela / 2, Math.max(janela / 2, centroX)), olho: o.olho }
+}
+
+/** As trilhas do pedaco: o mesmo rosto de um instante ao outro (guloso, do maior ao menor). */
+function trilhasDoPedaco(pedaco: RostosDoPedaco): Deteccao[][] {
+  const { largura, altura, quadros } = pedaco
+  const trilhas: Deteccao[][] = []
+  if (largura <= 0 || altura <= 0) return trilhas
+  quadros.forEach((quadro, q) => {
+    if (!quadro.ok) return
+    const dets: Deteccao[] = quadro.rostos
+      .filter((r) => r.w > 0 && r.h > 0)
+      .map((r) => {
+        const w = r.w / largura
+        const h = r.h / altura
+        return {
+          q,
+          cx: (r.x + r.w / 2) / largura,
+          cy: (r.y + r.h / 2) / altura,
+          w,
+          h,
+          peso: w * h * (r.tipo === 'cabeca' ? PESO_DA_CABECA : 1),
+          personagem: r.personagem,
+          pessoa: r.pessoa ?? null,
+        }
+      })
+      .sort((a, b) => b.peso - a.peso)
+    const usadas = new Set<Deteccao[]>()
+    for (const d of dets) {
+      let melhor: Deteccao[] | null = null
+      let menor = Infinity
+      for (const t of trilhas) {
+        if (usadas.has(t)) continue
+        const u = t[t.length - 1]!
+        if (u.q >= q) continue
+        const escala = (d.w * d.h) / (u.w * u.h)
+        if (escala > ESCALA_NO_MAXIMO || escala < 1 / ESCALA_NO_MAXIMO) continue
+        const anda = Math.hypot((d.cx - u.cx) / Math.max(d.w, u.w), (d.cy - u.cy) / Math.max(d.h, u.h))
+        if (anda < ANDA_NO_MAXIMO && anda < menor) {
+          menor = anda
+          melhor = t
+        }
+      }
+      if (melhor) {
+        melhor.push(d)
+        usadas.add(melhor)
+      } else {
+        const nova = [d]
+        trilhas.push(nova)
+        usadas.add(nova)
+      }
+    }
+  })
+  return trilhas
+}
+
+/** A caixa de uma trilha: a mediana ponderada de cada medida (um foco so por pedaco). */
+function caixaDaTrilha(t: readonly Deteccao[]): { cx: number; cy: number; w: number; h: number } {
+  return {
+    cx: medianaPonderada(t.map((d) => ({ v: d.cx, p: d.peso }))),
+    cy: medianaPonderada(t.map((d) => ({ v: d.cy, p: d.peso }))),
+    w: medianaPonderada(t.map((d) => ({ v: d.w, p: d.peso }))),
+    h: medianaPonderada(t.map((d) => ({ v: d.h, p: d.peso }))),
+  }
+}
+
+/** Um recorte possivel de um pedaco: centrado num rosto (fracao do quadro) e quem ele mostra. */
+export interface OutroRecorte {
+  centro: { centroX: number; centroY: number }
+  /** Quem o rosto e (o motor identificou), ou null. */
+  quem: string | null
+  peso: number
+}
+
+/**
+ * (3a rodada) OS OUTROS RECORTES de um pedaco: cada rosto que aparece de verdade
+ * (trilha com pelo menos CITADO_PESO_MIN do maior), fora do recorte de agora
+ * (mais de meia janela do centro atual), um por posicao. Na ordem: quem o
+ * pedaco cita (`preferidos`), depois o maior. Pura: o pos-passo do recorte
+ * (semRecortesIguais) prova cada um contra a cena vizinha.
+ */
+export function outrosRecortes(
+  pedaco: RostosDoPedaco,
+  preferidos: readonly string[],
+  janela: number,
+  centroAtual: number | null,
+): OutroRecorte[] {
+  const trilhas = trilhasDoPedaco(pedaco)
+  if (trilhas.length === 0) return []
+  const pesoDa = (t: readonly Deteccao[]): number => t.reduce((s, d) => s + d.peso, 0)
+  const maior = Math.max(...trilhas.map(pesoDa))
+  const quemDa = (t: readonly Deteccao[]): string | null => {
+    const conta = new Map<string, number>()
+    for (const d of t) {
+      const n = d.pessoa ?? d.personagem
+      if (n) conta.set(n, (conta.get(n) ?? 0) + d.peso)
+    }
+    return [...conta.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+  }
+  const rankDe = (nome: string | null): number => {
+    if (!nome) return Infinity
+    const i = preferidos.findIndex((c) => c === nome || mesmaPessoa(c, nome))
+    return i >= 0 ? i : Infinity
+  }
+  const todos = trilhas
+    .filter((t) => pesoDa(t) >= CITADO_PESO_MIN * maior)
+    .map((t) => {
+      const c = caixaDaTrilha(t)
+      return { centro: { centroX: c.cx, centroY: c.cy }, quem: quemDa(t), peso: pesoDa(t) }
+    })
+    .sort((a, b) => rankDe(a.quem) - rankDe(b.quem) || b.peso - a.peso)
+  const saida: OutroRecorte[] = []
+  for (const r of todos) {
+    if (centroAtual !== null && Math.abs(r.centro.centroX - centroAtual) < janela / 2) continue
+    if (saida.some((x) => Math.abs(x.centro.centroX - r.centro.centroX) < janela / 2)) continue
+    saida.push(r)
+  }
+  return saida
 }
 
 /**
@@ -710,6 +828,226 @@ function personagensPorArquivo(indice: Pick<EpisodeIndex, 'planos'> | null): (ar
   return (arquivo) => mapa.get(norm(arquivo)) ?? []
 }
 
+/** As larguras ja medidas por indice (a sugestao de cenas pede de novo a cada frase). */
+const largurasPorIndice = new Map<string, Promise<Map<string, number>>>()
+
+/**
+ * (19/10, 3a rodada) A LARGURA DO MAIOR ROSTO de cada plano (fracao do quadro),
+ * para o casar evitar o close extremo: o modo rostos do motor nos 3 instantes
+ * de cada plano (25/50/75%), so detectando (sem identificar), com o mesmo
+ * cache do rostosDosPedacos -- a 1a vez de um episodio leva ~1 min (375 planos
+ * do MRM E02: 63 s na GPU); depois, nada. A largura e a mediana entre os
+ * instantes do maior rosto de cada um. Sem motor ou teto: o que chegou (o
+ * casar fica sem a regra nos outros).
+ */
+export function largurasDosRostos(
+  indice: Pick<EpisodeIndex, 'id' | 'anime' | 'temporada' | 'planos' | 'atualizadoEm'>,
+  o: OpcoesDoRostoPeloMotor & { tetoMs?: number } = {},
+): Promise<Map<string, number>> {
+  const chave = `${indice.id}|${indice.planos.length}|${indice.atualizadoEm}`
+  const pronta = largurasPorIndice.get(chave)
+  if (pronta) return pronta
+  const conta = (async () => {
+    const itens: ItemDoMotor[] = indice.planos
+      .filter((p) => p.arquivo && p.end > p.start)
+      .map((p) => {
+        const base = p.inicioNoArquivo ?? 0
+        const d = p.end - p.start
+        return { chave: p.id, arquivo: p.arquivo, instantes: [0.25, 0.5, 0.75].map((f) => base + f * d), personagens: [], candidatos: [] }
+      })
+    const arquivoCache = arquivoDoCache(o)
+    const cache = lerCache(arquivoCache)
+    const chaves = new Map(itens.map((it) => [it.chave, chaveDoCache(it, null, false)]))
+    const resultados = new Map<string, RostosDoPedaco>()
+    for (const it of itens) {
+      const k = chaves.get(it.chave)
+      const achado = k ? cache.get(k) : undefined
+      if (achado) resultados.set(it.chave, achado)
+    }
+    const faltam = itens.filter((it) => !resultados.has(it.chave))
+    if (faltam.length > 0) {
+      const r = await rodarMotorDeRostos(faltam, { anime: null, temporada: null, identificar: false, aspecto: null }, o.tetoMs ?? 240_000, o)
+      for (const [k, achado] of r.resultados) {
+        resultados.set(k, achado)
+        const ck = chaves.get(k)
+        if (ck) {
+          cache.delete(ck)
+          cache.set(ck, achado)
+        }
+      }
+      if (r.resultados.size > 0) gravarCache(arquivoCache, cache)
+    }
+    const saida = new Map<string, number>()
+    for (const [id, achado] of resultados) {
+      const w = larguraDoMaiorRosto(achado)
+      if (w !== null) saida.set(id, w)
+    }
+    return saida
+  })().catch(() => new Map<string, number>())
+  largurasPorIndice.set(chave, conta)
+  return conta
+}
+
+/** A mediana, entre os instantes com rosto, da largura (fracao) do maior rosto. null = rosto em menos de 2. */
+export function larguraDoMaiorRosto(achado: RostosDoPedaco): number | null {
+  if (!(achado.largura > 0)) return null
+  const ws = achado.quadros
+    .filter((q) => q.ok && q.rostos.length > 0)
+    .map((q) => [...q.rostos].sort((a, b) => b.w * b.h - a.w * a.h)[0]!.w / achado.largura)
+    .sort((a, b) => a - b)
+  return ws.length >= 2 ? ws[Math.floor((ws.length - 1) / 2)]! : null
+}
+
+/** O plano do indice de cada mp4 (o mesmo caminho, sem caixa nem barra). */
+function planoPorArquivo(indice: Pick<EpisodeIndex, 'planos'>): (arquivo: string) => Plano | null {
+  const norm = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
+  const mapa = new Map<string, Plano>()
+  for (const p of indice.planos) mapa.set(norm(p.arquivo), p)
+  return (arquivo) => mapa.get(norm(arquivo)) ?? null
+}
+
+// ============================================ o recorte visto de perto (3a rodada)
+
+/** O keyframe do plano mais perto do meio do trecho que o pedido toca (segundos do mp4). */
+function keyframeDoTrecho(plano: Pick<Plano, 'keyframe' | 'start' | 'end' | 'inicioNoArquivo'>, de: number, ate: number): string | null {
+  const kf = plano.keyframe
+  if (!kf) return null
+  if (!/_1\.jpe?g$/i.test(kf)) return kf
+  const dur = plano.end - plano.start
+  const meio = (de + ate) / 2 - (plano.inicioNoArquivo ?? 0)
+  let k = 1
+  let menor = Infinity
+  for (const kk of [0, 1, 2]) {
+    const d = Math.abs(posDoKeyframe(kk) * dur - meio)
+    if (d < menor) {
+      menor = d
+      k = kk
+    }
+  }
+  return kf.replace(/_1(\.jpe?g)$/i, `_${k}$1`)
+}
+
+/** O recorte que a tela mostra de um keyframe, no focusX, reduzido para a comparacao. null = nao leu. */
+async function descritorNoFoco(kf: string, focusX: number, formato: Formato): Promise<DescritorDoRecorte | null> {
+  try {
+    const meta = await sharp(kf).metadata()
+    const W = meta.width ?? 0
+    const H = meta.height ?? 0
+    if (W <= 0 || H <= 0) return null
+    const j = janelaVisivel(focusX, W, H, formato)
+    const w = Math.max(1, Math.min(W, Math.round(j.largura * W)))
+    const x = Math.max(0, Math.min(W - w, Math.round(j.centro * W - w / 2)))
+    const { data } = await sharp(kf)
+      .extract({ left: x, top: 0, width: w, height: H })
+      .resize(RECORTE_LARGURA, RECORTE_ALTURA, { fit: 'fill' })
+      .removeAlpha()
+      .toColourspace('srgb')
+      .raw()
+      .toBuffer({ resolveWithObject: true })
+    return descritorDoRecorte(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
+  } catch {
+    return null
+  }
+}
+
+/** Dois pedidos do mesmo mp4, o segundo continuando o primeiro: e a mesma cena seguindo (sem corte). */
+function colados(a: Pick<PedidoDeRosto, 'arquivo' | 'de' | 'ate'>, b: Pick<PedidoDeRosto, 'arquivo' | 'de' | 'ate'>): boolean {
+  return a.arquivo.toLowerCase() === b.arquivo.toLowerCase() && Math.abs(b.de - a.ate) < 0.6
+}
+
+/**
+ * (19/10, 3a rodada) SEM RECORTES IGUAIS: a cena seguida quase igual DEPOIS do
+ * recorte 9:16 (o Lent com o papel em 0126 -> 0129, o Lent de perfil em 0285 ->
+ * 0286 no MRM E02) parece um jump cut. Para cada pedido, na ordem da montagem,
+ * o recorte e comparado com o da cena de antes e com as vezes anteriores do
+ * MESMO plano (a repeticao nunca mostra o mesmo quadro). Acima de RECORTE_IGUAL:
+ *   1. outro recorte na cena de agora: outro rosto do pedaco (outrosRecortes,
+ *      quem o pedaco cita primeiro), o primeiro que fica diferente das vizinhas;
+ *   2. senao, outro recorte na cena de antes (se ela ainda nao foi trocada);
+ *   3. senao, fica, com aviso.
+ * Cada pedido troca no maximo uma vez. Muda `focos` no lugar; devolve os avisos.
+ */
+async function semRecortesIguais(e: {
+  pedidos: readonly PedidoDeRosto[]
+  focos: Map<string, FocoDoRosto>
+  resultados: ReadonlyMap<string, RostosDoPedaco>
+  planoDe: (arquivo: string) => Plano | null
+  formato: Formato
+}): Promise<string[]> {
+  const ordem: PedidoDeRosto[] = []
+  for (const p of e.pedidos) if (ordem[ordem.length - 1]?.chave !== p.chave) ordem.push(p)
+  const lidos = new Map<string, Promise<DescritorDoRecorte | null>>()
+  const descritor = (p: PedidoDeRosto, focusX: number): Promise<DescritorDoRecorte | null> => {
+    const k = `${p.chave}|${focusX.toFixed(4)}`
+    let d = lidos.get(k)
+    if (!d) {
+      const plano = e.planoDe(p.arquivo)
+      const kf = plano ? keyframeDoTrecho(plano, p.de, Math.max(p.ate, p.de)) : null
+      d = kf ? descritorNoFoco(kf, focusX, e.formato) : Promise.resolve(null)
+      lidos.set(k, d)
+    }
+    return d
+  }
+  const atual = (p: PedidoDeRosto): Promise<DescritorDoRecorte | null> => descritor(p, e.focos.get(p.chave)?.focusX ?? 0.5)
+  /** A maior semelhanca do recorte `d` (do pedido p) com os vizinhos. */
+  const piorContra = async (d: DescritorDoRecorte, vizinhos: readonly PedidoDeRosto[]): Promise<number> => {
+    let pior = 0
+    for (const v of vizinhos) {
+      const dv = await atual(v)
+      if (dv) pior = Math.max(pior, semelhancaDosRecortes(d, dv))
+    }
+    return pior
+  }
+  const trocados = new Set<string>()
+  /** Tenta outro recorte em `p` que fique diferente de todos os `vizinhos`. */
+  const tentar = async (p: PedidoDeRosto, vizinhos: readonly PedidoDeRosto[]): Promise<boolean> => {
+    if (trocados.has(p.chave)) return false
+    const achado = e.resultados.get(p.chave)
+    const foco = e.focos.get(p.chave)
+    if (!achado || !foco || achado.largura <= 0 || achado.altura <= 0) return false
+    const janela = janelaDoFormato(achado.largura, achado.altura, e.formato)
+    const centroAtual = janelaVisivel(foco.focusX, achado.largura, achado.altura, e.formato).centro
+    for (const alt of outrosRecortes(achado, citadosNaOrdem(p.personagens), janela, centroAtual)) {
+      const f = focoNoQuadro(alt.centro, achado.largura, achado.altura, e.formato)
+      const d = await descritor(p, f.focusX)
+      if (!d || (await piorContra(d, vizinhos)) >= RECORTE_IGUAL) continue
+      e.focos.set(p.chave, { ...foco, focusX: f.focusX, focusY: f.focusY, focusAuto: true, fonte: 'motor', personagem: alt.quem })
+      trocados.add(p.chave)
+      return true
+    }
+    return false
+  }
+  const avisos: string[] = []
+  let trocas = 0
+  let ficaram = 0
+  for (let i = 1; i < ordem.length; i++) {
+    const b = ordem[i]!
+    const anteriores = ordem.slice(0, i - 1).filter((x) => x.arquivo.toLowerCase() === b.arquivo.toLowerCase() && x.chave !== b.chave)
+    const vizinhos = [ordem[i - 1]!, ...anteriores].filter((a) => a.chave !== b.chave && !colados(a, b))
+    if (vizinhos.length === 0) continue
+    const db = await atual(b)
+    if (!db || (await piorContra(db, vizinhos)) < RECORTE_IGUAL) continue
+    // 1. Outro recorte na cena de agora, diferente das de antes e da seguinte.
+    const seguinte = ordem[i + 1] && !colados(b, ordem[i + 1]!) ? [ordem[i + 1]!] : []
+    if (await tentar(b, [...vizinhos, ...seguinte])) {
+      trocas += 1
+      continue
+    }
+    // 2. Outro recorte na cena de antes (a vizinha imediata), diferente da dela de antes e desta.
+    const a = ordem[i - 1]!
+    const antesDeA = i >= 2 && !colados(ordem[i - 2]!, a) ? [ordem[i - 2]!] : []
+    if (vizinhos.includes(a) && (await tentar(a, [...antesDeA, b]))) {
+      trocas += 1
+      continue
+    }
+    ficaram += 1
+  }
+  const nomeDe = (chave: string): string => chave.replace(/@[^@]*$/, '').replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '')
+  if (trocas > 0) avisos.push(`Recorte trocado em ${trocas} cena(s) (${[...trocados].map(nomeDe).join(', ')}): ficava quase igual a cena vizinha.`)
+  if (ficaram > 0) avisos.push(`${ficaram} cena(s) seguem quase iguais a vizinha depois do recorte (sem outro rosto para enquadrar).`)
+  return avisos
+}
+
 /**
  * Os citados na ordem que vieram (a montagem ja ordena: o citado no texto, o
  * sujeito herdado, quem fala, os do evento), uma vez cada pessoa. Desde 19/10
@@ -838,6 +1176,8 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
   const pedidos = [...unicos.values()]
 
   // 1. O motor (o que o cache ja sabe nao roda de novo).
+  const resultados = new Map<string, RostosDoPedaco>()
+  const noOlho: string[] = []
   if (lote.motor && pedidos.length > 0) {
     const identificar = o.identificar !== false
     const itens: ItemDoMotor[] = pedidos.map((p) => ({
@@ -850,7 +1190,6 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
     const arquivoCache = arquivoDoCache(o)
     const cache = lerCache(arquivoCache)
     const chaves = new Map(itens.map((it) => [it.chave, chaveDoCache(it, aspecto, identificar)]))
-    const resultados = new Map<string, RostosDoPedaco>()
     for (const it of itens) {
       const k = chaves.get(it.chave)
       const pronto = k ? cache.get(k) : undefined
@@ -892,6 +1231,7 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
         janelaDoFormato(achado.largura || 1920, achado.altura || 1080, formato),
       )
       const foco = escolha.centro ? focoNoQuadro(escolha.centro, achado.largura, achado.altura, formato) : null
+      if (escolha.olho) noOlho.push(item.arquivo.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, ''))
       focos.set(item.chave, {
         chave: item.chave,
         focusX: foco?.focusX ?? 0.5,
@@ -936,6 +1276,17 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
         instantesComRosto: f ? 1 : 0,
         instantes: instantesDoTrecho(p.de, p.ate).length,
       })
+    }
+  }
+
+  if (noOlho.length > 0) avisos.push(`Close extremo: recorte num olho em ${noOlho.length} cena(s) (${[...new Set(noOlho)].join(', ')})`)
+
+  // 3. (3a rodada) Cenas seguidas quase iguais DEPOIS do recorte: outro recorte numa delas.
+  if (resultados.size > 0 && indice) {
+    try {
+      avisos.push(...(await semRecortesIguais({ pedidos: lote.pedidos, focos, resultados, planoDe: planoPorArquivo(indice), formato })))
+    } catch {
+      // Ajuste fino: sem ele, o recorte de cada pedaco fica o que o motor escolheu.
     }
   }
 
