@@ -215,10 +215,12 @@ async function principal(): Promise<void> {
 
   // ===================================================================== 6.
   secao('6. A etiqueta do roteiro diz a verdade')
-  const d1 = destinoDoTextoDeTela({ primeira: true, textosLigados: false })
-  const d2 = destinoDoTextoDeTela({ primeira: false, textosLigados: true })
-  const d3 = destinoDoTextoDeTela({ primeira: false, textosLigados: false })
-  confere(d1.noVideo && /gancho/.test(d1.dica), '1a frase: card de gancho')
+  const d1 = destinoDoTextoDeTela({ primeira: true, textosLigados: false, tituloLigado: true })
+  const d2 = destinoDoTextoDeTela({ primeira: false, textosLigados: true, tituloLigado: false })
+  const d3 = destinoDoTextoDeTela({ primeira: false, textosLigados: false, tituloLigado: true })
+  const d4 = destinoDoTextoDeTela({ primeira: true, textosLigados: true, tituloLigado: false })
+  confere(d1.noVideo && /gancho/.test(d1.dica), '1a frase, com o Titulo no gancho: card de gancho')
+  confere(!d4.noVideo && /Titulo no gancho/.test(d4.dica), '1a frase, com o Titulo no gancho desligado: fica so no roteiro')
   confere(d2.noVideo && /Vai no video/.test(d2.dica), 'as outras, com Textos na tela: vai no video')
   confere(!d3.noVideo && /so no roteiro/.test(d3.dica), 'Textos na tela desligado: fica so no roteiro')
 }

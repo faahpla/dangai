@@ -358,10 +358,12 @@ async function montarAqui(
   const estilo = estiloSalvo(pedido.estilo)
   const cor = config?.cor ? corDaMontagem(take.duracao, pedido.presetsDeCor ?? []) : null
   if (cor) avisosDaEdicao.push(...cor.avisos)
-  // O card de gancho (a 1a frase, ou a 1a sugestao de thumb) e os TEXTOS NA
-  // TELA das outras frases, acima da camada de cor e depois do card.
+  // O TITULO NO GANCHO (a 1a frase, ou a 1a sugestao de thumb) e os TEXTOS NA
+  // TELA das outras frases, acima da camada de cor e depois do card. Cada um
+  // so com a sua parte ligada (desligadas por padrao).
   const thumbs = sugestoesDaVersao(r, roteiro.versao)?.thumbs ?? []
-  const gancho = ganchoDaMontagem(roteiro, take, thumbs)
+  const titulo = config?.titulo === true
+  const gancho = titulo ? ganchoDaMontagem(roteiro, take, thumbs) : { texto: '', sec: 0 }
   let textos: Awaited<ReturnType<typeof textosDaMontagem>> | null = null
   if (config?.textos) {
     andar('Textos na tela...')
@@ -389,6 +391,7 @@ async function montarAqui(
     trilhas: som?.trilhas ?? [],
     sobreposicoes: [...(cor?.camada ? [cor.camada] : []), ...(textos?.clipes ?? [])],
     thumbs,
+    titulo,
     nomesDasFrases: nomes.porFrase,
     minimoSec,
   })

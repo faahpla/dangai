@@ -154,11 +154,15 @@ export function ganchoDoRoteiro(
 
 /**
  * O que a etiqueta do texto de tela no roteiro promete (a tela diz a verdade):
- * a 1a frase vira o card de gancho; as outras entram animadas, com a Edicao
- * rapida > Textos na tela ligada.
+ * a 1a frase vira o card de gancho (Edicao rapida > Titulo no gancho); as
+ * outras entram animadas, com a Edicao rapida > Textos na tela ligada.
  */
-export function destinoDoTextoDeTela(e: { primeira: boolean; textosLigados: boolean }): { noVideo: boolean; dica: string } {
-  if (e.primeira) return { noVideo: true, dica: 'Vai no video como card de gancho, no alto, no comeco.' }
+export function destinoDoTextoDeTela(e: { primeira: boolean; textosLigados: boolean; tituloLigado: boolean }): { noVideo: boolean; dica: string } {
+  if (e.primeira) {
+    return e.tituloLigado
+      ? { noVideo: true, dica: 'Vai no video como titulo do gancho, no alto, no comeco (Edicao rapida > Titulo no gancho).' }
+      : { noVideo: false, dica: 'Fica so no roteiro: a Edicao rapida > Titulo no gancho esta desligada.' }
+  }
   if (e.textosLigados) {
     return { noVideo: true, dica: 'Vai no video: entra animado no alto da tela quando a frase e dita (Edicao rapida > Textos na tela).' }
   }

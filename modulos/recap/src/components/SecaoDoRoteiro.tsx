@@ -89,7 +89,8 @@ export function SecaoDoRoteiro({
   // O ritmo da voz que vai narrar: o mesmo "~Xs" da contagem do roteiro.
   const ritmo = useRitmoDaVoz()
   // A etiqueta do texto de tela diz a verdade: vai no video (Edicao rapida > Textos na tela) ou nao.
-  const textosLigados = useEdicaoRapida((s) => s.padrao?.config.textos ?? true)
+  const textosLigados = useEdicaoRapida((s) => s.padrao?.config.textos ?? false)
+  const tituloLigado = useEdicaoRapida((s) => s.padrao?.config.titulo ?? false)
   const carregarPadrao = useEdicaoRapida((s) => s.carregarPadrao)
   useEffect(() => {
     if (!useEdicaoRapida.getState().padrao) void carregarPadrao()
@@ -203,6 +204,7 @@ export function SecaoDoRoteiro({
                   anterior={lugar > 0 ? (ordem[lugar - 1] ?? null) : null}
                   proxima={lugar >= 0 ? (ordem[lugar + 1] ?? null) : null}
                   textosLigados={textosLigados}
+                  tituloLigado={tituloLigado}
                 />
               )
             })}
@@ -320,6 +322,7 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   anterior,
   proxima,
   textosLigados,
+  tituloLigado,
 }: {
   frase: Frase
   secaoId: string
@@ -341,6 +344,8 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   proxima: string | null
   /** A Edicao rapida > Textos na tela esta ligada (o texto de tela entra no video). */
   textosLigados: boolean
+  /** A Edicao rapida > Titulo no gancho esta ligada (o texto da 1a frase vira o card). */
+  tituloLigado: boolean
 }) {
   const editarFrase = useRoteiro((s) => s.editarFrase)
   const marcarFoco = useRoteiro((s) => s.marcarFoco)
@@ -351,8 +356,8 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   const falas = indice ? falasDaFrase(frase, eventos, indice) : []
   const evento = momento ? eventos.find((e) => e.id === momento.eventoId) : undefined
   const telaLonga = frase.textoDeTela !== null && palavrasDeTela(frase.textoDeTela) > TEXTO_DE_TELA_MAX_PALAVRAS
-  // A 1a frase do roteiro (sem anterior) e o card de gancho; as outras entram animadas.
-  const destino = destinoDoTextoDeTela({ primeira: anterior === null, textosLigados })
+  // A 1a frase do roteiro (sem anterior) e o titulo do gancho; as outras entram animadas.
+  const destino = destinoDoTextoDeTela({ primeira: anterior === null, textosLigados, tituloLigado })
   // Frase vazia recem-criada, com o cursor nela, ainda nao e erro: e ele escrevendo.
   const mostrarErro = erro !== null && !focado
   const mostrarAvisos = avisos !== null && !mostrarErro && frase.texto.trim() !== ''

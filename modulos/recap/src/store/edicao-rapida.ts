@@ -733,7 +733,7 @@ export async function pedidoDaMontagem(): Promise<PedidoDeMontagem> {
 }
 
 /** So a musica: o controle de musica da barra (por, trocar). */
-export const SO_A_MUSICA: ConfigDaEdicaoRapida = { sfx: false, musica: true, rosto: false, legenda: false, cor: false, textos: false }
+export const SO_A_MUSICA: ConfigDaEdicaoRapida = { sfx: false, musica: true, rosto: false, legenda: false, cor: false, textos: false, titulo: false }
 
 /** Os trechos de musica que a Edicao rapida pos (o controle de musica mexe neles). */
 export function trechosDaMusica<T extends { modulos?: Record<string, unknown> | undefined }>(trilhas: readonly T[]): T[] {

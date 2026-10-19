@@ -257,7 +257,7 @@ async function principal(): Promise<void> {
   secao('5. Abrir no editor COM a Edicao rapida (sons de fabrica, musica, cor, textos)')
   const m2 = await montarProjeto(
     r.id,
-    { edicaoRapida: { sfx: true, musica: true, rosto: false, legenda: true, cor: true, textos: true }, estilo: ESTILO, presetsDeCor: [] },
+    { edicaoRapida: { sfx: true, musica: true, rosto: false, legenda: true, cor: true, textos: true, titulo: true }, estilo: ESTILO, presetsDeCor: [] },
     { rostos: false },
   )
   const f2 = projectFileSchemaQuePreserva.parse(JSON.parse(readFileSync(m2.projetoPath, 'utf8')))

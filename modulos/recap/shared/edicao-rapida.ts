@@ -78,10 +78,16 @@ export const configDaEdicaoRapidaSchema = z.object({
   cor: z.boolean().catch(true).default(true),
   /**
    * (18/10) Os TEXTOS NA TELA: o texto de tela de cada frase do roteiro entra
-   * animado no video (shared/textos-na-tela.ts); o da 1a frase continua sendo
-   * o card de gancho. Ligado por padrao, como a cor.
+   * animado no video (shared/textos-na-tela.ts), menos o da 1a (esse e o
+   * titulo). (19/10) Desligado por padrao: o Levi nao usa texto no alto.
    */
-  textos: z.boolean().catch(true).default(true),
+  textos: z.boolean().catch(false).default(false),
+  /**
+   * (19/10) O TITULO NO GANCHO: o card de gancho do nucleo (hookText), no alto,
+   * no comeco -- o texto de tela da 1a frase ou a 1a sugestao de thumb
+   * (ganchoDoRoteiro). Desligado por padrao, como os textos.
+   */
+  titulo: z.boolean().catch(false).default(false),
 })
 export type ConfigDaEdicaoRapida = z.infer<typeof configDaEdicaoRapidaSchema>
 
@@ -91,7 +97,8 @@ export const CONFIG_DA_EDICAO_RAPIDA_PADRAO: ConfigDaEdicaoRapida = {
   rosto: true,
   legenda: true,
   cor: true,
-  textos: true,
+  textos: false,
+  titulo: false,
 }
 
 /**
@@ -1432,12 +1439,12 @@ export interface ResumoDaEdicaoRapida {
 
 /** Nenhuma parte ligada: o botao nao tem o que fazer. */
 export function nadaLigado(c: ConfigDaEdicaoRapida): boolean {
-  return !c.sfx && !c.musica && !c.rosto && !c.legenda && !c.cor && !c.textos
+  return !c.sfx && !c.musica && !c.rosto && !c.legenda && !c.cor && !c.textos && !c.titulo
 }
 
 /** As partes ligadas em ASCII curto ("sons, musica e rosto"), para dicas e titulos. */
 export function partesLigadas(c: ConfigDaEdicaoRapida): string {
-  const nomes = [c.sfx && 'sons', c.musica && 'musica', c.rosto && 'rosto', c.legenda && 'legenda', c.cor && 'cor', c.textos && 'textos'].filter(
+  const nomes = [c.sfx && 'sons', c.musica && 'musica', c.rosto && 'rosto', c.legenda && 'legenda', c.cor && 'cor', c.titulo && 'titulo', c.textos && 'textos'].filter(
     (x): x is string => typeof x === 'string',
   )
   if (nomes.length <= 1) return nomes[0] ?? ''

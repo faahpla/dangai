@@ -32,9 +32,14 @@ const PARTES: readonly { campo: keyof ConfigDaEdicaoRapida; nome: string; dica: 
   { campo: 'legenda', nome: 'Legenda', dica: 'A legenda no seu estilo salvo' },
   { campo: 'cor', nome: 'Cor', dica: 'Uma camada de ajuste no video inteiro, com o look escolhido abaixo' },
   {
+    campo: 'titulo',
+    nome: 'Titulo no gancho',
+    dica: 'Um card com o titulo no alto, nos primeiros segundos (o texto de tela da 1a frase ou a 1a sugestao de thumb)',
+  },
+  {
     campo: 'textos',
     nome: 'Textos na tela',
-    dica: 'O texto de tela de cada frase do roteiro entra animado no alto, na palavra dita (o da 1a frase vira o card de gancho)',
+    dica: 'O texto de tela de cada frase do roteiro entra animado no alto, na palavra dita',
   },
 ]
 

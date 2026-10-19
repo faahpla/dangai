@@ -430,7 +430,7 @@ async function main(): Promise<void> {
   const telas = { ...RECAP, secoes: RECAP.secoes!.map((s) => ({ ...s, frases: s.frases.map((f) => ({ ...f, tela: f.id === 'f01' ? 'GANCHO' : 'CHROME' })) })) }
   useProject.setState({ modulos: { recap: telas }, hookText: 'GANCHO', hookSec: 2 })
   const pararUndo9 = startUndo()
-  const SO_TEXTOS = { sfx: false, musica: false, rosto: false, legenda: false, cor: true, textos: true }
+  const SO_TEXTOS = { sfx: false, musica: false, rosto: false, legenda: false, cor: true, textos: true, titulo: false }
   const r9 = await edicaoRapidaNoProjeto(SO_TEXTOS)
   const s9 = useProject.getState()
   const textos9 = s9.sobreposicoes.filter((o) => papelDaSobreposicao(o) === 'texto')

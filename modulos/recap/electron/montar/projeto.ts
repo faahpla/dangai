@@ -140,6 +140,8 @@ export interface EntradaDaMontagem {
   sobreposicoes?: readonly ClipeDoRecap[]
   /** As sugestoes de texto de thumb do roteiro: a 1a vira o card de gancho quando a 1a frase nao tem texto. */
   thumbs?: readonly string[]
+  /** (19/10) A Edicao rapida > Titulo no gancho: so com ela o projeto nasce com o card. Ausente = sem card. */
+  titulo?: boolean
   /**
    * (19/10) Quem cada frase cita, na ordem de preferencia (nomesDaMontagem): o
    * `personagens` de `studio.secoes`. Ausente = os personagens dos eventos.
@@ -383,7 +385,7 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
   })
 
   const transcript = transcriptDoTake(e.roteiro, e.take)
-  const gancho = ganchoDaMontagem(e.roteiro, e.take, e.thumbs ?? [])
+  const gancho = e.titulo ? ganchoDaMontagem(e.roteiro, e.take, e.thumbs ?? []) : { texto: '', sec: HOOK_SEC_DEFAULT }
 
   // [recap] O que no Studio era o `studio` da raiz: `modulos.recap`, versao 1.
   // O transcript fica travado pelo nucleo (`transcriptTravado`), nao por uma
