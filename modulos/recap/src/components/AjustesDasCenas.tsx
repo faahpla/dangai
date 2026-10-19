@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { JUIZES, type ConfigDasCenas, type ConfigDoRecapNaTela, type JuizVisual } from '../../shared/config'
+import type { ConfigDasCenas, ConfigDoRecapNaTela } from '../../shared/config'
 import { LIMIAR_DE_DIVISAO_PADRAO_SEC, LIMIARES_DE_DIVISAO, MINIMO_NA_TELA_PADRAO_SEC, MINIMOS_NA_TELA } from '../../shared/divisao'
-import { Segmentos, type Segmento } from '@/modulos/kit'
+import { Segmentos } from '@/modulos/kit'
 import { ponte } from '../ponte'
 import { Caixinha, COR_DE_AVISO } from './pecas'
 
@@ -32,22 +32,8 @@ export function AjustesDasCenas() {
   }
 
   const c = config?.cenas
-  const temGemini = config?.escritoresComChave['gemini-pro'] ?? false
-  const temClaude = config?.escritoresComChave.claude ?? false
-  const juizes: Segmento<JuizVisual>[] = JUIZES.map((id) => {
-    const semChave = (id === 'gemini' && !temGemini) || (id === 'haiku' && !temClaude)
-    const nome = id === 'desligado' ? 'Desligado' : id === 'gemini' ? 'Gemini' : 'Haiku'
-    return {
-      valor: id,
-      rotulo: semChave ? `${nome} · sem chave` : nome,
-      title:
-        id === 'desligado'
-          ? 'Sem juiz: ficam as notas do passo 4'
-          : id === 'gemini'
-            ? 'Gemini (gratis): a IA olha as 3 melhores de cada frase. Gasta pedidos da cota gratis (~1 a cada 6 frases)'
-            : 'Claude Haiku: a IA olha as 3 melhores de cada frase. Pago: ~US$ 0,01 por video, pergunta o custo antes',
-    }
-  })
+  // (19/10) O juiz visual saiu da tela: ninguem quer por enquanto. A config
+  // `juiz` continua no settings (desligado), sem opcao para ligar.
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -115,12 +101,6 @@ export function AjustesDasCenas() {
           ativo={(v) => v === (c?.minimoNaTela ?? MINIMO_NA_TELA_PADRAO_SEC)}
           onChange={(v) => void salvar({ minimoNaTela: v })}
         />
-      </div>
-      <div className="flex flex-col gap-1.5 pt-1">
-        <span className="text-[11px] font-medium text-ink-2" title="Opcional. O nucleo do Dangai ainda nao manda imagem para a IA: por enquanto o juiz nao roda.">
-          Juiz visual
-        </span>
-        <Segmentos opcoes={juizes} ativo={(v) => v === (c?.juiz ?? 'desligado')} onChange={(v) => void salvar({ juiz: v })} />
       </div>
       {aviso && <p className={`text-[11px] ${COR_DE_AVISO}`}>{aviso}</p>}
     </div>
