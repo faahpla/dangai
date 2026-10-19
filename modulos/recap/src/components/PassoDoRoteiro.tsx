@@ -54,7 +54,7 @@ const MODOS: readonly Segmento<ModoDoRoteiro>[] = [
 ]
 
 /** Avisos do roteiro inteiro que a barra mostra (o tamanho ja esta na contagem). */
-const AVISOS_DA_BARRA = new Set<ProblemaDoRoteiro['codigo']>(['sem-gancho', 'sem-fechamento', 'muleta', 'lista-de-fatos'])
+const AVISOS_DA_BARRA = new Set<ProblemaDoRoteiro['codigo']>(['sem-gancho', 'sem-fechamento', 'muleta', 'conectivo-repetido', 'lista-de-fatos'])
 
 /**
  * O PASSO 2 DO ASSISTENTE: o roteiro do short, em partes, para ler, editar,
@@ -210,6 +210,8 @@ function BarraDoRoteiro() {
   const colando = useRoteiro((s) => s.colando)
   const abrirColar = useRoteiro((s) => s.abrirColar)
   const ligarFrases = useRoteiro((s) => s.ligarFrases)
+  const revisar = useRoteiro((s) => s.revisar)
+  const escolherVersao = useRoteiro((s) => s.escolherVersao)
   const problemas = useProblemasDoRoteiro()
   // A versao na tela ja foi conferida e nao sobrou marca: o check verde no "Revisar".
   const marcasDaTela = useMarcasDaRevisao()
@@ -292,10 +294,38 @@ function BarraDoRoteiro() {
           {tela && <ResumoDaRevisao travado={travado || aprovando || noTexto} />}
           {tela && !noTexto && <ResumoDasMudancas travado={travado || aprovando} />}
           {doRoteiro.map((p) => (
-            <Aviso key={p.codigo} title={p.codigo === 'lista-de-fatos' ? 'Frases seguidas no mesmo molde. Revisar > Melhorar texto reescreve esses trechos com virada e ritmo.' : undefined}>
+            <Aviso
+              key={`${p.codigo}-${p.mensagem}`}
+              title={
+                p.codigo === 'lista-de-fatos'
+                  ? 'Frases seguidas no mesmo molde. Revisar > Melhorar texto reescreve esses trechos com virada e ritmo.'
+                  : p.codigo === 'conectivo-repetido'
+                    ? 'O mesmo conectivo abrindo mais de 2 frases vira muleta.'
+                    : undefined
+              }
+            >
               {p.mensagem}
             </Aviso>
           ))}
+          {/* A versao Melhorada deixou um conectivo repetido: refazer ou voltar a de antes. */}
+          {tela?.melhorada && tela.derivadoDe !== null && !noTexto && doRoteiro.some((p) => p.codigo === 'conectivo-repetido') && (
+            <span className="flex items-center gap-3">
+              <Link
+                onClick={() => void revisar(false, 'melhorar')}
+                disabled={travado || aprovando}
+                title="Pede o Melhorar texto de novo sobre esta versao, com a muleta apontada (1 pedido)"
+              >
+                Melhorar de novo
+              </Link>
+              <Link
+                onClick={() => void escolherVersao(tela.derivadoDe!)}
+                disabled={travado || aprovando}
+                title={`Volta para a v${tela.derivadoDe}, a de antes do Melhorar texto. Esta fica em Versoes.`}
+              >
+                Voltar para a v{tela.derivadoDe}
+              </Link>
+            </span>
+          )}
         </div>
       )}
       <AvisosDoRascunho />

@@ -1,5 +1,8 @@
 import {
   adicionarVersao,
+  conectivosRepetidos,
+  CONECTIVO_MAX,
+  textoDaMuleta,
   faixaDePalavras,
   proximaVersao,
   roteiroAtual,
@@ -81,7 +84,7 @@ export function sistemaDaMelhoria(estilo: string | null): string {
   const base = `Você é o editor de roteiros de shorts de anime. Você recebe os ACONTECIMENTOS citados (cada um com as falas da legenda que o provam) e o ROTEIRO de um short, frase por frase. Sua tarefa: MELHORAR O TEXTO sem mudar os fatos — reescrever os trechos chapados com gancho e ritmo.
 
 O QUE MELHORAR:
-- TRECHO CHAPADO ("lista de acontecimentos"): frases seguidas no mesmo molde (sujeito + verbo + fato, do mesmo tamanho), sem virada nem emoção. Os trechos que o app achou vêm marcados no pedido; olhe também o resto. Reescreva com conectivos de virada ("mas", "só que", "até que", "e aí"), variando o tamanho (uma frase curta de impacto no meio) e com a emoção que os acontecimentos dizem.
+- TRECHO CHAPADO ("lista de acontecimentos"): frases seguidas no mesmo molde (sujeito + verbo + fato, do mesmo tamanho), sem virada nem emoção. Os trechos que o app achou vêm marcados no pedido; olhe também o resto. Reescreva com conectivos de virada ("mas", "só que", "até que", "e aí"; um de cada, sem repetir), variando o tamanho (uma frase curta de impacto no meio) e com a emoção que os acontecimentos dizem.
 - GANCHO FRACO: a primeira frase tem que jogar quem assiste dentro do conflito ou do absurdo mais forte do roteiro.
 - VIRADA TARDE: se a virada só chega depois da metade, anuncie antes com um micro-gancho ("Só que tinha um detalhe."), sem mudar a ordem dos fatos.
 - FINAL SECO: a última frase deixa consequência, pergunta ou "e agora?".${
@@ -93,6 +96,7 @@ REGRAS (não negociáveis):
 - A frase reescrita continua com a MESMA função e os mesmos acontecimentos: só o jeito de dizer muda. Não junte duas frases numa e não corte frase.
 - Uma frase vira UMA frase (um ponto final no fim). Se ajudar o ritmo, pode virar DUAS frases curtas, separadas por ponto.
 - MESMO TAMANHO: o tempo do short é fixo. Cada frase reescrita fica com no máximo 2 palavras a mais que a original, e o roteiro inteiro não cresce (se uma frase ganhar palavras, outra perde).
+- CONECTIVO NÃO VIRA MULETA: o mesmo conectivo abrindo frase ("só que", "mas", "e aí", "até que", "então", "aí") aparece no máximo ${CONECTIVO_MAX} vezes no roteiro INTEIRO, contando as frases que você não reescreve. Se ele já está ${CONECTIVO_MAX} vezes, use outra virada ou nenhuma.
 - Nomes exatamente como no ELENCO; "ele"/"ela" só retomam o sujeito da frase anterior.
 - Nada de markdown, emoji, hashtag nem rótulo de seção.
 - Frase que já está boa NÃO entra na lista. No máximo 12 frases: as que mais mudam o roteiro.
@@ -152,11 +156,20 @@ export function promptDoRevisor(e: EntradaDoRevisor): string {
 /** O pedido do "Melhorar texto": o de cima, mais os trechos chapados que o app achou (trechosChapados). */
 export function promptDaMelhoria(e: Omit<EntradaDoRevisor, 'instrucoes'>): string {
   const chapados = trechosChapados(e.roteiro)
+  // As muletas que ja estao no roteiro: o "Melhorar de novo" de uma versao com "So que" 5x.
+  const muletas = conectivosRepetidos(e.roteiro)
   const linhas = comecoDoPedido(e)
   linhas.push(
     chapados.length > 0
       ? `TRECHOS CHAPADOS que o app achou (reescreva estes primeiro): ${textoDosTrechos(chapados)}.`
       : 'O app não achou trecho chapado: olhe o gancho, a virada, o final e o ritmo.',
+    ...(muletas.length > 0
+      ? [
+          `CONECTIVOS REPETIDOS que o app achou (deixe cada um no máximo ${CONECTIVO_MAX} vezes): ${muletas
+            .map((m) => `"${m.rotulo}" ${m.vezes}x (${m.fraseIds.join(', ')})`)
+            .join('; ')}.`,
+        ]
+      : []),
     '',
     ...roteiroComIds(e.roteiro),
   )
@@ -286,6 +299,15 @@ async function melhorar(rascunhoId: string): Promise<RevisaoFeita> {
   const nova = roteiroMelhorado(base, conferidas.trocas, { versao: proximaVersao(fresco), agoraIso: quando, modelo: resposta.modelo })
   const final = nova ? adicionarVersao(fresco, nova, quando) : fresco
   if (nova) gravarRascunho(final)
+  // A conferencia depois: conectivo que a versao nova repete mais que a de antes ("So que" 5x) vira recado.
+  const antes = new Map(conectivosRepetidos(base).map((m) => [m.rotulo, m.vezes]))
+  const muleta = nova
+    ? conectivosRepetidos(nova)
+        .filter((m) => m.vezes > (antes.get(m.rotulo) ?? CONECTIVO_MAX))
+        .map(textoDaMuleta)
+        .join(', ') || null
+    : null
+  if (muleta) console.log(`[gerar:melhoria] muleta na versao nova: ${muleta}`)
   return {
     pulada: null,
     modo: 'melhorar',
@@ -295,6 +317,7 @@ async function melhorar(rascunhoId: string): Promise<RevisaoFeita> {
     versaoNova: nova?.versao ?? null,
     trocadas: conferidas.trocas.length,
     marcadas: 0,
+    muleta,
   }
 }
 

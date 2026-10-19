@@ -103,6 +103,11 @@ export type RevisaoFeita =
       trocadas: number
       /** Frases marcadas pelo revisor (corrigir), com ou sem sugestao. */
       marcadas: number
+      /**
+       * O "Melhorar texto" deixou um conectivo repetido ('"So que" repetido 5x'):
+       * a tela oferece "Melhorar de novo" ou voltar a versao de antes. null = nao.
+       */
+      muleta?: string | null
     }
   | {
       /** desligada = automatica com o revisor desligado (nada a dizer); falhou = cota, rede, so reserva. */
@@ -111,9 +116,19 @@ export type RevisaoFeita =
     }
 
 /** O recado curto depois de revisar: "1 frase corrigida", "6 frases melhoradas", "Nada a corrigir". */
-export function resumoDaRevisao(feita: { modo: ModoDaRevisao; trocadas: number; marcadas: number; versaoNova: number | null }): string {
+export function resumoDaRevisao(feita: {
+  modo: ModoDaRevisao
+  trocadas: number
+  marcadas: number
+  versaoNova: number | null
+  muleta?: string | null
+}): string {
   const n = feita.trocadas
-  if (feita.modo === 'melhorar') return n === 0 ? 'Nada a melhorar' : `${n} ${n === 1 ? 'frase melhorada' : 'frases melhoradas'}`
+  if (feita.modo === 'melhorar') {
+    if (n === 0) return 'Nada a melhorar'
+    const base = `${n} ${n === 1 ? 'frase melhorada' : 'frases melhoradas'}`
+    return feita.muleta ? `${base}, mas com muleta: ${feita.muleta}` : base
+  }
   if (n > 0) {
     const semSugestao = feita.marcadas - n
     return `${n} ${n === 1 ? 'frase corrigida' : 'frases corrigidas'}${semSugestao > 0 ? ` · ${semSugestao} ${semSugestao === 1 ? 'marcada' : 'marcadas'}` : ''}`

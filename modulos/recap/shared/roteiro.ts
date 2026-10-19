@@ -1219,6 +1219,7 @@ export type CodigoDoProblema =
   | 'frase-partida'
   | 'cta'
   | 'muleta'
+  | 'conectivo-repetido'
   | 'pronome-ambiguo'
   | 'hipotese-como-fato'
   | 'copia-do-resumo'
@@ -1267,6 +1268,60 @@ const TERMOS_VIGIADOS: readonly { rotulo: string; pt: RegExp; en: RegExp | null 
   { rotulo: 'manipulou', pt: /\bmanipul\w*/, en: /\bmanipulat\w*/ },
   { rotulo: 'giria', pt: /\b(tank(ou|a|ar|ando)|largou a braba|entrega o ouro|baguncar o coreto)\b/, en: null },
 ]
+
+/**
+ * A frase fala COM quem assiste (pede comentario, pergunta a opiniao): nao
+ * conta fato do episodio, entao nao tem evento -- e nao e aviso ("Comenta ai:
+ * essa cobranca foi merecida ou passou dos limites?", o fecho do E02). Texto
+ * sem acento, minusculas.
+ */
+const CHAMADA_AO_PUBLICO =
+  /(^|[\s,.!?:;])(comenta|comente|comentem|me diz|me diga|me conta|me fala|e voce|e voces|voce acha|voces acham|o que voce acha|o que voces acham|qual (e )?(o )?seu|qual (e )?(a )?sua|deixa (ai )?nos comentarios|deixe nos comentarios|escreve ai|curte|curta|se inscreve|inscreva-se|segue o canal|siga o canal)(?=$|[\s,.!?:;])/
+
+/** A frase e uma chamada ao publico (CTA ou pergunta a quem assiste)? */
+export function chamaOPublico(texto: string): boolean {
+  return CHAMADA_AO_PUBLICO.test(semAcentos(texto.trim()))
+}
+
+/**
+ * CONECTIVO REPETIDO: o "Melhorar texto" do E02 abriu 5 frases com "So que".
+ * O mesmo conectivo abrindo mais de CONECTIVO_MAX frases do roteiro vira
+ * muleta (o prompt do Melhorar pede no maximo 2; o validarRoteiro avisa).
+ * Conta so a ABERTURA da frase ("So que ai" conta como "So que"); os de
+ * varias palavras vem antes dos de uma ("e ai" antes de "ai").
+ */
+export const CONECTIVO_MAX = 2
+const CONECTIVOS: readonly { forma: string; rotulo: string }[] = [
+  { forma: 'so que', rotulo: 'So que' },
+  { forma: 'e ai', rotulo: 'E ai' },
+  { forma: 'ate que', rotulo: 'Ate que' },
+  { forma: 'enquanto isso', rotulo: 'Enquanto isso' },
+  { forma: 'de repente', rotulo: 'De repente' },
+  { forma: 'no fim', rotulo: 'No fim' },
+  { forma: 'mas', rotulo: 'Mas' },
+  { forma: 'entao', rotulo: 'Entao' },
+  { forma: 'porem', rotulo: 'Porem' },
+  { forma: 'ai', rotulo: 'Ai' },
+]
+
+/** Os conectivos que abrem mais de CONECTIVO_MAX frases: '"So que" repetido 5x'. */
+export function conectivosRepetidos(roteiro: Pick<Roteiro, 'secoes'>): { rotulo: string; vezes: number; fraseIds: string[] }[] {
+  const porRotulo = new Map<string, string[]>()
+  for (const f of roteiro.secoes.flatMap((s) => s.frases)) {
+    const t = semAcentos(f.texto).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim()
+    const c = CONECTIVOS.find((x) => t === x.forma || t.startsWith(`${x.forma} `))
+    if (c) porRotulo.set(c.rotulo, [...(porRotulo.get(c.rotulo) ?? []), f.id])
+  }
+  return [...porRotulo.entries()]
+    .filter(([, ids]) => ids.length > CONECTIVO_MAX)
+    .map(([rotulo, fraseIds]) => ({ rotulo, vezes: fraseIds.length, fraseIds }))
+    .sort((a, b) => b.vezes - a.vezes)
+}
+
+/** O recado de uma muleta de conectivo ('"So que" repetido 5x'). */
+export function textoDaMuleta(m: { rotulo: string; vezes: number }): string {
+  return `"${m.rotulo}" repetido ${m.vezes}x`
+}
 
 /** Pedido de like/comentario: nao e narracao do episodio. */
 const CTA = /\b(comenta|comente|comentem|curte|curta|curtam|se inscreve|se inscreva|inscreva-se|inscrevam|deixa o like|deixe o like|deixa seu like|segue o canal|siga o canal|ativa o sininho|ative o sininho)\b/
@@ -1464,7 +1519,8 @@ export function validarRoteiro(
           ...onde,
         })
       }
-      if (frase.eventoIds.length === 0) aviso('frase-sem-evento', 'Sem evento')
+      // A chamada ao publico ("Comenta ai: ...?") nao conta fato: sem evento e o certo.
+      if (frase.eventoIds.length === 0 && !chamaOPublico(frase.texto)) aviso('frase-sem-evento', 'Sem evento')
       if (frase.textoDeTela && palavrasDeTela(frase.textoDeTela) > TEXTO_DE_TELA_MAX_PALAVRAS) {
         aviso('texto-de-tela-longo', 'Texto de tela longo')
       }
@@ -1550,6 +1606,9 @@ export function validarRoteiro(
     }
   }
   if (muletas > 1) problemas.push({ nivel: 'aviso', codigo: 'muleta', mensagem: `"Mano"/"cara" abrindo ${muletas} frases` })
+  for (const m of conectivosRepetidos(roteiro)) {
+    problemas.push({ nivel: 'aviso', codigo: 'conectivo-repetido', mensagem: textoDaMuleta(m) })
+  }
   // [A3] Frases seguidas no mesmo molde: o caminho e o "Revisar > Melhorar texto".
   const chapados = trechosChapados(roteiro)
   if (chapados.length > 0) {
