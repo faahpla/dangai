@@ -138,8 +138,21 @@ export const PESOS = {
   continua: 4,
   /** O mesmo plano da frase anterior, em outro momento: corte seco dentro da mesma tomada. */
   mesmoPlano: -20,
-  /** Outro trecho de um plano longo que outra frase ja mostra: o mesmo enquadramento duas vezes no short. */
-  reuso: -12,
+  /**
+   * Outro trecho de um plano longo que outra frase ja mostra: o mesmo
+   * enquadramento duas vezes no short. Desde 19/10 so com a frase pedindo (a
+   * fala do momento cai nele), e pesando mais (era -12).
+   */
+  reuso: -30,
+  /**
+   * Variedade por PLANO (19/10, MRM E02: "Lent lendo o papel" em ~8 trechos):
+   * outro trecho do mesmo plano sem a frase pedir (a fala do momento nao cai
+   * nele) e a 3a vez do plano no video. A conta so os usa sem outra saida.
+   */
+  planoRepetido: -40,
+  planoNoLimite: -60,
+  /** A mesma cena por outro plano (planos vizinhos quase iguais no CLIP, grupoVisual), por vez. */
+  mesmaCena: -12,
   repeteRosto: -6,
   /** Dois closes seguidos da mesma pessoa (uma pessoa so na tela). */
   repeteRostoSeguido: -4,
@@ -218,6 +231,10 @@ const ESCURO_PULA_SEC = 2.5
 const RELANCE_SEC = 1
 /** A troca local so vale quando a soma das duas frases melhora pelo menos isto. */
 const TROCA_MINIMA = 1
+/** Quantas vezes, no maximo, o mesmo plano aparece no video (em trechos separados). */
+export const PLANO_VEZES_MAX = 2
+/** Planos vizinhos (1 ou 2 de distancia) com CLIP acima disto sao a mesma cena (medido no MRM E02: p97 de planos distantes). */
+const MESMA_CENA_CLIP = 0.88
 
 // ------------------------------------------------------------------- nomes
 
@@ -767,6 +784,46 @@ export interface VisaoDoEpisodio {
   qualidade: Map<string, { q: number; borrado: boolean }>
   /** C7: os planos apagados (todos os quadros borrados e feios: nevoa, lustre no escuro). */
   apagados: Set<string>
+  /**
+   * (19/10) A MESMA CENA: planos vizinhos (1 ou 2 de distancia no indice, o
+   * plano e contraplano) com CLIP acima de MESMA_CENA_CLIP ganham o mesmo
+   * numero. Plano sem vetor fica sem grupo (so ele).
+   */
+  grupoVisual: Map<string, number>
+}
+
+/**
+ * Os grupos de planos vizinhos quase iguais (union-find em i/i+1 e i/i+2): o
+ * maior cosseno entre os keyframes dos dois. Medido no MRM E02: vizinhos tem
+ * mediana 0,80 e p90 0,96; planos distantes, p90 0,82. A 0,88 o "Lent lendo o
+ * papel" 0126/0127 vira uma cena so; o maior grupo tem 23 planos em 45 s.
+ */
+export function gruposVisuais(todos: readonly PlanoDoCasar[], quadros: ReadonlyMap<string, readonly QuadroDaVisao[]> | undefined): Map<string, number> {
+  const saida = new Map<string, number>()
+  if (!quadros || quadros.size === 0) return saida
+  const pai = todos.map((_, i) => i)
+  const raiz = (i: number): number => {
+    while (pai[i] !== i) {
+      pai[i] = pai[pai[i]!]!
+      i = pai[i]!
+    }
+    return i
+  }
+  const vetores = (p: PlanoDoCasar): Float32Array[] => (quadros.get(p.plano.id) ?? []).flatMap((q) => (q.vetor ? [q.vetor] : []))
+  const vs = todos.map(vetores)
+  for (let i = 0; i < todos.length; i++) {
+    for (const d of [1, 2]) {
+      const j = i + d
+      if (j >= todos.length || vs[i]!.length === 0 || vs[j]!.length === 0) continue
+      let maior = -1
+      for (const a of vs[i]!) for (const b of vs[j]!) maior = Math.max(maior, produtoInterno(a, b))
+      if (maior >= MESMA_CENA_CLIP) pai[raiz(j)] = raiz(i)
+    }
+  }
+  todos.forEach((p, i) => {
+    if (vs[i]!.length > 0) saida.set(p.plano.id, raiz(i))
+  })
+  return saida
 }
 
 export function prepararVisao(
@@ -817,7 +874,7 @@ export function prepararVisao(
   }
   const apagados = new Set<string>()
   for (const [id, qs] of sinais.quadros ?? []) if (qs.length > 0 && qs.every((q) => qualidade.get(q.arquivo)?.borrado)) apagados.add(id)
-  return { camadas: c, sinais, cuesPerto, idf, qualidade, apagados }
+  return { camadas: c, sinais, cuesPerto, idf, qualidade, apagados, grupoVisual: gruposVisuais(todos, sinais.quadros) }
 }
 
 /**
@@ -1430,7 +1487,10 @@ function pontuar(
   outSec: number,
   ctx: ContextoDaFrase,
   repetido: boolean,
-  reusado = false,
+  /** Quantas vezes os planos ja aparecem no video (outros trechos). */
+  reusos = 0,
+  /** false = sem os termos da sequencia (a lista da conta: a passagem soma a parte). */
+  sequencia = true,
 ): { termos: Termo[]; falta: number } {
   const termos: Termo[] = []
   const add = (chave: string, valor: number, rotulo: string): void => {
@@ -1625,7 +1685,7 @@ function pontuar(
   }
 
   // 5. Cronologia, continuidade e variedade (desempate).
-  for (const t of termosDaSequencia(planos, inSec, fimReal, ctx, ctx.anteriores, reusado)) termos.push(t)
+  if (sequencia) for (const t of termosDaSequencia(planos, inSec, fimReal, ctx, ctx.anteriores, reusos)) termos.push(t)
 
   // 6. Duracao.
   const cobre = outSec - inSec
@@ -1655,7 +1715,8 @@ function termosDaSequencia(
   fimReal: number,
   ctx: Pick<ContextoDaFrase, 'janela' | 'citados' | 'visao'>,
   anteriores: readonly CenaAnterior[],
-  reusado: boolean,
+  /** Quantas vezes os planos do candidato ja aparecem no video, fora a continuacao colada (repeticoes). */
+  reusos: number,
   /**
    * C5: a ancora da frase de ANTES. Com ela, "a frase vai em frente" compara
    * as ancoras (a ordem da historia), e nao a cena escolhida antes: na conta do
@@ -1663,6 +1724,8 @@ function termosDaSequencia(
    * Ausente = o guloso de sempre.
    */
   ancoraAnterior?: number | null,
+  /** (19/10) Quantas vezes a MESMA CENA (grupoVisual) ja aparece por outro plano. */
+  grupoUsos = 0,
 ): Termo[] {
   const termos: Termo[] = []
   const add = (chave: string, valor: number, rotulo: string): void => {
@@ -1671,6 +1734,16 @@ function termosDaSequencia(
   const j = ctx.janela
   const primeiro = planos[0]!
   const ant = anteriores[anteriores.length - 1]
+  // (19/10) Variedade por PLANO e por CENA: o mesmo plano em outro trecho so
+  // volta quando a frase pede (a fala do momento cai nele) e nunca 3 vezes; a
+  // mesma cena por outro plano pesa contra. A continuacao colada nao conta.
+  const colado = !!ant && planos.some((p) => ant.planoIds.includes(p.plano.id)) && Math.abs(inSec - ant.fimReal) <= 0.5
+  if (!colado) {
+    const pede = pedeOPlano(planos, j)
+    if (reusos >= PLANO_VEZES_MAX) add('planoRepetido', PESOS.planoNoLimite, 'plano repetido')
+    else if (reusos > 0) add(pede ? 'reuso' : 'planoRepetido', pede ? PESOS.reuso : PESOS.planoRepetido, pede ? 'plano ja usado' : 'plano repetido')
+    if (grupoUsos > 0 && !pede) add('mesmaCena', PESOS.mesmaCena * Math.min(2, grupoUsos), 'mesma cena')
+  }
   if (ant) {
     const fraseVaiEmFrente =
       j.ancora === null || (ancoraAnterior !== undefined && ancoraAnterior !== null ? j.ancora >= ancoraAnterior - 2 : j.ancora >= ant.inSec - 2)
@@ -1680,9 +1753,7 @@ function termosDaSequencia(
       } else if (fimReal <= ant.inSec + 0.05) add('cronologia', PESOS.volta, 'volta no tempo')
     }
     const mesmoPlano = planos.some((p) => ant.planoIds.includes(p.plano.id))
-    const colado = mesmoPlano && Math.abs(inSec - ant.fimReal) <= 0.5
     if (mesmoPlano && !colado) add('mesmoPlano', PESOS.mesmoPlano, 'mesmo plano')
-    else if (reusado && !mesmoPlano) add('reuso', PESOS.reuso, 'plano ja usado')
     // Continua = o corte original do episodio: a anterior foi ate o fim do
     // plano dela e esta abre o plano seguinte (ou segue colada na mesma tomada).
     const abreOPlano = inSec <= primeiro.util!.de + 1
@@ -1711,6 +1782,48 @@ function termosDaSequencia(
     }
   }
   return termos
+}
+
+/** A frase pede ESTE plano: a fala do momento (citacao ou cue do momento) comeca nele. */
+function pedeOPlano(planos: readonly PlanoDoCasar[], j: JanelaDaFrase): boolean {
+  if (!j.forte || !j.cueAncora || j.semCenas || j.herdada) return false
+  const t = j.cueAncora.start + 0.2
+  return planos.some((q) => t >= q.plano.start && t < q.plano.end)
+}
+
+/**
+ * Quantas vezes os planos do candidato ja aparecem nos trechos usados (cada
+ * trecho e uma aparicao), e quantas vezes a mesma cena (grupoVisual) aparece
+ * por OUTRO plano. A cadeia colada de antes (o mesmo plano seguindo de uma
+ * frase para a outra) e uma aparicao so: nao conta.
+ */
+function repeticoes(
+  c: Pick<CandidatoDeCena, 'planoIds' | 'inSec'>,
+  usados: readonly TrechoUsado[],
+  anteriores: readonly CenaAnterior[],
+  grupo: ReadonlyMap<string, number>,
+): { reusos: number; grupoUsos: number } {
+  const cadeia: CenaAnterior[] = []
+  let atual: Pick<CandidatoDeCena, 'planoIds' | 'inSec'> = c
+  for (let k = anteriores.length - 1; k >= 0; k--) {
+    const e = anteriores[k]!
+    if (!e.planoIds.some((id) => atual.planoIds.includes(id)) || Math.abs(atual.inSec - e.fimReal) > 0.5) break
+    cadeia.push(e)
+    atual = e
+  }
+  const mesmo = (u: TrechoUsado, e: CenaAnterior): boolean => Math.abs(u.de - e.inSec) < 1e-6 && u.planoIds.join('|') === e.planoIds.join('|')
+  // A cena logo antes, em outro plano da mesma cena, e o corte do proprio episodio (plano e
+  // contraplano): continuidade, nao repeticao. Repete quando a cena VOLTA depois de outra.
+  const ant = anteriores[anteriores.length - 1]
+  const grupos = new Set(c.planoIds.flatMap((id) => (grupo.has(id) ? [grupo.get(id)!] : [])))
+  let reusos = 0
+  let grupoUsos = 0
+  for (const u of usados) {
+    if (cadeia.some((e) => mesmo(u, e))) continue
+    if (u.planoIds.some((id) => c.planoIds.includes(id))) reusos += 1
+    else if (grupos.size > 0 && !(ant && mesmo(u, ant)) && u.planoIds.some((id) => grupos.has(grupo.get(id) ?? -1))) grupoUsos += 1
+  }
+  return { reusos, grupoUsos }
 }
 
 /**
@@ -1779,6 +1892,8 @@ function fitaDaFrase(
   episodioId: string,
   /** Quantos candidatos (a fita guarda FITA_MAX; a conta do roteiro inteiro pede mais). */
   max: number = FITA_MAX,
+  /** false = a lista da conta (a passagem soma cronologia, variedade e repeticao a parte). */
+  sequencia = true,
 ): CandidatoPontuado[] {
   const niveis = niveisDaJanela(ctx.janela, eventos)
   const forte = !!ctx.visao?.camadas.personagemForte && ctx.citados.length > 0
@@ -1801,8 +1916,8 @@ function fitaDaFrase(
       const pontuados = janelas.map((w) => {
         const fimReal = Math.min(w.outSec, w.inSec + ctx.duracao)
         const repetido = sobrepoe(ocupacao, w.planos.map((q) => q.plano.id), w.inSec, fimReal)
-        const reusado = !repetido && w.planos.some((q) => (ocupacao.get(q.plano.id)?.length ?? 0) > 0)
-        const { termos, falta } = pontuar(w.planos, w.inSec, w.outSec, ctx, repetido, reusado)
+        const reusos = repetido ? 0 : Math.max(0, ...w.planos.map((q) => ocupacao.get(q.plano.id)?.length ?? 0))
+        const { termos, falta } = pontuar(w.planos, w.inSec, w.outSec, ctx, repetido, reusos, sequencia)
         const candidato: CandidatoDeCena = {
           planoIds: w.planos.map((q) => q.plano.id),
           episodioId,
@@ -2048,7 +2163,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   const inteiraDe = (i: number): CandidatoPontuado[] => {
     let x = inteiras.get(i)
     if (!x) {
-      x = fitaDaFrase(todos, { ...fixo[i]!.ctx, anteriores: [] }, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA)
+      x = fitaDaFrase(todos, { ...fixo[i]!.ctx, anteriores: [] }, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA, false)
       inteiras.set(i, x)
     }
     return x
@@ -2158,7 +2273,18 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   }
 
   if (visao.camadas.conta) {
-    const ctxDaConta: ContextoDaConta = { e, todos, porId, janelas, fixo, fraseDe, inteiraDe, momentoSeguinte, ocupacaoInicial: inicial.ocupacao }
+    const ctxDaConta: ContextoDaConta = {
+      e,
+      todos,
+      porId,
+      janelas,
+      fixo,
+      fraseDe,
+      inteiraDe,
+      momentoSeguinte,
+      ocupacaoInicial: inicial.ocupacao,
+      grupo: visao.grupoVisual,
+    }
     // A guarda: frase com pedaco fraco volta a ter uma cena so, e a conta refaz.
     const comGuarda = (r: ResultadoDoCasar): ResultadoDoCasar => (divisao ? { ...r, guarda: [...naoDividir].map((i) => e.frases[i]!.id) } : r)
     for (let rodada = 0; ; rodada++) {
@@ -2575,6 +2701,8 @@ interface ContextoDaConta {
   momentoSeguinte: (i: number) => string | null
   /** Os trechos das fixas (as listas dos pedacos comecam sem eles). */
   ocupacaoInicial: Ocupacao
+  /** (19/10) A mesma cena: o grupo visual de cada plano (VisaoDoEpisodio.grupoVisual). */
+  grupo: ReadonlyMap<string, number>
 }
 
 /** Um item da conta: uma frase inteira ou um pedaco de uma frase dividida. */
@@ -2681,7 +2809,13 @@ function casarPelaConta(
       // Os pedacos anteriores DESTA frase neste caminho.
       const daFrase = item.k === 0 ? [] : k.escolhas.slice(x0 - item.k, x0).flatMap((y, j) => (y ? [{ c: y.c, duracao: itens[x0 - item.k + j]!.duracao }] : []))
       const pode = (c: CandidatoPontuado): boolean => dentroDaFrase(c, daFrase) && !(evitar !== null && c.candidato.planoIds.includes(evitar))
-      const livres = item.lista.filter((c) => pode(c) && !cruzaUsado(k.usados, trechoDe(c.candidato, item.duracao)))
+      // (19/10) As repeticoes no caminho: o plano de novo so quando a frase pede, e nunca a 3a vez.
+      const reps = new Map(item.lista.map((c) => [c, repeticoes(c.candidato, k.usados, k.anteriores, x.grupo)]))
+      const repeteDemais = (c: CandidatoPontuado): boolean => {
+        const r = reps.get(c)!
+        return r.reusos >= PLANO_VEZES_MAX || (r.reusos > 0 && !pedeOPlano(c.planos, item.janela))
+      }
+      const livres = item.lista.filter((c) => pode(c) && !cruzaUsado(k.usados, trechoDe(c.candidato, item.duracao)) && !repeteDemais(c))
       const opcoes =
         livres.length > 0
           ? livres.map((c) => ({ c, forcado: false }))
@@ -2689,8 +2823,8 @@ function casarPelaConta(
       for (const { c, forcado } of opcoes) {
         const repetido = c.repetido || forcado
         const fimReal = Math.min(c.candidato.outSec, c.candidato.inSec + item.duracao)
-        const reusado = !repetido && k.usados.some((u) => u.planoIds.some((id) => c.candidato.planoIds.includes(id)))
-        const passagem = termosDaSequencia(c.planos, c.candidato.inSec, fimReal, item.ctx, k.anteriores, reusado, ancoraAntes)
+        const r = reps.get(c)!
+        const passagem = termosDaSequencia(c.planos, c.candidato.inSec, fimReal, item.ctx, k.anteriores, repetido ? 0 : r.reusos, ancoraAntes, r.grupoUsos)
         if (forcado && !c.repetido) passagem.push({ chave: 'repetida', valor: PESOS.repetida, rotulo: 'repetida' })
         proximos.push({
           nota: k.nota + c.candidato.nota + passagem.reduce((s, t) => s + t.valor, 0),
@@ -2778,7 +2912,7 @@ function listaDoPedaco(x: ContextoDaConta, i: number, k: number, p: PedacoNoCasa
   const pronta = mapa.get(chave)
   if (pronta) return pronta
   // As fixas ja ocupam: a fita do pedaco comeca sem os trechos delas, como a da frase inteira.
-  const lista = fitaDaFrase(x.todos, { ...p.ctx, anteriores: [] }, x.e.eventos, x.ocupacaoInicial, x.e.indice.id, CANDIDATOS_DA_CONTA).filter(cobreOPedaco)
+  const lista = fitaDaFrase(x.todos, { ...p.ctx, anteriores: [] }, x.e.eventos, x.ocupacaoInicial, x.e.indice.id, CANDIDATOS_DA_CONTA, false).filter(cobreOPedaco)
   mapa.set(chave, lista)
   return lista
 }
