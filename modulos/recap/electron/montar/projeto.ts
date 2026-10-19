@@ -171,6 +171,8 @@ export interface EntradaDaMontagem {
   nomesDasFrases?: ReadonlyMap<string, readonly string[]>
   /** O minimo na tela das emendas (config Cenas). Ausente = o padrao. */
   minimoSec?: number
+  /** (4a rodada) A entrada depois do efeito de cada plano que abre ruim (ContextoDoEncaixe.entradas). Ausente = sem piso. */
+  entradas?: ReadonlyMap<string, number>
 }
 
 /**
@@ -225,7 +227,13 @@ export function pedacosDaMontagem(e: Omit<EntradaDaMontagem, 'narracaoPath' | 'f
         escolha = { ...escolha, cenas: [{ candidato: primeira, palavraInicio: 0 }] }
         avisos.push(`${frase.id}: sem cena escolhida, entrou a 1a sugestao`)
       }
-      const ctx = { indice: e.indice, frase, take: e.take, ...(e.minimoSec !== undefined ? { minimoSec: e.minimoSec } : {}) }
+      const ctx = {
+        indice: e.indice,
+        frase,
+        take: e.take,
+        ...(e.minimoSec !== undefined ? { minimoSec: e.minimoSec } : {}),
+        ...(e.entradas ? { entradas: e.entradas } : {}),
+      }
       const feito = encaixarEscolha(escolha, ctx)
       avisos.push(...feito.avisos)
       const tempos = temposDasCenas(feito.escolha, frase, e.take)

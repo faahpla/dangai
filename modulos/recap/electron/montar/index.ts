@@ -10,7 +10,7 @@ import {
   type PedidoDeMontagem,
   type ProjetoMontado,
 } from '../../shared/cenas'
-import { encaixarEscolha, semPiscar } from '../../shared/encaixe'
+import { encaixarEscolha, entradasDosPlanos, semPiscar } from '../../shared/encaixe'
 import { MINIMO_NA_TELA_PADRAO_SEC } from '../../shared/divisao'
 import { configDoRecap } from '../contexto'
 import type { EpisodeIndex } from '../../shared/episodio'
@@ -18,6 +18,7 @@ import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/r
 import { nomeDoPersonagem } from '../../shared/apelidos'
 import { apelidosDoIndice } from '../cenas/casar'
 import { comMesclas } from '../cenas/mesclas'
+import { quadrosDosPlanos } from '../cenas/quadros'
 import { aplicarGrids, marcaDoGrid, sinaisDoGrid, type SinaisDoGrid } from '../cenas/grid'
 import { saveProjectFile } from '../project'
 import { arquivoDaVoz, pastaDaVoz } from '../voz/pastas'
@@ -94,12 +95,14 @@ export function encaixarTudo(
   indice: EpisodeIndex,
   take: ReturnType<typeof takeAtual>,
   minimoSec: number = minimoDaConfig(),
+  /** (4a rodada) A entrada depois do efeito de cada plano que abre ruim (entradasDoRascunho). Ausente = sem piso. */
+  entradas?: ReadonlyMap<string, number>,
 ): { escolhas: EstadoDasCenas['escolhas']; avisos: string[] } {
   const porId = new Map(frasesDoRoteiro(roteiro).map((f) => [f.id, f]))
   const avisos: string[] = []
   const contexto = (fraseId: string) => {
     const frase = porId.get(fraseId)
-    return frase ? { indice, frase, take, minimoSec } : null
+    return frase ? { indice, frase, take, minimoSec, ...(entradas ? { entradas } : {}) } : null
   }
   const encaixadas = cenas.escolhas.map((e) => {
     const ctx = contexto(e.fraseId)
@@ -112,6 +115,23 @@ export function encaixarTudo(
   const { escolhas, juntadas } = semPiscar(encaixadas, contexto, minimoSec)
   for (const id of juntadas) avisos.push(`${id}: voltou a ter uma cena (pedaco curto na voz)`)
   return { escolhas, avisos }
+}
+
+/**
+ * (4a rodada) A ENTRADA DEPOIS DO EFEITO de cada plano que abre com preto,
+ * clarao ou borrao (o comeco ruim do quadros.json, so lido): o encaixe nao poe
+ * o comeco antes dela. Sem a medida (o episodio nunca passou pelas cenas) ou
+ * falhou: nenhuma.
+ */
+async function entradasDoRascunho(rascunhoId: string): Promise<Map<string, number>> {
+  try {
+    const aberto = indiceDoRascunho(lerRascunhoDoDisco(rascunhoId))
+    const indice = comMesclas(aberto.indice)
+    const q = await quadrosDosPlanos(indice, aberto.caminho, true)
+    return entradasDosPlanos(indice.planos, q.abremRuim)
+  } catch {
+    return new Map()
+  }
 }
 
 /** O minimo na tela da config "Cenas" (sem config, o padrao). */
@@ -142,13 +162,14 @@ async function sinaisDoGridDoRascunho(rascunhoId: string): Promise<SinaisDoGrid 
 
 export async function encaixarNaVoz(rascunhoId: string): Promise<CenasGravadas> {
   const sinais = await sinaisDoGridDoRascunho(rascunhoId)
+  const entradas = await entradasDoRascunho(rascunhoId)
   const r = lerRascunhoDoDisco(rascunhoId)
   const roteiro = roteiroAtual(r)
   if (!roteiro) throw new Error('Nao ha roteiro.')
   const indice = comMesclas(indiceDoRascunho(r).indice)
   const take = takeAtual(r)
   const atual = cenasDoRascunho(r)
-  const encaixe = encaixarTudo(atual, roteiro, indice, take)
+  const encaixe = encaixarTudo(atual, roteiro, indice, take, minimoDaConfig(), entradas)
   // (rodada 4) O GRID, um passo depois da escolha e do encaixe (cenas/grid.ts).
   const grid = aplicarGrids({ roteiro, take, indice, escolhas: encaixe.escolhas, sinais })
   const quando = agora()
@@ -262,6 +283,8 @@ async function montarAqui(
   opcoes: OpcoesDaMontagem,
   largada: string | null,
 ): Promise<ProjetoMontado> {
+  // (4a rodada) A entrada depois do efeito (quadros.json, so lido) -- antes de ler o rascunho.
+  const entradas = await entradasDoRascunho(rascunhoId)
   // 1. Ler, conferir e encaixar no take aprovado -- sem await ate gravar.
   const r = lerRascunhoDoDisco(rascunhoId)
   const roteiro = roteiroAtual(r)
@@ -272,7 +295,7 @@ async function montarAqui(
   // [recap] Plano mesclado pelo Dangai depois do indice: o projeto aponta o mesclado.
   const indice = comMesclas(indiceDoRascunho(r).indice)
   const atual = cenasDoRascunho(r)
-  const { escolhas } = encaixarTudo(atual, roteiro, indice, take)
+  const { escolhas } = encaixarTudo(atual, roteiro, indice, take, minimoDaConfig(), entradas)
   const cenas: EstadoDasCenas = { ...atual, escolhas, takeId: take.id }
   const precisaGravar =
     atual.takeId !== take.id || JSON.stringify(atual.escolhas) !== JSON.stringify(escolhas)
@@ -288,7 +311,7 @@ async function montarAqui(
 
   // Os pedacos antes do disco: sem nenhuma cena, nada e criado.
   const minimoSec = minimoDaConfig()
-  const previa = pedacosDaMontagem({ rascunho: r, roteiro, take, indice, cenas, minimoSec })
+  const previa = pedacosDaMontagem({ rascunho: r, roteiro, take, indice, cenas, minimoSec, entradas })
   // Quem cada pedaco e cada frase mostram (o rosto da Edicao rapida e o `studio.secoes`).
   const nomes = nomesDaMontagem(previa.pedacos, roteiro, eventos, indice, cenas.escolhas)
   if (previa.pedacos.length === 0) throw new Error('Nenhuma frase tem cena. Escolha as cenas antes de abrir no editor.')
@@ -423,6 +446,7 @@ async function montarAqui(
     titulo,
     nomesDasFrases: nomes.porFrase,
     minimoSec,
+    entradas,
   })
   const projetoPath = arquivoDoProjeto(pasta, nome)
   saveProjectFile(projetoPath, file)

@@ -50,7 +50,12 @@ import { encaixarMetade } from './grid'
  *     mesma regra de cuesElegiveis) nunca entra sozinho numa emenda;
  *   - e IDEMPOTENTE: encaixar de novo com o mesmo take devolve a mesma
  *     escolha, e com outro take parte da janela que ja estava (o comeco
- *     escolhido fica), crescendo ou encolhendo so o fim.
+ *     escolhido fica), crescendo ou encolhendo so o fim;
+ *   - (4a rodada) o plano que ABRE COM EFEITO (preto, clarao, borrao: o 0318
+ *     do Nia E01 tem ~10 quadros de clarao antes do golpe) tem a ENTRADA
+ *     depois do efeito (ContextoDoEncaixe.entradas): o comeco nunca fica antes
+ *     dela, nem recuando para caber -- falta pequena segura o ultimo quadro,
+ *     como sempre. Posto a mao ('usuario'), o comeco continua dele.
  */
 
 /** Ate quantos planos uma emenda junta (a montagem original de 2 a 3 planos, com folga). */
@@ -91,6 +96,24 @@ export interface ContextoDoEncaixe {
   take: Pick<TakeDaVoz, 'id' | 'trechos' | 'palavras'> | null
   /** O minimo na tela de cada pedaco de emenda (config Cenas). Ausente = MINIMO_NA_TELA_PADRAO_SEC. */
   minimoSec?: number
+  /**
+   * (4a rodada) A ENTRADA de cada plano que abre com efeito: o 1o instante bom
+   * (segundos do .mkv; o comeco do plano + o comeco ruim de quadros.json). A
+   * janela que comeca nesse plano nao entra antes. Ausente = sem piso (a tela,
+   * que nao le os quadros; a montagem e o encaixe na voz passam).
+   */
+  entradas?: ReadonlyMap<string, number>
+}
+
+/** As entradas de quem abre com efeito (ContextoDoEncaixe.entradas): o comeco do plano + os segundos ruins. */
+export function entradasDosPlanos(planos: readonly Pick<Plano, 'id' | 'start' | 'end'>[], abremRuim: ReadonlyMap<string, number> | undefined): Map<string, number> {
+  const saida = new Map<string, number>()
+  if (!abremRuim) return saida
+  for (const p of planos) {
+    const ruim = abremRuim.get(p.id) ?? 0
+    if (ruim > 0 && p.start + ruim < p.end) saida.set(p.id, p.start + ruim)
+  }
+  return saida
 }
 
 export interface EscolhaEncaixada {
@@ -220,6 +243,12 @@ function encaixarCandidato(
     const p = planos[i]
     return p !== undefined && !planoExcluido(p, ctx.indice.exclusoes)
   }
+  // (4a rodada) O piso do comeco em cada plano: depois do efeito do comeco (posto a mao, o do plano).
+  const piso = (i: number): number => {
+    const p = planos[i]!
+    const e = c.origem === 'usuario' ? undefined : ctx.entradas?.get(p.id)
+    return e !== undefined && e > p.start && e < p.end ? e : p.start
+  }
 
   // O comeco preferido: a fala citada dentro dos planos do candidato; senao o
   // inSec que veio. Posto a mao, o comeco e dele.
@@ -227,13 +256,13 @@ function encaixarCandidato(
   const citacaoDentro =
     citada !== undefined && citada.start >= planos[a]!.start - 1e-6 && citada.start < planos[b]!.end
   const preferido = c.origem !== 'usuario' && citacaoDentro ? citada.start : c.inSec
-  let inicio = Math.min(Math.max(preferido, planos[a]!.start), planos[b]!.end)
+  let inicio = Math.min(Math.max(preferido, piso(a)), planos[b]!.end)
 
   if (cobertura(planos, a, b, inicio) < precisa - TOLERANCIA_DE_DURACAO_SEC) {
-    if (cobertura(planos, a, b, planos[a]!.start) >= precisa - FOLGA_SEM_EMENDA_SEC) {
+    if (cobertura(planos, a, b, piso(a)) >= precisa - FOLGA_SEM_EMENDA_SEC) {
       // Cabe (ou quase) nos planos do candidato: recua o comeco so o
       // necessario; a fala citada continua dentro da janela.
-      inicio = Math.max(planos[a]!.start, Math.min(inicio, inicioPelaCobertura(planos, a, b, precisa)))
+      inicio = Math.max(piso(a), Math.min(inicio, inicioPelaCobertura(planos, a, b, precisa)))
     } else {
       // Nao cabe: o plano seguinte do episodio, como a montagem original...
       // (plano mais curto que o minimo na tela nunca entra: vira um flash no meio)
@@ -253,7 +282,7 @@ function encaixarCandidato(
         duracaoDoPlano(planos, a - 1) >= minimo - 1e-6
       ) {
         a -= 1
-        inicio = Math.max(planos[a]!.start, inicioPelaCobertura(planos, a, b, precisa))
+        inicio = Math.max(piso(a), inicioPelaCobertura(planos, a, b, precisa))
       }
     }
   }
@@ -267,7 +296,7 @@ function encaixarCandidato(
     if (Math.min(p.end, fim) - Math.max(p.start, inicio) > 1e-6) tocados.push(i)
   }
   // Emenda sem relance: nenhum pedaco de plano curto demais (pecas puras abaixo).
-  const ajuste = semRelance(planos, tocados.length > 0 ? tocados : [a], inicio, fim, precisa, minimo)
+  const ajuste = semRelance(planos, tocados.length > 0 ? tocados : [a], inicio, fim, precisa, minimo, piso)
   const usados = ajuste.usados
   inicio = ajuste.inicio
   fim = ajuste.fim
@@ -331,6 +360,8 @@ function semRelance(
   fimInicial: number,
   precisa: number,
   minimo: number,
+  /** (4a rodada) O comeco mais cedo de cada plano (depois do efeito). Padrao: o comeco do plano. */
+  piso: (i: number) => number = (i) => planos[i]!.start,
 ): { usados: number[]; inicio: number; fim: number; segurado: number } {
   let usados = [...usadosIniciais]
   let inicio = inicioInicial
@@ -344,10 +375,10 @@ function semRelance(
       const resto = usados.slice(0, -1)
       const ra = resto[0]!
       const rb = resto[resto.length - 1]!
-      const daComeco = cobertura(planos, ra, rb, planos[ra]!.start)
+      const daComeco = cobertura(planos, ra, rb, piso(ra))
       if (precisa - daComeco <= SEGURAR_EM_VEZ_DE_RELANCE_SEC) {
         usados = resto
-        inicio = Math.max(planos[ra]!.start, Math.min(inicio, inicioPelaCobertura(planos, ra, rb, precisa)))
+        inicio = Math.max(piso(ra), Math.min(inicio, inicioPelaCobertura(planos, ra, rb, precisa)))
         fim = planos[rb]!.end
         segurado = Math.max(0, precisa - cobertura(planos, ra, rb, inicio))
       } else {
@@ -367,7 +398,7 @@ function semRelance(
     if (pf < minimo) {
       const ultimo = planos[usados[usados.length - 1]!]!
       const resto = usados.slice(1)
-      const comecoDoResto = planos[resto[0]!]!.start
+      const comecoDoResto = piso(resto[0]!)
       if (fim + pf <= ultimo.end + 1e-9) {
         usados = resto
         inicio = comecoDoResto
