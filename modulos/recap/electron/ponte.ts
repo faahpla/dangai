@@ -72,6 +72,7 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     candidatosDaFrase: (rascunhoId, fraseId, filtros) => invocar(C.candidatosDaFrase, rascunhoId, fraseId, filtros),
     salvarCenas: (rascunhoId, escolhas) => invocar(C.salvarCenas, rascunhoId, escolhas),
     encaixarNaVoz: (rascunhoId) => invocar(C.encaixarNaVoz, rascunhoId),
+    gridDaFrase: (rascunhoId, fraseId, ligar) => invocar(C.gridDaFrase, rascunhoId, fraseId, ligar === true),
     mesclasDoEpisodio: (episodioId) => invocar(C.mesclasDoEpisodio, episodioId),
     montarProjeto: (rascunhoId, pedido) => invocar(C.montarProjeto, rascunhoId, pedido ?? {}),
     montagemInterrompida: (rascunhoId) => invocar(C.montagemInterrompida, rascunhoId),

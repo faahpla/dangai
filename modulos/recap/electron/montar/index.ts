@@ -18,6 +18,7 @@ import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/r
 import { nomeDoPersonagem } from '../../shared/apelidos'
 import { apelidosDoIndice } from '../cenas/casar'
 import { comMesclas } from '../cenas/mesclas'
+import { aplicarGrids, marcaDoGrid, sinaisDoGrid, type SinaisDoGrid } from '../cenas/grid'
 import { saveProjectFile } from '../project'
 import { arquivoDaVoz, pastaDaVoz } from '../voz/pastas'
 import { secoesDoTake, type RostosDoLote } from '../../shared/edicao-rapida'
@@ -122,22 +123,42 @@ function minimoDaConfig(): number {
   }
 }
 
+/**
+ * (rodada 4) Os sinais do GRID do rascunho (vetos, mesma cena, quem), ANTES de
+ * ler de novo para aplicar. Sem roteiro, sem voz ou falhou: null (o grid roda
+ * so com as regras puras).
+ */
+async function sinaisDoGridDoRascunho(rascunhoId: string): Promise<SinaisDoGrid | null> {
+  try {
+    const r = lerRascunhoDoDisco(rascunhoId)
+    const roteiro = roteiroAtual(r)
+    if (!roteiro || !takeAtual(r)) return null
+    const aberto = indiceDoRascunho(r)
+    return await sinaisDoGrid({ indice: comMesclas(aberto.indice), caminho: aberto.caminho }, roteiro, r.eventos, cenasDoRascunho(r).escolhas)
+  } catch {
+    return null
+  }
+}
+
 export async function encaixarNaVoz(rascunhoId: string): Promise<CenasGravadas> {
+  const sinais = await sinaisDoGridDoRascunho(rascunhoId)
   const r = lerRascunhoDoDisco(rascunhoId)
   const roteiro = roteiroAtual(r)
   if (!roteiro) throw new Error('Nao ha roteiro.')
   const indice = comMesclas(indiceDoRascunho(r).indice)
   const take = takeAtual(r)
   const atual = cenasDoRascunho(r)
-  const { escolhas, avisos } = encaixarTudo(atual, roteiro, indice, take)
+  const encaixe = encaixarTudo(atual, roteiro, indice, take)
+  // (rodada 4) O GRID, um passo depois da escolha e do encaixe (cenas/grid.ts).
+  const grid = aplicarGrids({ roteiro, take, indice, escolhas: encaixe.escolhas, sinais })
   const quando = agora()
   const novo: RascunhoDoRecap = {
     ...r,
-    cenas: { ...atual, escolhas, takeId: take?.id ?? null, encaixadoEm: quando },
+    cenas: { ...atual, escolhas: grid.escolhas, takeId: take?.id ?? null, encaixadoEm: quando, grid: marcaDoGrid() },
     atualizadoEm: quando,
   }
   gravarRascunho(novo)
-  return { rascunho: novo, avisos }
+  return { rascunho: novo, avisos: [...encaixe.avisos, ...grid.avisos] }
 }
 
 /** Opcoes que a tela nao manda (os testes usam). */

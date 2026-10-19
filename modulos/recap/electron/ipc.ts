@@ -108,6 +108,7 @@ import {
   type SfxDaEdicaoRapida,
 } from '../shared/edicao-rapida'
 import { candidatosDaFrase, salvarCenas, sugerirCenas } from './cenas'
+import { gridDaFrase } from './cenas/grid'
 import { mesclasDoEpisodio } from './cenas/mesclas'
 import type { PlanoNoMesclado } from '../shared/mesclas'
 import { encaixarNaVoz, montagemInterrompida, montarProjeto } from './montar'
@@ -394,6 +395,10 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   )
 
   ctx.handle<[string], CenasGravadas>(C.encaixarNaVoz, async (rascunhoId) => encaixarNaVoz(idDoRascunho(rascunhoId)))
+
+  ctx.handle<[string, string, boolean], CenasGravadas>(C.gridDaFrase, async (rascunhoId, fraseId, ligar) =>
+    gridDaFrase(idDoRascunho(rascunhoId), idDaFrase(fraseId), ligar === true),
+  )
 
   ctx.handle<[string], Record<string, PlanoNoMesclado>>(C.mesclasDoEpisodio, async (episodioId) => mesclasDoEpisodio(idDoEpisodio(episodioId)))
 

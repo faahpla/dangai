@@ -170,6 +170,8 @@ export const CANAIS = {
   candidatosDaFrase: 'recap:cenas:candidatos',
   salvarCenas: 'recap:cenas:salvar',
   encaixarNaVoz: 'recap:cenas:encaixar',
+  /** (rodada 4) "Grid" / "Tela cheia" numa frase (cenas/grid.ts). */
+  gridDaFrase: 'recap:cenas:grid',
   mesclasDoEpisodio: 'recap:cenas:mesclas',
   montarProjeto: 'recap:montar:projeto',
   /** O2: a montagem (Abrir no editor) que o app largou no meio. */
@@ -352,6 +354,12 @@ export interface PonteDoRecap {
   candidatosDaFrase(rascunhoId: string, fraseId: string, filtros: FiltrosDeCandidatos): Promise<IpcResult<CandidatosDaFrase>>
   salvarCenas(rascunhoId: string, escolhas: readonly EscolhaDaFrase[]): Promise<IpcResult<CenasGravadas>>
   encaixarNaVoz(rascunhoId: string): Promise<IpcResult<CenasGravadas>>
+  /**
+   * (rodada 4) O "Grid" / "Tela cheia" da frase: `ligar` poe o grid na mao (a
+   * cena dele fica como uma das metades); desligado volta a tela cheia e o
+   * automatico nao poe mais. Erro (ASCII) quando nenhuma outra cena serve.
+   */
+  gridDaFrase(rascunhoId: string, fraseId: string, ligar: boolean): Promise<IpcResult<CenasGravadas>>
   /** Os planos que o Dangai mesclou depois do indice: planoId -> o mesclado e o ponto dentro dele. So le. */
   mesclasDoEpisodio(episodioId: string): Promise<IpcResult<Record<string, PlanoNoMesclado>>>
   /** Grava o .dangai em <biblioteca do recap>/_projetos/. A tela abre pelo abrirProjeto do nucleo. */
