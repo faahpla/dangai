@@ -30,7 +30,7 @@ import {
   somDaMontagem,
 } from './edicao-rapida'
 import { focosDosPedacos } from './foco'
-import { arquivoDoProjeto, conferirPastaPedida, nomeDoProjeto, pastaPadraoDoProjeto } from './pasta'
+import { arquivoDoProjeto, conferirPastaPedida, nomeDoProjeto, nomeDosArquivos, pastaPadraoDoProjeto } from './pasta'
 import { ganchoDaMontagem, montarArquivoDoProjeto, pedacosDaMontagem, type FocoDoPedaco } from './projeto'
 import { textosDaMontagem } from './textos'
 
@@ -245,9 +245,12 @@ async function montarAqui(
   if (previa.pedacos.length === 0) throw new Error('Nenhuma frase tem cena. Escolha as cenas antes de abrir no editor.')
 
   // 2. A pasta: a pedida (conferida) ou a padrao; nunca numa biblioteca externa.
-  const nome = nomeDoProjeto(indice)
+  // O nome curto do anime + SxxEyy na pasta; os arquivos levam a data junto.
+  const quando = new Date()
+  const nomeDaPasta = nomeDoProjeto(indice)
+  const nome = nomeDosArquivos(nomeDaPasta, quando)
   // O2: a pasta de uma montagem largada no meio (sem o projeto) volta a ser usada.
-  const pasta = conferirPastaPedida(pedido.pasta ?? largada ?? pastaPadraoDoProjeto(nome, new Date()))
+  const pasta = conferirPastaPedida(pedido.pasta ?? largada ?? pastaPadraoDoProjeto(nomeDaPasta, quando))
   const origem = arquivoDaVoz(r.id, take.arquivo)
   if (!existsSync(origem)) throw new Error('O audio da voz aprovada sumiu. Gere ou importe a voz de novo.')
   mkdirSync(pasta, { recursive: true })
