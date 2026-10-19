@@ -314,6 +314,26 @@ são pequenas e marcadas `[Studio]`; a 9 é para levar ao ancut-hub-engine.
     total de quadros lidos (`_fim_como_na_sequencial`), como a sequencial vê.
     - Medido no BC S02E03: 56 s em vez de 150–184 s, os 709 shots iguais aos da
       sequencial (início e fim de cada um). Teste: `TestSaltoDePts`.
+12. **`app/corte_v2.py`** (arquivo novo) + **`app/shot_detection.py`** +
+    **`app/pipeline.py`**: o corte v2, só para episódio NOVO. O
+    AdaptiveDetector decide como sempre e `refinar_cortes` pós-processa os
+    cortes dele (flash com a volta depois do pico, confirmação pela luz com a
+    2ª chance, fade na saída do escuro, trecho curto colado; sem dissolve).
+    - Luz e histograma no MESMO passe da nota: do quadro já reduzido (256x144),
+      levado a 128x72 (`_luz_e_hist`), nos pedaços paralelos e no detector da
+      sequencial (`_AdaptiveComSinais`): os dois caminhos dão os mesmos valores.
+      Custo medido: +2,2 s num episódio de 23 min (+4%).
+    - Identidade: `DETECTOR_ID_V2 = "adaptive/ratio=2.0/floor=15.0/curta-cola/v2-flash-luz-fade"`
+      (a v1 continua `"adaptive/ratio=2.0/floor=15.0/curta-cola"`). O cache
+      aceita as duas (`DETECTORES_ACEITOS`): episódio já cortado nunca é
+      recortado, nem na reanálise; o `shot_bounds.json` novo grava a identidade
+      do corte que saiu (`Cortes.detector`; o v2 que falha volta ao v1 e grava V1).
+      O AnCut aceita as mesmas duas.
+    - Limiares em quadros escalados por `round(x * fps / 24)`, inclusive o
+      mínimo entre cortes do detector no v2.
+    - Medido (19/10): BC S02E03 709 → 652 shots, MRM E02 375 → 308, Nia E01
+      432 → 402. Testes: `test_corte_v2.py`, `test_corte_cache.py` e os de
+      paralelo = sequencial em `test_rapido.py`.
 
 Os modelos (CLIP, YOLO, CCIP, SCRFD) no app instalado vão para
 `<runtime>\modelos` (`HF_HOME`, `motor-runtime/ambiente.ts`), não para o

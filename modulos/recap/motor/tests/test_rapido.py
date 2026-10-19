@@ -1,7 +1,9 @@
 """[recap] O1: o corte mais rapido sem mudar o resultado.
 
 - a deteccao em pedacos paralelos da EXATAMENTE as mesmas cenas da sequencial
-  (um video sintetico de 75 s com cortes secos, feito pelo ffmpeg);
+  (um video sintetico de 75 s com cortes secos, feito pelo ffmpeg), no corte v1
+  e no v2, com a luz e o histograma do v2 iguais quadro a quadro; tambem com
+  salto de PTS (3 quadros a menos na conta do tempo);
 - a deteccao por tras (_Deteccao) devolve o mesmo e para quando pedem;
 - os vetores do CCIP em varias sessoes saem iguais aos de uma sessao so;
 - o corte decodificando na GPU so entra para H.264/HEVC de 8 bits 4:2:0 e,
@@ -58,6 +60,37 @@ def _video_com_salto_de_pts(destino: Path, base: Path) -> Path:
     return destino
 
 
+def _sinais_dos_dois_caminhos(caso: unittest.TestCase, video: Path) -> None:
+    """[recap] Corte v2: a luz e o histograma de cada quadro saem iguais no caminho
+    paralelo (no mesmo passe da nota) e no sequencial (no detector do SceneManager)."""
+    from scenedetect import SceneManager, open_video
+
+    from app.shot_detection import _AdaptiveComSinais
+
+    par: list = []
+    _cenas_em_paralelo(video, open_video(str(video)), 2.0, 15.0, 4, None, sinais=par)
+    sm = SceneManager()
+    det = _AdaptiveComSinais(adaptive_threshold=2.0, min_content_val=15.0)
+    sm.add_detector(det)
+    sm.detect_scenes(open_video(str(video)), show_progress=False)
+    seq = det.sinais
+    caso.assertEqual(len(par), len(seq))
+    for a, b in zip(par, seq):
+        caso.assertEqual((a[0], a[1], a[2]), (b[0], b[1], b[2]))
+        caso.assertTrue(np.array_equal(a[3], b[3]))
+    caso.assertGreater(len({round(x[2], 3) for x in par}), 5, "a luz muda ao longo do video")
+
+
+def _v1_e_v2_iguais_na_sequencial(caso: unittest.TestCase, video: Path) -> None:
+    from app.shot_detection import DETECTOR_ID_V1, DETECTOR_ID_V2
+
+    for versao, identidade in ((1, DETECTOR_ID_V1), (2, DETECTOR_ID_V2)):
+        seq = detect_shots(video, paralelo=1, versao=versao)
+        par = detect_shots(video, paralelo=4, versao=versao)
+        caso.assertEqual((seq.detector, par.detector), (identidade, identidade))
+        caso.assertEqual([(s.idx, s.start, s.end) for s in seq], [(s.idx, s.start, s.end) for s in par])
+
+
 class TestSaltoDePts(unittest.TestCase):
     """[recap] O1 com salto de PTS: antes caia inteiro na sequencial ("quadro fora
     de ordem"); agora o caminho rapido roda e da as MESMAS cenas."""
@@ -91,6 +124,12 @@ class TestSaltoDePts(unittest.TestCase):
         cenas = _cenas_em_paralelo(self.video, open_video(str(self.video)), 2.0, 15.0, 4, None)
         self.assertEqual(len(cenas), len(seq))
 
+    def test_sinais_iguais_nos_dois_caminhos(self):
+        _sinais_dos_dois_caminhos(self, self.video)
+
+    def test_v1_e_v2_iguais_na_sequencial(self):
+        _v1_e_v2_iguais_na_sequencial(self, self.video)
+
 
 class TestDeteccaoParalela(unittest.TestCase):
     @classmethod
@@ -112,6 +151,12 @@ class TestDeteccaoParalela(unittest.TestCase):
         # E o caminho paralelo rodou de verdade (nao caiu na sequencial calado).
         cenas = _cenas_em_paralelo(self.video, open_video(str(self.video)), 2.0, 15.0, 4, None)
         self.assertEqual(len(cenas) + 0, len(seq))
+
+    def test_sinais_iguais_nos_dois_caminhos(self):
+        _sinais_dos_dois_caminhos(self, self.video)
+
+    def test_v1_e_v2_iguais_na_sequencial(self):
+        _v1_e_v2_iguais_na_sequencial(self, self.video)
 
     def test_deteccao_por_tras(self):
         from app.config import Config

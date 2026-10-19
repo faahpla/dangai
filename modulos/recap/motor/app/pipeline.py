@@ -67,7 +67,7 @@ from .providers.anime_provider import (
     local_cache_id,
 )
 from .references.reference_store import ReferenceStore
-from .shot_detection import DETECTOR_ID, ShotBounds, detect_shots
+from .shot_detection import DETECTOR_ID, DETECTORES_ACEITOS, ShotBounds, detect_shots
 from .storage.db import Database
 from .storage.metadata_writer import build_shot_payload, write_characters_json, write_shots_json
 from .storage.anime_folders import AnimeFolderStore
@@ -2513,7 +2513,11 @@ class Pipeline:
         return _Deteccao.comecar(info.source, cfg)
 
     def _bounds_do_cache(self, bounds_cache: Path, info: EpisodeInfo) -> list[ShotBounds] | None:
-        """Os cortes guardados no shot_bounds.json, se valem para este video e detector."""
+        """Os cortes guardados no shot_bounds.json, se valem para este video.
+
+        [recap] Qualquer detector conhecido (``DETECTORES_ACEITOS``: o corte v1 e o
+        v2) vale: episodio ja cortado nunca e recortado, nem na reanalise.
+        """
         cfg = self.cfg
         if not bounds_cache.exists():
             return None
@@ -2522,7 +2526,7 @@ class Pipeline:
             if (
                 isinstance(data, dict)
                 and data.get("source") == str(info.source)
-                and data.get("detector") == DETECTOR_ID
+                and data.get("detector") in DETECTORES_ACEITOS
                 and abs(float(data.get("min_seconds", -1)) - cfg.min_shot_seconds) < 1e-6
             ):
                 return [
@@ -2559,9 +2563,9 @@ class Pipeline:
 
         bounds_cache = metadata_dir / "shot_bounds.json"
         # `detector` entrou junto com a detecção adaptativa. Cache gravado
-        # antes disso não tem a chave, não bate com o DETECTOR_ID de hoje, e é
-        # recomputado — que é exatamente o que precisa acontecer: senão a
-        # reanálise de um episódio antigo reusaria os cortes ruins e nada mudaria.
+        # antes disso não tem a chave e é recomputado (com o corte de hoje).
+        # [recap] Cache com detector conhecido (v1 ou v2) é SEMPRE reaproveitado:
+        # o corte v2 só vale para episódio novo (sem shot_bounds.json).
         shots: list[ShotBounds] | None = self._bounds_do_cache(bounds_cache, info)
 
         if shots:
@@ -2587,7 +2591,8 @@ class Pipeline:
                 json.dumps(
                     {
                         "source": str(info.source),
-                        "detector": DETECTOR_ID,
+                        # [recap] O corte que saiu de verdade (o v2 que falha grava V1).
+                        "detector": getattr(shots, "detector", DETECTOR_ID),
                         "min_seconds": cfg.min_shot_seconds,
                         "shots": [
                             {"idx": s.idx, "start": s.start, "end": s.end} for s in shots
