@@ -20,7 +20,7 @@ import {
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
 import { completarDicas } from '../gerar/dicas'
 import { configDoRecap } from '../contexto'
-import type { CamadasDoCasar, SinaisDoCasar } from '../../shared/visao'
+import { legibilidadeDoQuadro, LEITURA_ALTURA, LEITURA_LARGURA, type CamadasDoCasar, type SinaisDoCasar } from '../../shared/visao'
 import type { ConfigDasCenas } from '../../shared/config'
 import { corteDaFrase, idDoPedaco, type OpcoesDaDivisao } from '../../shared/divisao'
 import { comMesclas } from './mesclas'
@@ -41,7 +41,7 @@ function agora(): string {
   return new Date().toISOString()
 }
 
-// ------------------------------------------------------- a luz dos keyframes
+// ------------------------------------------- a luz e a leitura dos keyframes
 
 /** Luz media (0-255) do primeiro quadro abaixo da qual o plano "abre escuro" (o 0307 do S4 - 37 abre em ~20). */
 const LUZ_ESCURA = 32
@@ -50,47 +50,74 @@ const CLAREIA = 15
 /** Leituras de JPG ao mesmo tempo (o sharp usa o pool do libuv). */
 const LEITURAS_JUNTAS = 8
 
-const luzPorIndice = new Map<string, Promise<Map<string, (number | null)[]>>>()
+/** O que o servico le de um keyframe: a luz media (0-255) e a legibilidade (0..1, legibilidadeDoQuadro). */
+interface QuadroLido {
+  luz: number
+  leitura: number
+}
 
-/** Luz media de um JPG, reduzido na decodificacao. null = nao deu para ler. */
-async function luzMedia(arquivo: string): Promise<number | null> {
+const lidosPorIndice = new Map<string, Promise<Map<string, (QuadroLido | null)[]>>>()
+
+/** A luz media e a legibilidade de um JPG, reduzido na decodificacao. null = nao deu para ler. */
+async function lerQuadro(arquivo: string): Promise<QuadroLido | null> {
   try {
-    const { data } = await sharp(arquivo).resize(32, 18, { fit: 'fill' }).greyscale().raw().toBuffer({ resolveWithObject: true })
+    const [cinza, cor] = await Promise.all([
+      sharp(arquivo).resize(32, 18, { fit: 'fill' }).greyscale().raw().toBuffer({ resolveWithObject: true }),
+      sharp(arquivo)
+        .resize(LEITURA_LARGURA, LEITURA_ALTURA, { fit: 'fill' })
+        .removeAlpha()
+        .toColourspace('srgb')
+        .raw()
+        .toBuffer({ resolveWithObject: true }),
+    ])
+    if (cinza.data.length === 0 || cor.info.channels !== 3) return null
     let soma = 0
-    for (const v of data) soma += v
-    return data.length > 0 ? soma / data.length : null
+    for (const v of cinza.data) soma += v
+    return { luz: soma / cinza.data.length, leitura: legibilidadeDoQuadro(cor.data, cor.info.width, cor.info.height) }
   } catch {
     return null
   }
 }
 
 /**
- * A luz media (0-255) dos 3 keyframes de cada plano (_0, _1, _2: 25/50/75% do
- * plano), uma vez por indice. O casar usa para o plano que abre escuro e (19/10)
- * para o gancho e o comeco de cada parte: o MRM E02 abria em 2 s escuros (os
- * planos 0006 e 0007, luz ~40 num episodio de mediana 139). Falhou = mapa
- * vazio (ajuste fino, nunca impede a sugestao).
+ * A luz e a legibilidade dos 3 keyframes de cada plano (_0, _1, _2: 25/50/75%
+ * do plano), uma vez por indice. Falhou = mapa vazio (ajuste fino, nunca
+ * impede a sugestao).
  */
-export function luzDosPlanos(indice: Pick<EpisodeIndex, 'id' | 'planos' | 'atualizadoEm'>): Promise<Map<string, (number | null)[]>> {
+function quadrosLidos(indice: Pick<EpisodeIndex, 'id' | 'planos' | 'atualizadoEm'>): Promise<Map<string, (QuadroLido | null)[]>> {
   const chave = `${indice.id}|${indice.planos.length}|${indice.atualizadoEm}`
-  const pronta = luzPorIndice.get(chave)
+  const pronta = lidosPorIndice.get(chave)
   if (pronta) return pronta
   const conta = (async () => {
-    const saida = new Map<string, (number | null)[]>()
+    const saida = new Map<string, (QuadroLido | null)[]>()
     const comKeyframe = indice.planos.filter((p) => p.keyframe && /_1\.jpe?g$/i.test(p.keyframe))
     for (let i = 0; i < comKeyframe.length; i += LEITURAS_JUNTAS) {
       await Promise.all(
         comKeyframe.slice(i, i + LEITURAS_JUNTAS).map(async (p) => {
           const meio = p.keyframe!
-          const luzes = await Promise.all([0, 1, 2].map((k) => luzMedia(meio.replace(/_1(\.jpe?g)$/i, `_${k}$1`))))
-          saida.set(p.id, luzes)
+          saida.set(p.id, await Promise.all([0, 1, 2].map((k) => lerQuadro(meio.replace(/_1(\.jpe?g)$/i, `_${k}$1`)))))
         }),
       )
     }
     return saida
-  })().catch(() => new Map<string, (number | null)[]>())
-  luzPorIndice.set(chave, conta)
+  })().catch(() => new Map<string, (QuadroLido | null)[]>())
+  lidosPorIndice.set(chave, conta)
   return conta
+}
+
+/** A luz media (0-255) dos 3 keyframes de cada plano: o plano que abre escuro. */
+export async function luzDosPlanos(indice: Pick<EpisodeIndex, 'id' | 'planos' | 'atualizadoEm'>): Promise<Map<string, (number | null)[]>> {
+  return new Map([...(await quadrosLidos(indice))].map(([id, qs]) => [id, qs.map((q) => q?.luz ?? null)]))
+}
+
+/**
+ * (19/10, 2a rodada) A LEGIBILIDADE (0..1) dos 3 keyframes de cada plano: o
+ * gancho e o comeco de cada parte desempatam pelo quadro legivel. A luz media
+ * enganava no MRM E02: o grupo de olhos vermelhos (0006) tem luz 36 e e
+ * legivel; o queixo na chuva (0007), luz 46, nao.
+ */
+export async function leituraDosPlanos(indice: Pick<EpisodeIndex, 'id' | 'planos' | 'atualizadoEm'>): Promise<Map<string, (number | null)[]>> {
+  return new Map([...(await quadrosLidos(indice))].map(([id, qs]) => [id, qs.map((q) => q?.leitura ?? null)]))
 }
 
 /**
@@ -187,11 +214,11 @@ function abrirParaCenas(r: RascunhoDoRecap): { indice: EpisodeIndex; roteiro: No
  * frases que sairam do roteiro saem. Nada a fazer = nada gravado.
  */
 export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
-  // Os sinais (dicas, motor) e a luz dos keyframes antes: entre ler e gravar o rascunho nao ha await.
+  // Os sinais (dicas, motor) e a leitura dos keyframes antes: entre ler e gravar o rascunho nao ha await.
   const { sinais, camadas } = await sinaisParaOCasar(rascunhoId)
   const indiceAntes = abrirParaCenas(lerRascunhoDoDisco(rascunhoId)).indice
   const abremEscuro = await planosQueAbremEscuro(indiceAntes)
-  const luz = await luzDosPlanos(indiceAntes)
+  const leitura = await leituraDosPlanos(indiceAntes)
   const r = lerRascunhoDoDisco(rascunhoId)
   const { indice, roteiro } = abrirParaCenas(r)
   const take = takeAtual(r)
@@ -221,7 +248,7 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
     sinais,
     camadas,
     divisao,
-    luz,
+    leitura,
     abrem: frasesQueAbrem(roteiro),
   })
   const quando = agora()
@@ -354,7 +381,7 @@ export async function candidatosDaFrase(
   if (!escolha) {
     const fixas = new Map(cenas.escolhas.map((e): [string, EscolhaDaFrase] => [e.fraseId, e]))
     const abremEscuro = await planosQueAbremEscuro(indice)
-    const luz = await luzDosPlanos(indice)
+    const leitura = await leituraDosPlanos(indice)
     const { sinais, camadas } = await sinaisParaOCasar(rascunhoId, true)
     const divisao = divisaoDaConfig(configDoRecap().cenas)
     const { casadas } = casarFrases({
@@ -368,7 +395,7 @@ export async function candidatosDaFrase(
       sinais,
       camadas,
       divisao,
-      luz,
+      leitura,
       abrem: frasesQueAbrem(roteiro),
     })
     sugestoes = casadas[0]?.escolha.fita ?? []

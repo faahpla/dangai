@@ -156,3 +156,51 @@ export function kDoKeyframe(arquivo: string): number | null {
 export function posDoKeyframe(k: number, total = 3): number {
   return (k + 1) / (total + 1)
 }
+
+// ------------------------------------------------- a legibilidade do quadro
+
+/** O tamanho em que o servico le o keyframe para a legibilidade (a conta depende da escala). */
+export const LEITURA_LARGURA = 96
+export const LEITURA_ALTURA = 54
+
+/**
+ * A LEGIBILIDADE de um quadro, 0..1 (19/10, 2a rodada do MRM E02): o olho le
+ * a tela quando ha forma (contraste local: o gradiente medio da luma) e algum
+ * destaque aceso (o p98 do maior canal -- o olho vermelho brilhando conta, a
+ * luma dele nao). A luz media enganava: o grupo de olhos vermelhos (0006, luz
+ * 36) e legivel e o queixo na chuva (0007, luz 46) nao. Medido nos keyframes
+ * do MRM E02 e do Nia E01: 0006 = 0,88, 0007 = 0,19; abaixo de 0,4 ficam 5,5%
+ * e 1,6% dos quadros (a abertura na chuva, o preto, o fundo de noite).
+ *
+ * `rgb`: os pixels RGB (3 bytes) do quadro reduzido a largura x altura
+ * (LEITURA_LARGURA x LEITURA_ALTURA, encaixe "fill").
+ */
+export function legibilidadeDoQuadro(rgb: Uint8Array, largura: number, altura: number): number {
+  const n = largura * altura
+  if (n <= 0 || rgb.length < 3 * n) return 0
+  const y = new Float32Array(n)
+  const maior: number[] = new Array(n)
+  for (let i = 0; i < n; i++) {
+    const r = rgb[3 * i]!
+    const g = rgb[3 * i + 1]!
+    const b = rgb[3 * i + 2]!
+    y[i] = 0.299 * r + 0.587 * g + 0.114 * b
+    maior[i] = Math.max(r, g, b)
+  }
+  let gradiente = 0
+  let contados = 0
+  for (let l = 1; l < altura - 1; l++) {
+    for (let c = 1; c < largura - 1; c++) {
+      const i = l * largura + c
+      const gx = y[i + 1]! - y[i - 1]!
+      const gy = y[i + largura]! - y[i - largura]!
+      gradiente += Math.sqrt(gx * gx + gy * gy)
+      contados += 1
+    }
+  }
+  gradiente = contados > 0 ? gradiente / contados : 0
+  maior.sort((a, b) => a - b)
+  const destaque = maior[Math.min(n - 1, Math.floor(0.98 * n))]!
+  const faixa = (x: number): number => Math.max(0, Math.min(1, x))
+  return 0.5 * faixa((gradiente - 8) / 8) + 0.5 * faixa((destaque - 100) / 80)
+}

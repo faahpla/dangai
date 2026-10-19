@@ -13,8 +13,10 @@
  *   D. o MINIMO NA TELA: o pedaco da divisao, a emenda do encaixe, o span do
  *      casar, o semPiscar (frase dividida pela estimativa volta a uma cena, sem
  *      rajada de 3 curtas), o "antes da voz" e a config;
- *   E. o GANCHO claro: o escuro pesa no gancho e no comeco da parte, a fala
- *      citada manda.
+ *   E. o GANCHO legivel (2a rodada): a legibilidade (nao a luz media) so
+ *      desempata entre candidatas de relevancia parecida; a ilegivel de
+ *      relevancia fraca perde para a legivel relevante; a que bate o evento
+ *      nunca perde para uma que nao bate; vale a frase inteira do gancho.
  *
  * Nao escreve nada. Rodar da raiz do projeto:
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-arrumar-visual.ts
@@ -22,12 +24,15 @@
 import {
   apelidosDoIndice,
   apelidosPelaLegenda,
+  bateOMomento,
   casarFrases,
   citadosNoTexto,
   elencoDoEpisodio,
   elencoPrincipal,
   gruposVisuais,
+  LEGIVEL,
   prepararPlanos,
+  relevanciaForte,
   type FraseDoCasar,
   type ResultadoDoCasar,
 } from '../electron/cenas/casar'
@@ -47,7 +52,7 @@ import { cortarFrase, minimoNaTela, MINIMO_NA_TELA_PADRAO_SEC } from '../shared/
 import { encaixarEscolha, semPiscar, type ContextoDoEncaixe } from '../shared/encaixe'
 import type { Cue, EpisodeIndex, Plano } from '../shared/episodio'
 import type { Evento } from '../shared/roteiro'
-import type { QuadroDaVisao } from '../shared/visao'
+import { LEITURA_ALTURA, LEITURA_LARGURA, legibilidadeDoQuadro, type QuadroDaVisao } from '../shared/visao'
 import { hashDoTexto, palavrasDaFrase, type TakeDaVoz } from '../shared/voz'
 
 let falhas = 0
@@ -415,11 +420,54 @@ function minimo(): void {
   }
 }
 
-// ------------------------------------------------------------ E. o gancho claro
+// ------------------------------------------------------------ E. o gancho legivel
+
+/** Um quadro sintetico (LEITURA_LARGURA x LEITURA_ALTURA, RGB) pintado por `cor(x, y)`. */
+function quadro(cor: (x: number, y: number) => [number, number, number]): Uint8Array {
+  const rgb = new Uint8Array(LEITURA_LARGURA * LEITURA_ALTURA * 3)
+  for (let y = 0; y < LEITURA_ALTURA; y++) {
+    for (let x = 0; x < LEITURA_LARGURA; x++) {
+      const [r, g, b] = cor(x, y)
+      const i = 3 * (y * LEITURA_LARGURA + x)
+      rgb[i] = r
+      rgb[i + 1] = g
+      rgb[i + 2] = b
+    }
+  }
+  return rgb
+}
 
 function gancho(): void {
-  console.log('\n== E. O gancho claro')
-  // Dois planos no mesmo evento: o 0001 escuro (luz 30) e um pouco mais perto do momento, o 0002 claro.
+  console.log('\n== E. O gancho legivel')
+  // A legibilidade: o escuro por igual cai; o escuro com olho aceso e o claro com forma passam.
+  const lido = (rgb: Uint8Array): number => legibilidadeDoQuadro(rgb, LEITURA_LARGURA, LEITURA_ALTURA)
+  const escuroIgual = lido(quadro((x) => [40 + (x % 3), 42, 50]))
+  // Tres rostos escuros (cabelo listrado) com os olhos vermelhos acesos e o brilho em volta, num fundo quase preto.
+  const olhosAcesos = lido(
+    quadro((x, y) => {
+      for (const cx of [20, 48, 76]) {
+        const dx = x - cx
+        const dy = y - 24
+        if ((Math.abs(dx - 5) < 3 || Math.abs(dx + 5) < 3) && Math.abs(dy) < 2) return [255, 30, 40]
+        if ((Math.abs(dx - 5) < 5 || Math.abs(dx + 5) < 5) && Math.abs(dy) < 4) return [150, 30, 50]
+        if (Math.abs(dx) < 11 && Math.abs(dy) < 16) return y % 4 < 2 ? [80, 60, 95] : [45, 35, 60]
+      }
+      return [15, 10, 20]
+    }),
+  )
+  const claro = lido(quadro((x, y) => ((Math.floor(x / 6) + Math.floor(y / 6)) % 2 === 0 ? [230, 220, 200] : [60, 90, 140])))
+  confere(escuroIgual < LEGIVEL, `o escuro por igual (o queixo na chuva) e ilegivel: ${escuroIgual.toFixed(2)}`)
+  confere(olhosAcesos >= LEGIVEL, `escuro com olho aceso (o grupo de olhos vermelhos) passa: ${olhosAcesos.toFixed(2)}`)
+  confere(claro > 0.9, `claro com forma: ${claro.toFixed(2)}`)
+  confere(legibilidadeDoQuadro(new Uint8Array(3), 10, 10) === 0, 'quadro sem pixels: 0')
+
+  // A relevancia: forte (o rosto de quem a frase cita, o momento forte, a fala citada) e o que "bate".
+  const t = (chave: string, valor: number, rotulo = chave) => ({ chave, valor, rotulo })
+  confere(relevanciaForte([t('pessoa', 20, 'Lent')], { forte: false }) && !relevanciaForte([t('pessoa', 8, 'Lent fala')], { forte: false }), 'o rosto citado e forte; a fala de fora de quadro nao')
+  confere(relevanciaForte([t('janela', 40, 'no momento')], { forte: true }) && !relevanciaForte([t('janela', 38, 'no momento')], { forte: false }), 'o momento forte e forte; o estimado pelas palavras nao')
+  confere(!relevanciaForte([t('janela', 30, 'no evento'), t('imagem', 6, 'parecido')], { forte: true }) && bateOMomento([t('janela', 30, 'no evento')], { forte: false }), '"no evento" + "parecido": fraca, mas bate o evento')
+
+  // O caso do MRM E02: dois planos no evento, o 0001 ilegivel (e um pouco mais perto) e o 0002 legivel.
   const planos = [plano('0001', 10, 14), plano('0002', 15, 19), plano('0003', 30, 34), plano('0004', 35, 39), plano('0005', 40, 44)]
   const cues: Cue[] = [{ id: 'c1', start: 11, end: 12.5, texto: 'Get out of here', falante: null, estilo: 'Default', tipo: 'fala' }]
   planos[0]!.cueIds = ['c1']
@@ -428,42 +476,51 @@ function gancho(): void {
     { id: 'e01', cueIds: ['c1'], t0: 10, t1: 19, resumo: 'expulso', personagens: [], peso: 3 },
     { id: 'e02', cueIds: [], t0: 30, t1: 44, resumo: 'depois', personagens: [], peso: 3 },
   ]
-  const luz = new Map<string, (number | null)[]>([
-    ['0001', [30, 30, 30]],
-    ['0002', [150, 150, 150]],
-    ['0003', [30, 30, 30]],
-    ['0004', [150, 150, 150]],
-    ['0005', [150, 150, 150]],
-  ])
+  const ruim = 0.1
+  const boa = 0.9
+  const leitura = (l1: number, l2 = boa): Map<string, (number | null)[]> =>
+    new Map<string, (number | null)[]>([
+      ['0001', [l1, l1, l1]],
+      ['0002', [l2, l2, l2]],
+      ['0003', [ruim, ruim, ruim]],
+      ['0004', [boa, boa, boa]],
+      ['0005', [boa, boa, boa]],
+    ])
   const texto = 'Esse cara foi expulso por ser inutil.'
-  const casar = (frases: FraseDoCasar[], comLuz: boolean, abrem?: Set<string>): ResultadoDoCasar => {
+  const casar = (frases: FraseDoCasar[], l: Map<string, (number | null)[]> | null, abrem?: Set<string>, ind = indice): ResultadoDoCasar => {
     const take = takeDe(frases.map((f) => ({ id: f.id, texto: f.texto, dur: 2 })))
-    return casarFrases({
-      indice,
-      eventos,
-      frases,
-      take,
-      fixas: new Map(),
-      refazer: new Set(frases.map((f) => f.id)),
-      divisao: null,
-      ...(comLuz ? { luz } : {}),
-      ...(abrem ? { abrem } : {}),
-    })
+    return casarFrases({ indice: ind, eventos, frases, take, fixas: new Map(), refazer: new Set(frases.map((f) => f.id)), divisao: null, ...(l ? { leitura: l } : {}), ...(abrem ? { abrem } : {}) })
   }
   const primeiro = (r: ResultadoDoCasar, id = 'f01'): string => r.casadas.find((c) => c.escolha.fraseId === id)!.escolha.cenas[0]!.candidato.planoIds[0]!
   const so = [fr('f01', texto, { eventoIds: ['e01'] })]
-  confere(primeiro(casar(so, false)) === '0001', 'sem a luz medida: o plano do momento (0001), como antes')
-  confere(primeiro(casar(so, true)) === '0002', 'com a luz: o gancho foge do escuro (0002 claro)')
-  // A mesma frase fora do gancho (a 2a, sem abrir parte): o escuro nao pesa.
-  const duas = [fr('f01', 'Outra coisa acontece depois.', { eventoIds: ['e02'] }), fr('f02', texto, { eventoIds: ['e01'] })]
-  confere(primeiro(casar(duas, true), 'f02') === '0001', 'no meio da parte, o escuro nao muda nada')
-  // Abrindo uma parte, o escuro pesa menos que no gancho (o termo aparece).
-  const r = casar(duas, true, new Set(['f01', 'f02']))
-  const termos = r.casadas.find((c) => c.escolha.fraseId === 'f02')!.fita.flatMap((c) => c.termos.filter((t) => t.chave === 'escuro'))
-  confere(termos.length > 0 && termos.every((t) => t.valor < 0 && t.valor >= -8), 'o comeco da parte pesa o escuro mais leve (ate -8)', termos)
-  // A fala CITADA no plano escuro manda.
+  confere(primeiro(casar(so, null)) === '0001', 'sem a leitura medida: o plano mais perto (0001), como antes')
+  confere(primeiro(casar(so, leitura(ruim))) === '0002', 'ilegivel e de relevancia fraca: perde para a legivel do mesmo evento (0002)')
+  confere(primeiro(casar(so, leitura(0.55))) === '0001', 'escuro mas legivel (0,55): nada muda (0001)')
+  // O momento FORTE (a cue do momento) no plano ilegivel: so desempata, e o 0001 e bem mais relevante.
+  const forte = [fr('f01', texto, { eventoIds: ['e01'], cueDoMomento: 'c1' })]
+  const rf = casar(forte, leitura(ruim))
+  const termoForte = rf.casadas[0]!.fita.find((c) => c.candidato.planoIds[0] === '0001')?.termos.find((x) => x.chave === 'ilegivel')
+  confere(primeiro(rf) === '0001' && !!termoForte && termoForte.valor >= -5 - 1e-9, 'o momento forte no plano ilegivel: so desempata (ate -5) e fica', termoForte)
+  // A fala CITADA no plano ilegivel manda.
   const citada = [fr('f01', 'Esse cara gritou "Get out of here" e foi expulso.', { eventoIds: ['e01'], citacaoCueId: 'c1' })]
-  confere(primeiro(casar(citada, true)) === '0001', 'a fala citada no plano escuro continua mandando')
+  confere(primeiro(casar(citada, leitura(ruim))) === '0001', 'a fala citada no plano ilegivel continua mandando')
+  // A que bate o evento nunca perde para uma legivel que nao bate: so o 0001 no evento (os outros fora dele).
+  const sozinho = { ...indice, planos: [plano('0001', 10, 14, { cueIds: ['c1'] }), plano('0003', 30, 34), plano('0004', 35, 39), plano('0005', 40, 44)] }
+  const rs = casar(so, leitura(ruim), undefined, sozinho)
+  confere(primeiro(rs) === '0001', 'ilegivel no evento x legiveis fora dele: fica a do evento (o escuro nao troca a cena certa pela errada)', rs.casadas[0]!.fita.map((c) => `${c.candidato.planoIds[0]} ${c.candidato.nota}`))
+  // No meio da parte, a legibilidade nao pesa.
+  const duas = [fr('f01', 'Outra coisa acontece depois.', { eventoIds: ['e02'] }), fr('f02', texto, { eventoIds: ['e01'] })]
+  confere(primeiro(casar(duas, leitura(ruim)), 'f02') === '0001', 'no meio da parte, o ilegivel nao muda nada')
+  // Abrindo uma parte, pesa menos que no gancho (ate -8).
+  const r = casar(duas, leitura(ruim), new Set(['f01', 'f02']))
+  const termos = r.casadas.find((c) => c.escolha.fraseId === 'f02')!.fita.flatMap((c) => c.termos.filter((x) => x.chave === 'ilegivel'))
+  confere(termos.length > 0 && termos.every((x) => x.valor < 0 && x.valor >= -8 - 1e-9), 'o comeco da parte pesa o ilegivel mais leve (ate -8)', termos)
+  // O gancho e a frase inteira: dividida em 2 cenas, o 2o pedaco tambem foge do ilegivel.
+  const longa = [fr('f01', 'Esse cara foi expulso do grupo dele, por acharem que ele era um peso inutil.', { eventoIds: ['e01'] })]
+  const takeLongo = takeDe([{ id: 'f01', texto: longa[0]!.texto, dur: 4 }])
+  const rd = casarFrases({ indice, eventos, frases: longa, take: takeLongo, fixas: new Map(), refazer: new Set(['f01']), divisao: { ligada: true, limiarSec: 3 }, leitura: leitura(ruim) })
+  const pedacos = rd.casadas[0]!.pedacos ?? []
+  confere(pedacos.length < 2 || pedacos[1]!.fita.some((c) => c.termos.some((x) => x.chave === 'ilegivel' || x.chave === 'bonito')) || !pedacos[1]!.fita.some((c) => c.candidato.planoIds.includes('0001')), 'o 2o pedaco do gancho tambem olha a legibilidade', pedacos.map((p) => p.fita.map((c) => c.candidato.planoIds[0])))
 }
 
 foco()
