@@ -7,6 +7,7 @@ import type { VozPadrao } from './tipos-da-voz'
 import { ESCRITORES_IDS, MODELO_GEMINI_PRO_PADRAO, type Escritor } from './escritor'
 import { arrumarVelocidadeNativa, VELOCIDADE_NATIVA_PADRAO } from './voz'
 import { LIMIAR_DE_DIVISAO_PADRAO_SEC, limiarDeDivisao, MINIMO_NA_TELA_PADRAO_SEC, minimoNaTela } from './divisao'
+import { MODO_DO_GRID_PADRAO, modoDoGrid, type ModoDoGrid } from './grid'
 
 /**
  * [recap] A CONFIGURACAO DO MODULO, em `Settings.modulos.recap` (o nucleo
@@ -78,6 +79,12 @@ export interface ConfigDasCenas {
   limiarDuasCenas: number
   /** O minimo na tela de cada cena automatica, em segundos (shared/divisao.ts, MINIMOS_NA_TELA). */
   minimoNaTela: number
+  /**
+   * (rodada 4) O GRID (shared/grid.ts): duas cenas boas para a mesma frase
+   * entram empilhadas, uma em cima da outra. Automatico (o padrao) = o passo do
+   * grid poe, com o limite de 3 por minuto; desligado = so o "Grid" na mao.
+   */
+  grid: ModoDoGrid
 }
 
 export const CENAS_PADRAO: ConfigDasCenas = {
@@ -88,6 +95,7 @@ export const CENAS_PADRAO: ConfigDasCenas = {
   duasCenas: true,
   limiarDuasCenas: LIMIAR_DE_DIVISAO_PADRAO_SEC,
   minimoNaTela: MINIMO_NA_TELA_PADRAO_SEC,
+  grid: MODO_DO_GRID_PADRAO,
 }
 
 function cenasSalvas(raw: unknown): ConfigDasCenas {
@@ -100,6 +108,7 @@ function cenasSalvas(raw: unknown): ConfigDasCenas {
     duasCenas: r['duasCenas'] !== false,
     limiarDuasCenas: limiarDeDivisao(r['limiarDuasCenas']),
     minimoNaTela: minimoNaTela(r['minimoNaTela']),
+    grid: modoDoGrid(r['grid']),
   }
 }
 

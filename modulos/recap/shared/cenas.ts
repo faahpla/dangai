@@ -135,8 +135,27 @@ export const cenaDaFraseSchema = z.object({
    * outras sobem estritamente.
    */
   palavraInicio: z.number().int().nonnegative(),
+  /**
+   * (19/10, rodada 4) O GRID: a metade de BAIXO da tela dividida. Com ela, a
+   * cena toca as duas ao mesmo tempo -- `candidato` em cima, esta embaixo --,
+   * cada uma num plano so que cobre a cena inteira (shared/grid.ts). Vira o
+   * `imageIndexB` do bloco na montagem. Ausente = tela cheia (o de sempre).
+   */
+  baixo: candidatoDeCenaSchema.optional(),
 })
 export type CenaDaFrase = z.infer<typeof cenaDaFraseSchema>
+
+/**
+ * Quem pos o grid na frase e as cenas de ANTES dele (em tela cheia): o
+ * "Tela cheia" do passo 4 e o passo automatico voltam a elas.
+ * - auto: o passo do grid (shared/grid.ts) pos; ele mesmo refaz ou tira;
+ * - mao: ele ligou o "Grid" na frase; o automatico nunca mexe.
+ */
+export const gridDaFraseSchema = z.object({
+  origem: z.enum(['auto', 'mao']),
+  antes: z.array(cenaDaFraseSchema),
+})
+export type GridDaFrase = z.infer<typeof gridDaFraseSchema>
 
 /** O que a frase mostra: a(s) cena(s) e a fita de onde elas sairam. */
 export const escolhaDaFraseSchema = z
@@ -162,6 +181,10 @@ export const escolhaDaFraseSchema = z
      * em 1" da tela (juntarEmUma). Ausente = a frase nao foi dividida pelo casar.
      */
     inteira: z.array(candidatoDeCenaSchema).max(FITA_MAX).optional(),
+    /** (rodada 4) O grid da frase: quem pos e as cenas de antes dele. Ausente = sem grid. */
+    grid: gridDaFraseSchema.optional(),
+    /** (rodada 4) Ele pediu "Tela cheia": o grid automatico nunca entra nesta frase. */
+    telaCheia: z.boolean().optional(),
   })
   .superRefine((e, ctx) => {
     for (const [i, c] of e.cenas.entries()) {
@@ -193,6 +216,12 @@ export const estadoDasCenasSchema = z
     takeId: takeIdSchema.nullable(),
     /** ISO do ultimo encaixarNaVoz. null = nunca encaixado. */
     encaixadoEm: z.string().nullable().default(null),
+    /**
+     * (rodada 4) O ultimo passo do GRID (shared/grid.ts): o modo da config com
+     * que rodou e quando. Ausente = nunca rodou neste rascunho (o passo 4 pede
+     * o encaixe, que roda o grid); modo diferente da config = roda de novo.
+     */
+    grid: z.object({ modo: z.enum(['desligado', 'automatico']), em: z.string() }).optional(),
   })
   .superRefine((c, ctx) => {
     const vistas = new Set<string>()
@@ -434,7 +463,14 @@ export function juntarEmUma(escolha: EscolhaDaFrase): EscolhaDaFrase | null {
   if (!primeira || escolha.cenas.length < 2) return null
   const junta: EscolhaDaFrase = { ...escolha, cenas: [{ candidato: primeira, palavraInicio: 0 }], fita: inteira }
   delete junta.inteira
+  // A cena nova e de tela cheia: o grid de antes (e as cenas dele) nao vale mais.
+  delete junta.grid
   return junta
+}
+
+/** A frase mostra um GRID (alguma cena com a metade de baixo). */
+export function temGrid(escolha: Pick<EscolhaDaFrase, 'cenas'> | null): boolean {
+  return !!escolha && escolha.cenas.some((c) => c.baixo !== undefined)
 }
 
 /** Um pedaco de mp4 de plano: o que o player encadeia e o que vira cena no projeto. */
@@ -528,7 +564,8 @@ export function mesmoCandidato(
 export function escolhasForaDoIndice(cenas: Pick<EstadoDasCenas, 'escolhas'>, planos: readonly Pick<Plano, 'id'>[]): string[] {
   if (planos.length === 0) return []
   const ids = new Set(planos.map((p) => p.id))
-  return cenas.escolhas.filter((e) => e.cenas.some((c) => c.candidato.planoIds.some((id) => !ids.has(id)))).map((e) => e.fraseId)
+  const fora = (c: CenaDaFrase): boolean => [...c.candidato.planoIds, ...(c.baixo?.planoIds ?? [])].some((id) => !ids.has(id))
+  return cenas.escolhas.filter((e) => e.cenas.some(fora)).map((e) => e.fraseId)
 }
 
 /** Frases do roteiro (na ordem) sem escolha, ou com escolha sem cena nenhuma. */

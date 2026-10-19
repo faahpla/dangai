@@ -12,6 +12,7 @@ import {
   type EscolhaDaFrase,
 } from './cenas'
 import { MINIMO_NA_TELA_PADRAO_SEC, minimoNaTela, RAJADA_SEC } from './divisao'
+import { encaixarMetade } from './grid'
 
 /**
  * O ENCAIXE de uma escolha de cena na duracao da frase (agente B).
@@ -104,9 +105,21 @@ export function encaixarEscolha(escolha: EscolhaDaFrase, ctx: ContextoDoEncaixe)
   const tempos = temposDasCenas(corrigida, ctx.frase, ctx.take)
   const daEscolha = new Set<string>()
   const avisos: string[] = []
+  const planosDoGrid = corrigida.cenas.some((c) => c.baixo) ? new Map(ctx.indice.planos.map((p) => [p.id, p])) : null
   const cenas = corrigida.cenas.map((cena, k) => {
     const t = tempos[k]
     const precisa = t ? t.fim - t.inicio : 0
+    // (rodada 4) O GRID: cada metade e um plano so que cobre a cena inteira, sem emenda (shared/grid.ts).
+    if (cena.baixo && planosDoGrid) {
+      const cima = encaixarMetade(cena.candidato, precisa, planosDoGrid)
+      const baixo = encaixarMetade(cena.baixo, precisa, planosDoGrid)
+      const falta = Math.max(cima.falta, baixo.falta)
+      if (falta > FOLGA_SEM_EMENDA_SEC) {
+        daEscolha.add(AVISO_CENA_CURTA)
+        avisos.push(`${ctx.frase.id}: grid com uma metade curta, falta ${segundos(falta)} de imagem`)
+      }
+      return { ...cena, candidato: cima.candidato, baixo: baixo.candidato }
+    }
     const feito = encaixarCandidato(cena.candidato, precisa, ctx)
     for (const a of feito.avisos) {
       daEscolha.add(a.curto)
