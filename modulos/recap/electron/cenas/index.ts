@@ -215,7 +215,7 @@ const CENAS_DO_FALANTE_MIN = 3
  * "Why-Man") e aparecem em CENAS_DO_FALANTE_MIN cenas ou mais, cada um com
  * quantas cenas tem ele por rosto OU por fala.
  */
-function personagensDoEpisodio(indice: Pick<EpisodeIndex, 'planos'>, todos: readonly PlanoDoCasar[]): { nome: string; cenas: number }[] {
+export function personagensDoEpisodio(indice: Pick<EpisodeIndex, 'planos'>, todos: readonly PlanoDoCasar[]): { nome: string; cenas: number }[] {
   const crus = new Map<string, number>()
   for (const p of indice.planos) for (const x of p.personagens) crus.set(x.nome, (crus.get(x.nome) ?? 0) + 1)
   const unido = canonizar(crus)

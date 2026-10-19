@@ -10,6 +10,7 @@ import {
   type ResumoDoIndice,
 } from '../../shared/episodio'
 import { nomeNatural } from '@shared/nomes'
+import { apelidosDoElenco, falantesUnidos } from '../../shared/apelidos'
 import { nomesDeUmaArte, ORIGEM_DO_BATISMO, podeReconhecerNaMao } from '../../shared/descoberta'
 import { devolverAoAncutNoFim, TRECHO_MINIMO, useGerar } from '../store/gerar'
 import { useAncut } from '../store/ancut'
@@ -68,17 +69,26 @@ export function ResumoDoEpisodio() {
   const comResultado = useDescoberta((s) => s.resultado !== null && s.episodioId === indice?.id)
 
   const resumo = useMemo(() => (indice ? resumirIndice(indice) : null), [indice])
+  // Os apelidos (shared/apelidos.ts): o rosto "Empee" e o falante "MP" (e "MP<U+30FB>Yggdrasil") sao um so.
+  const apelidos = useMemo(
+    () => (resumo ? apelidosDoElenco(resumo.personagens.map((p) => p.nome), resumo.falantes.map((f) => f.nome)) : new Map<string, string>()),
+    [resumo],
+  )
+  const falantes = useMemo(() => (resumo ? falantesUnidos(resumo.falantes, apelidos) : []), [resumo, apelidos])
   const personagens = useMemo(() => {
     if (!resumo) return []
-    const falantes = resumo.falantes.map((f) => f.nome)
+    const nomesDosFalantes = resumo.falantes.map((f) => f.nome)
     // Duas grafias que viram o mesmo nome natural contam como uma: fica a maior contagem.
-    const porNome = new Map<string, number>()
+    const porNome = new Map<string, { n: number; legenda: string | null }>()
     for (const p of resumo.personagens) {
-      const nome = nomeNatural(p.nome, falantes)
-      porNome.set(nome, Math.max(porNome.get(nome) ?? 0, p.cenas))
+      const nome = nomeNatural(p.nome, nomesDosFalantes)
+      // O nome dele na legenda, quando e outro ("Empee" e o "MP" da legenda).
+      const naLegenda = falantes.find((f) => apelidos.get(f.nome) === p.nome)?.nome ?? null
+      const antes = porNome.get(nome)
+      porNome.set(nome, { n: Math.max(antes?.n ?? 0, p.cenas), legenda: antes?.legenda ?? naLegenda })
     }
-    return [...porNome.entries()].map(([nome, n]) => ({ nome, n })).sort((a, b) => b.n - a.n)
-  }, [resumo])
+    return [...porNome.entries()].map(([nome, v]) => ({ nome, n: v.n, legenda: v.legenda })).sort((a, b) => b.n - a.n)
+  }, [resumo, apelidos, falantes])
   // Reconhecidos com uma arte so (arte-unica.ts), no nome natural dos chips.
   const umaArte = useMemo(() => {
     const nomes = nomesDeUmaArte(fotosDoElenco)
@@ -187,7 +197,7 @@ export function ResumoDoEpisodio() {
                 {personagens.slice(0, PERSONAGENS_VISIVEIS).map((p) => (
                   <Contagem
                     key={p.nome}
-                    nome={p.nome}
+                    nome={p.legenda ? `${p.nome} (${p.legenda})` : p.nome}
                     n={p.n}
                     unidade={['cena', 'cenas']}
                     aviso={umaArte?.includes(p.nome) ? 'Uma foto so do elenco: confira as cenas' : undefined}
@@ -214,7 +224,7 @@ export function ResumoDoEpisodio() {
             <p className="text-[11px] text-ink-3">
               Quem mais fala:{' '}
               {listaCurta(
-                resumo.falantes.map((f) => ({ nome: f.nome, n: f.falas })),
+                falantes.map((f) => ({ nome: f.nome, n: f.falas })),
                 5,
               )}
             </p>

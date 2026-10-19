@@ -1,3 +1,4 @@
+import { apelidosDoElenco, nomeDoPersonagem, partesDoNome } from '../../shared/apelidos'
 import type { Cue, EpisodeIndex, Plano } from '../../shared/episodio'
 import { cuesDoEvento, momentoDaFrase, type Evento, type Frase } from '../../shared/roteiro'
 import { hashDoTexto, type TakeDaVoz } from '../../shared/voz'
@@ -304,6 +305,24 @@ export function falantesDe(nome: string): string[] {
     .filter(Boolean)
 }
 
+/**
+ * Os APELIDOS do episodio (shared/apelidos.ts): "MP" e "MP<U+30FB>Yggdrasil" na
+ * legenda sao o rosto "Empee" do reconhecimento. Os rostos sao o nome que
+ * fica; os falantes (e os personagens dos eventos) se juntam a eles.
+ */
+export function apelidosDoIndice(
+  indice: Pick<EpisodeIndex, 'planos' | 'cues'>,
+  eventos: readonly Pick<Evento, 'personagens'>[] = [],
+): Map<string, string> {
+  const rostos = indice.planos.flatMap((p) => p.personagens.map((x) => x.nome))
+  const outros = [
+    ...indice.cues.flatMap((c) => (c.falante ? falantesDe(c.falante) : [])),
+    ...indice.planos.flatMap((p) => p.falantes.flatMap(falantesDe)),
+    ...eventos.flatMap((e) => e.personagens),
+  ]
+  return apelidosDoElenco(rostos, outros)
+}
+
 interface NomeDoPlano {
   nome: string
   fichas: string[]
@@ -380,6 +399,8 @@ function mesmaGente(a: readonly string[][], b: readonly string[][]): boolean {
 export function prepararPlanos(indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'exclusoes'>): PlanoDoCasar[] {
   const cuePorId = new Map(indice.cues.map((c) => [c.id, c]))
   const proprios = nomesPropriosFracos(indice)
+  // A fala do "MP" e do rosto "Empee": as fichas do falante sao as do personagem.
+  const apelidos = apelidosDoIndice(indice)
   return indice.planos.map((plano, pos) => {
     const temFala = plano.cueIds.some((id) => {
       const c = cuePorId.get(id)
@@ -398,7 +419,9 @@ export function prepararPlanos(indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'e
           ? 'placa'
           : null
     const rostos = plano.personagens.map((x) => ({ nome: x.nome, fichas: fichasFortes(x.nome, proprios), conf: x.conf }))
-    const falas = plano.falantes.flatMap(falantesDe).map((nome) => ({ nome, fichas: fichasFortes(nome, proprios), conf: 1 }))
+    const falas = plano.falantes
+      .flatMap(falantesDe)
+      .map((nome) => ({ nome, fichas: fichasFortes(nomeDoPersonagem(nome, apelidos), proprios), conf: 1 }))
     // Quem esta na tela para a variedade: os rostos; sem rosto reconhecido, o
     // falante unico do plano (o close do Gen sem rosto reconhecido ainda e o Gen).
     // Figurante sem nome forte ("Scientist A") conta como mais uma pessoa: o
@@ -427,6 +450,8 @@ export interface Elenco {
   nomesDaFicha: Map<string, Set<string>>
   /** As palavras fracas que sao nome de rosto neste episodio (nomesPropriosFracos). */
   proprios: ReadonlySet<string>
+  /** Ficha de um apelido -> a ficha do personagem ("mp" e "yggdrasil" -> "empee"). */
+  apelidos?: ReadonlyMap<string, string>
 }
 
 export function elencoDoEpisodio(planos: readonly PlanoDoCasar[], indice: Pick<EpisodeIndex, 'cues'>, eventos: readonly Pick<Evento, 'personagens'>[]): Elenco {
@@ -439,15 +464,29 @@ export function elencoDoEpisodio(planos: readonly PlanoDoCasar[], indice: Pick<E
   for (const e of eventos) for (const n of e.personagens) nomes.add(n)
   // Os nomes de rosto que sao palavra fraca ("Guy"): as fichas dos rostos ja vem com eles.
   const proprios = new Set(planos.flatMap((p) => p.rostos.flatMap((r) => r.fichas.filter((f) => FICHAS_FRACAS.has(f)))))
+  // O apelido vira o personagem: "MP" -> "Empee" (a sigla soletrada), "MP<U+30FB>Yggdrasil" tambem.
+  const rostos = new Set(planos.flatMap((p) => p.rostos.map((r) => r.nome)))
+  const apelidos = apelidosDoElenco(rostos, [...nomes].filter((n) => !rostos.has(n)))
   const nomesDaFicha = new Map<string, Set<string>>()
   for (const nome of nomes) {
-    for (const f of fichasFortes(nome, proprios)) {
+    const dono = nomeDoPersonagem(nome, apelidos)
+    for (const f of fichasFortes(dono, proprios)) {
       const s = nomesDaFicha.get(f) ?? new Set<string>()
-      s.add(nome)
+      s.add(dono)
       nomesDaFicha.set(f, s)
     }
   }
-  return { nomesDaFicha, proprios }
+  // Cada palavra do apelido (ate a sigla curta "MP") aponta a ficha do personagem.
+  const fichaDoApelido = new Map<string, string>()
+  for (const [cru, dono] of apelidos) {
+    const principal = fichasFortes(dono, proprios)[0]
+    if (!principal) continue
+    for (const parte of partesDoNome(cru)) {
+      const f = fichasDe(parte)
+      if (f.length === 1 && f[0] !== principal) fichaDoApelido.set(f[0]!, principal)
+    }
+  }
+  return { nomesDaFicha, proprios, apelidos: fichaDoApelido }
 }
 
 /**
@@ -462,7 +501,8 @@ export function citadosNoTexto(texto: string, elenco: Elenco): Citado[] {
   for (const palavra of palavras) {
     const fichas = fichasDe(palavra)
     if (fichas.length !== 1) continue
-    const f = fichas[0]!
+    // "a fadinha MP": o apelido vira a ficha do personagem ("empee").
+    const f = elenco.apelidos?.get(fichas[0]!) ?? fichas[0]!
     if (f.length < 3 || (FICHAS_FRACAS.has(f) && !elenco.proprios.has(f))) continue
     const conhecida = elenco.nomesDaFicha.has(f) || [...elenco.nomesDaFicha.keys()].some((k) => bate(f, k))
     if (!conhecida || achados.some((a) => a.ficha === f)) continue

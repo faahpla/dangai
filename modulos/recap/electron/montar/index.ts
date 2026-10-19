@@ -13,6 +13,8 @@ import {
 import { encaixarEscolha } from '../../shared/encaixe'
 import type { EpisodeIndex } from '../../shared/episodio'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
+import { nomeDoPersonagem } from '../../shared/apelidos'
+import { apelidosDoIndice } from '../cenas/casar'
 import { comMesclas } from '../cenas/mesclas'
 import { saveProjectFile } from '../project'
 import { arquivoDaVoz, pastaDaVoz } from '../voz/pastas'
@@ -233,6 +235,11 @@ async function montarAqui(
     gravarRascunho({ ...r, cenas: { ...cenas, encaixadoEm: quando }, atualizadoEm: quando })
   }
 
+  // Os personagens dos eventos com o nome do rosto ("MP" e "MP<U+30FB>Yggdrasil" ->
+  // "Empee"): o rosto da Edicao rapida e as secoes do projeto procuram quem o motor conhece.
+  const apelidos = apelidosDoIndice(indice, r.eventos)
+  const eventos = r.eventos.map((e) => ({ ...e, personagens: [...new Set(e.personagens.map((n) => nomeDoPersonagem(n, apelidos)))] }))
+
   // Os pedacos antes do disco: sem nenhuma cena, nada e criado.
   const previa = pedacosDaMontagem({ rascunho: r, roteiro, take, indice, cenas })
   if (previa.pedacos.length === 0) throw new Error('Nenhuma frase tem cena. Escolha as cenas antes de abrir no editor.')
@@ -269,7 +276,7 @@ async function montarAqui(
   const rostos = async (): Promise<{ focos: Map<string, FocoDoPedaco>; lote: RostosDoLote | null; avisos: string[] }> => {
     if (opcoes.rostos === false) return { focos: new Map(), lote: null, avisos: [] }
     if (config?.rosto) {
-      const nomes = personagensDosPedacos(previa.pedacos, roteiro, r.eventos, indice)
+      const nomes = personagensDosPedacos(previa.pedacos, roteiro, eventos, indice)
       return rostosDaMontagem(previa.pedacos, nomes, r.episodioId, opcoes.tetoDosRostosMs)
     }
     return { focos: await focosDosPedacos(previa.pedacos, opcoes.tetoDosRostosMs), lote: null, avisos: [] }
@@ -283,7 +290,7 @@ async function montarAqui(
       ? somDaMontagem(config, {
           duracaoSec: take.duracao,
           cortes: previa.pedacos.map((p, j) => (j === 0 ? 0 : p.inicio)),
-          secoes: secoesDoTake(roteiro, take, r.eventos),
+          secoes: secoesDoTake(roteiro, take, eventos),
           vozPath: narracaoPath,
         })
       : Promise.resolve(null)
@@ -348,7 +355,7 @@ async function montarAqui(
     narracaoPath,
     focos,
     agora: agora(),
-    eventos: r.eventos,
+    eventos,
     estilo,
     trilhas: som?.trilhas ?? [],
     sobreposicoes: [...(cor?.camada ? [cor.camada] : []), ...(textos?.clipes ?? [])],

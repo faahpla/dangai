@@ -1,3 +1,4 @@
+import { apelidosDoElenco, mesmaSigla, nomeDoPersonagem, partesDoNome } from '../../shared/apelidos'
 import type { EpisodeIndex } from '../../shared/episodio'
 import type { EventosDaIa, RoteiroDaIa, SecaoDaIa } from '../../shared/roteiro'
 import { canonizar } from '@shared/nomes'
@@ -129,10 +130,16 @@ export function elencoDoEpisodio(indice: Pick<EpisodeIndex, 'cues' | 'planos'>):
   // texto diz "Why-Man"); senao, a do Name mais usada.
   let comFalante = false
   const doName = new Map<string, Map<string, number>>()
+  const separar = (falante: string): string[] => falante.split(/\s*(?:&|\/|\+|;|\band\b)\s*/i)
+  // O apelido na legenda ("MP<U+30FB>Yggdrasil", e "Yggdrasil" sozinho) e o mesmo falante ("MP").
+  const apelidosDaLegenda = apelidosDoElenco(
+    [],
+    indice.cues.flatMap((c) => (c.tipo === 'fala' && c.falante ? separar(c.falante).map((n) => n.trim()) : [])),
+  )
   for (const cue of indice.cues) {
     if (cue.tipo !== 'fala' || !cue.falante) continue
-    for (const cru of cue.falante.split(/\s*(?:&|\/|\+|;|\band\b)\s*/i)) {
-      const nome = semHonorifico(cru)
+    for (const cru of separar(cue.falante)) {
+      const nome = semHonorifico(nomeDoPersonagem(cru.trim(), apelidosDaLegenda))
       const forma = formaDoNome(nome)
       if (forma.length < 2 || NAO_E_PERSONAGEM.has(forma)) continue
       comFalante = true
@@ -166,7 +173,10 @@ export function elencoDoEpisodio(indice: Pick<EpisodeIndex, 'cues' | 'planos'>):
     const palavras = palavrasDoNome(nomeDoIndice)
     if (palavras.length === 0) continue
     // Ja e um falante? (por qualquer palavra do nome: "Asagiri, Gen" -> "Gen")
-    const falante = palavras.map((p) => porForma.get(formaDoNome(p))).find((p) => p !== undefined)
+    // Ou a sigla soletrada: o rosto "Empee" e o falante "MP".
+    const falante =
+      palavras.map((p) => porForma.get(formaDoNome(p))).find((p) => p !== undefined) ??
+      [...porForma.values()].find((f) => mesmaSigla(f.nome, nomeDoIndice))
     if (falante) {
       falante.cenas += cenas
       falante.doIndice.push(...crus)
@@ -206,6 +216,13 @@ export function elencoDoEpisodio(indice: Pick<EpisodeIndex, 'cues' | 'planos'>):
   for (const p of personagens) {
     registrar(formaDoNome(p.nome), p.nome)
     for (const cru of p.doIndice) for (const palavra of palavrasDoNome(cru)) registrar(formaDoNome(palavra), p.nome)
+  }
+  // Os apelidos da legenda apontam o personagem ("MP<U+30FB>Yggdrasil" e "Yggdrasil" -> "MP").
+  for (const [cru, dono] of apelidosDaLegenda) {
+    const p = personagens.find((x) => formaDoNome(x.nome) === formaDoNome(semHonorifico(dono)))
+    if (!p) continue
+    registrar(formaDoNome(cru), p.nome)
+    for (const parte of partesDoNome(cru)) registrar(formaDoNome(parte), p.nome)
   }
   // O nome do elenco ganha da palavra ambigua: "Gen" e sempre o Gen.
   for (const p of personagens) alvo.set(formaDoNome(p.nome), p.nome)
