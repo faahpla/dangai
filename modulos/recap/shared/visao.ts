@@ -28,6 +28,12 @@ export interface SinaisDoCasar {
   quadros?: ReadonlyMap<string, readonly QuadroDaVisao[]>
   /** C2: o CLIP da `visualEn` de cada frase (fraseId). */
   imagemDaFrase?: ReadonlyMap<string, Float32Array>
+  /**
+   * (4a rodada) O CLIP da consulta da PONTE VISUAL (consultaVisual) de cada frase
+   * e de cada pedaco (fraseId ou idDoPedaco): o alvo de imagem de quem nao tem a
+   * `visualEn` da IA. Vale menos que ela.
+   */
+  imagemDaPonte?: ReadonlyMap<string, Float32Array>
   /** C1: o sentido (multilingual-e5-small) do texto de cada frase e de cada fala (cueId). */
   sentidoDaFrase?: ReadonlyMap<string, Float32Array>
   sentidoDaCue?: ReadonlyMap<string, Float32Array>

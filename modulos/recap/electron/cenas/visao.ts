@@ -545,22 +545,25 @@ function vetorDe(b64: string): Float32Array {
 export async function sinaisDasFrases(
   frases: readonly Pick<Frase, 'id' | 'texto' | 'visualEn'>[],
   quer: { imagem: boolean; sentido: boolean; soCache?: boolean },
-): Promise<{ sinais: Pick<SinaisDoCasar, 'imagemDaFrase' | 'sentidoDaFrase'>; falha: string | null; ms: number }> {
+  /** (4a rodada) As consultas da ponte visual (consultaVisual), por frase ou pedaco: o CLIP do texto, no mesmo cache. */
+  consultas: readonly { id: string; texto: string }[] = [],
+): Promise<{ sinais: Pick<SinaisDoCasar, 'imagemDaFrase' | 'sentidoDaFrase' | 'imagemDaPonte'>; falha: string | null; ms: number }> {
   const t0 = Date.now()
   const cache = lerCacheDasFrases()
-  const pedidos: { tipo: 'clip' | 'sentido'; fraseId: string; texto: string; chave: string }[] = []
+  const pedidos: { tipo: 'clip' | 'sentido' | 'ponte'; fraseId: string; texto: string; chave: string }[] = []
   for (const f of frases) {
     if (quer.imagem && f.visualEn?.trim()) pedidos.push({ tipo: 'clip', fraseId: f.id, texto: f.visualEn.trim(), chave: chaveDoTexto(MODELO_CLIP, f.visualEn) })
     if (quer.sentido && f.texto.trim()) pedidos.push({ tipo: 'sentido', fraseId: f.id, texto: f.texto.trim(), chave: chaveDoTexto(MODELO_SENTIDO, f.texto) })
   }
+  if (quer.imagem) for (const c of consultas) if (c.texto.trim()) pedidos.push({ tipo: 'ponte', fraseId: c.id, texto: c.texto.trim(), chave: chaveDoTexto(MODELO_CLIP, c.texto) })
   const faltam = pedidos.filter((p) => !cache[p.chave])
   let falha: string | null = null
   if (faltam.length > 0 && !quer.soCache) {
     const tmp = join(pastaDoPerfil(), 'visao', `frases-${randomBytes(4).toString('hex')}`)
-    const unicos = (tipo: string): { id: string; texto: string }[] => [
-      ...new Map(faltam.filter((p) => p.tipo === tipo).map((p) => [p.chave, { id: p.chave, texto: p.texto }])).values(),
+    const unicos = (...tipos: string[]): { id: string; texto: string }[] => [
+      ...new Map(faltam.filter((p) => tipos.includes(p.tipo)).map((p) => [p.chave, { id: p.chave, texto: p.texto }])).values(),
     ]
-    const r = await rodarModoCenas({ clipTextos: unicos('clip'), sentido: unicos('sentido') }, tmp, () => {}, LIMITE_DAS_FRASES_MS)
+    const r = await rodarModoCenas({ clipTextos: unicos('clip', 'ponte'), sentido: unicos('sentido') }, tmp, () => {}, LIMITE_DAS_FRASES_MS)
     if (r.falha) falha = r.falha
     else {
       for (const nome of ['clip-textos', 'sentido']) {
@@ -581,15 +584,17 @@ export async function sinaisDasFrases(
   }
   const imagemDaFrase = new Map<string, Float32Array>()
   const sentidoDaFrase = new Map<string, Float32Array>()
+  const imagemDaPonte = new Map<string, Float32Array>()
   for (const p of pedidos) {
     const b64 = cache[p.chave]
     if (!b64) continue
-    ;(p.tipo === 'clip' ? imagemDaFrase : sentidoDaFrase).set(p.fraseId, vetorDe(b64))
+    ;(p.tipo === 'clip' ? imagemDaFrase : p.tipo === 'ponte' ? imagemDaPonte : sentidoDaFrase).set(p.fraseId, vetorDe(b64))
   }
   return {
     sinais: {
       ...(imagemDaFrase.size > 0 ? { imagemDaFrase } : {}),
       ...(sentidoDaFrase.size > 0 ? { sentidoDaFrase } : {}),
+      ...(imagemDaPonte.size > 0 ? { imagemDaPonte } : {}),
     },
     falha,
     ms: Date.now() - t0,
