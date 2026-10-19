@@ -570,6 +570,8 @@ async function prepararRostos(
     episodioId: episodioId && RE_EPISODIO.test(episodioId) ? episodioId : null,
     tetoMs: 120_000,
     motor: true,
+    // Quem o roteiro cita no video inteiro: o conjunto fechado em que o motor diz QUEM e cada rosto.
+    elenco: [...new Set(frases.flatMap((f) => f.personagens))].map((x) => x.slice(0, 120)).slice(0, 40),
   })
   if (!r.ok) {
     avisos.push(`Sem rosto: ${r.error}`)

@@ -19,32 +19,50 @@ Pedido:
                 "personagens": ["Yuzuriha", "Taiju"],
                 "candidatos": ["Ogawa, Yuzuriha", "Ooki, Taiju"]}],
      "anime": "Dr. Stone" | null, "temporada": 4 | null,
-     "identificar": true}
+     "identificar": true, "aspecto": 0.489 | null}
+
+    `aspecto`: a largura VISIVEL do recorte sobre a altura do quadro (0,489 no
+    short 9:16 com a folga do Ken Burns). Com ele, o item cujo 1o citado nao
+    tem rosto achado ganha as `janelas` (ver _Elenco.janelas).
 
     `personagens`: quem a frase cita, em ordem de preferencia.
-    `candidatos`: quem o INDICE reconhece no plano. Identificar e escolher
-    ENTRE eles (conjunto fechado, 2-3 pessoas), nao entre o elenco inteiro --
-    medido no S4-37: contra o elenco inteiro o CLIP trocava o Gen pelo Gozan e
-    marcava figurante de fundo como Chrome com sim maior que o proprio Chrome.
-    Vazio = nao identifica (o host so manda quando um citado esta no plano).
+    `candidatos`: o conjunto FECHADO em que cada rosto e procurado. Desde
+    19/10 o host manda os citados, quem o INDICE reconhece no plano e o
+    elenco principal do episodio (as pessoas que mais aparecem, ate 8) --
+    nunca o elenco inteiro do anime: medido no S4-37, contra o elenco inteiro o
+    CLIP trocava o Gen pelo Gozan e marcava figurante de fundo como Chrome. Com
+    so o citado no conjunto (o de antes), todo rosto de anime parece com ele
+    (~0,8 no CLIP) e nada se decide: no MRM E02 a Misa grande ficou no lugar do
+    Lent pequeno no meio. Vazio = nao identifica.
 
 Eventos (stdout, um JSON por linha):
     {"type": "pronto", "ms": .., "gpu": bool, "cabeca": bool, "elenco": "<pasta>"|null, "semElenco": ..}
     {"type": "rostos", "chave": "...", "largura": 1920, "altura": 1080,
      "quadros": [{"t": 1.2, "ok": true, "rostos": [
          {"x": .., "y": .., "w": .., "h": .., "conf": .., "tipo": "rosto"|"cabeca",
-          "personagem": "Yuzuriha"|null, "sim": 0.95|null, "quem": "Ogawa, Yuzuriha"|null}]}]}
+          "personagem": "Yuzuriha"|null, "pessoa": "Ogawa, Yuzuriha"|null,
+          "sim": 0.95|null, "quem": "Ogawa, Yuzuriha"|null}]}]}
     {"type": "fim", "ms": .., "itens": N, "identificados": n, "clipMs": ..}
     erro: {"type": "failed", "message": "..."} (o main() do headless)
+
+    O quadro pode trazer `janelas`: [{"x": .., "w": .., "quem": .., "sim": ..,
+    "personagem": "MP"|null}] (19/10), as posicoes do recorte da esquerda para
+    a direita e quem cada uma mostra.
+
+    `pessoa`: QUEM e o rosto (a pasta do elenco), so quando a identificacao
+    passou nas margens -- citado ou nao. `personagem`: o nome CITADO (como veio
+    no pedido) que e essa pessoa. `quem`/`sim`: o mais parecido, sempre.
 
 So LEITURA: o elenco (anime_db, ref_features.npz) e os mp4 sao so lidos --
 nada de FeatureCache.save(), Config.save() nem ensure_dirs(). A pasta de dados
 e a do Studio (ANIRECAP_MOTOR_DADOS), e as bibliotecas do AnCut/Corte Cenas
 podem ser a origem dos mp4.
 
-Identificar so roda quando vale a pena: o item tem candidatos, e o quadro tem
-2+ rostos. O CLIP (ViT-L/14, ~1 GB) sobe numa thread JA no comeco quando algum
-item tem candidatos, em paralelo com o YOLO e a leitura dos quadros.
+Identificar roda quando o item tem candidatos e o quadro tem rosto. O CLIP
+(ViT-L/14, ~1 GB) sobe numa thread JA no comeco quando algum item tem
+candidatos, em paralelo com o YOLO e a leitura dos quadros. Item com citados
+tambem procura CABECA nos quadros que ja tem rosto (19/10): o perfil da
+fadinha em close (MRM E02, "Ela ativou...") o modelo de rosto nao ve.
 """
 from __future__ import annotations
 
@@ -69,12 +87,24 @@ CONF = 0.4
 MINIMO_PX_1080 = 32
 #: Um rosto e do candidato quando parece com ele pelo menos isto (abaixo do
 #: default_threshold 0.80 do reconhecimento: aqui a pergunta e fechada, "qual
-#: destes 2-3 rostos e ele", nao "quem esta na cena")...
+#: destes rostos e ele", nao "quem esta na cena")...
 LIMIAR_ID = 0.70
 #: ...com folga sobre o 2o candidato para o MESMO rosto...
 MARGEM_ID = 0.02
 #: ...e sobre o 2o rosto para o MESMO candidato (dois rostos quase iguais = nao sei).
 MARGEM_ENTRE_ROSTOS = 0.02
+#: Com UMA pessoa so no conjunto nao ha 2o candidato para comparar: so vale
+#: quem parece muito (no MRM E02 os rostos de outra pessoa davam 0,79-0,83 e o
+#: proprio, 0,91-0,93).
+LIMIAR_SOZINHO = 0.88
+#: Cabeca que cobre um rosto ja achado e a mesma pessoa: fica so o rosto.
+SOBREPOE_ROSTO = 0.3
+#: As janelas do recorte (fracao da folga), quando o citado nao tem rosto achado.
+POSICOES_DA_JANELA = (0.0, 0.25, 0.5, 0.75, 1.0)
+#: A janela e do citado quando ele e o mais parecido dela, acima disto...
+LIMIAR_JANELA = 0.80
+#: ...com esta folga do 2o.
+MARGEM_JANELA = 0.02
 
 
 def _ms(desde: float) -> int:
@@ -136,9 +166,11 @@ class _Detector:
             )
         return saida
 
-    def detectar(self, imgs: list[np.ndarray]) -> list[list[dict]]:
-        """Por imagem: [{x,y,w,h,conf,tipo}], rosto primeiro; cabeca so onde
-        nao achou rosto (a cascata do motor)."""
+    def detectar(self, imgs: list[np.ndarray], cabecas: list[bool] | None = None) -> list[list[dict]]:
+        """Por imagem: [{x,y,w,h,conf,tipo}], rosto primeiro; cabeca onde nao
+        achou rosto (a cascata do motor) e, em `cabecas[i]`, tambem ao lado dos
+        rostos -- so as que nao cobrem um rosto ja achado (perfil, nuca, close
+        cortado na borda)."""
         saida: list[list[dict]] = [[] for _ in imgs]
         if not imgs:
             return saida
@@ -154,11 +186,69 @@ class _Detector:
 
         for i, caixas in enumerate(self._prever(self.rosto, imgs)):
             saida[i] = filtrar(imgs[i], caixas, "rosto")
-        faltam = [i for i, r in enumerate(saida) if not r]
+        faltam = [i for i, r in enumerate(saida) if not r or (cabecas is not None and cabecas[i])]
         if faltam and self.cabeca is not None:
             for i, caixas in zip(faltam, self._prever(self.cabeca, [imgs[i] for i in faltam])):
-                saida[i] = filtrar(imgs[i], caixas, "cabeca")
+                rostos = saida[i]
+                novas = [c for c in filtrar(imgs[i], caixas, "cabeca") if not any(_cobre(c, r) for r in rostos)]
+                saida[i] = rostos + novas
         return saida
+
+
+def atribuir(sims: np.ndarray) -> list[int | None]:
+    """[19/10] QUEM e cada rosto: sims[i, j] = o rosto i contra a pessoa j.
+
+    1. cada rosto quer a pessoa que mais parece com ele, acima de LIMIAR_ID e
+       com MARGEM_ID do 2o candidato (com uma pessoa so no conjunto, acima de
+       LIMIAR_SOZINHO: nao ha 2o para comparar);
+    2. dois rostos querendo a mesma pessoa: fica o mais parecido, com
+       MARGEM_ENTRE_ROSTOS do outro; quase empate, nenhum.
+    Rosto que quer OUTRA pessoa nao disputa: antes ele contava, e a Misa grande
+    (Misa 0,87, Lent 0,83) tirava o Lent do rosto pequeno dele (Lent 0,83)."""
+    if sims.size == 0:
+        return [None for _ in range(sims.shape[0])]
+    sozinho = sims.shape[1] == 1
+    quer: list[int | None] = []
+    for i in range(sims.shape[0]):
+        j = int(np.argmax(sims[i]))
+        s1 = float(sims[i, j])
+        s2 = float(np.max(np.delete(sims[i], j))) if sims.shape[1] > 1 else -1.0
+        ok = s1 >= (LIMIAR_SOZINHO if sozinho else LIMIAR_ID) and s1 - s2 >= MARGEM_ID
+        quer.append(j if ok else None)
+    saida: list[int | None] = []
+    for i, j in enumerate(quer):
+        if j is None:
+            saida.append(None)
+            continue
+        rivais = [float(sims[o, j]) for o in range(sims.shape[0]) if o != i and quer[o] == j]
+        saida.append(None if rivais and float(sims[i, j]) - max(rivais) < MARGEM_ENTRE_ROSTOS else j)
+    return saida
+
+
+def quem_na_janela(sims: np.ndarray) -> list[int | None]:
+    """[19/10] A pessoa que cada janela do recorte mostra (sims[i, j]: a janela i
+    contra a pessoa j): a mais parecida, acima de LIMIAR_JANELA e com
+    MARGEM_JANELA da 2a; senao ninguem."""
+    saida: list[int | None] = []
+    for i in range(sims.shape[0]):
+        if sims.shape[1] < 2:
+            saida.append(None)
+            continue
+        j = int(np.argmax(sims[i]))
+        s1 = float(sims[i, j])
+        s2 = float(np.max(np.delete(sims[i], j)))
+        saida.append(j if s1 >= LIMIAR_JANELA and s1 - s2 >= MARGEM_JANELA else None)
+    return saida
+
+
+def _cobre(cabeca: dict, rosto: dict) -> bool:
+    """A cabeca e a do rosto: a intersecao passa de SOBREPOE_ROSTO da area do rosto."""
+    x0 = max(cabeca["x"], rosto["x"])
+    y0 = max(cabeca["y"], rosto["y"])
+    x1 = min(cabeca["x"] + cabeca["w"], rosto["x"] + rosto["w"])
+    y1 = min(cabeca["y"] + cabeca["h"], rosto["y"] + rosto["h"])
+    inter = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+    return inter > SOBREPOE_ROSTO * max(1.0, rosto["w"] * rosto["h"])
 
 
 # ------------------------------------------------------------------ quadros
@@ -421,22 +511,19 @@ class _Elenco:
         candidatos: list[str],
         citados: list[str],
     ) -> None:
-        """Marca em cada rosto `quem` (o candidato do indice que ele e), `sim`
-        e `personagem` (o nome CITADO, como veio no pedido, que e essa pessoa).
+        """Marca em cada rosto `quem` (o candidato mais parecido), `sim`,
+        `pessoa` (a pasta do elenco, quando a identificacao passou) e
+        `personagem` (o nome CITADO, como veio no pedido, que e essa pessoa).
 
-        Conjunto FECHADO: so os candidatos (quem o indice reconhece no plano).
-        Cada candidato fica com no maximo um rosto por quadro (o mais parecido),
-        e so quando ganha com folga do 2o candidato e do 2o rosto."""
+        Conjunto FECHADO: so os candidatos. Cada rosto fica com a pessoa que
+        mais parece com ele, com folga do 2o candidato; dois rostos querendo a
+        mesma pessoa: fica o mais parecido, com folga do outro (19/10: antes o
+        2o rosto contava mesmo sendo, com folga, de OUTRA pessoa -- a Misa
+        grande "tirava" o Lent do rosto pequeno dele). Com uma pessoa so no
+        conjunto, so acima de LIMIAR_SOZINHO."""
         from .matching.face_detector import crops_from_boxes
 
-        pessoas: list[tuple[frozenset[str], np.ndarray]] = []
-        for nome in candidatos:
-            k = self._pessoa(nome)
-            if k is None or any(k == p for p, _ in pessoas):
-                continue
-            m = self._matriz(detector, k)
-            if m is not None:
-                pessoas.append((k, m))
+        pessoas = self.pessoas(detector, candidatos)
         if not pessoas:
             return
         engine = self.engine()
@@ -457,17 +544,76 @@ class _Elenco:
         citadas = [(c, _fichas(c)) for c in citados]
         for i, r in enumerate(rostos):
             j = int(np.argmax(sims[i]))
-            s1 = float(sims[i, j])
-            s2 = float(np.max(np.delete(sims[i], j))) if sims.shape[1] > 1 else -1.0
-            outro_rosto = float(np.max(np.delete(sims[:, j], i))) if sims.shape[0] > 1 else -1.0
             r["quem"] = grupos[pessoas[j][0]]["nome"]
-            r["sim"] = round(s1, 3)
-            if s1 < LIMIAR_ID or s1 - s2 < MARGEM_ID or s1 - outro_rosto < MARGEM_ENTRE_ROSTOS:
+            r["sim"] = round(float(sims[i, j]), 3)
+            if os.environ.get("ANIRECAP_ROSTOS_SIMS") == "1":
+                r["sims"] = {grupos[k]["nome"]: round(float(sims[i, jj]), 3) for jj, (k, _) in enumerate(pessoas)}
+        for i, j in enumerate(atribuir(sims)):
+            if j is None:
                 continue
+            r = rostos[i]
+            r["pessoa"] = grupos[pessoas[j][0]]["nome"]
             for nome, f in citadas:
                 if _mesma(f, pessoas[j][0]):
                     r["personagem"] = nome
                     break
+
+    def pessoas(self, detector: _Detector, candidatos: list[str]) -> list[tuple[frozenset[str], np.ndarray]]:
+        """Os candidatos com foto no elenco (uma vez cada pessoa) e os prototipos dela."""
+        saida: list[tuple[frozenset[str], np.ndarray]] = []
+        for nome in candidatos:
+            k = self._pessoa(nome)
+            if k is None or any(k == p for p, _ in saida):
+                continue
+            m = self._matriz(detector, k)
+            if m is not None:
+                saida.append((k, m))
+        return saida
+
+    def janelas(
+        self,
+        detector: _Detector,
+        img: np.ndarray,
+        candidatos: list[str],
+        citados: list[str],
+        aspecto: float,
+    ) -> list[dict]:
+        """[19/10] O citado que nenhum detector ve (a fadinha de costas, em close,
+        no MRM E02: so a orelha, o cabelo e o sorriso): o CLIP de JANELAS do
+        tamanho do recorte 9:16, da esquerda para a direita, contra os
+        candidatos. Por janela: {x, w, quem, sim, personagem}; `personagem` so
+        quando o citado e o mais parecido da janela, acima de LIMIAR_JANELA e
+        com MARGEM_JANELA do 2o. Medido no MRM E02: a janela da fadinha deu
+        0,85 contra 0,80 da 2a pessoa; sem ela no quadro, nenhuma janela passa."""
+        pessoas = self.pessoas(detector, candidatos)
+        engine = self.engine()
+        if len(pessoas) < 2 or engine is None:
+            return []
+        h, w = img.shape[:2]
+        # A largura VISIVEL do recorte no quadro (a mesma conta do janelaDoFormato do host).
+        jw = int(round(max(0.05, aspecto) * h))
+        if jw >= w:
+            return []
+        xs = [int(round(f * (w - jw))) for f in POSICOES_DA_JANELA]
+        t0 = time.perf_counter()
+        embs = engine.embed_images([img[:, x:x + jw] for x in xs])
+        self.clip_ms += _ms(t0)
+        if len(embs) != len(xs):
+            return []
+        sims = np.stack([(embs @ m.T).max(axis=1) for _, m in pessoas], axis=1)
+        grupos = self._grupos_do_disco()
+        citadas = [(c, _fichas(c)) for c in citados]
+        saida: list[dict] = []
+        for i, (x, j) in enumerate(zip(xs, quem_na_janela(sims))):
+            k = int(np.argmax(sims[i]))
+            janela = {"x": x, "w": jw, "quem": grupos[pessoas[k][0]]["nome"], "sim": round(float(sims[i, k]), 3), "personagem": None}
+            if j is not None:
+                for nome, f in citadas:
+                    if _mesma(f, pessoas[j][0]):
+                        janela["personagem"] = nome
+                        break
+            saida.append(janela)
+        return saida
 
 
 # ------------------------------------------------------------------ o modo
@@ -515,12 +661,15 @@ def rodar(pedido: dict, emit: Emit, cancelado: Callable[[], bool]) -> int:
             lidos.append((item, instantes, quadros))
 
         imgs = [q for _, _, qs in lidos for q in qs if q is not None]
-        achados = iter(detector.detectar(imgs))
+        # Cabeca tambem ao lado dos rostos so em item que cita alguem (o perfil do citado).
+        cabecas = [bool(item.get("personagens")) for item, _, qs in lidos for q in qs if q is not None]
+        achados = iter(detector.detectar(imgs, cabecas))
         for item, instantes, quadros in lidos:
             largura = altura = 0
             saida = []
             citados = [str(c) for c in (item.get("personagens") or []) if str(c).strip()]
             candidatos = [str(c) for c in (item.get("candidatos") or []) if str(c).strip()]
+            pode = elenco is not None and elenco.pasta is not None and bool(candidatos)
             for t, img in zip(instantes, quadros):
                 if img is None:
                     saida.append({"t": t, "ok": False, "rostos": []})
@@ -529,15 +678,28 @@ def rodar(pedido: dict, emit: Emit, cancelado: Callable[[], bool]) -> int:
                 rostos = next(achados)
                 for r in rostos:
                     r.setdefault("personagem", None)
+                    r.setdefault("pessoa", None)
                     r.setdefault("sim", None)
                     r.setdefault("quem", None)
-                if elenco is not None and elenco.pasta is not None and candidatos and citados and len(rostos) >= 2:
+                if pode and rostos:
                     try:
                         elenco.identificar(detector, img, rostos, candidatos, citados)
-                        identificados += sum(1 for r in rostos if r["personagem"])
+                        identificados += sum(1 for r in rostos if r["pessoa"])
                     except Exception as e:  # noqa: BLE001 -- identificar e melhoria
                         print(f"[rostos] identificar falhou: {e}")
                 saida.append({"t": t, "ok": True, "rostos": rostos})
+            # [19/10] O 1o citado sem rosto achado nos instantes: as janelas do recorte
+            # (o host decide se a janela dele ganha do rosto de um citado depois dele).
+            achou = any(r.get("personagem") == citados[0] for q in saida for r in q["rostos"]) if citados else True
+            aspecto = item.get("aspecto") or pedido.get("aspecto")
+            if pode and citados and not achou and isinstance(aspecto, (int, float)) and aspecto > 0:
+                for q, img in zip(saida, [x for x in quadros]):
+                    if not q["ok"] or img is None:
+                        continue
+                    try:
+                        q["janelas"] = elenco.janelas(detector, img, candidatos, citados, float(aspecto))
+                    except Exception as e:  # noqa: BLE001 -- janela e melhoria
+                        print(f"[rostos] janelas falharam: {e}")
             emit(
                 {
                     "type": "rostos",

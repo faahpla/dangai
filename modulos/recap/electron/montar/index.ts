@@ -23,7 +23,7 @@ import { aquecerMiniaturas } from './abertura'
 import {
   corDaMontagem,
   estiloSalvo,
-  personagensDosPedacos,
+  nomesDaMontagem,
   registrarAMusica,
   resumoDaMontagem,
   rostosDaMontagem,
@@ -242,6 +242,8 @@ async function montarAqui(
 
   // Os pedacos antes do disco: sem nenhuma cena, nada e criado.
   const previa = pedacosDaMontagem({ rascunho: r, roteiro, take, indice, cenas })
+  // Quem cada pedaco e cada frase mostram (o rosto da Edicao rapida e o `studio.secoes`).
+  const nomes = nomesDaMontagem(previa.pedacos, roteiro, eventos, indice, cenas.escolhas)
   if (previa.pedacos.length === 0) throw new Error('Nenhuma frase tem cena. Escolha as cenas antes de abrir no editor.')
 
   // 2. A pasta: a pedida (conferida) ou a padrao; nunca numa biblioteca externa.
@@ -279,8 +281,7 @@ async function montarAqui(
   const rostos = async (): Promise<{ focos: Map<string, FocoDoPedaco>; lote: RostosDoLote | null; avisos: string[] }> => {
     if (opcoes.rostos === false) return { focos: new Map(), lote: null, avisos: [] }
     if (config?.rosto) {
-      const nomes = personagensDosPedacos(previa.pedacos, roteiro, eventos, indice)
-      return rostosDaMontagem(previa.pedacos, nomes, r.episodioId, opcoes.tetoDosRostosMs)
+      return rostosDaMontagem(previa.pedacos, nomes.porPedaco, r.episodioId, opcoes.tetoDosRostosMs, nomes.elenco)
     }
     return { focos: await focosDosPedacos(previa.pedacos, opcoes.tetoDosRostosMs), lote: null, avisos: [] }
   }
@@ -293,7 +294,7 @@ async function montarAqui(
       ? somDaMontagem(config, {
           duracaoSec: take.duracao,
           cortes: previa.pedacos.map((p, j) => (j === 0 ? 0 : p.inicio)),
-          secoes: secoesDoTake(roteiro, take, eventos),
+          secoes: secoesDoTake(roteiro, take, eventos, nomes.porFrase),
           vozPath: narracaoPath,
         })
       : Promise.resolve(null)
@@ -363,6 +364,7 @@ async function montarAqui(
     trilhas: som?.trilhas ?? [],
     sobreposicoes: [...(cor?.camada ? [cor.camada] : []), ...(textos?.clipes ?? [])],
     thumbs,
+    nomesDasFrases: nomes.porFrase,
   })
   const projetoPath = arquivoDoProjeto(pasta, nome)
   saveProjectFile(projetoPath, file)

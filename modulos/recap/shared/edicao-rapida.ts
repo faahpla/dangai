@@ -935,6 +935,8 @@ export function secoesDoTake(
   roteiro: Pick<Roteiro, 'secoes'>,
   take: Pick<TakeDaVoz, 'trechos' | 'duracao'>,
   eventos: readonly Pick<Evento, 'id' | 'personagens'>[] = [],
+  /** (19/10) Quem cada frase cita, na ordem de preferencia (a montagem sabe). Ausente = os dos eventos. */
+  nomes?: ReadonlyMap<string, readonly string[]>,
 ): SecaoDoStudio[] {
   const trechos = new Map(take.trechos.map((t) => [t.fraseId, t]))
   const saida: SecaoDoStudio[] = []
@@ -947,7 +949,7 @@ export function secoesDoTake(
           id: f.id,
           inicio: arredondar(t.offset),
           fim: arredondar(t.offset + t.duracao),
-          personagens: personagensDaFrase(f, eventos),
+          personagens: [...(nomes?.get(f.id) ?? personagensDaFrase(f, eventos))],
           // O texto de tela vai junto: a Edicao rapida no editor poe os textos sem o rascunho.
           tela: f.textoDeTela?.replace(/\s+/g, ' ').trim() || null,
         },
@@ -1336,6 +1338,12 @@ export const loteDeRostosSchema = z.object({
   tetoMs: z.number().int().positive().max(600_000).default(120_000),
   /** false = pula o motor e usa so o detector antigo (lbpcascade). */
   motor: z.boolean().default(true),
+  /**
+   * (19/10) Quem o roteiro cita no video inteiro: entra no conjunto fechado de
+   * cada pedaco, junto do elenco principal do indice, para o motor dizer QUEM e
+   * cada rosto (e nao so "parece com o citado").
+   */
+  elenco: z.array(z.string().max(120)).max(40).optional(),
 })
 export type LoteDeRostos = z.infer<typeof loteDeRostosSchema>
 

@@ -16,6 +16,19 @@ import {
   type RostosDoLote,
 } from '../../shared/edicao-rapida'
 import type { EpisodeIndex } from '../../shared/episodio'
+import type { EscolhaDaFrase } from '../../shared/cenas'
+import { palavrasDaFrase } from '../../shared/voz'
+import {
+  apelidosDoIndice,
+  citadosNoTexto,
+  elencoDoEpisodio,
+  falantesDe,
+  fichasFortes,
+  mesmoNome,
+  prepararPlanos,
+  sujeitoHerdado,
+  type Citado,
+} from '../cenas/casar'
 import type {
   ClipeDoRecap as SobreposicaoSalva,
   SecaoNoTempo as SecaoDoStudio,
@@ -58,45 +71,125 @@ export function estiloSalvo(cru: unknown): CaptionStyle | null {
   return lido.success ? lido.data : null
 }
 
-/**
- * Quem cada pedaco deve enquadrar: os personagens dos eventos que a frase
- * cita (personagensDaFrase), com os que o INDICE reconhece no plano daquele
- * pedaco na frente (pelo `conf` do motor/AnCut). Frase que nao cita ninguem:
- * lista vazia = o maior rosto. Por chaveDoPedaco.
- */
-export function personagensDosPedacos(
-  pedacos: readonly Pick<PedacoDaMontagem, 'fraseId' | 'planoId' | 'arquivo' | 'de'>[],
-  roteiro: Pick<Roteiro, 'secoes'>,
-  eventos: readonly Pick<Evento, 'id' | 'personagens'>[],
-  indice: Pick<EpisodeIndex, 'planos'>,
-): Map<string, string[]> {
-  const frases = new Map(roteiro.secoes.flatMap((s) => s.frases).map((f) => [f.id, f]))
-  const planos = new Map(indice.planos.map((p) => [p.id, p]))
-  const saida = new Map<string, string[]>()
-  for (const p of pedacos) {
-    const frase = frases.get(p.fraseId)
-    const citados = frase ? personagensDaFrase(frase, eventos) : []
-    if (citados.length === 0) {
-      saida.set(chaveDoPedaco(p), [])
-      continue
-    }
-    const noPlano = new Map((planos.get(p.planoId)?.personagens ?? []).map((x) => [normalizar(x.nome), x.conf]))
-    const ordenados = citados
-      .map((nome, i) => ({ nome, i, conf: noPlano.get(normalizar(nome)) ?? -1 }))
-      .sort((a, b) => b.conf - a.conf || a.i - b.i)
-      .map((x) => x.nome.slice(0, 120))
-      .slice(0, 20)
-    saida.set(chaveDoPedaco(p), ordenados)
-  }
-  return saida
+/** O que a montagem sabe de QUEM cada pedaco mostra (nomesDaMontagem). */
+export interface NomesDaMontagem {
+  /** chaveDoPedaco -> quem o pedaco cita, em ordem de preferencia (com o nome do rosto no indice). */
+  porPedaco: Map<string, string[]>
+  /** fraseId -> quem a frase cita, na mesma ordem (`studio.secoes`: a Edicao rapida do editor le). */
+  porFrase: Map<string, string[]>
+  /** Quem o roteiro cita no video inteiro (o conjunto fechado do motor, com o elenco principal). */
+  elenco: string[]
 }
 
-function normalizar(nome: string): string {
-  return nome
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim()
-    .toLowerCase()
+/** Quantos nomes por pedaco (o pedido de rosto aceita 20). */
+const NOMES_MAX = 20
+
+/**
+ * QUEM CADA PEDACO DEVE ENQUADRAR (19/10, reescrito com o teste real do MRM
+ * E02: a fadinha saia do quadro em "junto da fadinha MP" e "Ela ativou...", e
+ * "O Guy" mostrava a Misa). A ordem de preferencia de cada pedaco:
+ *   1. quem o TEXTO DO PEDACO cita ("a fadinha MP" -> Empee, pelo apelido da
+ *      legenda: apelidosDoIndice), na ordem em que aparece;
+ *   2. sem nome, o sujeito herdado ("Ela ativou..." -> a MP da frase de antes),
+ *      a mesma regra C4 do casar (sujeitoHerdado);
+ *   3. quem FALA no trecho do episodio que o pedaco mostra (a legenda);
+ *   4. quem o resto da frase cita e os personagens dos eventos da frase.
+ * Antes era so (4), na ordem da confianca do indice no plano. Os nomes saem com
+ * a grafia do ROSTO no indice ("MP" -> "Empee", "Senku" -> "Ishigami,
+ * Senkuu"), que e a do elenco do motor; sem rosto, como vieram.
+ */
+export function nomesDaMontagem(
+  pedacos: readonly Pick<PedacoDaMontagem, 'fraseId' | 'cena' | 'planoId' | 'arquivo' | 'de' | 'ate'>[],
+  roteiro: Pick<Roteiro, 'secoes'>,
+  eventos: readonly Pick<Evento, 'id' | 'personagens'>[],
+  indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'exclusoes'>,
+  escolhas: readonly Pick<EscolhaDaFrase, 'fraseId' | 'cenas'>[],
+): NomesDaMontagem {
+  const todos = prepararPlanos(indice)
+  const elencoDoEp = elencoDoEpisodio(todos, indice, eventos)
+  const apelidos = apelidosDoIndice(indice)
+  // Os rostos do indice, do que mais aparece ao que menos (o nome que o motor conhece).
+  const contagem = new Map<string, number>()
+  for (const p of indice.planos) for (const x of p.personagens) contagem.set(x.nome, (contagem.get(x.nome) ?? 0) + 1)
+  const rostos = [...contagem.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => ({ nome: n, fichas: fichasFortes(n, elencoDoEp.proprios) }))
+  const doRosto = (fichas: readonly string[]): string | null => (fichas.length > 0 ? (rostos.find((r) => mesmoNome(r.fichas, fichas))?.nome ?? null) : null)
+  const resolver = (nome: string): string => {
+    const limpo = nome.trim()
+    const apelido = apelidos.get(limpo)
+    if (apelido) return apelido
+    return doRosto(fichasFortes(limpo, elencoDoEp.proprios)) ?? limpo
+  }
+  const doCitado = (c: Citado): string => doRosto([c.ficha]) ?? c.rotulo
+  const unicos = (nomes: readonly string[]): string[] => {
+    const saida: string[] = []
+    for (const n of nomes) {
+      const f = fichasFortes(n, elencoDoEp.proprios)
+      if (!n.trim() || saida.some((x) => x === n || (f.length > 0 && mesmoNome(fichasFortes(x, elencoDoEp.proprios), f)))) continue
+      saida.push(n.slice(0, 120))
+    }
+    return saida.slice(0, NOMES_MAX)
+  }
+
+  // Quem fala no trecho do episodio que o pedaco mostra (a fala que mais cobre o trecho).
+  const planos = new Map(indice.planos.map((p) => [p.id, p]))
+  const falante = (p: Pick<PedacoDaMontagem, 'planoId' | 'de' | 'ate'>): string | null => {
+    const plano = planos.get(p.planoId)
+    if (!plano) return null
+    const base = plano.inicioNoArquivo ?? 0
+    const de = plano.start + (p.de - base)
+    const ate = plano.start + (p.ate - base)
+    let melhor: { nome: string; cobre: number } | null = null
+    for (const c of indice.cues) {
+      if (c.tipo !== 'fala' || !c.falante) continue
+      const cobre = Math.min(ate, c.end) - Math.max(de, c.start)
+      if (cobre > 0.1 && (!melhor || cobre > melhor.cobre)) melhor = { nome: falantesDe(c.falante)[0] ?? c.falante, cobre }
+    }
+    return melhor ? resolver(melhor.nome) : null
+  }
+
+  const porFrase = new Map<string, string[]>()
+  const porPedacoDaFrase = new Map<string, string[][]>()
+  const restoDaFrase = new Map<string, string[]>()
+  const escolhaDe = new Map(escolhas.map((e) => [e.fraseId, e]))
+  // O sujeito para a frase seguinte e o da frase INTEIRA (como o casar): "O poder do Lent ... junto da
+  // fadinha MP. E ... ele descobre" -- o "ele" e o Lent, o 1o citado, nao o ultimo pedaco.
+  let sujeito: Citado[] = []
+  for (const frase of roteiro.secoes.flatMap((sec) => sec.frases)) {
+    const doEvento = personagensDaFrase(frase, eventos).map(resolver)
+    const tokens = palavrasDaFrase(frase.texto)
+    const inicios = (escolhaDe.get(frase.id)?.cenas ?? []).map((c) => c.palavraInicio)
+    const cortes = inicios.length > 0 ? inicios : [0]
+    const ditosNaFrase = citadosNoTexto(frase.texto, elencoDoEp)
+    const daFrase = ditosNaFrase.length > 0 ? ditosNaFrase : sujeitoHerdado(frase.texto, sujeito)
+    let sujeitoK = sujeito
+    const pedacosDaFrase = cortes.map((p0, k) => {
+      const texto = tokens.slice(p0, cortes[k + 1] ?? tokens.length).join(' ')
+      const ditos = citadosNoTexto(texto, elencoDoEp)
+      const citados = ditos.length > 0 ? ditos : sujeitoHerdado(texto, sujeitoK)
+      if (citados.length > 0) sujeitoK = citados
+      return citados.map(doCitado)
+    })
+    sujeito = daFrase
+    const resto = [...daFrase.map(doCitado), ...doEvento]
+    porFrase.set(frase.id, unicos(resto))
+    porPedacoDaFrase.set(frase.id, pedacosDaFrase)
+    restoDaFrase.set(frase.id, resto)
+  }
+
+  const porPedaco = new Map<string, string[]>()
+  for (const p of pedacos) {
+    const proprios = porPedacoDaFrase.get(p.fraseId)?.[p.cena] ?? []
+    const resto = restoDaFrase.get(p.fraseId) ?? []
+    const quemFala = falante(p)
+    // Quem fala desempata entre os citados do pedaco (os dois nao cabem: o que fala); sem citado,
+    // so entra no fim (o personagem do evento vem antes: o "ele" sem antecedente e o protagonista).
+    const fala = quemFala ? fichasFortes(quemFala, elencoDoEp.proprios) : []
+    const falaCitado = fala.length > 0 && proprios.some((n) => mesmoNome(fichasFortes(n, elencoDoEp.proprios), fala))
+    const nomes = falaCitado ? [quemFala!, ...proprios, ...resto] : [...proprios, ...resto, ...(quemFala ? [quemFala] : [])]
+    porPedaco.set(chaveDoPedaco(p), unicos(nomes))
+  }
+  const elenco = unicos([...porFrase.values()].flat())
+  return { porPedaco, porFrase, elenco }
 }
 
 /**
@@ -111,6 +204,8 @@ export async function rostosDaMontagem(
   personagens: ReadonlyMap<string, string[]>,
   episodioId: string,
   tetoMs?: number,
+  /** Quem o roteiro cita no video inteiro (NomesDaMontagem.elenco). */
+  elenco: readonly string[] = [],
 ): Promise<{ focos: Map<string, FocoDoPedaco>; lote: RostosDoLote | null; avisos: string[] }> {
   const unicos = new Map<string, PedidoDeRosto>()
   for (const p of pedacos) {
@@ -133,6 +228,7 @@ export async function rostosDaMontagem(
       episodioId: /^ep_[0-9a-f]{40}$/.test(episodioId) ? episodioId : null,
       tetoMs: tetoMs ?? 120_000,
       motor: true,
+      elenco: elenco.map((n) => n.slice(0, 120)).slice(0, 40),
     })
     const focos = new Map<string, FocoDoPedaco>()
     for (const f of lote.focos) {

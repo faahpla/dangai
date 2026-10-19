@@ -1,11 +1,14 @@
 import { spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
 import { medidasDo, type Formato } from '@shared/contract'
 import type { FocoDoRosto, FonteDoRosto, LoteDeRostos, PedidoDeRosto, RostosDoLote } from '../../shared/edicao-rapida'
 import type { EpisodeIndex } from '../../shared/episodio'
 import { fichasDoNome } from '@shared/nomes'
 import { abrirIndicePorId } from '../episodio/abrir-indice'
+import { pastaDoPerfil } from '../episodio/perfil'
+import { elencoPrincipal } from '../cenas/casar'
 import { ffmpegPath } from '../ffmpeg-path'
 import { configDoMotor, pastaDeDadosDoMotor } from '../motor'
 import { focoNoQuadro, focosDosPedacos, instantesDoTrecho } from './foco'
@@ -25,19 +28,26 @@ import { ambienteDoRuntime, backendDoRuntime, usaRuntime } from '../motor-runtim
  * o torch e subir a GPU custa ~8 s.
  *
  * Divisao do trabalho:
- * - o motor DETECTA (rosto/cabeca, com confianca) nos instantes pedidos e,
- *   quando o quadro tem 2+ rostos e um citado da frase esta entre os que o
- *   INDICE reconhece no plano, IDENTIFICA pelo CLIP qual rosto e quem -- so
- *   entre esses do plano (conjunto fechado, 2-3 pessoas), com as fotos do
- *   elenco do cache do motor do Studio (so lido). Contra o elenco inteiro o
- *   CLIP errava demais (medido no S4-37: Gen virava Gozan);
+ * - o motor DETECTA (rosto/cabeca, com confianca) nos instantes pedidos e
+ *   IDENTIFICA pelo CLIP QUEM e cada rosto num conjunto FECHADO
+ *   (candidatosDoPedaco, 19/10): os citados, quem o indice reconhece no plano e
+ *   o elenco principal do episodio -- nunca o elenco inteiro (medido no S4-37:
+ *   Gen virava Gozan). Antes so identificava entre os do indice no plano, e so
+ *   quando um citado estava la: no MRM E02 a fadinha "MP" (o rosto "Empee")
+ *   nunca era achada e a Misa grande ganhava do Lent pequeno. Com as fotos do
+ *   elenco do cache do motor (so lido). O 1o citado sem rosto achado ganha as
+ *   JANELAS: o CLIP de cada posicao do recorte (a fadinha de costas em close);
  * - daqui sai a DECISAO (escolherNoPedaco, pura e testada): os rostos dos
  *   instantes viram trilhas (o mesmo rosto ao longo do pedaco), e o foco e a
  *   mediana da trilha escolhida -- um foco so por bloco, sem tremer. Escolhe a
- *   trilha do personagem citado (identificado pelo motor, ou pelo indice quando
- *   so ha uma pessoa na tela e o plano so tem ela); sem isso, a de mais
- *   presenca x tamanho ("o maior rosto", suavizado). Outro rosto grande que
- *   cabe junto na janela 9:16 entra no enquadramento (plano de dois).
+ *   trilha do citado de maior preferencia (o 1o citado no texto do pedaco, o
+ *   sujeito herdado, quem fala: nomesDaMontagem), mesmo pequena; a janela do
+ *   1o citado quando so um citado depois dele tem rosto; o indice quando so ha
+ *   uma pessoa na tela e o plano so tem ela; sem nada disso, a de mais presenca
+ *   x tamanho ("o maior rosto", suavizado). Outro citado que cabe junto entra
+ *   no enquadramento (os dois), e outro rosto grande que cabe tambem.
+ * - o CACHE (19/10): a resposta do motor por arquivo, instantes e conjunto
+ *   fica no perfil do modulo (rostos-cache.json): montar de novo nao roda.
  *
  * Reserva: motor desligado (lote.motor false), sem motor (app instalado sem o
  * runtime: motor-runtime/), erro ao subir ou teto: os pedacos sem resposta vao para o detector
@@ -54,6 +64,11 @@ export interface QuadroDoMotor {
   /** false = o instante nao abriu (arquivo ruim, depois do fim). */
   ok: boolean
   rostos: RostoDoMotor[]
+  /**
+   * (19/10) O 1o citado sem rosto achado: as posicoes do recorte, da esquerda
+   * para a direita, e quem cada uma mostra (motor/app/rostos.py, _Elenco.janelas).
+   */
+  janelas?: JanelaDoMotor[]
 }
 
 export interface RostoDoMotor {
@@ -65,10 +80,21 @@ export interface RostoDoMotor {
   tipo: 'rosto' | 'cabeca'
   /** O nome CITADO (como veio no pedido) quando o motor identificou. */
   personagem: string | null
+  /** (19/10) QUEM e o rosto (a pasta do elenco), citado ou nao, quando a identificacao passou. */
+  pessoa: string | null
   /** Similaridade com quem o motor achou mais parecido (so quando identificou). */
   sim: number | null
   /** O mais parecido do elenco (pasta do personagem), so quando identificou. */
   quem: string | null
+}
+
+/** Uma posicao do recorte no quadro (px) e o citado que ela mostra, quando mostra. */
+export interface JanelaDoMotor {
+  x: number
+  w: number
+  quem: string | null
+  sim: number | null
+  personagem: string | null
 }
 
 /** O que o motor devolve de um pedaco. */
@@ -80,8 +106,11 @@ export interface RostosDoPedaco {
 
 // ================================================================ decisao
 
-/** Como o foco foi escolhido (o teste e o log contam). */
-export type ComoEscolheu = 'citado' | 'indice' | 'maior' | 'nenhum'
+/**
+ * Como o foco foi escolhido (o teste e o log contam). 'janela' (19/10): o
+ * citado sem rosto achado, pela posicao do recorte que mais parece com ele.
+ */
+export type ComoEscolheu = 'citado' | 'janela' | 'indice' | 'maior' | 'nenhum'
 
 export interface EscolhaNoPedaco {
   /** Ponto do quadro (fracao 0..1) que vai ao centro da janela. null = centro, sem rosto. */
@@ -110,8 +139,14 @@ const PESO_DA_CABECA = 0.5
 /** O mesmo rosto de um instante ao outro: anda menos que o proprio tamanho e nao muda de escala demais. */
 const ANDA_NO_MAXIMO = 1.0
 const ESCALA_NO_MAXIMO = 3
-/** O citado identificado so ganha do maior quando pesa pelo menos isto dele. */
-const CITADO_PESO_MIN = 0.2
+/**
+ * O citado identificado so ganha do maior quando pesa pelo menos isto dele.
+ * Era 0,2 (no S4-37 um figurante de fundo saiu "Chrome"); desde 19/10 o
+ * conjunto fechado tem o elenco principal e cada rosto precisa ganhar com folga
+ * dos outros -- e o citado pequeno de verdade (o Lent no meio da rua, a fadinha
+ * voando a 50 px no MRM E02) pesava 0,07-0,18 do maior.
+ */
+const CITADO_PESO_MIN = 0.03
 /** Outro rosto entra junto quando pesa pelo menos isto do escolhido... */
 const JUNTO_PESO_MIN = 0.5
 /** ...e os dois cabem nesta fracao da janela visivel (folga para o Ken Burns). */
@@ -156,8 +191,21 @@ export function janelaDoFormato(largura: number, altura: number, formato: Format
 /**
  * O foco de UM pedaco a partir dos quadros do motor (pura).
  *
- * `citados`: quem a frase cita, em ordem de preferencia. `noPlano`: quem o
- * indice reconhece no plano (pode estar vazio). `janela`: janelaDoFormato.
+ * `citados`: quem o pedaco cita, em ordem de preferencia (o 1o citado no texto,
+ * o sujeito herdado, quem fala, os do evento). `noPlano`: quem o indice
+ * reconhece no plano (pode estar vazio). `janela`: janelaDoFormato.
+ *
+ * A decisao (19/10):
+ *   1. a trilha do citado de maior preferencia que o motor identificou (mesmo
+ *      pequena, ate CITADO_PESO_MIN do maior rosto);
+ *   2. o 1o citado sem rosto achado, mas com a mesma posicao do recorte
+ *      parecendo com ele na maioria dos instantes (as `janelas` do motor), ganha
+ *      de um citado depois dele (a fadinha de costas em close no "Ela ativou");
+ *   3. o indice: uma pessoa so na tela, e o plano so tem ela, citada;
+ *   4. sem identidade: o maior rosto (o de sempre).
+ * Outro CITADO que cabe junto na janela entra no enquadramento (os dois); nao
+ * cabendo, fica o de maior preferencia. Outro rosto grande que cabe tambem
+ * entra (plano de dois), como antes.
  */
 export function escolherNoPedaco(
   pedaco: RostosDoPedaco,
@@ -169,7 +217,12 @@ export function escolherNoPedaco(
   const instantes = quadros.length
   const instantesComRosto = quadros.filter((q) => q.ok && q.rostos.length > 0).length
   const nada: EscolhaNoPedaco = { centro: null, personagem: null, como: 'nenhum', juntos: 0, instantesComRosto, instantes }
-  if (largura <= 0 || altura <= 0 || instantesComRosto === 0) return nada
+  if (largura <= 0 || altura <= 0) return nada
+  const rankDe = (nome: string | null): number => {
+    if (!nome) return Infinity
+    const i = citados.findIndex((c) => c === nome || mesmaPessoa(c, nome))
+    return i >= 0 ? i : Infinity
+  }
 
   // 1. Trilhas: o mesmo rosto de um instante ao outro (guloso, do maior ao menor).
   const trilhas: Deteccao[][] = []
@@ -217,52 +270,55 @@ export function escolherNoPedaco(
       }
     }
   })
-  if (trilhas.length === 0) return nada
 
   const pesoDa = (t: readonly Deteccao[]): number => t.reduce((s, d) => s + d.peso, 0)
-  const rankDa = (t: readonly Deteccao[]): number => {
-    let rank = Infinity
-    for (const d of t) {
-      if (!d.personagem) continue
-      const i = citados.findIndex((c) => c === d.personagem || mesmaPessoa(c, d.personagem!))
-      if (i >= 0 && i < rank) rank = i
-    }
-    return rank
-  }
-
-  // 2. Quem: o citado identificado (o de maior preferencia); senao o maior.
+  const rankDa = (t: readonly Deteccao[]): number => Math.min(Infinity, ...t.map((d) => rankDe(d.personagem)))
   const porPeso = [...trilhas].sort((a, b) => pesoDa(b) - pesoDa(a))
+  const maiorPeso = porPeso[0] ? pesoDa(porPeso[0]) : 0
+  // Rosto miudo de fundo nao puxa o quadro, mesmo marcado (o CLIP erra mais neles).
+  const citadas = porPeso
+    .filter((t) => pesoDa(t) >= CITADO_PESO_MIN * maiorPeso)
+    .map((t) => ({ t, rank: rankDa(t) }))
+    .filter((x) => Number.isFinite(x.rank))
+    .sort((a, b) => a.rank - b.rank || pesoDa(b.t) - pesoDa(a.t))
+  const rankDaTrilha = citadas[0]?.rank ?? Infinity
+
+  // 2. A janela do citado de maior preferencia que nenhuma trilha mostra.
+  const pelaJanela = janelaDoCitado(quadros, citados, rankDe, rankDaTrilha)
+  if (pelaJanela) {
+    return {
+      centro: { centroX: Math.min(1, Math.max(0, pelaJanela.centro / largura)), centroY: 0.5 },
+      personagem: citados[pelaJanela.rank] ?? null,
+      como: 'janela',
+      juntos: 0,
+      instantesComRosto,
+      instantes,
+    }
+  }
+  if (trilhas.length === 0) return nada
+
+  // 3. Quem: o citado identificado (o de maior preferencia); senao o indice; senao o maior.
   let escolhida = porPeso[0]!
   let como: ComoEscolheu = 'maior'
   let personagem: string | null = null
-  if (citados.length > 0) {
-    // Rosto miudo de fundo nao puxa o quadro, mesmo marcado: o CLIP erra mais
-    // neles (no S4-37 um figurante de fundo saiu "Chrome" com sim maior que o Chrome).
-    const maiorPeso = pesoDa(porPeso[0]!)
-    const comRank = porPeso
-      .filter((t) => pesoDa(t) >= CITADO_PESO_MIN * maiorPeso)
-      .map((t) => ({ t, rank: rankDa(t) }))
-      .filter((x) => Number.isFinite(x.rank))
-    if (comRank.length > 0) {
-      comRank.sort((a, b) => a.rank - b.rank || pesoDa(b.t) - pesoDa(a.t))
-      escolhida = comRank[0]!.t
-      como = 'citado'
-      personagem = citados[comRank[0]!.rank] ?? null
-    } else if (trilhas.length === 1) {
-      // Uma pessoa so na tela, e o indice diz que o plano tem UMA pessoa e
-      // ela e citada: e ela (o que o indice sabe, sem precisar do CLIP).
-      const pessoas: string[] = []
-      for (const n of noPlano) if (!pessoas.some((p) => mesmaPessoa(p, n))) pessoas.push(n)
-      const unica = pessoas.length === 1 ? pessoas[0]! : null
-      const citado = unica ? citados.find((c) => mesmaPessoa(c, unica)) : undefined
-      if (citado) {
-        como = 'indice'
-        personagem = citado
-      }
+  if (citadas.length > 0) {
+    escolhida = citadas[0]!.t
+    como = 'citado'
+    personagem = citados[citadas[0]!.rank] ?? null
+  } else if (citados.length > 0 && trilhas.length === 1) {
+    // Uma pessoa so na tela, e o indice diz que o plano tem UMA pessoa e
+    // ela e citada: e ela (o que o indice sabe, sem precisar do CLIP).
+    const pessoas: string[] = []
+    for (const n of noPlano) if (!pessoas.some((p) => mesmaPessoa(p, n))) pessoas.push(n)
+    const unica = pessoas.length === 1 ? pessoas[0]! : null
+    const citado = unica ? citados.find((c) => mesmaPessoa(c, unica)) : undefined
+    if (citado) {
+      como = 'indice'
+      personagem = citado
     }
   }
 
-  // 3. Onde: a mediana da trilha (suaviza o pedaco inteiro num foco so).
+  // 4. Onde: a mediana da trilha (suaviza o pedaco inteiro num foco so).
   const caixa = (t: readonly Deteccao[]): { cx: number; cy: number; w: number; h: number } => ({
     cx: medianaPonderada(t.map((d) => ({ v: d.cx, p: d.peso }))),
     cy: medianaPonderada(t.map((d) => ({ v: d.cy, p: d.peso }))),
@@ -275,18 +331,23 @@ export function escolherNoPedaco(
   let y0 = base.cy - base.h / 2
   let y1 = base.cy + base.h / 2
   let juntos = 0
-  const pesoEscolhida = pesoDa(escolhida)
-  for (const t of porPeso) {
-    if (t === escolhida || pesoDa(t) < JUNTO_PESO_MIN * pesoEscolhida) continue
+  const juntar = (t: readonly Deteccao[]): void => {
     const c = caixa(t)
     const nx0 = Math.min(x0, c.cx - c.w / 2)
     const nx1 = Math.max(x1, c.cx + c.w / 2)
-    if (nx1 - nx0 > janela * JUNTO_CABE) continue
+    if (nx1 - nx0 > janela * JUNTO_CABE) return
     x0 = nx0
     x1 = nx1
     y0 = Math.min(y0, c.cy - c.h / 2)
     y1 = Math.max(y1, c.cy + c.h / 2)
     juntos += 1
+  }
+  // Os outros citados primeiro (os dois cabem: os dois), depois os rostos grandes.
+  for (const { t } of citadas) if (t !== escolhida) juntar(t)
+  const pesoEscolhida = pesoDa(escolhida)
+  for (const t of porPeso) {
+    if (t === escolhida || citadas.some((c) => c.t === t) || pesoDa(t) < JUNTO_PESO_MIN * pesoEscolhida) continue
+    juntar(t)
   }
   return {
     centro: { centroX: (x0 + x1) / 2, centroY: (y0 + y1) / 2 },
@@ -296,6 +357,44 @@ export function escolherNoPedaco(
     instantesComRosto,
     instantes,
   }
+}
+
+/**
+ * (19/10) A posicao do recorte do citado que nenhum rosto mostra: a janela
+ * marcada para ele na MAIORIA dos instantes, todas na mesma posicao ou na
+ * vizinha (a mediana delas). So o citado de preferencia MAIOR que o da trilha
+ * achada conta. null = nenhuma.
+ */
+export function janelaDoCitado(
+  quadros: readonly QuadroDoMotor[],
+  citados: readonly string[],
+  rankDe: (nome: string | null) => number,
+  rankDaTrilha: number,
+): { centro: number; rank: number } | null {
+  const validos = quadros.filter((q) => q.ok)
+  if (validos.length === 0) return null
+  const porRank = new Map<number, number[]>()
+  for (const q of validos) {
+    // Num quadro, a janela marcada mais parecida com cada citado.
+    const melhor = new Map<number, JanelaDoMotor>()
+    for (const j of q.janelas ?? []) {
+      const r = rankDe(j.personagem)
+      if (!Number.isFinite(r) || r >= rankDaTrilha) continue
+      const atual = melhor.get(r)
+      if (!atual || (j.sim ?? 0) > (atual.sim ?? 0)) melhor.set(r, j)
+    }
+    for (const [r, j] of melhor) porRank.set(r, [...(porRank.get(r) ?? []), j.x + j.w / 2])
+  }
+  const metade = Math.floor(validos.length / 2) + 1
+  for (const r of [...porRank.keys()].sort((a, b) => a - b)) {
+    const centros = [...porRank.get(r)!].sort((a, b) => a - b)
+    if (centros.length < metade || r >= citados.length) continue
+    const w = (validos.flatMap((q) => q.janelas ?? [])[0]?.w ?? 0) || 1
+    // As marcadas no mesmo lugar (ou na posicao vizinha): a pessoa nao pulou de um lado ao outro.
+    if (centros[centros.length - 1]! - centros[0]! > w * 0.75) continue
+    return { centro: centros[Math.floor((centros.length - 1) / 2)]!, rank: r }
+  }
+  return null
 }
 
 // ================================================================== motor
@@ -314,6 +413,12 @@ export interface OpcoesDoRostoPeloMotor {
   log?: string | null
   /** false = so detectar (nao sobe o CLIP). Padrao: true. */
   identificar?: boolean
+  /**
+   * (19/10) O cache das respostas do motor por plano e instante (o mesmo
+   * pedaco nao roda de novo). Padrao: <perfil do modulo>/rostos-cache.json.
+   * null = sem cache.
+   */
+  cache?: string | null
 }
 
 interface Backend {
@@ -375,12 +480,12 @@ export interface ItemDoMotor {
   chave: string
   arquivo: string
   instantes: number[]
-  /** Quem a frase cita, em ordem de preferencia. */
+  /** Quem o pedaco cita, em ordem de preferencia. */
   personagens: string[]
   /**
-   * Quem o INDICE reconhece no plano: o motor identifica os rostos ENTRE eles
-   * (conjunto fechado). Vazio = nao identifica -- so vale quando um citado
-   * esta no plano (candidatosDoPedaco).
+   * O conjunto FECHADO em que o motor identifica cada rosto (candidatosDoPedaco):
+   * os citados, quem o indice reconhece no plano e o elenco principal. Vazio =
+   * nao identifica.
    */
   candidatos: string[]
 }
@@ -406,7 +511,7 @@ export interface RespostaDoMotor {
  */
 export function rodarMotorDeRostos(
   itens: readonly ItemDoMotor[],
-  extra: { anime: string | null; temporada: number | null; identificar: boolean },
+  extra: { anime: string | null; temporada: number | null; identificar: boolean; aspecto?: number | null },
   limiteMs: number,
   o: OpcoesDoRostoPeloMotor = {},
 ): Promise<RespostaDoMotor> {
@@ -512,7 +617,7 @@ export function rodarMotorDeRostos(
 
     // A requisicao na 1a linha; o stdin fica ABERTO: pipe fechado o motor le como "o host morreu".
     filho.stdin.write(
-      `${JSON.stringify({ itens, anime: extra.anime, temporada: extra.temporada, identificar: extra.identificar })}\n`,
+      `${JSON.stringify({ itens, anime: extra.anime, temporada: extra.temporada, identificar: extra.identificar, aspecto: extra.aspecto ?? null })}\n`,
     )
 
     function lerLinha(linha: string): void {
@@ -570,10 +675,25 @@ function lerQuadro(cru: unknown): QuadroDoMotor {
         conf: num(r['conf']) ?? 0,
         tipo: r['tipo'] === 'cabeca' ? ('cabeca' as const) : ('rosto' as const),
         personagem: typeof r['personagem'] === 'string' ? r['personagem'] : null,
+        pessoa: typeof r['pessoa'] === 'string' ? r['pessoa'] : null,
         sim: num(r['sim']),
         quem: typeof r['quem'] === 'string' ? r['quem'] : null,
       }))
       .filter((r) => r.w > 0 && r.h > 0),
+    ...(Array.isArray(q['janelas'])
+      ? {
+          janelas: (q['janelas'] as unknown[])
+            .map((j) => (j && typeof j === 'object' ? (j as Record<string, unknown>) : {}))
+            .map((j) => ({
+              x: num(j['x']) ?? 0,
+              w: num(j['w']) ?? 0,
+              quem: typeof j['quem'] === 'string' ? j['quem'] : null,
+              sim: num(j['sim']),
+              personagem: typeof j['personagem'] === 'string' ? j['personagem'] : null,
+            }))
+            .filter((j) => j.w > 0),
+        }
+      : {}),
   }
 }
 
@@ -590,24 +710,103 @@ function personagensPorArquivo(indice: Pick<EpisodeIndex, 'planos'> | null): (ar
   return (arquivo) => mapa.get(norm(arquivo)) ?? []
 }
 
-/** Os citados com quem o indice reconhece no plano na frente (o motor tenta nessa ordem). */
-function citadosNaOrdem(citados: readonly string[], noPlano: readonly string[]): string[] {
+/**
+ * Os citados na ordem que vieram (a montagem ja ordena: o citado no texto, o
+ * sujeito herdado, quem fala, os do evento), uma vez cada pessoa. Desde 19/10
+ * a ordem nao e mais a de quem o indice ve no plano: no MRM E02 "O Guy e as
+ * garotas" enquadrava a Misa porque o indice tinha a Misa com mais confianca.
+ */
+function citadosNaOrdem(citados: readonly string[]): string[] {
   const unicos: string[] = []
   for (const c of citados) if (c.trim() && !unicos.some((u) => mesmaPessoa(u, c))) unicos.push(c)
-  const naTela = unicos.filter((c) => noPlano.some((n) => mesmaPessoa(c, n)))
-  return [...naTela, ...unicos.filter((c) => !naTela.includes(c))]
+  return unicos
+}
+
+/** Quantas pessoas, no maximo, no conjunto fechado de um pedaco. */
+const CANDIDATOS_MAX = 12
+
+/**
+ * O conjunto FECHADO em que o motor identifica os rostos do pedaco (19/10): os
+ * citados, quem o indice ve no plano e o elenco principal do episodio, uma vez
+ * cada pessoa. Antes era so quem o indice via no plano, e so quando um citado
+ * estava la: com uma pessoa so no conjunto, todo rosto de anime parece com ela
+ * (~0,8 no CLIP) e nada se decidia. Nunca o elenco inteiro do anime (no S4-37
+ * o CLIP trocou o Gen pelo Gozan). Sem nenhum citado: vazio (o maior rosto).
+ */
+export function candidatosDoPedaco(citados: readonly string[], noPlano: readonly string[], elenco: readonly string[] = []): string[] {
+  if (!citados.some((c) => c.trim())) return []
+  const unicos: string[] = []
+  for (const n of [...citados, ...noPlano, ...elenco]) if (n.trim() && !unicos.some((u) => mesmaPessoa(u, n))) unicos.push(n)
+  return unicos.slice(0, CANDIDATOS_MAX)
+}
+
+// ================================================================== o cache
+
+/** Sobe quando a resposta do motor muda de forma (o cache velho e ignorado). */
+const VERSAO_DO_CACHE = 1
+/** Quantas respostas o cache guarda (as mais antigas saem). */
+const CACHE_MAX = 4000
+
+interface CacheDosRostos {
+  versao: number
+  itens: Record<string, RostosDoPedaco>
 }
 
 /**
- * Quem o motor pode identificar no pedaco: os nomes do indice no plano, mas so
- * quando algum citado esta entre eles (senao a preferencia nao muda nada e o
- * CLIP nem sobe). Grafias da mesma pessoa vao uma vez.
+ * A chave de um item no cache: o arquivo (caminho, tamanho e data), os
+ * instantes, quem cita, o conjunto fechado e o recorte. Arquivo que nao abre:
+ * sem chave (o motor responde).
  */
-export function candidatosDoPedaco(citados: readonly string[], noPlano: readonly string[]): string[] {
-  if (!citados.some((c) => noPlano.some((n) => mesmaPessoa(c, n)))) return []
-  const unicos: string[] = []
-  for (const n of noPlano) if (!unicos.some((u) => mesmaPessoa(u, n))) unicos.push(n)
-  return unicos
+function chaveDoCache(item: ItemDoMotor, aspecto: number | null, identificar: boolean): string | null {
+  try {
+    const st = statSync(item.arquivo)
+    const base = {
+      v: VERSAO_DO_CACHE,
+      a: item.arquivo.replace(/\\/g, '/').toLowerCase(),
+      t: st.size,
+      m: Math.round(st.mtimeMs),
+      i: item.instantes.map((x) => Math.round(x * 1000)),
+      p: item.personagens,
+      c: [...item.candidatos].sort(),
+      j: aspecto === null ? null : Math.round(aspecto * 1000),
+      id: identificar,
+    }
+    return createHash('sha1').update(JSON.stringify(base)).digest('hex')
+  } catch {
+    return null
+  }
+}
+
+function lerCache(arquivo: string | null): Map<string, RostosDoPedaco> {
+  if (!arquivo) return new Map()
+  try {
+    const c = JSON.parse(readFileSync(arquivo, 'utf8')) as CacheDosRostos
+    return c.versao === VERSAO_DO_CACHE && c.itens && typeof c.itens === 'object' ? new Map(Object.entries(c.itens)) : new Map()
+  } catch {
+    return new Map()
+  }
+}
+
+function gravarCache(arquivo: string | null, cache: Map<string, RostosDoPedaco>): void {
+  if (!arquivo) return
+  try {
+    const itens = [...cache.entries()].slice(-CACHE_MAX)
+    mkdirSync(dirname(arquivo), { recursive: true })
+    const tmp = `${arquivo}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify({ versao: VERSAO_DO_CACHE, itens: Object.fromEntries(itens) } satisfies CacheDosRostos), 'utf8')
+    renameSync(tmp, arquivo)
+  } catch {
+    // cache e conveniencia
+  }
+}
+
+function arquivoDoCache(o: OpcoesDoRostoPeloMotor): string | null {
+  if (o.cache !== undefined) return o.cache
+  try {
+    return join(pastaDoPerfil(), 'rostos-cache.json')
+  } catch {
+    return null
+  }
 }
 
 export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloMotor = {}): Promise<RostosDoLote> {
@@ -627,36 +826,64 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
     }
   }
   const noPlanoDe = personagensPorArquivo(indice)
+  // O elenco principal (quem mais aparece no indice) e o do roteiro: o conjunto fechado de cada pedaco.
+  const elenco = [...(indice ? elencoPrincipal(indice) : []), ...(lote.elenco ?? [])]
+  const medidas = medidasDo(formato)
+  // A largura visivel do recorte sobre a altura do quadro (as janelas do motor, janelaDoFormato).
+  const aspecto = medidas.width / medidas.renderHeight
 
   // Um item por chave (o mesmo pedaco pode vir duas vezes).
   const unicos = new Map<string, PedidoDeRosto>()
   for (const p of lote.pedidos) if (!unicos.has(p.chave)) unicos.set(p.chave, p)
   const pedidos = [...unicos.values()]
 
-  // 1. O motor.
+  // 1. O motor (o que o cache ja sabe nao roda de novo).
   if (lote.motor && pedidos.length > 0) {
+    const identificar = o.identificar !== false
     const itens: ItemDoMotor[] = pedidos.map((p) => ({
       chave: p.chave,
       arquivo: p.arquivo,
       instantes: instantesDoTrecho(p.de, Math.max(p.ate, p.de)),
-      personagens: citadosNaOrdem(p.personagens, noPlanoDe(p.arquivo)),
-      candidatos: candidatosDoPedaco(p.personagens, noPlanoDe(p.arquivo)),
+      personagens: citadosNaOrdem(p.personagens),
+      candidatos: candidatosDoPedaco(p.personagens, noPlanoDe(p.arquivo), elenco),
     }))
-    const r = await rodarMotorDeRostos(
-      itens,
-      { anime: indice?.anime ?? null, temporada: indice?.temporada ?? null, identificar: o.identificar !== false },
-      Math.max(1000, Math.round(lote.tetoMs * PARTE_DO_MOTOR)),
-      o,
-    )
-    if (r.falha) {
-      avisos.push(
-        r.resultados.size > 0
-          ? `Motor parou no meio (${r.falha}): o resto foi pelo detector antigo.`
-          : `Motor indisponivel (${r.falha}): usei o detector antigo.`,
+    const arquivoCache = arquivoDoCache(o)
+    const cache = lerCache(arquivoCache)
+    const chaves = new Map(itens.map((it) => [it.chave, chaveDoCache(it, aspecto, identificar)]))
+    const resultados = new Map<string, RostosDoPedaco>()
+    for (const it of itens) {
+      const k = chaves.get(it.chave)
+      const pronto = k ? cache.get(k) : undefined
+      if (pronto) resultados.set(it.chave, pronto)
+    }
+    const faltamNoCache = itens.filter((it) => !resultados.has(it.chave))
+    if (faltamNoCache.length > 0) {
+      const r = await rodarMotorDeRostos(
+        faltamNoCache,
+        { anime: indice?.anime ?? null, temporada: indice?.temporada ?? null, identificar, aspecto },
+        Math.max(1000, Math.round(lote.tetoMs * PARTE_DO_MOTOR)),
+        o,
       )
+      if (r.falha) {
+        avisos.push(
+          r.resultados.size + resultados.size > 0
+            ? `Motor parou no meio (${r.falha}): o resto foi pelo detector antigo.`
+            : `Motor indisponivel (${r.falha}): usei o detector antigo.`,
+        )
+      }
+      for (const [chave, achado] of r.resultados) {
+        resultados.set(chave, achado)
+        const k = chaves.get(chave)
+        // So guarda resposta de um motor que identificou (o elenco carregado).
+        if (k && (r.elenco !== null || !identificar)) {
+          cache.delete(k)
+          cache.set(k, achado)
+        }
+      }
+      if (r.resultados.size > 0) gravarCache(arquivoCache, cache)
     }
     for (const item of itens) {
-      const achado = r.resultados.get(item.chave)
+      const achado = resultados.get(item.chave)
       if (!achado) continue
       const escolha = escolherNoPedaco(
         achado,

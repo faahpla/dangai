@@ -276,6 +276,89 @@ export function nomesPropriosFracos(indice: Pick<EpisodeIndex, 'planos'>): Set<s
   return saida
 }
 
+/** Falas com rosto na tela que um falante precisa ter para virar apelido de um rosto. */
+const APELIDO_FALAS_MIN = 8
+/** Fracao dessas falas em que o rosto aparece no plano. */
+const APELIDO_FRACAO_MIN = 0.6
+/** Um rosto entra no elenco principal do episodio a partir de tantos planos. */
+const ELENCO_PRINCIPAL_PLANOS_MIN = 3
+
+/**
+ * O APELIDO PELA LEGENDA (19/10), o complemento da sigla soletrada
+ * (shared/apelidos.ts): o falante que nenhum rosto chama pelo nome e o rosto
+ * que nenhum falante chama -- quando a fala dele cai quase sempre
+ * (APELIDO_FRACAO_MIN) num plano com esse rosto, e a mesma pessoa, mesmo sem
+ * a soletracao bater. No MRM E02, 93% das 151 falas da "MP" com rosto na tela
+ * tem a "Empee". Medido no Dr. Stone S4-37 e no MRM E01: nenhum apelido falso
+ * (o "Why-man-chan" tem 4 falas com rosto; os outros falantes ja tem rosto com
+ * o nome deles).
+ *
+ * Devolve falante -> nome do rosto. So le o indice.
+ */
+export function apelidosPelaLegenda(indice: Pick<EpisodeIndex, 'planos' | 'cues'>): Map<string, string> {
+  const contagem = new Map<string, number>()
+  for (const p of indice.planos) for (const x of p.personagens) contagem.set(x.nome, (contagem.get(x.nome) ?? 0) + 1)
+  const rostos = [...contagem.keys()].filter((n) => (contagem.get(n) ?? 0) >= ELENCO_PRINCIPAL_PLANOS_MIN)
+  if (rostos.length === 0) return new Map()
+  const fichasDoNome = (n: string): string[] => fichasDe(n).filter((f) => f.length >= 2)
+  const mesmo = (a: string, b: string): boolean => mesmoNome(fichasDoNome(a), fichasDoNome(b))
+  const planos = [...indice.planos].sort((a, b) => a.start - b.start)
+  const planoEm = (t: number): Plano | undefined => {
+    let lo = 0
+    let hi = planos.length - 1
+    while (lo <= hi) {
+      const m = (lo + hi) >> 1
+      const p = planos[m]!
+      if (t < p.start) hi = m - 1
+      else if (t >= p.end) lo = m + 1
+      else return p
+    }
+    return undefined
+  }
+  // Por falante: quantas falas caem num plano com rosto, e com cada rosto.
+  const porFalante = new Map<string, { comRosto: number; com: Map<string, number> }>()
+  for (const c of indice.cues) {
+    if (!c.falante || c.tipo !== 'fala') continue
+    const p = planoEm((c.start + c.end) / 2)
+    if (!p || p.personagens.length === 0) continue
+    for (const f of falantesDe(c.falante)) {
+      const e = porFalante.get(f) ?? { comRosto: 0, com: new Map<string, number>() }
+      e.comRosto += 1
+      for (const n of new Set(p.personagens.map((x) => x.nome))) e.com.set(n, (e.com.get(n) ?? 0) + 1)
+      porFalante.set(f, e)
+    }
+  }
+  const falantes = [...porFalante.keys()]
+  // Rosto com falante de mesmo nome ja tem dono; falante com rosto de mesmo nome nao precisa de apelido.
+  const livres = new Set(rostos.filter((r) => !falantes.some((f) => mesmo(f, r))))
+  const saida = new Map<string, string>()
+  const orfaos = falantes
+    .filter((f) => !rostos.some((r) => mesmo(f, r)) && (porFalante.get(f)?.comRosto ?? 0) >= APELIDO_FALAS_MIN)
+    .sort((a, b) => (porFalante.get(b)?.comRosto ?? 0) - (porFalante.get(a)?.comRosto ?? 0))
+  for (const f of orfaos) {
+    const e = porFalante.get(f)!
+    const opcoes = [...e.com.entries()].filter(([n]) => livres.has(n)).sort((a, b) => b[1] - a[1])
+    const [nome, n] = opcoes[0] ?? []
+    if (!nome || n === undefined || n / e.comRosto < APELIDO_FRACAO_MIN) continue
+    // O segundo rosto livre nao pode estar perto: a fala seria de qualquer um dos dois.
+    if ((opcoes[1]?.[1] ?? 0) > n / 2) continue
+    saida.set(f, nome)
+    livres.delete(nome)
+  }
+  return saida
+}
+
+/** As pessoas que mais aparecem no episodio (pelo rosto), da que mais aparece para a que menos. */
+export function elencoPrincipal(indice: Pick<EpisodeIndex, 'planos'>, maximo = 8): string[] {
+  const contagem = new Map<string, number>()
+  for (const p of indice.planos) for (const x of new Set(p.personagens.map((y) => y.nome))) contagem.set(x, (contagem.get(x) ?? 0) + 1)
+  return [...contagem.entries()]
+    .filter(([, n]) => n >= ELENCO_PRINCIPAL_PLANOS_MIN)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, maximo)
+    .map(([n]) => n)
+}
+
 /** A ficha do texto bate com a do nome: igual, ou comeco de uma longa ("whyman" em "whymanchan"). */
 function bate(doTexto: string, doNome: string): boolean {
   return doTexto === doNome || (doTexto.length >= 5 && doNome.startsWith(doTexto))
@@ -320,7 +403,10 @@ export function apelidosDoIndice(
     ...indice.planos.flatMap((p) => p.falantes.flatMap(falantesDe)),
     ...eventos.flatMap((e) => e.personagens),
   ]
-  return apelidosDoElenco(rostos, outros)
+  const saida = apelidosDoElenco(rostos, outros)
+  // (19/10) E quem a legenda diz: o falante que quase sempre fala no plano de um rosto (apelidosPelaLegenda).
+  for (const [falante, rosto] of apelidosPelaLegenda(indice)) if (!saida.has(falante)) saida.set(falante, rosto)
+  return saida
 }
 
 interface NomeDoPlano {
@@ -467,6 +553,10 @@ export function elencoDoEpisodio(planos: readonly PlanoDoCasar[], indice: Pick<E
   // O apelido vira o personagem: "MP" -> "Empee" (a sigla soletrada), "MP<U+30FB>Yggdrasil" tambem.
   const rostos = new Set(planos.flatMap((p) => p.rostos.map((r) => r.nome)))
   const apelidos = apelidosDoElenco(rostos, [...nomes].filter((n) => !rostos.has(n)))
+  // (19/10) E o apelido pela legenda (a fala dele cai no plano do rosto), sem a soletracao bater.
+  for (const [falante, rosto] of apelidosPelaLegenda({ planos: planos.map((p) => p.plano), cues: indice.cues })) {
+    if (!apelidos.has(falante)) apelidos.set(falante, rosto)
+  }
   const nomesDaFicha = new Map<string, Set<string>>()
   for (const nome of nomes) {
     const dono = nomeDoPersonagem(nome, apelidos)

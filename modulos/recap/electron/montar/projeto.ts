@@ -140,6 +140,11 @@ export interface EntradaDaMontagem {
   sobreposicoes?: readonly ClipeDoRecap[]
   /** As sugestoes de texto de thumb do roteiro: a 1a vira o card de gancho quando a 1a frase nao tem texto. */
   thumbs?: readonly string[]
+  /**
+   * (19/10) Quem cada frase cita, na ordem de preferencia (nomesDaMontagem): o
+   * `personagens` de `studio.secoes`. Ausente = os personagens dos eventos.
+   */
+  nomesDasFrases?: ReadonlyMap<string, readonly string[]>
 }
 
 /**
@@ -390,7 +395,7 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
     vozAlinhada: true,
     geradoEm: e.agora,
     // As partes do roteiro no tempo do take: as viradas do som e os nomes do rosto.
-    secoes: secoesDoTake(e.roteiro, e.take, e.eventos ?? []),
+    secoes: secoesDoTake(e.roteiro, e.take, e.eventos ?? [], e.nomesDasFrases),
   }
 
   // O zod confere E completa os campos com padrao (cor, fonte, curva...),

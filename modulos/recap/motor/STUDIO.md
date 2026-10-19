@@ -146,14 +146,21 @@ reconhecimento muda.
      (`_YOLO_REPO/_YOLO_FILE`, cabeça só nos quadros sem rosto, conf 0.4,
      mínimo de 32 px a 1080p), pegando-os do cache do HuggingFace sem rede
      primeiro (`local_files_only`). Não mexe em `face_detector.py`.
-   - Identifica só com 2+ rostos no quadro e `candidatos` (conjunto FECHADO:
-     as 2-3 pessoas que o índice vê no plano, nunca o elenco inteiro --
+   - Identifica quando o item tem `candidatos` e o quadro tem rosto. O
+     conjunto FECHADO (19/10) são os citados, quem o índice vê no plano e o
+     elenco principal do episódio (até 12 pessoas), nunca o elenco inteiro --
      contra o elenco inteiro o CLIP trocou o Gen pelo Gozan e marcou um
-     figurante de fundo como Chrome). CLIP ViT-L/14 + protótipos como o
-     pipeline (`build_prototypes`), com os embeddings das fotos lidos do
-     `ref_features.npz` com a MESMA meta do `_feature_meta`; foto sem
-     embedding no cache é calculada e NÃO gravada. O CLIP sobe numa thread
-     logo no começo, em paralelo com o YOLO.
+     figurante de fundo como Chrome. Cada rosto disputa só a pessoa que mais
+     parece com ele (`atribuir`); com uma pessoa só no conjunto, só acima de
+     `LIMIAR_SOZINHO`. Devolve `pessoa` (quem é) e `personagem` (o citado).
+     CLIP ViT-L/14 + protótipos como o pipeline (`build_prototypes`), com os
+     embeddings das fotos lidos do `ref_features.npz` com a MESMA meta do
+     `_feature_meta`; foto sem embedding no cache é calculada e NÃO gravada.
+     O CLIP sobe numa thread logo no começo, em paralelo com o YOLO.
+   - (19/10) Item com citados procura CABEÇA também nos quadros que já têm
+     rosto (o perfil); e, quando o 1º citado não tem rosto achado, devolve as
+     `janelas` do recorte (`aspecto` = largura visível / altura do quadro):
+     o CLIP de 5 posições contra os candidatos (`quem_na_janela`).
    - SÓ LEITURA: `Config.load()` sem `ensure_dirs()`/`save()`, o elenco
      achado por `AnimeFolderStore.franchise_for_name` + `resolve_anime_dir`
      (o mesmo caminho do modo só-cortar), `FeatureCache` sem `save()`.
