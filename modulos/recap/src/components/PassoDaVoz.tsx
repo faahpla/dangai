@@ -14,6 +14,9 @@ import {
   VELOCIDADE_NATIVA_PASSO,
   VELOCIDADE_PASSO,
   avisoDoAlvo,
+  custoEmDolar,
+  ehBotaoPago,
+  focoDepoisDaVoz,
   frasesMudadas,
   modeloEleven,
   situacaoDaVoz,
@@ -148,14 +151,16 @@ function ComRoteiro({ rascunho, roteiro }: { rascunho: RascunhoDoRecap; roteiro:
     sincronizar()
   }, [rascunho.id, takeId, ajustes, sincronizar])
 
-  // O pedido acabou e o foco estava no Cancelar (que sumiu): vai para o play, ou para o que gera.
+  // O pedido acabou e o foco estava no Cancelar (que sumiu): vai para o "Aprovar voz" (ou o
+  // play), NUNCA para um botao que gasta (focoDepoisDaVoz) -- nem fica num deles.
   const temPedido = pedido !== null
   const tinha = useRef(temPedido)
   useEffect(() => {
     if (tinha.current && !temPedido) {
       requestAnimationFrame(() => {
         const ativo = document.activeElement
-        if (!ativo || ativo === document.body) focarBotao('tocar-voz', 'gerar-voz', 'escolher-audio')
+        const pago = ativo instanceof HTMLElement && ehBotaoPago(ativo.dataset['foco'] ?? '')
+        if (!ativo || ativo === document.body || pago) focarBotao(...focoDepoisDaVoz({ cancelado: false }))
       })
     }
     tinha.current = temPedido
@@ -748,6 +753,7 @@ function Estimativa({ rascunho, config }: { rascunho: RascunhoDoRecap; config: C
             `${e.caracteres.toLocaleString('pt-BR')} caracteres no roteiro${e.doCache ? ' (ja no cache: nao cobra)' : ''}`,
             e.creditos !== null ? `~${Math.ceil(e.creditos).toLocaleString('pt-BR')} creditos pela taxa da conta (do character-cost das chamadas anteriores)` : null,
             e.restam !== null ? `restam ${e.restam.toLocaleString('pt-BR')} creditos no plano${e.plano ? ` (${e.plano})` : ''}` : null,
+            e.dolares !== null && e.dolares !== undefined ? `${custoEmDolar(e.dolares)} pelo preco do Fish (US$ 15 por milhao de bytes de texto)` : null,
           ]
             .filter(Boolean)
             .join('\n')}
@@ -809,9 +815,8 @@ function AndamentoDaVoz({ pedido, cancelado }: { pedido: PedidoDaVoz; cancelado:
 
   const cancelarEDevolverFoco = (): void => {
     cancelar()
-    // O botao some com o andamento: o foco volta para o que pediu.
-    if (pedido.tipo === 'regravar') focarBotao(n === 1 ? `regravar-${pedido.fraseIds[0]}` : 'regravar-mudou', 'tocar-voz')
-    else focarBotao('gerar-voz', 'aplicar-voz', 'escolher-audio', 'tocar-voz')
+    // O botao some com o andamento: o foco vai para o play ou o Aprovar, nunca para um que gasta.
+    focarBotao(...focoDepoisDaVoz({ cancelado: true }))
   }
 
   return (

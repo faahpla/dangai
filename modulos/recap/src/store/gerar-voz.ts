@@ -19,6 +19,7 @@ import {
   settingsFishSchema,
   situacaoDaVoz,
   soMudaOPos,
+  sugerirVozDoFish,
   takeAtual,
   textoParaNarrar,
   velocidadeNativaDoPerfil,
@@ -720,13 +721,16 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
       if (take) {
         // A fonte do take manda; as outras fontes ficam com a voz que ja tinham (ou a completada).
         const base = s.formDe !== take.id ? formComTake(take, s.form) : s.form
-        const form = completarVozes(base, r.voz?.takes ?? [], s.ajustes)
+        const form = sugerirVozDoFish(completarVozes(base, r.voz?.takes ?? [], s.ajustes), s.vozes.fish)
         if (s.formDe !== take.id) set({ form, formDe: take.id, formMexido: false })
         else if (form !== s.form) set({ form })
         return
       }
       if (s.formDe !== null) set({ formDe: null })
       if (!s.formMexido && s.ajustes) set({ form: formDosAjustes(s.ajustes, s.form) })
+      // A voz do Fish sugerida (a 1a da conta) vale mexido ou nao: so preenche o que esta vazio.
+      const sugerida = sugerirVozDoFish(get().form, get().vozes.fish)
+      if (sugerida !== get().form) set({ form: sugerida })
     },
 
     lerAjustes: async () => {
@@ -759,8 +763,11 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
       // O "Testar" das Configuracoes: le o plano e a lista de vozes, sem gastar caractere.
       const r = provedor === 'elevenlabs' ? await ponte.testarEleven(null) : await ponte.testarFish(null)
       set({ carregandoVozes: { ...get().carregandoVozes, [provedor]: false } })
-      if (r.ok) set({ vozes: { ...get().vozes, [provedor]: r.value.vozes } })
-      else set({ vozesErro: { ...get().vozesErro, [provedor]: r.error } })
+      if (r.ok) {
+        set({ vozes: { ...get().vozes, [provedor]: r.value.vozes } })
+        // As vozes chegaram: a do Fish vazia ganha a sugestao (sugerirVozDoFish).
+        get().sincronizar()
+      } else set({ vozesErro: { ...get().vozesErro, [provedor]: r.error } })
     },
 
     escolherFonte: (fonte) => {

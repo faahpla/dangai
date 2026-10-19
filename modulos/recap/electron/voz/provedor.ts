@@ -16,6 +16,7 @@ import { decodificar } from './ffmpeg'
 import { formatoFish, sintetizarFish } from './fish'
 import type { AlinhamentoDeCaracteres } from './palavras'
 import { pastaDoCacheDaVoz } from './pastas'
+import { registrarGastoEleven } from './saldo'
 import { aprenderTaxa } from './taxa'
 import { lerWav, wavDoPcm, type Pcm } from './wav'
 
@@ -238,6 +239,10 @@ export async function cumprirPlano(plano: PlanoDoPedido, taxa: number | null, si
     criadoEm: new Date().toISOString(),
   }
   gravarNoCache(chaveReal, resposta.bytes, meta)
+  // O saldo da tela desconta o que esta chamada cobrou (a conta payg demora a refletir: saldo.ts).
+  if (plano.pedido.config.fonte === 'elevenlabs') {
+    registrarGastoEleven(resposta.custo ?? caracteres * creditosPorCaractere(plano.pedido.config))
+  }
   if (resposta.custo !== null) {
     console.log(`[voz] ${plano.pedido.config.fonte}: ${caracteres} caracteres, character-cost ${resposta.custo}`)
     // A taxa da conta (creditos por caractere): a estimativa seguinte mostra o custo de fato.

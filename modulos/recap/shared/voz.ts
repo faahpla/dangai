@@ -641,6 +641,11 @@ export interface EstimativaDeCusto {
   plano: string | null
   /** Fish: saldo da API em dolar, como o Fish manda. null no ElevenLabs. */
   saldo: string | null
+  /**
+   * Fish: o custo em dolar pelo preco publico do modelo (dolaresDoFish), como
+   * os creditos do ElevenLabs. null/ausente = ElevenLabs, ou nada a pagar.
+   */
+  dolares?: number | null
   /** restam >= aCobrar. null = nao da para saber (Fish, ou o saldo nao veio). */
   suficiente: boolean | null
   /** Recado em ASCII ("Passa do limite do modelo (5.000)"). null = nada. */
@@ -1089,11 +1094,79 @@ export function creditosGastos(v: Pick<EstadoDaVoz, 'takes'>): number {
  * conta creditos, e a conta do Levi cobra ~0,22 credito por caractere. Sem a
  * taxa aprendida ainda, so os caracteres.
  */
+/**
+ * Sem voz do Fish escolhida (nenhum take do Fish, a voz padrao e de outra
+ * fonte): a 1a voz da CONTA (as proprias vem primeiro) fica sugerida no
+ * select, em vez do "Escolha uma voz" com o Gerar apagado (teste do E02).
+ * Nunca troca uma voz ja escolhida; devolve o MESMO objeto sem o que sugerir.
+ */
+export function sugerirVozDoFish<F extends { fish: { voiceId: string; modelId: string } }>(
+  form: F,
+  vozes: readonly { id: string }[] | null,
+): F {
+  const primeira = vozes?.[0]
+  if (form.fish.voiceId || !primeira) return form
+  return { ...form, fish: { voiceId: primeira.id, modelId: form.fish.modelId || MODELO_PADRAO.fish } }
+}
+
+/** O botao GASTA (abre a pergunta de custo): "Gerar voz", "Gerar tudo de novo", "Regravar". */
+export function ehBotaoPago(foco: string): boolean {
+  return foco === 'gerar-voz' || foco.startsWith('regravar-')
+}
+
+/**
+ * Para onde o foco do teclado vai quando um pedido de voz acaba (o Cancelar
+ * some com o andamento): o "Aprovar voz" (Enter aprova), o "Proximo: Cenas",
+ * o play. NUNCA um botao pago: no teste do E02 o play ainda estava desligado
+ * (o audio carregando) e o foco caiu no "Gerar tudo de novo". Os nomes sao os
+ * `data-foco` da tela, em ordem de preferencia (o primeiro ligado ganha).
+ */
+export function focoDepoisDaVoz(e: { cancelado: boolean }): string[] {
+  const ordem = e.cancelado
+    ? ['tocar-voz', 'aprovar-voz', 'proximo-cenas', 'aplicar-voz', 'escolher-audio']
+    : ['aprovar-voz', 'aprovar-mesmo-assim', 'proximo-cenas', 'tocar-voz', 'aplicar-voz', 'escolher-audio']
+  return ordem.filter((f) => !ehBotaoPago(f))
+}
+
+/**
+ * O PRECO do Fish Audio, em dolar por milhao de bytes UTF-8 do texto
+ * (docs.fish.audio, "Models & pricing", conferido em 18/10/2026): s2.1-pro,
+ * s2-pro e s1 a US$ 15; o s2.1-pro-free nao cobra. Modelo fora da lista: o
+ * preco dos pagos.
+ */
+export const PRECO_DO_FISH_POR_MILHAO_DE_BYTES: Readonly<Record<string, number>> = {
+  's2.1-pro': 15,
+  's2-pro': 15,
+  s1: 15,
+  's2.1-pro-free': 0,
+}
+const PRECO_DO_FISH_PADRAO = 15
+
+/** Quanto o Fish cobra por estes bytes de texto, em dolar. */
+export function dolaresDoFish(bytes: number, modelId: string): number {
+  const preco = PRECO_DO_FISH_POR_MILHAO_DE_BYTES[modelId] ?? PRECO_DO_FISH_PADRAO
+  return (Math.max(0, bytes) * preco) / 1_000_000
+}
+
+/** "~US$ 0,02"; abaixo de um centavo, "< US$ 0,01". */
+export function custoEmDolar(usd: number): string {
+  if (usd <= 0) return 'US$ 0,00'
+  if (usd < 0.01) return '< US$ 0,01'
+  return `~US$ ${usd.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
 export function textoDaEstimativa(e: EstimativaDeCusto): string {
   if (e.fonte === 'importado') return 'Audio importado, sem custo'
   if (e.aCobrar === 0) return 'Ja gerado, sem custo'
   const caracteres = `${e.pagos.toLocaleString('pt-BR')} caracteres`
-  const partes = [e.creditos !== null ? `${caracteres} (~${Math.ceil(e.creditos).toLocaleString('pt-BR')} creditos)` : caracteres, ROTULO_DA_FONTE[e.fonte]]
+  // O custo de fato ao lado dos caracteres: creditos no ElevenLabs, dolar no Fish.
+  const custo =
+    e.creditos !== null
+      ? `~${Math.ceil(e.creditos).toLocaleString('pt-BR')} creditos`
+      : e.dolares !== null && e.dolares !== undefined
+        ? custoEmDolar(e.dolares)
+        : null
+  const partes = [custo ? `${caracteres} (${custo})` : caracteres, ROTULO_DA_FONTE[e.fonte]]
   if (e.restam !== null) partes.push(`restam ${e.restam.toLocaleString('pt-BR')} creditos`)
   else if (e.saldo !== null) {
     // O Fish manda o saldo cru ("7.541320"): na tela vai como nas Configuracoes (US$ 7,54).

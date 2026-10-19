@@ -4,6 +4,7 @@ import {
   caracteresDasFrases,
   contarCaracteres,
   contextoDaFrase,
+  dolaresDoFish,
   frasesMudadas,
   frasesParaRegravar,
   modeloEleven,
@@ -22,8 +23,9 @@ import { lerRascunhoDoDisco } from '../gerar/rascunho'
 import { lerOuvidos, planejarPedido, type ConfigPaga, type PedidoDeVoz, type PlanoDoPedido } from './cache'
 import { assinaturaEleven } from './eleven'
 import { saldoFish } from './fish'
+import { restamDescontado } from './saldo'
 import { arquivoDaVoz } from './pastas'
-import { creditosPorCaractere, formatosDoPedido } from './provedor'
+import { creditosPorCaractere, esperaDaVozFalsa, formatosDoPedido } from './provedor'
 import { taxaAprendida } from './taxa'
 import { lerWav } from './wav'
 
@@ -56,6 +58,8 @@ export interface PlanoDoTudo {
   caracteres: number
   /** Caracteres pagos (0 = do cache). */
   pagos: number
+  /** Bytes UTF-8 pagos: a unidade do preco do Fish. */
+  bytesPagos: number
   aCobrar: number
 }
 
@@ -68,7 +72,8 @@ export function planejarTudo(rascunhoId: string, r: RascunhoDoRecap, config: Con
   const plano = planejarPedido(pedido, formatosDoPedido(config), { explicito: true, ouvidos: lerOuvidos(rascunhoId) })
   const caracteres = contarCaracteres(texto)
   const pagos = plano.doCache ? 0 : caracteres
-  return { roteiro, texto, frases, plano, caracteres, pagos, aCobrar: pagos * creditosPorCaractere(config) }
+  const bytesPagos = plano.doCache ? 0 : Buffer.byteLength(texto, 'utf8')
+  return { roteiro, texto, frases, plano, caracteres, pagos, bytesPagos, aCobrar: pagos * creditosPorCaractere(config) }
 }
 
 /** O plano do "Regravar esta frase" / "Atualizar a voz", sobre o take atual. */
@@ -84,6 +89,8 @@ export interface PlanoDasFrases {
   caracteres: number
   /** Caracteres pagos: fora do cache, e cada chave paga uma vez so. */
   pagos: number
+  /** Bytes UTF-8 pagos: a unidade do preco do Fish. */
+  bytesPagos: number
   aCobrar: number
 }
 
@@ -123,6 +130,7 @@ export function planejarFrases(rascunhoId: string, r: RascunhoDoRecap, pedidas: 
    */
   const pagas = new Set<string>()
   let pagos = 0
+  let bytesPagos = 0
   for (const id of gerar) {
     const f = frases.get(id)!
     // O Fish nao tem previous_text: contexto vazio (e fora da chave do cache).
@@ -132,10 +140,11 @@ export function planejarFrases(rascunhoId: string, r: RascunhoDoRecap, pedidas: 
     if (!plano.doCache && !pagas.has(plano.chave)) {
       pagas.add(plano.chave)
       pagos += contarCaracteres(f.texto)
+      bytesPagos += Buffer.byteLength(f.texto, 'utf8')
     }
   }
   const aCobrar = pagos * creditosPorCaractere(config)
-  return { roteiro, take, config, gerar, planos, taxa, caracteres: caracteresDasFrases(roteiro, gerar), pagos, aCobrar }
+  return { roteiro, take, config, gerar, planos, taxa, caracteres: caracteresDasFrases(roteiro, gerar), pagos, bytesPagos, aCobrar }
 }
 
 function zerada(fonte: EstimativaDeCusto['fonte'], fraseIds: string[], caracteres: number): EstimativaDeCusto {
@@ -151,10 +160,18 @@ function zerada(fonte: EstimativaDeCusto['fonte'], fraseIds: string[], caractere
     limite: null,
     plano: null,
     saldo: null,
+    dolares: null,
     suficiente: null,
     aviso: null,
   }
 }
+
+/**
+ * O modo de teste da voz falsa (RECAP_TESTE_VOZ_FALSA) tambem nao le a conta:
+ * uma assinatura e um saldo fixos, sem rede e sem chave.
+ */
+const ASSINATURA_DE_TESTE = { plano: 'teste', usados: 0, limite: 10_000, estica: false }
+const SALDO_DE_TESTE = '7.51'
 
 /** Um take deste rascunho com a mesma voz e o roteiro em dia: voltar para ele e de graca. */
 function takeParecido(r: RascunhoDoRecap, roteiro: Roteiro, config: ConfigDaVoz): TakeDaVoz | null {
@@ -172,8 +189,10 @@ export async function estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa)
   let fraseIds: string[]
   let caracteres: number
   let pagos: number
+  let bytesPagos: number
   let aCobrar: number
   const avisos: string[] = []
+  const falsa = esperaDaVozFalsa() !== null
 
   if (pedido.tipo === 'tudo') {
     if (pedido.config.fonte === 'importado') {
@@ -185,6 +204,7 @@ export async function estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa)
     fraseIds = p.frases.map((f) => f.fraseId)
     caracteres = p.caracteres
     pagos = p.pagos
+    bytesPagos = p.bytesPagos
     aCobrar = p.aCobrar
     const limite = config.fonte === 'elevenlabs' ? modeloEleven(config.modelId).limite : null
     if (limite !== null && caracteres > limite) {
@@ -206,6 +226,7 @@ export async function estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa)
     fraseIds = p.gerar
     caracteres = p.caracteres
     pagos = p.pagos
+    bytesPagos = p.bytesPagos
     aCobrar = p.aCobrar
     if (p.gerar.length === 0 && !vozDesatualizada(frasesMudadas(p.roteiro, p.take))) {
       avisos.push('A voz ja esta em dia com o roteiro.')
@@ -225,19 +246,22 @@ export async function estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa)
     limite: null,
     plano: null,
     saldo: null,
+    // O Fish cobra em dolar por byte do texto: o custo de fato, como os creditos do ElevenLabs.
+    dolares: config.fonte === 'fish' && aCobrar > 0 ? dolaresDoFish(bytesPagos, config.modelId) : null,
     suficiente: null,
     aviso: null,
   }
 
   const s = getSettings()
   if (config.fonte === 'elevenlabs') {
-    if (!s.elevenlabsApiKey) avisos.push('Cole a chave do ElevenLabs em Configuracoes > Voz.')
+    if (!s.elevenlabsApiKey && !falsa) avisos.push('Cole a chave do ElevenLabs em Configuracoes > Voz.')
     else if (aCobrar > 0) {
-      const a = await assinaturaEleven(s.elevenlabsApiKey)
+      const a = falsa ? ASSINATURA_DE_TESTE : await assinaturaEleven(s.elevenlabsApiKey)
       if (a) {
         estimativa.plano = a.plano
         estimativa.limite = a.limite
-        estimativa.restam = a.usados !== null && a.limite !== null ? Math.max(0, a.limite - a.usados) : null
+        // O que a conta diz, menos o que esta sessao ja gastou e ela ainda nao refletiu (saldo.ts).
+        estimativa.restam = a.usados !== null && a.limite !== null ? restamDescontado(Math.max(0, a.limite - a.usados)) : null
         if (estimativa.restam !== null) {
           // Creditos contra creditos: a taxa aprendida quando ha, senao a conta conservadora.
           const precisa = estimativa.creditos ?? aCobrar
@@ -251,9 +275,9 @@ export async function estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa)
       }
     }
   } else {
-    if (!s.fishApiKey) avisos.push('Cole a chave do Fish Audio em Configuracoes > Voz.')
+    if (!s.fishApiKey && !falsa) avisos.push('Cole a chave do Fish Audio em Configuracoes > Voz.')
     else if (aCobrar > 0) {
-      estimativa.saldo = await saldoFish(s.fishApiKey)
+      estimativa.saldo = falsa ? SALDO_DE_TESTE : await saldoFish(s.fishApiKey)
       const saldo = estimativa.saldo !== null ? Number(estimativa.saldo) : Number.NaN
       if (Number.isFinite(saldo) && saldo <= 0) avisos.push('Sem saldo no Fish Audio: recarregue em fish.audio.')
     }
