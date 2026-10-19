@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Reorder, useDragControls } from 'motion/react'
-import { Check, Copy, GripVertical, Link2, LocateFixed, Lock, LockOpen, Merge, Pause, Play, TriangleAlert, X } from 'lucide-react'
+import { Check, Copy, GripVertical, Link2, LocateFixed, Lock, LockOpen, Merge, Pause, Play, Rows2, TriangleAlert, X } from 'lucide-react'
 import type { Plano } from '../../shared/episodio'
 import { nomeNatural } from '@shared/nomes'
 import { ROTULO_DO_PAPEL, type Frase, type Roteiro } from '../../shared/roteiro'
@@ -10,12 +10,14 @@ import {
   divididaPeloCasar,
   duracaoDaFrase,
   escolhaDaFrase,
+  temGrid,
   temposDasCenas,
   trechosDoCandidato,
   type CenaDaFrase,
   type EscolhaDaFrase,
   type EstadoDasCenas,
 } from '../../shared/cenas'
+import { Segmentos } from '@/modulos/kit'
 import { useCenas, type AvisosDaFrase } from '../store/gerar-cenas'
 import type { PlanosDaTela } from './GradeDasCenas'
 import { COR_DE_AVISO } from './pecas'
@@ -57,7 +59,7 @@ export function FrasesDasCenas({
 
   // As miniaturas das cenas escolhidas (a coluna inteira, poucas dezenas).
   const escolhidas = useMemo(
-    () => cenas.escolhas.flatMap((e) => e.cenas.map((c) => c.candidato.planoIds[0] ?? '')).filter(Boolean),
+    () => cenas.escolhas.flatMap((e) => e.cenas.flatMap((c) => [c.candidato.planoIds[0] ?? '', c.baixo?.planoIds[0] ?? ''])).filter(Boolean),
     [cenas],
   )
   useEffect(() => {
@@ -212,6 +214,14 @@ const LinhaDaFrase = memo(function LinhaDaFrase({
               {avisos?.emendada && (
                 <span title="Cena emendada: a frase e mais longa que o plano, e entra o plano seguinte" className="text-ink-3">
                   <Link2 size={10} strokeWidth={2} />
+                </span>
+              )}
+              {temGrid(escolha) && (
+                <span
+                  title={escolha?.grid?.origem === 'auto' ? 'Grid automatico: duas cenas, uma em cima da outra' : 'Grid: duas cenas, uma em cima da outra'}
+                  className="text-accent"
+                >
+                  <Rows2 size={10} strokeWidth={2} />
                 </span>
               )}
               {escolha && lista.length > 0 && <Cadeado fraseId={frase.id} travada={escolha.travada} aberta={aberta} />}
@@ -507,8 +517,9 @@ function FitaDaFrase({
           />
         ))}
       </Reorder.Group>
+      <GridDaFrase fraseId={frase.id} escolha={escolha} />
       {/* A divisao automatica se desfaz aqui: volta a uma cena so, a melhor para a frase inteira. */}
-      {divididaPeloCasar(escolha) && (
+      {divididaPeloCasar(escolha) && !temGrid(escolha) && (
         <button
           type="button"
           onClick={(e) => {
@@ -523,6 +534,49 @@ function FitaDaFrase({
         </button>
       )}
     </>
+  )
+}
+
+/**
+ * (rodada 4) GRID / TELA CHEIA da frase aberta: o grid poe duas cenas, uma em
+ * cima da outra (o app escolhe a outra metade na fita; a cena que voce
+ * escolheu fica). Tela cheia volta a uma cena por vez, e o automatico nao poe
+ * mais grid nesta frase.
+ */
+function GridDaFrase({ fraseId, escolha }: { fraseId: string; escolha: EscolhaDaFrase | null }) {
+  const alternarGrid = useCenas((s) => s.alternarGrid)
+  const gridando = useCenas((s) => s.gridando)
+  const ligado = temGrid(escolha)
+  const ocupado = gridando !== null
+  const auto = ligado && escolha?.grid?.origem === 'auto'
+  return (
+    <div
+      className={['mt-1.5 flex items-center gap-2', ocupado ? 'pointer-events-none opacity-60' : ''].join(' ')}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="shrink-0 text-[11px] text-ink-3" title="Grid: duas cenas boas para a mesma frase, uma em cima da outra (como no Kiumaz)">
+        {gridando === fraseId ? 'Montando...' : auto ? 'Grid (auto)' : 'Tela'}
+      </span>
+      <Segmentos
+        opcoes={[
+          { valor: false, rotulo: 'Tela cheia', title: 'Uma cena por vez (o grid automatico nao entra nesta frase)' },
+          {
+            valor: true,
+            rotulo: (
+              <>
+                <Rows2 size={11} strokeWidth={1.75} />
+                Grid
+              </>
+            ),
+            title: 'Duas cenas, uma em cima da outra: a outra metade sai da fita desta frase (a sua cena fica)',
+          },
+        ]}
+        ativo={(v) => v === ligado}
+        onChange={(v) => {
+          if (v !== ligado) void alternarGrid(fraseId, v)
+        }}
+      />
+    </div>
   )
 }
 
@@ -552,6 +606,7 @@ function LinhaDaCena({
 }) {
   const controles = useDragControls()
   const url = useCenas((s) => s.miniaturas[cena.candidato.planoIds[0] ?? ''] ?? null)
+  const urlDeBaixo = useCenas((s) => (cena.baixo ? (s.miniaturas[cena.baixo.planoIds[0] ?? ''] ?? null) : null))
   const tocandoEsta = useCenas((s) => s.previa?.fraseId === fraseId && s.previa.candidato === null)
   const definirCenaAlvo = useCenas((s) => s.definirCenaAlvo)
   const removerCena = useCenas((s) => s.removerCena)
@@ -598,10 +653,26 @@ function LinhaDaCena({
           ) : (
             <span className="block h-[36px] w-[64px] rounded-[2px] border border-line bg-elevated" />
           )}
+          {/* (rodada 4) O grid: a metade de baixo logo embaixo da de cima, como no video. */}
+          {cena.baixo &&
+            (urlDeBaixo ? (
+              <img src={urlDeBaixo} alt="" draggable={false} className="mt-px block h-[36px] w-[64px] rounded-[2px] border border-line object-cover" />
+            ) : (
+              <span className="mt-px block h-[36px] w-[64px] rounded-[2px] border border-line bg-elevated" />
+            ))}
           <span className="tnum absolute left-0 top-0 rounded-br-[2px] bg-black/75 px-1 text-[10px] text-white">{posicao + 1}</span>
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="tnum text-[12px] text-ink-2">{segundos.toFixed(1)}s</span>
+          {cena.baixo && (
+            <span
+              className="flex items-center gap-1 truncate text-[10px] leading-tight text-accent"
+              title={`Grid: ${cena.candidato.planoIds[0] ?? ''} em cima, ${cena.baixo.planoIds[0] ?? ''} embaixo. Clique na cena de baixo na grade para tirar so ela.`}
+            >
+              <Rows2 size={10} strokeWidth={2} />
+              grid
+            </span>
+          )}
           {emenda && <span className="truncate text-[10px] leading-tight text-ink-3">emendada</span>}
           {parada > 0.05 && (
             <span

@@ -133,7 +133,7 @@ export function TocadorDasCenas({
     planos: indice.planos,
     audioUrl: audioPublicado?.url ?? null,
     tocarAoAbrir: previa.tocar,
-    chave: `${previa.fraseId}|${previa.candidato?.planoIds.join('+') ?? 'como-esta'}|${montagem?.cenas.map((c) => `${c.candidato.planoIds.join('+')}@${c.palavraInicio}:${c.candidato.inSec.toFixed(2)}`).join(',') ?? ''}`,
+    chave: `${previa.fraseId}|${previa.candidato?.planoIds.join('+') ?? 'como-esta'}|${montagem?.cenas.map((c) => `${c.candidato.planoIds.join('+')}${c.baixo ? `/${c.baixo.planoIds.join('+')}` : ''}@${c.palavraInicio}:${c.candidato.inSec.toFixed(2)}`).join(',') ?? ''}`,
   })
 
   /*
@@ -309,6 +309,8 @@ interface Segmento {
   t0: number
   t1: number
   cena: number
+  /** (rodada 4) O grid: a metade de baixo, que toca junto (segundos dentro do mp4 dela). */
+  baixo?: { arquivo: string; de: number; ate: number }
 }
 
 function segmentosDa(
@@ -325,6 +327,7 @@ function segmentosDa(
     const janela = tempos[k]
     if (!janela || janela.fim <= janela.inicio) continue
     const dele = cena.candidato.planoIds.map((id) => porId.get(id)).filter((p): p is Plano => p !== undefined)
+    const deBaixo = cena.baixo ? trechosDoCandidato(cena.baixo, cena.baixo.planoIds.flatMap((id) => porId.get(id) ?? []))[0] : undefined
     let t = janela.inicio
     let ultimo: Segmento | null = null
     for (const tr of trechosDoCandidato(cena.candidato, dele)) {
@@ -337,6 +340,9 @@ function segmentosDa(
         t0: t,
         t1: fim,
         cena: k,
+        ...(deBaixo
+          ? { baixo: { arquivo: deBaixo.arquivo, de: deBaixo.de + (t - janela.inicio), ate: Math.min(deBaixo.ate, deBaixo.de + (fim - janela.inicio)) } }
+          : {}),
       }
       saida.push(ultimo)
       t = fim
@@ -361,6 +367,8 @@ interface MotorDaMontagem {
   alternar: () => void
   irPara: (t: number) => void
   videoRef: (i: number) => (el: HTMLVideoElement | null) => void
+  /** (rodada 4) O video da metade de baixo do segmento i (grid). */
+  videoDeBaixoRef: (i: number) => (el: HTMLVideoElement | null) => void
 }
 
 /**
@@ -411,6 +419,7 @@ function useMotorDaMontagem({
   const tocandoRef = useRef(false)
   const relogio = useRef({ base: 0, desde: 0 })
   const videos = useRef<(HTMLVideoElement | null)[]>([])
+  const videosDeBaixo = useRef<(HTMLVideoElement | null)[]>([])
   const audio = useRef<HTMLAudioElement | null>(null)
   const segRef = useRef(segmentos)
   segRef.current = segmentos
@@ -448,12 +457,12 @@ function useMotorDaMontagem({
     const segs = segRef.current
     let vez = segs.findIndex((s) => tt >= s.t0 && tt < s.t1)
     if (vez < 0 && segs.length > 0) vez = tt >= (segs[segs.length - 1]?.t1 ?? 0) ? segs.length - 1 : 0
-    segs.forEach((s, i) => {
-      const v = videos.current[i]
+    // O video de cima e, no grid, o de baixo: os dois andam juntos, cada um no trecho dele.
+    const mover = (v: HTMLVideoElement | null | undefined, de: number, ate: number, i: number, s: Segmento): void => {
       if (!v) return
       if (i === vez) {
-        const alvo = Math.min(s.ate, s.de + Math.max(0, tt - s.t0))
-        const parado = alvo >= s.ate - 0.02
+        const alvo = Math.min(ate, de + Math.max(0, tt - s.t0))
+        const parado = alvo >= ate - 0.02
         if (tocandoAgora && !parado) {
           if (Math.abs(v.currentTime - alvo) > 0.25) v.currentTime = alvo
           if (v.paused) void v.play().catch(() => undefined)
@@ -463,8 +472,12 @@ function useMotorDaMontagem({
         }
       } else {
         if (!v.paused) v.pause()
-        if (i > vez && !v.seeking && Math.abs(v.currentTime - s.de) > 0.04) v.currentTime = s.de
+        if (i > vez && !v.seeking && Math.abs(v.currentTime - de) > 0.04) v.currentTime = de
       }
+    }
+    segs.forEach((s, i) => {
+      mover(videos.current[i], s.de, s.ate, i, s)
+      if (s.baixo) mover(videosDeBaixo.current[i], s.baixo.de, s.baixo.ate, i, s)
     })
     setAtivo(vez)
   }, [])
@@ -473,7 +486,7 @@ function useMotorDaMontagem({
     tocandoRef.current = false
     setTocando(false)
     audio.current?.pause()
-    for (const v of videos.current) v?.pause()
+    for (const v of [...videos.current, ...videosDeBaixo.current]) v?.pause()
   }, [])
 
   const irPara = useCallback(
@@ -571,6 +584,13 @@ function useMotorDaMontagem({
       },
     [],
   )
+  const videoDeBaixoRef = useCallback(
+    (i: number) =>
+      (el: HTMLVideoElement | null): void => {
+        videosDeBaixo.current[i] = el
+      },
+    [],
+  )
 
   return {
     segmentos,
@@ -583,6 +603,7 @@ function useMotorDaMontagem({
     alternar,
     irPara,
     videoRef,
+    videoDeBaixoRef,
   }
 }
 
@@ -598,7 +619,7 @@ function Tela({ motor, planoDoPoster }: { motor: MotorDaMontagem; planoDoPoster:
   const publicarVideo = useCenas((s) => s.publicarVideo)
   const videos = useCenas((s) => s.videos)
   const poster = useCenas((s) => (planoDoPoster ? (s.miniaturas[planoDoPoster] ?? null) : null))
-  const arquivos = useMemo(() => [...new Set(motor.segmentos.map((s) => s.arquivo))], [motor.segmentos])
+  const arquivos = useMemo(() => [...new Set(motor.segmentos.flatMap((s) => (s.baixo ? [s.arquivo, s.baixo.arquivo] : [s.arquivo])))], [motor.segmentos])
   const [faltando, setFaltando] = useState<ReadonlySet<string>>(new Set())
   const [demorou, setDemorou] = useState(false)
   const marcarFalta = useCallback((arquivo: string) => {
@@ -625,6 +646,48 @@ function Tela({ motor, planoDoPoster }: { motor: MotorDaMontagem; planoDoPoster:
       {poster && !algum && <img src={poster} alt="" className="absolute inset-0 size-full object-contain" />}
       {motor.segmentos.map((s, i) => {
         const url = videos[s.arquivo]
+        // (rodada 4) O grid: um quadro 9:16 no meio do player, a de cima e a de baixo em 9:8 (o centro;
+        // o enquadramento pelo rosto entra no Abrir no editor).
+        if (url && s.baixo) {
+          const urlDeBaixo = videos[s.baixo.arquivo]
+          const deBaixo = s.baixo
+          return (
+            <div
+              key={`${i}-${s.arquivo}-grid`}
+              className="absolute inset-y-0 left-1/2 flex aspect-[9/16] h-full -translate-x-1/2 flex-col gap-px overflow-hidden bg-black"
+              style={{ opacity: i === motor.ativo ? 1 : 0 }}
+            >
+              <video
+                ref={motor.videoRef(i)}
+                src={url}
+                muted
+                playsInline
+                preload="auto"
+                onLoadedMetadata={(e) => {
+                  if (i !== motor.ativo) e.currentTarget.currentTime = s.de
+                }}
+                onError={() => marcarFalta(s.arquivo)}
+                className="min-h-0 w-full flex-1 object-cover"
+              />
+              {urlDeBaixo ? (
+                <video
+                  ref={motor.videoDeBaixoRef(i)}
+                  src={urlDeBaixo}
+                  muted
+                  playsInline
+                  preload="auto"
+                  onLoadedMetadata={(e) => {
+                    if (i !== motor.ativo) e.currentTarget.currentTime = deBaixo.de
+                  }}
+                  onError={() => marcarFalta(deBaixo.arquivo)}
+                  className="min-h-0 w-full flex-1 object-cover"
+                />
+              ) : (
+                <div className="min-h-0 w-full flex-1 bg-black" />
+              )}
+            </div>
+          )
+        }
         return url ? (
           <video
             key={`${i}-${s.arquivo}`}

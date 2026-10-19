@@ -22,6 +22,7 @@ import {
   type EstadoDasCenas,
 } from '../../shared/cenas'
 import { encaixarEscolha } from '../../shared/encaixe'
+import type { ModoDoGrid } from '../../shared/grid'
 import { aplicarMesclas, type PlanoNoMesclado } from '../../shared/mesclas'
 import { useGerar } from './gerar'
 import { useRoteiro } from './gerar-roteiro'
@@ -147,6 +148,8 @@ interface EstadoDasCenasNaTela {
   salvando: boolean
   /** Um sugerirCenas no ar: 'auto' (segundo plano), 'todas' ou o id da frase. */
   sugerindo: string | null
+  /** (rodada 4) O "Grid" / "Tela cheia" de uma frase no ar: o id dela. */
+  gridando: string | null
   encaixando: boolean
   montando: boolean
   /** O que a montagem esta fazendo agora (do main: "Rostos, sons e musica..."). null = sem recado. */
@@ -182,6 +185,11 @@ interface EstadoDasCenasNaTela {
   travar: (fraseId: string, travada: boolean) => void
   /** "Sugerir de novo": uma frase (mesmo travada) ou, com null, todas as nao travadas. */
   sugerirDeNovo: (fraseId: string | null) => Promise<void>
+  /**
+   * (rodada 4) "Grid" (ligar) ou "Tela cheia" na frase: o main escolhe a outra
+   * metade (a cena dele fica como uma das duas) e grava; a frase fica travada.
+   */
+  alternarGrid: (fraseId: string, ligar: boolean) => Promise<void>
   pedirMiniaturas: (episodioId: string, planoIds: readonly string[]) => void
   publicarVideo: (arquivo: string) => Promise<string | null>
   carregarAudio: (rascunhoId: string, takeId: string) => Promise<void>
@@ -221,6 +229,7 @@ const LIMPO = {
   pendentes: {},
   salvando: false,
   sugerindo: null,
+  gridando: null,
   encaixando: false,
   montando: false,
   etapaDaMontagem: null,
@@ -281,9 +290,12 @@ export function avisosDasFrases(
     const tempos = temposDasCenas(e, f, take)
     for (const [k, c] of e.cenas.entries()) {
       const t = tempos[k]
-      const de = c.candidato.inSec
-      const ate = Math.max(de + 0.05, Math.min(c.candidato.outSec, de + (t ? t.fim - t.inicio : 0)))
-      for (const id of c.candidato.planoIds) trechos.push({ plano: id, de, ate, fraseId: f.id, k })
+      // (rodada 4) As duas metades do grid mostram trecho de verdade: as duas contam.
+      for (const cand of c.baixo ? [c.candidato, c.baixo] : [c.candidato]) {
+        const de = cand.inSec
+        const ate = Math.max(de + 0.05, Math.min(cand.outSec, de + (t ? t.fim - t.inicio : 0)))
+        for (const id of cand.planoIds) trechos.push({ plano: id, de, ate, fraseId: f.id, k })
+      }
     }
   }
   const saida = new Map<string, AvisosDaFrase>()
@@ -586,6 +598,10 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
         set({ fraseAtiva: (sem ?? frases[0])?.id ?? null, cenaAlvo: 0 })
       }
       set({ recado: null, confirmando: null })
+      // (rodada 4) O modo do grid da config: mudou desde o ultimo encaixe = o grid roda de novo.
+      void ponte.lerConfig().then((c) => {
+        if (c.ok) avisarModoDoGrid(c.value.cenas.grid)
+      })
       // O2: o app fechou no meio do "Abrir no editor": o rodape avisa (uma vez).
       const rascunhoId = rascunho.id
       void ponte.montagemInterrompida(rascunhoId).then((r) => {
@@ -671,6 +687,17 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       if (!id) return
       mudarEscolha(id, (atual, ctx) => {
         const base = atual ?? escolhaVazia(ctx)
+        // (rodada 4) O cartao da metade de baixo do grid, de novo: sai so ela (a cena fica cheia).
+        const deBaixo = base.cenas.findIndex((c) => c.baixo !== undefined && mesmaCena(c.baixo, candidato))
+        if (deBaixo >= 0) {
+          const cenas = base.cenas.map((c, k) => {
+            if (k !== deBaixo) return c
+            const cheia = { ...c }
+            delete cheia.baixo
+            return cheia
+          })
+          return { ...base, cenas }
+        }
         const ja = base.cenas.findIndex((c) => mesmaCena(c.candidato, candidato))
         // O mesmo cartao de novo tira a cena (como a selecao do Dangai: "clique para tirar").
         if (ja >= 0) {
@@ -717,7 +744,11 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       mudarEscolha(fraseId, (atual) => {
         if (!atual || ordem.length !== atual.cenas.length) return null
         // Os cortes sao das PALAVRAS: as cenas trocam de lugar, as palavras de inicio ficam.
-        const cenas = ordem.map((de, k) => ({ candidato: atual.cenas[de]!.candidato, palavraInicio: atual.cenas[k]!.palavraInicio }))
+        // A metade de baixo do grid anda junto com a de cima (o par e da cena).
+        const cenas = ordem.map((de, k) => {
+          const { baixo } = atual.cenas[de]!
+          return { candidato: atual.cenas[de]!.candidato, palavraInicio: atual.cenas[k]!.palavraInicio, ...(baixo ? { baixo } : {}) }
+        })
         if (cenas.every((c, k) => c.candidato === atual.cenas[k]!.candidato)) return null
         const alvo = ordem.indexOf(get().cenaAlvo)
         set({ cenaAlvo: alvo >= 0 ? alvo : 0 })
@@ -788,6 +819,25 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
         return encaixarSePreciso(id)
       })
       if (get().rascunhoId === id) set({ sugerindo: null, ...(ok && !fraseId ? { recado: 'Sugestoes refeitas.' } : {}) })
+      agendarConferencia()
+    },
+
+    alternarGrid: async (fraseId, ligar) => {
+      const id = get().rascunhoId
+      const rascunho = useRoteiro.getState().rascunho
+      if (!id || !rascunho || rascunho.id !== id || get().gridando || get().montando) return
+      set({ gridando: fraseId, erro: null, recado: null, confirmando: null })
+      await naFila(async () => {
+        if (!(await gravarPendentes())) return
+        const r = await ponte.gridDaFrase(id, fraseId, ligar)
+        if (!ainda(id)) return
+        if (!r.ok) {
+          set({ erro: r.error })
+          return
+        }
+        trocarRascunho(r.value.rascunho)
+      })
+      if (get().rascunhoId === id) set({ gridando: null })
       agendarConferencia()
     },
 
@@ -910,16 +960,34 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
 
 // --------------------------------------------- encaixe e sugestao (fila)
 
-/** O encaixe esta velho para o take de agora: outro take, duracao mudou, ou sugestao depois do ultimo encaixe. */
+/**
+ * O encaixe esta velho para o take de agora: outro take, duracao mudou, ou
+ * sugestao depois do ultimo encaixe. (rodada 4) Tambem quando o grid nunca
+ * rodou neste rascunho, ou rodou num modo que a config nao tem mais: o passo
+ * do grid mora no fim do encaixe.
+ */
 function encaixeAtrasado(roteiro: Roteiro, take: TakeDaVoz | null, cenas: EstadoDasCenas): boolean {
   if (cenas.escolhas.length === 0) return false
   const d = escolhasDesatualizadas(roteiro, take, cenas)
+  const gridVelho = take !== null && (!cenas.grid || (modoDoGridAtual !== null && cenas.grid.modo !== modoDoGridAtual))
   return (
     d.encaixeVelho ||
     d.duracaoMudou.length > 0 ||
     cenas.encaixadoEm === null ||
-    (cenas.sugeridasEm !== null && cenas.sugeridasEm > cenas.encaixadoEm)
+    (cenas.sugeridasEm !== null && cenas.sugeridasEm > cenas.encaixadoEm) ||
+    gridVelho
   )
+}
+
+/** (rodada 4) O modo do grid da config (null = ainda nao lido): o encaixe refaz o grid quando muda. */
+let modoDoGridAtual: ModoDoGrid | null = null
+
+/** A config mudou o grid (ou foi lida ao entrar no passo 4): o grid do rascunho aberto e refeito. */
+export function avisarModoDoGrid(modo: ModoDoGrid): void {
+  if (modoDoGridAtual === modo) return
+  modoDoGridAtual = modo
+  ultimoEncaixe = null
+  agendarConferencia()
 }
 
 /**

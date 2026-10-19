@@ -209,8 +209,9 @@ export function GradeDasCenas({
     if (ids.length > 0) pedirMiniaturas(planos.episodioId, ids)
   }, [lista.sugestoes, lista.vizinhas, planos.episodioId, pedirMiniaturas])
 
-  const escolhidas = escolha?.cenas.map((c) => c.candidato) ?? []
-  const ordemDe = (c: CandidatoDeCena): number => escolhidas.findIndex((e) => mesmaCena(e, c)) + 1
+  // (rodada 4) A metade de baixo do grid ganha o numero da cena dela (clicar de novo tira so ela).
+  const ordemDe = (c: CandidatoDeCena): number =>
+    (escolha?.cenas.findIndex((e) => mesmaCena(e.candidato, c) || (e.baixo !== undefined && mesmaCena(e.baixo, c))) ?? -1) + 1
 
   const escolher = (c: CandidatoDeCena, evento?: React.MouseEvent | React.KeyboardEvent): void => {
     if (evento && (evento.shiftKey || evento.ctrlKey || evento.metaKey)) adicionarCena(c, frase.id)

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { ConfigDasCenas, ConfigDoRecapNaTela } from '../../shared/config'
 import { LIMIAR_DE_DIVISAO_PADRAO_SEC, LIMIARES_DE_DIVISAO, MINIMO_NA_TELA_PADRAO_SEC, MINIMOS_NA_TELA } from '../../shared/divisao'
+import { GRIDS_POR_MINUTO, MODO_DO_GRID_PADRAO, type ModoDoGrid } from '../../shared/grid'
 import { Segmentos } from '@/modulos/kit'
 import { ponte } from '../ponte'
+import { avisarModoDoGrid } from '../store/gerar-cenas'
 import { Caixinha, COR_DE_AVISO } from './pecas'
 
 /**
@@ -27,8 +29,11 @@ export function AjustesDasCenas() {
 
   const salvar = async (cenas: Partial<ConfigDasCenas>): Promise<void> => {
     const r = await ponte.salvarConfig({ cenas })
-    if (r.ok) setConfig(r.value)
-    else setAviso(r.error)
+    if (r.ok) {
+      setConfig(r.value)
+      // O grid do recap aberto e refeito no modo novo (o passo do grid roda no encaixe).
+      if (cenas.grid !== undefined) avisarModoDoGrid(r.value.cenas.grid)
+    } else setAviso(r.error)
   }
 
   const c = config?.cenas
@@ -85,6 +90,22 @@ export function AjustesDasCenas() {
           />
         </div>
       )}
+      <div className="flex items-center gap-2">
+        <span
+          className="shrink-0 text-[11px] text-ink-3"
+          title={`Duas cenas boas para a mesma frase entram uma em cima da outra, como no Kiumaz. Automatico: ate ${GRIDS_POR_MINUTO} por minuto, nunca seguidas. Cada frase tem o botao Grid / Tela cheia no passo 4.`}
+        >
+          Grid
+        </span>
+        <Segmentos
+          opcoes={[
+            { valor: 'desligado' as ModoDoGrid, rotulo: 'Desligado', title: 'So o grid que voce ligar na frase' },
+            { valor: 'automatico' as ModoDoGrid, rotulo: 'Automatico', title: `O app poe ate ${GRIDS_POR_MINUTO} por minuto` },
+          ]}
+          ativo={(v) => v === (c?.grid ?? MODO_DO_GRID_PADRAO)}
+          onChange={(v) => void salvar({ grid: v })}
+        />
+      </div>
       <div className="flex items-center gap-2">
         <span
           className="shrink-0 text-[11px] text-ink-3"

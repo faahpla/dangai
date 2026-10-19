@@ -197,7 +197,8 @@ function Mesa({ rascunho, roteiro, indice }: { rascunho: RascunhoDoRecap; roteir
     const ids = new Set<string>()
     for (const e of cenas.escolhas) {
       if (e.fraseId === fraseAtiva) continue
-      for (const c of e.cenas) for (const id of c.candidato.planoIds) ids.add(id)
+      // (rodada 4) A metade de baixo do grid tambem e uma cena usada.
+      for (const c of e.cenas) for (const id of [...c.candidato.planoIds, ...(c.baixo?.planoIds ?? [])]) ids.add(id)
     }
     return ids
   }, [cenas, fraseAtiva])
