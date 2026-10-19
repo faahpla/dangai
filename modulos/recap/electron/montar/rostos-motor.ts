@@ -28,6 +28,7 @@ import { focoNoQuadro, focosDosPedacos, instantesDoTrecho } from './foco'
 import { chaveDaMetade, chaveDoPedaco } from './projeto'
 import { pythonDoMotor } from '../python-do-motor'
 import { ambienteDoRuntime, backendDoRuntime, usaRuntime } from '../motor-runtime'
+import { rodarFfmpeg } from '../voz/ffmpeg'
 
 /**
  * O ROSTO PELO MOTOR (Edicao rapida, agente B, 14/10).
@@ -99,6 +100,14 @@ export interface RostoDoMotor {
   sim: number | null
   /** O mais parecido do elenco (pasta do personagem), so quando identificou. */
   quem: string | null
+  /**
+   * (4a rodada) A LUZ do rosto: o cinza medio (0-255) dentro da caixa, medido
+   * aqui (comLuzDosRostos) no quadro do instante -- nunca pelo motor, e nunca
+   * no cache. Ausente = nao medido.
+   */
+  luz?: number
+  /** (4a rodada) A caixa e uma SILHUETA (ehSilhueta): escura, lisa e mais escura que o quadro. */
+  silhueta?: boolean
 }
 
 /** Uma posicao do recorte no quadro (px) e o citado que ela mostra, quando mostra. */
@@ -149,10 +158,44 @@ interface Deteccao {
   personagem: string | null
   /** (3a rodada) Quem e o rosto, citado ou nao (RostoDoMotor.pessoa). */
   pessoa: string | null
+  /** (4a rodada) 'cabeca' = a cabeca sem rosto achado (de costas, de perfil, encapuzada). */
+  tipo: 'rosto' | 'cabeca'
+  /** (4a rodada) RostoDoMotor.luz. null = nao medida. */
+  luz: number | null
+  /** (4a rodada) RostoDoMotor.silhueta. */
+  silhueta: boolean
 }
 
 /** A cabeca (rosto + cabelo) tem ~2x a area do rosto: pesa metade, para nao ganhar so por ser cabeca. */
 const PESO_DA_CABECA = 0.5
+/**
+ * (4a rodada, a edicao do Levi no Nia E01) Sem o citado identificado, a CABECA
+ * SEM ROSTO (a nuca do artesao no 0294) perde do maior rosto visivel que pesa
+ * pelo menos isto dela: o Levi enquadrou a Nia e a criada assistindo (focusX
+ * 1,0), o app a nuca (0,04).
+ */
+const ROSTO_SOBRE_CABECA = 0.25
+/**
+ * (4a rodada) A SILHUETA: o rosto (ou cabeca) escuro (cinza medio da caixa
+ * abaixo de LUZ_SILHUETA), LISO (desvio abaixo de CONTRASTE_SILHUETA: sem olho
+ * nem boca) e mais escuro que o quadro (SILHUETA_NO_QUADRO da luz dele) nao e
+ * o foco quando outro do plano esta ACESO (pelo menos LUZ_ACESA, sem ser
+ * silhueta) e pesa pelo menos ACESO_PESO_MIN dele -- o 0132 do Nia: o mordomo
+ * em silhueta (0,917) contra a criada iluminada (o Levi, 0,0). O rosto na
+ * NOITE nao e silhueta: o Lent do MRM E02 tem luz 51-75, mas desvio 39-53 (o
+ * olho, a boca) num quadro de 37-88. Sem rosto aceso (o 0038, a silhueta que o
+ * Levi escolheu), a silhueta continua o foco.
+ */
+export const LUZ_SILHUETA = 60
+export const CONTRASTE_SILHUETA = 25
+const SILHUETA_NO_QUADRO = 0.7
+export const LUZ_ACESA = 100
+const ACESO_PESO_MIN = 0.25
+
+/** (4a rodada) A caixa e uma silhueta: escura, lisa e mais escura que o quadro em volta. */
+export function ehSilhueta(caixa: { media: number; desvio: number }, luzDoQuadro: number): boolean {
+  return caixa.media < LUZ_SILHUETA && caixa.desvio < CONTRASTE_SILHUETA && caixa.media < SILHUETA_NO_QUADRO * luzDoQuadro
+}
 /** O mesmo rosto de um instante ao outro: anda menos que o proprio tamanho e nao muda de escala demais. */
 const ANDA_NO_MAXIMO = 1.0
 const ESCALA_NO_MAXIMO = 3
@@ -248,9 +291,13 @@ export function escolherNoPedaco(
   const rankDa = (t: readonly Deteccao[]): number => Math.min(Infinity, ...t.map((d) => rankDe(d.personagem)))
   const porPeso = [...trilhas].sort((a, b) => pesoDa(b) - pesoDa(a))
   const maiorPeso = porPeso[0] ? pesoDa(porPeso[0]) : 0
+  // (4a rodada) A silhueta escura com um rosto aceso no plano nao e foco, nem citada.
+  const escura = (t: readonly Deteccao[]): boolean => t.filter((d) => d.silhueta).length * 2 > t.length
+  const silhueta = (t: readonly Deteccao[]): boolean =>
+    escura(t) && porPeso.some((o) => o !== t && !escura(o) && (luzDaTrilha(o) ?? 0) >= LUZ_ACESA && pesoDa(o) >= ACESO_PESO_MIN * pesoDa(t))
   // Rosto miudo de fundo nao puxa o quadro, mesmo marcado (o CLIP erra mais neles).
   const citadas = porPeso
-    .filter((t) => pesoDa(t) >= CITADO_PESO_MIN * maiorPeso)
+    .filter((t) => pesoDa(t) >= CITADO_PESO_MIN * maiorPeso && !silhueta(t))
     .map((t) => ({ t, rank: rankDa(t) }))
     .filter((x) => Number.isFinite(x.rank))
     .sort((a, b) => a.rank - b.rank || pesoDa(b.t) - pesoDa(a.t))
@@ -270,8 +317,9 @@ export function escolherNoPedaco(
   }
   if (trilhas.length === 0) return nada
 
-  // 3. Quem: o citado identificado (o de maior preferencia); senao o indice; senao o maior.
-  let escolhida = porPeso[0]!
+  // 3. Quem: o citado identificado (o de maior preferencia); senao o indice; senao o maior
+  // VISIVEL (4a rodada): o rosto no lugar da nuca, o aceso no lugar da silhueta.
+  let escolhida = maiorVisivel(porPeso, pesoDa, silhueta)
   let como: ComoEscolheu = 'maior'
   let personagem: string | null = null
   if (citadas.length > 0) {
@@ -331,6 +379,36 @@ export function escolherNoPedaco(
   }
 }
 
+/** A luz de uma trilha: a mediana das medidas (null = nenhuma medida). */
+function luzDaTrilha(t: readonly Deteccao[]): number | null {
+  const ls = t.map((d) => d.luz).filter((l): l is number => l !== null).sort((a, b) => a - b)
+  return ls.length > 0 ? ls[Math.floor((ls.length - 1) / 2)]! : null
+}
+
+/**
+ * (4a rodada) O MAIOR VISIVEL, sem citado: a trilha mais pesada, menos (1) a
+ * cabeca sem rosto quando um rosto visivel pesa ROSTO_SOBRE_CABECA dela e (2) a
+ * silhueta escura quando um rosto aceso pesa ACESO_PESO_MIN dela. `porPeso`
+ * vem do mais pesado ao mais leve.
+ */
+function maiorVisivel(
+  porPeso: readonly Deteccao[][],
+  pesoDa: (t: readonly Deteccao[]) => number,
+  silhueta: (t: readonly Deteccao[]) => boolean,
+): Deteccao[] {
+  const soCabeca = (t: readonly Deteccao[]): boolean => t.every((d) => d.tipo === 'cabeca')
+  let t = porPeso[0]!
+  if (soCabeca(t)) {
+    const rosto = porPeso.find((x) => !soCabeca(x) && !silhueta(x) && pesoDa(x) >= ROSTO_SOBRE_CABECA * pesoDa(t))
+    if (rosto) t = rosto
+  }
+  if (silhueta(t)) {
+    const acesa = porPeso.find((x) => x !== t && !silhueta(x) && (luzDaTrilha(x) ?? 0) >= LUZ_ACESA)
+    if (acesa) t = acesa
+  }
+  return t
+}
+
 /** Em rosto de anime, os olhos ficam a ~30% e ~70% da largura da caixa: +-OLHO_X do centro. */
 const OLHO_X = 0.2
 /** O olho fica a esta fracao da janela, do lado de fora: o resto do rosto entra pelo lado de dentro. */
@@ -383,6 +461,9 @@ function trilhasDoPedaco(pedaco: RostosDoPedaco): Deteccao[][] {
           peso: w * h * (r.tipo === 'cabeca' ? PESO_DA_CABECA : 1),
           personagem: r.personagem,
           pessoa: r.pessoa ?? null,
+          tipo: r.tipo === 'cabeca' ? ('cabeca' as const) : ('rosto' as const),
+          luz: typeof r.luz === 'number' && Number.isFinite(r.luz) ? r.luz : null,
+          silhueta: r.silhueta === true,
         }
       })
       .sort((a, b) => b.peso - a.peso)
@@ -962,6 +1043,95 @@ export function larguraDoMaiorRosto(achado: RostosDoPedaco): number | null {
   return ws.length >= 2 ? ws[Math.floor((ws.length - 1) / 2)]! : null
 }
 
+// ================================================ a luz dos rostos (4a rodada)
+
+/** A largura do quadro em cinza em que a luz dos rostos e medida. */
+const LUZ_LARGURA = 160
+/** Pedacos medidos ao mesmo tempo (cada um, ate 3 ffmpeg curtos). */
+const LUZ_JUNTOS = 6
+
+/**
+ * A LUZ de um rosto: o cinza medio (0-255) e o desvio dentro da caixa (pixels
+ * do quadro original), num quadro em cinza `largura` x `altura` do mesmo
+ * instante. null = caixa fora do quadro.
+ */
+export function luzNaCaixa(
+  cinza: Uint8Array,
+  largura: number,
+  altura: number,
+  caixa: Pick<RostoDoMotor, 'x' | 'y' | 'w' | 'h'>,
+  larguraOriginal: number,
+  alturaOriginal: number,
+): { media: number; desvio: number } | null {
+  if (!(larguraOriginal > 0) || !(alturaOriginal > 0) || cinza.length < largura * altura) return null
+  const sx = largura / larguraOriginal
+  const sy = altura / alturaOriginal
+  const x0 = Math.max(0, Math.floor(caixa.x * sx))
+  const y0 = Math.max(0, Math.floor(caixa.y * sy))
+  const x1 = Math.min(largura, Math.ceil((caixa.x + caixa.w) * sx))
+  const y1 = Math.min(altura, Math.ceil((caixa.y + caixa.h) * sy))
+  if (x1 <= x0 || y1 <= y0) return null
+  let soma = 0
+  let quad = 0
+  for (let l = y0; l < y1; l++) {
+    for (let c = x0; c < x1; c++) {
+      const v = cinza[l * largura + c]!
+      soma += v
+      quad += v * v
+    }
+  }
+  const n = (x1 - x0) * (y1 - y0)
+  const media = soma / n
+  return { media, desvio: Math.sqrt(Math.max(0, quad / n - media * media)) }
+}
+
+/** A luz media (0-255) do quadro inteiro em cinza. */
+function luzDoQuadro(cinza: Uint8Array): number {
+  let soma = 0
+  for (const v of cinza) soma += v
+  return cinza.length > 0 ? soma / cinza.length : 0
+}
+
+/**
+ * (4a rodada) A luz de cada rosto dos pedacos com dois rostos ou mais num
+ * instante (so ali a silhueta pode perder de um rosto aceso): um quadro em
+ * cinza por instante, pelo ffmpeg. Devolve COPIAS (o cache do motor fica sem a
+ * luz); o pedaco que falhou fica de fora (sem luz, a escolha de sempre).
+ */
+async function comLuzDosRostos(itens: readonly { chave: string; arquivo: string; achado: RostosDoPedaco }[]): Promise<Map<string, RostosDoPedaco>> {
+  const saida = new Map<string, RostosDoPedaco>()
+  const medir = itens.filter((it) => it.achado.largura > 0 && it.achado.altura > 0 && it.achado.quadros.some((q) => q.ok && q.rostos.length >= 2))
+  for (let i = 0; i < medir.length; i += LUZ_JUNTOS) {
+    await Promise.all(
+      medir.slice(i, i + LUZ_JUNTOS).map(async ({ chave, arquivo, achado }) => {
+        const W = LUZ_LARGURA
+        const H = Math.max(2, Math.round((W * achado.altura) / achado.largura))
+        try {
+          const quadros = await Promise.all(
+            achado.quadros.map(async (q): Promise<QuadroDoMotor> => {
+              if (!q.ok || q.rostos.length === 0) return q
+              const cinza = await rodarFfmpeg(['-ss', q.t.toFixed(3), '-i', arquivo, '-frames:v', '1', '-vf', `scale=${W}:${H}`, '-f', 'rawvideo', '-pix_fmt', 'gray', 'pipe:1'])
+              const px = new Uint8Array(cinza.buffer, cinza.byteOffset, Math.min(cinza.byteLength, W * H))
+              const doQuadro = luzDoQuadro(px)
+              return {
+                ...q,
+                rostos: q.rostos.map((r) => {
+                  const luz = luzNaCaixa(px, W, H, r, achado.largura, achado.altura)
+                  return luz === null ? r : { ...r, luz: Math.round(luz.media), silhueta: ehSilhueta(luz, doQuadro) }
+                }),
+              }
+            }),
+          )
+          saida.set(chave, { ...achado, quadros })
+        } catch {
+          // Sem a luz: a escolha de sempre.
+        }
+      }),
+    )
+  }
+  return saida
+}
+
 /** O plano do indice de cada mp4 (o mesmo caminho, sem caixa nem barra). */
 function planoPorArquivo(indice: Pick<EpisodeIndex, 'planos'>): (arquivo: string) => Plano | null {
   const norm = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
@@ -1292,8 +1462,13 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
       }
       if (r.resultados.size > 0) gravarCache(arquivoCache, cache)
     }
+    // (4a rodada) A luz de cada rosto, nos pedacos com dois ou mais (a silhueta perde do aceso).
+    const acesos = await comLuzDosRostos(itens.flatMap((it) => {
+      const achado = resultados.get(it.chave)
+      return achado ? [{ chave: it.chave, arquivo: it.arquivo, achado }] : []
+    }))
     for (const item of itens) {
-      const achado = resultados.get(item.chave)
+      const achado = acesos.get(item.chave) ?? resultados.get(item.chave)
       if (!achado) continue
       const quadro = quadroDe(pedidoDe.get(item.chave) ?? {})
       const escolha = escolherNoPedaco(
