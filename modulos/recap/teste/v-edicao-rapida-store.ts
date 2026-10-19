@@ -22,6 +22,9 @@
  *    card de gancho) vira clipe de imagem com url, acima da cor, no tempo da
  *    palavra; rodar de novo nao muda nada (nenhum passo); o texto que ele
  *    arrastou fica; projeto antigo (sem `tela`) le do rascunho.
+ * 10. o GRID (rodada 4): cada metade da tela dividida pede o rosto na janela
+ *    dela (chave |metade), no trecho que toca, a de baixo com o 2o citado
+ *    primeiro, e nao refaz o recorte 9:16 (a metade toca o original).
  *
  * Nao escreve nada. Rodar da raiz do projeto (o store precisa dos caminhos do renderer):
  *   npx tsx --tsconfig tsconfig.web.json modulos/recap/teste/v-edicao-rapida-store.ts
@@ -457,6 +460,43 @@ async function main(): Promise<void> {
   const r9d = await edicaoRapidaNoProjeto(SO_TEXTOS)
   confere(quantas('telasDoRascunho') === antesDoRascunho + 1 && r9d?.textos?.postos === 1, 'projeto antigo: o texto de tela vem do rascunho')
   pararUndo9()
+
+  secao('10. O grid (tela dividida): as metades entram no enquadramento')
+  // Bloco 2 dividido: img-2 em cima (do segundo 1,5), img-3 embaixo (do 2,5).
+  const base10 = planEqualSplit(3, 12)
+  const plano10 = {
+    scenes: base10.scenes.map((s, i) => ({ ...s, sourceStart: i === 1 ? 1.5 : 0, ...(i === 1 ? { imageIndexB: 2, sourceStartB: 2.5 } : {}) })),
+  }
+  plano10.scenes[2] = { ...plano10.scenes[2]!, imageIndex: 3 }
+  useProject.setState({
+    audio: AUDIO,
+    images: [
+      imagem(1, 'video', { x: 0.5, y: 0.5, auto: false }),
+      imagem(2, 'video', { x: 0.5, y: 0.5, auto: false }),
+      imagem(3, 'video', { x: 0.5, y: 0.5, auto: false }),
+      imagem(4, 'image', { x: 0.5, y: 0.5, auto: false }),
+    ],
+    plan: plano10,
+    transcript: TRANSCRIPT,
+    modulos: { recap: RECAP },
+    sobreposicoes: [],
+    trilhas: [],
+    busy: null,
+  })
+  const reframes10 = quantas('reframeImage')
+  const r10 = await edicaoRapidaNoProjeto({ sfx: false, musica: false, rosto: true, legenda: false, cor: false })
+  const lote10 = ultima('rostosDosPedacos')?.[0] as LoteDeRostos
+  const metades = lote10.pedidos.filter((p) => p.metade)
+  confere(metades.length === 2 && metades.every((p) => p.chave.endsWith('|metade')), 'as duas metades pedem o rosto na janela da metade (chave |metade)')
+  const cima10 = metades.find((p) => p.arquivo.endsWith('/2.mp4'))
+  const baixo10 = metades.find((p) => p.arquivo.endsWith('/3.mp4'))
+  confere(cima10?.de === 1.5 && baixo10?.de === 2.5 && Math.abs((baixo10?.ate ?? 0) - 6.5) < 1e-9, 'cada metade no trecho que ela toca (sourceStart e sourceStartB)')
+  confere(cima10?.personagens.join() === 'Senku,Kohaku' && baixo10?.personagens.join() === 'Kohaku,Senku', 'em cima o 1o citado; embaixo o 2o primeiro')
+  confere(lote10.pedidos.some((p) => p.arquivo.endsWith('/1.mp4') && !p.metade), 'o bloco cheio continua na janela do 9:16')
+  const s10 = useProject.getState()
+  confere(s10.images[1]!.focusAuto && s10.images[2]!.focusAuto, 'as duas metades enquadradas')
+  confere(s10.images[1]!.url === 'http://127.0.0.1/i/2' && s10.images[2]!.url === 'http://127.0.0.1/i/3', 'a metade toca o original: nada de recorte 9:16 novo para ela')
+  confere(quantas('reframeImage') - reframes10 === 2 && r10?.aplicou === true, 'so os blocos cheios refazem o recorte (2)')
 }
 
 main()
