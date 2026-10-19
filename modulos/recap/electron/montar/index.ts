@@ -10,7 +10,9 @@ import {
   type PedidoDeMontagem,
   type ProjetoMontado,
 } from '../../shared/cenas'
-import { encaixarEscolha } from '../../shared/encaixe'
+import { encaixarEscolha, semPiscar } from '../../shared/encaixe'
+import { MINIMO_NA_TELA_PADRAO_SEC } from '../../shared/divisao'
+import { configDoRecap } from '../contexto'
 import type { EpisodeIndex } from '../../shared/episodio'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
 import { nomeDoPersonagem } from '../../shared/apelidos'
@@ -78,23 +80,45 @@ function narracaoNaPasta(pasta: string, nome: string, origem: string): string {
   }
 }
 
-/** As escolhas encaixadas no take dado (puro; orfas e frases sem escolha ficam como estao). */
-function encaixarTudo(
-  cenas: EstadoDasCenas,
-  roteiro: NonNullable<ReturnType<typeof roteiroAtual>>,
+/**
+ * As escolhas encaixadas no take dado (puro; orfas e frases sem escolha ficam
+ * como estao). Com o take (a voz de verdade), as frases que o casar dividiu e
+ * ficaram com pedaco abaixo do minimo na tela voltam a ter uma cena, e nunca
+ * ha 3 cenas curtas seguidas (semPiscar, 19/10).
+ */
+export function encaixarTudo(
+  cenas: Pick<EstadoDasCenas, 'escolhas'>,
+  roteiro: Pick<NonNullable<ReturnType<typeof roteiroAtual>>, 'secoes'>,
   indice: EpisodeIndex,
   take: ReturnType<typeof takeAtual>,
+  minimoSec: number = minimoDaConfig(),
 ): { escolhas: EstadoDasCenas['escolhas']; avisos: string[] } {
   const porId = new Map(frasesDoRoteiro(roteiro).map((f) => [f.id, f]))
   const avisos: string[] = []
-  const escolhas = cenas.escolhas.map((e) => {
-    const frase = porId.get(e.fraseId)
-    if (!frase) return e
-    const feito = encaixarEscolha(e, { indice, frase, take })
+  const contexto = (fraseId: string) => {
+    const frase = porId.get(fraseId)
+    return frase ? { indice, frase, take, minimoSec } : null
+  }
+  const encaixadas = cenas.escolhas.map((e) => {
+    const ctx = contexto(e.fraseId)
+    if (!ctx) return e
+    const feito = encaixarEscolha(e, ctx)
     avisos.push(...feito.avisos)
     return feito.escolha
   })
+  if (!take) return { escolhas: encaixadas, avisos }
+  const { escolhas, juntadas } = semPiscar(encaixadas, contexto, minimoSec)
+  for (const id of juntadas) avisos.push(`${id}: voltou a ter uma cena (pedaco curto na voz)`)
   return { escolhas, avisos }
+}
+
+/** O minimo na tela da config "Cenas" (sem config, o padrao). */
+function minimoDaConfig(): number {
+  try {
+    return configDoRecap().cenas.minimoNaTela
+  } catch {
+    return MINIMO_NA_TELA_PADRAO_SEC
+  }
 }
 
 export async function encaixarNaVoz(rascunhoId: string): Promise<CenasGravadas> {
@@ -241,7 +265,8 @@ async function montarAqui(
   const eventos = r.eventos.map((e) => ({ ...e, personagens: [...new Set(e.personagens.map((n) => nomeDoPersonagem(n, apelidos)))] }))
 
   // Os pedacos antes do disco: sem nenhuma cena, nada e criado.
-  const previa = pedacosDaMontagem({ rascunho: r, roteiro, take, indice, cenas })
+  const minimoSec = minimoDaConfig()
+  const previa = pedacosDaMontagem({ rascunho: r, roteiro, take, indice, cenas, minimoSec })
   // Quem cada pedaco e cada frase mostram (o rosto da Edicao rapida e o `studio.secoes`).
   const nomes = nomesDaMontagem(previa.pedacos, roteiro, eventos, indice, cenas.escolhas)
   if (previa.pedacos.length === 0) throw new Error('Nenhuma frase tem cena. Escolha as cenas antes de abrir no editor.')
@@ -365,6 +390,7 @@ async function montarAqui(
     sobreposicoes: [...(cor?.camada ? [cor.camada] : []), ...(textos?.clipes ?? [])],
     thumbs,
     nomesDasFrases: nomes.porFrase,
+    minimoSec,
   })
   const projetoPath = arquivoDoProjeto(pasta, nome)
   saveProjectFile(projetoPath, file)

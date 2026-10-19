@@ -29,6 +29,8 @@ import {
   corteDaFrase,
   dividirFrase,
   idDoPedaco,
+  MINIMO_NA_TELA_PADRAO_SEC,
+  minimoNaTela,
   type CorteDaFrase,
   type MotivoDaDivisao,
   type OpcoesDaDivisao,
@@ -1325,6 +1327,8 @@ interface ContextoDaFrase {
   sinais: SinaisDaFrase
   /** C7: o centro ampliado quando a ancora cai num plano apagado (centroAmpliado). null = o ponto. */
   centro: Intervalo | null
+  /** O minimo na tela de cada plano de um span (a config Cenas). */
+  minimo: number
 }
 
 /** O que a frase de antes mostrou: a cronologia, a continuidade e a variedade olham. */
@@ -1416,6 +1420,11 @@ function montarJanelas(
     return [{ planos: [p], inSec, outSec: util.ate }]
   }
   if (!inteiro) return []
+  // (19/10) Span so com planos que ficam o minimo na tela: no MRM E02 a frase
+  // "Eles vao passar o dia todo..." emendou 4 planos de 0,6 s (0299-0302).
+  // Plano curto demais para abrir um span fica so (congela o fim).
+  const minimo = ctx.minimo
+  if (util.ate - util.de < minimo - 1e-6) return [{ planos: [p], inSec: util.de, outSec: util.ate }]
   const planos = [p]
   let fim = util.ate
   while (fim - util.de < d - 0.05 && planos.length < SPAN_MAX) {
@@ -1425,6 +1434,8 @@ function montarJanelas(
     // Emenda so o que e continuo no episodio: nada aparado entre os dois.
     if (ult.util!.ate < ult.plano.end - 0.01 || prox.util.de > prox.plano.start + 0.01) break
     if (prox.plano.start - ult.plano.end > 0.1) break
+    // O seguinte entra com o minimo: o plano inteiro e o que falta da frase.
+    if (prox.util.ate - prox.util.de < minimo - 1e-6 || d - (fim - util.de) < minimo - 1e-6) break
     planos.push(prox)
     fim = prox.util.ate
   }
@@ -2101,6 +2112,8 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   // A imagem (C2) e as etiquetas (C3) da frase vao para o pedaco que a intencao descreve.
   const intencaoDe = new Map([...cortes].map(([i, c]) => [i, pedacoDaIntencao(e.frases[i]!.intencaoVisual, c, elenco)]))
   const visao = prepararVisao(todos, e.indice, sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe), e.camadas ?? {})
+  // (19/10) O minimo na tela de cada plano de um span (a config Cenas).
+  const minimo = e.divisao?.minimoSec === undefined ? MINIMO_NA_TELA_PADRAO_SEC : minimoNaTela(e.divisao.minimoSec)
   const sinaisPorFrase = new Map(e.frases.map((f) => [f.id, sinaisDaFrase(f.id, todos, visao)]))
   const janelas = janelasDasFrases(e.frases, e.eventos, e.indice, todos, (id) => sinaisPorFrase.get(id)?.zDaCue ?? null)
   const cuePorId = new Map(e.indice.cues.map((c) => [c.id, c]))
@@ -2152,6 +2165,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
         centro: visao.camadas.melhorQuadro
           ? centroAmpliado(janelas[i]!.cueAncora ? janelas[i]!.cueAncora!.start + 0.2 : janelas[i]!.ancora, todos, visao)
           : null,
+        minimo,
       } satisfies Omit<ContextoDaFrase, 'anteriores'>,
     }
   })
@@ -2240,6 +2254,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
           visao,
           sinais: sinaisK[k]!,
           centro: visao.camadas.melhorQuadro ? centroAmpliado(janela.cueAncora ? janela.cueAncora.start + 0.2 : janela.ancora, todos, visao) : null,
+          minimo,
         },
       }
     })

@@ -6,7 +6,7 @@ import {
 import type { VozPadrao } from './tipos-da-voz'
 import { ESCRITORES_IDS, MODELO_GEMINI_PRO_PADRAO, type Escritor } from './escritor'
 import { arrumarVelocidadeNativa, VELOCIDADE_NATIVA_PADRAO } from './voz'
-import { LIMIAR_DE_DIVISAO_PADRAO_SEC, limiarDeDivisao } from './divisao'
+import { LIMIAR_DE_DIVISAO_PADRAO_SEC, limiarDeDivisao, MINIMO_NA_TELA_PADRAO_SEC, minimoNaTela } from './divisao'
 
 /**
  * [recap] A CONFIGURACAO DO MODULO, em `Settings.modulos.recap` (o nucleo
@@ -76,6 +76,8 @@ export interface ConfigDasCenas {
   duasCenas: boolean
   /** Acima de quantos segundos no take a frase e longa (divide). */
   limiarDuasCenas: number
+  /** O minimo na tela de cada cena automatica, em segundos (shared/divisao.ts, MINIMOS_NA_TELA). */
+  minimoNaTela: number
 }
 
 export const CENAS_PADRAO: ConfigDasCenas = {
@@ -85,6 +87,7 @@ export const CENAS_PADRAO: ConfigDasCenas = {
   juiz: 'desligado',
   duasCenas: true,
   limiarDuasCenas: LIMIAR_DE_DIVISAO_PADRAO_SEC,
+  minimoNaTela: MINIMO_NA_TELA_PADRAO_SEC,
 }
 
 function cenasSalvas(raw: unknown): ConfigDasCenas {
@@ -96,6 +99,7 @@ function cenasSalvas(raw: unknown): ConfigDasCenas {
     juiz: (JUIZES as readonly unknown[]).includes(r['juiz']) ? (r['juiz'] as JuizVisual) : 'desligado',
     duasCenas: r['duasCenas'] !== false,
     limiarDuasCenas: limiarDeDivisao(r['limiarDuasCenas']),
+    minimoNaTela: minimoNaTela(r['minimoNaTela']),
   }
 }
 

@@ -44,6 +44,22 @@ const LIMIAR_MIN_SEC = 2
 const LIMIAR_MAX_SEC = 6
 /** Nenhum pedaco abaixo disto: pisca. */
 export const PEDACO_MIN_SEC = 1
+
+/**
+ * O MINIMO NA TELA de cada cena automatica (19/10, MRM E02: 7 cenas de 0,6-0,8 s,
+ * 5 seguidas perto dos 42 s): o pedaco da frase dividida, o plano de uma
+ * emenda e o plano de um span nunca ficam abaixo disto. A config "Cenas"
+ * troca (quatro botoes); a escolha feita a mao fica como ele quis.
+ */
+export const MINIMO_NA_TELA_PADRAO_SEC = 1
+export const MINIMOS_NA_TELA: readonly number[] = [0.8, 1, 1.2, 1.5]
+/** Nunca 3 cenas seguidas abaixo disto (a rajada de cortes curtos). */
+export const RAJADA_SEC = 1.2
+
+/** O minimo salvo, conferido (fora da faixa ou lixo: o padrao). */
+export function minimoNaTela(x: unknown): number {
+  return typeof x === 'number' && Number.isFinite(x) && x >= 0.5 && x <= 2 ? x : MINIMO_NA_TELA_PADRAO_SEC
+}
 /** Nem abaixo disto de palavras ("Depois," sozinho nao e um momento). */
 export const PEDACO_MIN_PALAVRAS = 2
 /** Tres cenas so quando a frase passa deste tanto de vezes o limiar (7,5 s com 3,0). */
@@ -56,6 +72,8 @@ export interface OpcoesDaDivisao {
   ligada: boolean
   /** Acima disto (s, no take) a frase e 'longa'. */
   limiarSec: number
+  /** Nenhum pedaco abaixo disto (o "Minimo na tela" da config Cenas). Ausente = PEDACO_MIN_SEC. */
+  minimoSec?: number
 }
 
 export const DIVISAO_PADRAO: OpcoesDaDivisao = { ligada: true, limiarSec: LIMIAR_DE_DIVISAO_PADRAO_SEC }
@@ -238,10 +256,11 @@ export function cortarFrase(
   frase: Pick<Frase, 'id' | 'texto'>,
   take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null,
   n: 2 | 3 = 2,
+  minimoSec: number = PEDACO_MIN_SEC,
 ): CorteDaFrase | null {
   const tokens = palavrasDaFrase(frase.texto)
   const d = duracaoDaFrase(frase, take)
-  if (tokens.length < n * PEDACO_MIN_PALAVRAS || d.duracao < n * PEDACO_MIN_SEC) return null
+  if (tokens.length < n * PEDACO_MIN_PALAVRAS || d.duracao < n * minimoSec) return null
   const t = tokens.map((_, i) => (i === 0 ? 0 : inicioDaPalavra(i, frase, take, d)))
   const limites = new Map(limitesNaturais(tokens).map((l) => [l.palavra, l]))
   const total = d.duracao
@@ -255,7 +274,7 @@ export function cortarFrase(
       if (b - a < PEDACO_MIN_PALAVRAS || !temConteudo(tokens.slice(a, b))) return false
       const de = t[a]!
       const ate = b < tokens.length ? t[b]! : total
-      if (ate - de < PEDACO_MIN_SEC - 1e-6) return false
+      if (ate - de < minimoSec - 1e-6) return false
     }
     return true
   }
@@ -344,8 +363,9 @@ export function corteDaFrase(
   if (!opcoes.ligada || frase.citacaoCueId || ASPAS.test(frase.texto)) return null
   const d = duracaoDaFrase(frase, take).duracao
   const limiar = limiarDeDivisao(opcoes.limiarSec)
-  const tres = d > FATOR_TRES_CENAS * limiar ? cortarFrase(frase, take, 3) : null
-  return tres ?? cortarFrase(frase, take, 2)
+  const minimo = opcoes.minimoSec === undefined ? PEDACO_MIN_SEC : minimoNaTela(opcoes.minimoSec)
+  const tres = d > FATOR_TRES_CENAS * limiar ? cortarFrase(frase, take, 3, minimo) : null
+  return tres ?? cortarFrase(frase, take, 2, minimo)
 }
 
 /**

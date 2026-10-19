@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { JUIZES, type ConfigDasCenas, type ConfigDoRecapNaTela, type JuizVisual } from '../../shared/config'
-import { LIMIAR_DE_DIVISAO_PADRAO_SEC, LIMIARES_DE_DIVISAO } from '../../shared/divisao'
+import { LIMIAR_DE_DIVISAO_PADRAO_SEC, LIMIARES_DE_DIVISAO, MINIMO_NA_TELA_PADRAO_SEC, MINIMOS_NA_TELA } from '../../shared/divisao'
 import { Segmentos, type Segmento } from '@/modulos/kit'
 import { ponte } from '../ponte'
 import { Caixinha, COR_DE_AVISO } from './pecas'
@@ -99,6 +99,23 @@ export function AjustesDasCenas() {
           />
         </div>
       )}
+      <div className="flex items-center gap-2">
+        <span
+          className="shrink-0 text-[11px] text-ink-3"
+          title="Nenhuma cena escolhida sozinha fica menos que isto na tela: pedaco curto volta a ser uma cena so, e emenda curta nao entra. As que voce escolheu ficam como estao."
+        >
+          Minimo na tela
+        </span>
+        <Segmentos
+          opcoes={MINIMOS_NA_TELA.map((v) => ({
+            valor: v,
+            rotulo: `${String(v).replace('.', ',')}s`,
+            title: `Cada cena fica pelo menos ${String(v).replace('.', ',')} s`,
+          }))}
+          ativo={(v) => v === (c?.minimoNaTela ?? MINIMO_NA_TELA_PADRAO_SEC)}
+          onChange={(v) => void salvar({ minimoNaTela: v })}
+        />
+      </div>
       <div className="flex flex-col gap-1.5 pt-1">
         <span className="text-[11px] font-medium text-ink-2" title="Opcional. O nucleo do Dangai ainda nao manda imagem para a IA: por enquanto o juiz nao roda.">
           Juiz visual

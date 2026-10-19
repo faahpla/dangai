@@ -2,7 +2,7 @@ import sharp from 'sharp'
 import { temPlanos, type EpisodeIndex } from '../../shared/episodio'
 import { canonizar, nomeNatural } from '@shared/nomes'
 import { roteiroAtual, type RascunhoDoRecap } from '../../shared/roteiro'
-import { takeAtual } from '../../shared/voz'
+import { podeIrParaCenas, takeAtual } from '../../shared/voz'
 import {
   aplicarEscolhas,
   candidatoDosPlanos,
@@ -104,9 +104,9 @@ interface SinaisParaOCasar {
   avisos: string[]
 }
 
-/** "Ate 2 cenas por frase" e o limiar, da config "Cenas". */
-export function divisaoDaConfig(c: Pick<ConfigDasCenas, 'duasCenas' | 'limiarDuasCenas'>): OpcoesDaDivisao {
-  return { ligada: c.duasCenas, limiarSec: c.limiarDuasCenas }
+/** "Ate 2 cenas por frase", o limiar e o minimo na tela, da config "Cenas". */
+export function divisaoDaConfig(c: Pick<ConfigDasCenas, 'duasCenas' | 'limiarDuasCenas'> & Partial<Pick<ConfigDasCenas, 'minimoNaTela'>>): OpcoesDaDivisao {
+  return { ligada: c.duasCenas, limiarSec: c.limiarDuasCenas, ...(c.minimoNaTela !== undefined ? { minimoSec: c.minimoNaTela } : {}) }
 }
 
 /**
@@ -183,6 +183,8 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
     ...velhas.textoMudou.filter((id) => !escolhaDaFrase(atual, id)?.travada),
     // Corte refeito: a cena escolhida nao existe mais no indice (mesmo travada).
     ...escolhasForaDoIndice(atual, indice.planos),
+    // Sugeridas pela estimativa antes da voz: com ela aprovada, no tempo real das falas.
+    ...(podeIrParaCenas(r, roteiro) ? velhas.antesDaVoz : []),
   ])
   if (refazer.size === 0 && velhas.orfas.length === 0) return { rascunho: r, avisos: [] }
 

@@ -3,6 +3,7 @@ import type { Frase } from './roteiro'
 import type { TakeDaVoz } from './voz'
 import {
   duracaoDaFrase,
+  juntarEmUma,
   normalizarCortes,
   palavrasNaFrase,
   temposDasCenas,
@@ -10,6 +11,7 @@ import {
   type CandidatoDeCena,
   type EscolhaDaFrase,
 } from './cenas'
+import { MINIMO_NA_TELA_PADRAO_SEC, minimoNaTela, RAJADA_SEC } from './divisao'
 
 /**
  * O ENCAIXE de uma escolha de cena na duracao da frase (agente B).
@@ -61,6 +63,11 @@ export const FOLGA_SEM_EMENDA_SEC = 0.25
  * limite do "Bloco N tem 0.3s e vai passar como um flash" do preflight do
  * editor (BLOCO_CURTO_SEC). Visto no 1o short de ponta a ponta (14/10): uma
  * frase 0,3 s mais longa que o plano emendava 0,3 s do seguinte.
+ *
+ * Desde 19/10 o minimo e o "Minimo na tela" da config Cenas
+ * (ContextoDoEncaixe.minimoSec, padrao 1 s): no MRM E02 a emenda 0104+0105
+ * ficou com 0,8 s do segundo plano e a 0299-0302, com 4 planos de 0,6 s.
+ * Este e o piso antigo, so para quem importa a constante.
  */
 export const PEDACO_MINIMO_DA_EMENDA_SEC = 0.8
 
@@ -81,6 +88,8 @@ export interface ContextoDoEncaixe {
   frase: Pick<Frase, 'id' | 'texto' | 'citacaoCueId' | 'cueDoMomento' | 'eventoIds'>
   /** O take atual (takeAtual do rascunho). null = sem voz: encaixa pela estimativa. */
   take: Pick<TakeDaVoz, 'id' | 'trechos' | 'palavras'> | null
+  /** O minimo na tela de cada pedaco de emenda (config Cenas). Ausente = MINIMO_NA_TELA_PADRAO_SEC. */
+  minimoSec?: number
 }
 
 export interface EscolhaEncaixada {
@@ -191,6 +200,7 @@ function encaixarCandidato(
   // Um quadro no minimo: o schema recusa janela vazia, e cena de zero segundo
   // nao existe no editor.
   const precisa = Math.max(precisaBruto, TOLERANCIA_DE_DURACAO_SEC)
+  const minimo = ctx.minimoSec === undefined ? MINIMO_NA_TELA_PADRAO_SEC : minimoNaTela(ctx.minimoSec)
   let a = Math.min(...posicoes)
   let b = Math.max(...posicoes)
   const livre = (i: number): boolean => {
@@ -213,10 +223,12 @@ function encaixarCandidato(
       inicio = Math.max(planos[a]!.start, Math.min(inicio, inicioPelaCobertura(planos, a, b, precisa)))
     } else {
       // Nao cabe: o plano seguinte do episodio, como a montagem original...
+      // (plano mais curto que o minimo na tela nunca entra: vira um flash no meio)
       while (
         cobertura(planos, a, b, inicio) < precisa - FOLGA_SEM_EMENDA_SEC &&
         b - a + 1 < SPAN_MAX_PLANOS &&
-        livre(b + 1)
+        livre(b + 1) &&
+        duracaoDoPlano(planos, b + 1) >= minimo - 1e-6
       ) {
         b += 1
       }
@@ -224,7 +236,8 @@ function encaixarCandidato(
       while (
         cobertura(planos, a, b, inicio) < precisa - FOLGA_SEM_EMENDA_SEC &&
         b - a + 1 < SPAN_MAX_PLANOS &&
-        livre(a - 1)
+        livre(a - 1) &&
+        duracaoDoPlano(planos, a - 1) >= minimo - 1e-6
       ) {
         a -= 1
         inicio = Math.max(planos[a]!.start, inicioPelaCobertura(planos, a, b, precisa))
@@ -241,7 +254,7 @@ function encaixarCandidato(
     if (Math.min(p.end, fim) - Math.max(p.start, inicio) > 1e-6) tocados.push(i)
   }
   // Emenda sem relance: nenhum pedaco de plano curto demais (pecas puras abaixo).
-  const ajuste = semRelance(planos, tocados.length > 0 ? tocados : [a], inicio, fim, precisa)
+  const ajuste = semRelance(planos, tocados.length > 0 ? tocados : [a], inicio, fim, precisa, minimo)
   const usados = ajuste.usados
   inicio = ajuste.inicio
   fim = ajuste.fim
@@ -273,14 +286,20 @@ function encaixarCandidato(
 
 // ------------------------------------------------------------ sem relance
 
+/** Os segundos de imagem do plano i (0 fora do indice). */
+function duracaoDoPlano(planos: readonly Plano[], i: number): number {
+  const p = planos[i]
+  return p ? p.end - p.start : 0
+}
+
 /** O pedaco de cada plano da janela, em segundos de imagem. */
 function pedacoNoPlano(p: Plano, inicio: number, fim: number): number {
   return Math.max(0, Math.min(p.end, fim) - Math.max(p.start, inicio))
 }
 
 /**
- * Uma emenda cujo primeiro ou ultimo pedaco ficaria mais curto que
- * PEDACO_MINIMO_DA_EMENDA_SEC (um relance de outro plano):
+ * Uma emenda cujo primeiro ou ultimo pedaco ficaria mais curto que o minimo
+ * na tela (um relance de outro plano):
  * - ULTIMO pedaco curto: sem o ultimo plano, a frase cabe nos outros
  *   recuando o comeco e segurando no maximo SEGURAR_EM_VEZ_DE_RELANCE_SEC?
  *   Entao sai o plano (a fala citada continua dentro: so recua). Senao a
@@ -298,12 +317,12 @@ function semRelance(
   inicioInicial: number,
   fimInicial: number,
   precisa: number,
+  minimo: number,
 ): { usados: number[]; inicio: number; fim: number; segurado: number } {
   let usados = [...usadosIniciais]
   let inicio = inicioInicial
   let fim = fimInicial
   let segurado = 0
-  const minimo = PEDACO_MINIMO_DA_EMENDA_SEC
 
   if (usados.length > 1) {
     const ultimo = planos[usados[usados.length - 1]!]!
@@ -349,4 +368,67 @@ function semRelance(
   }
 
   return { usados, inicio, fim, segurado }
+}
+
+// ------------------------------------------------------------ sem piscar
+
+/** Ate quantas voltas o semPiscar junta frases (cada volta tira pelo menos uma cena). */
+const VOLTAS_SEM_PISCAR = 8
+
+/**
+ * SEM PISCAR (19/10): o casar dividiu a frase pela ESTIMATIVA da voz (corre
+ * assim que o roteiro e aprovado) e a voz de verdade saiu mais rapida -- no MRM
+ * E02 sobraram pedacos de 0,6-0,9 s. Depois do encaixe no take:
+ *   1. a frase que o casar dividiu (`inteira` guardada), sem mexida dele, com
+ *      um pedaco abaixo do minimo na tela volta a ter UMA cena (juntarEmUma) e
+ *      e encaixada de novo;
+ *   2. nunca 3 cenas seguidas abaixo de RAJADA_SEC (contando a fronteira entre
+ *      frases): a frase dividida da rajada junta, a de pedaco mais curto antes.
+ * A escolha travada (ele mexeu) fica como esta. Puro e idempotente; devolve as
+ * frases que juntou.
+ */
+export function semPiscar(
+  escolhas: readonly EscolhaDaFrase[],
+  contexto: (fraseId: string) => ContextoDoEncaixe | null,
+  minimoSec: number = MINIMO_NA_TELA_PADRAO_SEC,
+): { escolhas: EscolhaDaFrase[]; juntadas: string[] } {
+  const minimo = minimoNaTela(minimoSec)
+  const saida = [...escolhas]
+  const juntadas: string[] = []
+  const duracoes = (e: EscolhaDaFrase): number[] => {
+    const ctx = contexto(e.fraseId)
+    if (!ctx || e.cenas.length === 0) return []
+    return temposDasCenas(e, ctx.frase, ctx.take).map((t) => t.fim - t.inicio)
+  }
+  const podeJuntar = (e: EscolhaDaFrase): boolean => !e.travada && e.cenas.length > 1 && (e.inteira?.length ?? 0) > 0
+  const juntar = (i: number): boolean => {
+    const e = saida[i]!
+    const ctx = contexto(e.fraseId)
+    const junta = ctx ? juntarEmUma(e) : null
+    if (!ctx || !junta) return false
+    saida[i] = encaixarEscolha(junta, ctx).escolha
+    juntadas.push(e.fraseId)
+    return true
+  }
+  // 1. Pedaco abaixo do minimo.
+  saida.forEach((e, i) => {
+    if (podeJuntar(e) && duracoes(e).some((d) => d < minimo - 1e-6)) juntar(i)
+  })
+  // 2. A rajada: 3 cenas seguidas abaixo de RAJADA_SEC.
+  for (let volta = 0; volta < VOLTAS_SEM_PISCAR; volta++) {
+    const cenas = saida.flatMap((e, i) => duracoes(e).map((d) => ({ i, d })))
+    let juntou = false
+    for (let k = 0; k + 2 < cenas.length && !juntou; k++) {
+      const trio = cenas.slice(k, k + 3)
+      if (!trio.every((c) => c.d < RAJADA_SEC - 1e-6)) continue
+      const frases = [...new Set(trio.map((c) => c.i))].filter((i) => podeJuntar(saida[i]!))
+      frases.sort((a, b) => Math.min(...duracoes(saida[a]!)) - Math.min(...duracoes(saida[b]!)))
+      for (const i of frases) if (juntar(i)) {
+        juntou = true
+        break
+      }
+    }
+    if (!juntou) break
+  }
+  return { escolhas: saida, juntadas }
 }

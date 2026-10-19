@@ -1001,7 +1001,9 @@ function conferir(): void {
   const d = escolhasDesatualizadas(roteiro, take, cenas)
   // Corte refeito: escolha com plano que o indice novo nao tem (o main refaz, mesmo travada).
   const foraDoIndice = escolhasForaDoIndice(cenas, indice.planos)
-  const refazer = [...new Set([...d.semEscolha, ...d.textoMudou.filter((id) => !escolhaDaFrase(cenas, id)?.travada), ...foraDoIndice])]
+  // Sugeridas pela estimativa antes da voz: com a voz aprovada, o casar refaz no tempo real (o main confere igual).
+  const pelaVoz = podeIrParaCenas(rascunho, roteiro) ? d.antesDaVoz : []
+  const refazer = [...new Set([...d.semEscolha, ...d.textoMudou.filter((id) => !escolhaDaFrase(cenas, id)?.travada), ...foraDoIndice, ...pelaVoz])]
   const id = rascunho.id
   if (refazer.length > 0 || d.orfas.length > 0) {
     const chave = [id, roteiro.versao, indice.planos.length, refazer.join(','), d.orfas.join(',')].join('|')

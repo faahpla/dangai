@@ -550,6 +550,15 @@ export interface CenasDesatualizadas {
   encaixeVelho: boolean
   /** Frases cuja duracao agora difere da usada no encaixe (regravada, take trocado). */
   duracaoMudou: string[]
+  /**
+   * (19/10) As escolhas que o casar fez ANTES desta voz existir (sugeridasEm
+   * antes do take), sem mexida dele: o casar refaz com o tempo real das falas.
+   * A sugestao corre em segundo plano assim que o roteiro e aprovado, pela
+   * estimativa (2,7 palavras/s); no MRM E02 a voz saiu ~40% mais rapida e as
+   * frases divididas pela estimativa ficaram com pedacos de 0,6-0,9 s. Quem
+   * chama so refaz com a voz aprovada (podeIrParaCenas).
+   */
+  antesDaVoz: string[]
 }
 
 /**
@@ -559,8 +568,8 @@ export interface CenasDesatualizadas {
  */
 export function escolhasDesatualizadas(
   roteiro: Pick<Roteiro, 'secoes'>,
-  take: Pick<TakeDaVoz, 'id' | 'trechos'> | null,
-  cenas: Pick<EstadoDasCenas, 'escolhas' | 'takeId'> | null,
+  take: (Pick<TakeDaVoz, 'id' | 'trechos'> & Partial<Pick<TakeDaVoz, 'criadoEm'>>) | null,
+  cenas: (Pick<EstadoDasCenas, 'escolhas' | 'takeId'> & Partial<Pick<EstadoDasCenas, 'sugeridasEm'>>) | null,
 ): CenasDesatualizadas {
   const frases = frasesDoRoteiro(roteiro)
   const noRoteiro = new Set(frases.map((f) => f.id))
@@ -579,10 +588,16 @@ export function escolhasDesatualizadas(
   }
   const orfas = (cenas?.escolhas ?? []).filter((e) => !noRoteiro.has(e.fraseId)).map((e) => e.fraseId)
   const encaixeVelho = (cenas?.escolhas.length ?? 0) > 0 && (take?.id ?? null) !== (cenas?.takeId ?? null)
-  return { semEscolha, textoMudou, orfas, encaixeVelho, duracaoMudou }
+  // Sugeridas antes do take (ISO compara como texto): as que ele nao mexeu voltam ao casar.
+  const sugeridas = cenas?.sugeridasEm ?? null
+  const antesDaVoz =
+    take?.criadoEm && sugeridas && sugeridas < take.criadoEm
+      ? (cenas?.escolhas ?? []).filter((e) => !e.travada && noRoteiro.has(e.fraseId)).map((e) => e.fraseId)
+      : []
+  return { semEscolha, textoMudou, orfas, encaixeVelho, duracaoMudou, antesDaVoz }
 }
 
-/** Nada a sugerir nem a encaixar. */
+/** Nada a sugerir nem a encaixar (o `antesDaVoz` fica de fora: so conta com a voz aprovada). */
 export function cenasEmDia(d: CenasDesatualizadas): boolean {
   return (
     d.semEscolha.length === 0 &&

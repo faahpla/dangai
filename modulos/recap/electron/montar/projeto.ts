@@ -145,6 +145,8 @@ export interface EntradaDaMontagem {
    * `personagens` de `studio.secoes`. Ausente = os personagens dos eventos.
    */
   nomesDasFrases?: ReadonlyMap<string, readonly string[]>
+  /** O minimo na tela das emendas (config Cenas). Ausente = o padrao. */
+  minimoSec?: number
 }
 
 /**
@@ -199,7 +201,7 @@ export function pedacosDaMontagem(e: Omit<EntradaDaMontagem, 'narracaoPath' | 'f
         escolha = { ...escolha, cenas: [{ candidato: primeira, palavraInicio: 0 }] }
         avisos.push(`${frase.id}: sem cena escolhida, entrou a 1a sugestao`)
       }
-      const ctx = { indice: e.indice, frase, take: e.take }
+      const ctx = { indice: e.indice, frase, take: e.take, ...(e.minimoSec !== undefined ? { minimoSec: e.minimoSec } : {}) }
       const feito = encaixarEscolha(escolha, ctx)
       avisos.push(...feito.avisos)
       const tempos = temposDasCenas(feito.escolha, frase, e.take)

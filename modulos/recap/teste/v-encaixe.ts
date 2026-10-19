@@ -223,25 +223,29 @@ console.log('M. sem take: a estimativa')
   confere(perto(r.escolha.duracao, estimada) && perto(imagem(r.escolha), estimada), `duracao estimada ${estimada.toFixed(3)} s, imagem ${imagem(r.escolha).toFixed(3)}`)
 }
 
-console.log('O. emenda sem relance (pedaco < 0,8 s = o flash do editor)')
+console.log('O. emenda sem relance (pedaco < 1,0 s, o minimo na tela padrao desde 19/10)')
 {
   // O1: falta 0,4 s -> segura o ultimo quadro em vez de 0,4 s do 0002.
   const r1 = encaixa(escolha([{ c: cand(['0001']), palavra: 0 }]), take(3.4))
   const c1 = r1.escolha.cenas[0]!.candidato
   confere(c1.planoIds.join() === '0001' && perto(c1.inSec, 100) && perto(c1.outSec, 103) && r1.avisos.length === 0, `falta 0,4 s: fica no 0001 e segura [${c1.inSec}, ${c1.outSec}] ${r1.avisos.join(' | ')}`)
   confere(JSON.stringify(encaixa(r1.escolha, take(3.4)).escolha) === JSON.stringify(r1.escolha), 'O1 idempotente')
-  // O2: falta 0,6 s -> emenda, mas a janela anda 0,2 s: o 0002 entra com 0,8 s.
+  // O2: falta 0,6 s -> emenda, mas a janela anda 0,4 s: o 0002 entra com o minimo (1,0 s).
   const r2 = encaixa(escolha([{ c: cand(['0001']), palavra: 0 }]), take(3.6))
   const c2 = r2.escolha.cenas[0]!.candidato
   const pedacos2 = trechosDoCandidato(c2, P).map((t) => t.ate - t.de)
-  confere(c2.planoIds.join() === '0001,0002' && perto(c2.inSec, 100.2) && perto(c2.outSec, 103.8), `falta 0,6 s: ${c2.planoIds.join('+')} [${c2.inSec.toFixed(3)}, ${c2.outSec.toFixed(3)}]`)
-  confere(pedacos2.every((d) => d >= 0.8 - 1e-6) && perto(imagem(r2.escolha), 3.6), `pedacos ${pedacos2.map((d) => d.toFixed(2)).join(' + ')} (nenhum < 0,8 s), imagem 3,6 s`)
+  confere(c2.planoIds.join() === '0001,0002' && perto(c2.inSec, 100.4) && perto(c2.outSec, 104), `falta 0,6 s: ${c2.planoIds.join('+')} [${c2.inSec.toFixed(3)}, ${c2.outSec.toFixed(3)}]`)
+  confere(pedacos2.every((d) => d >= 1 - 1e-6) && perto(imagem(r2.escolha), 3.6), `pedacos ${pedacos2.map((d) => d.toFixed(2)).join(' + ')} (nenhum < 1,0 s), imagem 3,6 s`)
+  // O2b: com o minimo da config em 0,8 s, o de antes (a janela anda 0,2 s).
+  const r2b = encaixarEscolha(escolha([{ c: cand(['0001']), palavra: 0 }]), { indice, frase: frase(), take: take(3.6), minimoSec: 0.8 })
+  const c2b = r2b.escolha.cenas[0]!.candidato
+  confere(perto(c2b.inSec, 100.2) && perto(c2b.outSec, 103.8), `minimo 0,8 s: [${c2b.inSec.toFixed(3)}, ${c2b.outSec.toFixed(3)}]`)
   confere(JSON.stringify(encaixa(r2.escolha, take(3.6)).escolha) === JSON.stringify(r2.escolha), 'O2 idempotente')
   // O3: fala citada 0,2 s antes do fim do plano numa frase longa: o relance do comeco sai.
   const r3 = encaixa(escolha([{ c: cand(['0001']), palavra: 0 }]), take(3.5), frase('c0003'))
   const c3 = r3.escolha.cenas[0]!.candidato
   const pedacos3 = trechosDoCandidato(c3, P).map((t) => t.ate - t.de)
-  confere(pedacos3.every((d) => d >= 0.8 - 1e-6) && !r3.escolha.avisos.includes(AVISO_CENA_CURTA), `citada no fim do plano: ${c3.planoIds.join('+')} [${c3.inSec.toFixed(3)}, ${c3.outSec.toFixed(3)}] pedacos ${pedacos3.map((d) => d.toFixed(2)).join(' + ')}`)
+  confere(pedacos3.every((d) => d >= 1 - 1e-6) && !r3.escolha.avisos.includes(AVISO_CENA_CURTA), `citada no fim do plano: ${c3.planoIds.join('+')} [${c3.inSec.toFixed(3)}, ${c3.outSec.toFixed(3)}] pedacos ${pedacos3.map((d) => d.toFixed(2)).join(' + ')}`)
   confere(JSON.stringify(encaixa(r3.escolha, take(3.5), frase('c0003')).escolha) === JSON.stringify(r3.escolha), 'O3 idempotente')
 }
 
