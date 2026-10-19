@@ -33,7 +33,7 @@ import {
   rostosDaMontagem,
   somDaMontagem,
 } from './edicao-rapida'
-import { focosDosPedacos } from './foco'
+import { focosDosPedacos, trechosParaFocar } from './foco'
 import { arquivoDoProjeto, conferirPastaPedida, nomeDoProjeto, nomeDosArquivos, pastaPadraoDoProjeto } from './pasta'
 import { ganchoDaMontagem, montarArquivoDoProjeto, pedacosDaMontagem, type FocoDoPedaco } from './projeto'
 import { textosDaMontagem } from './textos'
@@ -328,9 +328,9 @@ async function montarAqui(
   const rostos = async (): Promise<{ focos: Map<string, FocoDoPedaco>; lote: RostosDoLote | null; avisos: string[] }> => {
     if (opcoes.rostos === false) return { focos: new Map(), lote: null, avisos: [] }
     if (config?.rosto) {
-      return rostosDaMontagem(previa.pedacos, nomes.porPedaco, r.episodioId, opcoes.tetoDosRostosMs, nomes.elenco)
+      return rostosDaMontagem(previa.pedacos, nomes.porPedaco, r.episodioId, opcoes.tetoDosRostosMs, nomes.elenco, nomes.porFrase)
     }
-    return { focos: await focosDosPedacos(previa.pedacos, opcoes.tetoDosRostosMs), lote: null, avisos: [] }
+    return { focos: await focosDosPedacos(trechosParaFocar(previa.pedacos), opcoes.tetoDosRostosMs), lote: null, avisos: [] }
   }
 
   // 5. O som da Edicao rapida: whoosh nas viradas, impacto no gancho e no

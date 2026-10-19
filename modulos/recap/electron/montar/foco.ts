@@ -1,7 +1,8 @@
-import { medidasDo, type Formato } from '@shared/contract'
+import type { Formato } from '@shared/contract'
+import { medidasDoQuadro, type QuadroDoRecorte } from '../../shared/recorte'
 import { rostoNosInstantes } from '../assets'
 import { probeClip } from '../clips'
-import { chaveDoPedaco, type FocoDoPedaco, type PedacoDaMontagem } from './projeto'
+import { chaveDaMetade, chaveDoPedaco, type FocoDoPedaco, type PedacoDaMontagem } from './projeto'
 
 /**
  * O ENQUADRAMENTO 9:16 de cada bloco do projeto montado, pelo mesmo detector
@@ -45,9 +46,9 @@ export function focoNoQuadro(
   ponto: { centroX: number; centroY: number },
   largura: number,
   altura: number,
-  formato: Formato = 'short',
+  formato: QuadroDoRecorte = 'short',
 ): { focusX: number; focusY: number } {
-  const quadro = medidasDo(formato)
+  const quadro = medidasDoQuadro(formato)
   const escala = Math.max(quadro.renderWidth / largura, quadro.renderHeight / altura)
   const w = Math.max(Math.ceil(largura * escala), quadro.renderWidth)
   const h = Math.max(Math.ceil(altura * escala), quadro.renderHeight)
@@ -60,14 +61,33 @@ export function focoNoQuadro(
   }
 }
 
+/** Um trecho para enquadrar: `metade` = uma metade do grid (a janela 9:8, chaveDaMetade). */
+export type TrechoParaFocar = Pick<PedacoDaMontagem, 'arquivo' | 'de' | 'ate'> & { metade?: boolean }
+
+/**
+ * (rodada 4) Os trechos que a montagem enquadra: cada pedaco e, no grid, as
+ * DUAS metades, cada uma na janela dela (o trecho que toca: `de` ate `de` + o
+ * tempo do bloco).
+ */
+export function trechosParaFocar(pedacos: readonly Pick<PedacoDaMontagem, 'arquivo' | 'de' | 'ate' | 'inicio' | 'fim' | 'baixo'>[]): TrechoParaFocar[] {
+  return pedacos.flatMap((p): TrechoParaFocar[] => {
+    if (!p.baixo) return [{ arquivo: p.arquivo, de: p.de, ate: p.ate }]
+    const dura = Math.max(p.fim - p.inicio, 0)
+    return [
+      { arquivo: p.arquivo, de: p.de, ate: p.de + dura, metade: true },
+      { arquivo: p.baixo.arquivo, de: p.baixo.de, ate: p.baixo.de + dura, metade: true },
+    ]
+  })
+}
+
 export async function focosDosPedacos(
-  pedacos: readonly Pick<PedacoDaMontagem, 'arquivo' | 'de' | 'ate'>[],
+  pedacos: readonly TrechoParaFocar[],
   tetoMs = TETO_DOS_ROSTOS_MS,
   formato: Formato = 'short',
 ): Promise<Map<string, FocoDoPedaco>> {
   const focos = new Map<string, FocoDoPedaco>()
-  const unicos = new Map<string, Pick<PedacoDaMontagem, 'arquivo' | 'de' | 'ate'>>()
-  for (const p of pedacos) unicos.set(chaveDoPedaco(p), p)
+  const unicos = new Map<string, TrechoParaFocar>()
+  for (const p of pedacos) unicos.set(p.metade ? chaveDaMetade(p) : chaveDoPedaco(p), p)
   const fila = [...unicos.entries()]
   const limite = Date.now() + tetoMs
   const medidas = new Map<string, Promise<{ width: number; height: number } | null>>()
@@ -94,7 +114,10 @@ export async function focosDosPedacos(
         const [achados, medida] = await Promise.all([rostoNosInstantes(p.arquivo, instantes), medir(p.arquivo)])
         let maior: { centroX: number; centroY: number; area: number } | null = null
         for (const r of achados) if (r && (maior === null || r.area > maior.area)) maior = r
-        if (maior && medida) focos.set(chave, { ...focoNoQuadro(maior, medida.width, medida.height, formato), focusAuto: true })
+        if (maior && medida) {
+          const quadro: QuadroDoRecorte = p.metade ? 'metade' : formato
+          focos.set(chave, { ...focoNoQuadro(maior, medida.width, medida.height, quadro), focusAuto: true })
+        }
       } catch {
         // Fica no centro.
       }

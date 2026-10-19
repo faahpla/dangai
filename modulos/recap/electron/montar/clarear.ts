@@ -83,7 +83,8 @@ export async function clarearDaMontagem(e: {
     try {
       const plano = planos.get(p.planoId)
       const dura = p.fim - p.inicio
-      if (!plano || !(dura > 0)) continue
+      // (rodada 4) O grid fica de fora: a camada clarearia as duas metades por causa de uma.
+      if (!plano || !(dura > 0) || p.baixo) continue
       const kf = keyframeDoMeio(plano, p.de, p.de + dura)
       if (!kf) continue
       const rgb = await recorteDaTela(kf, e.focos.get(chaveDoPedaco(p))?.focusX ?? 0.5, formato)

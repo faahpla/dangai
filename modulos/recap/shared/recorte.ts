@@ -11,13 +11,28 @@ import { medidasDo, type Formato } from '@shared/contract'
  */
 
 /**
+ * (rodada 4) O QUADRO de um recorte: o formato do video ('short' 9:16, 'long'
+ * 16:9) ou a METADE do grid -- cada metade da tela dividida do short, 1080x960
+ * (9:8). A metade parte do arquivo original com `cover` (Scene.tsx, Metade):
+ * sem a folga do Ken Burns do recorte pronto, a caixa e o que se ve.
+ */
+export type QuadroDoRecorte = Formato | 'metade'
+
+/** As medidas do quadro: as do formato, ou as da metade do short (sem folga). */
+export function medidasDoQuadro(q: QuadroDoRecorte): { width: number; height: number; renderWidth: number; renderHeight: number } {
+  if (q !== 'metade') return medidasDo(q)
+  const m = medidasDo('short')
+  return { width: m.width, height: m.height / 2, renderWidth: m.width, renderHeight: m.height / 2 }
+}
+
+/**
  * A parte do quadro que a tela mostra, em fracao da largura: o centro e a
  * largura. A mesma conta do focoNoQuadro (montar/foco.ts) e do render: a caixa
  * do render (com a folga do Ken Burns) anda pelo focusX, e o que se ve e o
  * meio dela.
  */
-export function janelaVisivel(focusX: number, largura: number, altura: number, formato: Formato = 'short'): { centro: number; largura: number } {
-  const m = medidasDo(formato)
+export function janelaVisivel(focusX: number, largura: number, altura: number, formato: QuadroDoRecorte = 'short'): { centro: number; largura: number } {
+  const m = medidasDoQuadro(formato)
   if (!(largura > 0) || !(altura > 0)) return { centro: 0.5, largura: 1 }
   const escala = Math.max(m.renderWidth / largura, m.renderHeight / altura)
   const caixa = Math.min(largura, m.renderWidth / escala)

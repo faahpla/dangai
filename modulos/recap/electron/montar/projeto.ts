@@ -89,6 +89,15 @@ export interface FocoDoPedaco {
   focusAuto: boolean
 }
 
+/** (rodada 4) A metade de BAIXO de um bloco em grid: o mp4 e o trecho dele que toca junto. */
+export interface MetadeDaMontagem {
+  planoId: string
+  arquivo: string
+  /** Segundos DENTRO do mp4: `de` vira o sourceStartB do bloco. */
+  de: number
+  ate: number
+}
+
 /** Um bloco do plano antes de virar Scene: de onde vem a imagem e onde entra na narracao. */
 export interface PedacoDaMontagem {
   fraseId: string
@@ -106,11 +115,24 @@ export interface PedacoDaMontagem {
   inicio: number
   fim: number
   porque: string[]
+  /**
+   * (rodada 4) O GRID: a metade de baixo (a cena tem `baixo`). Este pedaco e
+   * a de cima; os dois enquadram na janela da METADE (1080x960), nao no 9:16.
+   */
+  baixo?: MetadeDaMontagem
 }
 
 /** Chave do foco de um pedaco: o mesmo mp4 pode entrar duas vezes, de pontos diferentes. */
 export function chaveDoPedaco(p: Pick<PedacoDaMontagem, 'arquivo' | 'de'>): string {
   return `${p.arquivo}@${p.de.toFixed(3)}`
+}
+
+/**
+ * (rodada 4) Chave do foco de uma METADE do grid: o mesmo mp4 e ponto, mas a
+ * janela e a da metade (9:8), e o foco do 9:16 erra ate 646 px nela.
+ */
+export function chaveDaMetade(p: Pick<PedacoDaMontagem, 'arquivo' | 'de'>): string {
+  return `${chaveDoPedaco(p)}|metade`
 }
 
 export interface EntradaDaMontagem {
@@ -219,6 +241,9 @@ export function pedacosDaMontagem(e: Omit<EntradaDaMontagem, 'narracaoPath' | 'f
           avisos.push(`${frase.id}: cena sem arquivo`)
           return
         }
+        // (rodada 4) O grid: a metade de baixo toca junto, do comeco ao fim da cena.
+        const deBaixo = cena.baixo ? trechosDoCandidato(cena.baixo, e.indice.planos)[0] : undefined
+        if (cena.baixo && !deBaixo) avisos.push(`${frase.id}: metade de baixo sem arquivo, a cena fica cheia`)
         let cursor = inicio
         partes.forEach((p, j) => {
           if (cursor >= fim - 1e-9) return
@@ -236,6 +261,10 @@ export function pedacosDaMontagem(e: Omit<EntradaDaMontagem, 'narracaoPath' | 'f
             inicio: cursor,
             fim: ate,
             porque: cena.candidato.porque,
+            // Cima emendada (raro: so na mao): a de baixo continua de onde estava.
+            ...(deBaixo
+              ? { baixo: { planoId: deBaixo.planoId, arquivo: deBaixo.arquivo, de: deBaixo.de + (cursor - inicio), ate: deBaixo.ate } }
+              : {}),
           })
           cursor = ate
         })
@@ -341,19 +370,25 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
   const papeis = e.roteiro.secoes.map((s) => ROTULO_DO_PAPEL[s.papel])
   const duracao = e.take.duracao
 
-  const images = pedacos.map((p) => {
-    const foco = e.focos?.get(chaveDoPedaco(p))
-    return {
-      path: p.arquivo,
-      rel: null,
-      fileName: basename(p.arquivo),
-      focusX: foco?.focusX ?? 0.5,
-      focusY: foco?.focusY ?? 0.5,
-      focusAuto: foco?.focusAuto ?? false,
-      section: p.secao,
-      sectionName: papeis[p.secao] ?? `Parte ${p.secao + 1}`,
-      invertido: false,
-    }
+  // Uma imagem por pedaco e, no grid, a da metade de baixo logo depois (como os
+  // `pares` da montagem automatica do nucleo). As duas metades enquadram na
+  // janela da metade (chaveDaMetade): o foco do 9:16 erra nela.
+  const imagem = (arquivo: string, foco: FocoDoPedaco | undefined, secao: number) => ({
+    path: arquivo,
+    rel: null,
+    fileName: basename(arquivo),
+    focusX: foco?.focusX ?? 0.5,
+    focusY: foco?.focusY ?? 0.5,
+    focusAuto: foco?.focusAuto ?? false,
+    section: secao,
+    sectionName: papeis[secao] ?? `Parte ${secao + 1}`,
+    invertido: false,
+  })
+  const images: ReturnType<typeof imagem>[] = []
+  const indices = pedacos.map((p) => {
+    const cima = images.push(imagem(p.arquivo, e.focos?.get(p.baixo ? chaveDaMetade(p) : chaveDoPedaco(p)), p.secao)) - 1
+    const baixo = p.baixo ? images.push(imagem(p.baixo.arquivo, e.focos?.get(chaveDaMetade(p.baixo)), p.secao)) - 1 : null
+    return { cima, baixo }
   })
 
   const scenes: Scene[] = pedacos.map((p, j) => {
@@ -363,24 +398,30 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
     const start = j === 0 ? 0 : p.inicio
     const end = seguinte ? seguinte.inicio : Math.max(duracao, p.fim)
     const virada = j > 0 && p.secao !== pedacos[j - 1]!.secao
+    const { cima, baixo } = indices[j]!
+    // (rodada 4) O grid nasce como o nucleo recomenda (planoDosBlocos): as metades
+    // indo para lados opostos -- cima para a esquerda, baixo para a direita --, na
+    // mesma intensidade (intensityB null segue a de cima).
+    const metade = p.baixo && baixo !== null ? p.baixo : null
+    const porque = p.porque.length > 0 ? `: ${p.porque.join(', ')}` : ''
     return {
-      imageIndex: j,
-      imageIndexB: null,
+      imageIndex: cima,
+      imageIndexB: metade ? baixo : null,
       start,
       end,
-      effect: KEN_BURNS_EFFECTS[j % KEN_BURNS_EFFECTS.length]!,
+      effect: metade ? 'pan-left' : KEN_BURNS_EFFECTS[j % KEN_BURNS_EFFECTS.length]!,
       intensity: CLIP_INTENSITY,
-      effectB: null,
+      effectB: metade ? 'pan-right' : null,
       intensityB: null,
       curve: CLIP_MOTION_CURVE,
       curvePoints: null,
       camera: null,
       sourceStart: p.de,
-      sourceStartB: 0,
+      sourceStartB: metade ? metade.de : 0,
       rotation: 0,
       transitionIn: virada ? TRANSICAO_DA_VIRADA : 'cut',
       ...(virada ? { transicao: { frames: QUADROS_DA_VIRADA } } : {}),
-      reason: p.porque.length > 0 ? `${p.fraseId}: ${p.porque.join(', ')}` : p.fraseId,
+      reason: metade ? `${p.fraseId}: grid ${p.planoId} / ${metade.planoId}${porque}` : `${p.fraseId}${porque}`,
     }
   })
 

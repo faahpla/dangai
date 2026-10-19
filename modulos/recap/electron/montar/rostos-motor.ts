@@ -3,17 +3,19 @@ import { createHash } from 'node:crypto'
 import sharp from 'sharp'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, join } from 'node:path'
-import { medidasDo, type Formato } from '@shared/contract'
+import type { Formato } from '@shared/contract'
 import type { FocoDoRosto, FonteDoRosto, LoteDeRostos, PedidoDeRosto, RostosDoLote } from '../../shared/edicao-rapida'
 import type { EpisodeIndex, Plano } from '../../shared/episodio'
 import {
   descritorDoRecorte,
   janelaVisivel,
+  medidasDoQuadro,
   RECORTE_ALTURA,
   RECORTE_IGUAL,
   RECORTE_LARGURA,
   semelhancaDosRecortes,
   type DescritorDoRecorte,
+  type QuadroDoRecorte,
 } from '../../shared/recorte'
 import { posDoKeyframe } from '../../shared/visao'
 import { fichasDoNome } from '@shared/nomes'
@@ -23,7 +25,7 @@ import { elencoPrincipal } from '../cenas/casar'
 import { ffmpegPath } from '../ffmpeg-path'
 import { configDoMotor, pastaDeDadosDoMotor } from '../motor'
 import { focoNoQuadro, focosDosPedacos, instantesDoTrecho } from './foco'
-import { chaveDoPedaco } from './projeto'
+import { chaveDaMetade, chaveDoPedaco } from './projeto'
 import { pythonDoMotor } from '../python-do-motor'
 import { ambienteDoRuntime, backendDoRuntime, usaRuntime } from '../motor-runtime'
 
@@ -196,9 +198,9 @@ export function mesmaPessoa(a: string, b: string): boolean {
   return true
 }
 
-/** A largura visivel da janela do formato, em fracao da largura do quadro. */
-export function janelaDoFormato(largura: number, altura: number, formato: Formato = 'short'): number {
-  const m = medidasDo(formato)
+/** A largura visivel da janela do formato (ou da metade do grid), em fracao da largura do quadro. */
+export function janelaDoFormato(largura: number, altura: number, formato: QuadroDoRecorte = 'short'): number {
+  const m = medidasDoQuadro(formato)
   const escala = Math.max(m.renderWidth / largura, m.renderHeight / altura)
   return Math.min(1, m.width / escala / largura)
 }
@@ -606,6 +608,8 @@ export interface ItemDoMotor {
    * nao identifica.
    */
   candidatos: string[]
+  /** (rodada 4) A janela DESTE item (a metade do grid), no lugar da do lote. Ausente = a do lote. */
+  aspecto?: number
 }
 
 export interface RespostaDoMotor {
@@ -1166,9 +1170,14 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
   const noPlanoDe = personagensPorArquivo(indice)
   // O elenco principal (quem mais aparece no indice) e o do roteiro: o conjunto fechado de cada pedaco.
   const elenco = [...(indice ? elencoPrincipal(indice) : []), ...(lote.elenco ?? [])]
-  const medidas = medidasDo(formato)
+  // (rodada 4) O quadro de cada pedido: o do formato, ou a METADE do grid (a janela 9:8).
+  const quadroDe = (p: Pick<PedidoDeRosto, 'metade'>): QuadroDoRecorte => (p.metade ? 'metade' : formato)
   // A largura visivel do recorte sobre a altura do quadro (as janelas do motor, janelaDoFormato).
-  const aspecto = medidas.width / medidas.renderHeight
+  const aspectoDe = (q: QuadroDoRecorte): number => {
+    const m = medidasDoQuadro(q)
+    return m.width / m.renderHeight
+  }
+  const aspecto = aspectoDe(formato)
 
   // Um item por chave (o mesmo pedaco pode vir duas vezes).
   const unicos = new Map<string, PedidoDeRosto>()
@@ -1186,10 +1195,12 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
       instantes: instantesDoTrecho(p.de, Math.max(p.ate, p.de)),
       personagens: citadosNaOrdem(p.personagens),
       candidatos: candidatosDoPedaco(p.personagens, noPlanoDe(p.arquivo), elenco),
+      ...(p.metade ? { aspecto: aspectoDe('metade') } : {}),
     }))
+    const pedidoDe = new Map(pedidos.map((p) => [p.chave, p]))
     const arquivoCache = arquivoDoCache(o)
     const cache = lerCache(arquivoCache)
-    const chaves = new Map(itens.map((it) => [it.chave, chaveDoCache(it, aspecto, identificar)]))
+    const chaves = new Map(itens.map((it) => [it.chave, chaveDoCache(it, it.aspecto ?? aspecto, identificar)]))
     for (const it of itens) {
       const k = chaves.get(it.chave)
       const pronto = k ? cache.get(k) : undefined
@@ -1224,13 +1235,14 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
     for (const item of itens) {
       const achado = resultados.get(item.chave)
       if (!achado) continue
+      const quadro = quadroDe(pedidoDe.get(item.chave) ?? {})
       const escolha = escolherNoPedaco(
         achado,
         item.personagens,
         noPlanoDe(item.arquivo),
-        janelaDoFormato(achado.largura || 1920, achado.altura || 1080, formato),
+        janelaDoFormato(achado.largura || 1920, achado.altura || 1080, quadro),
       )
-      const foco = escolha.centro ? focoNoQuadro(escolha.centro, achado.largura, achado.altura, formato) : null
+      const foco = escolha.centro ? focoNoQuadro(escolha.centro, achado.largura, achado.altura, quadro) : null
       if (escolha.olho) noOlho.push(item.arquivo.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, ''))
       focos.set(item.chave, {
         chave: item.chave,
@@ -1253,7 +1265,7 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
     if (resta > 500) {
       try {
         achados = await focosDosPedacos(
-          faltam.map((p) => ({ arquivo: p.arquivo, de: p.de, ate: Math.max(p.ate, p.de) })),
+          faltam.map((p) => ({ arquivo: p.arquivo, de: p.de, ate: Math.max(p.ate, p.de), ...(p.metade ? { metade: true } : {}) })),
           resta,
           formato,
         )
@@ -1264,7 +1276,7 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
       avisos.push('Sem tempo para procurar os rostos que faltaram: ficam no centro.')
     }
     for (const p of faltam) {
-      const f = achados.get(chaveDoPedaco({ arquivo: p.arquivo, de: p.de }))
+      const f = achados.get(p.metade ? chaveDaMetade({ arquivo: p.arquivo, de: p.de }) : chaveDoPedaco({ arquivo: p.arquivo, de: p.de }))
       focos.set(p.chave, {
         chave: p.chave,
         focusX: f?.focusX ?? 0.5,
@@ -1284,7 +1296,9 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
   // 3. (3a rodada) Cenas seguidas quase iguais DEPOIS do recorte: outro recorte numa delas.
   if (resultados.size > 0 && indice) {
     try {
-      avisos.push(...(await semRecortesIguais({ pedidos: lote.pedidos, focos, resultados, planoDe: planoPorArquivo(indice), formato })))
+      // (rodada 4) So a tela cheia: as metades do grid ficam juntas na tela, nao seguidas.
+      const cheios = lote.pedidos.filter((p) => !p.metade)
+      avisos.push(...(await semRecortesIguais({ pedidos: cheios, focos, resultados, planoDe: planoPorArquivo(indice), formato })))
     } catch {
       // Ajuste fino: sem ele, o recorte de cada pedaco fica o que o motor escolheu.
     }

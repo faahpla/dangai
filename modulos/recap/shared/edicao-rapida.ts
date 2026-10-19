@@ -1331,6 +1331,12 @@ export const pedidoDeRostoSchema = z.object({
    * maior rosto.
    */
   personagens: z.array(z.string().max(120)).max(20).default([]),
+  /**
+   * (rodada 4) Uma METADE do grid: o foco vale na janela da metade (1080x960,
+   * 9:8), nao na do formato -- o foco do 9:16 erra ate 646 px nela. Ausente =
+   * tela cheia.
+   */
+  metade: z.boolean().optional(),
 })
 export type PedidoDeRosto = z.infer<typeof pedidoDeRostoSchema>
 
@@ -1396,9 +1402,9 @@ export interface RostosDoLote {
   ms: number
 }
 
-/** A chave de um pedaco: igual ao chaveDoPedaco da montagem. */
-export function chaveDoPedidoDeRosto(arquivo: string, de: number): string {
-  return `${arquivo}@${de.toFixed(3)}`
+/** A chave de um pedaco: igual ao chaveDoPedaco da montagem (e ao chaveDaMetade, com `metade`). */
+export function chaveDoPedidoDeRosto(arquivo: string, de: number, metade = false): string {
+  return `${arquivo}@${de.toFixed(3)}${metade ? '|metade' : ''}`
 }
 
 // ===================================================================== resumo

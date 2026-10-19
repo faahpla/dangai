@@ -39,7 +39,7 @@ import type { Evento, Roteiro } from '../../shared/roteiro'
 import { configDoRecap } from '../contexto'
 import { registrarMusicaUsada } from '../som/musicas'
 import { planejarSom } from '../som/planejar'
-import { focosDosPedacos } from './foco'
+import { focosDosPedacos, trechosParaFocar } from './foco'
 import { chaveDoPedaco, type FocoDoPedaco, type PedacoDaMontagem } from './projeto'
 import { rostosDosPedacos } from './rostos-motor'
 
@@ -228,19 +228,32 @@ export async function rostosDaMontagem(
   tetoMs?: number,
   /** Quem o roteiro cita no video inteiro (NomesDaMontagem.elenco). */
   elenco: readonly string[] = [],
+  /**
+   * (rodada 4) Quem cada FRASE cita, na ordem (NomesDaMontagem.porFrase): as
+   * metades do grid enquadram por ela -- em cima o que a frase fala primeiro,
+   * como a ordem das metades (shared/grid.ts), e nao o que o pedaco cita.
+   */
+  porFrase?: ReadonlyMap<string, string[]>,
 ): Promise<{ focos: Map<string, FocoDoPedaco>; lote: RostosDoLote | null; avisos: string[] }> {
   const unicos = new Map<string, PedidoDeRosto>()
+  const pedir = (arquivo: string, de: number, dura: number, nomes: string[], metade: boolean): void => {
+    const chave = chaveDoPedidoDeRosto(arquivo, de, metade)
+    if (unicos.has(chave)) return
+    // O trecho que o bloco TOCA do mp4: de `de` ate `de` + o tempo do bloco.
+    unicos.set(chave, { chave, arquivo, de, ate: de + dura, personagens: nomes, ...(metade ? { metade: true } : {}) })
+  }
   for (const p of pedacos) {
-    const chave = chaveDoPedaco(p)
-    if (unicos.has(chave)) continue
-    unicos.set(chave, {
-      chave: chaveDoPedidoDeRosto(p.arquivo, p.de),
-      arquivo: p.arquivo,
-      de: p.de,
-      // O trecho que o bloco TOCA do mp4: de `de` ate `de` + o tempo do bloco.
-      ate: p.de + Math.max(p.fim - p.inicio, 0),
-      personagens: personagens.get(chave) ?? [],
-    })
+    const dura = Math.max(p.fim - p.inicio, 0)
+    const nomes = personagens.get(chaveDoPedaco(p)) ?? []
+    if (p.baixo) {
+      // (rodada 4) O grid: as duas metades, cada uma na janela dela (9:8). Em cima, quem
+      // a frase cita primeiro; embaixo, o mesmo elenco com o primeiro por ultimo.
+      const daFrase = porFrase?.get(p.fraseId) ?? nomes
+      pedir(p.arquivo, p.de, dura, daFrase, true)
+      pedir(p.baixo.arquivo, p.baixo.de, dura, [...daFrase.slice(1), ...daFrase.slice(0, 1)], true)
+    } else {
+      pedir(p.arquivo, p.de, dura, nomes, false)
+    }
   }
   const pedidos = [...unicos.values()]
   try {
@@ -259,7 +272,7 @@ export async function rostosDaMontagem(
     }
     return { focos, lote, avisos: lote.avisos }
   } catch (err) {
-    const focos = await focosDosPedacos(pedacos, tetoMs).catch(() => new Map<string, FocoDoPedaco>())
+    const focos = await focosDosPedacos(trechosParaFocar(pedacos), tetoMs).catch(() => new Map<string, FocoDoPedaco>())
     return { focos, lote: null, avisos: [`Rosto pelo detector antigo: ${mensagem(err)}`] }
   }
 }
