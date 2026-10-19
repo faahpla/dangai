@@ -7,6 +7,7 @@ import {
   forcaDoDesvio,
   mediaEDesvio,
   normalizarTag,
+  posDoKeyframe,
   produtoInterno,
   tagEmPortugues,
   tagUtil,
@@ -155,6 +156,15 @@ export const PESOS = {
   planoNoLimite: -60,
   /** A mesma cena por outro plano (planos vizinhos quase iguais no CLIP, grupoVisual), por vez. */
   mesmaCena: -12,
+  /**
+   * O GANCHO (a 1a frase) e o comeco de cada parte (19/10, MRM E02 abria em 2 s
+   * escuros): quadro escuro pesa contra (vezes a fracao abaixo de LUZ_BOA) e o
+   * quadro bonito (C7, desvios) a favor. A fala citada continua mandando.
+   */
+  escuroGancho: -60,
+  escuroSecao: -8,
+  bonitoGancho: 3,
+  bonitoSecao: 1.5,
   repeteRosto: -6,
   /** Dois closes seguidos da mesma pessoa (uma pessoa so na tela). */
   repeteRostoSeguido: -4,
@@ -233,10 +243,16 @@ const ESCURO_PULA_SEC = 2.5
 const RELANCE_SEC = 1
 /** A troca local so vale quando a soma das duas frases melhora pelo menos isto. */
 const TROCA_MINIMA = 1
+/** O nivel da janela em que o gancho comeca a procurar (niveisDaJanela: 3 = +-60 s do evento). */
+const NIVEL_DO_GANCHO = 3
 /** Quantas vezes, no maximo, o mesmo plano aparece no video (em trechos separados). */
 export const PLANO_VEZES_MAX = 2
 /** Planos vizinhos (1 ou 2 de distancia) com CLIP acima disto sao a mesma cena (medido no MRM E02: p97 de planos distantes). */
 const MESMA_CENA_CLIP = 0.88
+/** Luz media (0-255) dos keyframes abaixo da qual o quadro conta como escuro no gancho (p25 do MRM E02). */
+export const LUZ_BOA = 90
+/** No plano em que a fala citada cai, o escuro do gancho pesa esta fracao (a citacao manda). */
+const ESCURO_COM_A_FALA = 0.2
 
 // ------------------------------------------------------------------- nomes
 
@@ -792,6 +808,8 @@ export interface VisaoDoEpisodio {
    * numero. Plano sem vetor fica sem grupo (so ele).
    */
   grupoVisual: Map<string, number>
+  /** (19/10) A luz media dos 3 keyframes de cada plano (0-255). Vazio = sem medida. */
+  luz: ReadonlyMap<string, readonly (number | null)[]>
 }
 
 /**
@@ -833,6 +851,7 @@ export function prepararVisao(
   indice: Pick<EpisodeIndex, 'cues'>,
   sinais: SinaisDoCasar = {},
   camadas: Partial<CamadasDoCasar> = {},
+  luz: ReadonlyMap<string, readonly (number | null)[]> = new Map(),
 ): VisaoDoEpisodio {
   const c: CamadasDoCasar = { ...CAMADAS_PADRAO, ...camadas }
   const cuesPerto = new Map<string, { id: string; peso: number }[]>()
@@ -876,7 +895,7 @@ export function prepararVisao(
   }
   const apagados = new Set<string>()
   for (const [id, qs] of sinais.quadros ?? []) if (qs.length > 0 && qs.every((q) => qualidade.get(q.arquivo)?.borrado)) apagados.add(id)
-  return { camadas: c, sinais, cuesPerto, idf, qualidade, apagados, grupoVisual: gruposVisuais(todos, sinais.quadros) }
+  return { camadas: c, sinais, cuesPerto, idf, qualidade, apagados, grupoVisual: gruposVisuais(todos, sinais.quadros), luz }
 }
 
 /**
@@ -1327,6 +1346,8 @@ interface ContextoDaFrase {
   sinais: SinaisDaFrase
   /** C7: o centro ampliado quando a ancora cai num plano apagado (centroAmpliado). null = o ponto. */
   centro: Intervalo | null
+  /** (19/10) A frase abre o video (gancho) ou uma parte do roteiro: foge do quadro escuro e borrado. */
+  abre: 'gancho' | 'secao' | null
   /** O minimo na tela de cada plano de um span (a config Cenas). */
   minimo: number
 }
@@ -1413,10 +1434,12 @@ function montarJanelas(
     const escuro = ancoraDentro === null && util.de <= p.plano.start + 0.05 && ctx.abremEscuro.has(p.plano.id)
     const inSec =
       ancoraDentro !== null
-        ? Math.max(util.de, Math.min(ancoraDentro, util.ate - d))
+        ? ctx.abre !== null
+          ? comecoClaroComAFala(p, util, d, ancoraDentro, ctx.visao)
+          : Math.max(util.de, Math.min(ancoraDentro, util.ate - d))
         : escuro
           ? util.de + Math.min(sobra, ESCURO_PULA_SEC)
-          : melhorComeco(p, util, d, ctx.visao)
+          : melhorComeco(p, util, d, ctx.visao, ctx.abre !== null)
     return [{ planos: [p], inSec, outSec: util.ate }]
   }
   if (!inteiro) return []
@@ -1443,6 +1466,45 @@ function montarJanelas(
   return planos.length > 1 ? [span, { planos: [p], inSec: util.de, outSec: util.ate }] : [span]
 }
 
+/** Luz que o comeco claro tem que ganhar para sair do lugar de sempre (0-255). */
+const CLAREIA_O_COMECO = 15
+
+/**
+ * (19/10) O gancho e o comeco da parte com a fala do momento DENTRO do plano:
+ * a fala manda (a janela continua com ela), mas dentro do que sobra a janela
+ * anda para os quadros mais claros (os keyframes que caem nela). Sem medida de
+ * luz, ou sem ganho de CLAREIA_O_COMECO, fica o de sempre (comecar na fala).
+ */
+function comecoClaroComAFala(p: PlanoDoCasar, util: Intervalo, d: number, ancora: number, v: VisaoDoEpisodio | null): number {
+  const deSempre = Math.max(util.de, Math.min(ancora, util.ate - d))
+  const luz = v?.luz.get(p.plano.id)
+  if (!luz) return deSempre
+  // A fala tem que continuar na janela: o comeco vai de (fala - d + 0,5) ate a propria fala.
+  const de = Math.max(util.de, ancora - d + 0.5)
+  const ate = Math.min(ancora, util.ate - d)
+  if (ate - de < 0.2) return deSempre
+  const dur = p.plano.end - p.plano.start
+  const luzDe = (inSec: number): number | null => {
+    const dentro = luz.filter((x, k): x is number => {
+      const t = p.plano.start + posDoKeyframe(k) * dur
+      return x !== null && t >= inSec - 0.05 && t <= inSec + d + 0.05
+    })
+    return dentro.length > 0 ? dentro.reduce((a, b) => a + b, 0) / dentro.length : null
+  }
+  const base = luzDe(deSempre)
+  let melhor = deSempre
+  let maior = base ?? -Infinity
+  for (let i = 0; i <= 4; i++) {
+    const inSec = de + ((ate - de) * i) / 4
+    const x = luzDe(inSec)
+    if (x !== null && x > maior) {
+      maior = x
+      melhor = inSec
+    }
+  }
+  return base === null || maior >= base + CLAREIA_O_COMECO ? melhor : deSempre
+}
+
 /**
  * C7: o comeco do trecho num plano que sobra (sem ancora dentro). Os
  * candidatos sao o comeco do plano (a montagem original) e cada keyframe um
@@ -1450,18 +1512,24 @@ function montarJanelas(
  * fugindo de quadro borrado (transicao, movimento). Sair do comeco exige
  * ganhar MELHOR_TRECHO_GANHO: na duvida, fica o corte original.
  */
-function melhorComeco(p: PlanoDoCasar, util: Intervalo, d: number, v: VisaoDoEpisodio | null): number {
+function melhorComeco(p: PlanoDoCasar, util: Intervalo, d: number, v: VisaoDoEpisodio | null, abre = false): number {
   if (!v || v.qualidade.size === 0 || util.ate - util.de - d < 0.8) return util.de
   const qs = v.sinais.quadros?.get(p.plano.id) ?? []
   if (qs.length === 0) return util.de
   const dur = p.plano.end - p.plano.start
+  // (19/10) No gancho e no comeco da parte, a luz do quadro conta junto: 1 desvio a cada LUZ_BOA/2 abaixo de LUZ_BOA.
+  const luz = abre ? v.luz.get(p.plano.id) : undefined
   const nota = (inSec: number): number | null => {
-    const dentro = quadrosNaJanela(p, inSec, inSec + d, v).flatMap((q) => {
+    const naJanela = quadrosNaJanela(p, inSec, inSec + d, v)
+    const dentro = naJanela.flatMap((q) => {
       const x = v.qualidade.get(q.arquivo)
       return x ? [x] : []
     })
     if (dentro.length === 0) return null
-    return dentro.reduce((s, x) => s + x.q, 0) / dentro.length - (dentro.some((x) => x.borrado) ? 1.5 : 0)
+    const escuro = luz
+      ? naJanela.reduce((s, q) => s + Math.max(0, LUZ_BOA - (luz[q.k] ?? LUZ_BOA)), 0) / naJanela.length / (LUZ_BOA / 2)
+      : 0
+    return dentro.reduce((s, x) => s + x.q, 0) / dentro.length - (dentro.some((x) => x.borrado) ? 1.5 : 0) - escuro
   }
   let melhor = util.de
   let maior = -Infinity
@@ -1693,6 +1761,8 @@ function pontuar(
       const qs = planos.flatMap((q) => quadrosNaJanela(q, inSec, fimReal, v)).flatMap((q) => v.qualidade.get(q.arquivo) ?? [])
       if (qs.length > 0 && qs.every((x) => x.borrado)) add('borrado', PESOS.borrado, 'borrado')
     }
+    // (19/10) O gancho e o comeco de cada parte: a luz e a beleza do que a tela mostra.
+    if (ctx.abre) for (const t of termosDaAbertura(planos, inSec, fimReal, ctx.abre, v, ctx.cueCitada)) termos.push(t)
   }
 
   // 5. Cronologia, continuidade e variedade (desempate).
@@ -1800,6 +1870,56 @@ function pedeOPlano(planos: readonly PlanoDoCasar[], j: JanelaDaFrase): boolean 
   if (!j.forte || !j.cueAncora || j.semCenas || j.herdada) return false
   const t = j.cueAncora.start + 0.2
   return planos.some((q) => t >= q.plano.start && t < q.plano.end)
+}
+
+/**
+ * (19/10) O GANCHO e o comeco de cada parte (MRM E02: os 2 primeiros segundos
+ * escuros). A luz dos keyframes que caem na janela (sem nenhum dentro, os do
+ * plano): abaixo de LUZ_BOA pesa contra, na fracao que falta; e a beleza do C7
+ * (desvios do episodio) soma ou tira. A fala CITADA continua mandando (no
+ * plano dela o escuro pesa ESCURO_COM_A_FALA); a cue do momento nao, e o
+ * gancho olha mais longe (NIVEL_DO_GANCHO) para achar um quadro claro.
+ */
+function termosDaAbertura(
+  planos: readonly PlanoDoCasar[],
+  inSec: number,
+  fimReal: number,
+  abre: 'gancho' | 'secao',
+  v: VisaoDoEpisodio,
+  /** A fala que a frase cita (ContextoDaFrase.cueCitada). null = nenhuma. */
+  citada: Pick<Cue, 'start' | 'end'> | null,
+): Termo[] {
+  const termos: Termo[] = []
+  const gancho = abre === 'gancho'
+  const luzes: number[] = []
+  for (const q of planos) {
+    const daqui = v.luz.get(q.plano.id)
+    if (!daqui) continue
+    const dur = q.plano.end - q.plano.start
+    const dentro = daqui.filter((x, k): x is number => {
+      const t = q.plano.start + posDoKeyframe(k) * dur
+      return x !== null && t >= inSec - 0.05 && t <= fimReal + 0.05
+    })
+    luzes.push(...(dentro.length > 0 ? dentro : daqui.filter((x): x is number => x !== null)))
+  }
+  if (luzes.length > 0) {
+    const luz = luzes.reduce((a, b) => a + b, 0) / luzes.length
+    const falta = Math.max(0, Math.min(1, (LUZ_BOA - luz) / LUZ_BOA))
+    // A fala CITADA (a frase cita a fala: a cena tem que mostra-la) no plano manda: o escuro so pesa 1/5.
+    // A cue do momento nao: no MRM E02 ela caia no plano escuro da chuva e o gancho ficava preto.
+    const manda = citada && planos.some((q) => citada.start + 0.2 >= q.plano.start && citada.start + 0.2 < q.plano.end) ? ESCURO_COM_A_FALA : 1
+    const valor = (gancho ? PESOS.escuroGancho : PESOS.escuroSecao) * falta * manda
+    if (Math.abs(valor) >= 0.05) termos.push({ chave: 'escuro', valor, rotulo: 'escuro' })
+  }
+  if (v.qualidade.size > 0) {
+    const qs = planos.flatMap((q) => quadrosNaJanela(q, inSec, fimReal, v)).flatMap((q) => v.qualidade.get(q.arquivo) ?? [])
+    if (qs.length > 0) {
+      const q = Math.max(-2, Math.min(2, qs.reduce((a, x) => a + x.q, 0) / qs.length))
+      const valor = (gancho ? PESOS.bonitoGancho : PESOS.bonitoSecao) * q
+      if (Math.abs(valor) >= 0.05) termos.push({ chave: 'bonito', valor, rotulo: valor > 0 ? 'bonito' : 'feio' })
+    }
+  }
+  return termos
 }
 
 /**
@@ -1923,6 +2043,9 @@ function fitaDaFrase(
         .filter((x) => x.partes.length > 0)
       const ultimo = n === niveis.length - 1
       if (base.length < CANDIDATOS_MIN && !ultimo) continue
+      // (19/10) O gancho olha mais longe (ate +-60 s do evento): o momento todo
+      // escuro (a expulsao na chuva do MRM E02) deixa o quadro claro concorrer.
+      if (ctx.abre === 'gancho' && n < NIVEL_DO_GANCHO && !ultimo) continue
       const janelas = base.flatMap(({ p, partes: ps }) => ps.flatMap(({ seg, inteiro }) => montarJanelas(p, seg, inteiro, todos, ctx, livre)))
       const pontuados = janelas.map((w) => {
         const fimReal = Math.min(w.outSec, w.inSec + ctx.duracao)
@@ -2006,6 +2129,14 @@ export interface EntradaDoCasar {
    * pela chave idDoPedaco (o servico mede); sem ele, o pedaco fica sem C1.
    */
   divisao?: OpcoesDaDivisao | null
+  /**
+   * (19/10) A luz media (0-255) dos 3 keyframes de cada plano (luzDosPlanos no
+   * servico): o gancho e o comeco de cada parte fogem do quadro escuro.
+   * Ausente = sem essa medida (como antes).
+   */
+  luz?: ReadonlyMap<string, readonly (number | null)[]>
+  /** As frases que abrem uma parte do roteiro (a 1a de todas e o gancho). Ausente = so a 1a frase. */
+  abrem?: ReadonlySet<string>
 }
 
 /** Um pedaco de uma frase dividida, como o casar o escolheu. */
@@ -2111,7 +2242,9 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   }
   // A imagem (C2) e as etiquetas (C3) da frase vao para o pedaco que a intencao descreve.
   const intencaoDe = new Map([...cortes].map(([i, c]) => [i, pedacoDaIntencao(e.frases[i]!.intencaoVisual, c, elenco)]))
-  const visao = prepararVisao(todos, e.indice, sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe), e.camadas ?? {})
+  const visao = prepararVisao(todos, e.indice, sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe), e.camadas ?? {}, e.luz ?? new Map())
+  // (19/10) O gancho (a 1a frase) e o comeco de cada parte fogem do escuro.
+  const abreDe = (i: number): 'gancho' | 'secao' | null => (i === 0 ? 'gancho' : e.abrem?.has(e.frases[i]!.id) ? 'secao' : null)
   // (19/10) O minimo na tela de cada plano de um span (a config Cenas).
   const minimo = e.divisao?.minimoSec === undefined ? MINIMO_NA_TELA_PADRAO_SEC : minimoNaTela(e.divisao.minimoSec)
   const sinaisPorFrase = new Map(e.frases.map((f) => [f.id, sinaisDaFrase(f.id, todos, visao)]))
@@ -2165,6 +2298,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
         centro: visao.camadas.melhorQuadro
           ? centroAmpliado(janelas[i]!.cueAncora ? janelas[i]!.cueAncora!.start + 0.2 : janelas[i]!.ancora, todos, visao)
           : null,
+        abre: abreDe(i),
         minimo,
       } satisfies Omit<ContextoDaFrase, 'anteriores'>,
     }
@@ -2254,6 +2388,8 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
           visao,
           sinais: sinaisK[k]!,
           centro: visao.camadas.melhorQuadro ? centroAmpliado(janela.cueAncora ? janela.cueAncora.start + 0.2 : janela.ancora, todos, visao) : null,
+          // So o 1o pedaco abre a parte (o comeco da frase e o da parte).
+          abre: k === 0 ? abreDe(i) : null,
           minimo,
         },
       }

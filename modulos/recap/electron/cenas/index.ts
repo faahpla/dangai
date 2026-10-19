@@ -1,7 +1,7 @@
 import sharp from 'sharp'
 import { temPlanos, type EpisodeIndex } from '../../shared/episodio'
 import { canonizar, nomeNatural } from '@shared/nomes'
-import { roteiroAtual, type RascunhoDoRecap } from '../../shared/roteiro'
+import { roteiroAtual, type RascunhoDoRecap, type Roteiro } from '../../shared/roteiro'
 import { podeIrParaCenas, takeAtual } from '../../shared/voz'
 import {
   aplicarEscolhas,
@@ -41,7 +41,7 @@ function agora(): string {
   return new Date().toISOString()
 }
 
-// ------------------------------------------------------- planos que abrem escuros
+// ------------------------------------------------------- a luz dos keyframes
 
 /** Luz media (0-255) do primeiro quadro abaixo da qual o plano "abre escuro" (o 0307 do S4 - 37 abre em ~20). */
 const LUZ_ESCURA = 32
@@ -50,7 +50,7 @@ const CLAREIA = 15
 /** Leituras de JPG ao mesmo tempo (o sharp usa o pool do libuv). */
 const LEITURAS_JUNTAS = 8
 
-const escurosPorIndice = new Map<string, Promise<Set<string>>>()
+const luzPorIndice = new Map<string, Promise<Map<string, (number | null)[]>>>()
 
 /** Luz media de um JPG, reduzido na decodificacao. null = nao deu para ler. */
 async function luzMedia(arquivo: string): Promise<number | null> {
@@ -65,34 +65,51 @@ async function luzMedia(arquivo: string): Promise<number | null> {
 }
 
 /**
- * Os planos que abrem escuros (fade do preto, a Terra nascendo no escuro): o
- * casar comeca a janela um pouco depois, se o plano sobra. Le o keyframe do
- * comeco (_0) e, se escuro, o do meio (_1), uma vez por indice. Falhou =
- * conjunto vazio (e so um ajuste fino, nunca impede a sugestao).
+ * A luz media (0-255) dos 3 keyframes de cada plano (_0, _1, _2: 25/50/75% do
+ * plano), uma vez por indice. O casar usa para o plano que abre escuro e (19/10)
+ * para o gancho e o comeco de cada parte: o MRM E02 abria em 2 s escuros (os
+ * planos 0006 e 0007, luz ~40 num episodio de mediana 139). Falhou = mapa
+ * vazio (ajuste fino, nunca impede a sugestao).
  */
-export function planosQueAbremEscuro(indice: Pick<EpisodeIndex, 'id' | 'planos' | 'atualizadoEm'>): Promise<Set<string>> {
+export function luzDosPlanos(indice: Pick<EpisodeIndex, 'id' | 'planos' | 'atualizadoEm'>): Promise<Map<string, (number | null)[]>> {
   const chave = `${indice.id}|${indice.planos.length}|${indice.atualizadoEm}`
-  const pronta = escurosPorIndice.get(chave)
+  const pronta = luzPorIndice.get(chave)
   if (pronta) return pronta
   const conta = (async () => {
-    const saida = new Set<string>()
+    const saida = new Map<string, (number | null)[]>()
     const comKeyframe = indice.planos.filter((p) => p.keyframe && /_1\.jpe?g$/i.test(p.keyframe))
     for (let i = 0; i < comKeyframe.length; i += LEITURAS_JUNTAS) {
       await Promise.all(
         comKeyframe.slice(i, i + LEITURAS_JUNTAS).map(async (p) => {
           const meio = p.keyframe!
-          const comeco = meio.replace(/_1(\.jpe?g)$/i, '_0$1')
-          const luz0 = await luzMedia(comeco)
-          if (luz0 === null || luz0 >= LUZ_ESCURA) return
-          const luz1 = await luzMedia(meio)
-          if (luz1 !== null && luz1 >= luz0 + CLAREIA) saida.add(p.id)
+          const luzes = await Promise.all([0, 1, 2].map((k) => luzMedia(meio.replace(/_1(\.jpe?g)$/i, `_${k}$1`))))
+          saida.set(p.id, luzes)
         }),
       )
     }
     return saida
-  })().catch(() => new Set<string>())
-  escurosPorIndice.set(chave, conta)
+  })().catch(() => new Map<string, (number | null)[]>())
+  luzPorIndice.set(chave, conta)
   return conta
+}
+
+/**
+ * Os planos que abrem escuros (fade do preto, a Terra nascendo no escuro): o
+ * casar comeca a janela um pouco depois, se o plano sobra. O keyframe do
+ * comeco (_0) escuro e o do meio (_1) clareando.
+ */
+export async function planosQueAbremEscuro(indice: Pick<EpisodeIndex, 'id' | 'planos' | 'atualizadoEm'>): Promise<Set<string>> {
+  const saida = new Set<string>()
+  for (const [id, [luz0, luz1]] of await luzDosPlanos(indice)) {
+    if (luz0 === null || luz0 === undefined || luz0 >= LUZ_ESCURA) continue
+    if (luz1 !== null && luz1 !== undefined && luz1 >= luz0 + CLAREIA) saida.add(id)
+  }
+  return saida
+}
+
+/** As frases que abrem uma parte do roteiro (a 1a de cada secao; a 1a de todas e o gancho). */
+export function frasesQueAbrem(roteiro: Pick<Roteiro, 'secoes'>): Set<string> {
+  return new Set(roteiro.secoes.flatMap((s) => (s.frases[0] ? [s.frases[0].id] : [])))
 }
 
 // ------------------------------------------------- o que se ve (lote 2)
@@ -172,7 +189,9 @@ function abrirParaCenas(r: RascunhoDoRecap): { indice: EpisodeIndex; roteiro: No
 export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
   // Os sinais (dicas, motor) e a luz dos keyframes antes: entre ler e gravar o rascunho nao ha await.
   const { sinais, camadas } = await sinaisParaOCasar(rascunhoId)
-  const abremEscuro = await planosQueAbremEscuro(abrirParaCenas(lerRascunhoDoDisco(rascunhoId)).indice)
+  const indiceAntes = abrirParaCenas(lerRascunhoDoDisco(rascunhoId)).indice
+  const abremEscuro = await planosQueAbremEscuro(indiceAntes)
+  const luz = await luzDosPlanos(indiceAntes)
   const r = lerRascunhoDoDisco(rascunhoId)
   const { indice, roteiro } = abrirParaCenas(r)
   const take = takeAtual(r)
@@ -191,7 +210,20 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
   const frases = frasesDoRoteiro(roteiro)
   const fixas = new Map(atual.escolhas.filter((e) => !refazer.has(e.fraseId)).map((e) => [e.fraseId, e]))
   const divisao = divisaoDaConfig(configDoRecap().cenas)
-  const { casadas, avisos } = casarFrases({ indice, eventos: r.eventos, frases, take, fixas, refazer, abremEscuro, sinais, camadas, divisao })
+  const { casadas, avisos } = casarFrases({
+    indice,
+    eventos: r.eventos,
+    frases,
+    take,
+    fixas,
+    refazer,
+    abremEscuro,
+    sinais,
+    camadas,
+    divisao,
+    luz,
+    abrem: frasesQueAbrem(roteiro),
+  })
   const quando = agora()
   const cenas = {
     ...aplicarEscolhas(atual, casadas.map((c) => c.escolha), roteiro),
@@ -322,9 +354,23 @@ export async function candidatosDaFrase(
   if (!escolha) {
     const fixas = new Map(cenas.escolhas.map((e): [string, EscolhaDaFrase] => [e.fraseId, e]))
     const abremEscuro = await planosQueAbremEscuro(indice)
+    const luz = await luzDosPlanos(indice)
     const { sinais, camadas } = await sinaisParaOCasar(rascunhoId, true)
     const divisao = divisaoDaConfig(configDoRecap().cenas)
-    const { casadas } = casarFrases({ indice, eventos: r.eventos, frases, take: takeAtual(r), fixas, refazer: new Set([fraseId]), abremEscuro, sinais, camadas, divisao })
+    const { casadas } = casarFrases({
+      indice,
+      eventos: r.eventos,
+      frases,
+      take: takeAtual(r),
+      fixas,
+      refazer: new Set([fraseId]),
+      abremEscuro,
+      sinais,
+      camadas,
+      divisao,
+      luz,
+      abrem: frasesQueAbrem(roteiro),
+    })
     sugestoes = casadas[0]?.escolha.fita ?? []
   }
   const naFita = new Set(sugestoes.flatMap((c) => c.planoIds))
