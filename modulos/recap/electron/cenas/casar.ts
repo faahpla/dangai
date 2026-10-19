@@ -179,6 +179,13 @@ export const PESOS = {
   ilegivelGancho: -25,
   ilegivelSecao: -8,
   ilegivelForte: -5,
+  /**
+   * (3a rodada) O CLOSE EXTREMO (o rosto principal tao largo que a janela 9:16
+   * nao mostra os dois olhos: o Nia E01, bloco 1, so com nariz e boca). "Close
+   * extremo geralmente nem da pra usar": perto de excluir -- so entra sem outra
+   * candidata razoavel (ou travado, que nao passa por aqui).
+   */
+  closeExtremo: -40,
   /** E o quadro bonito (C7, desvios de beleza + nitidez, ate +-2) desempata: o gancho abre na imagem mais forte. */
   bonitoGancho: 1.5,
   bonitoSecao: 0.75,
@@ -270,6 +277,18 @@ const RELANCE_SEC = 1
 const TROCA_MINIMA = 1
 /** Quantas vezes, no maximo, o mesmo plano aparece no video (em trechos separados). */
 export const PLANO_VEZES_MAX = 2
+/** O irmao de uma repeticao vale ate tanto abaixo dela na relevancia sem o instante (irmaoDaRepeticao). */
+const IRMAO_MARGEM = 6
+/** A lista da conta tem pelo menos tantas candidatas que cobrem a frase (sem congelar alem de CONGELA_SEC). */
+const COBREM_NA_CONTA = 3
+/**
+ * O close extremo: o maior rosto do plano passa disto da largura do 16:9. Em
+ * rosto de anime os olhos ficam a ~30% e ~70% da caixa (0,4 da largura); a
+ * janela 9:16 ve 0,275 do quadro: acima de 0,69 os dois olhos nao cabem. O
+ * "mais largo que a janela" ao pe da letra (0,275) pegava 1/3 dos planos com
+ * rosto (119 no MRM E02, os closes bons de sempre).
+ */
+export const CLOSE_EXTREMO = 0.69
 /** Planos vizinhos (1 ou 2 de distancia) com CLIP acima disto sao a mesma cena (medido no MRM E02: p97 de planos distantes). */
 const MESMA_CENA_CLIP = 0.88
 /** Legibilidade (legibilidadeDoQuadro, 0..1) abaixo da qual o quadro e ilegivel no gancho e no comeco da parte. */
@@ -589,6 +608,8 @@ export interface Citado {
   ficha: string
   /** A palavra do roteiro, ASCII ("Senku", "Why-Man"). */
   rotulo: string
+  /** (3a rodada) Veio de uma palavra de grupo ("o trio"), nao do nome (comOGrupo). */
+  grupo?: true
 }
 
 /** Todas as fichas fortes que existem no episodio (rostos, falantes, eventos), e em quais nomes. */
@@ -599,6 +620,8 @@ export interface Elenco {
   proprios: ReadonlySet<string>
   /** Ficha de um apelido -> a ficha do personagem ("mp" e "yggdrasil" -> "empee"). */
   apelidos?: ReadonlyMap<string, string>
+  /** (3a rodada) O grupo do episodio ("o trio", "os parceiros"): grupoDoEpisodio. Ausente = nenhum. */
+  grupo?: Citado[]
 }
 
 export function elencoDoEpisodio(planos: readonly PlanoDoCasar[], indice: Pick<EpisodeIndex, 'cues'>, eventos: readonly Pick<Evento, 'personagens'>[]): Elenco {
@@ -637,7 +660,70 @@ export function elencoDoEpisodio(planos: readonly PlanoDoCasar[], indice: Pick<E
       if (f.length === 1 && f[0] !== principal) fichaDoApelido.set(f[0]!, principal)
     }
   }
-  return { nomesDaFicha, proprios, apelidos: fichaDoApelido }
+  const grupo = grupoDoEpisodio(planos).flatMap((nome): Citado[] => {
+    const f = fichasFortes(nome, proprios)[0]
+    return f ? [{ ficha: f, rotulo: ascii(nome), grupo: true }] : []
+  })
+  return { nomesDaFicha, proprios, apelidos: fichaDoApelido, ...(grupo.length >= 2 ? { grupo } : {}) }
+}
+
+/**
+ * As palavras que nomeiam O grupo no roteiro, sem acento e com o artigo
+ * definido (contraido tambem: "do trio", "pros parceiros"): "um grupo de
+ * bandidos" nao e o grupo do episodio.
+ */
+const PALAVRAS_DO_GRUPO =
+  /\b(?:o|do|no|pro|ao|pelo|esse|desse|nesse)\s+(?:trio|grupo|time)\b|\b(?:a|da|na|pra|pela|essa|dessa|nessa)\s+(?:party|equipe|gangue)\b|\b(?:os|dos|nos|pros|aos|pelos|seus|esses|desses)\s+(?:ex-)?(?:parceiros|caras)\b|\bex-parceir[oa]s\b/i
+/** Cada par do grupo aparece junto em pelo menos tantos planos. */
+const GRUPO_JUNTOS_MIN = 5
+
+/**
+ * O GRUPO DO EPISODIO (19/10, 3a rodada): o trio de rostos que mais aparece
+ * JUNTO -- cada par em pelo menos GRUPO_JUNTOS_MIN planos; vale o trio cujo par
+ * mais fraco e o mais forte. No MRM E02, o Guy, a Misa e a Elle (pares de 24,
+ * 22 e 17 planos); a dupla Lent e fadinha (33) nao forma trio com ninguem. Sem
+ * rosto reconhecido (o Nia E01), nenhum. Os nomes do mais visto ao menos.
+ */
+export function grupoDoEpisodio(planos: readonly Pick<PlanoDoCasar, 'rostos'>[]): string[] {
+  const conta = new Map<string, number>()
+  const par = new Map<string, number>()
+  const chave = (a: string, b: string): string => (a < b ? `${a}|${b}` : `${b}|${a}`)
+  for (const p of planos) {
+    const ns = [...new Set(p.rostos.map((r) => r.nome))]
+    for (const n of ns) conta.set(n, (conta.get(n) ?? 0) + 1)
+    for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) par.set(chave(ns[i]!, ns[j]!), (par.get(chave(ns[i]!, ns[j]!)) ?? 0) + 1)
+  }
+  const nomes = [...conta.keys()].filter((n) => (conta.get(n) ?? 0) >= ELENCO_PRINCIPAL_PLANOS_MIN).sort()
+  const juntos = (a: string, b: string): number => par.get(chave(a, b)) ?? 0
+  let melhor: string[] = []
+  let fraco = GRUPO_JUNTOS_MIN - 1
+  let soma = 0
+  for (let i = 0; i < nomes.length; i++) {
+    for (let j = i + 1; j < nomes.length; j++) {
+      for (let k = j + 1; k < nomes.length; k++) {
+        const [a, b, c] = [nomes[i]!, nomes[j]!, nomes[k]!]
+        const m = Math.min(juntos(a, b), juntos(a, c), juntos(b, c))
+        const s = juntos(a, b) + juntos(a, c) + juntos(b, c)
+        if (m > fraco || (m === fraco && melhor.length > 0 && s > soma)) {
+          melhor = [a, b, c]
+          fraco = m
+          soma = s
+        }
+      }
+    }
+  }
+  return melhor.sort((a, b) => (conta.get(b) ?? 0) - (conta.get(a) ?? 0))
+}
+
+/**
+ * (3a rodada) O texto fala do GRUPO ("o trio", "os parceiros"): os rostos do
+ * grupo entram nos citados, depois de quem o texto ja cita (e do sujeito
+ * herdado). Sem grupo no episodio ou sem a palavra, os citados como vieram.
+ */
+export function comOGrupo(texto: string, citados: readonly Citado[], elenco: Pick<Elenco, 'grupo'>): Citado[] {
+  if (!elenco.grupo || elenco.grupo.length === 0) return [...citados]
+  if (!PALAVRAS_DO_GRUPO.test(texto.normalize('NFD').replace(/\p{Mn}/gu, ''))) return [...citados]
+  return [...citados, ...elenco.grupo.filter((g) => !citados.some((c) => bate(c.ficha, g.ficha) || bate(g.ficha, c.ficha)))]
 }
 
 /**
@@ -838,6 +924,8 @@ export interface VisaoDoEpisodio {
   leitura: ReadonlyMap<string, readonly (number | null)[]>
   /** (2a rodada) O ASSUNTO de cada plano: quem esta na tela e o objeto na mao. So os planos com objeto. */
   assunto: Map<string, AssuntoDoPlano>
+  /** (3a rodada) Os planos em close extremo (EntradaDoCasar.rostos acima de CLOSE_EXTREMO). */
+  closes: ReadonlySet<string>
 }
 
 /** O assunto de um plano: os rostos reconhecidos (fichas) e os objetos das etiquetas (objetosDasTags). */
@@ -905,6 +993,7 @@ export function prepararVisao(
   sinais: SinaisDoCasar = {},
   camadas: Partial<CamadasDoCasar> = {},
   leitura: ReadonlyMap<string, readonly (number | null)[]> = new Map(),
+  rostos: ReadonlyMap<string, number> = new Map(),
 ): VisaoDoEpisodio {
   const c: CamadasDoCasar = { ...CAMADAS_PADRAO, ...camadas }
   const cuesPerto = new Map<string, { id: string; peso: number }[]>()
@@ -958,6 +1047,7 @@ export function prepararVisao(
     grupoVisual: gruposVisuais(todos, sinais.quadros),
     leitura,
     assunto: c.tags ? assuntosDosPlanos(todos, sinais.tagsDoPlano) : new Map(),
+    closes: new Set([...rostos].filter(([, w]) => w > CLOSE_EXTREMO).map(([id]) => id)),
   }
 }
 
@@ -1715,7 +1805,11 @@ function pontuar(
     let soma = 0
     const presentes: Termo[] = []
     const ausentes: Termo[] = []
+    // (3a rodada) O grupo citado por palavra ("do trio") so conta no plano que cobre a frase: no MRM E02
+    // ele so anda junto nos planos de 0,6 s do contador, e o bonus deles fazia a frase congelar ou dividir.
+    const faltaAqui = Math.max(0, ctx.duracao - (outSec - inSec))
     for (const c of pessoas) {
+      if (c.grupo && faltaAqui > CONGELA_SEC + 1e-6) continue
       const x = presencaNoSpan(c)
       // Meio valor garantido: a pessoa no plano certo de um span ainda conta.
       const f = 0.5 + 0.5 * x.fracao
@@ -1724,7 +1818,7 @@ function pontuar(
       else if (x.fala) {
         const valor = rostosDoSpan.length > 0 ? PESOS.falanteComOutroRosto : PESOS.falante
         presentes.push({ chave: 'pessoa', valor: valor * f, rotulo: `${c.rotulo} fala` })
-      } else if (outroRostoCerto(c)) ausentes.push({ chave: 'ausente', valor: PESOS.ausente, rotulo: `sem ${c.rotulo}` })
+      } else if (!c.grupo && outroRostoCerto(c)) ausentes.push({ chave: 'ausente', valor: PESOS.ausente, rotulo: `sem ${c.rotulo}` })
     }
     for (const t of presentes) {
       const v = Math.min(t.valor, PESOS.pessoaTeto - soma)
@@ -1816,7 +1910,7 @@ function pontuar(
     }
     // C4: as duas pessoas citadas no mesmo plano (pelo rosto).
     if (v.camadas.personagemForte && ctx.citados.length >= 2) {
-      const comRosto = ctx.citados.filter((c) => rostosDoSpan.some((r) => r.fichas.some((f) => bate(c.ficha, f))))
+      const comRosto = ctx.citados.filter((c) => !c.grupo && rostosDoSpan.some((r) => r.fichas.some((f) => bate(c.ficha, f))))
       if (comRosto.length >= 2) add('juntos', PESOS.juntos, `${comRosto[0]!.rotulo} + ${comRosto[1]!.rotulo}`)
     }
     // C7: a janela inteira em quadro borrado.
@@ -1824,6 +1918,8 @@ function pontuar(
       const qs = planos.flatMap((q) => quadrosNaJanela(q, inSec, fimReal, v)).flatMap((q) => v.qualidade.get(q.arquivo) ?? [])
       if (qs.length > 0 && qs.every((x) => x.borrado)) add('borrado', PESOS.borrado, 'borrado')
     }
+    // (3a rodada) O close extremo (o 1o plano do span e o que abre a cena).
+    if (v.closes.has(primeiro.plano.id)) add('close', PESOS.closeExtremo, 'close extremo')
     // O gancho e o comeco de cada parte (a legibilidade) olham as outras candidatas: termosDaLeitura, na fita.
   }
 
@@ -1932,6 +2028,31 @@ function termosDaSequencia(
     }
   }
   return termos
+}
+
+/** A relevancia sem o instante (o termo da janela): o que a cena mostra, para comparar planos do mesmo momento. */
+function relevanciaSemOInstante(c: Pick<CandidatoPontuado, 'termos'>): number {
+  return c.termos.reduce((s, t) => s + (t.chave === 'janela' ? 0 : t.valor), 0)
+}
+
+/**
+ * (19/10, 3a rodada) O IRMAO de uma repeticao: outro plano do mesmo momento ou
+ * do mesmo evento ("no momento" / "no evento") cuja relevancia SEM o instante
+ * fica a IRMAO_MARGEM da repetida -- o 0126 do MRM E02 voltava no f08 porque a
+ * fala do momento caia nele de novo, com o 0127 (o mesmo evento, o Lent e a
+ * fadinha com o papel) quase tao relevante. null = nao ha: a fala do momento
+ * pode repetir o plano.
+ */
+export function irmaoDaRepeticao(repetida: CandidatoPontuado, livres: readonly CandidatoPontuado[]): CandidatoPontuado | null {
+  const alvo = relevanciaSemOInstante(repetida) - IRMAO_MARGEM
+  let melhor: CandidatoPontuado | null = null
+  for (const c of livres) {
+    if (c === repetida || c.candidato.planoIds.some((id) => repetida.candidato.planoIds.includes(id))) continue
+    if (!c.termos.some((t) => t.chave === 'janela' && (t.rotulo === 'no momento' || t.rotulo === 'no evento'))) continue
+    const r = relevanciaSemOInstante(c)
+    if (r >= alvo && (!melhor || r > relevanciaSemOInstante(melhor))) melhor = c
+  }
+  return melhor
 }
 
 /** As ultimas n cenas de antes; a continuacao colada (o mesmo plano seguindo) conta uma vez so. */
@@ -2148,9 +2269,12 @@ function fitaDaFrase(
   sequencia = true,
 ): CandidatoPontuado[] {
   const niveis = niveisDaJanela(ctx.janela, eventos)
-  const forte = !!ctx.visao?.camadas.personagemForte && ctx.citados.length > 0
+  // (3a rodada) O grupo citado por palavra ("o trio") soma quando aparece e nunca tira: ele so anda
+  // junto em parte do episodio (nos planos de 0,6 s do contador do MRM E02), e o C4 jogava o resto fora.
+  const pelosNomes = ctx.citados.filter((c) => !c.grupo)
+  const forte = !!ctx.visao?.camadas.personagemForte && pelosNomes.length > 0
   const temCitado = (planos: readonly PlanoDoCasar[]): boolean =>
-    planos.some((q) => q.rostos.some((r) => ctx.citados.some((c) => r.fichas.some((f) => bate(c.ficha, f)))))
+    planos.some((q) => q.rostos.some((r) => pelosNomes.some((c) => r.fichas.some((f) => bate(c.ficha, f)))))
   const tentar = (permitirUsados: boolean): CandidatoPontuado[] => {
     // Emendar so plano que ninguem usou (span e a montagem original, inteira).
     const livre = (q: PlanoDoCasar): boolean => permitirUsados || (ocupacao.get(q.plano.id)?.length ?? 0) === 0
@@ -2207,6 +2331,20 @@ function fitaDaFrase(
         for (const id of c.candidato.planoIds) ocupados.add(id)
         if (fita.length >= max) break
       }
+      // (3a rodada) A lista da conta guarda sempre as melhores que COBREM a frase (sem congelar mais
+      // que CONGELA_SEC): a pessoa citada nos planos curtos enchia a lista, e a conta so via congelar.
+      if (!sequencia) {
+        // E sem close extremo (3a rodada): a conta precisa ver a outra saida para o close nao entrar.
+        const razoavel = (c: CandidatoPontuado): boolean => c.falta <= CONGELA_SEC + 1e-6 && !c.termos.some((t) => t.chave === 'close')
+        let cobrem = fita.filter(razoavel).length
+        for (const c of pontuados) {
+          if (cobrem >= COBREM_NA_CONTA) break
+          if (!razoavel(c) || c.candidato.planoIds.some((id) => ocupados.has(id))) continue
+          fita.push(c)
+          for (const id of c.candidato.planoIds) ocupados.add(id)
+          cobrem += 1
+        }
+      }
       melhor = fita
       if (fita.length >= max || ultimo) break
     }
@@ -2257,6 +2395,12 @@ export interface EntradaDoCasar {
   leitura?: ReadonlyMap<string, readonly (number | null)[]>
   /** As frases que abrem uma parte do roteiro (a 1a de todas e o gancho). Ausente = so a 1a frase. */
   abrem?: ReadonlySet<string>
+  /**
+   * (19/10, 3a rodada) A largura (fracao do quadro) do maior rosto de cada plano
+   * (largurasDosRostos no servico): acima de CLOSE_EXTREMO, o close extremo.
+   * Ausente = sem a medida (como antes).
+   */
+  rostos?: ReadonlyMap<string, number>
 }
 
 /** Um pedaco de uma frase dividida, como o casar o escolheu. */
@@ -2362,7 +2506,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   }
   // A imagem (C2) e as etiquetas (C3) da frase vao para o pedaco que a intencao descreve.
   const intencaoDe = new Map([...cortes].map(([i, c]) => [i, pedacoDaIntencao(e.frases[i]!.intencaoVisual, c, elenco)]))
-  const visao = prepararVisao(todos, e.indice, sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe), e.camadas ?? {}, e.leitura ?? new Map())
+  const visao = prepararVisao(todos, e.indice, sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe), e.camadas ?? {}, e.leitura ?? new Map(), e.rostos ?? new Map())
   // (19/10) O gancho (a 1a frase) e o comeco de cada parte fogem do quadro ilegivel.
   const abreDe = (i: number): 'gancho' | 'secao' | null => (i === 0 ? 'gancho' : e.abrem?.has(e.frases[i]!.id) ? 'secao' : null)
   // (19/10) O minimo na tela de cada plano de um span (a config Cenas).
@@ -2388,7 +2532,9 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   const fixo = e.frases.map((frase, i) => {
     const sujeitoAntes = sujeito
     const doTexto = citadosNoTexto(frase.texto, elenco)
-    const citados = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(frase.texto, sujeito) : doTexto
+    const base = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(frase.texto, sujeito) : doTexto
+    // (3a rodada) "os parceiros jogaram ele na rua": o grupo entra junto (depois do sujeito).
+    const citados = visao.camadas.personagemForte ? comOGrupo(frase.texto, base, elenco) : base
     sujeito = citados
     const daIntencao = citadosNoTexto(frase.intencaoVisual, elenco).filter((c) => !citados.some((x) => bate(x.ficha, c.ficha) || bate(c.ficha, x.ficha)))
     const palavrasIv = palavrasSimples(frase.intencaoVisual)
@@ -2449,7 +2595,8 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     let sujeitoK = fixo[i]!.sujeitoAntes
     const citadosK = corte.pedacos.map((p) => {
       const doTexto = citadosNoTexto(p.texto, elenco)
-      const c = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(p.texto, sujeitoK) : doTexto
+      const base = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(p.texto, sujeitoK) : doTexto
+      const c = visao.camadas.personagemForte ? comOGrupo(p.texto, base, elenco) : base
       if (c.length > 0) sujeitoK = c
       return c
     })
@@ -3086,11 +3233,20 @@ function casarPelaConta(
       const pode = (c: CandidatoPontuado): boolean => dentroDaFrase(c, daFrase) && !(evitar !== null && c.candidato.planoIds.includes(evitar))
       // (19/10) As repeticoes no caminho: o plano de novo so quando a frase pede, e nunca a 3a vez.
       const reps = new Map(item.lista.map((c) => [c, repeticoes(c.candidato, k.usados, k.anteriores, x.grupo)]))
+      // (3a rodada) E mesmo pedida, a repeticao so vale sem um IRMAO: outro plano do mesmo
+      // momento ou evento, livre neste caminho, com relevancia parecida (irmaoDaRepeticao).
+      const livreAqui = (c: CandidatoPontuado): boolean =>
+        pode(c) && reps.get(c)!.reusos === 0 && !cruzaUsado(k.usados, trechoDe(c.candidato, item.duracao))
       const repeteDemais = (c: CandidatoPontuado): boolean => {
         const r = reps.get(c)!
-        return r.reusos >= PLANO_VEZES_MAX || (r.reusos > 0 && !pedeOPlano(c.planos, item.janela))
+        if (r.reusos >= PLANO_VEZES_MAX || (r.reusos > 0 && !pedeOPlano(c.planos, item.janela))) return true
+        return r.reusos > 0 && irmaoDaRepeticao(c, item.lista.filter(livreAqui)) !== null
       }
-      const livres = item.lista.filter((c) => pode(c) && !cruzaUsado(k.usados, trechoDe(c.candidato, item.duracao)) && !repeteDemais(c))
+      const todasLivres = item.lista.filter((c) => pode(c) && !cruzaUsado(k.usados, trechoDe(c.candidato, item.duracao)) && !repeteDemais(c))
+      // (3a rodada) Quadro parado alem de CONGELA_SEC so sem outra saida: a pessoa citada no plano curto
+      // (o trio nos planos de 0,6 s do contador) nao paga o congelamento so com a nota.
+      const semCongelar = todasLivres.filter((c) => c.falta <= CONGELA_SEC + 1e-6)
+      const livres = semCongelar.length > 0 ? semCongelar : todasLivres
       const opcoes =
         livres.length > 0
           ? livres.map((c) => ({ c, forcado: false }))

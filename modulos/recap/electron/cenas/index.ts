@@ -26,6 +26,7 @@ import { corteDaFrase, idDoPedaco, type OpcoesDaDivisao } from '../../shared/div
 import { comMesclas } from './mesclas'
 import { casarFrases, fichasDe, fichasFortes, janelasDasFrases, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
 import { camadasDaConfig, garantirVisao, sinaisDasFrases, sinaisDoEpisodio } from './visao'
+import { largurasDosRostos } from '../montar/rostos-motor'
 
 /**
  * O CASAR do passo 4 (agente A): a fita de cada frase, de graca, e a grade da
@@ -219,6 +220,8 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
   const indiceAntes = abrirParaCenas(lerRascunhoDoDisco(rascunhoId)).indice
   const abremEscuro = await planosQueAbremEscuro(indiceAntes)
   const leitura = await leituraDosPlanos(indiceAntes)
+  // (3a rodada) O maior rosto de cada plano: o close extremo (a 1a vez do episodio, ~1 min no motor).
+  const rostos = await largurasDosRostos(indiceAntes)
   const r = lerRascunhoDoDisco(rascunhoId)
   const { indice, roteiro } = abrirParaCenas(r)
   const take = takeAtual(r)
@@ -249,6 +252,7 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
     camadas,
     divisao,
     leitura,
+    rostos,
     abrem: frasesQueAbrem(roteiro),
   })
   const quando = agora()
@@ -382,6 +386,7 @@ export async function candidatosDaFrase(
     const fixas = new Map(cenas.escolhas.map((e): [string, EscolhaDaFrase] => [e.fraseId, e]))
     const abremEscuro = await planosQueAbremEscuro(indice)
     const leitura = await leituraDosPlanos(indice)
+    const rostos = await largurasDosRostos(indice)
     const { sinais, camadas } = await sinaisParaOCasar(rascunhoId, true)
     const divisao = divisaoDaConfig(configDoRecap().cenas)
     const { casadas } = casarFrases({
@@ -396,6 +401,7 @@ export async function candidatosDaFrase(
       camadas,
       divisao,
       leitura,
+      rostos,
       abrem: frasesQueAbrem(roteiro),
     })
     sugestoes = casadas[0]?.escolha.fita ?? []

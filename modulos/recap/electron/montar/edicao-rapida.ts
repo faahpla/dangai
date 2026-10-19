@@ -21,6 +21,7 @@ import { palavrasDaFrase } from '../../shared/voz'
 import {
   apelidosDoIndice,
   citadosNoTexto,
+  comOGrupo,
   elencoDoEpisodio,
   falantesDe,
   fichasFortes,
@@ -150,6 +151,8 @@ export function nomesDaMontagem(
   const porFrase = new Map<string, string[]>()
   const porPedacoDaFrase = new Map<string, string[][]>()
   const restoDaFrase = new Map<string, string[]>()
+  /** (3a rodada) Quem a intencao visual da frase poe na tela ("Lent olhando o numero no pergaminho"). */
+  const intencaoDaFrase = new Map<string, string[]>()
   const escolhaDe = new Map(escolhas.map((e) => [e.fraseId, e]))
   // O sujeito para a frase seguinte e o da frase INTEIRA (como o casar): "O poder do Lent ... junto da
   // fadinha MP. E ... ele descobre" -- o "ele" e o Lent, o 1o citado, nao o ultimo pedaco.
@@ -160,12 +163,13 @@ export function nomesDaMontagem(
     const inicios = (escolhaDe.get(frase.id)?.cenas ?? []).map((c) => c.palavraInicio)
     const cortes = inicios.length > 0 ? inicios : [0]
     const ditosNaFrase = citadosNoTexto(frase.texto, elencoDoEp)
-    const daFrase = ditosNaFrase.length > 0 ? ditosNaFrase : sujeitoHerdado(frase.texto, sujeito)
+    // (3a rodada) "o trio", "os parceiros": os rostos do grupo entram depois de quem o texto cita.
+    const daFrase = comOGrupo(frase.texto, ditosNaFrase.length > 0 ? ditosNaFrase : sujeitoHerdado(frase.texto, sujeito), elencoDoEp)
     let sujeitoK = sujeito
     const pedacosDaFrase = cortes.map((p0, k) => {
       const texto = tokens.slice(p0, cortes[k + 1] ?? tokens.length).join(' ')
       const ditos = citadosNoTexto(texto, elencoDoEp)
-      const citados = ditos.length > 0 ? ditos : sujeitoHerdado(texto, sujeitoK)
+      const citados = comOGrupo(texto, ditos.length > 0 ? ditos : sujeitoHerdado(texto, sujeitoK), elencoDoEp)
       if (citados.length > 0) sujeitoK = citados
       return citados.map(doCitado)
     })
@@ -174,6 +178,7 @@ export function nomesDaMontagem(
     porFrase.set(frase.id, unicos(resto))
     porPedacoDaFrase.set(frase.id, pedacosDaFrase)
     restoDaFrase.set(frase.id, resto)
+    intencaoDaFrase.set(frase.id, citadosNoTexto(frase.intencaoVisual ?? '', elencoDoEp).map(doCitado))
   }
 
   const porPedaco = new Map<string, string[]>()
@@ -185,7 +190,24 @@ export function nomesDaMontagem(
     // so entra no fim (o personagem do evento vem antes: o "ele" sem antecedente e o protagonista).
     const fala = quemFala ? fichasFortes(quemFala, elencoDoEp.proprios) : []
     const falaCitado = fala.length > 0 && proprios.some((n) => mesmoNome(fichasFortes(n, elencoDoEp.proprios), fala))
-    const nomes = falaCitado ? [quemFala!, ...proprios, ...resto] : [...proprios, ...resto, ...(quemFala ? [quemFala] : [])]
+    // (3a rodada) Ninguem que o pedaco cita esta no plano ("A taxa consome a regeneracao do trio" sobre
+    // o Lent e a fadinha explicando): quem FALA no plano vem primeiro -- o recorte mira quem explica, e
+    // nao o maior rosto.
+    const doPlano = planos.get(p.planoId)?.personagens.map((x) => fichasFortes(x.nome, elencoDoEp.proprios)) ?? []
+    const noPlano = (n: string): boolean => {
+      const f = fichasFortes(n, elencoDoEp.proprios)
+      return f.length > 0 && doPlano.some((x) => mesmoNome(x, f))
+    }
+    // Antes de quem fala, quem a intencao visual da frase poe na tela, se esta no plano ("Lent olhando o
+    // numero gigantesco no pergaminho": o Lent, mesmo com a fadinha falando).
+    const daIntencao = (intencaoDaFrase.get(p.fraseId) ?? []).filter(noPlano)
+    const ninguem = !proprios.some(noPlano)
+    const explica = ninguem && (daIntencao.length > 0 || (!!quemFala && noPlano(quemFala)))
+    const nomes = falaCitado
+      ? [quemFala!, ...proprios, ...resto]
+      : explica
+        ? [...daIntencao, ...(quemFala && noPlano(quemFala) ? [quemFala] : []), ...proprios, ...resto]
+        : [...proprios, ...resto, ...(quemFala ? [quemFala] : [])]
     porPedaco.set(chaveDoPedaco(p), unicos(nomes))
   }
   const elenco = unicos([...porFrase.values()].flat())
