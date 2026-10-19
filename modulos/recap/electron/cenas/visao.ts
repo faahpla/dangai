@@ -6,6 +6,7 @@ import type { LibraryClip } from '@shared/channels'
 import type { EpisodeIndex } from '../../shared/episodio'
 import type { Frase } from '../../shared/roteiro'
 import {
+  confiancaDasTagsGravadas,
   kDoKeyframe,
   linhasDaMatriz,
   posDoKeyframe,
@@ -14,7 +15,7 @@ import {
   type SinaisDoCasar,
 } from '../../shared/visao'
 import type { ConfigDasCenas } from '../../shared/config'
-import { tagClips } from '../../../../electron/services/tagger'
+import { etiquetarComConfianca, taggerReady } from '../../../../electron/services/tagger'
 import { pastaDoPerfil } from '../episodio/perfil'
 import { garantirGravavel } from '../episodio/protegidas'
 import { ffmpegPath } from '../ffmpeg-path'
@@ -245,6 +246,12 @@ interface VisaoGravada {
   cues: string[] | null
   /** As etiquetas de cada plano, da mais confiante para a menos. */
   tags: Record<string, string[]> | null
+  /**
+   * (19/10) A confianca (0..1) de cada etiqueta, na MESMA ordem de `tags`.
+   * Campo novo, a versao fica: quem so le `tags` segue igual. Ausente = medido
+   * antes (pelo tagClips, sem confianca): o proximo garantirVisao reetiqueta.
+   */
+  confiancas?: Record<string, number[]> | null
   gpu: boolean | null
   tempos: Record<string, number>
 }
@@ -335,7 +342,8 @@ async function medir(
 ): Promise<EstadoDaVisao> {
   const pasta = pastaDaVisao(indice, caminhoDoIndice)
   const chave = chaveDoIndice(indice)
-  const atual: VisaoGravada = lerGravada(pasta, chave) ?? { versao: VISAO_VERSAO, chave, quadros: null, cues: null, tags: null, gpu: null, tempos: {} }
+  const gravada = lerGravada(pasta, chave)
+  const atual: VisaoGravada = gravada ?? { versao: VISAO_VERSAO, chave, quadros: null, cues: null, tags: null, confiancas: null, gpu: null, tempos: {} }
   const motivos: string[] = []
 
   if (quer.motor && (atual.quadros === null || atual.cues === null)) {
@@ -374,24 +382,23 @@ async function medir(
     rmSync(tmp, { recursive: true, force: true })
   }
 
-  if (quer.etiquetas && atual.tags === null) {
-    const t0 = Date.now()
-    try {
-      // O etiquetador do nucleo, com ids proprios (nao colidem com os clipes da Biblioteca).
-      const clips = indice.planos
-        .filter((p) => p.keyframe && existsSync(p.keyframe))
-        .map((p) => ({ id: idDaEtiqueta(indice.id, p.id), keyframe: p.keyframe!, thumbPath: p.keyframe! }) as unknown as LibraryClip)
-      const todas = await tagClips(clips, (m) => aoProgresso(m))
-      const tags: Record<string, string[]> = {}
-      for (const p of indice.planos) {
-        const t = todas[idDaEtiqueta(indice.id, p.id)]
-        if (t) tags[p.id] = t
+  if (quer.etiquetas && (atual.tags === null || !atual.confiancas)) {
+    const reetiquetar = atual.tags !== null
+    // Reetiquetar (o visao.json de antes) so com o modelo no disco: nunca um download de 379 MB no passo 4.
+    if (!reetiquetar || taggerReady()) {
+      const t0 = Date.now()
+      try {
+        const r = await etiquetarDoEpisodio(indice, pasta, gravada === null, aoProgresso)
+        atual.tags = r.tags
+        atual.confiancas = r.confiancas
+        atual.tempos['etiquetas'] = Date.now() - t0
+        gravarJson(join(pasta, 'visao.json'), atual)
+        rmSync(arquivoDoCacheDasEtiquetas(pasta), { force: true })
+        if (reetiquetar) console.log(`[cenas] etiquetas de ${indice.id} com confianca em ${Date.now() - t0} ms`)
+      } catch (e) {
+        // Reetiquetar que falha nao tira nada: as etiquetas de antes continuam valendo (sem confianca).
+        if (!reetiquetar) motivos.push(`etiquetas: ${ascii(e instanceof Error ? e.message : String(e)).slice(0, 120)}`)
       }
-      atual.tags = tags
-      atual.tempos['etiquetas'] = Date.now() - t0
-      gravarJson(join(pasta, 'visao.json'), atual)
-    } catch (e) {
-      motivos.push(`etiquetas: ${ascii(e instanceof Error ? e.message : String(e)).slice(0, 120)}`)
     }
   }
   const pronta = (!quer.motor || (atual.quadros !== null && atual.cues !== null)) && (!quer.etiquetas || atual.tags !== null)
@@ -402,12 +409,53 @@ function idDaEtiqueta(indiceId: string, planoId: string): string {
   return `recap/${indiceId}/${planoId}`
 }
 
+/**
+ * O cache do etiquetador para este episodio: na pasta da visao (do modulo, ao
+ * lado do indice ou no perfil), nunca no etiquetas.json da Biblioteca do
+ * Dangai. So vive durante a etiquetagem (o resultado mora no visao.json): se
+ * ela cair no meio, a proxima continua de onde parou.
+ */
+function arquivoDoCacheDasEtiquetas(pasta: string): string {
+  return join(pasta, 'etiquetas-cache.json')
+}
+
+/**
+ * As etiquetas COM confianca de cada plano (etiquetarComConfianca do nucleo).
+ * `novo` = a visao deste corte ainda nao existia: um cache que sobrou e de
+ * outro corte (os ids dos planos se repetem) e sai antes.
+ */
+async function etiquetarDoEpisodio(
+  indice: EpisodeIndex,
+  pasta: string,
+  novo: boolean,
+  aoProgresso: (texto: string) => void,
+): Promise<{ tags: Record<string, string[]>; confiancas: Record<string, number[]> }> {
+  const cache = arquivoDoCacheDasEtiquetas(pasta)
+  if (novo) rmSync(cache, { force: true })
+  const clips = indice.planos
+    .filter((p) => p.keyframe && existsSync(p.keyframe))
+    .map((p) => ({ id: idDaEtiqueta(indice.id, p.id), keyframe: p.keyframe!, thumbPath: p.keyframe! }) as unknown as LibraryClip)
+  const todas = await etiquetarComConfianca(clips, (m) => aoProgresso(m), cache)
+  const tags: Record<string, string[]> = {}
+  const confiancas: Record<string, number[]> = {}
+  for (const p of indice.planos) {
+    const t = todas[idDaEtiqueta(indice.id, p.id)]
+    if (!t) continue
+    tags[p.id] = t.map((x) => x.tag)
+    confiancas[p.id] = t.map((x) => x.p)
+  }
+  return { tags, confiancas }
+}
+
 /** O que ja foi medido do episodio, no formato do casar. Nada medido = mapas ausentes. */
-export function sinaisDoEpisodio(indice: EpisodeIndex, caminhoDoIndice: string): Pick<SinaisDoCasar, 'quadros' | 'sentidoDaCue' | 'tagsDoPlano'> {
+export function sinaisDoEpisodio(
+  indice: EpisodeIndex,
+  caminhoDoIndice: string,
+): Pick<SinaisDoCasar, 'quadros' | 'sentidoDaCue' | 'tagsDoPlano' | 'confiancaDasTags'> {
   const pasta = pastaDaVisao(indice, caminhoDoIndice)
   const v = lerGravada(pasta, chaveDoIndice(indice))
   if (!v) return {}
-  const saida: Pick<SinaisDoCasar, 'quadros' | 'sentidoDaCue' | 'tagsDoPlano'> = {}
+  const saida: Pick<SinaisDoCasar, 'quadros' | 'sentidoDaCue' | 'tagsDoPlano' | 'confiancaDasTags'> = {}
   if (v.quadros) {
     try {
       const linhas = linhasDaMatriz(readFileSync(join(pasta, 'imagens.f32')), 768)
@@ -434,7 +482,10 @@ export function sinaisDoEpisodio(indice: EpisodeIndex, caminhoDoIndice: string):
       // sem o sentido das falas
     }
   }
-  if (v.tags) saida.tagsDoPlano = new Map(Object.entries(v.tags))
+  if (v.tags) {
+    saida.tagsDoPlano = new Map(Object.entries(v.tags))
+    if (v.confiancas) saida.confiancaDasTags = confiancaDasTagsGravadas(v.tags, v.confiancas)
+  }
   return saida
 }
 
