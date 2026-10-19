@@ -303,6 +303,18 @@ são pequenas e marcadas `[Studio]`; a 9 é para levar ao ancut-hub-engine.
     `use_cuda` de sempre (YOLO, CLIP, SCRFD, `rostos.py`) e o ffmpeg segue
     com a placa. Só do Studio.
 
+### Corte (19/10, marcado `[recap]`)
+
+11. **`app/shot_detection.py`** (`_cenas_em_paralelo`, O1): o caminho rápido
+    aguenta salto de PTS. Vídeo com um quadro a menos na conta do tempo (Black
+    Clover S02E03: 8640→8642 e 25906→25908) tem buraco no `frame_num`, e a
+    junção dos pedaços exigia `frame_num` seguido: o episódio inteiro caía na
+    sequencial. Agora a sobra de cada pedaço tem que ser exatamente o fim do que
+    o vizinho leu (mesmo quadro, tempo e nota), e o fim do vídeo é refeito com o
+    total de quadros lidos (`_fim_como_na_sequencial`), como a sequencial vê.
+    - Medido no BC S02E03: 56 s em vez de 150–184 s, os 709 shots iguais aos da
+      sequencial (início e fim de cada um). Teste: `TestSaltoDePts`.
+
 Os modelos (CLIP, YOLO, CCIP, SCRFD) no app instalado vão para
 `<runtime>\modelos` (`HF_HOME`, `motor-runtime/ambiente.ts`), não para o
 `~/.cache/huggingface`: entram no disco escolhido, no Remover e no
@@ -413,7 +425,7 @@ normal.
 ## Atualizar a cópia
 
 1. Copiar o ancut-hub-engine novo por cima de `motor/` (sem `.venv`).
-2. Reaplicar as dez mudanças acima (procurar `[Studio]` no diff; o
+2. Reaplicar as mudanças acima (procurar `[Studio]` e `[recap]` no diff; o
    `app/rostos.py` é só do Studio e fica como está; o
    `app/providers/mal_direto.py` fica até o upstream ter o seu).
 3. Atualizar o commit no topo deste arquivo e no `NOTICE`.

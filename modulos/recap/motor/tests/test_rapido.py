@@ -44,6 +44,54 @@ def _video_de_teste(destino: Path, codec: str = "libx264", pix: str = "yuv420p")
     return destino
 
 
+def _video_com_salto_de_pts(destino: Path, base: Path) -> Path:
+    """O video de teste sem 3 quadros e SEM refazer o tempo dos outros: buraco no
+    PTS, como o Black Clover S02E03 (8640->8642, 25906->25908). Um no meio de um
+    pedaco (600), um dentro da sobra da borda 900 (895) e um na propria borda
+    1350 (os 4 pedacos de 1800 quadros comecam em 450, 900 e 1350)."""
+    sel = "select='not(eq(n\\,600)+eq(n\\,895)+eq(n\\,1350))'"
+    subprocess.run(
+        [ffmpeg_binary(), "-v", "error", "-y", "-i", str(base), "-vf", sel, "-fps_mode", "passthrough",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "48", str(destino)],
+        check=True, capture_output=True, creationflags=SEM_JANELA,
+    )
+    return destino
+
+
+class TestSaltoDePts(unittest.TestCase):
+    """[recap] O1 com salto de PTS: antes caia inteiro na sequencial ("quadro fora
+    de ordem"); agora o caminho rapido roda e da as MESMAS cenas."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dir = Path(tempfile.mkdtemp(prefix="salto-"))
+        cls.video = _video_com_salto_de_pts(cls.dir / "salto.mkv", _video_de_teste(cls.dir / "base.mkv"))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def test_o_video_tem_os_saltos(self):
+        from scenedetect import open_video
+
+        v = open_video(str(self.video))
+        pos = []
+        while v.read(decode=False) is not False:
+            pos.append(v.position.frame_num)
+        self.assertEqual([(a, b) for a, b in zip(pos, pos[1:]) if b != a + 1], [(599, 601), (894, 896), (1349, 1351)])
+
+    def test_mesmas_cenas_da_sequencial(self):
+        from scenedetect import open_video
+
+        seq = detect_shots(self.video, paralelo=1)
+        par = detect_shots(self.video, paralelo=4)
+        self.assertGreaterEqual(len(seq), 7)
+        self.assertEqual([(s.idx, s.start, s.end) for s in seq], [(s.idx, s.start, s.end) for s in par])
+        # O caminho paralelo rodou de verdade: nao levanta _NaoDaEmParalelo.
+        cenas = _cenas_em_paralelo(self.video, open_video(str(self.video)), 2.0, 15.0, 4, None)
+        self.assertEqual(len(cenas), len(seq))
+
+
 class TestDeteccaoParalela(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:

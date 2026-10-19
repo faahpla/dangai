@@ -205,7 +205,36 @@ def _ler_pedaco(video_path, de: int, ate: int | None, ratio: float, piso: float,
             quadro = cv2.resize(quadro, alvo, interpolation=cv2.INTER_LINEAR)
         saida.append((pos, det._calculate_frame_score(pos, quadro)))
         contador[0] += 1
-    return saida, (v.position if ate is None else None)
+    if ate is not None:
+        return saida, None
+    # O fim do video como o leitor deste pedaco ve: a posicao, o frame_number do
+    # OpenCV e o PTS (no fim do arquivo o PTS e 0 e a posicao sai do frame_number).
+    return saida, (v.position, v.frame_number, getattr(getattr(v, "timecode", None), "pts", 0))
+
+
+def _fim_como_na_sequencial(video, fim, num_fim: int, pts_fim, lidos: int):
+    """[recap] A posicao final que a deteccao SEQUENCIAL teria.
+
+    No fim do arquivo o OpenCV devolve PTS 0, e a posicao sai do frame_number
+    (``frame_number - 1``). Lendo do comeco, o frame_number conta os quadros
+    decodificados; depois do seek do ultimo pedaco, ele parte do numero que o
+    tempo do seek da e so entao conta. Com salto de PTS antes do seek os dois
+    diferem pelo numero de saltos (Black Clover S02E03: 34287 contra 34286), e o
+    fim da ultima cena sairia 1 quadro depois. Aqui a posicao e refeita com o
+    total de quadros lidos, do mesmo jeito que o leitor faria.
+    """
+    if (pts_fim or 0) > 0 or num_fim <= 0 or num_fim == lidos:
+        return fim
+    try:
+        from fractions import Fraction
+
+        from scenedetect.common import FrameTimecode, Timecode
+
+        fps = video.frame_rate
+        tc = Timecode(pts=(lidos - 1) * fps.denominator, time_base=Fraction(1, fps.numerator))
+        return FrameTimecode(timecode=tc, fps=fps)
+    except Exception as e:  # noqa: BLE001 -- sem como refazer: a sequencial de sempre
+        raise _NaoDaEmParalelo(f"fim do video: {type(e).__name__}: {e}") from e
 
 
 class _NotaPronta(AdaptiveDetector):
@@ -270,29 +299,32 @@ def _cenas_em_paralelo(video_path, video, ratio: float, piso: float, pedacos: in
                 raise _NaoDaEmParalelo("o 1o quadro nao e o 0")
             juntos.extend(lidos)
             continue
-        # A sobra tem que bater com o vizinho: mesmo quadro, mesmo tempo e
-        # (fora o 1o, que nao tem anterior no pedaco) a mesma nota.
-        anteriores = {p.frame_num: (p, n) for p, n in juntos[-SOBRA_DO_PEDACO:]}
-        conferidos = 0
-        for j, (p, n) in enumerate(lidos):
-            if p.frame_num >= bordas[i]:
-                break
-            viz = anteriores.get(p.frame_num)
-            if viz is None or p != viz[0] or (j > 0 and n != viz[1]):
-                raise _NaoDaEmParalelo(f"a sobra do pedaco {i} nao bate no quadro {p.frame_num}")
-            conferidos += 1
-        if conferidos < SOBRA_DO_PEDACO:
+        # [recap] A sobra (os quadros antes da borda) tem que ser EXATAMENTE o fim
+        # do que o vizinho leu, na mesma ordem: mesmo quadro, mesmo tempo e (fora
+        # o 1o, que nao tem anterior no pedaco) a mesma nota. Nao se exige mais o
+        # frame_num seguido: video com salto de PTS (um quadro a menos na conta do
+        # tempo, como o Black Clover S02E03 em 8640->8642 e 25906->25908) tem
+        # buraco no frame_num, e antes caia inteiro na sequencial (150-184 s em vez
+        # de ~55 s). Nada se perde porque o 1o quadro novo do pedaco e o que vem,
+        # no MESMO decodificador, logo depois da sobra conferida.
+        k = 0
+        while k < len(lidos) and lidos[k][0].frame_num < bordas[i]:
+            k += 1
+        sobra, novos = lidos[:k], lidos[k:]
+        if len(sobra) < SOBRA_DO_PEDACO // 2 or len(sobra) > len(juntos):
             raise _NaoDaEmParalelo(f"o pedaco {i} comecou fora do lugar")
-        novos = [(p, n) for p, n in lidos if p.frame_num >= bordas[i]]
-        if not novos or novos[0][0].frame_num != juntos[-1][0].frame_num + 1:
+        for j, (meu, viz) in enumerate(zip(sobra, juntos[-len(sobra):])):
+            if meu[0] != viz[0] or (j > 0 and meu[1] != viz[1]):
+                raise _NaoDaEmParalelo(f"a sobra do pedaco {i} nao bate no quadro {meu[0].frame_num}")
+        if not novos or novos[0][0].frame_num <= juntos[-1][0].frame_num:
             raise _NaoDaEmParalelo(f"buraco entre os pedacos {i - 1} e {i}")
         juntos.extend(novos)
     for a, b in zip(juntos, juntos[1:]):
-        if b[0].frame_num != a[0].frame_num + 1:
+        if b[0].frame_num <= a[0].frame_num:
             raise _NaoDaEmParalelo(f"quadro fora de ordem perto de {a[0].frame_num}")
-    fim = resultados[-1][1]
-    if fim is None:
+    if resultados[-1][1] is None:
         raise _NaoDaEmParalelo("sem a posicao final")
+    fim = _fim_como_na_sequencial(video, *resultados[-1][1], len(juntos))
 
     # A decisao: o AdaptiveDetector e o SceneManager de verdade, com as notas prontas.
     sm.add_detector(_NotaPronta([n for _, n in juntos], adaptive_threshold=ratio, min_content_val=piso))
