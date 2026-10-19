@@ -21,6 +21,7 @@
  */
 import {
   apelidosDoIndice,
+  apelidosPelaLegenda,
   casarFrases,
   citadosNoTexto,
   elencoDoEpisodio,
@@ -190,11 +191,12 @@ function indiceDosNomes(): Pick<EpisodeIndex, 'id' | 'planos' | 'cues' | 'exclus
 function nomes(): void {
   console.log('\n== B. Os nomes')
   const indice = indiceDosNomes()
-  const ap = apelidosDoIndice(indice)
+  const ap = apelidosPelaLegenda(indice)
   confere(ap.get('MP') === 'Empee' && ap.size === 1, 'o falante "MP" e o rosto "Empee" (apelido pela legenda)', [...ap])
-  // Poucas falas com rosto: sem apelido.
+  confere(apelidosDoIndice(indice).get('MP') === 'Empee', 'o apelidosDoIndice (a sigla soletrada + a legenda) tambem', [...apelidosDoIndice(indice)])
+  // Poucas falas com rosto: a legenda sozinha nao faz apelido (a sigla soletrada e outra regra).
   const pouco = { ...indice, cues: indice.cues.filter((c) => c.falante !== 'MP' || Number(c.id.slice(1)) <= 5) }
-  confere(apelidosDoIndice(pouco).size === 0, 'com 5 falas so, o falante nao vira apelido')
+  confere(apelidosPelaLegenda(pouco).size === 0, 'com 5 falas so, a legenda nao faz apelido')
   confere(elencoPrincipal(indice).join(',') === 'Empee,Lent,Guy', 'o elenco principal: quem mais aparece', elencoPrincipal(indice))
   const todos = prepararPlanos(indice)
   const elenco = elencoDoEpisodio(todos, indice, [])
