@@ -18,7 +18,9 @@
  *      relevancia fraca perde para a legivel relevante; a que bate o evento
  *      nunca perde para uma que nao bate; vale a frase inteira do gancho;
  *   F. o MESMO ASSUNTO (rosto + objeto) em 3 das ultimas 5 cenas pesa contra,
- *      menos quando a fala do momento cai no plano.
+ *      menos quando a fala do momento cai no plano;
+ *   G. o CONGELAMENTO: nunca mais que ~0,5 s de quadro parado quando ha outra
+ *      cena ou as 2 cenas da frase.
  *
  * Nao escreve nada. Rodar da raiz do projeto:
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-arrumar-visual.ts
@@ -30,6 +32,7 @@ import {
   bateOMomento,
   casarFrases,
   citadosNoTexto,
+  CONGELA_SEC,
   elencoDoEpisodio,
   elencoPrincipal,
   gruposVisuais,
@@ -574,11 +577,36 @@ function assunto(): void {
   confere(termos.every((x) => x.valor < 0), 'o termo "mesmo assunto" pesa contra quando entra', termos)
 }
 
+// ------------------------------------------------------------ G. o congelamento
+
+function congelamento(): void {
+  console.log('\n== G. O congelamento')
+  confere(CONGELA_SEC === 0.5, 'o congelamento que passa: 0,5 s')
+  // O contador do MRM E02: planos de 0,63 s no momento e planos longos em volta.
+  const planos: Plano[] = []
+  for (let i = 0; i < 6; i++) planos.push(plano(String(i + 1).padStart(4, '0'), i * 3, i * 3 + 3))
+  for (let i = 0; i < 12; i++) planos.push(plano(String(i + 11).padStart(4, '0'), 18 + i * 0.63, 18 + (i + 1) * 0.63))
+  for (let i = 0; i < 6; i++) planos.push(plano(String(i + 31).padStart(4, '0'), 25.56 + i * 3, 28.56 + i * 3))
+  const cues: Cue[] = [{ id: 'c1', start: 20.6, end: 21.5, texto: 'onze mil seiscentos e quarenta', falante: 'MP', estilo: 'Default', tipo: 'fala' }]
+  for (const p of planos) p.cueIds = cues.filter((c) => c.start < p.end && c.end > p.start).map((c) => c.id)
+  const eventos: Evento[] = [{ id: 'e01', cueIds: ['c1'], t0: 0, t1: 44, resumo: 'o contador', personagens: [], peso: 3 }]
+  const frases = [fr('f01', 'Eles vao passar o dia todo sem sobrar nada de magia.', { eventoIds: ['e01'], cueDoMomento: 'c1' })]
+  const take = takeDe([{ id: 'f01', texto: frases[0]!.texto, dur: 2.5 }])
+  const indice = { id: EP, planos, cues, exclusoes: [] }
+  for (const divisao of [null, { ligada: true, limiarSec: 3, minimoSec: 1 }]) {
+    const r = casarFrases({ indice, eventos, frases, take, fixas: new Map(), refazer: new Set(['f01']), divisao })
+    const c = r.casadas[0]!
+    const faltas = c.pedacos ? c.pedacos.map((p) => p.fita[0]?.falta ?? 9) : [c.fita[0]?.falta ?? 9]
+    confere(faltas.every((f) => f <= CONGELA_SEC + 1e-6), `${divisao ? 'com' : 'sem'} 2 cenas: nada congela mais que 0,5 s (${faltas.map((f) => f.toFixed(2)).join(' + ')})`, c.escolha.cenas.map((x) => x.candidato.planoIds))
+  }
+}
+
 foco()
 nomes()
 variedade()
 minimo()
 gancho()
 assunto()
+congelamento()
 console.log(falhas === 0 ? '\nTUDO CERTO' : `\n${falhas} FALHA(S)`)
 process.exitCode = falhas === 0 ? 0 : 1

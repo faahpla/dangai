@@ -74,7 +74,7 @@ import {
  *   4. DURACAO: a da frase no take (duracaoDaFrase), senao a estimativa. Plano
  *      mais curto que a frase concorre de dois jeitos: sozinho (congela o fim)
  *      e num span com os planos SEGUINTES (a montagem original do episodio);
- *      o que faltar alem de 1,5 s penaliza.
+ *      o que faltar alem de CONGELA_SEC (0,5 s desde 19/10) penaliza forte.
  *   5. ATRIBUICAO em ordem, gulosa: cada frase leva a melhor da fita e o
  *      trecho dela sai das proximas (sem repeticao). A cronologia (seguir em
  *      frente), a continuidade e a variedade pesam pouco: so desempatam
@@ -188,12 +188,16 @@ export const PESOS = {
   /** Span que abre com um relance (< RELANCE_SEC) do primeiro plano. */
   relance: -6,
   cobre: 3,
-  /** Por segundo que falta ate 1,5 s (o congelamento que o Dangai tolera). */
+  /** Por segundo que falta ate CONGELA_SEC (o congelamento que nao se ve). */
   congela: -2,
-  /** Base + por segundo alem de 1,5 s. */
-  curtaBase: -3,
-  curtaPorSeg: -5,
-  curtaPiso: -25,
+  /**
+   * Base + por segundo alem de CONGELA_SEC (19/10, 2a rodada: o 0299 do
+   * contador segurava 1,9 s parado na f18 do MRM E02; era -3 e -5/s alem de
+   * 1,5 s). A conta prefere outra cena que cubra ou as 2 cenas da frase.
+   */
+  curtaBase: -10,
+  curtaPorSeg: -10,
+  curtaPiso: -40,
   /** Por plano a mais no span. */
   emenda: -2,
   repetida: -30,
@@ -244,8 +248,12 @@ export const PLANO_MIN_SEC = 0.6
 export const SPAN_MAX = 3
 /** Abaixo disto de candidatos (planos-base livres) a janela abre um nivel. */
 const CANDIDATOS_MIN = 8
-/** O que falta da frase que ainda passa como congelamento do ultimo quadro. */
-const CONGELA_SEC = 1.5
+/**
+ * O que falta da frase que ainda passa como congelamento do ultimo quadro
+ * (19/10, 2a rodada: era 1,5 s; o mesmo meio segundo que o encaixe segura em
+ * vez de emendar um relance, SEGURAR_EM_VEZ_DE_RELANCE_SEC).
+ */
+export const CONGELA_SEC = 0.5
 /** Encostar menos que isto numa exclusao so apara a janela; mais (ou >30% do plano) tira o plano. */
 const ENCOSTA_SEC = 0.35
 /** Cue de placa que cobre mais que isto do plano: o plano mostra texto em japones. */
@@ -2760,12 +2768,15 @@ function sinaisComPedacos(
 }
 
 /**
- * O candidato cobre o pedaco inteiro (no maximo a folga que o encaixe segura
- * sem emendar): senao o encaixe emendaria o plano seguinte -- que muitas vezes
- * e justamente o do pedaco seguinte.
+ * O candidato cobre o pedaco inteiro, no maximo com o congelamento que nao se
+ * ve (CONGELA_SEC: o encaixe segura ate SEGURAR_EM_VEZ_DE_RELANCE_SEC em vez
+ * de emendar um relance): senao o encaixe emendaria o plano seguinte -- que
+ * muitas vezes e justamente o do pedaco seguinte. Era FOLGA_SEM_EMENDA_SEC
+ * (0,25 s) ate a 2a rodada de 19/10: a frase do contador do MRM E02 (planos
+ * de 0,6 s) ficava sem pedaco possivel e voltava a uma cena congelada 1,9 s.
  */
 function cobreOPedaco(c: CandidatoPontuado): boolean {
-  return c.falta <= FOLGA_SEM_EMENDA_SEC
+  return c.falta <= CONGELA_SEC
 }
 
 /** Dentro da frase vale a ordem do episodio: o pedaco seguinte depois do anterior, sem plano dele. */
