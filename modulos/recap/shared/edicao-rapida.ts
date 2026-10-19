@@ -76,6 +76,12 @@ export const configDaEdicaoRapidaSchema = z.object({
    * settings.json de antes (sem o campo) passa a ter a cor.
    */
   cor: z.boolean().catch(true).default(true),
+  /**
+   * (18/10) Os TEXTOS NA TELA: o texto de tela de cada frase do roteiro entra
+   * animado no video (shared/textos-na-tela.ts); o da 1a frase continua sendo
+   * o card de gancho. Ligado por padrao, como a cor.
+   */
+  textos: z.boolean().catch(true).default(true),
 })
 export type ConfigDaEdicaoRapida = z.infer<typeof configDaEdicaoRapidaSchema>
 
@@ -85,6 +91,7 @@ export const CONFIG_DA_EDICAO_RAPIDA_PADRAO: ConfigDaEdicaoRapida = {
   rosto: true,
   legenda: true,
   cor: true,
+  textos: true,
 }
 
 /**
@@ -941,6 +948,8 @@ export function secoesDoTake(
           inicio: arredondar(t.offset),
           fim: arredondar(t.offset + t.duracao),
           personagens: personagensDaFrase(f, eventos),
+          // O texto de tela vai junto: a Edicao rapida no editor poe os textos sem o rascunho.
+          tela: f.textoDeTela?.replace(/\s+/g, ' ').trim() || null,
         },
       ]
     })
@@ -1397,6 +1406,11 @@ export interface ResumoDaEdicaoRapida {
   corPresetSumiu?: string | null
   /** A faixa da camada posta esta silenciada (0 = V1): no preview e no render, sem cor. */
   corFaixaMuda?: number | null
+  /**
+   * Os textos na tela: quantos entraram, quantos ele tinha mexido (ficaram) e
+   * em que faixa. null/ausente = a parte nao rodou.
+   */
+  textos?: { postos: number; mantidos: number; faixa: number | null } | null
   avisos: string[]
   /**
    * A rodada MUDOU o projeto (criou um passo de Ctrl+Z). false = nada mudou: o
@@ -1410,12 +1424,12 @@ export interface ResumoDaEdicaoRapida {
 
 /** Nenhuma parte ligada: o botao nao tem o que fazer. */
 export function nadaLigado(c: ConfigDaEdicaoRapida): boolean {
-  return !c.sfx && !c.musica && !c.rosto && !c.legenda && !c.cor
+  return !c.sfx && !c.musica && !c.rosto && !c.legenda && !c.cor && !c.textos
 }
 
 /** As partes ligadas em ASCII curto ("sons, musica e rosto"), para dicas e titulos. */
 export function partesLigadas(c: ConfigDaEdicaoRapida): string {
-  const nomes = [c.sfx && 'sons', c.musica && 'musica', c.rosto && 'rosto', c.legenda && 'legenda', c.cor && 'cor'].filter(
+  const nomes = [c.sfx && 'sons', c.musica && 'musica', c.rosto && 'rosto', c.legenda && 'legenda', c.cor && 'cor', c.textos && 'textos'].filter(
     (x): x is string => typeof x === 'string',
   )
   if (nomes.length <= 1) return nomes[0] ?? ''

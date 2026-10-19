@@ -83,6 +83,8 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     sfxDaEdicaoRapida: () => invocar(C.sfxDaEdicaoRapida),
     planejarSom: (pedido) => invocar(C.planejarSom, pedido),
     rostosDosPedacos: (lote) => invocar(C.rostosDosPedacos, lote),
+    textosNaTela: (pedido) => invocar(C.textosNaTela, pedido),
+    telasDoRascunho: (rascunhoId, versao) => invocar(C.telasDoRascunho, rascunhoId, versao),
 
     statusDoMotor: () => invocar(C.statusDoMotor),
     analisarEpisodio: (pedido) => invocar(C.analisarEpisodio, pedido),

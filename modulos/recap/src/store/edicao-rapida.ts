@@ -32,6 +32,7 @@ import {
   trilhaParaONucleo,
   type PapelDaTrilha,
 } from '../../shared/projeto-do-recap'
+import { clipeDoTexto, momentosDosTextos, trocaDosTextos } from '../../shared/textos-na-tela'
 import { nucleo } from '../nucleo'
 import { ponte } from '../ponte'
 
@@ -66,7 +67,9 @@ export type EstadoParaEdicaoRapida = Pick<
   Documento,
   'audio' | 'images' | 'plan' | 'transcript' | 'trilhas' | 'sobreposicoes' | 'faixasMudas' | 'modulos'
 > &
-  Pick<EstadoPublico, 'formato'>
+  Pick<EstadoPublico, 'formato'> &
+  // Os textos na tela: a legenda (para nao cair em cima dela), o card de gancho e a pasta do projeto.
+  Partial<Pick<Documento, 'captionY' | 'captionScale' | 'hookText' | 'hookSec'> & Pick<EstadoPublico, 'projectPath'>>
 
 export interface OpcoesDaEdicaoRapida {
   /** Forca esta musica (o "trocar" do controle de musica, pelo dialogo). */
@@ -189,11 +192,12 @@ export async function prepararEdicaoRapida(
       avisos.push(`${nome}: ${err instanceof Error ? err.message : String(err)}`)
       return null
     })
-  const [som, rostos, legenda, cor] = await Promise.all([
+  const [som, rostos, legenda, cor, textos] = await Promise.all([
     config.sfx || config.musica ? seguro('Sem som', prepararSom(estado, config, opcoes, avisos)) : Promise.resolve(null),
     config.rosto ? seguro('Sem rosto', prepararRostos(estado, avisos)) : Promise.resolve(null),
     config.legenda ? seguro('Legenda sem o estilo salvo', prepararLegenda(avisos)) : Promise.resolve(null),
     config.cor ? seguro('Sem cor', prepararCor(avisos)) : Promise.resolve(null),
+    config.textos ? seguro('Sem textos na tela', prepararTextos(estado, avisos)) : Promise.resolve(null),
   ])
 
   const aplicar = (atual: Documento): Partial<Documento> => {
@@ -251,6 +255,13 @@ export async function prepararEdicaoRapida(
         resumo.corFaixaMuda = feito.rodada.faixaMuda
       }
     }
+    if (textos) {
+      // Depois da cor: os textos ficam ACIMA da camada de cor (o branco e o rosa nao sao tingidos).
+      const vistas = (patch.sobreposicoes ?? atual.sobreposicoes).map((o) => clipeParaOModulo(o))
+      const feito = trocaDosTextos(vistas, textos.novos, { mudas: atual.faixasMudas.video })
+      patch.sobreposicoes = feito.sobreposicoes.map((o) => clipeParaONucleo(o) as ClipeDoDocumento)
+      resumo.textos = feito.rodada
+    }
     return patch
   }
 
@@ -270,6 +281,7 @@ export async function prepararEdicaoRapida(
     corMantida: null,
     corPresetSumiu: null,
     corFaixaMuda: null,
+    textos: null,
     avisos: [...new Set(avisos)],
     musicaMantida: mantida,
   }
@@ -299,6 +311,8 @@ export async function edicaoRapidaNoProjeto(
       faixasMudas: { video: [], audio: [] },
       modulos: antes.modulos,
       formato: antes.formato,
+      projectPath: antes.projectPath,
+      ...legendaEGancho(n),
     },
     config,
     opcoes,
@@ -317,6 +331,87 @@ export async function edicaoRapidaNoProjeto(
     return patch
   })
   return { ...preparo.resumo, aplicou }
+}
+
+/**
+ * A legenda e o card de gancho moram no documento (fora do EstadoPublico):
+ * lidos do projeto como iria para o disco (paraArquivo so le).
+ */
+function legendaEGancho(n: Nucleo): Partial<Pick<Documento, 'captionY' | 'captionScale' | 'hookText' | 'hookSec'>> {
+  const f = n.paraArquivo()
+  return f ? { captionY: f.captionY, captionScale: f.captionScale, hookText: f.hookText, hookSec: f.hookSec } : {}
+}
+
+// ---------------------------------------------------------------- textos
+
+type ClipeNovo = ReturnType<typeof clipeDoTexto> & { url: string }
+
+/** A pasta dos PNGs: a do .dangai (o projeto leva os textos junto); .anirecap ou sem arquivo, a do modulo. */
+function pastaDosTextos(projectPath: string | null | undefined): string | null {
+  if (!projectPath || !/\.dangai$/i.test(projectPath)) return null
+  return projectPath.replace(/[\\/][^\\/]*$/, '')
+}
+
+/**
+ * Os TEXTOS NA TELA (shared/textos-na-tela.ts): o texto de tela de cada frase
+ * do roteiro do projeto (`modulos.recap.secoes`; projeto montado antes disto,
+ * do rascunho), menos a 1a (o card de gancho), no tempo das palavras do
+ * transcript, desenhados pelo main. O aplicar troca so os intactos.
+ */
+async function prepararTextos(e: EstadoParaEdicaoRapida, avisos: string[]): Promise<{ novos: ClipeNovo[] } | null> {
+  const recap = recapDoProjeto(e.modulos)
+  const duracao = e.audio?.durationSec ?? 0
+  const frases = (recap?.secoes ?? []).flatMap((s) => s.frases)
+  if (!recap || frases.length === 0 || !(duracao > 0)) {
+    avisos.push('Sem textos na tela: o projeto nao veio do roteiro do recap.')
+    return null
+  }
+  let telas = new Map<string, string | null>(frases.map((f) => [f.id, f.tela ?? null]))
+  if (frases.every((f) => f.tela === undefined)) {
+    const r = await ponte.telasDoRascunho(recap.rascunhoId, recap.roteiroVersao)
+    if (!r.ok || !r.value) {
+      avisos.push('Sem textos na tela: o rascunho deste projeto nao foi achado.')
+      return null
+    }
+    telas = new Map(Object.entries(r.value))
+  }
+  // A 1a frase e o card de gancho (hookText): nao vira texto animado.
+  const pedidos = frases.slice(1).flatMap((f) => {
+    const texto = telas.get(f.id)?.trim()
+    return texto ? [{ fraseId: f.id, texto, inicio: f.inicio, fim: f.fim }] : []
+  })
+  if (pedidos.length === 0) return { novos: [] }
+  const palavras = (e.transcript?.words ?? []).map((w) => ({ texto: w.text, start: w.start, end: w.end }))
+  const ganchoAte = e.hookText?.trim() ? (e.hookSec ?? 0) : 0
+  const momentos = momentosDosTextos(pedidos, palavras, { duracaoSec: duracao, ganchoAteSec: ganchoAte })
+  avisos.push(...momentos.avisos)
+  if (momentos.textos.length === 0) return { novos: [] }
+  const r = await ponte.textosNaTela({
+    textos: momentos.textos.map((t) => ({ fraseId: t.fraseId, texto: t.texto })),
+    pasta: pastaDosTextos(e.projectPath),
+    formato: e.formato,
+    captionY: e.captionY ?? 0.355,
+    captionScale: e.captionScale ?? 1,
+  })
+  if (!r.ok) {
+    avisos.push(`Sem textos na tela: ${r.error}`)
+    return null
+  }
+  avisos.push(...r.value.avisos)
+  const porFrase = new Map(r.value.pngs.map((p) => [p.fraseId, p]))
+  const rodada = Date.now().toString(36)
+  const novos: ClipeNovo[] = []
+  for (const t of momentos.textos) {
+    const png = porFrase.get(t.fraseId)
+    if (!png) continue
+    const servido = await window.dangai.prepararSobreposicao(png.path)
+    if (!servido.ok) {
+      avisos.push(`Texto "${t.texto}" sem imagem: ${servido.error}`)
+      continue
+    }
+    novos.push({ ...clipeDoTexto({ id: `er-texto-${t.fraseId}-${rodada}`, png, texto: t, faixa: 0 }), url: servido.value.url })
+  }
+  return { novos }
 }
 
 // ------------------------------------------------------------------- cor
@@ -636,7 +731,7 @@ export async function pedidoDaMontagem(): Promise<PedidoDeMontagem> {
 }
 
 /** So a musica: o controle de musica da barra (por, trocar). */
-export const SO_A_MUSICA: ConfigDaEdicaoRapida = { sfx: false, musica: true, rosto: false, legenda: false, cor: false }
+export const SO_A_MUSICA: ConfigDaEdicaoRapida = { sfx: false, musica: true, rosto: false, legenda: false, cor: false, textos: false }
 
 /** Os trechos de musica que a Edicao rapida pos (o controle de musica mexe neles). */
 export function trechosDaMusica<T extends { modulos?: Record<string, unknown> | undefined }>(trilhas: readonly T[]): T[] {
@@ -676,7 +771,25 @@ export function linhasDoResumo(
     })
   }
   if (r.config.cor) linhas.push(linhaDaCor(r))
+  if (r.config.textos) linhas.push(linhaDosTextos(r))
   return linhas
+}
+
+/** A linha dos Textos na tela: quantos entraram, e os que ele tinha mexido. */
+function linhaDosTextos(r: ResumoDaEdicaoRapida): { rotulo: string; valor: string; dica?: string } {
+  const t = r.textos
+  if (!t || (t.postos === 0 && t.mantidos === 0)) {
+    return { rotulo: 'Textos', valor: 'nenhum', dica: 'Nenhuma frase do roteiro (depois da 1a) tem texto de tela.' }
+  }
+  const partes = [
+    t.postos > 0 ? `${t.postos} no video${t.faixa !== null ? ` (V${t.faixa + 1})` : ''}` : null,
+    t.mantidos > 0 ? `${t.mantidos} ${t.mantidos === 1 ? 'mantido' : 'mantidos'} (editado por voce)` : null,
+  ].filter((x): x is string => x !== null)
+  return {
+    rotulo: 'Textos',
+    valor: partes.join(', '),
+    dica: 'O texto de tela de cada frase entra animado no alto, na palavra dita. O que voce mexeu fica como esta.',
+  }
 }
 
 /** A linha da Cor: o look, com o que ele precisa saber NA linha. */

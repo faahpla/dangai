@@ -13,7 +13,8 @@ import { papelDaSecaoSchema } from './roteiro'
  *   (`nucleo.travarTranscript`): este pedaco so lembra de onde o projeto veio;
  * - trecho de audio: `modulos.recap.papel` ('musica' | 'whoosh' | 'impacto');
  *   o `ducking` e do nucleo (`trilha.ducking`);
- * - clipe da faixa de video: `modulos.recap.papel` ('cor') e `corOriginal`.
+ * - clipe da faixa de video: `modulos.recap.papel` ('cor') e `corOriginal`;
+ *   no texto de tela, `papel: 'texto'`, `fraseId` e `marca` (textos-na-tela.ts).
  *
  * O codigo portado do Studio (shared/edicao-rapida.ts) trabalha com o item
  * "achatado" (`papel` e `corOriginal` no proprio item): `paraOModulo` achata
@@ -32,7 +33,8 @@ export const PAPEIS_DA_TRILHA = ['musica', 'whoosh', 'impacto'] as const
 export const papelDaTrilhaSchema = z.enum(PAPEIS_DA_TRILHA)
 export type PapelDaTrilha = z.infer<typeof papelDaTrilhaSchema>
 
-export const PAPEIS_DA_SOBREPOSICAO = ['cor'] as const
+/** 'cor' = a camada de ajuste; 'texto' = um texto de tela do roteiro (textos-na-tela.ts). */
+export const PAPEIS_DA_SOBREPOSICAO = ['cor', 'texto'] as const
 export const papelDaSobreposicaoSchema = z.enum(PAPEIS_DA_SOBREPOSICAO)
 export type PapelDaSobreposicao = z.infer<typeof papelDaSobreposicaoSchema>
 
@@ -52,6 +54,12 @@ export const fraseNoTempoSchema = z.object({
   inicio: z.number().nonnegative(),
   fim: z.number().nonnegative(),
   personagens: z.array(z.string()).default([]),
+  /**
+   * O texto de tela da frase no roteiro aprovado (null = nenhum). Ausente =
+   * projeto montado antes dos Textos na tela: a Edicao rapida no editor le do
+   * rascunho.
+   */
+  tela: z.string().nullable().optional(),
 })
 
 /** Uma parte do roteiro no tempo do video: as viradas do som e os nomes do rosto. */

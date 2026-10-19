@@ -83,7 +83,7 @@ export function useDicaDaEdicaoRapida(): { ligadas: string; nada: boolean } {
   useEffect(() => {
     if (!useEdicaoRapida.getState().padrao) void carregarPadrao()
   }, [carregarPadrao])
-  if (!padrao) return { ligadas: 'sons, musica, rosto, legenda e cor', nada: false }
+  if (!padrao) return { ligadas: 'sons, musica, rosto, legenda, cor e textos', nada: false }
   return { ligadas: partesLigadas(padrao.config), nada: nadaLigado(padrao.config) }
 }
 

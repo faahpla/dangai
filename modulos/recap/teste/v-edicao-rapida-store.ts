@@ -17,7 +17,11 @@
  * 7. ocupado ou sem narracao: nada roda;
  * 8. o projeto do Studio (papel/corOriginal nos itens, `studio` na raiz) e
  *    convertido ao abrir: `modulos.recap` versao 1, a trava do transcript, e a
- *    Edicao rapida reconhece a camada e a musica dele.
+ *    Edicao rapida reconhece a camada e a musica dele;
+ * 9. os TEXTOS NA TELA no editor: o texto de tela das frases (menos a 1a, o
+ *    card de gancho) vira clipe de imagem com url, acima da cor, no tempo da
+ *    palavra; rodar de novo nao muda nada (nenhum passo); o texto que ele
+ *    arrastou fica; projeto antigo (sem `tela`) le do rascunho.
  *
  * Nao escreve nada. Rodar da raiz do projeto (o store precisa dos caminhos do renderer):
  *   npx tsx --tsconfig tsconfig.web.json modulos/recap/teste/v-edicao-rapida-store.ts
@@ -111,6 +115,7 @@ const doNucleo: Record<string, (...args: unknown[]) => Resposta> = {
   }),
   reframeImage: (args) => ({ ok: true, value: `http://127.0.0.1/recorte/${(args as { id: string }).id}` }),
   getSettings: () => ({ ok: true, value: { captionStyle: ESTILO, presetsDeCor: [] } }),
+  prepararSobreposicao: (path) => ({ ok: true, value: { tipo: 'image', url: `http://127.0.0.1/t/${String(path).split('/').pop()}`, durationSec: 3600, aspecto: 1080 / 1920 } }),
   pickMusic: () => ({ ok: true, value: { path: 'C:/outra/Escolhida.mp3', fileName: 'Escolhida.mp3', url: 'x' } }),
 }
 const doModulo: Record<string, (...args: unknown[]) => Resposta> = {
@@ -118,6 +123,20 @@ const doModulo: Record<string, (...args: unknown[]) => Resposta> = {
   rostosDosPedacos: (lote) => (respostas.rostoOk ? { ok: true, value: rostosDosPedacos(lote as LoteDeRostos) } : { ok: false, error: 'detector caiu' }),
   lerConfig: () => ({ ok: true, value: { edicaoRapidaPadrao: PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO } }),
   registrarMusicaUsada: () => ({ ok: true, value: true }),
+  textosNaTela: (pedido) => ({
+    ok: true,
+    value: {
+      pngs: (pedido as { textos: { fraseId: string; texto: string }[] }).textos.map((t) => ({
+        fraseId: t.fraseId,
+        path: `C:/proj/textos/${t.fraseId}.png`,
+        centroX: 0.5,
+        centroY: 0.27,
+        aspecto: 1080 / 1920,
+      })),
+      avisos: [],
+    },
+  }),
+  telasDoRascunho: () => ({ ok: true, value: { f01: 'GANCHO', f02: 'CHROME' } }),
 }
 const anotando = (tabela: Record<string, (...args: unknown[]) => Resposta>) =>
   new Proxy(
@@ -405,6 +424,39 @@ async function main(): Promise<void> {
   )
   confere(s8b.sobreposicoes.length === 1 && s8b.sobreposicoes[0]!.id === 'c1' && r8b?.cor === 'Anime vivo', `e reconhece a camada de cor intacta (trocada no lugar) ${r8b?.corMantida ?? ''}`)
   pararUndo8()
+
+  secao('9. Textos na tela no editor')
+  carregar()
+  const telas = { ...RECAP, secoes: RECAP.secoes!.map((s) => ({ ...s, frases: s.frases.map((f) => ({ ...f, tela: f.id === 'f01' ? 'GANCHO' : 'CHROME' })) })) }
+  useProject.setState({ modulos: { recap: telas }, hookText: 'GANCHO', hookSec: 2 })
+  const pararUndo9 = startUndo()
+  const SO_TEXTOS = { sfx: false, musica: false, rosto: false, legenda: false, cor: true, textos: true }
+  const r9 = await edicaoRapidaNoProjeto(SO_TEXTOS)
+  const s9 = useProject.getState()
+  const textos9 = s9.sobreposicoes.filter((o) => papelDaSobreposicao(o) === 'texto')
+  const cor9 = s9.sobreposicoes.find((o) => papelDaSobreposicao(o) === 'cor')
+  const pedidoDeTextos = ultima('textosNaTela')?.[0] as { textos: { fraseId: string }[]; pasta: string; captionY: number }
+  confere(textos9.length === 1 && (textos9[0]!.modulos as { recap: { fraseId: string } }).recap.fraseId === 'f02', 'so a f02 vira texto (a f01 e o card de gancho)')
+  confere(pedidoDeTextos.textos.length === 1 && pedidoDeTextos.pasta === 'C:/proj' && pedidoDeTextos.captionY === 0.42, 'o pedido ao main: a pasta do .dangai e a legenda do projeto')
+  confere(!!cor9 && textos9[0]!.faixa === cor9.faixa + 1 && textos9[0]!.url === 'http://127.0.0.1/t/f02.png', 'acima da camada de cor, com a url servida')
+  confere(Math.abs(textos9[0]!.at - (0.2 + 6 * 1.05 - 0.08)) < 1e-3 && textos9[0]!.tipo === 'image', `entra na palavra "Chrome" (${textos9[0]!.at} s), nao no comeco da f02`)
+  confere(r9?.textos?.postos === 1 && r9.aplicou, 'o resumo diz 1 texto')
+  const passos = useProject.getState()
+  const r9b = await edicaoRapidaNoProjeto(SO_TEXTOS)
+  confere(r9b?.aplicou === false && useProject.getState().sobreposicoes === passos.sobreposicoes, 'rodar de novo: nada muda, nenhum passo de Ctrl+Z')
+  // Ele arrasta o texto 1 s para a direita: rodar de novo deixa onde ele pos.
+  useProject.setState({ sobreposicoes: useProject.getState().sobreposicoes.map((o) => (papelDaSobreposicao(o) === 'texto' ? { ...o, at: o.at + 1 } : o)) })
+  const arrastado = useProject.getState().sobreposicoes.find((o) => papelDaSobreposicao(o) === 'texto')!
+  const r9c = await edicaoRapidaNoProjeto(SO_TEXTOS)
+  const s9c = useProject.getState().sobreposicoes.filter((o) => papelDaSobreposicao(o) === 'texto')
+  confere(s9c.length === 1 && s9c[0]!.at === arrastado.at && r9c?.textos?.mantidos === 1 && r9c.textos.postos === 0, 'o texto que ele arrastou fica onde ele pos (1 mantido, nenhum novo)')
+  confere(rotuloDoClipe({ tipo: 'video', clipe: s9c[0]! }) === 'Texto: CHROME (editado)', 'na linha do tempo: "Texto: CHROME (editado)"')
+  // Projeto montado antes dos Textos na tela (sem `tela`): os textos vem do rascunho.
+  useProject.setState({ modulos: { recap: RECAP }, sobreposicoes: [] })
+  const antesDoRascunho = quantas('telasDoRascunho')
+  const r9d = await edicaoRapidaNoProjeto(SO_TEXTOS)
+  confere(quantas('telasDoRascunho') === antesDoRascunho + 1 && r9d?.textos?.postos === 1, 'projeto antigo: o texto de tela vem do rascunho')
+  pararUndo9()
 }
 
 main()

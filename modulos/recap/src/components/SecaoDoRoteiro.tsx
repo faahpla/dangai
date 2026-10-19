@@ -1,5 +1,5 @@
 import { forwardRef, memo, useEffect, useRef, useState } from 'react'
-import { Plus, Trash2, TriangleAlert, Type, WandSparkles, X } from 'lucide-react'
+import { Clapperboard, Plus, Trash2, TriangleAlert, Type, WandSparkles, X } from 'lucide-react'
 import type { Cue, EpisodeIndex } from '../../shared/episodio'
 import {
   INSTRUCAO_MAX,
@@ -18,6 +18,8 @@ import {
   type Secao,
 } from '../../shared/roteiro'
 import { ROTULO_DO_PROBLEMA, type ItemDaRevisao, type MudancaDaRevisao } from '../../shared/revisao'
+import { destinoDoTextoDeTela } from '../../shared/textos-na-tela'
+import { useEdicaoRapida } from '../store/edicao-rapida'
 import { useRoteiro, type GeracaoEmCurso } from '../store/gerar-roteiro'
 import { useRitmoDaVoz } from '../store/ritmo'
 import { Linha } from '@/modulos/kit'
@@ -86,6 +88,12 @@ export function SecaoDoRoteiro({
   const [instrucao, setInstrucao] = useState<string | null>(null)
   // O ritmo da voz que vai narrar: o mesmo "~Xs" da contagem do roteiro.
   const ritmo = useRitmoDaVoz()
+  // A etiqueta do texto de tela diz a verdade: vai no video (Edicao rapida > Textos na tela) ou nao.
+  const textosLigados = useEdicaoRapida((s) => s.padrao?.config.textos ?? true)
+  const carregarPadrao = useEdicaoRapida((s) => s.carregarPadrao)
+  useEffect(() => {
+    if (!useEdicaoRapida.getState().padrao) void carregarPadrao()
+  }, [carregarPadrao])
 
   const travado = geracao !== null
   const refazendo = geracao !== null && geracao.secaoId === secao.id
@@ -194,6 +202,7 @@ export function SecaoDoRoteiro({
                   mudanca={mudancas.get(frase.id) ?? null}
                   anterior={lugar > 0 ? (ordem[lugar - 1] ?? null) : null}
                   proxima={lugar >= 0 ? (ordem[lugar + 1] ?? null) : null}
+                  textosLigados={textosLigados}
                 />
               )
             })}
@@ -310,6 +319,7 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   mudanca,
   anterior,
   proxima,
+  textosLigados,
 }: {
   frase: Frase
   secaoId: string
@@ -329,6 +339,8 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   mudanca: MudancaDaRevisao | null
   anterior: string | null
   proxima: string | null
+  /** A Edicao rapida > Textos na tela esta ligada (o texto de tela entra no video). */
+  textosLigados: boolean
 }) {
   const editarFrase = useRoteiro((s) => s.editarFrase)
   const marcarFoco = useRoteiro((s) => s.marcarFoco)
@@ -339,6 +351,8 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
   const falas = indice ? falasDaFrase(frase, eventos, indice) : []
   const evento = momento ? eventos.find((e) => e.id === momento.eventoId) : undefined
   const telaLonga = frase.textoDeTela !== null && palavrasDeTela(frase.textoDeTela) > TEXTO_DE_TELA_MAX_PALAVRAS
+  // A 1a frase do roteiro (sem anterior) e o card de gancho; as outras entram animadas.
+  const destino = destinoDoTextoDeTela({ primeira: anterior === null, textosLigados })
   // Frase vazia recem-criada, com o cursor nela, ainda nao e erro: e ele escrevendo.
   const mostrarErro = erro !== null && !focado
   const mostrarAvisos = avisos !== null && !mostrarErro && frase.texto.trim() !== ''
@@ -449,14 +463,21 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
         />
         {frase.textoDeTela && (
           <span
-            title={telaLonga ? `Texto de tela com mais de ${TEXTO_DE_TELA_MAX_PALAVRAS} palavras` : 'Texto de tela'}
+            title={telaLonga ? `Texto de tela com mais de ${TEXTO_DE_TELA_MAX_PALAVRAS} palavras` : `Texto de tela. ${destino.dica}`}
+            aria-label={`Texto de tela: ${frase.textoDeTela}. ${destino.dica}`}
+            data-no-video={destino.noVideo ? 'sim' : 'nao'}
             className={[
-              'flex max-w-[160px] shrink-0 items-center gap-1 rounded-[3px] border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-              telaLonga ? `border-[#f6a23c] ${COR_DE_AVISO}` : 'border-line text-ink-2',
+              'flex max-w-[200px] shrink-0 items-center gap-1 rounded-[3px] border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
+              telaLonga ? `border-[#f6a23c] ${COR_DE_AVISO}` : destino.noVideo ? 'border-line-strong text-ink' : 'border-line text-ink-3',
             ].join(' ')}
           >
-            <Type size={10} strokeWidth={1.75} className="shrink-0" />
+            {destino.noVideo ? (
+              <Clapperboard size={10} strokeWidth={1.75} className="shrink-0 text-accent" />
+            ) : (
+              <Type size={10} strokeWidth={1.75} className="shrink-0" />
+            )}
             <span className="truncate">{frase.textoDeTela}</span>
+            {destino.noVideo && <span className="shrink-0 text-[9px] normal-case tracking-normal text-ink-3">no video</span>}
           </span>
         )}
         {mudanca && <MarcaDaMudanca mudanca={mudanca} />}
@@ -479,7 +500,15 @@ const FraseDoRoteiro = memo(function FraseDoRoteiro({
       </div>
 
       {detalhe && (
-        <DetalheDaFrase frase={frase} falas={falas} eventos={eventos} indice={indice} momento={momento} travado={travado} />
+        <DetalheDaFrase
+          frase={frase}
+          falas={falas}
+          eventos={eventos}
+          indice={indice}
+          momento={momento}
+          travado={travado}
+          destinoDoTexto={destino.dica}
+        />
       )}
     </li>
   )
@@ -619,6 +648,7 @@ function DetalheDaFrase({
   indice,
   momento,
   travado,
+  destinoDoTexto,
 }: {
   frase: Frase
   falas: readonly Cue[]
@@ -626,6 +656,8 @@ function DetalheDaFrase({
   indice: EpisodeIndex | null
   momento: MomentoDaFrase | null
   travado: boolean
+  /** Para onde o texto de tela vai (card de gancho, video ou so o roteiro). */
+  destinoDoTexto: string
 }) {
   const editarFrase = useRoteiro((s) => s.editarFrase)
   const telaLonga = frase.textoDeTela !== null && palavrasDeTela(frase.textoDeTela) > TEXTO_DE_TELA_MAX_PALAVRAS
@@ -720,7 +752,7 @@ function DetalheDaFrase({
         </Linha>
         <Linha
           label="Texto"
-          title={`Texto queimado na tela, ${TEXTO_DE_TELA_MAX_PALAVRAS} palavras no maximo (artigo e preposicao nao contam). Vazio = nada.`}
+          title={`Texto queimado na tela, ${TEXTO_DE_TELA_MAX_PALAVRAS} palavras no maximo (artigo e preposicao nao contam). Vazio = nada. ${destinoDoTexto}`}
         >
           <input
             type="text"

@@ -112,6 +112,8 @@ import { mesclasDoEpisodio } from './cenas/mesclas'
 import type { PlanoNoMesclado } from '../shared/mesclas'
 import { encaixarNaVoz, montagemInterrompida, montarProjeto } from './montar'
 import { rostosDosPedacos } from './montar/rostos-motor'
+import { pngsDosTextos, telasDoRascunho } from './montar/textos'
+import { pedidoDeTextosSchema, type PedidoDeTextos, type PngDoTexto } from '../shared/textos-na-tela'
 import { registrarCanaisDoMotor } from './ipc-motor'
 import { registrarCanaisDaMigracao } from './migracao/ipc'
 import { escolherMusica, listarMusicas, registrarMusicaUsada } from './som/musicas'
@@ -422,6 +424,14 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[PedidoDePlanoDeSom], PlanoDeSom>(C.planejarSom, async (pedido) => planejarSom(pedidoDePlanoDeSomSchema.parse(pedido)))
 
   ctx.handle<[LoteDeRostos], RostosDoLote>(C.rostosDosPedacos, async (lote) => rostosDosPedacos(loteDeRostosSchema.parse(lote)))
+
+  // Os textos na tela da Edicao rapida no editor: os PNGs, e os textos de um projeto antigo.
+  ctx.handle<[PedidoDeTextos], { pngs: PngDoTexto[]; avisos: string[] }>(C.textosNaTela, async (pedido) =>
+    pngsDosTextos(pedidoDeTextosSchema.parse(pedido)),
+  )
+  ctx.handle<[string, number], Record<string, string | null> | null>(C.telasDoRascunho, async (rascunhoId, versao) =>
+    telasDoRascunho(z.string().regex(/^rc_[0-9a-z_]+$/).parse(rascunhoId), z.number().int().positive().parse(versao)),
+  )
 }
 
 /** 'f' + numero, como Frase.id. */

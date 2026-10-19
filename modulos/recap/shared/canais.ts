@@ -65,6 +65,7 @@ import type {
   SfxDaEdicaoRapida,
 } from './edicao-rapida'
 import type { AjustesDaVoz, CampoDeChaveDaVoz, TesteDeVoz, VozPadrao } from './tipos-da-voz'
+import type { PedidoDeTextos, PngDoTexto } from './textos-na-tela'
 import type {
   AudioDoTake,
   EstimativaDeCusto,
@@ -183,6 +184,10 @@ export const CANAIS = {
   planejarSom: 'recap:som:planejar',
   sfxDaEdicaoRapida: 'recap:som:sfx-da-edicao-rapida',
   rostosDosPedacos: 'recap:rosto:pedacos',
+  /** Os PNGs dos textos na tela (shared/textos-na-tela.ts, electron/montar/textos.ts). */
+  textosNaTela: 'recap:textos:png',
+  /** Os textos de tela de uma versao do roteiro (projeto montado antes dos Textos na tela). */
+  telasDoRascunho: 'recap:textos:do-rascunho',
 
   // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
   // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
@@ -364,6 +369,10 @@ export interface PonteDoRecap {
   planejarSom(pedido: PedidoDePlanoDeSom): Promise<IpcResult<PlanoDeSom>>
   /** O enquadramento de cada pedaco num lote so: o motor (YOLO de anime) e, sem ele, o detector antigo. */
   rostosDosPedacos(lote: LoteDeRostos): Promise<IpcResult<RostosDoLote>>
+  /** Desenha os rotulos (PNG do tamanho do quadro) em <pasta>/textos. Nao gasta nada. */
+  textosNaTela(pedido: PedidoDeTextos): Promise<IpcResult<{ pngs: PngDoTexto[]; avisos: string[] }>>
+  /** fraseId -> texto de tela da versao `versao` do rascunho. null = rascunho ou versao sumiu. */
+  telasDoRascunho(rascunhoId: string, versao: number): Promise<IpcResult<Record<string, string | null> | null>>
 
   // O motor de personagens (parte 4), com os nomes do Studio.
   /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */

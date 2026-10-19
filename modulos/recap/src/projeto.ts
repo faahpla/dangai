@@ -1,4 +1,5 @@
 import { rotuloDaSobreposicao } from '../shared/edicao-rapida'
+import { textoIntacto } from '../shared/textos-na-tela'
 import { clipeParaOModulo, converterDoStudio, papelDaSobreposicao, recapDoProjeto } from '../shared/projeto-do-recap'
 import type { ClipeDaFaixa } from '@/modulos/api'
 import { nucleo } from './nucleo'
@@ -63,8 +64,15 @@ function anotarAMusica(): void {
   registrarMusicaDoProjeto(estado)
 }
 
-/** O nome no clipe da linha do tempo: a camada de cor mexida diz "Cor (editada)". */
+/**
+ * O nome no clipe da linha do tempo: a camada de cor mexida diz "Cor
+ * (editada)"; o texto na tela mexido, "Texto: X (editado)" -- a Edicao rapida
+ * nao troca mais esse.
+ */
 export function rotuloDoClipe(c: ClipeDaFaixa): string | null {
-  if (c.tipo !== 'video' || papelDaSobreposicao(c.clipe) !== 'cor') return null
+  if (c.tipo !== 'video') return null
+  const papel = papelDaSobreposicao(c.clipe)
+  if (papel === 'texto') return textoIntacto(c.clipe) ? null : `${c.clipe.fileName} (editado)`
+  if (papel !== 'cor') return null
   return rotuloDaSobreposicao(clipeParaOModulo(c.clipe))
 }

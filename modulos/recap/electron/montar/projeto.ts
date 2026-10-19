@@ -29,6 +29,7 @@ import {
   type TrilhaDoRecap,
 } from '../../shared/projeto-do-recap'
 import { ROTULO_DO_PAPEL, textoDoRoteiro, type Evento, type RascunhoDoRecap, type Roteiro } from '../../shared/roteiro'
+import { ganchoDoRoteiro } from '../../shared/textos-na-tela'
 import type { TakeDaVoz } from '../../shared/voz'
 
 /**
@@ -53,7 +54,8 @@ import type { TakeDaVoz } from '../../shared/voz'
  *   de KEN_BURNS_EFFECTS, CLIP_INTENSITY, curva CLIP_MOTION_CURVE; corte seco
  *   dentro da secao e uma transicao curta (TRANSICAO_DA_VIRADA) na virada de
  *   secao; o primeiro bloco entra seco;
- * - card de gancho com o textoDeTela da 1a frase;
+ * - card de gancho com o textoDeTela da 1a frase (sem ele, a 1a sugestao de
+ *   thumb: ganchoDaMontagem);
  * - legendas: as do editor (buildCaptions com as regras padrao), com
  *   `captionsEdited: false` -- o openProject refaz com as regras de quem abre;
  * - [recap] `modulos.recap` (versao 1) com `vozAlinhada: true` e `secoes`, as
@@ -134,8 +136,27 @@ export interface EntradaDaMontagem {
   estilo?: CaptionStyle | null
   /** As faixas de audio da Edicao rapida (trilhasDoPlanoDeSom). Ausente = nenhuma. */
   trilhas?: readonly TrilhaDoRecap[]
-  /** A faixa de video da Edicao rapida: a camada de cor (camadaDeCor). Ausente = nenhuma. */
+  /** A faixa de video da Edicao rapida: a camada de cor (camadaDeCor) e os textos na tela. Ausente = nenhuma. */
   sobreposicoes?: readonly ClipeDoRecap[]
+  /** As sugestoes de texto de thumb do roteiro: a 1a vira o card de gancho quando a 1a frase nao tem texto. */
+  thumbs?: readonly string[]
+}
+
+/**
+ * O CARD DE GANCHO do projeto montado: o texto (o da 1a frase, ou a 1a
+ * sugestao de thumb) e quanto ele fica na tela -- o tempo da 1a frase, entre
+ * GANCHO_MIN_SEC e GANCHO_MAX_SEC. Os textos na tela comecam depois dele.
+ */
+export function ganchoDaMontagem(
+  roteiro: Pick<Roteiro, 'secoes'>,
+  take: Pick<TakeDaVoz, 'trechos'>,
+  thumbs: readonly string[] = [],
+): { texto: string; sec: number; origem: 'frase' | 'thumb' | null } {
+  const primeira = roteiro.secoes[0]?.frases[0]
+  const trecho = primeira ? take.trechos.find((t) => t.fraseId === primeira.id) : undefined
+  const gancho = ganchoDoRoteiro(primeira, thumbs)
+  const sec = trecho ? Math.round(Math.min(Math.max(trecho.duracao, GANCHO_MIN_SEC), GANCHO_MAX_SEC) * 10) / 10 : HOOK_SEC_DEFAULT
+  return { texto: gancho.texto, sec, origem: gancho.origem }
 }
 
 /**
@@ -355,12 +376,7 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
   })
 
   const transcript = transcriptDoTake(e.roteiro, e.take)
-  const primeira = e.roteiro.secoes[0]?.frases[0]
-  const trechoDaPrimeira = primeira ? e.take.trechos.find((t) => t.fraseId === primeira.id) : undefined
-  const gancho = primeira?.textoDeTela?.trim() ?? ''
-  const hookSec = trechoDaPrimeira
-    ? Math.round(Math.min(Math.max(trechoDaPrimeira.duracao, GANCHO_MIN_SEC), GANCHO_MAX_SEC) * 10) / 10
-    : HOOK_SEC_DEFAULT
+  const gancho = ganchoDaMontagem(e.roteiro, e.take, e.thumbs ?? [])
 
   // [recap] O que no Studio era o `studio` da raiz: `modulos.recap`, versao 1.
   // O transcript fica travado pelo nucleo (`transcriptTravado`), nao por uma
@@ -396,8 +412,8 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
     // Recap sem legenda nao existe: o projeto ja nasce com ela ligada.
     captionsEnabled: true,
     sfxEnabled: false,
-    hookText: gancho,
-    hookSec,
+    hookText: gancho.texto,
+    hookSec: gancho.sec,
     transcriptTravado: true,
     modulos: { [ID_DO_MODULO]: recap },
     // O `papel`/`corOriginal` da Edicao rapida vao para `modulos.recap` do item.

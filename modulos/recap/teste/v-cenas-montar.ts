@@ -16,9 +16,11 @@
  *    estilo salvo da legenda, nenhuma trilha; o plano mesclado vira o mesclado
  *    com o sourceStart certo;
  * 5. montar COM a Edicao rapida (sons de fabrica, musica de uma pasta
- *    temporaria, cor): o `papel` em `modulos.recap` dos itens, o `ducking` do
- *    nucleo na musica, a camada de cor, a musica no historico do perfil (nunca
- *    na pasta de musicas), o resumo com "SFX de fabrica";
+ *    temporaria, cor, textos na tela): o `papel` em `modulos.recap` dos itens,
+ *    o `ducking` do nucleo na musica, a camada de cor, os textos de tela das
+ *    frases como clipes de imagem acima da cor (PNG em <projeto>/textos), a
+ *    musica no historico do perfil (nunca na pasta de musicas), o resumo com
+ *    "SFX de fabrica";
  * 6. nada escrito fora das pastas temporarias.
  *
  * Usa o ffmpeg (a musica e a narracao de teste). Rodar da raiz do projeto:
@@ -129,7 +131,8 @@ async function principal(): Promise<void> {
     empacotado: false,
     config: () => ({ libraryDir: '', iaProvedor: 'gemini', whisperModel: 'small', modulo: { biblioteca: BIB, pastaDeMusicas: MUSICAS } }),
     ligado: () => true,
-    pasta: (tipo: string) => (tipo === 'dados' ? DADOS : RAIZ),
+    // 'app' = a raiz do repositorio: a fonte das legendas (assets/fonts) dos textos na tela.
+    pasta: (tipo: string) => (tipo === 'dados' ? DADOS : tipo === 'app' ? join(__dirname, '..', '..', '..') : RAIZ),
   } as unknown as ContextoDoModulo)
   configurarEpisodios(DADOS)
   configurarSom({ userData: DADOS, reservaDeSfx: join(__dirname, '..', '..', '..', 'assets', 'sfx') })
@@ -251,10 +254,10 @@ async function principal(): Promise<void> {
   confere(existsSync(f1.audio.path) && f1.audio.path.startsWith(join(BIB, '_projetos')), 'a narracao copiada para a pasta do projeto')
 
   // ===================================================================== 5.
-  secao('5. Abrir no editor COM a Edicao rapida (sons de fabrica, musica, cor)')
+  secao('5. Abrir no editor COM a Edicao rapida (sons de fabrica, musica, cor, textos)')
   const m2 = await montarProjeto(
     r.id,
-    { edicaoRapida: { sfx: true, musica: true, rosto: false, legenda: true, cor: true }, estilo: ESTILO, presetsDeCor: [] },
+    { edicaoRapida: { sfx: true, musica: true, rosto: false, legenda: true, cor: true, textos: true }, estilo: ESTILO, presetsDeCor: [] },
     { rostos: false },
   )
   const f2 = projectFileSchemaQuePreserva.parse(JSON.parse(readFileSync(m2.projetoPath, 'utf8')))
@@ -268,6 +271,25 @@ async function principal(): Promise<void> {
   const cor = f2.sobreposicoes.filter((o) => papelDaSobreposicao(o) === 'cor')
   confere(cor.length === 1 && cor[0]!.tipo === 'ajuste' && cor[0]!.at === 0 && cor[0]!.fileName === 'Cor: Anime vivo' && !('corOriginal' in cor[0]!), 'a camada de cor (Anime vivo) com o papel em modulos.recap')
   confere(m2.edicaoRapida?.musica === 'Tema de teste.mp3' && m2.edicaoRapida.cor === 'Anime vivo' && m2.edicaoRapida.legenda, 'o resumo diz a musica, a cor e a legenda')
+  // Os textos de tela do roteiro da fixture (f11 "PLANO REAL" e f14 "7 BILHOES"): acima da cor, no tempo da frase.
+  const textos = f2.sobreposicoes.filter((o) => papelDaSobreposicao(o) === 'texto')
+  const recap2 = recapDoProjeto(f2.modulos)!
+  const frasesNoTempo = new Map(recap2.secoes!.flatMap((s) => s.frases).map((f) => [f.id, f]))
+  const fraseDoClipe = (o: (typeof textos)[number]): string => String((o.modulos as { recap: { fraseId: string } }).recap.fraseId)
+  confere(
+    textos.length === 2 && textos.map(fraseDoClipe).sort().join() === 'f11,f14' && textos.every((o) => o.faixa === cor[0]!.faixa + 1),
+    `os 2 textos de tela entram, na faixa acima da cor (${textos.map((o) => `${fraseDoClipe(o)}@V${o.faixa + 1}`).join(', ')})`,
+  )
+  confere(
+    textos.every((o) => {
+      const f = frasesNoTempo.get(fraseDoClipe(o))!
+      return o.at >= f.inicio - 0.1 && o.at < f.fim && o.tipo === 'image' && (o.chaves?.length ?? 0) === 3 && o.fadeInSec > 0 && existsSync(o.path)
+    }),
+    'cada um no tempo da sua frase, com o pop e o PNG gravado',
+  )
+  confere(textos.every((o) => o.path.startsWith(join(m2.projetoPath, '..', 'textos'))), 'os PNGs em <projeto>/textos')
+  confere(recap2.secoes!.flatMap((s) => s.frases).find((f) => f.id === 'f11')?.tela === 'PLANO REAL', 'o texto de tela de cada frase em modulos.recap.secoes (o editor roda de novo sem o rascunho)')
+  confere(m2.edicaoRapida?.textos?.postos === 2 && f2.hookText === '', `o resumo diz 2 textos; sem texto na 1a frase e sem thumb, sem card ("${f2.hookText}")`)
   const historico = join(DADOS, 'som', 'musicas-usadas.json')
   confere(existsSync(historico) && readFileSync(historico, 'utf8').includes('Tema de teste.mp3'), 'a musica no historico do perfil do modulo')
   confere(readdirSync(MUSICAS).join() === 'Tema de teste.mp3', 'a pasta de musicas so lida (nada gravado la)')

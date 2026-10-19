@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { roteiroAtual, type RascunhoDoRecap } from '../../shared/roteiro'
+import { roteiroAtual, sugestoesDaVersao, type RascunhoDoRecap } from '../../shared/roteiro'
 import { podeIrParaCenas, takeAtual } from '../../shared/voz'
 import {
   cenasDoRascunho,
@@ -29,7 +29,8 @@ import {
 } from './edicao-rapida'
 import { focosDosPedacos } from './foco'
 import { arquivoDoProjeto, conferirPastaPedida, nomeDoProjeto, pastaPadraoDoProjeto } from './pasta'
-import { montarArquivoDoProjeto, pedacosDaMontagem, type FocoDoPedaco } from './projeto'
+import { ganchoDaMontagem, montarArquivoDoProjeto, pedacosDaMontagem, type FocoDoPedaco } from './projeto'
+import { textosDaMontagem } from './textos'
 
 /**
  * O ENCAIXE NA VOZ e a MONTAGEM do projeto (agente B).
@@ -321,6 +322,23 @@ async function montarAqui(
   const estilo = estiloSalvo(pedido.estilo)
   const cor = config?.cor ? corDaMontagem(take.duracao, pedido.presetsDeCor ?? []) : null
   if (cor) avisosDaEdicao.push(...cor.avisos)
+  // O card de gancho (a 1a frase, ou a 1a sugestao de thumb) e os TEXTOS NA
+  // TELA das outras frases, acima da camada de cor e depois do card.
+  const thumbs = sugestoesDaVersao(r, roteiro.versao)?.thumbs ?? []
+  const gancho = ganchoDaMontagem(roteiro, take, thumbs)
+  let textos: Awaited<ReturnType<typeof textosDaMontagem>> | null = null
+  if (config?.textos) {
+    andar('Textos na tela...')
+    textos = await textosDaMontagem({
+      roteiro,
+      take,
+      pasta,
+      estilo,
+      ganchoAteSec: gancho.texto ? gancho.sec : 0,
+      faixaDeVideo: cor?.camada ? [cor.camada] : [],
+    })
+    avisosDaEdicao.push(...textos.avisos)
+  }
   const { file, avisos } = montarArquivoDoProjeto({
     rascunho: r,
     roteiro,
@@ -333,7 +351,8 @@ async function montarAqui(
     eventos: r.eventos,
     estilo,
     trilhas: som?.trilhas ?? [],
-    sobreposicoes: cor?.camada ? [cor.camada] : [],
+    sobreposicoes: [...(cor?.camada ? [cor.camada] : []), ...(textos?.clipes ?? [])],
+    thumbs,
   })
   const projetoPath = arquivoDoProjeto(pasta, nome)
   saveProjectFile(projetoPath, file)
@@ -346,17 +365,20 @@ async function montarAqui(
   return {
     projetoPath,
     avisos,
-    edicaoRapida: resumoDaMontagem({
-      config,
-      plano: som?.plano ?? null,
-      lote,
-      focos,
-      pedacos: previa.pedacos,
-      rostoRodou: config.rosto && opcoes.rostos !== false,
-      legenda: estilo !== null,
-      cor: cor?.camada ? cor.nome : null,
-      corPresetSumiu: cor?.sumiu ?? null,
-      avisos: avisosDaEdicao,
-    }),
+    edicaoRapida: {
+      ...resumoDaMontagem({
+        config,
+        plano: som?.plano ?? null,
+        lote,
+        focos,
+        pedacos: previa.pedacos,
+        rostoRodou: config.rosto && opcoes.rostos !== false,
+        legenda: estilo !== null,
+        cor: cor?.camada ? cor.nome : null,
+        corPresetSumiu: cor?.sumiu ?? null,
+        avisos: avisosDaEdicao,
+      }),
+      textos: textos ? { postos: textos.clipes.length, mantidos: 0, faixa: textos.clipes[0]?.faixa ?? null } : null,
+    },
   }
 }
