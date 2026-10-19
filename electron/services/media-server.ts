@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createReadStream, statSync } from 'node:fs'
 import { extname } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 import { randomUUID } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 
@@ -154,7 +155,7 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
       'Content-Range': `bytes ${start}-${end}/${size}`,
       'Accept-Ranges': 'bytes',
     })
-    createReadStream(path, { start, end }).pipe(res)
+    enviar(createReadStream(path, { start, end }), res)
     return
   }
 
@@ -164,5 +165,20 @@ function handleRequest(req: IncomingMessage, res: ServerResponse): void {
     'Content-Length': size,
     'Accept-Ranges': 'bytes',
   })
-  createReadStream(path).pipe(res)
+  enviar(createReadStream(path), res)
+}
+
+/**
+ * Manda o arquivo e FECHA quando o player desiste.
+ *
+ * Com `.pipe(res)`, um pedido abandonado no meio (o <video> pulou de ponto ou
+ * a miniatura saiu da tela) deixava a leitura parada com o arquivo ABERTO ate
+ * o app fechar -- e o Windows recusava mover a pasta do episodio para a
+ * Lixeira na mesma sessao. O `pipeline` destroi a leitura junto com a
+ * resposta. Ver v-servidor-solta-arquivo.ts.
+ */
+function enviar(leitura: ReturnType<typeof createReadStream>, res: ServerResponse): void {
+  pipeline(leitura, res).catch(() => {
+    /* o player desistiu: normal, e a leitura ja foi fechada */
+  })
 }

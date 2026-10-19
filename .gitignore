@@ -19,3 +19,6 @@ Thumbs.db
 
 # Permissoes locais do Claude Code: so valem nesta maquina.
 .claude/settings.local.json
+
+# Testes fora do Electron podem criar o userData relativo; nunca vai para o repo.
+/userData/

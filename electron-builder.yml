@@ -65,6 +65,8 @@ extraResources:
       - '!bin{,/**}'
       - '!**/__pycache__{,/**}'
       - '!**/*.pyc'
+      # Os testes do motor sao do desenvolvimento, nao do app.
+      - '!tests{,/**}'
 
 # Binario dentro de asar nao pode ser executado, e o sharp carrega .node
 # nativo. Os dois precisam ficar desempacotados.

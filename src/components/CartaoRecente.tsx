@@ -99,8 +99,10 @@ export function CartaoRecente({ recente: r, sumiu, rotulos, abrir, esquecer }: P
 }
 
 function duracao(seg: number): string {
-  const m = Math.floor(seg / 60);
-  const s = Math.round(seg % 60);
+  // Arredonda o TOTAL primeiro: 59,6 s e 1:00, e nao "0:60".
+  const total = Math.round(seg);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
