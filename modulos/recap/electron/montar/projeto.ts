@@ -233,6 +233,10 @@ export function pedacosDaMontagem(e: Omit<EntradaDaMontagem, 'narracaoPath' | 'f
         take: e.take,
         ...(e.minimoSec !== undefined ? { minimoSec: e.minimoSec } : {}),
         ...(e.entradas ? { entradas: e.entradas } : {}),
+        // (4a rodada) A emenda nao cresce para o plano que outra frase mostra (o mesmo do encaixarTudo).
+        ocupados: new Set(
+          e.cenas.escolhas.filter((x) => x.fraseId !== frase.id).flatMap((x) => x.cenas.flatMap((c) => [...c.candidato.planoIds, ...(c.baixo?.planoIds ?? [])])),
+        ),
       }
       const feito = encaixarEscolha(escolha, ctx)
       avisos.push(...feito.avisos)

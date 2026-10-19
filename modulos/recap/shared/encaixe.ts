@@ -103,6 +103,12 @@ export interface ContextoDoEncaixe {
    * que nao le os quadros; a montagem e o encaixe na voz passam).
    */
   entradas?: ReadonlyMap<string, number>
+  /**
+   * (4a rodada) Os planos que OUTRAS frases mostram: a emenda nao cresce para
+   * eles (o MRM E02 repetia o 0288 da f17 na f18, puxado como o plano
+   * anterior de um 0289 de 0,75 s). Ausente = nenhum.
+   */
+  ocupados?: ReadonlySet<string>
 }
 
 /** As entradas de quem abre com efeito (ContextoDoEncaixe.entradas): o comeco do plano + os segundos ruins. */
@@ -241,7 +247,7 @@ function encaixarCandidato(
   let b = Math.max(...posicoes)
   const livre = (i: number): boolean => {
     const p = planos[i]
-    return p !== undefined && !planoExcluido(p, ctx.indice.exclusoes)
+    return p !== undefined && !planoExcluido(p, ctx.indice.exclusoes) && !(ctx.ocupados?.has(p.id) ?? false)
   }
   // (4a rodada) O piso do comeco em cada plano: depois do efeito do comeco (posto a mao, o do plano).
   const piso = (i: number): number => {

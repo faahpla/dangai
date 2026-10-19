@@ -100,9 +100,12 @@ export function encaixarTudo(
 ): { escolhas: EstadoDasCenas['escolhas']; avisos: string[] } {
   const porId = new Map(frasesDoRoteiro(roteiro).map((f) => [f.id, f]))
   const avisos: string[] = []
+  // (4a rodada) Os planos de cada OUTRA frase: a emenda de uma nao cresce para o plano que a outra mostra.
+  const dasOutras = (fraseId: string): Set<string> =>
+    new Set(cenas.escolhas.filter((e) => e.fraseId !== fraseId).flatMap((e) => e.cenas.flatMap((c) => [...c.candidato.planoIds, ...(c.baixo?.planoIds ?? [])])))
   const contexto = (fraseId: string) => {
     const frase = porId.get(fraseId)
-    return frase ? { indice, frase, take, minimoSec, ...(entradas ? { entradas } : {}) } : null
+    return frase ? { indice, frase, take, minimoSec, ...(entradas ? { entradas } : {}), ocupados: dasOutras(fraseId) } : null
   }
   const encaixadas = cenas.escolhas.map((e) => {
     const ctx = contexto(e.fraseId)
