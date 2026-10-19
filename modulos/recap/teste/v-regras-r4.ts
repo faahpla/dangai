@@ -253,6 +253,14 @@ function regra4(): void {
   confere(encaixarEscolha(comecoVelho, { indice: idx, frase: fr('f15', texto), take: takeF, entradas }).escolha.cenas[0]!.candidato.inSec === 4.5, 'um comeco velho dentro do clarao vai para depois dele')
   const amao = { ...comecoVelho, cenas: [{ ...comecoVelho.cenas[0]!, candidato: { ...comecoVelho.cenas[0]!.candidato, origem: 'usuario' as const } }] }
   confere(encaixarEscolha(amao, { indice: idx, frase: fr('f15', texto), take: takeF, entradas }).escolha.cenas[0]!.candidato.inSec === 4.1, 'posto a mao, o comeco e dele')
+  // A emenda nao cresce para o plano que outra frase mostra (o 0288 do MRM E02 na f17 e na f18).
+  const curta = 'Sem sobrar nada de magia.'
+  const takeC = takeDe([{ id: 'f18', texto: curta, dur: 2.2 }])
+  const no4: EscolhaDaFrase = { ...escolha, fraseId: 'f18', hashTexto: hashDoTexto(curta), duracao: 2.2, cenas: [{ candidato: { ...escolha.cenas[0]!.candidato, planoIds: ['0004'], inSec: 8.25, outSec: 9.25 }, palavraInicio: 0 }] }
+  const livre = encaixarEscolha(no4, { indice: idx, frase: fr('f18', curta), take: takeC }).escolha.cenas[0]!.candidato
+  const ocupado = encaixarEscolha(no4, { indice: idx, frase: fr('f18', curta), take: takeC, ocupados: new Set(['0003']) }).escolha.cenas[0]!.candidato
+  confere(livre.planoIds.includes('0003'), 'sem outra frase no 0003, o plano curto puxa o anterior', livre.planoIds)
+  confere(ocupado.planoIds.join() === '0004', 'com o 0003 de outra frase, fica no 0004 (cena curta, sem repetir o plano)', ocupado)
 
   // O casar: a janela comeca depois do efeito; o plano que fica curto demais depois de pular nao abre janela.
   const eventos = [ev('e01', 0, 120)]
