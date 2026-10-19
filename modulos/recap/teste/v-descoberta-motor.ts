@@ -76,6 +76,12 @@ const fase = process.argv[2] ?? 'e01'
 const base = resolve(process.argv[3] ?? '.')
 const saida = resolve(process.argv[4] ?? join(base, 'saida'))
 const raiz = process.cwd()
+// Sem argumentos (a rodada de todos os testes) e um teste MANUAL: precisa de
+// uma pasta base com a copia do E01. Pula com aviso, sem criar userData na raiz.
+if (process.argv[2] === undefined) {
+  console.log('PULADO: teste manual -- rode com <fase> <base> <saida> (ver o comeco do arquivo)')
+  process.exit(0)
+}
 
 let falhas = 0
 function confere(cond: unknown, msg: string): void {
