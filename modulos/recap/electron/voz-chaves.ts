@@ -138,6 +138,18 @@ export function notaDaFalha(provedor: ProvedorDeVoz, falha: Falha, chave: string
  * Confere a chave do ElevenLabs: o plano e os caracteres (GET /v1/user) e as
  * vozes (GET /v1/voices). Lanca Error com a nota pronta se a chave nao vale.
  */
+/**
+ * TESTE (O2): o "Testar" com a voz falsa (RECAP_TESTE_VOZ_FALSA): plano, saldo
+ * e vozes fixos, sem rede e sem chave -- a tela de voz inteira roda sem tocar
+ * no ElevenLabs nem no Fish.
+ */
+export function testeDeVozFalso(provedor: ProvedorDeVoz): TesteDeVoz {
+  const voz = (id: string, nome: string): VozDoProvedor => ({ id, nome, detalhe: 'pt, teste', previewUrl: null })
+  return provedor === 'elevenlabs'
+    ? { provedor, plano: 'teste', usados: 0, limite: 10_000, saldo: null, vozes: [voz('voz-teste-eleven', 'Voz de teste')], aviso: null }
+    : { provedor, plano: null, usados: null, limite: null, saldo: '7.51', vozes: [voz('voz-teste-fish-1', 'Voz Fish de teste 1'), voz('voz-teste-fish-2', 'Voz Fish de teste 2')], aviso: null }
+}
+
 export async function testarEleven(chave: string): Promise<TesteDeVoz> {
   const avisos: string[] = []
   let plano: string | null = null

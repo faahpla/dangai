@@ -83,7 +83,7 @@ import { esperaDaVozFalsa } from './voz/provedor'
 import { pedidoInterrompido } from './voz/pedidos'
 import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from './voz/gerar'
 import { aprovarVoz, audioDoTake, desaprovarVoz, escolherTakeDoRascunho } from './voz/takes'
-import { testarEleven, testarFish } from './voz-chaves'
+import { testarEleven, testarFish, testeDeVozFalso } from './voz-chaves'
 import { getSettings } from './settings'
 import { z } from 'zod'
 import {
@@ -365,12 +365,15 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
 
   // Testar so le plano/saldo e vozes, nao gasta credito.
   ctx.handle<[string | null], TesteDeVoz>(C.testarEleven, async (chave) => {
+    // TESTE (O2): com a voz falsa, o plano e as vozes tambem sao falsos (nada sai para a rede).
+    if (esperaDaVozFalsa() !== null) return testeDeVozFalso('elevenlabs')
     const usada = (typeof chave === 'string' ? chave.trim() : '') || getSettings().elevenlabsApiKey
     if (!usada) throw new Error('Cole a chave do ElevenLabs antes de testar.')
     return testarEleven(usada)
   })
 
   ctx.handle<[string | null], TesteDeVoz>(C.testarFish, async (chave) => {
+    if (esperaDaVozFalsa() !== null) return testeDeVozFalso('fish')
     const usada = (typeof chave === 'string' ? chave.trim() : '') || getSettings().fishApiKey
     if (!usada) throw new Error('Cole a chave do Fish Audio antes de testar.')
     return testarFish(usada)
