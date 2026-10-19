@@ -204,3 +204,30 @@ export function legibilidadeDoQuadro(rgb: Uint8Array, largura: number, altura: n
   const faixa = (x: number): number => Math.max(0, Math.min(1, x))
   return 0.5 * faixa((gradiente - 8) / 8) + 0.5 * faixa((destaque - 100) / 80)
 }
+
+// ---------------------------------------------- o assunto do plano (2a rodada)
+
+/** A familia do objeto na mao, pelas etiquetas do WD-Tagger: "paper" e "holding paper" sao o mesmo papel. */
+const OBJETOS: Readonly<Record<string, string>> = {
+  paper: 'papel', 'holding paper': 'papel', scroll: 'papel', 'holding scroll': 'papel', letter: 'papel', document: 'papel',
+  envelope: 'papel', contract: 'papel', book: 'papel', 'holding book': 'papel', 'open book': 'papel', notebook: 'papel', map: 'papel',
+  sword: 'arma', 'holding sword': 'arma', katana: 'arma', weapon: 'arma', 'holding weapon': 'arma', polearm: 'arma', spear: 'arma',
+  staff: 'arma', 'holding staff': 'arma', gun: 'arma', 'holding gun': 'arma', shield: 'arma', dagger: 'arma', knife: 'arma',
+  cup: 'copo', mug: 'copo', bottle: 'copo', 'holding cup': 'copo', alcohol: 'copo', food: 'comida', fruit: 'comida', 'holding food': 'comida',
+  phone: 'celular', cellphone: 'celular', 'holding phone': 'celular', smartphone: 'celular', bag: 'bolsa', coin: 'dinheiro', money: 'dinheiro',
+}
+
+/** Na mao, sem dizer o que: casa com qualquer objeto (o "holding" do Lent com o papel). */
+export const NA_MAO = 'mao'
+
+/** Os objetos (familias) que as etiquetas de um plano mostram. "holding" sozinho vira NA_MAO. */
+export function objetosDasTags(tags: readonly string[]): string[] {
+  const saida = new Set<string>()
+  for (const bruta of tags) {
+    const t = normalizarTag(bruta)
+    const f = OBJETOS[t]
+    if (f) saida.add(f)
+    else if (t === 'holding') saida.add(NA_MAO)
+  }
+  return [...saida]
+}

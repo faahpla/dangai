@@ -16,7 +16,9 @@
  *   E. o GANCHO legivel (2a rodada): a legibilidade (nao a luz media) so
  *      desempata entre candidatas de relevancia parecida; a ilegivel de
  *      relevancia fraca perde para a legivel relevante; a que bate o evento
- *      nunca perde para uma que nao bate; vale a frase inteira do gancho.
+ *      nunca perde para uma que nao bate; vale a frase inteira do gancho;
+ *   F. o MESMO ASSUNTO (rosto + objeto) em 3 das ultimas 5 cenas pesa contra,
+ *      menos quando a fala do momento cai no plano.
  *
  * Nao escreve nada. Rodar da raiz do projeto:
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-arrumar-visual.ts
@@ -24,6 +26,7 @@
 import {
   apelidosDoIndice,
   apelidosPelaLegenda,
+  assuntosDosPlanos,
   bateOMomento,
   casarFrases,
   citadosNoTexto,
@@ -31,6 +34,7 @@ import {
   elencoPrincipal,
   gruposVisuais,
   LEGIVEL,
+  mesmoAssunto,
   prepararPlanos,
   relevanciaForte,
   type FraseDoCasar,
@@ -52,7 +56,7 @@ import { cortarFrase, minimoNaTela, MINIMO_NA_TELA_PADRAO_SEC } from '../shared/
 import { encaixarEscolha, semPiscar, type ContextoDoEncaixe } from '../shared/encaixe'
 import type { Cue, EpisodeIndex, Plano } from '../shared/episodio'
 import type { Evento } from '../shared/roteiro'
-import { LEITURA_ALTURA, LEITURA_LARGURA, legibilidadeDoQuadro, type QuadroDaVisao } from '../shared/visao'
+import { LEITURA_ALTURA, LEITURA_LARGURA, legibilidadeDoQuadro, objetosDasTags, type QuadroDaVisao } from '../shared/visao'
 import { hashDoTexto, palavrasDaFrase, type TakeDaVoz } from '../shared/voz'
 
 let falhas = 0
@@ -523,10 +527,58 @@ function gancho(): void {
   confere(pedacos.length < 2 || pedacos[1]!.fita.some((c) => c.termos.some((x) => x.chave === 'ilegivel' || x.chave === 'bonito')) || !pedacos[1]!.fita.some((c) => c.candidato.planoIds.includes('0001')), 'o 2o pedaco do gancho tambem olha a legibilidade', pedacos.map((p) => p.fita.map((c) => c.candidato.planoIds[0])))
 }
 
+// ------------------------------------------------------------ F. o mesmo assunto
+
+function assunto(): void {
+  console.log('\n== F. O mesmo assunto')
+  confere(objetosDasTags(['holding', 'Holding_Paper', 'smile']).sort().join() === 'mao,papel', '"holding" e "holding paper": na mao e papel', objetosDasTags(['holding', 'Holding_Paper', 'smile']))
+  const lentPapel = { pessoas: ['lent'], objetos: ['papel'] }
+  confere(mesmoAssunto(lentPapel, { pessoas: ['lent', 'empee'], objetos: ['mao'] }), 'Lent com papel x Lent e a fadinha com algo na mao: o mesmo assunto')
+  confere(!mesmoAssunto(lentPapel, { pessoas: ['empee'], objetos: ['papel'] }) && !mesmoAssunto(lentPapel, { pessoas: ['lent'], objetos: ['arma'] }), 'outra pessoa ou outro objeto: nao')
+  const ps = prepararPlanos({ planos: [plano('a', 0, 2, { personagens: [{ nome: 'Lent', conf: 0.9, fonte: 'ancut' }] }), plano('b', 2, 4)], cues: [], exclusoes: [] })
+  const as = assuntosDosPlanos(ps, new Map([['a', ['holding', 'paper']], ['b', ['paper']]]))
+  confere(as.get('a')?.pessoas.join() === 'lent' && !as.has('b'), 'so plano com rosto e objeto tem assunto', [...as])
+
+  // Seis frases do mesmo evento; os planos 0001-0006 sao o Lent com o papel, 0011-0016 o Lent com a
+  // fadinha, sem o papel (a reacao: a mesma gente, outro assunto).
+  const planos: Plano[] = []
+  const tags = new Map<string, string[]>()
+  for (let i = 0; i < 6; i++) {
+    const a = String(i + 1).padStart(4, '0')
+    const b = String(i + 11).padStart(4, '0')
+    planos.push(plano(a, i * 8, i * 8 + 4, { personagens: [{ nome: 'Lent', conf: 0.9, fonte: 'ancut' }] }))
+    planos.push(plano(b, i * 8 + 4, i * 8 + 8, { personagens: [{ nome: 'Lent', conf: 0.9, fonte: 'ancut' }, { nome: 'Empee', conf: 0.9, fonte: 'ancut' }] }))
+    tags.set(a, ['holding', 'paper', '1boy'])
+    tags.set(b, ['1girl', '1boy', 'wings'])
+  }
+  planos.sort((x, y) => x.start - y.start)
+  const cues: Cue[] = []
+  const frases: FraseDoCasar[] = []
+  for (let i = 0; i < 6; i++) {
+    // A fala do momento de cada frase cai no plano do Lent; so a 1a e a 6a "pedem" (cue do momento).
+    const id = `c${i + 1}`
+    cues.push({ id, start: i * 8 + 1, end: i * 8 + 2.5, texto: `fala ${i}`, falante: 'Lent', estilo: 'Default', tipo: 'fala' })
+    frases.push(fr(`f0${i + 1}`, `O Lent olha o papel de novo na parte ${i + 1}.`, { eventoIds: ['e01'], cueDoMomento: i === 0 || i === 5 ? id : null }))
+  }
+  for (const p of planos) p.cueIds = cues.filter((c) => c.start < p.end && c.end > p.start).map((c) => c.id)
+  const eventos: Evento[] = [{ id: 'e01', cueIds: cues.map((c) => c.id), t0: 0, t1: 48, resumo: 'o papel', personagens: ['Lent'], peso: 3 }]
+  const take = takeDe(frases.map((f) => ({ id: f.id, texto: f.texto, dur: 2.5 })))
+  const r = casarFrases({ indice: { id: EP, planos, cues, exclusoes: [] }, eventos, frases, take, fixas: new Map(), refazer: new Set(frases.map((f) => f.id)), divisao: null, sinais: { tagsDoPlano: tags } })
+  const escolhidos = r.casadas.map((c) => c.escolha.cenas[0]!.candidato.planoIds[0]!)
+  const doLent = (id: string): boolean => Number(id) < 10
+  let pior = 0
+  for (let i = 0; i + 5 <= escolhidos.length + 0; i++) pior = Math.max(pior, escolhidos.slice(i, i + 5).filter(doLent).length)
+  confere(escolhidos.some((id) => !doLent(id)) && pior <= 3, `o Lent com o papel alterna com a fadinha (no maximo ${pior} em 5, contando as que a fala pede)`, escolhidos)
+  confere(doLent(escolhidos[0]!) && doLent(escolhidos[5]!), 'a fala do momento no plano (a 1a e a 6a) manda', escolhidos)
+  const termos = r.casadas.flatMap((c) => c.fita[0]!.termos.filter((x) => x.chave === 'assunto'))
+  confere(termos.every((x) => x.valor < 0), 'o termo "mesmo assunto" pesa contra quando entra', termos)
+}
+
 foco()
 nomes()
 variedade()
 minimo()
 gancho()
+assunto()
 console.log(falhas === 0 ? '\nTUDO CERTO' : `\n${falhas} FALHA(S)`)
 process.exitCode = falhas === 0 ? 0 : 1

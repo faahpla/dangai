@@ -6,7 +6,9 @@ import {
   CAMADAS_PADRAO,
   forcaDoDesvio,
   mediaEDesvio,
+  NA_MAO,
   normalizarTag,
+  objetosDasTags,
   posDoKeyframe,
   produtoInterno,
   tagEmPortugues,
@@ -157,6 +159,13 @@ export const PESOS = {
   /** A mesma cena por outro plano (planos vizinhos quase iguais no CLIP, grupoVisual), por vez. */
   mesmaCena: -12,
   /**
+   * O MESMO ASSUNTO (19/10, 2a rodada: o "Lent com o papel" em 6 planos
+   * diferentes do MRM E02): o mesmo rosto com o mesmo objeto nas etiquetas em 3
+   * das ultimas 5 cenas. A conta alterna com reacao (o close da fadinha, o
+   * contador) quando a fala deixa; a fala do momento no plano manda.
+   */
+  mesmoAssunto: -25,
+  /**
    * O GANCHO (a 1a frase inteira) e o comeco de cada parte (19/10; 2a rodada:
    * a LEGIBILIDADE, nao a luz media). O quadro ilegivel (escuro por igual, sem
    * destaque: o queixo na chuva, 0007) pesa contra; a paleta escura com rosto e
@@ -259,6 +268,9 @@ const MESMA_CENA_CLIP = 0.88
 export const LEGIVEL = 0.4
 /** A etiqueta (C3) que vale como a ACAO da frase na relevancia forte do gancho. */
 const TAG_FORTE = 3
+/** O mesmo assunto em tantas das ultimas cenas (com a candidata: ASSUNTO_JANELA) pesa contra. */
+const ASSUNTO_VEZES = 3
+const ASSUNTO_JANELA = 5
 
 // ------------------------------------------------------------------- nomes
 
@@ -816,6 +828,33 @@ export interface VisaoDoEpisodio {
   grupoVisual: Map<string, number>
   /** (19/10, 2a rodada) A legibilidade 0..1 dos 3 keyframes de cada plano (legibilidadeDoQuadro). Vazio = sem medida. */
   leitura: ReadonlyMap<string, readonly (number | null)[]>
+  /** (2a rodada) O ASSUNTO de cada plano: quem esta na tela e o objeto na mao. So os planos com objeto. */
+  assunto: Map<string, AssuntoDoPlano>
+}
+
+/** O assunto de um plano: os rostos reconhecidos (fichas) e os objetos das etiquetas (objetosDasTags). */
+export interface AssuntoDoPlano {
+  pessoas: string[]
+  objetos: string[]
+}
+
+/** Os assuntos dos planos com rosto reconhecido E objeto nas etiquetas (os outros nao repetem assunto). */
+export function assuntosDosPlanos(todos: readonly PlanoDoCasar[], tagsDoPlano: ReadonlyMap<string, readonly string[]> | undefined): Map<string, AssuntoDoPlano> {
+  const saida = new Map<string, AssuntoDoPlano>()
+  if (!tagsDoPlano || tagsDoPlano.size === 0) return saida
+  for (const p of todos) {
+    const objetos = objetosDasTags(tagsDoPlano.get(p.plano.id) ?? [])
+    const pessoas = [...new Set(p.rostos.map((r) => r.fichas.join(' ') || r.nome))]
+    if (objetos.length > 0 && pessoas.length > 0) saida.set(p.plano.id, { pessoas, objetos })
+  }
+  return saida
+}
+
+/** O mesmo assunto: uma pessoa em comum e um objeto em comum ("na mao" casa com qualquer objeto). */
+export function mesmoAssunto(a: AssuntoDoPlano | undefined, b: AssuntoDoPlano | undefined): boolean {
+  if (!a || !b) return false
+  if (!a.pessoas.some((p) => b.pessoas.includes(p))) return false
+  return a.objetos.some((o) => o === NA_MAO || b.objetos.includes(o) || b.objetos.includes(NA_MAO))
 }
 
 /**
@@ -910,6 +949,7 @@ export function prepararVisao(
     apagados,
     grupoVisual: gruposVisuais(todos, sinais.quadros),
     leitura,
+    assunto: c.tags ? assuntosDosPlanos(todos, sinais.tagsDoPlano) : new Map(),
   }
 }
 
@@ -1838,6 +1878,13 @@ function termosDaSequencia(
     if (reusos >= PLANO_VEZES_MAX) add('planoRepetido', PESOS.planoNoLimite, 'plano repetido')
     else if (reusos > 0) add(pede ? 'reuso' : 'planoRepetido', pede ? PESOS.reuso : PESOS.planoRepetido, pede ? 'plano ja usado' : 'plano repetido')
     if (grupoUsos > 0 && !pede) add('mesmaCena', PESOS.mesmaCena * Math.min(2, grupoUsos), 'mesma cena')
+    // (2a rodada) O MESMO ASSUNTO (o rosto e o objeto) em 3 das ultimas 5 cenas, sem a fala do momento pedir.
+    const assuntos = ctx.visao?.assunto
+    const meu = assuntos?.get(primeiro.plano.id)
+    if (assuntos && meu && !pede) {
+      const iguais = ultimasCenas(anteriores, ASSUNTO_JANELA - 1).filter((a) => mesmoAssunto(meu, assuntos.get(a.planoIds[0] ?? ''))).length
+      if (iguais + 1 >= ASSUNTO_VEZES) add('assunto', PESOS.mesmoAssunto, 'mesmo assunto')
+    }
   }
   if (ant) {
     const fraseVaiEmFrente =
@@ -1877,6 +1924,18 @@ function termosDaSequencia(
     }
   }
   return termos
+}
+
+/** As ultimas n cenas de antes; a continuacao colada (o mesmo plano seguindo) conta uma vez so. */
+function ultimasCenas(anteriores: readonly CenaAnterior[], n: number): CenaAnterior[] {
+  const saida: CenaAnterior[] = []
+  for (let k = anteriores.length - 1; k >= 0 && saida.length < n; k--) {
+    const e = anteriores[k]!
+    const depois = anteriores[k + 1]
+    const colada = !!depois && e.planoIds.some((id) => depois.planoIds.includes(id)) && Math.abs(depois.inSec - e.fimReal) <= 0.5
+    if (!colada) saida.push(e)
+  }
+  return saida
 }
 
 /** A frase pede ESTE plano: a fala do momento (citacao ou cue do momento) comeca nele. */
