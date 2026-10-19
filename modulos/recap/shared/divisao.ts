@@ -29,12 +29,25 @@ import { duracaoDaFrase, inicioDaPalavra } from './cenas'
  *     d. 'plano-curto': a melhor cena unica e mais curta que a frase (ia
  *        congelar o ultimo quadro ou emendar o plano seguinte).
  *   tres cenas: so acima de FATOR_TRES_CENAS vezes o limiar.
+ *   (19/10, 4a rodada, a edicao do Levi no Nia E01: ele dividiu 4 de 18 frases,
+ *   o app 14) DIVIDIR SO QUANDO GANHA: os motivos so fazem da frase uma
+ *   CANDIDATA. Fora do gancho, ela divide se um pedaco depois do primeiro tem
+ *   uma cena boa e DIFERENTE (ProvasDaDivisao.ganha, o casar mede) ou se a
+ *   melhor cena unica congela (plano-curto). A sequencia do anime (o span de
+ *   planos seguidos) toca inteira: nao e motivo. O limiar continua 3,0 s (4,0 s
+ *   matava o gancho e as divisoes boas do Levi, f09 e f11).
  *
  * ONDE CORTAR (cortarFrase): no limite natural -- a palavra depois da virgula
  * ou o proprio conectivo ("mas", "e", "quando", "ate que", "enquanto", "so
  * que") --, o mais perto do meio pelo tempo das palavras do take; sem limite
  * natural, no meio pelo tempo, numa fronteira de palavra que nao deixa artigo
- * nem preposicao no fim do pedaco.
+ * nem preposicao no fim do pedaco. (4a rodada) Cada pedaco tem pelo menos
+ * PEDACO_MIN_DIVIDIR_SEC (o ritmo do Levi) e alguma coisa que se VE
+ * (temImagem): "Tudo comecou" sozinho nao mostra nada e vai junto com o
+ * seguinte -- se o unico limite natural deixa um pedaco assim, a frase fica
+ * inteira (cortar no meio de "a pequena | Nia Liston" seria pior). So quando
+ * a cena unica congelaria, o corte de SOCORRO aceita o "Minimo na tela" da
+ * config (corteDaFrase marca `socorro`).
  */
 
 export const LIMIAR_DE_DIVISAO_PADRAO_SEC = 3
@@ -44,6 +57,13 @@ const LIMIAR_MIN_SEC = 2
 const LIMIAR_MAX_SEC = 6
 /** Nenhum pedaco abaixo disto: pisca. */
 export const PEDACO_MIN_SEC = 1
+/**
+ * (4a rodada) O pedaco minimo de uma frase DIVIDIDA pelo app (corteDaFrase): o
+ * Levi nunca deixou pedaco abaixo de ~1,4 s no Nia E01, e com 1,3 s a regra
+ * corta a f11 em "vira", como ele. O "Minimo na tela" maior da config manda;
+ * o menor so vale no corte de socorro (a cena unica congelaria).
+ */
+export const PEDACO_MIN_DIVIDIR_SEC = 1.3
 
 /**
  * O MINIMO NA TELA de cada cena automatica (19/10, MRM E02: 7 cenas de 0,6-0,8 s,
@@ -97,6 +117,12 @@ export interface CorteDaFrase {
   natural: boolean
   /** Os cortes separam oracoes com verbo dos dois lados. */
   duasAcoes: boolean
+  /**
+   * (4a rodada) Corte de SOCORRO: nenhum corte deixa os pedacos com o ritmo
+   * (PEDACO_MIN_DIVIDIR_SEC); este usa o "Minimo na tela" da config e so vale
+   * quando a cena unica congelaria (ProvasDaDivisao.planoCurto).
+   */
+  socorro?: true
 }
 
 export interface DivisaoDaFrase extends CorteDaFrase {
@@ -189,6 +215,30 @@ function temConteudo(tokens: readonly string[]): boolean {
 }
 
 /**
+ * (4a rodada) Palavras que nao viram imagem: o que SEM_CONTEUDO ja diz, mais os
+ * verbos de ligacao, de comeco e de pensamento ("Tudo comecou", "sem pensar
+ * duas vezes"). Pronome de pessoa ("ela", "ele") vira: e alguem na tela.
+ */
+const NAO_SE_VE = new Set([
+  ...FUNCIONAIS,
+  'assim', 'agora', 'depois', 'antes', 'entao', 'ainda', 'logo', 'tambem', 'ja', 'la', 'aqui', 'ali', 'isso', 'isto',
+  'aquilo', 'tudo', 'nada', 'algo', 'menos', 'mal', 'porque', 'pois', 'desde', 'apos', 'nem', 'sim', 'nao', 'mesmo',
+  'mesma', 'porem', 'enquanto', 'contudo', 'todavia', 'ai', 'vez', 'vezes', 'duas', 'dois', 'tres', 'coisa', 'coisas',
+  'comecou', 'comeca', 'comecaram', 'comecam', 'muda', 'mudou', 'mudam', 'mudaram', 'acontece', 'aconteceu',
+  'foi', 'era', 'eram', 'sao', 'ser', 'estar', 'esta', 'estava', 'estavam', 'fica', 'ficou', 'parece', 'parecia',
+  'pensar', 'pensa', 'pensou', 'pensando', 'sabe', 'sabia', 'acha', 'achou', 'acredita', 'quer', 'queria', 'pode',
+  'podia', 'tem', 'tinha', 'teve', 'ha', 'havia', 'problema', 'verdade', 'jeito', 'forma', 'momento',
+])
+
+/** O pedaco mostra alguma coisa: um nome, uma coisa, uma acao, alguem ("Tudo comecou" nao). */
+export function temImagem(tokens: readonly string[]): boolean {
+  return tokens.some((t) => {
+    const w = limpo(t)
+    return w.length >= 2 && !NAO_SE_VE.has(w) && !/^\d+$/.test(w)
+  })
+}
+
+/**
  * Onde uma oracao ou um sintagma comeca: verbo, artigo, preposicao, pronome,
  * conectivo. O corte no meio pelo tempo prefere estas palavras (o pedaco 2
  * comeca inteiro: "...visitou a sala especial | onde o projeto acontece", e
@@ -265,18 +315,28 @@ export function cortarFrase(
   const limites = new Map(limitesNaturais(tokens).map((l) => [l.palavra, l]))
   const total = d.duracao
 
-  // Os cortes possiveis: cada pedaco com o minimo de palavras e de segundos, e dizendo alguma coisa.
+  // Os cortes possiveis: cada pedaco com o minimo de palavras e de segundos, dizendo alguma coisa
+  // e (4a rodada) mostrando alguma coisa (temImagem).
   const valido = (cortes: readonly number[]): boolean => {
     const bordas = [0, ...cortes, tokens.length]
     for (let k = 0; k + 1 < bordas.length; k++) {
       const a = bordas[k]!
       const b = bordas[k + 1]!
-      if (b - a < PEDACO_MIN_PALAVRAS || !temConteudo(tokens.slice(a, b))) return false
+      if (b - a < PEDACO_MIN_PALAVRAS || !temConteudo(tokens.slice(a, b)) || !temImagem(tokens.slice(a, b))) return false
       const de = t[a]!
       const ate = b < tokens.length ? t[b]! : total
       if (ate - de < minimoSec - 1e-6) return false
     }
     return true
+  }
+  /**
+   * O corte so falha porque um pedaco nao mostra nada: cada pedaco tem as palavras e o conteudo,
+   * e algum nao tem imagem (o tempo nao importa: ele iria junto com o seguinte de qualquer jeito).
+   */
+  const deixaPedacoSemImagem = (cortes: readonly number[]): boolean => {
+    const bordas = [0, ...cortes, tokens.length]
+    const pedacos = bordas.slice(0, -1).map((a, k) => tokens.slice(a, bordas[k + 1]!))
+    return pedacos.every((p) => p.length >= PEDACO_MIN_PALAVRAS && temConteudo(p)) && pedacos.some((p) => !temImagem(p))
   }
   // Natural: a forca do limite (mais meio ponto com verbo dos dois lados), menos o desequilibrio pelo tempo.
   const nota = (cortes: readonly number[]): { valor: number; natural: boolean; acoes: boolean } => {
@@ -297,7 +357,12 @@ export function cortarFrase(
   const possiveis: number[][] = []
   if (n === 2) for (let j = 1; j < tokens.length; j++) possiveis.push([j])
   else for (let a = 1; a < tokens.length; a++) for (let b = a + 1; b < tokens.length; b++) possiveis.push([a, b])
-  const validos = possiveis.filter(valido)
+  const validos = possiveis.filter((c) => valido(c))
+  // (4a rodada) O limite natural que so falha porque um pedaco nao mostra nada ("Tudo comecou | quando
+  // a pequena Nia Liston estava morrendo"): o pedaco vai junto com o seguinte -- a frase fica inteira,
+  // em vez de um corte no meio de "a pequena | Nia Liston".
+  const natural = (c: readonly number[]): boolean => c.every((x) => (limites.get(x)?.forca ?? 0) >= FORCA_NATURAL)
+  if (!validos.some(natural) && possiveis.some((c) => natural(c) && deixaPedacoSemImagem(c))) return null
   if (validos.length === 0) return null
 
   // 1o: so cortes naturais, o de melhor nota.
@@ -342,8 +407,21 @@ export function cortarFrase(
 export interface ProvasDaDivisao {
   /** As pessoas que um texto cita (as fichas do elenco do episodio): o motivo 'dois-personagens'. */
   citados?: (texto: string) => readonly string[]
-  /** A melhor cena unica da frase e mais curta que ela (congela o ultimo quadro ou emenda o plano seguinte). */
+  /**
+   * A melhor cena unica da frase congela o ultimo quadro (mais curta que a frase
+   * alem do congelamento que nao se ve). (4a rodada) A sequencia do anime (o span
+   * de planos seguidos, a montagem original) toca inteira: nao e plano curto.
+   */
   planoCurto?: boolean
+  /** (4a rodada) A frase e o gancho: la a frase longa divide pelos motivos, como sempre (o Levi dividiu as duas do Nia E01). */
+  gancho?: boolean
+  /**
+   * (4a rodada) Um pedaco depois do primeiro GANHA: a melhor cena dele e boa
+   * (relevancia propria: a palavra dita, a etiqueta, a pessoa, a acao) e
+   * diferente da do primeiro (outro plano, que nao e o seguinte da mesma
+   * sequencia). Ausente = nao se mediu (divide pelos motivos, como antes).
+   */
+  ganha?: boolean
 }
 
 /** A frase traz uma fala entre aspas: a citacao fica no plano dela. */
@@ -363,9 +441,17 @@ export function corteDaFrase(
   if (!opcoes.ligada || frase.citacaoCueId || ASPAS.test(frase.texto)) return null
   const d = duracaoDaFrase(frase, take).duracao
   const limiar = limiarDeDivisao(opcoes.limiarSec)
-  const minimo = opcoes.minimoSec === undefined ? PEDACO_MIN_SEC : minimoNaTela(opcoes.minimoSec)
-  const tres = d > FATOR_TRES_CENAS * limiar ? cortarFrase(frase, take, 3, minimo) : null
-  return tres ?? cortarFrase(frase, take, 2, minimo)
+  const daConfig = opcoes.minimoSec === undefined ? PEDACO_MIN_SEC : minimoNaTela(opcoes.minimoSec)
+  const ritmo = Math.max(PEDACO_MIN_DIVIDIR_SEC, daConfig)
+  const cortar = (minimo: number): CorteDaFrase | null => {
+    const tres = d > FATOR_TRES_CENAS * limiar ? cortarFrase(frase, take, 3, minimo) : null
+    return tres ?? cortarFrase(frase, take, 2, minimo)
+  }
+  const doRitmo = cortar(ritmo)
+  if (doRitmo || daConfig >= ritmo) return doRitmo
+  // (4a rodada) Nenhum corte com o ritmo: o de socorro, com o minimo da config (so com a cena unica congelando).
+  const socorro = cortar(daConfig)
+  return socorro ? { ...socorro, socorro: true } : null
 }
 
 /**
@@ -380,6 +466,8 @@ export function dividirFrase(
 ): DivisaoDaFrase | null {
   const corte = corteDaFrase(frase, take, opcoes)
   if (!corte) return null
+  // (4a rodada) O corte de socorro (pedaco abaixo do ritmo) so quando a cena unica congelaria.
+  if (corte.socorro && !provas.planoCurto) return null
   const d = duracaoDaFrase(frase, take).duracao
   const motivos: MotivoDaDivisao[] = []
   if (d > limiarDeDivisao(opcoes.limiarSec) + 1e-6) motivos.push('longa')
@@ -388,7 +476,10 @@ export function dividirFrase(
   if (provas.planoCurto) motivos.push('plano-curto')
   // Tres pedacos so na frase longa (o corte em 3 so sai dela, mas o motivo confere).
   if (corte.pedacos.length > 2 && !motivos.includes('longa')) return null
-  return motivos.length > 0 ? { ...corte, motivos } : null
+  if (motivos.length === 0) return null
+  // (4a rodada) Fora do gancho, os motivos so fazem candidata: divide quando um pedaco ganha (ou a cena unica congela).
+  if (provas.ganha === false && !provas.gancho && !provas.planoCurto) return null
+  return { ...corte, motivos }
 }
 
 /** Pedacos vizinhos citam pessoas diferentes: cada um alguem, e ninguem dos dois. */
