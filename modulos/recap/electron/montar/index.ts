@@ -313,7 +313,7 @@ async function montarAqui(
   const minimoSec = minimoDaConfig()
   const previa = pedacosDaMontagem({ rascunho: r, roteiro, take, indice, cenas, minimoSec, entradas })
   // Quem cada pedaco e cada frase mostram (o rosto da Edicao rapida e o `studio.secoes`).
-  const nomes = nomesDaMontagem(previa.pedacos, roteiro, eventos, indice, cenas.escolhas)
+  const nomes = nomesDaMontagem(previa.pedacos, roteiro, eventos, indice, cenas.escolhas, take.palavras)
   if (previa.pedacos.length === 0) throw new Error('Nenhuma frase tem cena. Escolha as cenas antes de abrir no editor.')
 
   // 2. A pasta: a pedida (conferida) ou a padrao; nunca numa biblioteca externa.

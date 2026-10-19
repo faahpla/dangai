@@ -17,7 +17,7 @@ import {
 } from '../../shared/edicao-rapida'
 import type { EpisodeIndex } from '../../shared/episodio'
 import type { EscolhaDaFrase } from '../../shared/cenas'
-import { palavrasDaFrase } from '../../shared/voz'
+import { palavrasDaFrase, type PalavraComTempo } from '../../shared/voz'
 import {
   apelidosDoIndice,
   citadosNoTexto,
@@ -27,8 +27,8 @@ import {
   fichasFortes,
   mesmoNome,
   prepararPlanos,
-  sujeitoHerdado,
   type Citado,
+  type Elenco,
 } from '../cenas/casar'
 import type {
   ClipeDoRecap as SobreposicaoSalva,
@@ -86,6 +86,94 @@ export interface NomesDaMontagem {
 const NOMES_MAX = 20
 
 /**
+ * (4a rodada) A RETOMADA de alguem sem o nome: o pronome ("ela", "nela") ou a
+ * pessoa ja conhecida ("a garota", "essa garotinha"). Sem acento, minusculo.
+ */
+const RETOMADA_SINGULAR =
+  /\b(?:ele|ela|dele|dela|nele|nela|naquele|naquela|o cara|esse cara|a garota|essa garota|o garoto|esse garoto|a menina|essa menina|o menino|esse menino|o velho|a velha|o moleque|a mocinha|o rapaz|a moca|a mulher|o homem|o sujeito|a pequena|essa pequena|o pequeno|a garotinha|essa garotinha|a menininha|essa menininha|o garotinho|esse garotinho)\b/
+const RETOMADA_PLURAL = /\b(?:eles|elas|deles|delas|neles|nelas|os dois|as duas|a dupla)\b/
+/**
+ * (4a rodada) Um PAPEL: OUTRA pessoa que a frase poe em cena sem o nome -- o
+ * oficio ou o parentesco ("o artesao", "a criada", "o proprio irmao", "os
+ * pais") ou alguem novo ("um homem"). Nao e o sujeito da frase de antes.
+ */
+const PAPEL =
+  /\b(?:(?:o|a|os|as|esse|essa|aquele|aquela|do|da|dos|das|no|na|pro|pra|pros|pras|ao|aos|pelo|pela|seu|sua|seus|suas)\s+(?:proprio\s+|propria\s+|proprios\s+)?(?:artesaos?|artesas?|ferreiros?|ferreiras?|criadas?|criados?|empregadas?|empregados?|mordomos?|servos?|servas?|guardas?|soldados?|cavaleiros?|rei|reis|rainhas?|principes?|princesas?|mestres?|mestras?|professor|professores|professoras?|alunos?|alunas?|chefes?|donos?|donas?|vendedor|vendedores|vendedoras?|comerciantes?|medicos?|medicas?|padres?|sacerdotes?|sacerdotisas?|bruxas?|bruxos?|magos?|magas?|irmaos?|irmas?|pai|pais|mae|maes|avos?|tios?|tias?|filhos?|filhas?|primos?|primas?|marido|esposa|noivos?|noivas?|vilao|viloes|monstros?|bandidos?|ladrao|ladroes|lider|lideres|capitao|general|apresentador|apresentadora|clientes?|inimigos?|inimigas?|rivais|rival|demonios?|dragao|dragoes)|(?:um|uma)\s+(?:homem|mulher|velho|velha|garoto|garota|menino|menina|cara|rapaz|moca|sujeito|estranho|estranha|desconhecido|desconhecida))\b/
+
+/**
+ * (4a rodada, a edicao do Levi no Nia E01) QUEM O MOMENTO CITA -- o texto que
+ * soa enquanto um pedaco toca, ou a frase inteira:
+ *   1. o NOME no texto ("o lider Guy", "a fadinha MP"): ele;
+ *   2. sem nome, um PAPEL antes de qualquer retomada ("O artesao faz", "A
+ *      criada percebe", "Um homem usou"): OUTRA pessoa (`outro`) -- o sujeito
+ *      de antes nao e quem esta na tela; so o grupo, se o texto o cita;
+ *   3. a RETOMADA ("ela", "nela", "a garota"): o sujeito herdado (no plural,
+ *      ate dois); sem sujeito antes, a PROTAGONISTA ("Essa garotinha de
+ *      quatro anos", a 1a frase do Nia E01);
+ *   4. nada disso: ninguem (o grupo, se o texto o cita) -- `referente` false:
+ *      no meio da frase, a oracao continua (nomesDaMontagem repete o momento
+ *      de antes: "Ele emprestava mana | sem parar pros outros brilharem").
+ */
+export function quemOMomentoCita(
+  texto: string,
+  sujeito: readonly Citado[],
+  protagonista: Citado | null,
+  elenco: Elenco,
+): { citados: Citado[]; outro: boolean; referente: boolean } {
+  const ditos = citadosNoTexto(texto, elenco)
+  if (ditos.length > 0) return { citados: comOGrupo(texto, ditos, elenco), outro: false, referente: true }
+  const sem = texto.normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase()
+  const papel = sem.search(PAPEL)
+  const singular = sem.search(RETOMADA_SINGULAR)
+  const plural = sem.search(RETOMADA_PLURAL)
+  const retomadas = [singular, plural].filter((x) => x >= 0)
+  const retomada = retomadas.length > 0 ? Math.min(...retomadas) : -1
+  if (papel >= 0 && (retomada < 0 || papel < retomada)) return { citados: comOGrupo(texto, [], elenco), outro: true, referente: true }
+  if (retomada < 0) {
+    const grupo = comOGrupo(texto, [], elenco)
+    return { citados: grupo, outro: false, referente: grupo.length > 0 }
+  }
+  const noPlural = plural >= 0 && (singular < 0 || plural < singular)
+  const herdado = sujeito.length > 0 ? sujeito.slice(0, noPlural ? 2 : 1) : !noPlural && protagonista ? [protagonista] : []
+  return { citados: comOGrupo(texto, herdado, elenco), outro: false, referente: true }
+}
+
+/**
+ * (4a rodada) A PROTAGONISTA do roteiro: quem o texto mais cita pelo nome (o
+ * empate, a 1a a aparecer). Ninguem citado duas vezes: null.
+ */
+export function protagonistaDoRoteiro(textos: readonly string[], elenco: Elenco): Citado | null {
+  const conta = new Map<string, { c: Citado; n: number; i: number }>()
+  textos.forEach((t, i) => {
+    for (const c of citadosNoTexto(t, elenco)) {
+      const x = conta.get(c.ficha) ?? { c, n: 0, i }
+      x.n += 1
+      conta.set(c.ficha, x)
+    }
+  })
+  const melhor = [...conta.values()].sort((a, b) => b.n - a.n || a.i - b.i)[0]
+  return melhor && melhor.n >= 2 ? melhor.c : null
+}
+
+/**
+ * (4a rodada) O texto que SOA ENQUANTO o pedaco toca: as palavras da frase no
+ * take com o meio em [inicio, fim). null = sem palavras com tempo (ou nenhuma
+ * no pedaco): vale o texto da cena.
+ */
+export function textoDoMomento(
+  p: { fraseId: string; inicio?: number; fim?: number },
+  palavras: readonly Pick<PalavraComTempo, 'texto' | 'start' | 'end' | 'fraseId'>[],
+): string | null {
+  if (p.inicio === undefined || p.fim === undefined || palavras.length === 0) return null
+  const ditas = palavras.filter((w) => {
+    if (w.fraseId !== p.fraseId) return false
+    const meio = (w.start + w.end) / 2
+    return meio >= p.inicio! - 1e-6 && meio < p.fim!
+  })
+  return ditas.length > 0 ? ditas.map((w) => w.texto).join(' ') : null
+}
+
+/**
  * QUEM CADA PEDACO DEVE ENQUADRAR (19/10, reescrito com o teste real do MRM
  * E02: a fadinha saia do quadro em "junto da fadinha MP" e "Ela ativou...", e
  * "O Guy" mostrava a Misa). A ordem de preferencia de cada pedaco:
@@ -98,13 +186,23 @@ const NOMES_MAX = 20
  * Antes era so (4), na ordem da confianca do indice no plano. Os nomes saem com
  * a grafia do ROSTO no indice ("MP" -> "Empee", "Senku" -> "Ishigami,
  * Senkuu"), que e a do elenco do motor; sem rosto, como vieram.
+ *
+ * (4a rodada, a edicao do Levi no Nia E01) Com as `palavras` do take, cada
+ * pedaco cita quem e dito ENQUANTO ele toca (numa cena de 3 planos, "O artesao
+ * faz uma demonstracao, mas Nia acha o golpe fraco": o artesao nos dois
+ * primeiros, a Nia no ultimo), pela retomada ("ela", "a garota", "nela"; sem
+ * sujeito antes, a protagonista) e pelo papel: "o artesao", "a criada", "um
+ * homem" sao OUTRA pessoa -- o pedaco fica com os outros do evento e quem
+ * fala, nunca com o sujeito de antes (quemOMomentoCita).
  */
 export function nomesDaMontagem(
-  pedacos: readonly Pick<PedacoDaMontagem, 'fraseId' | 'cena' | 'planoId' | 'arquivo' | 'de' | 'ate'>[],
+  pedacos: readonly (Pick<PedacoDaMontagem, 'fraseId' | 'cena' | 'planoId' | 'arquivo' | 'de' | 'ate'> & Partial<Pick<PedacoDaMontagem, 'inicio' | 'fim'>>)[],
   roteiro: Pick<Roteiro, 'secoes'>,
   eventos: readonly Pick<Evento, 'id' | 'personagens'>[],
   indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'exclusoes'>,
   escolhas: readonly Pick<EscolhaDaFrase, 'fraseId' | 'cenas'>[],
+  /** (4a rodada) As palavras do take com tempo (TakeDaVoz.palavras). Vazio = o texto da cena inteira. */
+  palavras: readonly Pick<PalavraComTempo, 'texto' | 'start' | 'end' | 'fraseId'>[] = [],
 ): NomesDaMontagem {
   const todos = prepararPlanos(indice)
   const elencoDoEp = elencoDoEpisodio(todos, indice, eventos)
@@ -148,44 +246,81 @@ export function nomesDaMontagem(
     return melhor ? resolver(melhor.nome) : null
   }
 
+  const frases = roteiro.secoes.flatMap((sec) => sec.frases)
   const porFrase = new Map<string, string[]>()
-  const porPedacoDaFrase = new Map<string, string[][]>()
   const restoDaFrase = new Map<string, string[]>()
+  /** (4a rodada) Os personagens dos eventos da frase (com o nome do rosto): os "outros" de um papel. */
+  const doEventoDaFrase = new Map<string, string[]>()
+  /** (4a rodada) O sujeito ANTES de cada frase (o da frase de antes): o comeco da cadeia dos pedacos. */
+  const sujeitoAntes = new Map<string, Citado[]>()
+  /** (4a rodada) O texto de cada cena (pelas palavras de inicio), quando o pedaco nao tem palavras com tempo. */
+  const textoDaCena = new Map<string, string[]>()
   /** (3a rodada) Quem a intencao visual da frase poe na tela ("Lent olhando o numero no pergaminho"). */
   const intencaoDaFrase = new Map<string, string[]>()
   const escolhaDe = new Map(escolhas.map((e) => [e.fraseId, e]))
+  // (4a rodada) A protagonista: a retomada sem sujeito antes ("Essa garotinha...", a 1a frase).
+  const protagonista = protagonistaDoRoteiro(frases.map((f) => f.texto), elencoDoEp)
   // O sujeito para a frase seguinte e o da frase INTEIRA (como o casar): "O poder do Lent ... junto da
   // fadinha MP. E ... ele descobre" -- o "ele" e o Lent, o 1o citado, nao o ultimo pedaco.
   let sujeito: Citado[] = []
-  for (const frase of roteiro.secoes.flatMap((sec) => sec.frases)) {
+  for (const frase of frases) {
     const doEvento = personagensDaFrase(frase, eventos).map(resolver)
     const tokens = palavrasDaFrase(frase.texto)
     const inicios = (escolhaDe.get(frase.id)?.cenas ?? []).map((c) => c.palavraInicio)
     const cortes = inicios.length > 0 ? inicios : [0]
-    const ditosNaFrase = citadosNoTexto(frase.texto, elencoDoEp)
     // (3a rodada) "o trio", "os parceiros": os rostos do grupo entram depois de quem o texto cita.
-    const daFrase = comOGrupo(frase.texto, ditosNaFrase.length > 0 ? ditosNaFrase : sujeitoHerdado(frase.texto, sujeito), elencoDoEp)
-    let sujeitoK = sujeito
-    const pedacosDaFrase = cortes.map((p0, k) => {
-      const texto = tokens.slice(p0, cortes[k + 1] ?? tokens.length).join(' ')
-      const ditos = citadosNoTexto(texto, elencoDoEp)
-      const citados = comOGrupo(texto, ditos.length > 0 ? ditos : sujeitoHerdado(texto, sujeitoK), elencoDoEp)
-      if (citados.length > 0) sujeitoK = citados
-      return citados.map(doCitado)
-    })
+    const daFrase = quemOMomentoCita(frase.texto, sujeito, protagonista, elencoDoEp).citados
+    sujeitoAntes.set(frase.id, sujeito)
+    textoDaCena.set(frase.id, cortes.map((p0, k) => tokens.slice(p0, cortes[k + 1] ?? tokens.length).join(' ')))
     sujeito = daFrase
     const resto = [...daFrase.map(doCitado), ...doEvento]
     porFrase.set(frase.id, unicos(resto))
-    porPedacoDaFrase.set(frase.id, pedacosDaFrase)
     restoDaFrase.set(frase.id, resto)
+    doEventoDaFrase.set(frase.id, doEvento)
     intencaoDaFrase.set(frase.id, citadosNoTexto(frase.intencaoVisual ?? '', elencoDoEp).map(doCitado))
+  }
+
+  // (4a rodada) Quem cada pedaco cita: o momento dele, na ordem em que tocam (a cadeia do sujeito).
+  const ordem = new Map(frases.map((f, i) => [f.id, i]))
+  const emOrdem = [...pedacos].sort((a, b) => (ordem.get(a.fraseId) ?? 0) - (ordem.get(b.fraseId) ?? 0) || a.cena - b.cena || (a.inicio ?? 0) - (b.inicio ?? 0))
+  type Momento = { citados: Citado[]; outro: boolean; excluir: Citado[] }
+  const momentoDe = new Map<(typeof pedacos)[number], Momento>()
+  let fraseAtual: string | null = null
+  let sujeitoK: Citado[] = []
+  let anterior: Momento | null = null
+  for (const p of emOrdem) {
+    if (p.fraseId !== fraseAtual) {
+      fraseAtual = p.fraseId
+      sujeitoK = sujeitoAntes.get(p.fraseId) ?? []
+      anterior = null
+    }
+    const texto = textoDoMomento(p, palavras) ?? textoDaCena.get(p.fraseId)?.[p.cena] ?? ''
+    const m = quemOMomentoCita(texto, sujeitoK, protagonista, elencoDoEp)
+    // Sem ninguem no momento, no meio da frase: a oracao continua (o momento de antes).
+    const este: Momento = !m.referente && anterior ? anterior : { citados: m.citados, outro: m.outro, excluir: [...sujeitoK, ...(protagonista ? [protagonista] : [])] }
+    momentoDe.set(p, este)
+    anterior = este
+    if (!m.outro && m.citados.length > 0) sujeitoK = m.citados
   }
 
   const porPedaco = new Map<string, string[]>()
   for (const p of pedacos) {
-    const proprios = porPedacoDaFrase.get(p.fraseId)?.[p.cena] ?? []
-    const resto = restoDaFrase.get(p.fraseId) ?? []
+    const m = momentoDe.get(p) ?? { citados: [], outro: false, excluir: [] }
+    const proprios = m.citados.map(doCitado)
     const quemFala = falante(p)
+    if (m.outro) {
+      // Um PAPEL ("O artesao faz", "A criada percebe"): os outros do evento e quem fala, nunca o sujeito
+      // de antes nem a protagonista -- sem citado, o recorte fica com o maior rosto visivel.
+      const deFora = m.excluir.map((c) => c.ficha)
+      const ehDeFora = (n: string): boolean => {
+        const f = fichasFortes(n, elencoDoEp.proprios)
+        return f.length > 0 && deFora.some((x) => mesmoNome(f, [x]))
+      }
+      const outros = (doEventoDaFrase.get(p.fraseId) ?? []).filter((n) => !ehDeFora(n))
+      porPedaco.set(chaveDoPedaco(p), unicos([...proprios, ...outros, ...(quemFala && !ehDeFora(quemFala) ? [quemFala] : [])]))
+      continue
+    }
+    const resto = restoDaFrase.get(p.fraseId) ?? []
     // Quem fala desempata entre os citados do pedaco (os dois nao cabem: o que fala); sem citado,
     // so entra no fim (o personagem do evento vem antes: o "ele" sem antecedente e o protagonista).
     const fala = quemFala ? fichasFortes(quemFala, elencoDoEp.proprios) : []
