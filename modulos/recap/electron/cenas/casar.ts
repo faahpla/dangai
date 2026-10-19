@@ -30,12 +30,14 @@ import {
   type EscolhaDaFrase,
 } from '../../shared/cenas'
 import { FOLGA_SEM_EMENDA_SEC } from '../../shared/encaixe'
+import { acaoFisica, tagsDoTexto, type AcaoDaFrase } from '../../shared/ponte-visual'
 import {
   corteDaFrase,
   dividirFrase,
   idDoPedaco,
   MINIMO_NA_TELA_PADRAO_SEC,
   minimoNaTela,
+  pareceVerbo,
   type CorteDaFrase,
   type MotivoDaDivisao,
   type OpcoesDaDivisao,
@@ -188,6 +190,51 @@ export const PESOS = {
    * candidata razoavel (ou travado, que nao passa por aqui).
    */
   closeExtremo: -40,
+  /**
+   * (4a rodada, a edicao do Levi no Nia E01) A CABECA GRANDE: o maior rosto mais
+   * largo que ~1,5x a janela 9:16 (CLOSE_GRANDE) nos instantes que a cena toca.
+   * O Levi trocou todos os da fita (0263, 0193); pesa forte, mas abaixo do
+   * close extremo: o rosto grande ainda serve quando e o unico que diz a frase.
+   */
+  closeGrande: -3,
+  /**
+   * (4a rodada) A cena ABRE RUIM: o trecho comeca no preto, no flash ou no
+   * borrao do comeco do plano (o 0193 do Nia E01 abre com 0,8 s de preto) e o
+   * plano nao sobra para pular. Com sobra, a janela pula o comeco ruim.
+   */
+  abreRuim: -10,
+  /**
+   * (4a rodada) O QUADRO QUE O ANIME JA DIVIDE (a diagonal do 0193 do Nia E01, as
+   * duas caras separadas por uma linha): no 9:16 sobra meia cara de cada lado.
+   * Veto: so entra sem outra saida.
+   */
+  dividido: -40,
+  /**
+   * (4a rodada) REGRA 1, a ordem do episodio dentro do MESMO evento: a frase que
+   * continua o evento da anterior (mesma parte do roteiro, fora do gancho) e
+   * volta para antes da ultima cena dela (o escudo inteiro da f15 do Nia, 1187 s,
+   * depois do 1209 s da f14). Quase uma exclusao: a conta so aceita sem outra
+   * saida. Flashback (outro evento), a parte nova ("Tudo comecou quando...") e
+   * a inversao dentro da frase (regra 7) nao pagam.
+   */
+  voltaNoEvento: -40,
+  /**
+   * (4a rodada) REGRA 2, mostrar a ACAO e nao a fala sobre ela: na frase de
+   * acao fisica ("pega a espada", "parte um escudo"), o plano SEM fala no
+   * trecho, dentro do evento (a acao, nao o "Hand it to me"), soma; no golpe
+   * (acao de impacto), o pico de movimento do plano tambem. A fala do momento
+   * vale como ancora fraca e o que se ve vale inteiro.
+   */
+  acaoSemFala: 8,
+  /** (4a rodada) Na frase de acao, o trecho com fala: e o pedido ou o comentario, nao a acao. */
+  falaNaAcao: -6,
+  /**
+   * (4a rodada) O RITMO DE ACAO: o plano esta numa sequencia de cortes rapidos sem
+   * fala (a demonstracao do artesao 0292-0296, a Nia pegando a espada 0306-0311,
+   * o golpe 0316-0319 no Nia E01) -- e assim que o anime mostra a acao.
+   */
+  ritmoDeAcao: 4,
+  movimento: 4,
   /** E o quadro bonito (C7, desvios de beleza + nitidez, ate +-2) desempata: o gancho abre na imagem mais forte. */
   bonitoGancho: 1.5,
   bonitoSecao: 0.75,
@@ -214,6 +261,8 @@ export const PESOS = {
   // (Nia Liston E01 e Dr. Stone S4-37, folhas em _capturas/ideias-lote2).
   /** C2: o plano se destaca no CLIP da `visualEn` (forca 0..1 pelo desvio, ver forcaDoDesvio). */
   imagem: 12,
+  /** (4a rodada) O mesmo pela consulta da ponte visual (as etiquetas do texto), sem a `visualEn` da IA: vale metade. */
+  imagemDaPonte: 6,
   /** C1: as falas em volta do plano dizem o que a frase diz (forca 0..1 pelo desvio). */
   sentido: 6,
   /** C1 na ancora: uma fala muito parecida (forca 1) vale isto na conta da ancoraPelasPalavras (1 = basta). */
@@ -229,6 +278,12 @@ export const PESOS = {
   alternaOutro: 3,
   /** C7: todos os quadros da janela borrados ou apagados (transicao, nevoa, quadro escuro sem nada). */
   borrado: -10,
+  /**
+   * (4a rodada) E o plano inteiro APAGADO (todos os keyframes borrados e feios: o
+   * lampiao no escuro 0052 do Nia E01, "plano vazio no lugar da magia" na f02):
+   * quase veto, somado ao borrado. A fala dita sobre ele e dos vizinhos.
+   */
+  apagado: -12,
   /**
    * Com ancora FORTE (a fala do momento ou a citada, que o roteirista escolheu)
    * o que se ve so desempata: imagem, sentido e etiqueta valem esta fracao. O
@@ -279,6 +334,10 @@ const RELANCE_SEC = 1
 const TROCA_MINIMA = 1
 /** Quantas vezes, no maximo, o mesmo plano aparece no video (em trechos separados). */
 export const PLANO_VEZES_MAX = 2
+/** (4a rodada) Regra 1: a cena da frase anterior conta como "no evento" ate este tanto fora dele. */
+const MESMO_EVENTO_FOLGA_SEC = 8
+/** (4a rodada) Regra 1: comecar ate este tanto antes do fim da cena anterior ainda nao e voltar. */
+const VOLTA_TOLERANCIA_SEC = 0.5
 /** O irmao de uma repeticao vale ate tanto abaixo dela na relevancia sem o instante (irmaoDaRepeticao). */
 const IRMAO_MARGEM = 6
 /** A lista da conta tem pelo menos tantas candidatas que cobrem a frase (sem congelar alem de CONGELA_SEC). */
@@ -291,6 +350,13 @@ const COBREM_NA_CONTA = 3
  * rosto (119 no MRM E02, os closes bons de sempre).
  */
 export const CLOSE_EXTREMO = 0.69
+/**
+ * (4a rodada) A cabeca grande: o maior rosto mais largo que ~1,5x a janela 9:16
+ * (0,316 do 16:9 -> 0,47). No Nia E01, o 0263 (0,49) e o 0193 (0,52) que o
+ * Levi trocou; o 0057 dele tem rosto de 0,55, mas so nos instantes depois do
+ * trecho que ele usou (as maos brilhando): por isso a medida e por instante.
+ */
+export const CLOSE_GRANDE = 0.47
 /** Planos vizinhos (1 ou 2 de distancia) com CLIP acima disto sao a mesma cena (medido no MRM E02: p97 de planos distantes). */
 const MESMA_CENA_CLIP = 0.88
 /** Legibilidade (legibilidadeDoQuadro, 0..1) abaixo da qual o quadro e ilegivel no gancho e no comeco da parte. */
@@ -517,6 +583,10 @@ export interface PlanoDoCasar {
   genteDoRosto: boolean
   /** Alguem fala no plano (cue de fala que cruza mais de 0,2 s). */
   temFala: boolean
+  /** (4a rodada) Os trechos de fala dentro do plano (segundos do .mkv): a acao sem fala olha o trecho que toca. */
+  trechosDeFala: Intervalo[]
+  /** (4a rodada) O plano esta numa sequencia de cortes rapidos sem fala (ritmoDeAcao). */
+  ritmoDeAcao: boolean
   /** As palavras das falas do plano (minusculas, sem acento), para a ponte PT -> EN. */
   palavrasDitas: string[]
 }
@@ -564,12 +634,18 @@ function mesmaGente(a: readonly string[][], b: readonly string[][]): boolean {
 }
 
 /** Os planos do episodio com o que o casar usa: parte util, motivo de fora, rostos e falantes. */
+/** (4a rodada) O ritmo de acao: a vizinhanca (o plano no meio), quantos planos curtos e o tamanho do curto. */
+const RITMO_JANELA = 5
+const RITMO_RAPIDOS = 4
+const RITMO_PLANO_SEC = 1.8
+const RITMO_COM_FALA_MAX = 0
+
 export function prepararPlanos(indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'exclusoes'>): PlanoDoCasar[] {
   const cuePorId = new Map(indice.cues.map((c) => [c.id, c]))
   const proprios = nomesPropriosFracos(indice)
   // A fala do "MP" e do rosto "Empee": as fichas do falante sao as do personagem.
   const apelidos = apelidosDoIndice(indice)
-  return indice.planos.map((plano, pos) => {
+  const saida: PlanoDoCasar[] = indice.planos.map((plano, pos) => {
     const temFala = plano.cueIds.some((id) => {
       const c = cuePorId.get(id)
       return c?.tipo === 'fala' && Math.min(c.end, plano.end) - Math.max(c.start, plano.start) > 0.2
@@ -601,8 +677,26 @@ export function prepararPlanos(indice: Pick<EpisodeIndex, 'planos' | 'cues' | 'e
     const palavrasDitas = [
       ...new Set([...plano.cueIds.flatMap((id) => palavrasSimples(cuePorId.get(id)?.texto ?? '')), ...plano.falantes.flatMap(palavrasSimples)]),
     ]
-    return { plano, pos, util, fora, rostos, falas, gente, genteDoRosto: deRosto.length > 0, temFala, palavrasDitas }
+    const trechosDeFala = plano.cueIds.flatMap((id): Intervalo[] => {
+      const c = cuePorId.get(id)
+      if (c?.tipo !== 'fala') return []
+      const de = Math.max(c.start, plano.start)
+      const ate = Math.min(c.end, plano.end)
+      return ate - de > 0.2 ? [{ de, ate }] : []
+    })
+    return { plano, pos, util, fora, rostos, falas, gente, genteDoRosto: deRosto.length > 0, temFala, trechosDeFala, ritmoDeAcao: false, palavrasDitas }
   })
+  // (4a rodada) O ritmo de acao: na vizinhanca de RITMO_JANELA planos (o plano no meio), pelo menos
+  // RITMO_RAPIDOS planos curtos (ate RITMO_PLANO_SEC) e nenhum com fala.
+  const meio = Math.floor(RITMO_JANELA / 2)
+  for (let k = 0; k < saida.length; k++) {
+    const viz = saida.slice(Math.max(0, k - meio), k + meio + 1)
+    if (viz.length < RITMO_JANELA || saida[k]!.temFala) continue
+    const rapidos = viz.filter((q) => q.plano.end - q.plano.start <= RITMO_PLANO_SEC).length
+    const comFala = viz.filter((q) => q.temFala).length
+    saida[k]!.ritmoDeAcao = rapidos >= RITMO_RAPIDOS && comFala <= RITMO_COM_FALA_MAX
+  }
+  return saida
 }
 
 /** Uma pessoa citada numa frase: a ficha e a palavra como esta no texto. */
@@ -870,6 +964,23 @@ const PONTE_PT_EN: Readonly<Record<string, readonly string[]>> = {
   ouro: ['gold'],
   sopa: ['soup'],
   comida: ['food', 'eat', 'meal'],
+  // (4a rodada, a edicao do Levi no Nia E01) os substantivos das frases que a legenda diz.
+  trabalho: ['job', 'offer', 'employment'],
+  capital: ['capital'],
+  corpo: ['body'],
+  nobre: ['noble', 'aristocrat', 'aristocrats', 'nobility'],
+  fragil: ['frail', 'fragile', 'weak', 'sick', 'disease', 'ill', 'ailing'],
+  transmissao: ['broadcast', 'broadcasting', 'magivision', 'program', 'show'],
+  oficina: ['workshop', 'restoration', 'restorationist'],
+  espada: ['sword', 'swords', 'blade'],
+  escudo: ['shield'],
+  irmao: ['brother'],
+  servo: ['servant', 'servants', 'butler', 'maid'],
+  mansao: ['mansion', 'estate', 'manor'],
+  alma: ['soul', 'souls'],
+  pais: ['parents', 'mother', 'father'],
+  cartas: ['letters', 'letter', 'mail'],
+  convite: ['invitation', 'offer', 'invite'],
 }
 
 function palavrasSimples(texto: string): string[] {
@@ -934,6 +1045,48 @@ export interface VisaoDoEpisodio {
   assunto: Map<string, AssuntoDoPlano>
   /** (3a rodada) Os planos em close extremo (EntradaDoCasar.rostos acima de CLOSE_EXTREMO). */
   closes: ReadonlySet<string>
+  /**
+   * (4a rodada) A largura do maior rosto em cada instante medido (25/50/75% do
+   * plano; null = sem rosto naquele instante). So quando a entrada traz por
+   * instante; com a mediana so, fica vazio e vale o `closes`.
+   */
+  larguras: ReadonlyMap<string, readonly (number | null)[]>
+  /**
+   * (4a rodada) O MOVIMENTO no meio do plano, 0..1 pelo desvio no episodio (o
+   * golpe com os destrocos voando; o flash que so muda a luz nao conta: o
+   * servico mede com a luz media tirada). Vazio = sem medida.
+   */
+  movimento: ReadonlyMap<string, number>
+  /** (4a rodada) Os planos que o anime ja divide (a linha que corta o quadro de cima a baixo). */
+  divididos: ReadonlySet<string>
+  /** (4a rodada) Quantos segundos do comeco de cada plano sao preto, flash ou borrao. So os que abrem ruim. */
+  abremRuim: ReadonlyMap<string, number>
+}
+
+/**
+ * (4a rodada) O que o servico mede de cada plano para os vetos do recorte e a
+ * acao: os rostos por instante, o movimento cru (diferenca media entre quadros
+ * seguidos, a luz media tirada), os quadros divididos e o comeco ruim. Tudo
+ * opcional: o que faltar fica de fora da conta.
+ */
+export interface SinaisDaImagem {
+  larguras?: ReadonlyMap<string, readonly (number | null)[]>
+  movimento?: ReadonlyMap<string, number>
+  divididos?: ReadonlySet<string>
+  abremRuim?: ReadonlyMap<string, number>
+}
+
+/** O movimento cru (0..255 por pixel) vira a forca 0..1 pelo desvio do log no episodio. */
+export function forcaDoMovimento(crus: ReadonlyMap<string, number>): Map<string, number> {
+  const saida = new Map<string, number>()
+  if (crus.size < 8) return saida
+  const logs = new Map([...crus].map(([id, x]) => [id, Math.log1p(Math.max(0, x))]))
+  const { media, desvio } = mediaEDesvio([...logs.values()])
+  for (const [id, x] of logs) {
+    const f = forcaDoDesvio((x - media) / desvio, 0.5, 2)
+    if (f > 0) saida.set(id, f)
+  }
+  return saida
 }
 
 /** O assunto de um plano: os rostos reconhecidos (fichas) e os objetos das etiquetas (objetosDasTags). */
@@ -1010,6 +1163,7 @@ export function prepararVisao(
   camadas: Partial<CamadasDoCasar> = {},
   leitura: ReadonlyMap<string, readonly (number | null)[]> = new Map(),
   rostos: ReadonlyMap<string, number> = new Map(),
+  imagem: SinaisDaImagem = {},
 ): VisaoDoEpisodio {
   const c: CamadasDoCasar = { ...CAMADAS_PADRAO, ...camadas }
   const cuesPerto = new Map<string, { id: string; peso: number }[]>()
@@ -1067,6 +1221,10 @@ export function prepararVisao(
     leitura,
     assunto: c.tags ? assuntosDosPlanos(todos, sinais.tagsDoPlano, sinais.confiancaDasTags) : new Map(),
     closes: new Set([...rostos].filter(([, w]) => w > CLOSE_EXTREMO).map(([id]) => id)),
+    larguras: imagem.larguras ?? new Map(),
+    movimento: imagem.movimento ? forcaDoMovimento(imagem.movimento) : new Map(),
+    divididos: imagem.divididos ?? new Set(),
+    abremRuim: imagem.abremRuim ?? new Map(),
   }
 }
 
@@ -1094,6 +1252,8 @@ export function centroAmpliado(
 /** O que a frase pede, medido em cada plano (forca 0..1). null = a camada nao tem sinal para esta frase. */
 export interface SinaisDaFrase {
   imagem: Map<string, number> | null
+  /** (4a rodada) A imagem veio da consulta da ponte visual (vale menos que a `visualEn` da IA). */
+  imagemDaPonte: boolean
   sentido: Map<string, number> | null
   /** cueId -> desvio do sentido da frase contra todas as falas (a ancora le). */
   zDaCue: Map<string, number> | null
@@ -1101,14 +1261,28 @@ export interface SinaisDaFrase {
   tags: string[]
 }
 
-const SEM_SINAIS: SinaisDaFrase = { imagem: null, sentido: null, zDaCue: null, tags: [] }
+const SEM_SINAIS: SinaisDaFrase = { imagem: null, imagemDaPonte: false, sentido: null, zDaCue: null, tags: [] }
 
-export function sinaisDaFrase(fraseId: string, todos: readonly PlanoDoCasar[], v: VisaoDoEpisodio | null): SinaisDaFrase {
+/**
+ * (4a rodada) As palavras que a frase (ou o pedaco) poe na tela: as etiquetas
+ * da IA descrevem a INTENCAO (vao para o pedaco dela); a ponte visual traduz as
+ * palavras do proprio texto ("estrela da transmissao" -> microphone) e, sem as
+ * dicas da IA, as da intencao ("Nia segurando a espada" -> holding sword).
+ */
+export interface TextoDaFrase {
+  texto: string
+  intencao: string
+}
+
+export function sinaisDaFrase(fraseId: string, todos: readonly PlanoDoCasar[], v: VisaoDoEpisodio | null, texto?: TextoDaFrase): SinaisDaFrase {
   if (!v) return SEM_SINAIS
   const { sinais, camadas } = v
   const validos = todos.filter((p) => p.util && !p.fora)
   let imagem: Map<string, number> | null = null
-  const vi = camadas.imagem ? sinais.imagemDaFrase?.get(fraseId) : undefined
+  const viIa = camadas.imagem ? sinais.imagemDaFrase?.get(fraseId) : undefined
+  // (4a rodada) Sem a visualEn da IA, a consulta da ponte visual (o texto e a intencao).
+  const viPonte = camadas.imagem && !viIa ? sinais.imagemDaPonte?.get(fraseId) : undefined
+  const vi = viIa ?? viPonte
   if (vi && sinais.quadros) {
     const crus = new Map<string, number>()
     for (const p of validos) {
@@ -1135,8 +1309,13 @@ export function sinaisDaFrase(fraseId: string, todos: readonly PlanoDoCasar[], v
       if (f > 0) sentido.set(p.plano.id, f)
     }
   }
-  const tags = camadas.tags && v.idf.size > 0 ? [...new Set((sinais.tagsDaFrase?.get(fraseId) ?? []).map(normalizarTag))].filter(tagUtil) : []
-  return { imagem, sentido, zDaCue, tags }
+  let tags: string[] = []
+  if (camadas.tags && v.idf.size > 0) {
+    const daIa = (sinais.tagsDaFrase?.get(fraseId) ?? []).map(normalizarTag)
+    const daPonte = texto ? tagsDoTexto(daIa.length > 0 ? texto.texto : `${texto.texto} ${texto.intencao}`) : []
+    tags = [...new Set([...daIa, ...daPonte])].filter(tagUtil)
+  }
+  return { imagem, imagemDaPonte: !!imagem && !viIa, sentido, zDaCue, tags }
 }
 
 /**
@@ -1329,6 +1508,16 @@ function janelaPropria(
   let cue = m ? (cuePorId.get(m.cueId) ?? null) : null
   let ancora = m?.t ?? null
   const forte = !!cue && (cue.id === frase.citacaoCueId || cue.id === frase.cueDoMomento)
+  // (4a rodada) REGRA 5: a legenda LITERAL a uma ou duas falas da fala do momento, no mesmo evento,
+  // vira a referencia (f17 do Nia E01: "you received a job offer from the royal capital" logo antes
+  // do "Would you like to perform in a play?").
+  if (forte && cue && cue.id !== frase.citacaoCueId && frase.texto !== undefined) {
+    const literal = legendaLiteral(frase.texto, cue, citados, indice)
+    if (literal) {
+      cue = literal
+      ancora = (literal.start + literal.end) / 2
+    }
+  }
   let estimada = false
   if (!forte && frase.texto !== undefined) {
     const achada = ancoraPelasPalavras({ texto: frase.texto, intencaoVisual: frase.intencaoVisual ?? '' }, citados, indice, elenco, zDaCue)
@@ -1345,7 +1534,11 @@ function janelaPropria(
       }
     }
   }
-  const intervalos = citados.map((e) => {
+  // (4a rodada) REGRA 5: sem a fala do momento (a frase de ligacao), os eventos VIZINHOS cujo resumo
+  // diz um substantivo raro do texto tambem sao da frase (f11 do Nia E01: "estrela da transmissao" e o
+  // e19, "Em transmissao para o Reino", fora dos eventos que o roteiro marcou). Com o momento, ele manda.
+  const ampliados = !forte && frase.texto !== undefined ? eventosPeloTexto(frase.texto, citados, eventos, elenco) : []
+  const intervalos = [...citados, ...ampliados].map((e) => {
     // O trecho das cues de verdade (o t0/t1 gravado e o mesmo; a conta protege evento antigo).
     const cues = cuesDoEvento(e, indice)
     const de = cues.length > 0 ? Math.min(...cues.map((c) => c.start)) : e.t0
@@ -1359,10 +1552,93 @@ function janelaPropria(
     forte,
     estimada,
     semCenas: false,
-    eventoIds: citados.map((e) => e.id),
+    eventoIds: [...citados, ...ampliados].map((e) => e.id),
     herdada: false,
   }
   return comCenasPerto(base, planos)
+}
+
+/** (4a rodada) Regra 5: o substantivo de um resumo conta como raro em ate esta fracao dos eventos (no minimo 3). */
+const RARO_EM_EVENTOS = 0.2
+/** (4a rodada) Regra 5: os conceitos que a legenda vizinha tem que dizer a mais para virar a referencia. */
+const LITERAL_MINIMO = 2
+
+/** (4a rodada) Regra 5: o que tem 5 letras mas nao e substantivo da frase (numeral, conectivo, adverbio). */
+const NAO_SUBSTANTIVOS = new Set([
+  'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'onze', 'doze', 'vinte', 'trinta', 'milhao', 'milhoes', 'bilhao',
+  'primeiro', 'primeira', 'segundo', 'segunda', 'terceiro', 'terceira', 'enquanto', 'quanto', 'quantos', 'porque',
+  'porem', 'apenas', 'somente', 'sempre', 'nunca', 'depois', 'antes', 'agora', 'ainda', 'tambem', 'mesmo', 'mesma',
+  'muito', 'muita', 'muitos', 'muitas', 'pouco', 'pouca', 'todos', 'todas', 'nenhum', 'nenhuma', 'outro', 'outra',
+  'outros', 'outras', 'aquele', 'aquela', 'daquele', 'daquela', 'naquele', 'naquela', 'proprio', 'propria',
+  'pior', 'melhor', 'maior', 'menor', 'mano', 'cara', 'caras', 'coisa', 'coisas', 'vezes',
+])
+
+/** O comeco da palavra (6 letras) que o resumo do evento e a frase comparam ("transmissao" e "transmissoes"). */
+function raizDe(f: string): string {
+  return f.slice(0, 6)
+}
+
+/**
+ * (4a rodada) REGRA 5: os eventos vizinhos (logo antes ou logo depois de um
+ * evento da frase, na ordem do episodio) cujo resumo tem um substantivo RARO da
+ * frase -- 5 letras ou mais, que nao e nome do elenco e aparece no resumo de no
+ * maximo RARO_EM_EVENTOS dos eventos (a raiz de 6 letras; "transmissao" esta em
+ * 4 dos 24 do Nia E01). So os vizinhos: o
+ * substantivo comum ("espada") nao arrasta a frase para o outro lado do
+ * episodio.
+ */
+export function eventosPeloTexto(texto: string, citados: readonly Evento[], eventos: readonly Evento[], elenco: Elenco | null): Evento[] {
+  const ordem = [...eventos].sort((a, b) => a.t0 - b.t0)
+  const jaSao = new Set(citados.map((e) => e.id))
+  const vizinhos: Evento[] = []
+  for (const e of citados) {
+    const k = ordem.findIndex((x) => x.id === e.id)
+    for (const v of [ordem[k - 1], ordem[k + 1]]) if (v && !jaSao.has(v.id) && !vizinhos.includes(v)) vizinhos.push(v)
+  }
+  if (vizinhos.length === 0) return []
+  const raizesDoResumo = new Map(eventos.map((e) => [e.id, new Set(fichasDeConteudo(e.resumo).map(raizDe))]))
+  const nome = (f: string): boolean => !!elenco && [...elenco.nomesDaFicha.keys()].some((k) => bate(f, k) || bate(k, f))
+  const limite = Math.max(3, Math.floor(RARO_EM_EVENTOS * eventos.length))
+  // So o substantivo: fora o verbo ("emprestava"), o numeral ("cinco") e o conectivo ("enquanto").
+  const substantivo = (f: string): boolean => f.length >= 5 && !nome(f) && !NAO_SUBSTANTIVOS.has(f) && !pareceVerbo(f)
+  const raras = [...new Set(fichasDeConteudo(texto).filter(substantivo).map(raizDe))].filter(
+    (r) => [...raizesDoResumo.values()].filter((rs) => rs.has(r)).length <= limite,
+  )
+  if (raras.length === 0) return []
+  return vizinhos.filter((v) => raras.some((r) => raizesDoResumo.get(v.id)?.has(r)))
+}
+
+/**
+ * (4a rodada) REGRA 5: a legenda vizinha (uma ou duas falas antes ou depois da
+ * do momento, no mesmo evento) que diz pelo menos LITERAL_MINIMO conceitos da
+ * frase (a ponte PT -> EN) e mais que a do momento. null = fica a do momento.
+ */
+export function legendaLiteral(texto: string, cue: Pick<Cue, 'id'>, citados: readonly Evento[], indice: Pick<EpisodeIndex, 'cues' | 'exclusoes'>): Cue | null {
+  const conceitos = conceitosDaFrase(palavrasSimples(texto))
+  if (conceitos.length < LITERAL_MINIMO) return null
+  const diz = (c: Pick<Cue, 'texto'>): number => {
+    const ditas = new Set(palavrasSimples(c.texto))
+    return conceitos.filter((k) => [...k.formas].some((f) => ditas.has(f))).length
+  }
+  for (const e of citados) {
+    const cues = cuesDoEvento(e, indice)
+    const k = cues.findIndex((c) => c.id === cue.id)
+    if (k < 0) continue
+    const doMomento = diz(cues[k]!)
+    let melhor: Cue | null = null
+    let maior = Math.max(LITERAL_MINIMO - 1, doMomento)
+    for (const d of [-1, 1, -2, 2]) {
+      const c = cues[k + d]
+      if (!c || c.tipo !== 'fala') continue
+      const n = diz(c)
+      if (n > maior) {
+        maior = n
+        melhor = c
+      }
+    }
+    return melhor
+  }
+  return null
 }
 
 /**
@@ -1522,6 +1798,24 @@ interface ContextoDaFrase {
   abre: 'gancho' | 'secao' | null
   /** O minimo na tela de cada plano de um span (a config Cenas). */
   minimo: number
+  /** (4a rodada) A posicao da frase no roteiro (as cenas de antes dizem de que frase sao). */
+  fraseIdx: number
+  /**
+   * (4a rodada) REGRA 1: a frase continua o evento da anterior (a mesma parte do
+   * roteiro, fora do gancho, um evento em comum): o trecho dos eventos em comum,
+   * para a cena nao voltar para antes da ultima cena da frase anterior nele.
+   * null = sem a regra (outro evento, parte nova, gancho).
+   */
+  mesmoEvento: Intervalo[] | null
+  /** (4a rodada) REGRA 2: a frase (o pedaco) descreve uma acao fisica. null = nao. */
+  acao: AcaoDaFrase | null
+  /**
+   * (4a rodada) A frase pode voltar no tempo sem pagar: o gancho (mostra o mais
+   * forte fora de ordem) e a frase que abre uma parte ("Tudo comecou quando..."
+   * recomeca a historia: o Levi foi do 0057 da f02, 238 s, ao 0055 da f03, 211 s).
+   * Entre os pedacos da mesma frase vale a regra 7 (a ordem das palavras).
+   */
+  ordemLivre: boolean
 }
 
 /** O que a frase de antes mostrou: a cronologia, a continuidade e a variedade olham. */
@@ -1535,6 +1829,8 @@ interface CenaAnterior {
   chegouAoFim: boolean
   gente: string[][]
   genteDoRosto: boolean
+  /** (4a rodada) De que frase do roteiro a cena e (-1 = nao se sabe). */
+  fraseIdx: number
 }
 
 interface JanelaMontada {
@@ -1597,7 +1893,14 @@ function montarJanelas(
   ctx: ContextoDaFrase,
   livre: (q: PlanoDoCasar) => boolean,
 ): JanelaMontada[] {
-  const util = seg
+  // (4a rodada) O comeco ruim (preto, clarao, borrao): a ENTRADA vai para depois dele, como no
+  // plano que abre escuro -- o corte esta certo, o plano so abre com efeito (o 0318 do Nia, o golpe
+  // da f15 que o Levi usou, tem ~10 quadros de clarao). Vetado (nao abre janela) so o plano que e
+  // efeito ate o fim ou que fica mais curto que o minimo na tela depois de pular.
+  const ruim = ctx.visao?.abremRuim.get(p.plano.id) ?? 0
+  const pulaRuim = ruim > 0 && seg.de < p.plano.start + ruim
+  if (pulaRuim && seg.ate - (p.plano.start + ruim) < ctx.minimo - 1e-6) return []
+  const util = pulaRuim ? { de: p.plano.start + ruim, ate: seg.ate } : seg
   const d = ctx.duracao
   const cue = ctx.janela.cueAncora
   const ancoraDentro = cue !== null && cue.start > util.de + 0.3 && cue.start < util.ate - 0.3 ? cue.start - 0.15 : null
@@ -1732,6 +2035,35 @@ function sobrepoe(ocupacao: Ocupacao, planoIds: readonly string[], de: number, a
   return planoIds.some((id) => (ocupacao.get(id) ?? []).some((u) => ate > u.de - MARGEM_DO_TRECHO_SEC + 1e-6 && de < u.ate + MARGEM_DO_TRECHO_SEC - 1e-6))
 }
 
+/**
+ * (4a rodada) A largura do maior rosto nos instantes que a cena TOCA (os
+ * keyframes 25/50/75% de cada plano que caem no trecho; nenhum dentro, o mais
+ * perto do meio dele). Sem a medida por instante, a mediana do plano (o close
+ * extremo da 3a rodada). 0 = sem rosto.
+ */
+function maiorRostoNoTrecho(planos: readonly PlanoDoCasar[], inSec: number, fimReal: number, v: VisaoDoEpisodio): number {
+  let maior = 0
+  for (const q of planos) {
+    const de = Math.max(inSec, q.plano.start)
+    const ate = Math.min(fimReal, q.plano.end)
+    if (ate - de < 0.3) continue
+    const ws = v.larguras.get(q.plano.id)
+    if (!ws) {
+      if (v.closes.has(q.plano.id)) maior = Math.max(maior, CLOSE_EXTREMO + 0.01)
+      continue
+    }
+    const dur = q.plano.end - q.plano.start
+    const t = ws.map((_, k) => q.plano.start + posDoKeyframe(k) * dur)
+    let ks = ws.map((_, k) => k).filter((k) => t[k]! >= de - 0.05 && t[k]! <= ate + 0.05)
+    if (ks.length === 0) {
+      const meio = (de + ate) / 2
+      ks = [ws.map((_, k) => k).sort((a, b) => Math.abs(t[a]! - meio) - Math.abs(t[b]! - meio))[0]!]
+    }
+    for (const k of ks) maior = Math.max(maior, ws[k] ?? 0)
+  }
+  return maior
+}
+
 function pontuar(
   planos: PlanoDoCasar[],
   inSec: number,
@@ -1756,6 +2088,10 @@ function pontuar(
   // O que a tela mostra de fato: da entrada ate a duracao da frase.
   const fimReal = Math.min(outSec, inSec + ctx.duracao)
 
+  // A fracao do plano dentro do(s) evento(s) da frase (a janela e a acao sem fala olham).
+  const dentroDoEvento = j.intervalos.reduce((s, i) => s + Math.max(0, Math.min(ate, i.ate) - Math.max(de, i.de)), 0)
+  const fracaoNoEvento = Math.min(1, dentroDoEvento / Math.max(0.01, ate - de))
+
   // 1. Janela e centro. O centro e o INICIO da fala da ancora: o plano em que
   // ela comeca mostra quem fala naquele instante (o meio da cue cai, numa fala
   // longa, no plano seguinte, que ja e reacao).
@@ -1764,14 +2100,15 @@ function pontuar(
     // C7: momento dito sobre um plano apagado -- os vizinhos tambem estao "no momento".
     const c = ctx.centro
     const dist = c ? Math.max(0, c.de - ate, de - c.ate) : distancia(de, ate, ponto)
-    const nivel = j.forte ? 'forte' : j.estimada ? 'estimada' : 'fraca'
+    // (4a rodada) REGRA 2: na frase de acao a fala do momento e SOBRE a acao ("Hand it to me"
+    // antes de a Nia pegar a espada): vale como ancora fraca, e o evento inteiro mais.
+    const nivel = ctx.acao ? 'fraca' : j.forte ? 'forte' : j.estimada ? 'estimada' : 'fraca'
     const peso = { forte: PESOS.centroForte, estimada: PESOS.centroEstimado, fraca: PESOS.centroFraco }[nivel]
     const queda = { forte: PESOS.quedaForte, estimada: PESOS.quedaEstimada, fraca: PESOS.quedaFraca }[nivel]
     // O plano apagado em que a fala cai nao leva o centro: o momento e dos vizinhos (centroAmpliado).
     const apagado = !!c && planos.every((q) => ctx.visao?.apagados.has(q.plano.id))
     const centro = apagado ? 0 : peso * Math.exp(-dist / queda) * fator
-    const dentro = j.intervalos.reduce((s, i) => s + Math.max(0, Math.min(ate, i.ate) - Math.max(de, i.de)), 0)
-    const fracao = Math.min(1, dentro / Math.max(0.01, ate - de))
+    const fracao = fracaoNoEvento
     const janela = { forte: PESOS.janelaForte, estimada: PESOS.janelaEstimada, fraca: PESOS.janelaFraca }[nivel] * fracao * fator
     const rotulo = j.herdada
       ? 'perto da vizinha'
@@ -1889,8 +2226,11 @@ function pontuar(
   }
   // O que a legenda do plano diz bate com o que a frase/intencao pede ("lua" ->
   // "Moon"). Sem ancora forte, e o melhor sinal que sobra: vale mais.
+  // (4a rodada) A fala dita sobre um plano APAGADO (o lampiao no escuro do Nia E01) nao vale para ele:
+  // e dos vizinhos, como o centro (centroAmpliado).
+  const vivos = planos.filter((p) => !ctx.visao?.apagados.has(p.plano.id))
   if (ctx.conceitos.length > 0) {
-    const ditas = new Set(planos.flatMap((p) => p.palavrasDitas))
+    const ditas = new Set(vivos.flatMap((p) => p.palavrasDitas))
     const forte = j.forte && !j.semCenas
     const cada = forte ? PESOS.palavra : PESOS.palavraSemAncora
     const teto = forte ? PESOS.palavraTeto : PESOS.palavraTetoSemAncora
@@ -1915,9 +2255,13 @@ function pontuar(
     const media = (forca: (q: PlanoDoCasar) => number): number =>
       planos.reduce((s, q) => s + forca(q) * tempoNoPlano(q), 0) / tempoTotal
     const sf = ctx.sinais
-    const k = j.forte && !j.semCenas ? PESOS.vistoComAncoraForte : 1
-    if (sf.imagem) add('imagem', k * PESOS.imagem * media((q) => sf.imagem!.get(q.plano.id) ?? 0), 'parecido')
-    if (sf.sentido) add('sentido', k * PESOS.sentido * media((q) => sf.sentido!.get(q.plano.id) ?? 0), 'mesma ideia')
+    // Com ancora forte o que se ve so desempata; na frase de acao (regra 2) vale inteiro.
+    const k = j.forte && !j.semCenas && !ctx.acao ? PESOS.vistoComAncoraForte : 1
+    if (sf.imagem) add('imagem', k * (sf.imagemDaPonte ? PESOS.imagemDaPonte : PESOS.imagem) * media((q) => sf.imagem!.get(q.plano.id) ?? 0), 'parecido')
+    // (4a rodada) Na frase de acao, a fala em volta do plano e SOBRE a acao ("severing that flimsy shield"
+    // no escudo inteiro): o sentido so desempata, como com ancora forte.
+    const kSentido = ctx.acao ? PESOS.vistoComAncoraForte : k
+    if (sf.sentido) add('sentido', kSentido * PESOS.sentido * media((q) => (v.apagados.has(q.plano.id) ? 0 : (sf.sentido!.get(q.plano.id) ?? 0))), 'mesma ideia')
     if (sf.tags.length > 0) {
       let melhor: string | null = null
       const f = media((q) => {
@@ -1937,8 +2281,29 @@ function pontuar(
       const qs = planos.flatMap((q) => quadrosNaJanela(q, inSec, fimReal, v)).flatMap((q) => v.qualidade.get(q.arquivo) ?? [])
       if (qs.length > 0 && qs.every((x) => x.borrado)) add('borrado', PESOS.borrado, 'borrado')
     }
-    // (3a rodada) O close extremo (o 1o plano do span e o que abre a cena).
-    if (v.closes.has(primeiro.plano.id)) add('close', PESOS.closeExtremo, 'close extremo')
+    if (planos.every((q) => v.apagados.has(q.plano.id))) add('apagado', PESOS.apagado, 'apagado')
+    // (3a rodada) O close extremo; (4a rodada) e a cabeca grande, pelos instantes que a cena TOCA
+    // (o 0057 do Nia so tem o rosto grande depois das maos brilhando). Plano sem rosto nao paga.
+    const rosto = maiorRostoNoTrecho(planos, inSec, fimReal, v)
+    if (rosto > CLOSE_EXTREMO) add('close', PESOS.closeExtremo, 'close extremo')
+    else if (rosto > CLOSE_GRANDE) add('close', PESOS.closeGrande, 'cabeca grande')
+    // (4a rodada) O quadro que o anime ja divide (a linha de cima a baixo: meia cara de cada lado no 9:16).
+    if (planos.some((q) => tempoNoPlano(q) > 0.3 && v.divididos.has(q.plano.id))) add('dividido', PESOS.dividido, 'quadro dividido')
+    // (4a rodada) O trecho abre no preto, no clarao ou no borrao do comeco do plano: as janelas do
+    // casar ja entram depois do efeito (montarJanelas); paga a cena que entra nele por outro caminho.
+    const ruim = v.abremRuim.get(primeiro.plano.id) ?? 0
+    if (ruim > 0 && inSec < primeiro.plano.start + ruim - 0.05) add('abreRuim', PESOS.abreRuim, 'abre ruim')
+    // (4a rodada) REGRA 2: a acao sem fala (o que a tela mostra acontecendo, dentro do evento), a
+    // sequencia de cortes rapidos sem fala e, no golpe, o movimento do plano; a fala no trecho pesa contra.
+    if (ctx.acao) {
+      const comFala = planos.some((q) => q.trechosDeFala.some((t) => t.ate > inSec + 0.1 && t.de < fimReal - 0.1))
+      if (comFala) add('acao', PESOS.falaNaAcao, 'fala na acao')
+      else if (fracaoNoEvento > 0.5) {
+        add('acao', PESOS.acaoSemFala, 'acao')
+        if (planos.some((q) => q.ritmoDeAcao && tempoNoPlano(q) > 0.4)) add('ritmo', PESOS.ritmoDeAcao, 'ritmo de acao')
+      }
+      if (ctx.acao === 'impacto' && v.movimento.size > 0) add('movimento', PESOS.movimento * media((q) => v.movimento.get(q.plano.id) ?? 0), 'movimento')
+    }
     // O gancho e o comeco de cada parte (a legibilidade) olham as outras candidatas: termosDaLeitura, na fita.
   }
 
@@ -1971,7 +2336,7 @@ function termosDaSequencia(
   planos: readonly PlanoDoCasar[],
   inSec: number,
   fimReal: number,
-  ctx: Pick<ContextoDaFrase, 'janela' | 'citados' | 'visao'>,
+  ctx: Pick<ContextoDaFrase, 'janela' | 'citados' | 'visao' | 'fraseIdx' | 'mesmoEvento' | 'ordemLivre'>,
   anteriores: readonly CenaAnterior[],
   /** Quantas vezes os planos do candidato ja aparecem no video, fora a continuacao colada (repeticoes). */
   reusos: number,
@@ -2009,20 +2374,34 @@ function termosDaSequencia(
       if (iguais + 1 >= ASSUNTO_VEZES) add('assunto', PESOS.mesmoAssunto, 'mesmo assunto')
     }
   }
+  // (4a rodada) REGRA 1: a frase que continua o evento da anterior nao volta para antes da
+  // ultima cena dela NESSE evento (as cenas da anterior em outro evento nao prendem).
+  if (ctx.mesmoEvento) {
+    const ivs = ctx.mesmoEvento
+    const daAnterior = anteriores.filter(
+      (a) => a.fraseIdx === ctx.fraseIdx - 1 && ivs.some((i) => a.fimReal > i.de - MESMO_EVENTO_FOLGA_SEC && a.inSec < i.ate + MESMO_EVENTO_FOLGA_SEC),
+    )
+    if (daAnterior.length > 0) {
+      const limite = Math.max(...daAnterior.map((a) => a.fimReal))
+      if (inSec < limite - VOLTA_TOLERANCIA_SEC) add('voltaNoEvento', PESOS.voltaNoEvento, 'volta no evento')
+    }
+  }
   if (ant) {
     const fraseVaiEmFrente =
       j.ancora === null || (ancoraAnterior !== undefined && ancoraAnterior !== null ? j.ancora >= ancoraAnterior - 2 : j.ancora >= ant.inSec - 2)
     if (fraseVaiEmFrente) {
       if (inSec >= ant.fimReal - 0.05) {
         if (!j.semCenas) add('cronologia', PESOS.emFrente, 'em frente')
-      } else if (fimReal <= ant.inSec + 0.05) add('cronologia', PESOS.volta, 'volta no tempo')
+      } else if (fimReal <= ant.inSec + 0.05 && !ctx.ordemLivre && ant.fraseIdx !== ctx.fraseIdx) add('cronologia', PESOS.volta, 'volta no tempo')
     }
     const mesmoPlano = planos.some((p) => ant.planoIds.includes(p.plano.id))
     if (mesmoPlano && !colado) add('mesmoPlano', PESOS.mesmoPlano, 'mesmo plano')
     // Continua = o corte original do episodio: a anterior foi ate o fim do
     // plano dela e esta abre o plano seguinte (ou segue colada na mesma tomada).
     const abreOPlano = inSec <= primeiro.util!.de + 1
-    if (!j.semCenas && (colado || (primeiro.pos === ant.ultimoPos + 1 && ant.chegouAoFim && abreOPlano))) {
+    // (4a rodada) A frase sem evento (a janela herdada: o "Comenta ai" do fim) nao e o corte do episodio:
+    // seguir o plano da anterior ali e acaso, e puxava a anterior para o plano de antes dele (MRM E02 f23).
+    if (!j.semCenas && !j.herdada && (colado || (primeiro.pos === ant.ultimoPos + 1 && ant.chegouAoFim && abreOPlano))) {
       add('continua', PESOS.continua, 'continua')
     }
     // Variedade: a mesma gente seguida. Quem so FALA pode ser voz de fora
@@ -2420,6 +2799,12 @@ export interface EntradaDoCasar {
    * Ausente = sem a medida (como antes).
    */
   rostos?: ReadonlyMap<string, number>
+  /**
+   * (4a rodada) O que o servico mede de cada plano para os vetos do recorte e a
+   * acao (SinaisDaImagem): os rostos por instante, o movimento, os quadros
+   * divididos e o comeco ruim. Ausente = sem essas medidas.
+   */
+  imagem?: SinaisDaImagem
 }
 
 /** Um pedaco de uma frase dividida, como o casar o escolheu. */
@@ -2525,18 +2910,30 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   }
   // A imagem (C2) e as etiquetas (C3) da frase vao para o pedaco que a intencao descreve.
   const intencaoDe = new Map([...cortes].map(([i, c]) => [i, pedacoDaIntencao(e.frases[i]!.intencaoVisual, c, elenco)]))
-  const visao = prepararVisao(todos, e.indice, sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe), e.camadas ?? {}, e.leitura ?? new Map(), e.rostos ?? new Map())
+  const visao = prepararVisao(
+    todos,
+    e.indice,
+    sinaisComPedacos(e.sinais ?? {}, e.frases, cortes, intencaoDe),
+    e.camadas ?? {},
+    e.leitura ?? new Map(),
+    e.rostos ?? new Map(),
+    e.imagem ?? {},
+  )
+  // (4a rodada) A parte do roteiro de cada frase (0 = o gancho) e, para a regra 1, o trecho dos
+  // eventos que a frase divide com a anterior na mesma parte.
+  const secaoDe = partesDoRoteiro(e.frases, e.abrem)
+  const mesmoEventoDe = (i: number): Intervalo[] | null => trechoEmComum(e.frases, i, secaoDe, e.eventos, e.indice)
   // (19/10) O gancho (a 1a frase) e o comeco de cada parte fogem do quadro ilegivel.
   const abreDe = (i: number): 'gancho' | 'secao' | null => (i === 0 ? 'gancho' : e.abrem?.has(e.frases[i]!.id) ? 'secao' : null)
   // (19/10) O minimo na tela de cada plano de um span (a config Cenas).
   const minimo = e.divisao?.minimoSec === undefined ? MINIMO_NA_TELA_PADRAO_SEC : minimoNaTela(e.divisao.minimoSec)
-  const sinaisPorFrase = new Map(e.frases.map((f) => [f.id, sinaisDaFrase(f.id, todos, visao)]))
+  const sinaisPorFrase = new Map(e.frases.map((f) => [f.id, sinaisDaFrase(f.id, todos, visao, { texto: f.texto, intencao: f.intencaoVisual })]))
   const janelas = janelasDasFrases(e.frases, e.eventos, e.indice, todos, (id) => sinaisPorFrase.get(id)?.zDaCue ?? null)
   const cuePorId = new Map(e.indice.cues.map((c) => [c.id, c]))
   const abremEscuro = e.abremEscuro ?? new Set<string>()
 
-  const lembrar = (s: EstadoDoCasar, c: Pick<CandidatoDeCena, 'planoIds' | 'inSec' | 'outSec'>, duracao: number): void => {
-    s.anteriores.push(cenaAnterior(porId, c, duracao))
+  const lembrar = (s: EstadoDoCasar, c: Pick<CandidatoDeCena, 'planoIds' | 'inSec' | 'outSec'>, duracao: number, fraseIdx: number): void => {
+    s.anteriores.push(cenaAnterior(porId, c, duracao, fraseIdx))
   }
 
   const inicial: EstadoDoCasar = { ocupacao: new Map(), anteriores: [] }
@@ -2585,6 +2982,10 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
           : null,
         abre: abreDe(i),
         minimo,
+        fraseIdx: i,
+        mesmoEvento: mesmoEventoDe(i),
+        acao: acaoFisica(frase.texto),
+        ordemLivre: secaoDe[i] === 0 || abreDe(i) !== null,
       } satisfies Omit<ContextoDaFrase, 'anteriores'>,
     }
   })
@@ -2609,7 +3010,9 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     if (pronto) return pronto
     const frase = e.frases[i]!
     const kIntencao = intencaoDe.get(i) ?? -1
-    const sinaisK = corte.pedacos.map((_, k) => sinaisDaFrase(idDoPedaco(frase.id, k), todos, visao))
+    const sinaisK = corte.pedacos.map((p, k) =>
+      sinaisDaFrase(idDoPedaco(frase.id, k), todos, visao, { texto: p.texto, intencao: k === kIntencao ? frase.intencaoVisual : '' }),
+    )
     // Quem cada pedaco cita: o nome dito, ou o sujeito herdado ("ele", "o rapaz").
     let sujeitoK = fixo[i]!.sujeitoAntes
     const citadosK = corte.pedacos.map((p) => {
@@ -2621,8 +3024,11 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     })
     // A fala do momento fica com o PRIMEIRO pedaco: a frase comeca no momento dela, como a cena
     // unica comecaria (dar o momento ao pedaco que "diz" a fala empurrava o primeiro para tras, no
-    // trecho da frase anterior). Os seguintes acham o deles pelas palavras, depois dele.
-    const kMomento = 0
+    // trecho da frase anterior). Os seguintes acham o deles pelas palavras.
+    // (4a rodada) Salvo quando outro pedaco diz a fala do momento com folga (o sentido): na f13 do Nia,
+    // "You aren't going to slice it clean through?" e o "mas Nia acha o golpe fraco", e o "O artesao
+    // faz uma demonstracao" acha a demonstracao (15 s antes) pelas proprias palavras.
+    const kMomento = pedacoDoMomento(corte.pedacos.map((p) => acaoFisica(p.texto)))
     const js = emOrdem(
       corte.pedacos.map(
         (p, k) =>
@@ -2678,6 +3084,10 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
           // (2a rodada: o "por ser considerado inutil" do MRM E02, 1,8-3,1 s, ficava no 0007 escuro).
           abre: k === 0 || abreDe(i) === 'gancho' ? abreDe(i) : null,
           minimo,
+          fraseIdx: i,
+          mesmoEvento: mesmoEventoDe(i),
+          acao: acaoFisica(p.texto),
+          ordemLivre: secaoDe[i] === 0 || abreDe(i) !== null,
         },
       }
     })
@@ -2690,15 +3100,52 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   const divididas = (): Map<number, FraseDividida> => {
     const saida = new Map<number, FraseDividida>()
     if (!divisao) return saida
-    for (const i of cortes.keys()) {
+    for (const [i, corte] of cortes) {
       if (naoDividir.has(i)) continue
       const top = inteiraDe(i)[0]
-      // d. plano curto: a melhor cena unica emenda o plano seguinte ou congela o ultimo quadro.
-      const planoCurto = !!top && (top.planos.length > 1 || top.falta > FOLGA_SEM_EMENDA_SEC)
-      const dv = dividirFrase(e.frases[i]!, e.take, divisao, { citados: (t) => citadosNoTexto(t, elenco).map((c) => c.ficha), planoCurto })
+      // d. plano curto: a melhor cena unica CONGELA o ultimo quadro. (4a rodada) A sequencia do anime (o
+      // span que cobre a frase, a montagem original) toca inteira: nao e motivo para dividir.
+      const planoCurto = !!top && top.falta > CONGELA_SEC + 1e-6
+      // (4a rodada) Fora do gancho (a 1a parte do roteiro inteira), a frase so divide quando um pedaco
+      // depois do primeiro ganha.
+      const gancho = secaoDe[i] === 0
+      const ganha = gancho || planoCurto ? undefined : pedacoGanha(i, corte)
+      const dv = dividirFrase(e.frases[i]!, e.take, divisao, {
+        citados: (t) => citadosNoTexto(t, elenco).map((c) => c.ficha),
+        planoCurto,
+        gancho,
+        ...(ganha !== undefined ? { ganha } : {}),
+      })
       if (dv) saida.set(i, { motivos: dv.motivos, pedacos: pedacosDe(i, dv) })
     }
     return saida
+  }
+
+  /**
+   * (4a rodada) REGRA 3: dividir a frase ganha alguma coisa? A melhor cena de
+   * algum pedaco depois do primeiro (a lista dele sozinho, sem as frases de
+   * antes) e boa pelas PROPRIAS palavras (a fala, a etiqueta, a pessoa, a acao:
+   * relevanciaPropria) e diferente da melhor do primeiro (outro plano, que nao e
+   * o seguinte da mesma sequencia nem a mesma cena por outro angulo).
+   */
+  const ganhos = new Map<number, boolean>()
+  const pedacoGanha = (i: number, corte: CorteDaFrase): boolean => {
+    const pronto = ganhos.get(i)
+    if (pronto !== undefined) return pronto
+    const ps = pedacosDe(i, corte)
+    const tops = ps.map(
+      (p) =>
+        fitaDaFrase(todos, { ...p.ctx, anteriores: [] }, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA, false).filter(cobreOPedaco)[0],
+    )
+    const a = tops[0]
+    let ganhou = false
+    for (let k = 1; k < tops.length && !ganhou; k++) {
+      const b = tops[k]
+      if (!b || (a && !cenasDiferentes(a, b, visao.grupoVisual))) continue
+      ganhou = relevanciaVisivel(b, visao)
+    }
+    ganhos.set(i, ganhou)
+    return ganhou
   }
 
   /** O plano do momento da frase SEGUINTE (o pedaco de depois nao o pega). null = nao ha, ou a seguinte e fixa. */
@@ -2754,7 +3201,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
       const primeira = ok[0]
       if (!primeira || primeira.repetido || longeDoEvento(primeira.candidato, p.janela)) return null
       ocupar(copia.ocupacao, primeira.candidato, p.duracao)
-      lembrar(copia, primeira.candidato, p.duracao)
+      lembrar(copia, primeira.candidato, p.duracao, i)
       escolhidos.push({ c: primeira, duracao: p.duracao, fita: ok, janela: p.janela, palavraInicio: p.palavraInicio, texto: p.texto })
     }
     const inteira = inteiraDe(i).filter((c) => !sobrepoe(s.ocupacao, c.candidato.planoIds, c.candidato.inSec, Math.min(c.candidato.outSec, c.candidato.inSec + fixo[i]!.d.duracao)))
@@ -2773,7 +3220,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     const janela = janelas[i]!
     if (!e.refazer.has(frase.id)) {
       const fixa = e.fixas.get(frase.id)
-      if (fixa) for (const c of cenasDaFixa(fixa, frase, e.take)) lembrar(s, c.candidato, c.duracao)
+      if (fixa) for (const c of cenasDaFixa(fixa, frase, e.take)) lembrar(s, c.candidato, c.duracao, i)
       return null
     }
     const dv = evitar ? undefined : divididasDoGuloso.get(i)
@@ -2790,7 +3237,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     const primeira = fita[0]
     if (primeira) {
       ocupar(s.ocupacao, primeira.candidato, d.duracao)
-      lembrar(s, primeira.candidato, d.duracao)
+      lembrar(s, primeira.candidato, d.duracao, i)
     }
     return escolhaComAvisos(frase, janela, fita, d)
   }
@@ -2834,6 +3281,47 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   const avisos = casadas.flatMap((c) => c.avisos.map((a) => `${c.escolha.fraseId}: ${a.toLowerCase()}`))
   const guarda = [...naoDividir].filter((i) => !casadas.some((c) => c.escolha.fraseId === e.frases[i]!.id && c.pedacos)).map((i) => e.frases[i]!.id)
   return { casadas, avisos, ...(divisao ? { guarda } : {}) }
+}
+
+/**
+ * (4a rodada) A parte do roteiro de cada frase, pela ordem: 0 e o gancho; cada
+ * frase de `abrem` (a 1a de cada secao) abre a seguinte. Sem `abrem`, a 1a
+ * frase e o gancho e o resto, uma parte so.
+ */
+export function partesDoRoteiro(frases: readonly Pick<Frase, 'id'>[], abrem: ReadonlySet<string> | undefined): number[] {
+  let parte = 0
+  return frases.map((f, i) => {
+    if (i > 0 && (abrem ? abrem.has(f.id) : i === 1)) parte += 1
+    return parte
+  })
+}
+
+/**
+ * (4a rodada) REGRA 1: o trecho dos eventos que a frase i divide com a frase
+ * anterior, quando as duas estao na mesma parte do roteiro e fora do gancho (o
+ * gancho mostra o mais forte fora de ordem; a parte nova, "Tudo comecou
+ * quando...", pode recomecar a historia). null = sem a regra.
+ */
+export function trechoEmComum(
+  frases: readonly Pick<Frase, 'eventoIds'>[],
+  i: number,
+  partes: readonly number[],
+  eventos: readonly Evento[],
+  indice: Pick<EpisodeIndex, 'cues' | 'exclusoes'>,
+): Intervalo[] | null {
+  if (i <= 0 || partes[i] === 0 || partes[i] !== partes[i - 1]) return null
+  const antes = new Set(frases[i - 1]!.eventoIds)
+  const comuns = frases[i]!.eventoIds.filter((id) => antes.has(id))
+  const porId = new Map(eventos.map((e) => [e.id, e]))
+  const saida = comuns.flatMap((id): Intervalo[] => {
+    const e = porId.get(id)
+    if (!e) return []
+    const cues = cuesDoEvento(e, indice)
+    const de = cues.length > 0 ? Math.min(e.t0, ...cues.map((c) => c.start)) : e.t0
+    const ate = cues.length > 0 ? Math.max(e.t1, ...cues.map((c) => c.end)) : e.t1
+    return [{ de, ate }]
+  })
+  return saida.length > 0 ? saida : null
 }
 
 // ------------------------------------------------- ate 2 cenas: os pedacos
@@ -2890,6 +3378,19 @@ export function pedacoDaIntencao(intencao: string, corte: Pick<CorteDaFrase, 'pe
 }
 
 /**
+ * (4a rodada) O pedaco que fica com a fala do momento: o primeiro, salvo quando
+ * ele e de ACAO e outro nao e -- a fala do momento e o comentario sobre a acao
+ * (f13 do Nia E01: a fala da Nia depois do golpe e o "mas Nia acha o golpe
+ * fraco"; o "O artesao faz uma demonstracao" acha a demonstracao, 15 s antes,
+ * pelas proprias palavras).
+ */
+export function pedacoDoMomento(acoes: readonly (AcaoDaFrase | null)[]): number {
+  if (acoes.length < 2 || !acoes[0]) return 0
+  const k = acoes.findIndex((a) => a === null)
+  return k > 0 ? k : 0
+}
+
+/**
  * As ancoras dos pedacos na ordem do episodio: o pedaco depois do momento que
  * acharia a dele ANTES (ou o de antes, depois) fica com a do vizinho,
  * rebaixada a estimada -- a conta escolhe o plano em volta, em ordem.
@@ -2897,15 +3398,19 @@ export function pedacoDaIntencao(intencao: string, corte: Pick<CorteDaFrase, 'pe
 function emOrdem(js: readonly JanelaDaFrase[], kMomento: number): JanelaDaFrase[] {
   const saida = [...js]
   const rebaixada = (j: JanelaDaFrase): JanelaDaFrase => ({ ...j, forte: false, estimada: j.forte || j.estimada })
+  // (4a rodada, regra 7) O pedaco que achou a ancora pelas PROPRIAS palavras (estimada) fica com ela,
+  // fora de ordem ou nao: dentro da frase manda a ordem das palavras. So a ancora de reserva (o
+  // comeco do evento, sem fala que diga o pedaco) vira a do vizinho.
+  const propria = (j: JanelaDaFrase): boolean => j.forte || j.estimada
   for (let k = kMomento + 1; k < saida.length; k++) {
     const a = saida[k - 1]!.ancora
     const b = saida[k]!.ancora
-    if (a !== null && b !== null && b < a - 2) saida[k] = rebaixada(saida[k - 1]!)
+    if (a !== null && b !== null && b < a - 2 && !propria(js[k]!)) saida[k] = rebaixada(saida[k - 1]!)
   }
   for (let k = kMomento - 1; k >= 0; k--) {
     const a = saida[k]!.ancora
     const b = saida[k + 1]!.ancora
-    if (a !== null && b !== null && a > b + 2) saida[k] = rebaixada(saida[k + 1]!)
+    if (a !== null && b !== null && a > b + 2 && !propria(js[k]!)) saida[k] = rebaixada(saida[k + 1]!)
   }
   return saida
 }
@@ -2919,6 +3424,7 @@ function sinaisComPedacos(
 ): SinaisDoCasar {
   if (cortes.size === 0) return s
   const imagem = new Map(s.imagemDaFrase ?? [])
+  const ponte = new Map(s.imagemDaPonte ?? [])
   const tags = new Map(s.tagsDaFrase ?? [])
   for (const i of cortes.keys()) {
     const f = frases[i]!
@@ -2927,10 +3433,18 @@ function sinaisComPedacos(
     const id = idDoPedaco(f.id, k)
     const v = s.imagemDaFrase?.get(f.id)
     if (v) imagem.set(id, v)
+    // (4a rodada) Sem a da IA, a consulta da ponte da frase inteira (com a intencao) vai para o pedaco dela.
+    const vp = s.imagemDaPonte?.get(f.id)
+    if (!v && vp) ponte.set(id, vp)
     const t = s.tagsDaFrase?.get(f.id)
     if (t) tags.set(id, t)
   }
-  return { ...s, ...(imagem.size > 0 ? { imagemDaFrase: imagem } : {}), ...(tags.size > 0 ? { tagsDaFrase: tags } : {}) }
+  return {
+    ...s,
+    ...(imagem.size > 0 ? { imagemDaFrase: imagem } : {}),
+    ...(ponte.size > 0 ? { imagemDaPonte: ponte } : {}),
+    ...(tags.size > 0 ? { tagsDaFrase: tags } : {}),
+  }
 }
 
 /**
@@ -2945,14 +3459,80 @@ function cobreOPedaco(c: CandidatoPontuado): boolean {
   return c.falta <= CONGELA_SEC
 }
 
-/** Dentro da frase vale a ordem do episodio: o pedaco seguinte depois do anterior, sem plano dele. */
+/**
+ * Dentro da frase, o pedaco seguinte nunca repete plano de um pedaco anterior.
+ * (4a rodada, REGRA 7) Manda a ordem das PALAVRAS, nao a do episodio: o Levi
+ * pos o 0136 (Nia, 612 s) em "Ela sabe que derrotaria" e o 0132 (os criados,
+ * 608 s) em "qualquer servo" (f09 do Nia E01). So nao vale o plano logo antes
+ * do anterior: o corte do proprio anime tocado de tras para frente.
+ */
 function dentroDaFrase(c: CandidatoPontuado, antes: readonly { c: CandidatoPontuado; duracao: number }[]): boolean {
   const ult = antes[antes.length - 1]
   if (!ult) return true
   const planos = new Set(antes.flatMap((x) => x.c.candidato.planoIds))
   if (c.candidato.planoIds.some((id) => planos.has(id))) return false
-  const fim = Math.min(ult.c.candidato.outSec, ult.c.candidato.inSec + ult.duracao)
-  return c.candidato.inSec >= fim - 0.05
+  const primeiroDoAnterior = ult.c.planos[0]
+  const ultimoDeste = c.planos[c.planos.length - 1]
+  return !(primeiroDoAnterior && ultimoDeste && ultimoDeste.pos === primeiroDoAnterior.pos - 1)
+}
+
+/**
+ * (4a rodada) Duas cenas de pedacos diferentes da mesma frase sao DIFERENTES:
+ * nenhum plano em comum, a segunda nao e o plano seguinte da primeira (a
+ * sequencia do anime, que o span ja mostra inteira: f07 do Nia, 0111 -> 0112)
+ * nem a mesma cena por outro angulo (grupoVisual).
+ */
+export function cenasDiferentes(a: Pick<CandidatoPontuado, 'candidato' | 'planos'>, b: Pick<CandidatoPontuado, 'candidato' | 'planos'>, grupo: ReadonlyMap<string, number>): boolean {
+  if (b.candidato.planoIds.some((id) => a.candidato.planoIds.includes(id))) return false
+  const fimDeA = a.planos[a.planos.length - 1]
+  const comecoDeB = b.planos[0]
+  if (fimDeA && comecoDeB && comecoDeB.pos === fimDeA.pos + 1) return false
+  const ga = new Set(a.candidato.planoIds.flatMap((id) => (grupo.has(id) ? [grupo.get(id)!] : [])))
+  return !b.candidato.planoIds.some((id) => grupo.has(id) && ga.has(grupo.get(id)!))
+}
+
+/** (4a rodada) O rosto que se ve no 9:16: a partir desta largura (fracao do 16:9) a pessoa aparece de verdade. */
+const ROSTO_VISIVEL = 0.1
+
+/**
+ * (4a rodada) REGRA 3: a cena do pedaco MOSTRA o que ele diz -- a etiqueta forte,
+ * a imagem muito parecida, o rosto de quem ele cita, a acao sem fala; a fala
+ * citada ou a palavra dita so valem com alguem visivel no trecho (o patio do
+ * 0182 do Nia E01 tem a fala "Big Brother, swords are made to slice" e rostos
+ * de 0,05: no 9:16 e um patio vazio).
+ */
+export function relevanciaVisivel(c: Pick<CandidatoPontuado, 'termos' | 'planos' | 'candidato'>, v: VisaoDoEpisodio | null): boolean {
+  if (!relevanciaPropria(c.termos)) return false
+  const visual = c.termos.some(
+    (t) =>
+      t.chave === 'juntos' ||
+      (t.chave === 'acao' && t.valor > 0) ||
+      (t.chave === 'tag' && t.valor >= TAG_FORTE) ||
+      (t.chave === 'imagem' && t.valor >= 0.4 * PESOS.imagem) ||
+      ((t.chave === 'pessoa' || t.chave === 'intencao') && t.valor > 0 && !t.rotulo.endsWith(' fala')),
+  )
+  if (visual || !v) return visual
+  const fim = c.candidato.outSec
+  return maiorRostoNoTrecho(c.planos, c.candidato.inSec, fim, v) >= ROSTO_VISIVEL
+}
+
+/**
+ * (4a rodada) A cena e boa pelas PROPRIAS palavras do pedaco: a fala citada, o
+ * conceito dito na legenda, a etiqueta forte, o rosto de quem ele cita, a acao
+ * sem fala, a imagem muito parecida. So estar no evento (ou perto do momento
+ * da frase) nao basta.
+ */
+export function relevanciaPropria(termos: readonly Termo[]): boolean {
+  return termos.some(
+    (t) =>
+      t.chave === 'citada' ||
+      t.chave === 'palavra' ||
+      t.chave === 'juntos' ||
+      (t.chave === 'acao' && t.valor > 0) ||
+      (t.chave === 'tag' && t.valor >= TAG_FORTE) ||
+      (t.chave === 'imagem' && t.valor >= 0.4 * PESOS.imagem) ||
+      ((t.chave === 'pessoa' || t.chave === 'intencao') && t.valor > 0 && !t.rotulo.endsWith(' fala')),
+  )
 }
 
 /**
@@ -3070,6 +3650,7 @@ function cenaAnterior(
   porId: ReadonlyMap<string, PlanoDoCasar>,
   c: Pick<CandidatoDeCena, 'planoIds' | 'inSec' | 'outSec'>,
   duracao: number,
+  fraseIdx = -1,
 ): CenaAnterior {
   const primeiro = porId.get(c.planoIds[0] ?? '')
   const ultimo = porId.get(c.planoIds[c.planoIds.length - 1] ?? '')
@@ -3082,6 +3663,7 @@ function cenaAnterior(
     chegouAoFim: !!ultimo?.util && fimReal >= ultimo.util.ate - 1,
     gente: primeiro?.gente ?? [],
     genteDoRosto: primeiro?.genteDoRosto ?? false,
+    fraseIdx,
   }
 }
 
@@ -3233,7 +3815,7 @@ function casarPelaConta(
       const fixa = e.fixas.get(frase.id)
       if (!fixa) continue
       const cenas = cenasDaFixa(fixa, frase, e.take)
-      feixe = feixe.map((k) => ({ ...k, anteriores: [...k.anteriores, ...cenas.map((c) => cenaAnterior(porId, c.candidato, c.duracao))] }))
+      feixe = feixe.map((k) => ({ ...k, anteriores: [...k.anteriores, ...cenas.map((c) => cenaAnterior(porId, c.candidato, c.duracao, passo.fixa))] }))
       ancoraAntes = janelas[passo.fixa]!.ancora
       continue
     }
@@ -3280,7 +3862,7 @@ function casarPelaConta(
           nota: k.nota + c.candidato.nota + passagem.reduce((s, t) => s + t.valor, 0),
           escolhas: [...k.escolhas, { c: forcado && !c.repetido ? { ...c, repetido: true } : c, passagem, forcado }],
           usados: [...k.usados, trechoDe(c.candidato, item.duracao)],
-          anteriores: [...k.anteriores, cenaAnterior(porId, c.candidato, item.duracao)],
+          anteriores: [...k.anteriores, cenaAnterior(porId, c.candidato, item.duracao, item.i)],
         })
       }
     }

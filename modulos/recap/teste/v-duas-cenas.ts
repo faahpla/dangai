@@ -178,19 +178,25 @@ function decisao(): void {
     confere(d?.pedacos[1]?.texto.startsWith('ela vira') ?? false, 'a. o corte cai na palavra depois da virgula', d?.pedacos.map((p) => p.texto))
   }
   {
-    // b. duas acoes em 2,6 s ("mas" + verbo dos dois lados): divide abaixo do limiar.
-    const { f, take } = so('O artesao faz uma demonstracao, mas Nia acha o golpe fraco.', 2.6)
+    // b. duas acoes em 2,9 s ("mas" + verbo dos dois lados): divide abaixo do limiar.
+    const { f, take } = so('O artesao faz uma demonstracao, mas Nia acha o golpe fraco.', 2.9)
     const d = dividirFrase(f, take, LIGADA)
-    confere(!!d && d.motivos.includes('duas-acoes') && !d.motivos.includes('longa'), 'b. duas acoes (", mas") divide uma frase de 2,6 s', d?.motivos)
+    confere(!!d && d.motivos.includes('duas-acoes') && !d.motivos.includes('longa'), 'b. duas acoes (", mas") divide uma frase de 2,9 s', d?.motivos)
     confere(d?.pedacos[1]?.texto.startsWith('mas Nia') ?? false, 'b. o corte cai no conectivo "mas"', d?.pedacos.map((p) => p.texto))
+    // (4a rodada) Com 2,6 s o pedaco "mas Nia acha o golpe fraco." teria 1,2 s: abaixo do ritmo do
+    // Levi (PEDACO_MIN_DIVIDIR_SEC), a frase fica com uma cena -- so a cena unica congelando divide.
+    const { f: f26, take: t26 } = so('O artesao faz uma demonstracao, mas Nia acha o golpe fraco.', 2.6)
+    confere(dividirFrase(f26, t26, LIGADA) === null, 'b. com 2,6 s, o pedaco de 1,2 s nao divide (ritmo de 1,3 s)')
+    const socorro = dividirFrase(f26, t26, LIGADA, { planoCurto: true })
+    confere(!!socorro && socorro.socorro === true, 'b. com a cena unica congelando, o corte de socorro divide', socorro?.motivos)
   }
   {
     // c. dois personagens, um de cada lado do corte.
-    const { f, take } = so('Quando o Lent implorou pra ficar, o Guy asfixiou o rapaz.', 2.8)
+    const { f, take } = so('Quando o Lent implorou pra ficar, o Guy asfixiou o rapaz na frente de todos.', 2.9)
     const citados = (t: string): string[] => ['lent', 'guy'].filter((n) => t.toLowerCase().includes(n))
     const d = dividirFrase(f, take, LIGADA, { citados })
     confere(!!d && d.motivos.includes('dois-personagens'), 'c. dois personagens (Lent | Guy) dividem', d?.motivos)
-    confere(d?.pedacos.map((p) => p.texto).join(' | ') === 'Quando o Lent implorou pra ficar, | o Guy asfixiou o rapaz.', 'c. o corte e o do "quando...,"', d?.pedacos.map((p) => p.texto))
+    confere(d?.pedacos.map((p) => p.texto).join(' | ') === 'Quando o Lent implorou pra ficar, | o Guy asfixiou o rapaz na frente de todos.', 'c. o corte e o do "quando...,"', d?.pedacos.map((p) => p.texto))
     // O mesmo personagem dos dois lados nao e motivo.
     const { f: f2, take: t2 } = so('Quando o Lent caiu no chao, o Lent chorou sozinho.', 2.4)
     const d2 = dividirFrase(f2, t2, LIGADA, { citados })
@@ -250,10 +256,14 @@ function corte(): void {
   }
   {
     // Sem limite natural: o meio pelo tempo, sem artigo/preposicao no fim do 1o pedaco.
-    const texto = 'Tudo muda quando a menina visita uma oficina de armas'
+    const texto = 'A pequena garota segurou a espada pesada do velho pai dela'
     const c = cortarFrase(fr('f01', texto), takeDe([{ id: 'f01', texto, dur: 3.4 }]))
     const fim = c?.pedacos[0]?.texto.split(' ').pop()?.toLowerCase() ?? ''
-    confere(!!c && !['a', 'o', 'de', 'uma', 'um'].includes(fim), 'o meio pelo tempo nao deixa "a"/"de" no fim do pedaco', c?.pedacos.map((p) => p.texto))
+    confere(!!c && !['a', 'o', 'de', 'do', 'uma', 'um'].includes(fim), 'o meio pelo tempo nao deixa "a"/"de" no fim do pedaco', c?.pedacos.map((p) => p.texto))
+    // (4a rodada) O unico limite natural deixa "Tudo muda" sozinho, sem nada que se veja: o pedaco iria
+    // junto com o seguinte, e a frase fica inteira (o Levi: a f12 do Nia E01 numa cena so, 0276).
+    const semImagem = 'Tudo muda quando a menina visita uma oficina de armas'
+    confere(cortarFrase(fr('f01', semImagem), takeDe([{ id: 'f01', texto: semImagem, dur: 3.4 }])) === null, '"Tudo muda | quando a menina...": o pedaco sem imagem vai junto, a frase fica inteira')
   }
   {
     // Os tempos sao os das palavras no take: o pedaco 2 comeca no start da palavra do corte.
@@ -325,9 +335,10 @@ function conta(): void {
   confere(new Set(todos).size === todos.length, 'nenhum plano repetido no roteiro', todos)
   // A curta f02 (2,2 s, sem motivo) fica com uma.
   confere(da(r, 'f02')!.escolha.cenas.length === 1, 'f02 (2,2 s) fica com uma cena')
-  // f04: longa, sem nomes: divide no "e" entre as oracoes.
+  // (4a rodada) f04: longa, sem nomes e sem nada que a 2a cena mostre de diferente (nenhuma etiqueta,
+  // palavra dita ou pessoa nos planos do e03): os 3,4 s so fazem dela CANDIDATA, e ela fica com uma.
   const f04 = da(r, 'f04')!
-  confere(f04.escolha.cenas.length === 2 && f04.pedacos?.[1]?.texto.startsWith('e o mundo'), 'f04: divide no "e" entre oracoes', f04.pedacos?.map((p) => p.texto))
+  confere(f04.escolha.cenas.length === 1, 'f04: longa, mas nenhum pedaco ganha -- uma cena (regra 3)', f04.pedacos?.map((p) => p.texto))
   // A ordem tambem entre as frases: cada frase depois da anterior (ou no mesmo evento).
   const inicios = r.casadas.flatMap((c) => c.escolha.cenas.map((x) => x.candidato.inSec))
   confere(inicios.every((t, i) => i === 0 || t >= inicios[i - 1]! - 4), 'a sequencia anda em frente no episodio', inicios)
@@ -347,10 +358,19 @@ function conta(): void {
   )
   const m = da(r2, 'f01')!
   confere(m.pedacos?.[0]?.janela.cueAncora?.id === 'c0005' && m.pedacos[0].janela.forte, 'a fala do momento e do 1o pedaco (forte)', m.pedacos?.[0]?.janela.cueAncora)
-  confere(planosDa(r2, 'f01')[0] === '0005', 'o 1o pedaco no plano do momento (0005)', planosDa(r2, 'f01'))
+  // (4a rodada, regra 7) Dentro da frase manda a ORDEM DAS PALAVRAS: "Quando o Guy apareceu" mostra o
+  // Guy, "o Lent implorou" o Lent -- mesmo que o Lent venha antes no episodio --, sem o plano logo
+  // antes do 1o (voltar um corte da mesma sequencia) e sem o trecho da frase anterior.
+  const [doPrimeiro, doSegundo] = m.escolha.cenas.map((c) => c.candidato)
+  const quem = (c: typeof doPrimeiro): string[] => (c?.planoIds ?? []).flatMap((id) => indice.planos.find((p) => p.id === id)?.personagens.map((x) => x.nome) ?? [])
+  confere(quem(doPrimeiro).includes('Guy') && quem(doSegundo).includes('Lent'), 'a ordem das palavras: o Guy no 1o pedaco, o Lent no 2o', planosDa(r2, 'f01'))
   const antes = da(r2, 'f00')!.escolha.cenas.flatMap((c) => c.candidato.planoIds)
-  const doSegundo = m.escolha.cenas[1]?.candidato
-  confere(!!doSegundo && doSegundo.inSec >= m.escolha.cenas[0]!.candidato.inSec && !doSegundo.planoIds.some((id) => antes.includes(id)), 'o 2o pedaco vem depois, sem voltar ao trecho da frase anterior', { antes, doSegundo: doSegundo?.planoIds })
+  const posDe = (id: string): number => indice.planos.findIndex((p) => p.id === id)
+  confere(
+    !!doPrimeiro && !!doSegundo && !doSegundo.planoIds.some((id) => antes.includes(id)) && posDe(doSegundo.planoIds[doSegundo.planoIds.length - 1]!) !== posDe(doPrimeiro.planoIds[0]!) - 1,
+    'o 2o pedaco nao volta ao trecho da frase anterior nem ao plano logo antes do 1o',
+    { antes, primeiro: doPrimeiro?.planoIds, segundo: doSegundo?.planoIds },
+  )
 }
 
 // ------------------------------------------------------------ D. os pontos fixos
@@ -384,7 +404,8 @@ function fixos(): void {
   const r = casar(frases, take, { fixas: new Map([['f01', travada]]) })
   confere(!da(r, 'f01'), 'a frase travada nao volta do casar (fica como esta)')
   const f02 = da(r, 'f02')!
-  confere(f02.escolha.cenas.length === 2, 'a outra frase longa divide normalmente')
+  // (4a rodada, regra 3) A outra frase longa segue a regra de sempre: sem pedaco que ganhe, uma cena.
+  confere(f02.escolha.cenas.length === 1, 'a outra frase longa segue a regra (nenhum pedaco ganha: uma cena)', f02.escolha.cenas.length)
   confere(!f02.escolha.cenas.some((c) => c.candidato.planoIds.includes(p5.id)), 'ninguem usa o plano da travada', f02.escolha.cenas.map((c) => c.candidato.planoIds))
   // Travada com 2 cenas (feitas a mao): os dois trechos ficam ocupados.
   const p3 = indice.planos[2]!

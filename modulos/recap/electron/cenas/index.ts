@@ -1,7 +1,8 @@
 import sharp from 'sharp'
 import { temPlanos, type EpisodeIndex } from '../../shared/episodio'
 import { canonizar, nomeNatural } from '@shared/nomes'
-import { roteiroAtual, type RascunhoDoRecap, type Roteiro } from '../../shared/roteiro'
+import { roteiroAtual, type Frase, type RascunhoDoRecap, type Roteiro } from '../../shared/roteiro'
+import { consultaVisual } from '../../shared/ponte-visual'
 import { podeIrParaCenas, takeAtual } from '../../shared/voz'
 import {
   aplicarEscolhas,
@@ -22,11 +23,13 @@ import { completarDicas } from '../gerar/dicas'
 import { configDoRecap } from '../contexto'
 import { legibilidadeDoQuadro, LEITURA_ALTURA, LEITURA_LARGURA, type CamadasDoCasar, type SinaisDoCasar } from '../../shared/visao'
 import type { ConfigDasCenas } from '../../shared/config'
-import { corteDaFrase, idDoPedaco, type OpcoesDaDivisao } from '../../shared/divisao'
+import { corteDaFrase, idDoPedaco, minimoNaTela, type OpcoesDaDivisao } from '../../shared/divisao'
 import { comMesclas } from './mesclas'
 import { casarFrases, fichasDe, fichasFortes, janelasDasFrases, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
 import { camadasDaConfig, garantirVisao, sinaisDasFrases, sinaisDoEpisodio } from './visao'
-import { largurasDosRostos } from '../montar/rostos-motor'
+import { largurasDosRostos, largurasPorInstante } from '../montar/rostos-motor'
+import { quadrosDosPlanos } from './quadros'
+import type { SinaisDaImagem } from './casar'
 
 /**
  * O CASAR do passo 4 (agente A): a fita de cada frase, de graca, e a grade da
@@ -135,6 +138,42 @@ export async function planosQueAbremEscuro(indice: Pick<EpisodeIndex, 'id' | 'pl
   return saida
 }
 
+/**
+ * (4a rodada) As consultas de imagem da ponte visual (consultaVisual): a frase
+ * sem a `visualEn` da IA pede pelo texto e pela intencao; cada pedaco, pelo
+ * proprio texto. O casar usa so onde falta a da IA.
+ */
+export function consultasDaPonte(
+  frases: readonly Pick<Frase, 'id' | 'texto' | 'intencaoVisual' | 'visualEn'>[],
+  pedacos: readonly { id: string; texto: string }[],
+): { id: string; texto: string }[] {
+  const saida: { id: string; texto: string }[] = []
+  for (const f of frases) {
+    const q = consultaVisual(f.visualEn?.trim() ? f.texto : `${f.texto} ${f.intencaoVisual}`)
+    if (q) saida.push({ id: f.id, texto: q })
+  }
+  for (const p of pedacos) {
+    const q = consultaVisual(p.texto)
+    if (q) saida.push({ id: p.id, texto: q })
+  }
+  return saida
+}
+
+/**
+ * (4a rodada) O que o casar ve de perto de cada plano: o rosto por instante (o
+ * cache do motor), o comeco ruim, o movimento e o quadro dividido (quadros.json
+ * ao lado da visao). `soCache` (a grade) so le. Falhou: sem essas medidas.
+ */
+async function sinaisDaImagem(rascunhoId: string, indice: EpisodeIndex, soCache: boolean): Promise<SinaisDaImagem> {
+  try {
+    const caminho = indiceDoRascunho(lerRascunhoDoDisco(rascunhoId)).caminho
+    const [larguras, quadros] = await Promise.all([largurasPorInstante(indice), quadrosDosPlanos(indice, caminho, soCache)])
+    return { ...quadros, larguras }
+  } catch {
+    return {}
+  }
+}
+
 /** As frases que abrem uma parte do roteiro (a 1a de cada secao; a 1a de todas e o gancho). */
 export function frasesQueAbrem(roteiro: Pick<Roteiro, 'secoes'>): Set<string> {
   return new Set(roteiro.secoes.flatMap((s) => (s.frases[0] ? [s.frases[0].id] : [])))
@@ -187,7 +226,7 @@ async function sinaisParaOCasar(rascunhoId: string, soCache = false): Promise<Si
     const pedacos = divisao.ligada
       ? frases.flatMap((f) => (corteDaFrase(f, take, divisao)?.pedacos ?? []).map((p, k) => ({ id: idDoPedaco(f.id, k), texto: p.texto })))
       : []
-    const dasFrases = cfg.visao ? await sinaisDasFrases([...frases, ...pedacos], { imagem: true, sentido: true, soCache }) : null
+    const dasFrases = cfg.visao ? await sinaisDasFrases([...frases, ...pedacos], { imagem: true, sentido: true, soCache }, consultasDaPonte(frases, pedacos)) : null
     if (dasFrases?.falha) avisos.push(`frases: ${dasFrases.falha}`)
     const tagsDaFrase = new Map(frases.flatMap((f) => (f.tags && f.tags.length > 0 ? [[f.id, f.tags] as const] : [])))
     const sinais: SinaisDoCasar = { ...doEpisodio, ...(dasFrases?.sinais ?? {}), ...(tagsDaFrase.size > 0 ? { tagsDaFrase } : {}) }
@@ -222,6 +261,9 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
   const leitura = await leituraDosPlanos(indiceAntes)
   // (3a rodada) O maior rosto de cada plano: o close extremo (a 1a vez do episodio, ~1 min no motor).
   const rostos = await largurasDosRostos(indiceAntes)
+  // (4a rodada) Os vetos do recorte e a acao: o rosto por instante, o comeco ruim, o movimento e o
+  // quadro que o anime ja divide (a 1a vez do episodio, ~30 s de ffmpeg; depois, o cache).
+  const imagem = await sinaisDaImagem(rascunhoId, indiceAntes, false)
   const r = lerRascunhoDoDisco(rascunhoId)
   const { indice, roteiro } = abrirParaCenas(r)
   const take = takeAtual(r)
@@ -253,6 +295,7 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
     divisao,
     leitura,
     rostos,
+    imagem,
     abrem: frasesQueAbrem(roteiro),
   })
   const quando = agora()
@@ -357,8 +400,20 @@ function ondeFica(p: PlanoDoCasar, t: number | null): string[] {
   return [`${Math.max(1, s)}s ${t < p.plano.start ? 'depois' : 'antes'}`]
 }
 
-function candidatoDoPlano(p: PlanoDoCasar, episodioId: string, origem: 'vizinha' | 'busca', porque: string[]): CandidatoDeCena {
-  return candidatoDosPlanos([p.plano], episodioId, origem, { inSec: p.util!.de, outSec: p.util!.ate, porque })
+function candidatoDoPlano(p: PlanoDoCasar, episodioId: string, origem: 'vizinha' | 'busca', porque: string[], entrada = p.util!.de): CandidatoDeCena {
+  return candidatoDosPlanos([p.plano], episodioId, origem, { inSec: entrada, outSec: p.util!.ate, porque })
+}
+
+/**
+ * (4a rodada) A ENTRADA de um plano da grade: depois do preto, do clarao ou do
+ * borrao do comeco (o casar faz o mesmo nas sugestoes), se sobra o minimo na
+ * tela; senao, o comeco de sempre.
+ */
+export function entradaDepoisDoEfeito(p: Pick<PlanoDoCasar, 'plano' | 'util'>, abremRuim: ReadonlyMap<string, number> | undefined, minimo: number): number {
+  const de = p.util!.de
+  const ruim = abremRuim?.get(p.plano.id) ?? 0
+  const pulo = p.plano.start + ruim
+  return ruim > 0 && de < pulo && p.util!.ate - pulo >= minimo ? pulo : de
 }
 
 /**
@@ -382,13 +437,16 @@ export async function candidatosDaFrase(
   const janela = janelasDasFrases(frases, r.eventos, indice, todos)[i]!
 
   let sugestoes: CandidatoDeCena[] = escolha?.fita ?? []
+  // (4a rodada) So le (a grade): o comeco ruim de cada plano, para a entrada da grade tambem pular o efeito.
+  const imagem = await sinaisDaImagem(rascunhoId, indice, true)
+  const divisao = divisaoDaConfig(configDoRecap().cenas)
+  const minimo = minimoNaTela(divisao.minimoSec)
   if (!escolha) {
     const fixas = new Map(cenas.escolhas.map((e): [string, EscolhaDaFrase] => [e.fraseId, e]))
     const abremEscuro = await planosQueAbremEscuro(indice)
     const leitura = await leituraDosPlanos(indice)
     const rostos = await largurasDosRostos(indice)
     const { sinais, camadas } = await sinaisParaOCasar(rascunhoId, true)
-    const divisao = divisaoDaConfig(configDoRecap().cenas)
     const { casadas } = casarFrases({
       indice,
       eventos: r.eventos,
@@ -402,6 +460,7 @@ export async function candidatosDaFrase(
       divisao,
       leitura,
       rostos,
+      imagem,
       abrem: frasesQueAbrem(roteiro),
     })
     sugestoes = casadas[0]?.escolha.fita ?? []
@@ -431,11 +490,11 @@ export async function candidatosDaFrase(
       : visiveis
           .slice(Math.max(0, centro - VIZINHAS_DE_CADA_LADO), centro + VIZINHAS_DE_CADA_LADO + 1)
           .filter((p) => !naFita.has(p.plano.id) && passaNoFiltro(p, filtros, falaDaCue))
-          .map((p) => candidatoDoPlano(p, indice.id, 'vizinha', ondeFica(p, t)))
+          .map((p) => candidatoDoPlano(p, indice.id, 'vizinha', ondeFica(p, t), entradaDepoisDoEfeito(p, imagem.abremRuim, minimo)))
   const vistos = new Set(vizinhas.map((c) => c.planoIds[0]))
   const outras = visiveis
     .filter((p) => !naFita.has(p.plano.id) && !vistos.has(p.plano.id) && passaNoFiltro(p, filtros, falaDaCue))
-    .map((p) => candidatoDoPlano(p, indice.id, 'busca', []))
+    .map((p) => candidatoDoPlano(p, indice.id, 'busca', [], entradaDepoisDoEfeito(p, imagem.abremRuim, minimo)))
   return {
     fraseId,
     sugestoes,

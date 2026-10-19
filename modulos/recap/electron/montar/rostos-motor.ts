@@ -929,6 +929,29 @@ function deteccoesDosPlanos(
   return conta
 }
 
+/**
+ * (4a rodada) A largura do maior rosto em CADA instante (25/50/75% do plano;
+ * null = sem rosto naquele instante): o casar olha so os instantes que a cena
+ * toca (o 0057 do Nia E01 tem o rosto grande depois das maos brilhando); as mesmas deteccoes.
+ */
+export async function largurasPorInstante(
+  indice: Pick<EpisodeIndex, 'id' | 'anime' | 'temporada' | 'planos' | 'atualizadoEm'>,
+  o: OpcoesDoRostoPeloMotor & { tetoMs?: number } = {},
+): Promise<Map<string, (number | null)[]>> {
+  const saida = new Map<string, (number | null)[]>()
+  for (const [id, achado] of await deteccoesDosPlanos(indice, o)) {
+    const ws = larguraPorInstante(achado)
+    if (ws) saida.set(id, ws)
+  }
+  return saida
+}
+
+/** A largura (fracao) do maior rosto de cada instante. null = sem medida (largura do quadro desconhecida). */
+export function larguraPorInstante(achado: RostosDoPedaco): (number | null)[] | null {
+  if (!(achado.largura > 0)) return null
+  return achado.quadros.map((q) => (q.ok && q.rostos.length > 0 ? Math.max(...q.rostos.map((r) => r.w)) / achado.largura : null))
+}
+
 /** A mediana, entre os instantes com rosto, da largura (fracao) do maior rosto. null = rosto em menos de 2. */
 export function larguraDoMaiorRosto(achado: RostosDoPedaco): number | null {
   if (!(achado.largura > 0)) return null
