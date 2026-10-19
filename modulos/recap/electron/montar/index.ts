@@ -22,6 +22,7 @@ import { saveProjectFile } from '../project'
 import { arquivoDaVoz, pastaDaVoz } from '../voz/pastas'
 import { secoesDoTake, type RostosDoLote } from '../../shared/edicao-rapida'
 import { aquecerMiniaturas } from './abertura'
+import { clarearDaMontagem } from './clarear'
 import {
   corDaMontagem,
   estiloSalvo,
@@ -358,6 +359,13 @@ async function montarAqui(
   const estilo = estiloSalvo(pedido.estilo)
   const cor = config?.cor ? corDaMontagem(take.duracao, pedido.presetsDeCor ?? []) : null
   if (cor) avisosDaEdicao.push(...cor.avisos)
+  // (19/10, 3a rodada) A cena que a tela mostra ilegivel (o recorte ja decidido) ganha uma camada de
+  // ajuste curta, acima da camada de cor: clareia antes de alguem pensar em trocar a cena. So com a cor.
+  const clarear = config?.cor
+    ? await clarearDaMontagem({ pedacos: previa.pedacos, indice, focos, faixa: cor?.camada ? cor.camada.faixa + 1 : 0 })
+    : null
+  if (clarear) avisosDaEdicao.push(...clarear.avisos)
+  const faixaDaCor = [...(cor?.camada ? [cor.camada] : []), ...(clarear?.clipes ?? [])]
   // O TITULO NO GANCHO (a 1a frase, ou a 1a sugestao de thumb) e os TEXTOS NA
   // TELA das outras frases, acima da camada de cor e depois do card. Cada um
   // so com a sua parte ligada (desligadas por padrao).
@@ -373,7 +381,7 @@ async function montarAqui(
       pasta,
       estilo,
       ganchoAteSec: gancho.texto ? gancho.sec : 0,
-      faixaDeVideo: cor?.camada ? [cor.camada] : [],
+      faixaDeVideo: faixaDaCor,
     })
     avisosDaEdicao.push(...textos.avisos)
   }
@@ -389,7 +397,7 @@ async function montarAqui(
     eventos,
     estilo,
     trilhas: som?.trilhas ?? [],
-    sobreposicoes: [...(cor?.camada ? [cor.camada] : []), ...(textos?.clipes ?? [])],
+    sobreposicoes: [...faixaDaCor, ...(textos?.clipes ?? [])],
     thumbs,
     titulo,
     nomesDasFrases: nomes.porFrase,

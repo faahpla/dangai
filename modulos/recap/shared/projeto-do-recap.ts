@@ -33,8 +33,11 @@ export const PAPEIS_DA_TRILHA = ['musica', 'whoosh', 'impacto'] as const
 export const papelDaTrilhaSchema = z.enum(PAPEIS_DA_TRILHA)
 export type PapelDaTrilha = z.infer<typeof papelDaTrilhaSchema>
 
-/** 'cor' = a camada de ajuste; 'texto' = um texto de tela do roteiro (textos-na-tela.ts). */
-export const PAPEIS_DA_SOBREPOSICAO = ['cor', 'texto'] as const
+/**
+ * 'cor' = a camada de ajuste; 'texto' = um texto de tela do roteiro (textos-na-tela.ts);
+ * 'clarear' = a camada de ajuste curta que clareia uma cena escura (clarear.ts, 19/10).
+ */
+export const PAPEIS_DA_SOBREPOSICAO = ['cor', 'texto', 'clarear'] as const
 export const papelDaSobreposicaoSchema = z.enum(PAPEIS_DA_SOBREPOSICAO)
 export type PapelDaSobreposicao = z.infer<typeof papelDaSobreposicaoSchema>
 
