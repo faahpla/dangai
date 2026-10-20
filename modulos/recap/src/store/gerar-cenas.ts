@@ -21,7 +21,7 @@ import {
   type EscolhaDaFrase,
   type EstadoDasCenas,
 } from '../../shared/cenas'
-import { encaixarEscolha } from '../../shared/encaixe'
+import { encaixarEscolha, planoExcluido, PREFIXO_CENA_CURTA_DELE } from '../../shared/encaixe'
 import type { ModoDoGrid } from '../../shared/grid'
 import { aplicarMesclas, type PlanoNoMesclado } from '../../shared/mesclas'
 import { useGerar } from './gerar'
@@ -175,6 +175,8 @@ interface EstadoDasCenasNaTela {
   /** Shift/Ctrl+clique: mais uma cena na frase, comecando no meio do ultimo pedaco. */
   adicionarCena: (candidato: CandidatoDeCena, fraseId?: string) => void
   removerCena: (fraseId: string, k: number) => void
+  /** "Completar" a cena k que ficou curta: emenda o plano seguinte do episodio (a pedido dele). */
+  completarCena: (fraseId: string, k: number) => void
   /** Nova ordem das cenas (indices antigos). Os cortes ficam nas mesmas palavras. */
   reordenarCenas: (fraseId: string, ordem: readonly number[]) => void
   /** A barrinha rosa: a cena k (>= 1) passa a comecar na palavra `palavra`. */
@@ -521,10 +523,21 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       hashTexto: hashDoTexto(ctx.frase.texto),
       avisos: nova.avisos.filter((a) => a !== AVISO_LONGE_DO_MOMENTO),
     }
-    const { escolha } = encaixarEscolha(marcada, { indice: ctx.indice, frase: ctx.frase, take: ctx.take })
-    set({ pendentes: { ...get().pendentes, [fraseId]: escolha }, confirmando: null })
+    const { escolha, avisos } = encaixarEscolha(marcada, { indice: ctx.indice, frase: ctx.frase, take: ctx.take })
+    // (20/10) A cena posta a mao que nao cobre o pedaco fica (o fim congela): o recado diz, ele decide.
+    const curta = avisos.map((a) => a.slice(a.indexOf(': ') + 2)).find((a) => a.startsWith(PREFIXO_CENA_CURTA_DELE))
+    const recadoAntes = get().recado
+    const recado = curta
+      ? `Cena curta: ${curta.slice(PREFIXO_CENA_CURTA_DELE.length)}. O fim fica parado; "completar" na cena emenda o plano seguinte.`
+      : recadoAntes?.startsWith('Cena curta: ')
+        ? null
+        : recadoAntes
+    set({ pendentes: { ...get().pendentes, [fraseId]: escolha }, confirmando: null, recado })
     agendarGravacao()
   }
+
+  /** O candidato que ele clicou: posto a mao (o encaixe nunca o troca pelo vizinho). */
+  const dele = (c: CandidatoDeCena): CandidatoDeCena => (c.origem === 'usuario' ? c : { ...c, origem: 'usuario' })
 
   /** A escolha nova de uma frase que ainda nao tinha: a fita e a da grade, se for dela. */
   const escolhaVazia = (ctx: ContextoDaFrase): EscolhaDaFrase => {
@@ -705,9 +718,9 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
           set({ cenaAlvo: Math.max(0, Math.min(get().cenaAlvo, cenas.length - 1)) })
           return { ...base, cenas }
         }
-        if (base.cenas.length === 0) return { ...base, cenas: [{ candidato, palavraInicio: 0 }] }
+        if (base.cenas.length === 0) return { ...base, cenas: [{ candidato: dele(candidato), palavraInicio: 0 }] }
         const alvo = Math.min(get().cenaAlvo, base.cenas.length - 1)
-        return { ...base, cenas: base.cenas.map((c, k) => (k === alvo ? { ...c, candidato } : c)) }
+        return { ...base, cenas: base.cenas.map((c, k) => (k === alvo ? { ...c, candidato: dele(candidato) } : c)) }
       })
     },
 
@@ -716,7 +729,7 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       if (!id) return
       mudarEscolha(id, (atual, ctx) => {
         const base = atual ?? escolhaVazia(ctx)
-        if (base.cenas.length === 0) return { ...base, cenas: [{ candidato, palavraInicio: 0 }] }
+        if (base.cenas.length === 0) return { ...base, cenas: [{ candidato: dele(candidato), palavraInicio: 0 }] }
         if (base.cenas.some((c) => mesmaCena(c.candidato, candidato))) return null
         // A nova entra no meio do ultimo pedaco; a barrinha rosa ajusta a palavra.
         const n = palavrasNaFrase(ctx.frase.texto)
@@ -727,7 +740,28 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
         }
         const palavraInicio = ultima + Math.floor((n - ultima) / 2)
         set({ cenaAlvo: base.cenas.length })
-        return { ...base, cenas: [...base.cenas, { candidato, palavraInicio }] }
+        return { ...base, cenas: [...base.cenas, { candidato: dele(candidato), palavraInicio }] }
+      })
+    },
+
+    completarCena: (fraseId, k) => {
+      mudarEscolha(fraseId, (atual, ctx) => {
+        const cena = atual?.cenas[k]
+        if (!atual || !cena || cena.baixo) return null
+        const planos = ctx.indice.planos
+        const ultimo = cena.candidato.planoIds[cena.candidato.planoIds.length - 1]
+        const i = planos.findIndex((p) => p.id === ultimo)
+        const seguinte = i >= 0 ? planos[i + 1] : undefined
+        if (!seguinte || planoExcluido(seguinte, ctx.indice.exclusoes)) {
+          set({ recado: 'Sem plano seguinte para completar esta cena.' })
+          return null
+        }
+        const candidato: CandidatoDeCena = {
+          ...dele(cena.candidato),
+          planoIds: [...cena.candidato.planoIds, seguinte.id],
+          outSec: seguinte.end,
+        }
+        return { ...atual, cenas: atual.cenas.map((c, j) => (j === k ? { ...c, candidato } : c)) }
       })
     },
 

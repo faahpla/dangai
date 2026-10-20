@@ -610,6 +610,7 @@ function LinhaDaCena({
   const tocandoEsta = useCenas((s) => s.previa?.fraseId === fraseId && s.previa.candidato === null)
   const definirCenaAlvo = useCenas((s) => s.definirCenaAlvo)
   const removerCena = useCenas((s) => s.removerCena)
+  const completarCena = useCenas((s) => s.completarCena)
   const abrirPrevia = useCenas((s) => s.abrirPrevia)
   const definirFiltros = useCenas((s) => s.definirFiltros)
   const parada = segundos - janela
@@ -681,6 +682,20 @@ function LinhaDaCena({
             >
               parada {parada.toFixed(1)}s
             </span>
+          )}
+          {/* (20/10) A cena dele que nao cobre: emendar o plano seguinte so a pedido. */}
+          {parada > 0.05 && !cena.baixo && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                completarCena(fraseId, posicao)
+              }}
+              title="Completar com o plano seguinte do episodio (a cena emenda e para de ficar parada)"
+              className="w-fit text-left text-[10px] leading-tight text-ink-3 underline-offset-2 hover:text-ink hover:underline"
+            >
+              completar
+            </button>
           )}
         </div>
         <span className="flex shrink-0 items-center gap-0.5">

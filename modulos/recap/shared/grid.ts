@@ -181,7 +181,7 @@ function planoDe(planos: ReadonlyMap<string, Plano>, c: Pick<CandidatoDeCena, 'p
 /**
  * Uma METADE: um plano so do candidato, comecando em `comeco` (segundos do
  * .mkv) ou o mais perto dele que ainda cobre `dura` segundos sem congelar.
- * null = nenhum plano do candidato cobre o bloco sozinho.
+ * null = nenhum plano do candidato cobre o bloco sozinho (posto a mao: o primeiro).
  */
 export function metadeDoCandidato(
   c: CandidatoDeCena,
@@ -190,7 +190,10 @@ export function metadeDoCandidato(
   comeco: number = c.inSec,
   entradas?: ReadonlyMap<string, number>,
 ): CandidatoDeCena | null {
-  for (const id of c.planoIds) {
+  // (20/10) Posto a mao ('usuario'), a metade e o plano DELE (o primeiro): o grid nao
+  // troca o 0217 de 0,75 s pelo 0218 do "completar". Nao cobre = esta cena nao vira grid.
+  const ids = c.origem === 'usuario' ? c.planoIds.slice(0, 1) : c.planoIds
+  for (const id of ids) {
     const p = planos.get(id)
     if (!p) continue
     // (rodada 5) Nunca antes da entrada do plano que abre com clarao ou borrao.

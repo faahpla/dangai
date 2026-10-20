@@ -248,8 +248,9 @@ export function pedacosDaMontagem(e: Omit<EntradaDaMontagem, 'narracaoPath' | 'f
         const inicio = trecho.offset + t.inicio
         const fim = trecho.offset + t.fim
         if (fim - inicio <= 0) return
-        // (5a rodada) O plano emendado tambem entra depois do efeito (o encaixe contou assim); posto a mao, nao.
-        const partes = trechosDoCandidato(cena.candidato, e.indice.planos, cena.candidato.origem === 'usuario' ? undefined : e.entradas)
+        // (5a rodada) O plano emendado tambem entra depois do efeito (o encaixe contou assim), tambem
+        // o que ele pediu no "completar" (20/10); o primeiro plano e sempre do inSec.
+        const partes = trechosDoCandidato(cena.candidato, e.indice.planos, e.entradas)
         if (partes.length === 0) {
           avisos.push(`${frase.id}: cena sem arquivo`)
           return

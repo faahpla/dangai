@@ -56,6 +56,13 @@ import { encaixarMetade } from './grid'
  *     depois do efeito (ContextoDoEncaixe.entradas): o comeco nunca fica antes
  *     dela, nem recuando para caber -- falta pequena segura o ultimo quadro,
  *     como sempre. Posto a mao ('usuario'), o comeco continua dele.
+ *   - (20/10) POSTO A MAO ('usuario': o clique na grade, no player, o
+ *     "completar"): o plano dele e o primeiro e fica. O encaixe nunca o troca
+ *     pelo vizinho (o semRelance tirava o 0217 de 0,75 s do Nia S01E03 e
+ *     ficava o 0218), nunca poe o anterior na frente e nao emenda sozinho:
+ *     falta ate SEGURAR_EM_VEZ_DE_RELANCE_SEC congela no fim; mais que isso
+ *     e "Cena curta" com o recado "cena curta: 0,8 s para 1,4 s", e ele
+ *     decide (o "completar" da cena emenda o plano seguinte, a pedido).
  */
 
 /** Ate quantos planos uma emenda junta (a montagem original de 2 a 3 planos, com folga). */
@@ -237,6 +244,13 @@ function segundos(s: number): string {
   return `${s.toFixed(1).replace('.', ',')}s`
 }
 
+/** O recado da cena posta a mao que nao cobre o pedaco: "cena curta: 0,8 s para 1,4 s". */
+export const PREFIXO_CENA_CURTA_DELE = 'cena curta: '
+function cenaCurtaDele(tem: number, precisa: number): string {
+  const s = (x: number): string => `${x.toFixed(1).replace('.', ',')} s`
+  return `${PREFIXO_CENA_CURTA_DELE}${s(Math.max(0, tem))} para ${s(precisa)}`
+}
+
 function encaixarCandidato(
   c: CandidatoDeCena,
   precisaBruto: number,
@@ -264,11 +278,17 @@ function encaixarCandidato(
     const p = planos[i]
     return p !== undefined && !planoExcluido(p, ctx.indice.exclusoes) && !(ctx.ocupados?.has(p.id) ?? false)
   }
-  // (4a rodada) O piso do comeco em cada plano: depois do efeito do comeco (posto a mao, o do plano).
+  // (20/10) Posto a mao: o plano dele fica, sem emenda sozinha (ver o topo).
+  const mao = c.origem === 'usuario'
+  const primeiroDele = a
+  // (4a rodada) O piso do comeco em cada plano: depois do efeito do comeco. Posto a
+  // mao, o comeco que ele escolheu antes da entrada vale (o do plano); o recuo para
+  // caber e o plano que ele pediu para completar continuam depois do efeito.
   const piso = (i: number): number => {
     const p = planos[i]!
-    const e = c.origem === 'usuario' ? undefined : ctx.entradas?.get(p.id)
-    return e !== undefined && e > p.start && e < p.end ? e : p.start
+    const e = ctx.entradas?.get(p.id)
+    const dele = mao && i === primeiroDele && e !== undefined && c.inSec < e - 1e-6
+    return e !== undefined && !dele && e > p.start && e < p.end ? e : p.start
   }
 
   // O comeco preferido: a fala citada dentro dos planos do candidato; senao o
@@ -284,7 +304,7 @@ function encaixarCandidato(
       // Cabe (ou quase) nos planos do candidato: recua o comeco so o
       // necessario; a fala citada continua dentro da janela.
       inicio = Math.max(piso(a), Math.min(inicio, inicioPelaCobertura(planos, a, b, precisa, piso)))
-    } else {
+    } else if (!mao) {
       // Nao cabe: o plano seguinte do episodio, como a montagem original...
       // (plano mais curto que o minimo na tela nunca entra: vira um flash no meio)
       while (
@@ -317,7 +337,10 @@ function encaixarCandidato(
     if (Math.min(p.end, fim) - Math.max(p.start, inicio) > 1e-6) tocados.push(i)
   }
   // Emenda sem relance: nenhum pedaco de plano curto demais (pecas puras abaixo).
-  const ajuste = semRelance(planos, tocados.length > 0 ? tocados : [a], inicio, fim, precisa, minimo, piso)
+  // Posto a mao, a emenda e a que ele pediu: nada sai (o plano dele nunca).
+  const ajuste = mao
+    ? { usados: tocados.length > 0 ? tocados : [a], inicio, fim, segurado: Math.min(SEGURAR_EM_VEZ_DE_RELANCE_SEC, precisa) }
+    : semRelance(planos, tocados.length > 0 ? tocados : [a], inicio, fim, precisa, minimo, piso)
   const usados = ajuste.usados
   inicio = ajuste.inicio
   fim = ajuste.fim
@@ -332,7 +355,10 @@ function encaixarCandidato(
   }
   // A falta que o semRelance escolheu segurar (no maximo SEGURAR_EM_VEZ_DE_RELANCE_SEC) nao e aviso.
   if (falta > Math.max(FOLGA_SEM_EMENDA_SEC, ajuste.segurado + 1e-6)) {
-    avisos.push({ curto: AVISO_CENA_CURTA, longo: `cena curta, falta ${segundos(falta)} de imagem` })
+    avisos.push({
+      curto: AVISO_CENA_CURTA,
+      longo: mao ? cenaCurtaDele(precisa - falta, precisa) : `cena curta, falta ${segundos(falta)} de imagem`,
+    })
   }
 
   return {
