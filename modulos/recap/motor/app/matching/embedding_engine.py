@@ -60,12 +60,24 @@ class EmbeddingEngine:
         # com QuickGELU) — degradando o reconhecimento. Forçamos pra manter a
         # consistência com o cache existente.
         force_quick_gelu = pretrained == "openai"
-        self.model, _, self.preprocess = open_clip.create_model_and_transforms(
-            model_name,
-            pretrained=pretrained,
-            device=self.device,
-            force_quick_gelu=force_quick_gelu,
-        )
+
+        def criar():
+            return open_clip.create_model_and_transforms(
+                model_name,
+                pretrained=pretrained,
+                device=self.device,
+                force_quick_gelu=force_quick_gelu,
+            )
+
+        # [recap] O peso ja baixado sobe sem perguntar nada a rede (hub_local);
+        # na 1a vez (ainda nao esta no cache) o bloco falha e baixa normalmente.
+        from app.hub_local import so_cache
+
+        try:
+            with so_cache():
+                self.model, _, self.preprocess = criar()
+        except Exception:
+            self.model, _, self.preprocess = criar()
         self.model.eval()
 
         if prefer_cuda:

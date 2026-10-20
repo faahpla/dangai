@@ -78,17 +78,20 @@ def ensure_yolo_anime_face() -> Path:
     Raises RuntimeError with a helpful message if huggingface_hub is missing.
     """
     try:
-        from huggingface_hub import hf_hub_download
+        import huggingface_hub  # noqa: F401
     except ImportError as e:
         raise RuntimeError(
             "huggingface_hub não está instalado. Rode `pip install huggingface_hub`."
         ) from e
-    return Path(hf_hub_download(repo_id=_YOLO_REPO, filename=_YOLO_FILE))
+    from app.hub_local import baixar
+
+    return Path(baixar(_YOLO_REPO, _YOLO_FILE))
 
 
 def ensure_yolo_anime_head() -> Path:
-    from huggingface_hub import hf_hub_download
-    return Path(hf_hub_download(repo_id=_HEAD_REPO, filename=_HEAD_FILE))
+    from app.hub_local import baixar
+
+    return Path(baixar(_HEAD_REPO, _HEAD_FILE))
 
 
 class AnimeFaceDetector:

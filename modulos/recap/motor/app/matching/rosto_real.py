@@ -158,9 +158,9 @@ class DetectorRostoReal:
             return self._sessao
         try:
             import onnxruntime as ort
-            from huggingface_hub import hf_hub_download
+            from app.hub_local import baixar
 
-            caminho = hf_hub_download(REPO, ARQ_DETECTOR)
+            caminho = baixar(REPO, ARQ_DETECTOR)
             self._sessao = ort.InferenceSession(
                 caminho, providers=_provedores(self._use_cuda)
             )
@@ -291,9 +291,9 @@ class IdentidadeRostoReal:
             return self._sessao
         try:
             import onnxruntime as ort
-            from huggingface_hub import hf_hub_download
+            from app.hub_local import baixar
 
-            caminho = hf_hub_download(REPO, ARQ_IDENTIDADE)
+            caminho = baixar(REPO, ARQ_IDENTIDADE)
             self._sessao = ort.InferenceSession(
                 caminho, providers=_provedores(self._use_cuda)
             )

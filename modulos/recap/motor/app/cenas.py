@@ -105,11 +105,13 @@ class _Sentido:
 
     def __init__(self) -> None:
         import onnxruntime as ort
-        from huggingface_hub import hf_hub_download
         from tokenizers import Tokenizer
 
-        modelo = hf_hub_download(SENTIDO_REPO, SENTIDO_MODELO, revision=SENTIDO_REVISAO)
-        tok = hf_hub_download(SENTIDO_REPO, SENTIDO_TOKENIZER, revision=SENTIDO_REVISAO)
+        from app.hub_local import baixar
+
+        # O cache primeiro: o modelo ja baixado nao pergunta nada a rede (hub_local).
+        modelo = baixar(SENTIDO_REPO, SENTIDO_MODELO, revision=SENTIDO_REVISAO)
+        tok = baixar(SENTIDO_REPO, SENTIDO_TOKENIZER, revision=SENTIDO_REVISAO)
         self.tok = Tokenizer.from_file(tok)
         self.tok.enable_truncation(SENTIDO_MAX_TOKENS)
         self.tok.enable_padding(pad_id=self.tok.token_to_id("<pad>") or 1, pad_token="<pad>")

@@ -55,13 +55,13 @@ class CcipEngine:
             return self._feat, self._metrics
         try:
             import onnxruntime as ort
-            from huggingface_hub import hf_hub_download
+            from app.hub_local import baixar
 
             opts = ort.SessionOptions()
             if self._threads > 0:
                 opts.intra_op_num_threads = self._threads
             caminhos = {
-                nome: hf_hub_download(REPO, f"{MODELO}/{nome}")
+                nome: baixar(REPO, f"{MODELO}/{nome}")
                 for nome in ("model_feat.onnx", "model_metrics.onnx")
             }
             self._feat = ort.InferenceSession(

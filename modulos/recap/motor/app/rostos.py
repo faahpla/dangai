@@ -118,12 +118,9 @@ def _modelo_local(repo: str, arquivo: str) -> Path:
 
     A rede do Levi as vezes nao responde; com o cache cheio (o motor ja baixou
     na 1a analise) nao ha por que perguntar nada ao Hub."""
-    from huggingface_hub import hf_hub_download
+    from app.hub_local import baixar
 
-    try:
-        return Path(hf_hub_download(repo_id=repo, filename=arquivo, local_files_only=True))
-    except Exception:
-        return Path(hf_hub_download(repo_id=repo, filename=arquivo))
+    return Path(baixar(repo, arquivo))
 
 
 class _Detector:
