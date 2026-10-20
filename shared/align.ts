@@ -19,6 +19,38 @@ import type { Transcript, Word } from './contract'
 /** Abaixo disto o roteiro provavelmente nao e desta narracao. */
 const MIN_COVERAGE = 0.5
 
+/**
+ * CASAMENTO DENSO: no trecho do audio entre a primeira e a ultima palavra
+ * casada, quantas palavras do AUDIO casaram com o roteiro.
+ *
+ * Os 50% acima olham so o lado do roteiro, e num audio LONGO as palavras
+ * comuns ("de", "que", "o") bastavam para chegar la: 19 minutos de outra
+ * coisa passavam como a narracao certa, com o roteiro espremido no comeco e
+ * a ultima cena durando 18 minutos. Medido pelo Claude do Levi: audio certo
+ * 95%; certo com 5 min de outra coisa antes, 95%; outro texto, 13-19%; 19 min
+ * de outras coisas, 5%.
+ */
+const MIN_DENSIDADE = 0.5
+
+/**
+ * Palavras do roteiro sem fala, seguidas, numa PONTA (fim ou comeco) do audio,
+ * a partir das quais o audio "acaba antes" (ou "comeca depois") do roteiro.
+ * Antes, essas palavras eram espremidas no finzinho e a legenda corria ate
+ * 25 s na frente da voz.
+ */
+const PONTA_SEM_FALA = 8
+
+/** Por que o roteiro nao casou -- cada caso tem um recado proprio. */
+export type MotivoDoRoteiro = 'nao-bate' | 'acaba-antes' | 'comeca-depois'
+
+export interface FalhaDoAlinhamento {
+  falha: MotivoDoRoteiro
+  /** Quantas palavras do roteiro ficaram sem fala (acaba-antes, comeca-depois). */
+  faltam?: number
+  /** O comeco do trecho que falta, para ele reconhecer. */
+  trecho?: string
+}
+
 const MATCH = 3
 const NEAR = 1
 const MISMATCH = -2
@@ -124,8 +156,14 @@ function score(a: string, b: string): number {
  * em segundos. Nenhum token e descartado e nenhum texto e alterado.
  */
 export function alignScript(script: string, timed: readonly Word[]): Alignment | null {
+  const r = alinharRoteiro(script, timed)
+  return 'falha' in r ? null : r
+}
+
+/** O mesmo alinhamento, dizendo POR QUE nao casou quando nao casa. */
+export function alinharRoteiro(script: string, timed: readonly Word[]): Alignment | FalhaDoAlinhamento {
   const { tokens, fechaParagrafo } = tokenizeWithBreaks(script)
-  if (tokens.length === 0 || timed.length === 0) return null
+  if (tokens.length === 0 || timed.length === 0) return { falha: 'nao-bate' }
 
   const a = tokens.map(normalize)
   const b = timed.map((word) => normalize(word.text))
@@ -167,7 +205,58 @@ export function alignScript(script: string, timed: readonly Word[]): Alignment |
   }
 
   const anchored = pairedWith.filter((value) => value !== null).length
-  if (anchored / tokens.length < MIN_COVERAGE) return null
+  const casados = pairedWith.flatMap((par, indice) => (par === null || par === undefined ? [] : [indice]))
+  if (casados.length === 0) return { falha: 'nao-bate' }
+
+  // Denso no trecho que casou? Senao e outro audio, com palavras comuns em comum.
+  const primeiroDoAudio = pairedWith[casados[0]!]!
+  const ultimoDoAudio = pairedWith[casados.at(-1)!]!
+  if (anchored / (ultimoDoAudio - primeiroDoAudio + 1) < MIN_DENSIDADE) return { falha: 'nao-bate' }
+
+  // O audio para (ou comeca) no meio do roteiro: diz qual pedaco falta.
+  const trecho = (de: number, ate: number): string => {
+    const pedaco = tokens.slice(de, Math.min(ate, de + 8)).join(' ').replace(/[.,;:!?]+$/, '')
+    return ate - de > 8 ? `${pedaco}...` : pedaco
+  }
+  /*
+   * AS ANCORAS SOLTAS NAS PONTAS nao contam. Um audio que para em "...precisa
+   * de ajuda, e" fazia o alinhamento casar esse "e" com o ULTIMO "e" do
+   * roteiro, la no fim -- e o roteiro parecia inteiro. Uma palavra casada
+   * depois de um buraco grande no roteiro, mas colada na anterior no audio
+   * (o audio nao tem lugar para as palavras puladas), e coincidencia.
+   */
+  let fim = casados.length - 1
+  while (
+    fim > 0 &&
+    casados[fim]! - casados[fim - 1]! - 1 >= PONTA_SEM_FALA &&
+    pairedWith[casados[fim]!]! - pairedWith[casados[fim - 1]!]! <= 2
+  ) {
+    fim--
+  }
+  let ini = 0
+  while (
+    ini < fim &&
+    casados[ini + 1]! - casados[ini]! - 1 >= PONTA_SEM_FALA &&
+    pairedWith[casados[ini + 1]!]! - pairedWith[casados[ini]!]! <= 2
+  ) {
+    ini++
+  }
+  const ultimoReal = casados[fim]!
+  const primeiroReal = casados[ini]!
+  // As poucas palavras que o audio ainda tem DEPOIS da ultima ancora boa (ou
+  // antes da primeira) foram ditas: sao as seguintes do roteiro, e nao faltam.
+  const faladasDepois = timed.length - 1 - pairedWith[ultimoReal]!
+  const depois = tokens.length - 1 - ultimoReal - faladasDepois
+  if (depois >= PONTA_SEM_FALA && faladasDepois <= 2 + (casados.length - 1 - fim)) {
+    return { falha: 'acaba-antes', faltam: depois, trecho: trecho(tokens.length - depois, tokens.length) }
+  }
+  const faladasAntes = pairedWith[primeiroReal]!
+  const antes = primeiroReal - faladasAntes
+  if (antes >= PONTA_SEM_FALA && faladasAntes <= 2 + ini) {
+    return { falha: 'comeca-depois', faltam: antes, trecho: trecho(0, antes) }
+  }
+
+  if (anchored / tokens.length < MIN_COVERAGE) return { falha: 'nao-bate' }
 
   const words: Word[] = tokens.map((text, index) => {
     const paragraph = fechaParagrafo[index] === true
@@ -280,9 +369,9 @@ const MINIMO_ESTIMADO = 0.06
 export function transcriptFromScript(
   script: string,
   base: Transcript,
-): { transcript: Transcript; anchored: number; total: number } | null {
-  const alignment = alignScript(script, base.words)
-  if (!alignment) return null
+): { transcript: Transcript; anchored: number; total: number } | FalhaDoAlinhamento {
+  const alignment = alinharRoteiro(script, base.words)
+  if ('falha' in alignment) return alignment
 
   return {
     transcript: {

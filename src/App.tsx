@@ -30,6 +30,7 @@ import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
 import { semExtensaoDeProjeto } from '@shared/project-file'
 import { startModulos, TelasDosModulos } from '@/modulos'
+import { Pergunta } from '@/components/Pergunta'
 import { useTelaCheia } from '@/modulos/nucleo'
 
 /**
@@ -485,6 +486,7 @@ export function App() {
       <StatusBar isDragging={isDragging} />
       </div>
       <TelasDosModulos />
+      <Pergunta />
       <Settings />
       <Script />
       <Library />

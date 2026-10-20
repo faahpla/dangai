@@ -1,3 +1,4 @@
+import { roteiroNaoBate } from '@shared/preflight'
 import { ItensDosModulosNaBarraDeStatus } from '@/modulos'
 import { useEffect, useState } from 'react'
 import {
@@ -35,6 +36,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const lastOutput = useProject((s) => s.lastOutput)
   const planOrigin = useProject((s) => s.planOrigin)
   const aiNote = useProject((s) => s.aiNote)
+  const notaDoRoteiro = useProject((s) => roteiroNaoBate(s.script, s.transcript, s.scriptNote))
   const scriptNote = useProject((s) => s.scriptNote)
   const sectionNote = useProject((s) => s.sectionNote)
   const dismissError = useProject((s) => s.dismissError)
@@ -130,7 +132,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
         </button>
       )}
 
-      {!busy && planOrigin && <PlanBadge origin={planOrigin} note={aiNote} />}
+      {!busy && planOrigin && <PlanBadge origin={planOrigin} note={aiNote} pelaNarracao={notaDoRoteiro !== null} />}
 
       <UpdateChip appVersion={appVersion} />
 
@@ -283,7 +285,7 @@ function UpdateChip({ appVersion }: { appVersion: string }) {
  * participou ou se o app caiu no determinístico -- sem isso, um plano pior
  * chega sem explicacao.
  */
-function PlanBadge({ origin, note }: { origin: PlanOrigin; note: string | null }) {
+function PlanBadge({ origin, note, pelaNarracao }: { origin: PlanOrigin; note: string | null; pelaNarracao: boolean }) {
   const config: Record<PlanOrigin, { icon: typeof Sparkles; label: string }> = {
     // Cada bloco dura exatamente a frase que escolheu o clipe dele.
     auto: { icon: Wand2, label: 'Montado pelo roteiro' },
@@ -295,7 +297,9 @@ function PlanBadge({ origin, note }: { origin: PlanOrigin; note: string | null }
     silence: { icon: AudioWaveform, label: 'Cenas pelas pausas' },
     equal: { icon: Rows3, label: 'Cenas divididas igualmente' },
   }
-  const { icon: Icon, label } = config[origin]
+  const { icon: Icon, label: rotulo } = config[origin]
+  // Montado com um roteiro que NAO casou: foi pela narracao, e nao pelo roteiro.
+  const label = origin === 'auto' && pelaNarracao ? 'Montado pela narracao' : rotulo
 
   return (
     <span

@@ -53,7 +53,7 @@ import {
   MUSIC_GAIN_DB_MIN,
   VIDEO_FPS,
 } from '@shared/contract'
-import { dedupe, preflight } from '@shared/preflight'
+import { dedupe, preflight, roteiroNaoBate } from '@shared/preflight'
 
 /**
  * Volta para a tela de soltar arquivos -- o comeco de um video novo.
@@ -1090,11 +1090,12 @@ function Preflight() {
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const durationSec = useProject((s) => s.audio?.durationSec ?? 0)
   const selectScene = useProject((s) => s.selectScene)
+  const notaDoRoteiro = useProject((s) => roteiroNaoBate(s.script, s.transcript, s.scriptNote))
   const [aberto, setAberto] = useState(false)
 
   const avisos = useMemo(
-    () => dedupe(preflight({ plan, images, captions, captionsEnabled, durationSec })),
-    [plan, images, captions, captionsEnabled, durationSec],
+    () => dedupe(preflight({ plan, images, captions, captionsEnabled, durationSec, notaDoRoteiro })),
+    [plan, images, captions, captionsEnabled, durationSec, notaDoRoteiro],
   )
 
   if (avisos.length === 0) return null

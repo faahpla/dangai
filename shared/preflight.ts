@@ -6,7 +6,23 @@ import {
   type CaptionBlock,
   type ImageAsset,
   type ScenePlan,
+  type Transcript,
 } from './contract'
+
+/**
+ * O ROTEIRO QUE NAO BATEU com a narracao: havia roteiro, mas a transcricao
+ * que esta valendo nao veio dele (veio do que o Whisper ouviu). As legendas e
+ * os cortes seguem o audio, e nao o texto que ele escreveu. Devolve o recado
+ * (o da analise, quando ha), ou null quando esta tudo certo.
+ */
+export function roteiroNaoBate(
+  script: string | null,
+  transcript: Transcript | null,
+  scriptNote: string | null,
+): string | null {
+  if (!script?.trim() || !transcript || transcript.source === 'script') return null
+  return scriptNote ?? 'O roteiro nao bate com esta narracao.'
+}
 
 /**
  * O que o app percebe de errado ANTES de gastar um minuto renderizando.
@@ -25,6 +41,7 @@ export type AvisoTipo =
   | 'imagem-pequena'
   | 'sobra-de-audio'
   | 'legenda-desligada'
+  | 'roteiro-nao-bate'
 
 export interface Aviso {
   tipo: AvisoTipo
@@ -67,6 +84,8 @@ export interface PreflightInput {
   durationSec: number
   /** O quadro em que estas imagens vao cair. Ausente = o vertical de sempre. */
   formato?: Formato
+  /** O recado de roteiroNaoBate, quando o roteiro nao casou com a narracao. */
+  notaDoRoteiro?: string | null
 }
 
 export function preflight({
@@ -76,6 +95,7 @@ export function preflight({
   captionsEnabled,
   durationSec,
   formato = FORMATO_PADRAO,
+  notaDoRoteiro = null,
 }: PreflightInput): Aviso[] {
   if (!plan || plan.scenes.length === 0) return []
 
@@ -84,6 +104,18 @@ export function preflight({
   const medidas = medidasDo(formato)
 
   const avisos: Aviso[] = []
+
+  /*
+   * Primeiro da lista: e o erro que mais estraga o video. Antes ele so
+   * aparecia cortado na barra de status, e o rodape ainda dizia "Montado pelo
+   * roteiro" -- um audio de outro assunto virava 59 cenas aleatorias calado.
+   */
+  if (notaDoRoteiro) {
+    avisos.push({
+      tipo: 'roteiro-nao-bate',
+      texto: `O roteiro nao bate com a narracao: as legendas e os cortes seguem o que foi falado, e nao o roteiro. ${notaDoRoteiro}`,
+    })
+  }
 
   plan.scenes.forEach((scene, index) => {
     const duracao = scene.end - scene.start

@@ -230,12 +230,16 @@ export async function applyScript(
   onProgress('Casando o roteiro com a narracao...')
   const aligned = transcriptFromScript(trimmed, measured)
 
-  if (!aligned) {
-    return {
-      transcript: measured,
-      scriptNote:
-        'Esse roteiro nao bate com essa narracao — legendas mantidas pela transcricao. Confira se e o texto deste audio.',
-    }
+  if ('falha' in aligned) {
+    // Cada caso com o recado dele: o "nao bate" generico escondia o audio que
+    // so parou antes da hora (e esse e facil de consertar).
+    const scriptNote =
+      aligned.falha === 'acaba-antes'
+        ? `A narracao acaba antes do roteiro: faltam ${aligned.faltam} palavras ("${aligned.trecho}"). Legendas mantidas pela transcricao.`
+        : aligned.falha === 'comeca-depois'
+          ? `A narracao comeca depois do inicio do roteiro: faltam ${aligned.faltam} palavras no comeco ("${aligned.trecho}"). Legendas mantidas pela transcricao.`
+          : 'Esse roteiro nao bate com essa narracao — legendas mantidas pela transcricao. Confira se e o texto deste audio.'
+    return { transcript: measured, scriptNote }
   }
 
   const pct = Math.round((aligned.anchored / aligned.total) * 100)

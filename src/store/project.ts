@@ -122,6 +122,8 @@ import { semPassoDeDesfazer, semSujar } from './quiet'
 import { remapearEscolhas } from '@shared/remapear-escolhas'
 import { deslocarChaves } from '@shared/transform'
 import { emitir, interceptarArquivos } from '@/modulos/ganchos'
+import { perguntar } from './pergunta'
+import { roteiroNaoBate } from '@shared/preflight'
 import type { OrigemDosArquivos } from '@/modulos/api'
 
 /** Estados da interface. Existem tres, e nao mais que tres. */
@@ -1528,6 +1530,26 @@ export const useProject = create<ProjectState>((set, get) => ({
     }
 
     const { blocks, note, scriptNote, transcript } = proposta.value
+    /*
+     * O ROTEIRO NAO BATEU: pergunta antes de montar. Montado assim, os cortes
+     * e as legendas seguem o que foi falado -- com um audio de outro assunto,
+     * 59 cenas aleatorias, e antes sem ninguem avisar.
+     */
+    const nota = roteiroNaoBate(script, transcript, scriptNote)
+    if (nota) {
+      set({ busy: null })
+      const seguir = await perguntar({
+        titulo: 'O roteiro nao bate com a narracao',
+        texto: `${nota}\n\nMontando assim, os cortes e as legendas seguem o que foi falado, e nao o roteiro. Confira se a narracao e o roteiro sao do mesmo video.`,
+        sim: 'Montar pela narracao',
+        nao: 'Cancelar',
+      })
+      if (!seguir) {
+        set({ scriptNote: nota })
+        return
+      }
+      set({ busy: 'Montando...' })
+    }
     const uteis = blocks.filter((b) => b.candidates.length > 0)
     if (uteis.length === 0) {
       set({
