@@ -195,8 +195,16 @@ export const PESOS = {
    * largo que ~1,5x a janela 9:16 (CLOSE_GRANDE) nos instantes que a cena toca.
    * O Levi trocou todos os da fita (0263, 0193); pesa forte, mas abaixo do
    * close extremo: o rosto grande ainda serve quando e o unico que diz a frase.
+   * No GANCHO pesa pouco: o close emocionado e o gancho (o 0011 do MRM E02, as
+   * lagrimas do Lent; o Levi abriu o Nia no rosto da Nia).
    */
   closeGrande: -3,
+  /**
+   * (5a rodada) Fora do gancho, a cabeca grande pesa mais: no 9:16 ela corta um
+   * olho (o 0314 da fadinha no MRM E02 f19) ou a testa num close fixo de 3 s
+   * (o 0343 da f24).
+   */
+  closeGrandeFora: -12,
   /**
    * (4a rodada) A cena ABRE RUIM: o trecho comeca no preto, no flash ou no
    * borrao do comeco do plano (o 0193 do Nia E01 abre com 0,8 s de preto) e o
@@ -1818,6 +1826,8 @@ interface ContextoDaFrase {
    * Entre os pedacos da mesma frase vale a regra 7 (a ordem das palavras).
    */
   ordemLivre: boolean
+  /** (5a rodada) A frase e do gancho (a 1a parte do roteiro). */
+  gancho: boolean
 }
 
 /** O que a frase de antes mostrou: a cronologia, a continuidade e a variedade olham. */
@@ -2288,7 +2298,7 @@ function pontuar(
     // (o 0057 do Nia so tem o rosto grande depois das maos brilhando). Plano sem rosto nao paga.
     const rosto = maiorRostoNoTrecho(planos, inSec, fimReal, v)
     if (rosto > CLOSE_EXTREMO) add('close', PESOS.closeExtremo, 'close extremo')
-    else if (rosto > CLOSE_GRANDE) add('close', PESOS.closeGrande, 'cabeca grande')
+    else if (rosto > CLOSE_GRANDE) add('close', ctx.gancho ? PESOS.closeGrande : PESOS.closeGrandeFora, 'cabeca grande')
     // (4a rodada) O quadro que o anime ja divide (a linha de cima a baixo: meia cara de cada lado no 9:16).
     if (planos.some((q) => tempoNoPlano(q) > 0.3 && v.divididos.has(q.plano.id))) add('dividido', PESOS.dividido, 'quadro dividido')
     // (4a rodada) O trecho abre no preto, no clarao ou no borrao do comeco do plano: as janelas do
@@ -2988,6 +2998,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
         mesmoEvento: mesmoEventoDe(i),
         acao: acaoFisica(frase.texto),
         ordemLivre: secaoDe[i] === 0 || abreDe(i) !== null,
+        gancho: secaoDe[i] === 0,
       } satisfies Omit<ContextoDaFrase, 'anteriores'>,
     }
   })
@@ -3090,6 +3101,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
           mesmoEvento: mesmoEventoDe(i),
           acao: acaoFisica(p.texto),
           ordemLivre: secaoDe[i] === 0 || abreDe(i) !== null,
+          gancho: secaoDe[i] === 0,
         },
       }
     })
