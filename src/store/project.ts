@@ -633,6 +633,12 @@ export interface ProjectState {
   refreshSfxManual: () => Promise<void>
   /** Poe arquivos de audio numa faixa, a partir de `seconds`. */
   addTrilhasAt: (paths: readonly string[], seconds: number, faixa: number) => Promise<void>
+  /**
+   * Um arquivo SO DE SOM (meme baixado com a miniatura grudada como capa) que
+   * caiu numa faixa de video vai para uma faixa de AUDIO livre, no mesmo
+   * ponto -- na de video ele nem tocava o som, e quebrava o render.
+   */
+  levarSomParaAudio: (path: string, at: number, corte?: { inicioSec: number; usarSec: number | null }) => Promise<boolean>
   /** Move o trecho no tempo e, se pedir, para outra faixa. */
   moveTrilha: (id: string, at: number, faixa?: number) => void
   /** Corta pelo FIM: quanto toca, em segundos. null devolve ate o fim do arquivo. */
@@ -3340,7 +3346,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   addTrilhasAt: async (paths, seconds, faixa) => {
-    const audios = paths.filter((p) => classifyFile(p) === 'audio')
+    // Um video solto na faixa de audio entra pelo SOM dele.
+    const audios = paths.filter((p) => classifyFile(p) === 'audio' || classifyFile(p) === 'video')
     let cursor = Math.max(0, seconds)
     for (const [i, path] of audios.entries()) {
       const r = await window.dangai.analyzeAudio(path)
@@ -3370,6 +3377,41 @@ export const useProject = create<ProjectState>((set, get) => ({
       cursor += r.value.durationSec
       set((state) => ({ trilhas: [...state.trilhas, trecho], projectDirty: true }))
     }
+  },
+
+  levarSomParaAudio: async (path, at, corte) => {
+    const r = await window.dangai.analyzeAudio(path)
+    if (!r.ok) {
+      set({ error: r.error })
+      return false
+    }
+    const inicioSec = corte?.inicioSec ?? 0
+    const toca = corte?.usarSec ?? r.value.durationSec - inicioSec
+    // A primeira faixa de audio sem nada nesse intervalo.
+    const ocupa = get().trilhas
+    let faixa = 0
+    while (ocupa.some((t) => t.faixa === faixa && at < t.at + duracaoDoTrecho(t) - 1e-3 && at + toca > t.at + 1e-3)) faixa++
+    const trecho = {
+      id: `trilha-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      path,
+      fileName: r.value.fileName,
+      faixa,
+      at,
+      durationSec: r.value.durationSec,
+      inicioSec,
+      usarSec: corte?.usarSec ?? null,
+      gainDb: 0,
+      fadeInSec: 0,
+      fadeOutSec: 0,
+      ...ondaDoTrecho(r.value),
+      url: r.value.url,
+    }
+    set((state) => ({
+      trilhas: [...state.trilhas, trecho],
+      projectDirty: true,
+      error: `"${r.value.fileName}" so tem som (a imagem dele e so uma capa): foi para a faixa de audio A${faixa + 1}.`,
+    }))
+    return true
   },
 
   moveTrilha: (id, at, faixa) =>
@@ -3444,6 +3486,10 @@ export const useProject = create<ProjectState>((set, get) => ({
       set({ busy: null })
       if (!r.ok) {
         set({ error: r.error })
+        continue
+      }
+      if (r.value.tipo === 'som') {
+        await get().levarSomParaAudio(path, cursor)
         continue
       }
       const imagem = r.value.tipo === 'image'
@@ -3530,15 +3576,26 @@ export const useProject = create<ProjectState>((set, get) => ({
   refreshSobreposicoes: async () => {
     const atuais = get().sobreposicoes
     if (atuais.length === 0) return
+    const soDeSom: typeof atuais = []
     const repostos = await Promise.all(
       atuais.map(async (o) => {
         // A camada de ajuste nao tem arquivo: e so um filtro sobre o que esta embaixo.
         if (o.tipo === 'ajuste') return o
         const r = await window.dangai.prepararSobreposicao(o.path)
+        if (r.ok && r.value.tipo === 'som') soDeSom.push(o)
         return r.ok ? { ...o, url: r.value.url } : o
       }),
     )
-    set({ sobreposicoes: repostos })
+    /*
+     * UM CLIPE SO DE SOM NA FAIXA DE VIDEO (o projeto do ajk): o render quebrava
+     * nele. Sai da faixa de video e vai para uma de audio, no mesmo ponto e com
+     * o mesmo corte -- o som que ele queria passa a tocar, e o render anda.
+     */
+    const idsDeSom = new Set(soDeSom.map((o) => o.id))
+    set({ sobreposicoes: repostos.filter((o) => !idsDeSom.has(o.id)) })
+    for (const o of soDeSom) {
+      await get().levarSomParaAudio(o.path, o.at, { inicioSec: o.inicioSec, usarSec: o.usarSec })
+    }
   },
 
   alternarMudo: (tipo, faixa) =>

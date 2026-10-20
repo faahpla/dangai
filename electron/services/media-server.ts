@@ -99,6 +99,18 @@ export function startMediaServer(): Promise<string> {
 }
 
 /** Publica um arquivo e devolve a URL completa para ele. */
+/**
+ * Troca as URLs deste servidor que aparecem num texto (o erro do Remotion,
+ * "No video stream found in input file http://127.0.0.1:49443/m/<id>") pelo
+ * NOME do arquivo -- a URL nao diz nada a ninguem.
+ */
+export function nomearArquivosPublicados(texto: string): string {
+  return texto.replace(/https?:\/\/127\.0\.0\.1:\d+\/m\/([0-9a-f-]{36})/gi, (url, id: string) => {
+    const caminho = published.get(id)
+    return caminho ? `"${caminho.split(/[\\/]/).pop()}"` : url
+  })
+}
+
 export function publish(absolutePath: string): string {
   if (!baseUrl) {
     throw new Error('Servidor de midia ainda nao subiu')

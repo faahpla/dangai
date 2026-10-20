@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import sharp from 'sharp'
 import { ffmpegPath } from './ffmpeg-path'
-import { probeClip } from './clips'
+import { ErroSoSom, probeClip } from './clips'
 
 /**
  * Prepara um arquivo para a FAIXA DE VIDEO (setas, circulos, emoji animado).
@@ -36,7 +36,8 @@ const TOCA_DIRETO = ['.webm', '.mp4', '.m4v']
 export interface SobreposicaoPronta {
   /** O arquivo que o preview e o render vao tocar. */
   arquivo: string
-  tipo: 'video' | 'image'
+  /** 'som' = o arquivo so tem audio (no maximo uma capa): vai para uma faixa de AUDIO. */
+  tipo: 'video' | 'image' | 'som'
   durationSec: number
   aspecto: number
 }
@@ -56,7 +57,13 @@ export async function prepararSobreposicao(path: string): Promise<SobreposicaoPr
     }
   }
 
-  const info = await probeClip(path)
+  let info: Awaited<ReturnType<typeof probeClip>>
+  try {
+    info = await probeClip(path)
+  } catch (err) {
+    if (err instanceof ErroSoSom) return { arquivo: path, tipo: 'som', durationSec: 0, aspecto: 1 }
+    throw err
+  }
   const aspecto = info.width / info.height
   if (TOCA_DIRETO.includes(ext)) {
     return { arquivo: path, tipo: 'video', durationSec: info.durationSec, aspecto }

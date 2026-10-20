@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, shell } from 'electron'
+import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { readdirSync } from 'node:fs'
 import { registerIpc } from './ipc'
@@ -24,6 +24,23 @@ import { ligarModulosNoInicio, prepararModulos, registrarIpcDosModulos, segurarS
 import { MODULOS_DO_MAIN } from '../modulos/registro.main'
 
 const isDev = !app.isPackaged
+
+/*
+ * O COMPOSITOR DO REMOTION MORREU NO MEIO (um arquivo que ele nao consegue
+ * abrir, como o .mp4 so de som com capa do ajk) e a escrita seguinte bate no
+ * cano fechado: 'write EPIPE', sem ninguem para pegar. O Electron mostrava a
+ * janela 'A JavaScript error occurred in the main process' por cima de tudo --
+ * e o render ja tinha falhado, com o recado certo na barra. O EPIPE fica so no
+ * log; qualquer outro erro continua aparecendo, como antes.
+ */
+process.on('uncaughtException', (err) => {
+  if ((err as NodeJS.ErrnoException).code === 'EPIPE') {
+    console.error('[main] EPIPE (um processo filho fechou antes da hora):', err)
+    return
+  }
+  console.error('[main] erro nao tratado:', err)
+  dialog.showErrorBox('A JavaScript error occurred in the main process', err.stack ?? String(err))
+})
 
 function createWindow(): void {
   const window = new BrowserWindow({

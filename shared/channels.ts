@@ -621,7 +621,7 @@ export interface DangaiBridge {
    * vira WebM com transparencia), o tipo, a duracao e o aspecto.
    */
   prepararSobreposicao(path: string): Promise<
-    IpcResult<{ url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }>
+    IpcResult<{ url: string; tipo: 'video' | 'image' | 'som'; durationSec: number; aspecto: number }>
   >
   /**
    * Onde esta o que se ve no arquivo (a parte nao transparente), em fracao da

@@ -1,3 +1,4 @@
+import { nomearArquivosPublicados } from './media-server'
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
@@ -221,11 +222,30 @@ export async function renderVideo(
     // O Remotion aborta com a propria mensagem em ingles; traduzir para o tipo
     // do dominio aqui evita que ela chegue na interface.
     if (cancelRequested) throw new RenderCancelled()
-    throw err
+    throw traduzirErroDoRender(err)
   } finally {
     activeCancel = null
     rmSync(workDir, { recursive: true, force: true })
   }
+}
+
+/**
+ * O erro do render em portugues e com o NOME do arquivo. O do compositor do
+ * Remotion e um texto tecnico com a URL do servidor local e um backtrace de
+ * Rust -- o ajk viu so isso, sem como saber qual clipe era.
+ */
+function traduzirErroDoRender(err: unknown): unknown {
+  if (!(err instanceof Error)) return err
+  const msg = nomearArquivosPublicados(err.message)
+  const arquivo = /input file ("[^"]+")/.exec(msg)?.[1]
+  if (/No video stream found|expected pts/i.test(msg)) {
+    return new Error(
+      arquivo
+        ? `O arquivo ${arquivo} nao tem imagem de video (so som, ou uma capa). Tire ele da faixa de video ou troque por outro.`
+        : 'Um clipe da faixa de video nao tem imagem de video (so som, ou uma capa). Tire-o ou troque por outro.',
+    )
+  }
+  return msg === err.message ? err : new Error(msg.split('\n')[0]!.slice(0, 400))
 }
 
 // ------------------------------------------------------------------- bundle

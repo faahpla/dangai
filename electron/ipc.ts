@@ -225,7 +225,7 @@ export function registerIpc(): void {
 
   handle<
     [string],
-    { url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }
+    { url: string; tipo: 'video' | 'image' | 'som'; durationSec: number; aspecto: number }
   >(IPC.prepararSobreposicao, async (path) => {
     if (!existsSync(path)) throw new Error(`Esse arquivo nao esta mais no disco: ${basename(path)}`)
     const pronta = await prepararSobreposicao(path)

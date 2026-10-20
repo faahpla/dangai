@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import sharp from 'sharp'
 import { medidasAtuais } from './formato'
 import { ffmpegPath } from './ffmpeg-path'
@@ -70,6 +70,14 @@ export interface ClipInfo {
  */
 const sondados = new Map<string, ClipInfo>()
 
+/** O arquivo so tem SOM (no maximo uma capa): nao serve como imagem de video. */
+export class ErroSoSom extends Error {
+  constructor(path: string) {
+    super(`"${basename(path)}" so tem som, sem imagem de video.`)
+    this.name = 'ErroSoSom'
+  }
+}
+
 export async function probeClip(path: string): Promise<ClipInfo> {
   // A data entra na chave: o arquivo recortado com o app aberto e outro clipe.
   let chave = path
@@ -83,8 +91,20 @@ export async function probeClip(path: string): Promise<ClipInfo> {
 
   const saida = await runFfmpeg(['-hide_banner', '-i', path], { aceitaFalha: true })
 
-  const dimensao = /,\s(\d{2,5})x(\d{2,5})[\s,]/.exec(saida)
+  /*
+   * A medida vem de um stream de VIDEO DE VERDADE. Meme baixado da internet
+   * costuma ser so som com a miniatura grudada como CAPA ("attached pic"):
+   * aqui a capa passava por imagem, o clipe entrava na faixa de video, e o
+   * render quebrava no compositor do Remotion ("No video stream found" /
+   * "expected pts") -- foi o erro do ajk.
+   */
+  const dimensao = saida
+    .split('\n')
+    .filter((linha) => /Stream #.*Video:/.test(linha) && !/attached pic/i.test(linha))
+    .map((linha) => /,\s(\d{2,5})x(\d{2,5})[\s,]/.exec(linha))
+    .find((m) => m !== null)
   const duracao = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(saida)
+  if (!dimensao && /Stream #.*Audio:/.test(saida)) throw new ErroSoSom(path)
   if (!dimensao || !duracao) {
     throw new Error('nao foi possivel ler dimensoes ou duracao')
   }

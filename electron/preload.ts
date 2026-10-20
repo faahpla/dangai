@@ -78,7 +78,7 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.libraryClipStrip, path) as Promise<IpcResult<TiraDaCena>>,
   prepararSobreposicao: (path) =>
     ipcRenderer.invoke(IPC.prepararSobreposicao, path) as Promise<
-      IpcResult<{ url: string; tipo: 'video' | 'image'; durationSec: number; aspecto: number }>
+      IpcResult<{ url: string; tipo: 'video' | 'image' | 'som'; durationSec: number; aspecto: number }>
     >,
   caixaDoConteudo: (path) =>
     ipcRenderer.invoke(IPC.caixaDoConteudo, path) as Promise<
