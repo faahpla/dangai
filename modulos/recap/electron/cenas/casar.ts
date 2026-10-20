@@ -1080,6 +1080,8 @@ export interface VisaoDoEpisodio {
   divididos: ReadonlySet<string>
   /** (4a rodada) Quantos segundos do comeco de cada plano sao preto, flash ou borrao. So os que abrem ruim. */
   abremRuim: ReadonlyMap<string, number>
+  /** (5a rodada) Os trechos agitados do comeco de cada plano ([de, ate] desde o comeco): a entrada nao cai neles. */
+  agitados: ReadonlyMap<string, readonly (readonly [number, number])[]>
 }
 
 /**
@@ -1093,6 +1095,8 @@ export interface SinaisDaImagem {
   movimento?: ReadonlyMap<string, number>
   divididos?: ReadonlySet<string>
   abremRuim?: ReadonlyMap<string, number>
+  /** (5a rodada) Os trechos agitados do comeco (quadros.json). */
+  agitados?: ReadonlyMap<string, readonly (readonly [number, number])[]>
 }
 
 /** O movimento cru (0..255 por pixel) vira a forca 0..1 pelo desvio do log no episodio. */
@@ -1244,6 +1248,7 @@ export function prepararVisao(
     movimento: imagem.movimento ? forcaDoMovimento(imagem.movimento) : new Map(),
     divididos: imagem.divididos ?? new Set(),
     abremRuim: imagem.abremRuim ?? new Map(),
+    agitados: imagem.agitados ?? new Map(),
   }
 }
 
@@ -1898,6 +1903,27 @@ function partesParaAFrase(p: PlanoDoCasar, ocupacao: Ocupacao, d: number): { seg
 }
 
 /**
+ * (5a rodada) A ENTRADA FORA DO MOVIMENTO: a cena nao comeca no meio de um
+ * trecho agitado do comeco do plano (o 0083 do Nia E01 entrava a 0,36 s, no
+ * meio da camera descendo e borrando). Volta para o comeco do trecho (o quadro
+ * parado de antes), se a fala do momento continua dentro; senao vai para o fim
+ * dele, se a frase ainda cabe. Sem medida ou sem saida, fica.
+ */
+function entradaParada(p: PlanoDoCasar, inSec: number, util: Intervalo, d: number, ancora: number | null, v: VisaoDoEpisodio | null): number {
+  const trechos = v?.agitados.get(p.plano.id)
+  if (!trechos) return inSec
+  for (const [a, b] of trechos) {
+    const de = p.plano.start + a
+    const ate = p.plano.start + b
+    if (inSec <= de + 0.02 || inSec >= ate - 0.02) continue
+    if (de >= util.de - 1e-6 && (ancora === null || ancora <= de + d - 0.3)) return de
+    if (ate + d <= util.ate + 1e-6) return ate
+    return inSec
+  }
+  return inSec
+}
+
+/**
  * Os candidatos que comecam no plano `p`, dentro da parte `seg` dele. Parte
  * que cobre a frase: um so, com a janela comecando na fala da ancora se ela
  * cai dentro (plano que abre escuro e nao tem ancora: um pouco depois do
@@ -1936,7 +1962,7 @@ function montarJanelas(
         : escuro
           ? util.de + Math.min(sobra, ESCURO_PULA_SEC)
           : melhorComeco(p, util, d, ctx.visao, ctx.abre !== null)
-    return [{ planos: [p], inSec, outSec: util.ate }]
+    return [{ planos: [p], inSec: entradaParada(p, inSec, util, d, ancoraDentro, ctx.visao), outSec: util.ate }]
   }
   if (!inteiro) return []
   // (19/10) Span so com planos que ficam o minimo na tela: no MRM E02 a frase

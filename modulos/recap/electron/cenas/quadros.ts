@@ -10,6 +10,7 @@ import {
   DIVISAO_LARGURA,
   linhaDeDivisao,
   luzDoCinza,
+  trechosAgitados,
   movimentoEntre,
   nitidezDoCinza,
   planoDividido,
@@ -31,8 +32,11 @@ import { pastaDaVisao } from './visao'
  * sem ela). `soCache` (a grade da tela) so le.
  */
 
-/** Sobe quando a forma (ou a conta) muda: o que estiver gravado e refeito. 2 = o comeco a 12 quadros por segundo. */
-const QUADROS_VERSAO = 2
+/**
+ * Sobe quando a forma (ou a conta) muda: o que estiver gravado e refeito. 2 = o
+ * comeco a 12 quadros por segundo; 3 = os trechos agitados do comeco.
+ */
+const QUADROS_VERSAO = 3
 /** Planos ao mesmo tempo (cada um sao dois ffmpeg curtos). */
 const JUNTOS = 6
 
@@ -43,6 +47,8 @@ interface MedidaDoPlano {
   mov: number | null
   /** O anime ja divide o quadro (a linha inclinada nos keyframes). */
   div: boolean
+  /** (5a rodada) Os trechos agitados do comeco ([de, ate] desde o comeco do plano). Ausente = nenhum. */
+  mexe?: [number, number][]
 }
 
 interface QuadrosGravados {
@@ -110,10 +116,12 @@ async function medirPlano(p: Pick<Plano, 'arquivo' | 'keyframe' | 'start' | 'end
     const linhas = p.keyframe && /_1\.jpe?g$/i.test(p.keyframe)
       ? await Promise.all([0, 1, 2].map((k) => linhaDoKeyframe(p.keyframe!.replace(/_1(\.jpe?g)$/i, `_${k}$1`))))
       : []
+    const mexe = trechosAgitados(comeco)
     return {
       abre: Math.round(aberturaRuim(comeco.map(medido), meio[0] ? medido(meio[0]) : null) * 1000) / 1000,
       mov: movs.length > 0 ? Math.round((movs.reduce((a, b) => a + b, 0) / movs.length) * 1000) / 1000 : null,
       div: planoDividido(linhas),
+      ...(mexe.length > 0 ? { mexe } : {}),
     }
   } catch {
     return null
@@ -151,12 +159,14 @@ export function quadrosDosPlanos(
     const movimento = new Map<string, number>()
     const abremRuim = new Map<string, number>()
     const divididos = new Set<string>()
+    const agitados = new Map<string, [number, number][]>()
     for (const [id, m] of Object.entries(g.planos)) {
       if (m.mov !== null) movimento.set(id, m.mov)
       if (m.abre > 0) abremRuim.set(id, m.abre)
       if (m.div) divididos.add(id)
+      if (m.mexe && m.mexe.length > 0) agitados.set(id, m.mexe)
     }
-    return { movimento, abremRuim, divididos }
+    return { movimento, abremRuim, divididos, agitados }
   })()
     .catch(() => ({}))
     .finally(() => emAndamento.delete(k))

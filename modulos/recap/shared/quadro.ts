@@ -106,6 +106,39 @@ export function movimentoEntre(a: Uint8Array, b: Uint8Array): number {
   return s / n
 }
 
+/**
+ * (5a rodada) O MOVIMENTO FORTE no comeco do plano (o 0083 do Nia E01: a
+ * camera desce da tranca da criada para as adagas, de 0,17 a 1,33 s, borrando):
+ * entre dois quadros seguidos do comeco (ABERTURA_PASSO_SEC), acima disto.
+ * Medido no Nia: o pan do 0083 da 12-33; a mao que mexe no 0111, 0,1; o rosto
+ * que fala no 0073, ate 16 (em 2 quadros soltos).
+ */
+export const MOVIMENTO_AGITADO = 8
+
+/**
+ * (5a rodada) Os TRECHOS AGITADOS do comeco do plano: [de, ate] (segundos desde
+ * o comeco) em que o movimento entre quadros seguidos passa de
+ * MOVIMENTO_AGITADO. O anime desenha de 2 em 2 ou de 3 em 3 quadros: um par
+ * parado entre dois agitados nao interrompe o trecho. Trecho de um par so
+ * (um gesto, uma boca) nao conta. A entrada da cena nao cai dentro deles.
+ */
+export function trechosAgitados(comeco: readonly Uint8Array[], passo = ABERTURA_PASSO_SEC): [number, number][] {
+  const movs = comeco.slice(1).map((q, i) => movimentoEntre(comeco[i]!, q))
+  const agitado = movs.map((m, i) => m > MOVIMENTO_AGITADO || (i > 0 && i + 1 < movs.length && movs[i - 1]! > MOVIMENTO_AGITADO && movs[i + 1]! > MOVIMENTO_AGITADO))
+  const saida: [number, number][] = []
+  let de = -1
+  for (let i = 0; i <= agitado.length; i++) {
+    if (i < agitado.length && agitado[i]) {
+      if (de < 0) de = i
+    } else if (de >= 0) {
+      // Pares de..i-1 agitados: do quadro `de` ao quadro `i`.
+      if (i - de >= 2) saida.push([Math.round(de * passo * 1000) / 1000, Math.round(i * passo * 1000) / 1000])
+      de = -1
+    }
+  }
+  return saida
+}
+
 /** O quanto a linha e mais escura (ou mais clara) que os dois lados, em niveis de cinza. */
 const LINHA_PROFUNDA = 14
 /** A linha cobre pelo menos esta fracao das linhas do quadro... */
