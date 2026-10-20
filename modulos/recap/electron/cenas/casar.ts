@@ -334,6 +334,8 @@ const RELANCE_SEC = 1
 const TROCA_MINIMA = 1
 /** Quantas vezes, no maximo, o mesmo plano aparece no video (em trechos separados). */
 export const PLANO_VEZES_MAX = 2
+/** (5a rodada) Regra 3: a cena de um pedaco que GANHA pode ficar ate tanto abaixo da melhor dele. */
+const GANHA_MARGEM = 8
 /** (4a rodada) Regra 1: a cena da frase anterior conta como "no evento" ate este tanto fora dele. */
 const MESMO_EVENTO_FOLGA_SEC = 8
 /** (4a rodada) Regra 1: comecar ate este tanto antes do fim da cena anterior ainda nao e voltar. */
@@ -3107,9 +3109,12 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
       // span que cobre a frase, a montagem original) toca inteira: nao e motivo para dividir.
       const planoCurto = !!top && top.falta > CONGELA_SEC + 1e-6
       // (4a rodada) Fora do gancho (a 1a parte do roteiro inteira), a frase so divide quando um pedaco
-      // depois do primeiro ganha.
+      // depois do primeiro ganha. (5a rodada) A frase SEM EVENTO (a janela herdada: o "Comenta ai" do
+      // fim) nao tem momento para mostrar: divide pelos motivos, como antes (o MRM E02 f24, que virou um
+      // close fixo de 3 s).
       const gancho = secaoDe[i] === 0
-      const ganha = gancho || planoCurto ? undefined : pedacoGanha(i, corte)
+      const semMomento = !!janelas[i]?.herdada
+      const ganha = gancho || planoCurto || semMomento ? undefined : pedacoGanha(i, corte)
       const dv = dividirFrase(e.frases[i]!, e.take, divisao, {
         citados: (t) => citadosNoTexto(t, elenco).map((c) => c.ficha),
         planoCurto,
@@ -3133,16 +3138,20 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
     const pronto = ganhos.get(i)
     if (pronto !== undefined) return pronto
     const ps = pedacosDe(i, corte)
-    const tops = ps.map(
-      (p) =>
-        fitaDaFrase(todos, { ...p.ctx, anteriores: [] }, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA, false).filter(cobreOPedaco)[0],
+    const fitas = ps.map((p) =>
+      fitaDaFrase(todos, { ...p.ctx, anteriores: [] }, e.eventos, inicial.ocupacao, e.indice.id, CANDIDATOS_DA_CONTA, false).filter(cobreOPedaco),
     )
-    const a = tops[0]
+    const a = fitas[0]?.[0]
     let ganhou = false
-    for (let k = 1; k < tops.length && !ganhou; k++) {
-      const b = tops[k]
-      if (!b || (a && !cenasDiferentes(a, b, visao.grupoVisual))) continue
-      ganhou = relevanciaVisivel(b, visao)
+    for (let k = 1; k < fitas.length && !ganhou; k++) {
+      // (5a rodada) Nao so a melhor do pedaco: uma quase tao boa (GANHA_MARGEM) que seja outra cena. O MRM
+      // E02 f07: o 0102 (o Lent e a fadinha parados) e o melhor dos dois pedacos; a fadinha voando no 0105
+      // fica 5 pontos abaixo em "junto da fadinha MP" -- e e o que o Levi aprovou.
+      const melhor = fitas[k]?.[0]?.candidato.nota
+      if (melhor === undefined) continue
+      ganhou = fitas[k]!.some(
+        (b) => b.candidato.nota >= melhor - GANHA_MARGEM && (!a || cenasDiferentes(a, b, visao.grupoVisual)) && relevanciaVisivel(b, visao),
+      )
     }
     ganhos.set(i, ganhou)
     return ganhou
@@ -3480,15 +3489,29 @@ function dentroDaFrase(c: CandidatoPontuado, antes: readonly { c: CandidatoPontu
  * (4a rodada) Duas cenas de pedacos diferentes da mesma frase sao DIFERENTES:
  * nenhum plano em comum, a segunda nao e o plano seguinte da primeira (a
  * sequencia do anime, que o span ja mostra inteira: f07 do Nia, 0111 -> 0112)
- * nem a mesma cena por outro angulo (grupoVisual).
+ * nem a mesma cena por outro angulo (grupoVisual). (5a rodada) O plano seguinte
+ * que traz OUTRA pessoa citada e outra cena: o MRM E02 f07, o Lent no 0104 e a
+ * fadinha voando no 0105 em "junto da fadinha MP" (pessoasDaCena).
  */
-export function cenasDiferentes(a: Pick<CandidatoPontuado, 'candidato' | 'planos'>, b: Pick<CandidatoPontuado, 'candidato' | 'planos'>, grupo: ReadonlyMap<string, number>): boolean {
+export function cenasDiferentes(
+  a: Pick<CandidatoPontuado, 'candidato' | 'planos'> & Partial<Pick<CandidatoPontuado, 'termos'>>,
+  b: Pick<CandidatoPontuado, 'candidato' | 'planos'> & Partial<Pick<CandidatoPontuado, 'termos'>>,
+  grupo: ReadonlyMap<string, number>,
+): boolean {
   if (b.candidato.planoIds.some((id) => a.candidato.planoIds.includes(id))) return false
   const fimDeA = a.planos[a.planos.length - 1]
   const comecoDeB = b.planos[0]
-  if (fimDeA && comecoDeB && comecoDeB.pos === fimDeA.pos + 1) return false
+  if (fimDeA && comecoDeB && comecoDeB.pos === fimDeA.pos + 1) {
+    const deA = pessoasDaCena(a.termos ?? [])
+    return pessoasDaCena(b.termos ?? []).some((p) => !deA.includes(p))
+  }
   const ga = new Set(a.candidato.planoIds.flatMap((id) => (grupo.has(id) ? [grupo.get(id)!] : [])))
   return !b.candidato.planoIds.some((id) => grupo.has(id) && ga.has(grupo.get(id)!))
+}
+
+/** (5a rodada) Quem a cena mostra pelo termo da pessoa citada (o rosto ou o falante reconhecido): os rotulos. */
+function pessoasDaCena(termos: readonly Termo[]): string[] {
+  return termos.filter((t) => t.chave === 'pessoa' && t.valor > 0).map((t) => t.rotulo.replace(/ fala$/, ''))
 }
 
 /** (4a rodada) O rosto que se ve no 9:16: a partir desta largura (fracao do 16:9) a pessoa aparece de verdade. */
