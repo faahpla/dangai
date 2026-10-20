@@ -36,7 +36,7 @@ const TROCA = -2
 const ABRE = -3
 const ESTENDE = -0.5
 /** Mais que isto de sobra no audio inteiro: o casamento nao e confiavel (outro texto, Whisper perdido). */
-const SOBRA_MAXIMA = 0.4
+export const SOBRA_MAXIMA = 0.4
 /** Uma sobra parecida com o roteiro em volta (LCS/tamanho) e repeticao. */
 const PARECIDA = 0.5
 

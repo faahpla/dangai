@@ -224,7 +224,8 @@ export interface AlinhamentoGuardado {
 export function chaveDoImportado(hashDoAudio: string, frases: readonly { fraseId: string; texto: string }[]): string {
   // alinhador 2: as palavras vao ao wav2vec2 sem pontuacao (alinhamento.ts). Os alinhamentos da versao 1 tinham a ultima palavra da frase esticada por cima da pausa e nao valem mais.
   // alinhador 3 (V1): o Whisper procura a fala fora do roteiro e, com ela, o wav2vec2 alinha a sequencia falada.
-  return sha256(JSON.stringify({ fonte: 'importado', audio: hashDoAudio, frases: frases.map((f) => [f.fraseId, f.texto]), alinhador: 3 }))
+  // alinhador 4 (B1): audio sem um pedaco do roteiro e recusado (falta-no-audio.ts); um aceito antes disso confere de novo.
+  return sha256(JSON.stringify({ fonte: 'importado', audio: hashDoAudio, frases: frases.map((f) => [f.fraseId, f.texto]), alinhador: 4 }))
 }
 
 export function lerAlinhamentoGuardado(chave: string): AlinhamentoGuardado | null {

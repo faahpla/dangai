@@ -5,6 +5,7 @@ import { getSettings } from '../settings'
 import { transcribe } from '../whisper'
 import { acharCandidatos, chaveDaFala, sequenciaFalada, type CandidatoDeErro } from './casar-fala'
 import type { ErroOuvido } from './erros'
+import { mensagemDoTrechoQueFalta, trechoQueFalta } from './falta-no-audio'
 import { Cancelado } from './ffmpeg'
 import { quadrosDeFala, type Energia } from './pos'
 import {
@@ -140,6 +141,7 @@ export async function alinharPeloAudio(
   let peloWhisper: PalavrasCasadas | null = null
   let whisperOuviu = false
   let ouvidas: Word[] = []
+  let todasOuvidas: Word[] = []
   let candidatos: CandidatoDeErro[] = []
   if (opcoes.whisper) {
     opcoes.avisar('Ouvindo o audio (Whisper local)...')
@@ -152,6 +154,7 @@ export async function alinharPeloAudio(
       )
       if (t && t.words.length > 0) {
         whisperOuviu = true
+        todasOuvidas = t.words
         peloWhisper = palavrasPeloRoteiro(t.words, frases)
         if (opcoes.erros && peloWhisper) {
           // V1: o que o Whisper ouviu contra o roteiro (casar-fala.ts). So palavra com letra.
@@ -165,6 +168,23 @@ export async function alinharPeloAudio(
       if (err instanceof Cancelado) throw err
       avisos.push('O Whisper nao rodou: so o alinhador decidiu os tempos.')
     }
+  }
+
+  /*
+   * O AUDIO SEM UM PEDACO DO ROTEIRO (falta-no-audio.ts): recusa antes do
+   * wav2vec2, que espremeria o roteiro inteiro no som que existe. So no
+   * importado (que tem a energia do audio) e com o Whisper tendo ouvido fala.
+   */
+  if (opcoes.erros && todasOuvidas.length > 0) {
+    const e = opcoes.erros.energia
+    const segundos = (quadros: number): number => (quadros * e.amostrasPorQuadro) / e.taxa
+    const falta = trechoQueFalta(
+      tokens,
+      todasOuvidas.filter((w) => chaveDaFala(w.text).length > 0),
+      (a, b) => segundos(quadrosDeFala(e, a, b)),
+      segundos(e.db.length),
+    )
+    if (falta) throw new Error(mensagemDoTrechoQueFalta(tokens, falta))
   }
 
   /*

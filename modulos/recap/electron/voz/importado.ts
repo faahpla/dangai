@@ -20,7 +20,8 @@ import { duracaoDoPcm, gravarWavEnderecado } from './wav'
  * A regra do Dangai, inteira: o texto vem do ROTEIRO; o audio so da os tempos.
  *   1. ffmpeg decodifica para WAV PCM 16 bits mono (o bruto, enderecado por
  *      conteudo; o arquivo dele nunca e tocado);
- *   2. Whisper local confere que o audio e deste roteiro e da a reserva;
+ *   2. Whisper local confere que o audio e deste roteiro, e INTEIRO (sem
+ *      um pedaco dele: falta-no-audio.ts), e da a reserva;
  *      wav2vec2 (alinhador.ts) da o tempo fino de cada palavra do roteiro;
  *   3. o pos e o mesmo das outras fontes (corte de pausa desligado por padrao:
  *      a pausa de quem gravou costuma ser de proposito);
