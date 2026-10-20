@@ -206,6 +206,15 @@ export const PESOS = {
    */
   closeGrandeFora: -12,
   /**
+   * (5a rodada) QUEM A FRASE CITA DE COSTAS: a frase fala de alguem (o nome ou
+   * "ela", "ele") e o plano so mostra as costas (o etiquetador diz "from
+   * behind" ou "facing away" e o detector nao ve rosto no trecho que toca). O
+   * Levi trocou o 0313 (a Nia de costas) pelo 0315 (ela de frente, erguendo a
+   * espada) na f14 do Nia E01. Fora a frase de impacto: o golpe de costas (o
+   * 0318 da f15) e o proprio golpe.
+   */
+  deCostas: -10,
+  /**
    * (4a rodada) A cena ABRE RUIM: o trecho comeca no preto, no flash ou no
    * borrao do comeco do plano (o 0193 do Nia E01 abre com 0,8 s de preto) e o
    * plano nao sobra para pular. Com sobra, a janela pula o comeco ruim.
@@ -2299,6 +2308,17 @@ function pontuar(
     const rosto = maiorRostoNoTrecho(planos, inSec, fimReal, v)
     if (rosto > CLOSE_EXTREMO) add('close', PESOS.closeExtremo, 'close extremo')
     else if (rosto > CLOSE_GRANDE) add('close', ctx.gancho ? PESOS.closeGrande : PESOS.closeGrandeFora, 'cabeca grande')
+    // (5a rodada) Quem a frase cita, so de costas: pela parte da cena em planos de costas e sem rosto.
+    if (ctx.acao !== 'impacto' && falaDeAlguem(ctx)) {
+      const total = Math.max(0.01, fimReal - inSec)
+      const deCostas = planos.reduce((s, q) => {
+        const de = Math.max(inSec, q.plano.start)
+        const ate = Math.min(fimReal, q.plano.end)
+        if (ate - de < 0.3 || !deCostasNasTags(q.plano.id, v) || maiorRostoNoTrecho([q], de, ate, v) >= ROSTO_VISIVEL) return s
+        return s + (ate - de)
+      }, 0)
+      if (deCostas >= 0.5 * total) add('deCostas', PESOS.deCostas * Math.min(1, deCostas / total), 'de costas')
+    }
     // (4a rodada) O quadro que o anime ja divide (a linha de cima a baixo: meia cara de cada lado no 9:16).
     if (planos.some((q) => tempoNoPlano(q) > 0.3 && v.divididos.has(q.plano.id))) add('dividido', PESOS.dividido, 'quadro dividido')
     // (4a rodada) O trecho abre no preto, no clarao ou no borrao do comeco do plano: as janelas do
@@ -3519,6 +3539,25 @@ export function cenasDiferentes(
   }
   const ga = new Set(a.candidato.planoIds.flatMap((id) => (grupo.has(id) ? [grupo.get(id)!] : [])))
   return !b.candidato.planoIds.some((id) => grupo.has(id) && ga.has(grupo.get(id)!))
+}
+
+/** (5a rodada) A frase fala de alguem: um nome citado ou a retomada ("ela", "ele", "a garota"). */
+const FALA_DE_ALGUEM = /\b(?:ele|ela|eles|elas|a garota|o garoto|a menina|o menino|a garotinha|a pequena)\b/i
+function falaDeAlguem(ctx: Pick<ContextoDaFrase, 'citados' | 'frase'>): boolean {
+  return ctx.citados.length > 0 || FALA_DE_ALGUEM.test(ctx.frase.texto.normalize('NFD').replace(/\p{Mn}/gu, ''))
+}
+
+/**
+ * (5a rodada) O etiquetador ve o plano de costas ("from behind", "facing away")
+ * com pelo menos DE_COSTAS_CONFIANCA (o 0313 do Nia E01: 0,36; abaixo do corte
+ * das etiquetas da escolha, mas certo). Sem a confianca (visao antiga): pelo peso.
+ */
+const DE_COSTAS_CONFIANCA = 0.3
+function deCostasNasTags(planoId: string, v: VisaoDoEpisodio): boolean {
+  const conf = v.sinais.confiancaDasTags?.get(planoId)
+  if (conf) return (conf.get('from behind') ?? 0) >= DE_COSTAS_CONFIANCA || (conf.get('facing away') ?? 0) >= DE_COSTAS_CONFIANCA
+  const tags = v.pesoDasTags.get(planoId)
+  return !!tags && ((tags.get('from behind') ?? 0) > 0 || (tags.get('facing away') ?? 0) > 0)
 }
 
 /** (5a rodada) Quem a cena mostra pelo termo da pessoa citada (o rosto ou o falante reconhecido): os rotulos. */
