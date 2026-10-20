@@ -23,21 +23,28 @@ DETECTOR_ID_V1 = "adaptive/ratio=2.0/floor=15.0/curta-cola"
 #: escuro, trecho curto colado). O AnCut usa a MESMA identidade para o mesmo
 #: corte: os dois apps aceitam o cache um do outro.
 DETECTOR_ID_V2 = "adaptive/ratio=2.0/floor=15.0/curta-cola/v2-flash-luz-fade"
+#: [recap] Corte v3 (20/10/2026): o v2 + o pos-processamento de `corte_v3.py`
+#: (fade so entre duas imagens, 2a chance pela cor, saida do branco, nota
+#: aprendida com piso/flash/borda/deslocado). Sinais novos (hs e mini) no MESMO
+#: passe da nota. O AnCut usa a MESMA identidade para o mesmo corte.
+DETECTOR_ID_V3 = "adaptive/ratio=2.0/floor=15.0/curta-cola/v3-cor-branco-nota"
 #: [recap] A versao do corte que episodio NOVO ganha (1 = o de antes).
-VERSAO_DO_CORTE = 2
+VERSAO_DO_CORTE = 3
+_IDENTIDADES = {1: DETECTOR_ID_V1, 2: DETECTOR_ID_V2, 3: DETECTOR_ID_V3}
 #: Identidade do corte que episodio novo ganha.
-DETECTOR_ID = DETECTOR_ID_V2 if VERSAO_DO_CORTE >= 2 else DETECTOR_ID_V1
+DETECTOR_ID = _IDENTIDADES[min(max(VERSAO_DO_CORTE, 1), 3)]
 #: [recap] O cache vale com QUALQUER uma destas identidades: episodio ja
 #: cortado nunca muda, nem na reanalise. Antes a identidade era trocada para
 #: recortar o acervo na reanalise; agora nao, porque os ids de plano (os nomes
 #: dos mp4) estao nos rascunhos, no indice e na curadoria do index.db, e um
 #: recorte silencioso apontaria cada id para outro trecho do episodio.
-DETECTORES_ACEITOS = frozenset({DETECTOR_ID_V1, DETECTOR_ID_V2})
+DETECTORES_ACEITOS = frozenset({DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTOR_ID_V3})
 
 
 class Cortes(list):
     """[recap] A lista de ShotBounds de `detect_shots`, com a identidade do corte
-    que saiu de verdade (o v2 que falha volta ao v1 e grava V1 no cache)."""
+    que saiu de verdade (o v3 que falha volta ao v2, o v2 ao v1, e o cache grava
+    a identidade do que saiu)."""
 
     def __init__(self, shots=(), detector: str = DETECTOR_ID_V1) -> None:
         super().__init__(shots)
@@ -97,17 +104,20 @@ def detect_shots(
     ganha só 5% de cenas e o dobro de fragmentos curtos. Vale medir de novo
     num episódio de ação antes de descer mais.
 
-    [recap] ``versao`` 2 (o padrão, ``VERSAO_DO_CORTE``) passa os cortes pelo
-    pós-processamento de ``corte_v2.py``; a luz e o histograma de cada quadro
-    saem do MESMO passe da nota (do quadro já reduzido, levado a 128x72), no
-    caminho paralelo e no sequencial. ``versao`` 1 = o corte de antes. A
-    identidade do corte que saiu vai em ``Cortes.detector``.
+    [recap] ``versao`` 2 passa os cortes pelo pós-processamento de
+    ``corte_v2.py``; a luz e o histograma de cada quadro saem do MESMO passe da
+    nota (do quadro já reduzido, levado a 128x72), no caminho paralelo e no
+    sequencial. ``versao`` 3 (o padrão, ``VERSAO_DO_CORTE``) passa pelo
+    ``corte_v3.py``, com o hs e a mini do mesmo quadro (``sinais_v3``), também
+    no mesmo passe. ``versao`` 1 = o corte de antes. A identidade do corte que
+    saiu vai em ``Cortes.detector``.
     """
     from .corte_v2 import quadros
 
     if versao is None:
         versao = VERSAO_DO_CORTE
     v2 = versao >= 2
+    nivel = 3 if versao >= 3 else (2 if v2 else 0)
     video = open_video(str(video_path))
     fps = float(video.frame_rate)
     # O minimo entre cortes (15 quadros) escala com o fps no v2; o v1 fica como era.
@@ -125,16 +135,22 @@ def detect_shots(
             sinais = [] if v2 else None
             scenes = _cenas_em_paralelo(
                 video_path, video, adaptive_ratio, min_content_val, paralelo, on_progress,
-                sinais=sinais, minimo=minimo,
+                sinais=sinais, minimo=minimo, nivel=nivel,
             )
         except _NaoDaEmParalelo as e:
             print(f"[CorteCenas] deteccao em paralelo nao serviu ({e}); fazendo na sequencia.", flush=True)
             scenes = None
     if scenes is None:
         sm = SceneManager()
-        detector = (_AdaptiveComSinais if v2 else AdaptiveDetector)(
-            adaptive_threshold=adaptive_ratio, min_content_val=min_content_val, min_scene_len=minimo
-        )
+        if v2:
+            detector = _AdaptiveComSinais(
+                adaptive_threshold=adaptive_ratio, min_content_val=min_content_val, min_scene_len=minimo,
+                nivel=nivel,
+            )
+        else:
+            detector = AdaptiveDetector(
+                adaptive_threshold=adaptive_ratio, min_content_val=min_content_val, min_scene_len=minimo
+            )
         sm.add_detector(detector)
         # detect_scenes blocks for the whole episode (minutes). The per-cut
         # callback (fires every few seconds of video) feeds real progress to the
@@ -154,7 +170,15 @@ def detect_shots(
         sinais = detector.sinais if v2 else None
 
     identidade = DETECTOR_ID_V1
-    if v2:
+    feito = False
+    if nivel >= 3:
+        try:
+            scenes = _cenas_v2(scenes, sinais, fps, adaptive_ratio, min_content_val, v3=True)
+            identidade = DETECTOR_ID_V3
+            feito = True
+        except Exception as e:  # noqa: BLE001 -- o corte v2 continua valendo
+            print(f"[recap] corte v3 nao serviu ({type(e).__name__}: {e}); tentando o v2.", flush=True)
+    if v2 and not feito:
         try:
             scenes = _cenas_v2(scenes, sinais, fps, adaptive_ratio, min_content_val)
             identidade = DETECTOR_ID_V2
@@ -210,27 +234,39 @@ def _luz_e_hist(quadro):
     return float(y.mean()) / 255, (np.bincount((y >> 4).ravel(), minlength=16) / y.size).astype(np.float32)
 
 
+def _sinais_do_quadro(quadro, nivel: int) -> tuple:
+    """[recap] Os sinais do corte de um quadro ja reduzido: (luz, hist) no v2,
+    (luz, hist, hs, mini) no v3. O MESMO calculo nos dois caminhos."""
+    if nivel >= 3:
+        from .corte_v3 import sinais_v3
+
+        return sinais_v3(quadro)
+    return _luz_e_hist(quadro)
+
+
 class _AdaptiveComSinais(AdaptiveDetector):
     """[recap] O AdaptiveDetector da deteccao SEQUENCIAL guardando, quadro a
-    quadro, a posicao, a nota, a luz e o histograma (o quadro que chega aqui e o
-    que o SceneManager ja reduziu: o mesmo dos pedacos paralelos)."""
+    quadro, a posicao, a nota, a luz e o histograma (e, no v3, o hs e a mini) do
+    quadro que o SceneManager ja reduziu: o mesmo dos pedacos paralelos."""
 
-    def __init__(self, **kw) -> None:
+    def __init__(self, nivel: int = 2, **kw) -> None:
         super().__init__(**kw)
+        self.nivel = nivel
         self.sinais: list = []
 
     def _calculate_frame_score(self, timecode, frame_img) -> float:
         nota = super()._calculate_frame_score(timecode, frame_img)
-        luz, hist = _luz_e_hist(frame_img)
-        self.sinais.append((timecode, nota, luz, hist))
+        self.sinais.append((timecode, nota, *_sinais_do_quadro(frame_img, self.nivel)))
         return nota
 
 
-def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float):
-    """[recap] As cenas do AdaptiveDetector passadas pelo corte v2 (corte_v2.py)."""
+def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float, v3: bool = False):
+    """[recap] As cenas do AdaptiveDetector passadas pelo corte v2 (corte_v2.py)
+    ou, com ``v3``, pelo corte v3 (corte_v3.py, com o hs e a mini dos sinais)."""
     import numpy as np
 
     from .corte_v2 import refinar_cortes
+    from .corte_v3 import refinar_v3
 
     if not scenes:
         return scenes
@@ -240,12 +276,16 @@ def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float):
     if pos[0] != scenes[0][0]:
         raise ValueError("a 1a cena nao comeca no 1o quadro lido")
     cortes = _indices_dos_cortes(pos, [s for s, _e in scenes[1:]])
-    final = refinar_cortes(
-        np.array([x[1] for x in sinais], dtype=np.float64),
-        np.array([x[2] for x in sinais], dtype=np.float64),
-        np.stack([x[3] for x in sinais]),
-        cortes, fps, razao=ratio, piso=piso,
-    )
+    nota = np.array([x[1] for x in sinais], dtype=np.float64)
+    luz = np.array([x[2] for x in sinais], dtype=np.float64)
+    hist = np.stack([x[3] for x in sinais])
+    if v3:
+        if any(len(x) < 6 for x in sinais):
+            raise ValueError("sem o hs e a mini dos quadros")
+        final = refinar_v3(nota, luz, hist, np.stack([x[4] for x in sinais]), np.stack([x[5] for x in sinais]),
+                           cortes, fps, razao=ratio, piso=piso)
+    else:
+        final = refinar_cortes(nota, luz, hist, cortes, fps, razao=ratio, piso=piso)
     inicios = [scenes[0][0]] + [pos[c] for c in final]
     return list(zip(inicios, inicios[1:] + [scenes[-1][1]]))
 
@@ -322,10 +362,11 @@ def _tamanho_reduzido(largura: int, altura: int) -> tuple[int, int] | None:
 
 
 def _ler_pedaco(video_path, de: int, ate: int | None, ratio: float, piso: float, contador: list, parar,
-                sinais: bool = False):
+                sinais: int = 0):
     """[(posicao, nota)] dos quadros [de, ate) (ate None = ate o fim) e a
     posicao final do video (so no ultimo pedaco), como o SceneManager le.
-    [recap] Com ``sinais``: [(posicao, nota, luz, hist)], o corte v2 no mesmo passe."""
+    [recap] Com ``sinais`` 2: [(posicao, nota, luz, hist)], o corte v2 no mesmo
+    passe; 3: [(posicao, nota, luz, hist, hs, mini)], o corte v3."""
     import cv2
 
     v = open_video(str(video_path))
@@ -351,7 +392,7 @@ def _ler_pedaco(video_path, de: int, ate: int | None, ratio: float, piso: float,
         if alvo is not None:
             quadro = cv2.resize(quadro, alvo, interpolation=cv2.INTER_LINEAR)
         nota = det._calculate_frame_score(pos, quadro)
-        saida.append((pos, nota, *_luz_e_hist(quadro)) if sinais else (pos, nota))
+        saida.append((pos, nota, *_sinais_do_quadro(quadro, sinais)) if sinais else (pos, nota))
         contador[0] += 1
     if ate is not None:
         return saida, None
@@ -397,10 +438,11 @@ class _NotaPronta(AdaptiveDetector):
 
 
 def _cenas_em_paralelo(video_path, video, ratio: float, piso: float, pedacos: int, on_progress,
-                       sinais: list | None = None, minimo: int = 15):
+                       sinais: list | None = None, minimo: int = 15, nivel: int = 2):
     """As cenas do AdaptiveDetector lidas em ``pedacos`` paralelos. [recap] Com
     ``sinais`` (uma lista), ela recebe (posicao, nota, luz, hist) de cada quadro,
-    na ordem, para o corte v2; ``minimo`` = o min_scene_len do detector."""
+    na ordem, para o corte v2 (``nivel`` 3: mais o hs e a mini, para o v3);
+    ``minimo`` = o min_scene_len do detector."""
     import threading
     import time
     from concurrent.futures import ThreadPoolExecutor
@@ -423,7 +465,8 @@ def _cenas_em_paralelo(video_path, video, ratio: float, piso: float, pedacos: in
             de = 0 if i == 0 else b - SOBRA_DO_PEDACO
             ate = bordas[i + 1] if i + 1 < pedacos else None
             futuros.append(pool.submit(
-                _ler_pedaco, video_path, de, ate, ratio, piso, contadores[i], parar, sinais is not None
+                _ler_pedaco, video_path, de, ate, ratio, piso, contadores[i], parar,
+                max(nivel, 2) if sinais is not None else 0,
             ))
         try:
             while not all(f.done() for f in futuros):

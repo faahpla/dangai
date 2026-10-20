@@ -20,7 +20,8 @@ from unittest import mock
 
 from app.config import Config
 from app.pipeline import Pipeline
-from app.shot_detection import DETECTOR_ID, DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTORES_ACEITOS, Cortes, ShotBounds
+from app.shot_detection import (DETECTOR_ID, DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTOR_ID_V3, DETECTORES_ACEITOS, Cortes,
+                                 ShotBounds)
 
 CORTES = [{"idx": 0, "start": 0.0, "end": 3.17}, {"idx": 1, "start": 3.17, "end": 9.009}]
 
@@ -49,11 +50,12 @@ class TestCacheDoCorte(unittest.TestCase):
     def test_identidades(self):
         self.assertEqual(DETECTOR_ID_V1, "adaptive/ratio=2.0/floor=15.0/curta-cola")
         self.assertEqual(DETECTOR_ID_V2, "adaptive/ratio=2.0/floor=15.0/curta-cola/v2-flash-luz-fade")
-        self.assertEqual(DETECTOR_ID, DETECTOR_ID_V2)
-        self.assertEqual(DETECTORES_ACEITOS, {DETECTOR_ID_V1, DETECTOR_ID_V2})
+        self.assertEqual(DETECTOR_ID_V3, "adaptive/ratio=2.0/floor=15.0/curta-cola/v3-cor-branco-nota")
+        self.assertEqual(DETECTOR_ID, DETECTOR_ID_V3)
+        self.assertEqual(DETECTORES_ACEITOS, {DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTOR_ID_V3})
 
-    def test_v1_e_v2_sao_reaproveitados(self):
-        for detector in (DETECTOR_ID_V1, DETECTOR_ID_V2):
+    def test_v1_v2_e_v3_sao_reaproveitados(self):
+        for detector in (DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTOR_ID_V3):
             self._grava(detector=detector)
             shots = self._do_cache()
             self.assertEqual([(s.idx, s.start, s.end) for s in shots], [(c["idx"], c["start"], c["end"]) for c in CORTES])
@@ -72,18 +74,25 @@ class TestCacheDoCorte(unittest.TestCase):
             self.pipe._prepare_shots(self.info, lambda *a: None, pasta_anime="Anime")
         return cortar.call_args.args[1]
 
-    def test_reanalise_nao_recorta_o_episodio_v1(self):
-        self._grava(detector=DETECTOR_ID_V1)
-        antes = self.bounds.read_bytes()
+    def test_reanalise_nao_recorta_o_episodio_ja_cortado(self):
+        # V1 e V2 (o acervo de antes do v3) e V3: nenhum e detectado de novo.
+        for detector in (DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTOR_ID_V3):
+            self._grava(detector=detector)
+            antes = self.bounds.read_bytes()
 
-        def nao_pode(*a, **k):
-            raise AssertionError("episodio ja cortado nao pode ser detectado de novo")
+            def nao_pode(*a, **k):
+                raise AssertionError("episodio ja cortado nao pode ser detectado de novo")
 
-        shots = self._preparar(nao_pode)
-        self.assertEqual(len(shots), 2)
-        self.assertEqual(self.bounds.read_bytes(), antes)
+            shots = self._preparar(nao_pode)
+            self.assertEqual(len(shots), 2)
+            self.assertEqual(self.bounds.read_bytes(), antes)
 
-    def test_episodio_novo_grava_v2(self):
+    def test_episodio_novo_grava_v3(self):
+        novos = Cortes([ShotBounds(0, 0.0, 2.0), ShotBounds(1, 2.0, 5.0)], DETECTOR_ID_V3)
+        self._preparar(lambda *a, **k: novos)
+        self.assertEqual(json.loads(self.bounds.read_text(encoding="utf-8"))["detector"], DETECTOR_ID_V3)
+
+    def test_v3_que_falhou_grava_v2(self):
         novos = Cortes([ShotBounds(0, 0.0, 2.0), ShotBounds(1, 2.0, 5.0)], DETECTOR_ID_V2)
         self._preparar(lambda *a, **k: novos)
         self.assertEqual(json.loads(self.bounds.read_text(encoding="utf-8"))["detector"], DETECTOR_ID_V2)

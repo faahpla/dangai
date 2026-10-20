@@ -334,6 +334,35 @@ são pequenas e marcadas `[Studio]`; a 9 é para levar ao ancut-hub-engine.
     - Medido (19/10): BC S02E03 709 → 652 shots, MRM E02 375 → 308, Nia E01
       432 → 402. Testes: `test_corte_v2.py`, `test_corte_cache.py` e os de
       paralelo = sequencial em `test_rapido.py`.
+13. **`app/shot_detection.py`** (20/10): o corte casa pela ORDEM dos quadros,
+    não pelo `frame_num`. O Cyberpunk Edgerunners S02E01 tem dois quadros com o
+    `frame_num` 8098 (o `frame_num` é o tempo arredondado): o O1 dizia "quadro
+    fora de ordem" (caía na sequencial) e o `_cenas_v2` dizia "quadros com o
+    mesmo frame_num" e VOLTAVA AO V1. Agora `_indices_dos_cortes` acha cada
+    corte a partir do anterior (o próprio objeto da posição, ou a mesma posição
+    exata) e o O1 confere a ordem pela posição exata (o PTS), aceitando posição
+    repetida. Cyber: 623 shots V1 (209 s) → 550 V2 (~80 s, paralelo = sequencial);
+    MRM E02, Nia E01 e BC S02E03 com os mesmos cortes. Teste: `TestFrameNumRepetido`
+    e `TestCasarPelaOrdem`.
+14. **`app/corte_v3.py`** (arquivo novo) + **`app/shot_detection.py`** (20/10):
+    o corte v3 (a v3.1 do estudo `corte-v3`), só para episódio NOVO. Por cima do
+    v2: fade só entre duas imagens, 2ª chance também pela cor, saída do branco e
+    a nota aprendida (tira o corte no mesmo desenho, põe o candidato forte sem
+    corte, troca um corte mais fraco pelo vizinho), com as travas dos céticos:
+    piso (hd3 ≥ 0,45, cartela, escuro dos dois lados), flash, borda (≥ 15 q do
+    quadro 0 e do fim) e o corte deslocado indo para a troca.
+    - Sinais novos (`sinais_v3`): o hs (matiz 8 × saturação 4 do mesmo 128x72)
+      e a mini (cinza 32x18 do quadro 256x144), no MESMO passe da nota, nos
+      pedaços paralelos e no `_AdaptiveComSinais` da sequencial.
+    - Identidade: `DETECTOR_ID_V3 = "adaptive/ratio=2.0/floor=15.0/curta-cola/v3-cor-branco-nota"`.
+      O cache aceita V1, V2 e V3 (`DETECTORES_ACEITOS`): episódio já cortado
+      nunca é recortado. O v3 que falha volta ao v2 (grava V2); o v2, ao v1.
+    - Medido (régua escalada pelo fps, total = 3 × graves + falsos + deslocados):
+      hold-out (Bleach TYBW 49, Blue Box S02E03, Cyber S02E01) 272 → 119,
+      graves 21 → 4 (+2 graves novos em ponto sem rótulo, conferidos);
+      estudo (BC, MRM, Nia) 198 → 136, graves 17 → 13.
+      Testes: `test_corte_v3.py`, `test_corte_cache.py` e paralelo = sequencial
+      (v3, hs e mini iguais) em `test_rapido.py`.
 
 Os modelos (CLIP, YOLO, CCIP, SCRFD) no app instalado vão para
 `<runtime>\modelos` (`HF_HOME`, `motor-runtime/ambiente.ts`), não para o

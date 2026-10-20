@@ -74,7 +74,7 @@ def _video_com_frame_num_repetido(destino: Path, base: Path) -> Path:
     return destino
 
 
-def _sinais_dos_dois_caminhos(caso: unittest.TestCase, video: Path) -> None:
+def _sinais_dos_dois_caminhos(caso: unittest.TestCase, video: Path, nivel: int = 2) -> None:
     """[recap] Corte v2: a luz e o histograma de cada quadro saem iguais no caminho
     paralelo (no mesmo passe da nota) e no sequencial (no detector do SceneManager)."""
     from scenedetect import SceneManager, open_video
@@ -82,9 +82,9 @@ def _sinais_dos_dois_caminhos(caso: unittest.TestCase, video: Path) -> None:
     from app.shot_detection import _AdaptiveComSinais
 
     par: list = []
-    _cenas_em_paralelo(video, open_video(str(video)), 2.0, 15.0, 4, None, sinais=par)
+    _cenas_em_paralelo(video, open_video(str(video)), 2.0, 15.0, 4, None, sinais=par, nivel=nivel)
     sm = SceneManager()
-    det = _AdaptiveComSinais(adaptive_threshold=2.0, min_content_val=15.0)
+    det = _AdaptiveComSinais(adaptive_threshold=2.0, min_content_val=15.0, nivel=nivel)
     sm.add_detector(det)
     sm.detect_scenes(open_video(str(video)), show_progress=False)
     seq = det.sinais
@@ -92,13 +92,17 @@ def _sinais_dos_dois_caminhos(caso: unittest.TestCase, video: Path) -> None:
     for a, b in zip(par, seq):
         caso.assertEqual((a[0], a[1], a[2]), (b[0], b[1], b[2]))
         caso.assertTrue(np.array_equal(a[3], b[3]))
+        # [recap] corte v3: o hs e a mini do mesmo quadro, iguais nos dois caminhos.
+        caso.assertEqual(len(a), 6 if nivel >= 3 else 4)
+        if nivel >= 3:
+            caso.assertTrue(np.array_equal(a[4], b[4]) and np.array_equal(a[5], b[5]))
     caso.assertGreater(len({round(x[2], 3) for x in par}), 5, "a luz muda ao longo do video")
 
 
 def _v1_e_v2_iguais_na_sequencial(caso: unittest.TestCase, video: Path) -> None:
-    from app.shot_detection import DETECTOR_ID_V1, DETECTOR_ID_V2
+    from app.shot_detection import DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTOR_ID_V3
 
-    for versao, identidade in ((1, DETECTOR_ID_V1), (2, DETECTOR_ID_V2)):
+    for versao, identidade in ((1, DETECTOR_ID_V1), (2, DETECTOR_ID_V2), (3, DETECTOR_ID_V3)):
         seq = detect_shots(video, paralelo=1, versao=versao)
         par = detect_shots(video, paralelo=4, versao=versao)
         caso.assertEqual((seq.detector, par.detector), (identidade, identidade))
@@ -140,6 +144,7 @@ class TestSaltoDePts(unittest.TestCase):
 
     def test_sinais_iguais_nos_dois_caminhos(self):
         _sinais_dos_dois_caminhos(self, self.video)
+        _sinais_dos_dois_caminhos(self, self.video, nivel=3)
 
     def test_v1_e_v2_iguais_na_sequencial(self):
         _v1_e_v2_iguais_na_sequencial(self, self.video)
@@ -175,11 +180,11 @@ class TestFrameNumRepetido(unittest.TestCase):
     def test_mesmas_cenas_da_sequencial_e_v2_vale(self):
         from scenedetect import open_video
 
-        from app.shot_detection import DETECTOR_ID_V2
+        from app.shot_detection import DETECTOR_ID
 
         seq = detect_shots(self.video, paralelo=1)
         par = detect_shots(self.video, paralelo=4)
-        self.assertEqual((seq.detector, par.detector), (DETECTOR_ID_V2, DETECTOR_ID_V2))
+        self.assertEqual((seq.detector, par.detector), (DETECTOR_ID, DETECTOR_ID))
         self.assertGreaterEqual(len(seq), 7)
         self.assertEqual([(s.idx, s.start, s.end) for s in seq], [(s.idx, s.start, s.end) for s in par])
         # O caminho paralelo rodou de verdade (nao levanta _NaoDaEmParalelo).
@@ -188,6 +193,7 @@ class TestFrameNumRepetido(unittest.TestCase):
 
     def test_sinais_iguais_nos_dois_caminhos(self):
         _sinais_dos_dois_caminhos(self, self.video)
+        _sinais_dos_dois_caminhos(self, self.video, nivel=3)
 
 
 class TestDeteccaoParalela(unittest.TestCase):
@@ -213,6 +219,7 @@ class TestDeteccaoParalela(unittest.TestCase):
 
     def test_sinais_iguais_nos_dois_caminhos(self):
         _sinais_dos_dois_caminhos(self, self.video)
+        _sinais_dos_dois_caminhos(self, self.video, nivel=3)
 
     def test_v1_e_v2_iguais_na_sequencial(self):
         _v1_e_v2_iguais_na_sequencial(self, self.video)
