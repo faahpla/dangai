@@ -60,6 +60,20 @@ def _video_com_salto_de_pts(destino: Path, base: Path) -> Path:
     return destino
 
 
+def _video_com_frame_num_repetido(destino: Path, base: Path) -> Path:
+    """[recap] O video de teste com DOIS quadros do mesmo frame_num, como o
+    Cyberpunk Edgerunners S02E01 (dois 8098): o quadro 700 vai 0,6 quadro para
+    tras e o 1500 tambem (dentro do ultimo pedaco); o muxer arredonda e cada um
+    fica com o tempo do anterior. O frame_num e o tempo arredondado."""
+    sel = "setpts='if(eq(N\\,700)+eq(N\\,1500)\\,PTS-0.6/(24*TB)\\,PTS)'"
+    subprocess.run(
+        [ffmpeg_binary(), "-v", "error", "-y", "-i", str(base), "-vf", sel, "-fps_mode", "passthrough",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "48", str(destino)],
+        check=True, capture_output=True, creationflags=SEM_JANELA,
+    )
+    return destino
+
+
 def _sinais_dos_dois_caminhos(caso: unittest.TestCase, video: Path) -> None:
     """[recap] Corte v2: a luz e o histograma de cada quadro saem iguais no caminho
     paralelo (no mesmo passe da nota) e no sequencial (no detector do SceneManager)."""
@@ -129,6 +143,51 @@ class TestSaltoDePts(unittest.TestCase):
 
     def test_v1_e_v2_iguais_na_sequencial(self):
         _v1_e_v2_iguais_na_sequencial(self, self.video)
+
+
+class TestFrameNumRepetido(unittest.TestCase):
+    """[recap] Dois quadros com o mesmo frame_num: antes o O1 dizia "quadro fora
+    de ordem" (caia na sequencial) e o v2 dizia "quadros com o mesmo frame_num"
+    (VOLTAVA AO V1). Agora os cortes casam pela ordem dos quadros: o caminho
+    rapido roda, o v2 vale e as cenas sao as mesmas da sequencial."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.dir = Path(tempfile.mkdtemp(prefix="repetido-"))
+        cls.video = _video_com_frame_num_repetido(cls.dir / "repetido.mkv", _video_de_teste(cls.dir / "base.mkv"))
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.dir, ignore_errors=True)
+
+    def test_o_video_tem_o_frame_num_repetido(self):
+        from scenedetect import open_video
+
+        v = open_video(str(self.video))
+        pos = []
+        while v.read(decode=False) is not False:
+            pos.append(v.position)
+        nums = [p.frame_num for p in pos]
+        self.assertEqual([a for a, b in zip(nums, nums[1:]) if b == a], [699, 1499])
+        # O muxer arredonda o tempo do 700 para o do 699: posicao repetida, nunca para tras.
+        self.assertFalse(any(b < a for a, b in zip(pos, pos[1:])))
+
+    def test_mesmas_cenas_da_sequencial_e_v2_vale(self):
+        from scenedetect import open_video
+
+        from app.shot_detection import DETECTOR_ID_V2
+
+        seq = detect_shots(self.video, paralelo=1)
+        par = detect_shots(self.video, paralelo=4)
+        self.assertEqual((seq.detector, par.detector), (DETECTOR_ID_V2, DETECTOR_ID_V2))
+        self.assertGreaterEqual(len(seq), 7)
+        self.assertEqual([(s.idx, s.start, s.end) for s in seq], [(s.idx, s.start, s.end) for s in par])
+        # O caminho paralelo rodou de verdade (nao levanta _NaoDaEmParalelo).
+        cenas = _cenas_em_paralelo(self.video, open_video(str(self.video)), 2.0, 15.0, 4, None)
+        self.assertEqual(len(cenas), len(seq))
+
+    def test_sinais_iguais_nos_dois_caminhos(self):
+        _sinais_dos_dois_caminhos(self, self.video)
 
 
 class TestDeteccaoParalela(unittest.TestCase):

@@ -237,17 +237,9 @@ def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float):
     if not sinais:
         raise ValueError("sem os sinais dos quadros")
     pos = [x[0] for x in sinais]
-    indice = {p.frame_num: i for i, p in enumerate(pos)}
-    if len(indice) != len(pos):
-        raise ValueError("quadros com o mesmo frame_num")
     if pos[0] != scenes[0][0]:
         raise ValueError("a 1a cena nao comeca no 1o quadro lido")
-    cortes = []
-    for s, _e in scenes[1:]:
-        i = indice.get(s.frame_num)
-        if i is None or pos[i] != s:
-            raise ValueError(f"corte {s.frame_num} fora dos quadros lidos")
-        cortes.append(i)
+    cortes = _indices_dos_cortes(pos, [s for s, _e in scenes[1:]])
     final = refinar_cortes(
         np.array([x[1] for x in sinais], dtype=np.float64),
         np.array([x[2] for x in sinais], dtype=np.float64),
@@ -256,6 +248,41 @@ def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float):
     )
     inicios = [scenes[0][0]] + [pos[c] for c in final]
     return list(zip(inicios, inicios[1:] + [scenes[-1][1]]))
+
+
+def _indices_dos_cortes(pos, inicios) -> list[int]:
+    """[recap] O indice, na lista de quadros lidos, de cada inicio de cena.
+
+    Casa pela ORDEM dos quadros: cada corte e procurado a partir do quadro
+    seguinte ao do corte anterior. Vale o proprio objeto da posicao (o
+    detector devolve no corte a posicao que recebeu do quadro); sem ele, o
+    1o quadro com a mesma posicao exata (o PTS). Antes era um dicionario
+    frame_num -> indice, e video com dois quadros do mesmo frame_num (o
+    frame_num e o tempo arredondado: Cyberpunk Edgerunners S02E01 tem dois
+    8098) derrubava o v2 inteiro para o v1.
+    """
+    cortes: list[int] = []
+    j = 1
+    for s in inicios:
+        achou = igual = None
+        i = j
+        while i < len(pos):
+            if pos[i] is s:
+                achou = i
+                break
+            if pos[i] == s:
+                if igual is None:
+                    igual = i
+            elif igual is not None:
+                break  # passou da fileira de quadros com a mesma posicao
+            i += 1
+        if achou is None:
+            achou = igual
+        if achou is None:
+            raise ValueError(f"corte {s.frame_num} fora dos quadros lidos")
+        cortes.append(achou)
+        j = achou + 1
+    return cortes
 
 
 # ---------------------------------------------------------------------------
@@ -443,11 +470,16 @@ def _cenas_em_paralelo(video_path, video, ratio: float, piso: float, pedacos: in
         for j, (meu, viz) in enumerate(zip(sobra, juntos[-len(sobra):])):
             if meu[0] != viz[0] or (j > 0 and meu[1] != viz[1]) or meu[2:3] != viz[2:3]:
                 raise _NaoDaEmParalelo(f"a sobra do pedaco {i} nao bate no quadro {meu[0].frame_num}")
-        if not novos or novos[0][0].frame_num <= juntos[-1][0].frame_num:
+        # [recap] A ordem e conferida pela posicao exata (o PTS), nao pelo
+        # frame_num, e quadro com a MESMA posicao do anterior passa: dois
+        # quadros podem ter o mesmo frame_num (o tempo arredondado; Cyberpunk
+        # Edgerunners S02E01 tem dois 8098) e a sequencial le os dois do mesmo
+        # jeito. Os dois caem sempre no mesmo pedaco (a borda e por frame_num).
+        if not novos or not juntos[-1][0] < novos[0][0]:
             raise _NaoDaEmParalelo(f"buraco entre os pedacos {i - 1} e {i}")
         juntos.extend(novos)
     for a, b in zip(juntos, juntos[1:]):
-        if b[0].frame_num <= a[0].frame_num:
+        if b[0] < a[0]:
             raise _NaoDaEmParalelo(f"quadro fora de ordem perto de {a[0].frame_num}")
     if resultados[-1][1] is None:
         raise _NaoDaEmParalelo("sem a posicao final")

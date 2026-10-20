@@ -179,6 +179,50 @@ class TestFps(unittest.TestCase):
         self.assertEqual(s.refinar([100], fps=24.0), [100])
 
 
+class TestCasarPelaOrdem(unittest.TestCase):
+    """[recap] Os cortes casam com os quadros lidos pela ORDEM e pelo tempo exato,
+    nao pelo frame_num: dois quadros com o mesmo frame_num (o tempo arredondado,
+    Cyberpunk Edgerunners S02E01 tem dois 8098) nao derrubam mais o v2."""
+
+    @staticmethod
+    def _pos(ms):
+        from fractions import Fraction
+
+        from scenedetect.common import FrameTimecode, Timecode
+
+        return [FrameTimecode(timecode=Timecode(pts=m, time_base=Fraction(1, 1000)), fps=30.0) for m in ms]
+
+    def _video(self):
+        # 300 quadros a 30 fps (33,3 ms) e o 151o so 10 ms depois do 150o: os dois dao frame_num 150.
+        ms = [round(i * 1000 / 30) for i in range(151)] + [round(150 * 1000 / 30) + 10]
+        ms += [round(i * 1000 / 30) + 10 for i in range(151, 300)]
+        return self._pos(ms)
+
+    def test_o_frame_num_repete(self):
+        pos = self._video()
+        nums = [p.frame_num for p in pos]
+        self.assertEqual(nums[150], nums[151])
+        self.assertTrue(all(a < b for a, b in zip(pos, pos[1:])))
+
+    def test_indices_pela_ordem(self):
+        from app.shot_detection import _indices_dos_cortes
+
+        pos = self._video()
+        self.assertEqual(_indices_dos_cortes(pos, [pos[100], pos[151], pos[200]]), [100, 151, 200])
+        self.assertEqual(_indices_dos_cortes(pos, [pos[150], pos[151]]), [150, 151])
+        with self.assertRaises(ValueError):
+            _indices_dos_cortes(pos, [pos[200], pos[100]])  # fora de ordem: nao acha
+
+    def test_cenas_v2_com_frame_num_repetido(self):
+        from app.shot_detection import _cenas_v2
+
+        pos = self._video()
+        s = Sinais().trecho(A, 151).trecho(C, 150)  # a troca no quadro 151 (o 2o "150")
+        sinais = [(p, s.nota[i], s.luz[i], s.hist[i]) for i, p in enumerate(pos)]
+        cenas = _cenas_v2([(pos[0], pos[151]), (pos[151], pos[-1])], sinais, 30.0, 2.0, 15.0)
+        self.assertEqual(cenas, [(pos[0], pos[151]), (pos[151], pos[-1])])
+
+
 class TestCandidatos(unittest.TestCase):
     def test_mesma_conta_do_adaptive_detector(self):
         from scenedetect import AdaptiveDetector
