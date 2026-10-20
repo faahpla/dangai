@@ -486,20 +486,25 @@ export interface TrechoDoArquivo {
 /**
  * A janela do candidato em pedacos de arquivo: um por plano do span, com o
  * ponto dentro de cada mp4. Plano que nao esta no indice (ou fora da janela)
- * fica de fora.
+ * fica de fora. (5a rodada) `entradas`: o plano EMENDADO (do 2o em diante)
+ * entra depois do efeito do comeco dele, como o encaixe contou
+ * (ContextoDoEncaixe.entradas).
  */
 export function trechosDoCandidato(
   c: Pick<CandidatoDeCena, 'planoIds' | 'inSec' | 'outSec'>,
   planos: readonly Plano[],
+  entradas?: ReadonlyMap<string, number>,
 ): TrechoDoArquivo[] {
   const porId = new Map(planos.map((p) => [p.id, p]))
   const saida: TrechoDoArquivo[] = []
-  for (const id of c.planoIds) {
+  for (const [k, id] of c.planoIds.entries()) {
     const p = porId.get(id)
     if (!p) continue
     // [recap] Plano dentro de um clipe mesclado: o ponto dentro do mp4 anda junto (shared/mesclas.ts).
     const base = p.inicioNoArquivo ?? 0
-    const de = Math.max(c.inSec, p.start) - p.start
+    const entrada = k > 0 ? entradas?.get(id) : undefined
+    const comeco = entrada !== undefined && entrada > p.start && entrada < p.end ? entrada : p.start
+    const de = Math.max(c.inSec, comeco) - p.start
     const ate = Math.min(c.outSec, p.end) - p.start
     if (ate > de) saida.push({ planoId: id, arquivo: p.arquivo, de: base + de, ate: base + ate })
   }

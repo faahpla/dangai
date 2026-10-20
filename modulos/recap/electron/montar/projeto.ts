@@ -248,7 +248,8 @@ export function pedacosDaMontagem(e: Omit<EntradaDaMontagem, 'narracaoPath' | 'f
         const inicio = trecho.offset + t.inicio
         const fim = trecho.offset + t.fim
         if (fim - inicio <= 0) return
-        const partes = trechosDoCandidato(cena.candidato, e.indice.planos)
+        // (5a rodada) O plano emendado tambem entra depois do efeito (o encaixe contou assim); posto a mao, nao.
+        const partes = trechosDoCandidato(cena.candidato, e.indice.planos, cena.candidato.origem === 'usuario' ? undefined : e.entradas)
         if (partes.length === 0) {
           avisos.push(`${frase.id}: cena sem arquivo`)
           return

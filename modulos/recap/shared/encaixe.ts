@@ -182,22 +182,37 @@ export function planoExcluido(
   return exclusoes.some((e) => meio >= e.start && meio < e.end)
 }
 
+/**
+ * O comeco de cada plano na emenda: o do plano, ou (5a rodada) a ENTRADA depois
+ * do efeito (ContextoDoEncaixe.entradas). O plano emendado tambem entra depois
+ * do preto ou do borrao do comeco dele (o 0289 da f13 do Nia E01 entrava com
+ * 0,3 s de borrao escuro).
+ */
+type ComecoDoPlano = (i: number) => number
+
 /** Segundos de imagem dos planos [a..b] a partir de `inicio` (vaos entre planos nao contam). */
-function cobertura(planos: readonly Plano[], a: number, b: number, inicio: number): number {
+function cobertura(planos: readonly Plano[], a: number, b: number, inicio: number, comeco: ComecoDoPlano = (i) => planos[i]!.start): number {
   let soma = 0
   for (let i = a; i <= b; i++) {
     const p = planos[i]!
-    soma += Math.max(0, p.end - Math.max(p.start, inicio))
+    soma += Math.max(0, p.end - Math.max(comeco(i), inicio))
   }
   return soma
 }
 
 /** O fim da janela que da `precisa` segundos de imagem a partir de `inicio`, andando pelos planos [a..b]. */
-function fimPelaCobertura(planos: readonly Plano[], a: number, b: number, inicio: number, precisa: number): number {
+function fimPelaCobertura(
+  planos: readonly Plano[],
+  a: number,
+  b: number,
+  inicio: number,
+  precisa: number,
+  comeco: ComecoDoPlano = (i) => planos[i]!.start,
+): number {
   let acumulado = 0
   for (let i = a; i <= b; i++) {
     const p = planos[i]!
-    const de = Math.max(p.start, inicio)
+    const de = Math.max(comeco(i), inicio)
     const tem = p.end - de
     if (tem <= 0) continue
     if (acumulado + tem >= precisa) return de + (precisa - acumulado)
@@ -207,15 +222,15 @@ function fimPelaCobertura(planos: readonly Plano[], a: number, b: number, inicio
 }
 
 /** O comeco da janela que da `precisa` segundos de imagem terminando no fim de b, andando para tras ate a. */
-function inicioPelaCobertura(planos: readonly Plano[], a: number, b: number, precisa: number): number {
+function inicioPelaCobertura(planos: readonly Plano[], a: number, b: number, precisa: number, comeco: ComecoDoPlano = (i) => planos[i]!.start): number {
   let acumulado = 0
   for (let i = b; i >= a; i--) {
     const p = planos[i]!
-    const tem = p.end - p.start
+    const tem = p.end - comeco(i)
     if (acumulado + tem >= precisa) return p.end - (precisa - acumulado)
     acumulado += tem
   }
-  return planos[a]!.start
+  return comeco(a)
 }
 
 function segundos(s: number): string {
@@ -264,36 +279,36 @@ function encaixarCandidato(
   const preferido = c.origem !== 'usuario' && citacaoDentro ? citada.start : c.inSec
   let inicio = Math.min(Math.max(preferido, piso(a)), planos[b]!.end)
 
-  if (cobertura(planos, a, b, inicio) < precisa - TOLERANCIA_DE_DURACAO_SEC) {
-    if (cobertura(planos, a, b, piso(a)) >= precisa - FOLGA_SEM_EMENDA_SEC) {
+  if (cobertura(planos, a, b, inicio, piso) < precisa - TOLERANCIA_DE_DURACAO_SEC) {
+    if (cobertura(planos, a, b, piso(a), piso) >= precisa - FOLGA_SEM_EMENDA_SEC) {
       // Cabe (ou quase) nos planos do candidato: recua o comeco so o
       // necessario; a fala citada continua dentro da janela.
-      inicio = Math.max(piso(a), Math.min(inicio, inicioPelaCobertura(planos, a, b, precisa)))
+      inicio = Math.max(piso(a), Math.min(inicio, inicioPelaCobertura(planos, a, b, precisa, piso)))
     } else {
       // Nao cabe: o plano seguinte do episodio, como a montagem original...
       // (plano mais curto que o minimo na tela nunca entra: vira um flash no meio)
       while (
-        cobertura(planos, a, b, inicio) < precisa - FOLGA_SEM_EMENDA_SEC &&
+        cobertura(planos, a, b, inicio, piso) < precisa - FOLGA_SEM_EMENDA_SEC &&
         b - a + 1 < SPAN_MAX_PLANOS &&
         livre(b + 1) &&
-        duracaoDoPlano(planos, b + 1) >= minimo - 1e-6
+        duracaoDoPlano(planos, b + 1, piso) >= minimo - 1e-6
       ) {
         b += 1
       }
       // ...e, no fim do episodio ou na porta da OP/ED, o anterior.
       while (
-        cobertura(planos, a, b, inicio) < precisa - FOLGA_SEM_EMENDA_SEC &&
+        cobertura(planos, a, b, inicio, piso) < precisa - FOLGA_SEM_EMENDA_SEC &&
         b - a + 1 < SPAN_MAX_PLANOS &&
         livre(a - 1) &&
-        duracaoDoPlano(planos, a - 1) >= minimo - 1e-6
+        duracaoDoPlano(planos, a - 1, piso) >= minimo - 1e-6
       ) {
         a -= 1
-        inicio = Math.max(piso(a), inicioPelaCobertura(planos, a, b, precisa))
+        inicio = Math.max(piso(a), inicioPelaCobertura(planos, a, b, precisa, piso))
       }
     }
   }
 
-  let fim = Math.max(fimPelaCobertura(planos, a, b, inicio, precisa), inicio + TOLERANCIA_DE_DURACAO_SEC)
+  let fim = Math.max(fimPelaCobertura(planos, a, b, inicio, precisa, piso), inicio + TOLERANCIA_DE_DURACAO_SEC)
 
   // So os planos que a janela toca de fato (encolher a frase solta a emenda).
   const tocados: number[] = []
@@ -308,7 +323,7 @@ function encaixarCandidato(
   fim = ajuste.fim
   const ua = usados[0]!
   const ub = usados[usados.length - 1]!
-  const falta = precisa - cobertura(planos, ua, ub, inicio) + Math.max(0, cobertura(planos, ua, ub, fim))
+  const falta = precisa - cobertura(planos, ua, ub, inicio, piso) + Math.max(0, cobertura(planos, ua, ub, fim, piso))
   const primeiro = planos[ua]!
 
   const avisos: AvisoDoEncaixe[] = []
@@ -334,15 +349,15 @@ function encaixarCandidato(
 
 // ------------------------------------------------------------ sem relance
 
-/** Os segundos de imagem do plano i (0 fora do indice). */
-function duracaoDoPlano(planos: readonly Plano[], i: number): number {
+/** Os segundos de imagem do plano i (0 fora do indice), a partir do comeco dele na emenda. */
+function duracaoDoPlano(planos: readonly Plano[], i: number, comeco: ComecoDoPlano = (k) => planos[k]!.start): number {
   const p = planos[i]
-  return p ? p.end - p.start : 0
+  return p ? p.end - comeco(i) : 0
 }
 
-/** O pedaco de cada plano da janela, em segundos de imagem. */
-function pedacoNoPlano(p: Plano, inicio: number, fim: number): number {
-  return Math.max(0, Math.min(p.end, fim) - Math.max(p.start, inicio))
+/** O pedaco de cada plano da janela, em segundos de imagem (`comeco`: onde ele entra na emenda). */
+function pedacoNoPlano(p: Plano, inicio: number, fim: number, comeco: number = p.start): number {
+  return Math.max(0, Math.min(p.end, fim) - Math.max(comeco, inicio))
 }
 
 /**
@@ -376,20 +391,20 @@ function semRelance(
 
   if (usados.length > 1) {
     const ultimo = planos[usados[usados.length - 1]!]!
-    const pl = pedacoNoPlano(ultimo, inicio, fim)
+    const pl = pedacoNoPlano(ultimo, inicio, fim, piso(usados[usados.length - 1]!))
     if (pl < minimo) {
       const resto = usados.slice(0, -1)
       const ra = resto[0]!
       const rb = resto[resto.length - 1]!
-      const daComeco = cobertura(planos, ra, rb, piso(ra))
+      const daComeco = cobertura(planos, ra, rb, piso(ra), piso)
       if (precisa - daComeco <= SEGURAR_EM_VEZ_DE_RELANCE_SEC) {
         usados = resto
-        inicio = Math.max(piso(ra), Math.min(inicio, inicioPelaCobertura(planos, ra, rb, precisa)))
+        inicio = Math.max(piso(ra), Math.min(inicio, inicioPelaCobertura(planos, ra, rb, precisa, piso)))
         fim = planos[rb]!.end
-        segurado = Math.max(0, precisa - cobertura(planos, ra, rb, inicio))
+        segurado = Math.max(0, precisa - cobertura(planos, ra, rb, inicio, piso))
       } else {
         const delta = minimo - pl
-        const pf = pedacoNoPlano(planos[usados[0]!]!, inicio, fim)
+        const pf = pedacoNoPlano(planos[usados[0]!]!, inicio, fim, piso(usados[0]!))
         if (pf - delta >= minimo && fim + delta <= ultimo.end + 1e-9) {
           inicio += delta
           fim += delta
@@ -400,7 +415,7 @@ function semRelance(
 
   if (usados.length > 1) {
     const p0 = planos[usados[0]!]!
-    const pf = pedacoNoPlano(p0, inicio, fim)
+    const pf = pedacoNoPlano(p0, inicio, fim, piso(usados[0]!))
     if (pf < minimo) {
       const ultimo = planos[usados[usados.length - 1]!]!
       const resto = usados.slice(1)
