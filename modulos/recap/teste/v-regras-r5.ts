@@ -18,6 +18,7 @@
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-regras-r5.ts
  */
 import { casarFrases, cenasDiferentes, prepararPlanos, type CandidatoPontuado, type FraseDoCasar, type Termo } from '../electron/cenas/casar'
+import { dividirFrase, DIVISAO_PADRAO } from '../shared/divisao'
 import { encaixarEscolha, entradasDosPlanos } from '../shared/encaixe'
 import { trechosDoCandidato, type EscolhaDaFrase } from '../shared/cenas'
 import type { Cue, EpisodeIndex, Plano } from '../shared/episodio'
@@ -117,6 +118,19 @@ function regra3(): void {
   const r = casarFrases({ indice, eventos, frases, take, fixas: new Map(), refazer: new Set(['f00', 'f01']), divisao: { ligada: true, limiarSec: 3, minimoSec: 1 }, abrem: new Set(['f00', 'f01']) })
   const f01 = r.casadas.find((x) => x.escolha.fraseId === 'f01')!
   confere(f01.janela.herdada && f01.escolha.cenas.length === 2, 'a frase sem evento e longa divide pelos motivos (o MRM f24)', { herdada: f01.janela.herdada, cenas: f01.escolha.cenas.length, motivos: f01.motivos })
+  // Sem momento, o corte de socorro (pedaco abaixo do ritmo de 1,3 s) vale: o final-171 abria o f24 em 1,17 + 1,88 s.
+  const cta = 'Comenta ai: essa cobranca foi bem merecida ou exagero?'
+  const fcta = fr('f24', cta)
+  // Nenhuma fronteira de palavra entre 1,3 e 1,75 s (de 3,05 s): todo corte deixa um pedaco abaixo de 1,3 s.
+  const inicios = [0.1, 0.4, 0.7, 1.0, 1.25, 1.8, 2.1, 2.4, 2.7]
+  const tcta: TakeDoTeste = {
+    id: 't1',
+    trechos: [{ fraseId: 'f24', offset: 0, duracao: 3.05, hashTexto: hashDoTexto(cta), texto: cta } as TakeDaVoz['trechos'][number]],
+    palavras: palavrasDaFrase(cta).map((w, i) => ({ texto: w, start: inicios[i]!, end: (inicios[i + 1] ?? 3) - 0.05, fraseId: 'f24' }) as TakeDaVoz['palavras'][number]),
+  }
+  confere(dividirFrase(fcta, tcta, DIVISAO_PADRAO) === null, '(com momento, o pedaco curto nao divide)')
+  const sm = dividirFrase(fcta, tcta, DIVISAO_PADRAO, { semMomento: true })
+  confere(!!sm && sm.socorro === true, 'sem momento, o corte de socorro divide', sm?.pedacos.map((p) => p.texto))
 }
 
 // ------------------------------------------------------------ 2-5. no casar
