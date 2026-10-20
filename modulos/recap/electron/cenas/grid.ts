@@ -1,17 +1,32 @@
+import { createHash } from 'node:crypto'
+import { mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import sharp from 'sharp'
 import type { EpisodeIndex } from '../../shared/episodio'
 import { aplicarEscolhas, cenasDoRascunho, frasesDoRoteiro, type CenasGravadas, type EscolhaDaFrase, type EstadoDasCenas } from '../../shared/cenas'
-import { encaixarEscolha } from '../../shared/encaixe'
-import { desligarGrid, gridsAutomaticos, ligarGrid, type EntradaDoGrid, type ModoDoGrid, type QuemNoGrid } from '../../shared/grid'
+import { encaixarEscolha, entradasDosPlanos } from '../../shared/encaixe'
+import {
+  desligarGrid,
+  gridsAutomaticos,
+  ligarGrid,
+  familiaDoCabelo,
+  referenciaDosRostos,
+  type EntradaDoGrid,
+  type ModoDoGrid,
+  type QuemNoGrid,
+  type RostoDoPlano,
+} from '../../shared/grid'
 import { roteiroAtual, type Evento, type RascunhoDoRecap, type Roteiro } from '../../shared/roteiro'
 import { palavrasDaFrase, takeAtual, type TakeDaVoz } from '../../shared/voz'
-import { produtoInterno } from '../../shared/visao'
+import { linhasDaMatriz, produtoInterno } from '../../shared/visao'
 import { configDoRecap } from '../contexto'
 import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/rascunho'
-import { alturasDosRostos, largurasDosRostos } from '../montar/rostos-motor'
+import { pastaDoPerfil } from '../episodio/perfil'
+import { largurasDosRostos, rostosDosPlanos } from '../montar/rostos-motor'
 import { citadosNoTexto, elencoDoEpisodio, fichasDe, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
 import { comMesclas } from './mesclas'
-import { sinaisDoEpisodio } from './visao'
+import { quadrosDosPlanos } from './quadros'
+import { rodarModoCenas, sinaisDoEpisodio } from './visao'
 
 /**
  * [recap] O GRID no servico (rodada 4): os SINAIS que a decisao pura
@@ -165,17 +180,166 @@ export async function planosJaDivididos(indice: Pick<EpisodeIndex, 'id' | 'plano
   return new Set([...new Set(ids)].filter((id) => vistos!.get(id) === true))
 }
 
+// ------------------------------------------------- quem e quem sem reconhecimento
+
+/** A folga do recorte em volta da caixa do rosto: o cabelo e o que mais distingue o personagem de anime. */
+const FOLGA_DO_RECORTE = 0.35
+/** O teto do motor para os vetores dos recortes (o CLIP sobe em ~15 s; os recortes sao poucos). */
+const TETO_DOS_VETORES_MS = 4 * 60_000
+const VERSAO_DOS_VETORES = 1
+
+interface CacheDosVetores {
+  versao: number
+  /** chave do recorte -> o vetor (Float32, base64). */
+  itens: Record<string, string>
+}
+
+function arquivoDosVetores(): string {
+  return join(pastaDoPerfil(), 'grid-rostos.json')
+}
+
+function lerVetores(): Map<string, string> {
+  try {
+    const c = JSON.parse(readFileSync(arquivoDosVetores(), 'utf8')) as CacheDosVetores
+    return c.versao === VERSAO_DOS_VETORES && c.itens && typeof c.itens === 'object' ? new Map(Object.entries(c.itens)) : new Map()
+  } catch {
+    return new Map()
+  }
+}
+
+function gravarVetores(itens: Map<string, string>): void {
+  try {
+    const arquivo = arquivoDosVetores()
+    mkdirSync(dirname(arquivo), { recursive: true })
+    const tmp = `${arquivo}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify({ versao: VERSAO_DOS_VETORES, itens: Object.fromEntries([...itens].slice(-8000)) } satisfies CacheDosVetores), 'utf8')
+    renameSync(tmp, arquivo)
+  } catch {
+    // cache e conveniencia
+  }
+}
+
+const paraBase64 = (v: Float32Array): string => Buffer.from(v.buffer, v.byteOffset, v.byteLength).toString('base64')
+function deBase64(b64: string): Float32Array {
+  const buf = Buffer.from(b64, 'base64')
+  return new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength))
+}
+
+/** O keyframe do instante i do plano (os keyframes _0, _1 e _2 sao os instantes 25, 50 e 75%). */
+function keyframeDoInstante(keyframe: string | null | undefined, i: number): string | null {
+  if (!keyframe) return null
+  if (/_1\.jpe?g$/i.test(keyframe)) return keyframe.replace(/_1(\.jpe?g)$/i, `_${i}$1`)
+  return i === 1 ? keyframe : null
+}
+
+/**
+ * (rodada 5) QUEM E QUEM SEM RECONHECIMENTO: o vetor CLIP (o mesmo modelo do
+ * motor que identifica o elenco) do recorte de cada rosto do instante de
+ * referencia de cada plano (referenciaDosRostos), com o cabelo junto. O Nia E01
+ * nao tem reconhecimento (0 de 432 planos): sem isto a Nia passava nas duas
+ * metades. Os recortes ficam num cache do perfil; o que falta vai ao motor
+ * (modo cenas) de uma vez. Plano que nao deu: fora do mapa (o puro recusa).
+ */
+export async function vetoresDosRostos(
+  indice: Pick<EpisodeIndex, 'planos'>,
+  rostos: ReadonlyMap<string, readonly (readonly RostoDoPlano[] | null)[]>,
+  ids: Iterable<string>,
+): Promise<Map<string, Float32Array[]>> {
+  const porId = new Map(indice.planos.map((p) => [p.id, p]))
+  const cache = lerVetores()
+  const pedidos: { planoId: string; chaves: string[] }[] = []
+  const recortes: { chave: string; arquivo: string; caixa: RostoDoPlano }[] = []
+  for (const id of new Set(ids)) {
+    const instantes = rostos.get(id)
+    const ref = instantes ? referenciaDosRostos(instantes) : null
+    if (!ref || ref.rostos.length === 0) continue
+    const arquivo = keyframeDoInstante(porId.get(id)?.keyframe, ref.instante)
+    if (!arquivo) continue
+    let base: string
+    try {
+      const st = statSync(arquivo)
+      base = `${arquivo.replace(/\\/g, '/').toLowerCase()}|${st.size}|${Math.round(st.mtimeMs)}`
+    } catch {
+      continue
+    }
+    const chaves = ref.rostos.map((r) => createHash('sha1').update(`${base}|${[r.cx, r.cy, r.w, r.h].map((x) => x.toFixed(4)).join(',')}`).digest('hex'))
+    pedidos.push({ planoId: id, chaves })
+    for (const [i, chave] of chaves.entries()) if (!cache.has(chave)) recortes.push({ chave, arquivo, caixa: ref.rostos[i]! })
+  }
+  if (recortes.length > 0) {
+    const pasta = join(pastaDoPerfil(), 'grid-rostos-tmp', `${process.pid}-${Date.now()}`)
+    try {
+      mkdirSync(join(pasta, 'saida'), { recursive: true })
+      const imagens: { id: string; arquivo: string; prioridade: number }[] = []
+      for (const [i, r] of recortes.entries()) {
+        try {
+          const img = sharp(r.arquivo)
+          const { width = 0, height = 0 } = await img.metadata()
+          if (!width || !height) continue
+          // Quadrado em volta do rosto, um pouco para cima (o cabelo), dentro da imagem.
+          const lado = Math.min(width, height, Math.round(Math.max(r.caixa.w * width, r.caixa.h * height) * (1 + 2 * FOLGA_DO_RECORTE)))
+          const cx = r.caixa.cx * width
+          const cy = (r.caixa.cy - 0.1 * r.caixa.h) * height
+          const left = Math.min(Math.max(Math.round(cx - lado / 2), 0), width - lado)
+          const top = Math.min(Math.max(Math.round(cy - lado / 2), 0), height - lado)
+          const arq = join(pasta, `${i}.jpg`)
+          await sharp(r.arquivo).extract({ left, top, width: lado, height: lado }).jpeg({ quality: 92 }).toFile(arq)
+          imagens.push({ id: r.chave, arquivo: arq, prioridade: 0 })
+        } catch {
+          // keyframe que nao abre: esse rosto fica sem vetor
+        }
+      }
+      if (imagens.length > 0) {
+        const r = await rodarModoCenas({ imagens }, join(pasta, 'saida'), () => {}, TETO_DOS_VETORES_MS)
+        if (!r.falha) {
+          const meta = JSON.parse(readFileSync(join(pasta, 'saida', 'imagens.json'), 'utf8')) as { ids?: unknown[]; dim?: number }
+          const linhas = linhasDaMatriz(readFileSync(join(pasta, 'saida', 'imagens.f32')), typeof meta.dim === 'number' ? meta.dim : 768)
+          const idsLidos = (meta.ids ?? []).map(String)
+          if (linhas.length === idsLidos.length) {
+            for (const [i, chave] of idsLidos.entries()) cache.set(chave, paraBase64(linhas[i]!))
+            gravarVetores(cache)
+          }
+        }
+      }
+    } catch {
+      // sem o motor: os rostos ficam sem vetor (o puro recusa o par sem reconhecimento)
+    } finally {
+      try {
+        rmSync(pasta, { recursive: true, force: true })
+        rmdirSync(dirname(pasta))
+      } catch {
+        // a pasta temporaria (ou a de cima, com outra rodada dentro) sai na proxima
+      }
+    }
+  }
+  const saida = new Map<string, Float32Array[]>()
+  for (const p of pedidos) {
+    const vs = p.chaves.map((c) => cache.get(c))
+    if (vs.every((v): v is string => typeof v === 'string')) saida.set(p.planoId, vs.map(deBase64))
+  }
+  return saida
+}
+
 // ---------------------------------------------------------------- os sinais
 
 export interface SinaisDoGrid {
   vetados: Map<string, string>
   mesmaCena: (a: string, b: string) => boolean
   quem: QuemNoGrid
-  /** (polimento) O maior rosto de cada plano em cada instante (o detector do motor, o cache do casar). */
-  rostos?: Map<string, (number | null)[]>
+  /** Os rostos de cada plano em cada instante (o detector do motor, o cache do casar). */
+  rostos?: Map<string, (RostoDoPlano[] | null)[]>
+  /** (rodada 5) O vetor CLIP do recorte de cada rosto de referencia (quem e quem sem reconhecimento). */
+  vetoresDosRostos?: Map<string, Float32Array[]>
   /** (polimento) Os planos "de costas" (from behind) pelo etiquetador. */
   deCostas?: Set<string>
+  /** (rodada 5) As cores de cabelo (familias) que o etiquetador ve em cada plano. */
+  cabelos?: Map<string, Set<string>>
+  /** (rodada 5) A entrada depois do clarao ou borrao de cada plano que abre ruim (o quadros.json, so lido). */
+  entradas?: Map<string, number>
 }
+
+/** A etiqueta de cor de cabelo vale com pelo menos esta confianca. */
+const CABELO_MIN = 0.4
 
 /** A etiqueta "de costas" vale com pelo menos esta confianca. */
 const DE_COSTAS = 0.5
@@ -215,15 +379,31 @@ export async function sinaisDoGrid(
   } catch {
     // keyframes que nao abrem: sem esse veto
   }
-  let rostos: Map<string, (number | null)[]> | undefined
+  let entradas: Map<string, number> | undefined
   try {
-    const todas = await alturasDosRostos(indice)
-    if (todas.size > 0) rostos = new Map([...todas].filter(([id]) => candidatos.has(id)))
+    const q = await quadrosDosPlanos(indice, aberto.caminho, true)
+    entradas = entradasDosPlanos(indice.planos, q.abremRuim)
   } catch {
-    // sem o motor: sem a regra do rosto legivel
+    // sem a medida dos quadros: a metade pode comecar no comeco do plano
+  }
+  let rostos: Map<string, (RostoDoPlano[] | null)[]> | undefined
+  let vetoresDeRosto: Map<string, Float32Array[]> | undefined
+  try {
+    const todos = await rostosDosPlanos(indice)
+    if (todos.size > 0) rostos = new Map([...todos].filter(([id]) => candidatos.has(id)))
+  } catch {
+    // sem o motor: o automatico recusa (nao sabe se a metade tem rosto)
+  }
+  if (rostos) {
+    try {
+      vetoresDeRosto = await vetoresDosRostos(indice, rostos, candidatos)
+    } catch {
+      // sem o CLIP: o par sem reconhecimento e recusado
+    }
   }
   let vetores = new Map<string, Float32Array[]>()
   let deCostas: Set<string> | undefined
+  let cabelos: Map<string, Set<string>> | undefined
   try {
     const visao = sinaisDoEpisodio(indice, aberto.caminho)
     if (visao.quadros) vetores = new Map([...visao.quadros].map(([id, qs]) => [id, qs.flatMap((q) => (q.vetor ? [q.vetor] : []))]))
@@ -233,6 +413,17 @@ export async function sinaisDoGrid(
         if (!candidatos.has(id) || !tags.includes('from behind')) continue
         const conf = visao.confiancaDasTags?.get(id)?.get('from behind')
         if (conf === undefined || conf >= DE_COSTAS) deCostas.add(id)
+      }
+      cabelos = new Map<string, Set<string>>()
+      for (const [id, tags] of visao.tagsDoPlano) {
+        if (!candidatos.has(id)) continue
+        const cores = new Set<string>()
+        for (const t of tags) {
+          const familia = familiaDoCabelo(t)
+          const conf = visao.confiancaDasTags?.get(id)?.get(t)
+          if (familia && (conf === undefined || conf >= CABELO_MIN)) cores.add(familia)
+        }
+        cabelos.set(id, cores)
       }
     }
   } catch {
@@ -245,7 +436,16 @@ export async function sinaisDoGrid(
     for (const x of va) for (const y of vb) if (produtoInterno(x, y) >= MESMA_CENA) return true
     return false
   }
-  return { vetados, mesmaCena, quem: quemNoGrid(indice, roteiro, eventos), ...(rostos ? { rostos } : {}), ...(deCostas ? { deCostas } : {}) }
+  return {
+    vetados,
+    mesmaCena,
+    quem: quemNoGrid(indice, roteiro, eventos),
+    ...(rostos ? { rostos } : {}),
+    ...(vetoresDeRosto ? { vetoresDosRostos: vetoresDeRosto } : {}),
+    ...(deCostas ? { deCostas } : {}),
+    ...(cabelos ? { cabelos } : {}),
+    ...(entradas ? { entradas } : {}),
+  }
 }
 
 /** Quem cada frase cita (a palavra de cada um) e quem cada plano mostra, pelas fichas do casar. */
@@ -311,6 +511,9 @@ function entradaDoGrid(
     minimoSec,
     ...(sinais ? { vetados: sinais.vetados, mesmaCena: sinais.mesmaCena, quem: sinais.quem } : {}),
     ...(sinais?.rostos ? { rostos: sinais.rostos } : {}),
+    ...(sinais?.vetoresDosRostos ? { vetoresDosRostos: sinais.vetoresDosRostos } : {}),
+    ...(sinais?.cabelos ? { cabelos: sinais.cabelos } : {}),
+    ...(sinais?.entradas ? { entradas: sinais.entradas } : {}),
     ...(sinais?.deCostas ? { deCostas: sinais.deCostas } : {}),
   }
 }
@@ -350,7 +553,7 @@ export function aplicarGrids(
   const escolhas = saida.escolhas.map((x) => {
     const frase = porId.get(x.fraseId)
     if (!mudadas.has(x.fraseId) || !frase) return x
-    return encaixarEscolha(x, { indice: e.indice, frase, take: e.take, minimoSec }).escolha
+    return encaixarEscolha(x, { indice: e.indice, frase, take: e.take, minimoSec, ...(e.sinais?.entradas ? { entradas: e.sinais.entradas } : {}) }).escolha
   })
   return { escolhas, postos: saida.postos, avisos: saida.avisos }
 }
@@ -396,7 +599,7 @@ export async function gridDaFrase(rascunhoId: string, fraseId: string, ligar: bo
   } else {
     nova = desligarGrid(escolha)
   }
-  const { escolha: encaixada } = encaixarEscolha(nova, { indice, frase, take, minimoSec })
+  const { escolha: encaixada } = encaixarEscolha(nova, { indice, frase, take, minimoSec, ...(sinais?.entradas ? { entradas: sinais.entradas } : {}) })
   const quando = new Date().toISOString()
   const novo: RascunhoDoRecap = { ...r, cenas: aplicarEscolhas(atual, [encaixada], roteiro), atualizadoEm: quando }
   gravarRascunho(novo)

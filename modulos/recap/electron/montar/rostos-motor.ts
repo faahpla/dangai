@@ -938,32 +938,44 @@ export async function largurasDosRostos(
 }
 
 /**
- * (rodada 4) A ALTURA DO MAIOR ROSTO (fracao do quadro) em cada instante que o
- * motor olhou de cada plano, as mesmas deteccoes do largurasDosRostos: null =
- * nenhum rosto naquele instante (so a cabeca, de costas, ou ninguem). O grid
- * confere se a metade mostra um rosto legivel. Plano fora do mapa: nao se sabe.
+ * (rodada 4) Os ROSTOS de cada plano em cada instante que o motor olhou, as
+ * mesmas deteccoes do largurasDosRostos: o centro, a largura e a altura de
+ * cada rosto (fracao do quadro; a cabeca nao conta, ela e a nuca de quem esta
+ * de costas), na ordem dos instantes. Lista vazia = nenhum rosto naquele
+ * instante; null = o instante nao abriu. O grid confere se a
+ * metade mostra um rosto legivel, quem cabe na janela de 9:8 e recorta os
+ * rostos para comparar quem e quem. Plano fora do mapa: nao se sabe.
  */
-export async function alturasDosRostos(
+export async function rostosDosPlanos(
   indice: Pick<EpisodeIndex, 'id' | 'anime' | 'temporada' | 'planos' | 'atualizadoEm'>,
   o: OpcoesDoRostoPeloMotor & { tetoMs?: number } = {},
-): Promise<Map<string, (number | null)[]>> {
-  const saida = new Map<string, (number | null)[]>()
+): Promise<Map<string, (RostoNoInstante[] | null)[]>> {
+  const saida = new Map<string, (RostoNoInstante[] | null)[]>()
   for (const [id, achado] of await deteccoesDosPlanos(indice, o)) {
-    const alturas = alturasDoMaiorRosto(achado)
-    if (alturas.length > 0) saida.set(id, alturas)
+    const instantes = rostosDoAchado(achado)
+    if (instantes.length > 0) saida.set(id, instantes)
   }
   return saida
 }
 
-/** Em cada instante que abriu, a altura (fracao) do maior ROSTO (a cabeca nao conta); null = nenhum rosto. */
-export function alturasDoMaiorRosto(achado: RostosDoPedaco): (number | null)[] {
-  if (!(achado.altura > 0)) return []
-  return achado.quadros
-    .filter((q) => q.ok)
-    .map((q) => {
-      const rostos = q.rostos.filter((r) => r.tipo === 'rosto')
-      return rostos.length > 0 ? Math.max(...rostos.map((r) => r.h)) / achado.altura : null
-    })
+/** Um rosto num instante, em fracao do quadro: o centro (cx, cy), a largura e a altura. */
+export interface RostoNoInstante {
+  cx: number
+  cy: number
+  w: number
+  h: number
+}
+
+/** Em cada instante, os ROSTOS (sem as cabecas), em fracao do quadro; null = o instante nao abriu. */
+export function rostosDoAchado(achado: RostosDoPedaco): (RostoNoInstante[] | null)[] {
+  if (!(achado.altura > 0) || !(achado.largura > 0) || !achado.quadros.some((q) => q.ok)) return []
+  return achado.quadros.map((q) =>
+    q.ok
+      ? q.rostos
+          .filter((r) => r.tipo === 'rosto')
+          .map((r) => ({ cx: (r.x + r.w / 2) / achado.largura, cy: (r.y + r.h / 2) / achado.altura, w: r.w / achado.largura, h: r.h / achado.altura }))
+      : null,
+  )
 }
 
 /** O modo rostos do motor em cada plano (3 instantes, so detectando), pelo cache; o que falta vai ao motor. */
