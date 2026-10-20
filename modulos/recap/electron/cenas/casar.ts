@@ -3177,6 +3177,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
         citados: (t) => citadosNoTexto(t, elenco).map((c) => c.ficha),
         planoCurto,
         gancho,
+        ...(semMomento ? { semMomento } : {}),
         ...(ganha !== undefined ? { ganha } : {}),
       })
       if (dv) saida.set(i, { motivos: dv.motivos, pedacos: pedacosDe(i, dv) })

@@ -416,6 +416,12 @@ export interface ProvasDaDivisao {
   /** (4a rodada) A frase e o gancho: la a frase longa divide pelos motivos, como sempre (o Levi dividiu as duas do Nia E01). */
   gancho?: boolean
   /**
+   * (5a rodada) A frase nao tem evento (a janela herdada: o "Comenta ai" do
+   * fim): nao ha momento a respeitar, e o corte de socorro (o "Minimo na tela"
+   * da config) vale -- o final-171 abria o f24 do MRM E02 em 1,17 s + 1,88 s.
+   */
+  semMomento?: boolean
+  /**
    * (4a rodada) Um pedaco depois do primeiro GANHA: a melhor cena dele e boa
    * (relevancia propria: a palavra dita, a etiqueta, a pessoa, a acao) e
    * diferente da do primeiro (outro plano, que nao e o seguinte da mesma
@@ -467,7 +473,7 @@ export function dividirFrase(
   const corte = corteDaFrase(frase, take, opcoes)
   if (!corte) return null
   // (4a rodada) O corte de socorro (pedaco abaixo do ritmo) so quando a cena unica congelaria.
-  if (corte.socorro && !provas.planoCurto) return null
+  if (corte.socorro && !provas.planoCurto && !provas.semMomento) return null
   const d = duracaoDaFrase(frase, take).duracao
   const motivos: MotivoDaDivisao[] = []
   if (d > limiarDeDivisao(opcoes.limiarSec) + 1e-6) motivos.push('longa')
