@@ -21,13 +21,17 @@
  *      chave da metade (9:8) e o plano de render do nucleo com `abaixo`;
  *   H. a janela 9:8 (o foco do 9:16 erra na metade) e o detector do quadro
  *      que o anime ja divide;
- *   I. o par bom (o Levi, 19/10): (a) pessoa em comum nas duas metades
- *      recusa (o MRM E02 f21 e f12), pessoas diferentes entram (o f07, com a
- *      fadinha fora da janela de cima); (b) metade sem rosto legivel ou de
- *      costas recusa, o personagem citado inteiro entra, sem o detector nao
- *      se sabe; (c) o bonus de rostos diferentes e de rosto + o citado em
- *      acao; vale para a frase dividida e o grid no meio da cena; na mao
- *      continua livre.
+ *   I. o par bom (o Levi, 19/10), falhando FECHADO: (a) pessoa em comum nas
+ *      duas metades recusa (o MRM E02 f21 e f12), pessoas diferentes entram
+ *      (o f07, com a fadinha fora da janela de cima); sem reconhecimento,
+ *      o rosto parecido (CLIP) ou a mesma cor de cabelo recusa, e sem como
+ *      comparar tambem; (b) metade sem rosto legivel (20% da altura), de
+ *      costas ou sem o detector recusa, o personagem citado inteiro entra;
+ *      (c) o bonus de rostos diferentes e de rosto + o citado em acao; vale
+ *      para a frase dividida e o grid no meio da cena; na mao continua livre;
+ *   J. (rodada 5) a cena EMENDADA vira grid (a 1a parte cheia e o grid no
+ *      corte, ou os dois planos juntos, congelando ate 0,5 s); nunca no
+ *      gancho inteiro nem em frase com texto de tela.
  *
  * Nao escreve nada. Rodar da raiz do projeto:
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-grid.ts
@@ -57,7 +61,9 @@ import {
   metadeDoCandidato,
   modoDoGrid,
   type EntradaDoGrid,
+  familiaDoCabelo,
   type QuemNoGrid,
+  type RostoDoPlano,
 } from '../shared/grid'
 import { janelaVisivel, medidasDoQuadro } from '../shared/recorte'
 import type { PapelDaSecao, Roteiro } from '../shared/roteiro'
@@ -130,6 +136,8 @@ interface FraseDoTeste {
   texto: string
   dur: number
   papel: PapelDaSecao
+  /** O texto de tela da frase no roteiro. */
+  tela?: string
 }
 
 function roteiroDe(frases: readonly FraseDoTeste[]): Pick<Roteiro, 'secoes' | 'versao'> {
@@ -146,7 +154,7 @@ function roteiroDe(frases: readonly FraseDoTeste[]): Pick<Roteiro, 'secoes' | 'v
       eventoIds: [],
       cueDoMomento: null,
       intencaoVisual: '',
-      textoDeTela: null,
+      textoDeTela: f.tela ?? null,
       citacaoCueId: null,
     })
   }
@@ -222,8 +230,16 @@ function cenario(mexer: (c: Cenario) => void = () => {}): Cenario {
   return c
 }
 
+/**
+ * A entrada do passo, com o que o servico mandaria num episodio bom: o detector
+ * ve um rosto legivel em todo plano e o indice reconhece uma pessoa diferente em
+ * cada um (o grid automatico falha fechado sem isso: secao I).
+ */
 function entrada(c: Cenario, extra: Partial<EntradaDoGrid> = {}): EntradaDoGrid {
-  return { roteiro: c.roteiro, take: c.take, indice: indiceDe(c.planos), escolhas: c.escolhas, modo: 'automatico', ...extra }
+  const rosto = [{ cx: 0.5, cy: 0.4, w: 0.3, h: 0.5 }]
+  const rostos = new Map(c.planos.map((p) => [p.id, [rosto, rosto, rosto]]))
+  const quem: QuemNoGrid = { citados: new Map(), noPlano: (id) => new Set([`p${id}`]) }
+  return { roteiro: c.roteiro, take: c.take, indice: indiceDe(c.planos), escolhas: c.escolhas, modo: 'automatico', rostos, quem, ...extra }
 }
 
 const comGrid = (escolhas: readonly EscolhaDaFrase[]): string[] => escolhas.filter((e) => temGrid(e)).map((e) => e.fraseId)
@@ -442,7 +458,8 @@ function noMeio(): void {
   confere(temGrid(e) && e.cenas.length === 2, 'a cena emendada: cheia no comeco, o grid depois', e.cenas.map((x) => [x.palavraInicio, x.candidato.planoIds, x.baixo?.planoIds]))
   confere(e.cenas[1]?.palavraInicio === 4, 'o grid entra em "a garota" (o 2o sujeito)', e.cenas[1]?.palavraInicio)
   confere(e.cenas[1]?.candidato.planoIds[0] === '0052' && e.cenas[1]?.baixo?.planoIds[0] === '0055', 'em cima o plano da cena que continua (0052), embaixo a parceira', e.cenas[1])
-  confere(e.cenas[0]?.candidato.planoIds.join('+') === '0051+0052' && !e.cenas[0]?.baixo, 'antes do grid a cena de antes, em tela cheia', e.cenas[0])
+  // (rodada 5) A cena emendada: antes do grid so o 1o plano dela (a emenda vira grid no corte).
+  confere(e.cenas[0]?.candidato.planoIds.join('+') === '0051' && !e.cenas[0]?.baixo, 'antes do grid o 1o plano da cena emendada, em tela cheia', e.cenas[0])
   // O encaixe da frase: a cena cheia encolhe para o pedaco dela; as metades cobrem o resto.
   const frase = c.roteiro.secoes.flatMap((s) => s.frases).find((f) => f.id === 'f05')!
   const enc = encaixarEscolha(e, { indice: indiceDe(c.planos), frase, take: c.take })
@@ -677,14 +694,20 @@ function janelaEDetector(): void {
 
 // ------------------------------------------------------------ I. o par bom (pessoas e rostos)
 
+/** Um instante com um rosto da altura dada (null = nenhum rosto). */
+const comAltura = (h: number | null, cx = 0.5): RostoDoPlano[] => (h === null ? [] : [{ cx, cy: 0.4, w: h * 0.6, h }])
+
 function parBom(): void {
-  secao('I. O par bom: pessoas diferentes, rosto visivel, o bonus')
+  secao('I. O par bom: pessoas diferentes, rosto visivel, o bonus (falha fechado)')
   // Quem cada plano mostra, pelo lado do plano na frase: 10i+1 a escolhida, 10i+2 a parceira, 10i+4 uma outra.
   const lado = (id: string): number => Number(id) % 10
   const quem = (noPlano: (id: string) => string[]): QuemNoGrid => ({ citados: new Map(), noPlano: (id) => new Set(noPlano(id)) })
   const soOLent = (lados: number[]): QuemNoGrid => quem((id) => (lados.includes(lado(id)) ? ['lent'] : []))
   const c = cenario()
   const quantos = (extra: Partial<EntradaDoGrid>, x: Cenario = c): string[] => comGrid(gridsAutomaticos(entrada(x, extra)).escolhas)
+  /** Um vetor de "rosto" por lado do plano: o mesmo lado, o mesmo vetor. */
+  const vetorDoLado = (l: number): number[] => Array.from({ length: 8 }, (_, i) => (i === l ? 1 : 0))
+  const vetoresPorLado = (de: (l: number) => number): Map<string, number[][]> => new Map(c.planos.map((p) => [p.id, [vetorDoLado(de(lado(p.id)))]]))
 
   // (a) Pessoa em comum nas duas metades: o automatico recusa.
   confere(quantos({ quem: soOLent([1, 2]) }).length === 0, '(a) o Lent nas duas metades (o MRM E02 f21): recusa', quantos({ quem: soOLent([1, 2]) }))
@@ -692,8 +715,21 @@ function parBom(): void {
   confere(quantos({ quem: comOGuy }).length === 0, '(a) o Lent em cima e o Lent com o Guy embaixo: pessoa em comum, recusa', quantos({ quem: comOGuy }))
   const outra = quem((id) => (lado(id) === 1 ? ['lent'] : lado(id) === 2 ? ['guy'] : []))
   confere(quantos({ quem: outra }).length === 3, '(a) pessoas diferentes (o Lent e o Guy): entra', quantos({ quem: outra }))
-  confere(quantos({ quem: quem(() => []) }).length === 3, '(a) ninguem reconhecido nos planos: nao veta (3 grids)', quantos({ quem: quem(() => []) }))
-  confere(quantos({ quem: soOLent([1]) }).length === 3, '(a) so a metade de cima reconhecida: nao veta', quantos({ quem: soOLent([1]) }))
+
+  // (a) SEM reconhecimento (o Nia E01): compara os rostos; sem como comparar, recusa.
+  const ninguem = quem(() => [])
+  confere(quantos({ quem: ninguem }).length === 0, '(a) ninguem reconhecido e nada para comparar os rostos: recusa (falha fechado)', quantos({ quem: ninguem }))
+  confere(quantos({ quem: soOLent([1]) }).length === 0, '(a) so a de cima reconhecida e a de baixo sem vetor: recusa', quantos({ quem: soOLent([1]) }))
+  const outrosRostos = vetoresPorLado((l) => l)
+  confere(quantos({ quem: ninguem, vetoresDosRostos: outrosRostos }).length === 3, '(a) sem reconhecimento, rostos diferentes (o CLIP do recorte): entra', quantos({ quem: ninguem, vetoresDosRostos: outrosRostos }))
+  const mesmosRostos = vetoresPorLado((l) => (l === 2 ? 1 : l))
+  confere(quantos({ quem: ninguem, vetoresDosRostos: mesmosRostos }).length === 0, '(a) sem reconhecimento, o mesmo rosto nas duas (a Nia na f11): recusa')
+  const cabeloDe = (de: (l: number) => string[]): Map<string, Set<string>> => new Map(c.planos.map((p) => [p.id, new Set(de(lado(p.id)))]))
+  const cinzaNasDuas = cabeloDe((l) => (l === 1 ? ['cinza', 'castanho'] : l === 2 ? ['loiro', 'cinza'] : []))
+  confere(quantos({ quem: ninguem, vetoresDosRostos: outrosRostos, cabelos: cinzaNasDuas }).length === 0, '(a) sem reconhecimento, a mesma cor de cabelo nas duas (a Nia cinza na f11): recusa')
+  const castanhoECinza = cabeloDe((l) => (l === 1 ? ['castanho'] : l === 2 ? ['cinza'] : []))
+  confere(quantos({ quem: ninguem, vetoresDosRostos: outrosRostos, cabelos: castanhoECinza }).length === 3, '(a) a criada castanha e a Nia cinza (o Nia E01 f07): entra')
+  confere(familiaDoCabelo('grey hair') === familiaDoCabelo('white hair') && familiaDoCabelo('brown hair') !== familiaDoCabelo('grey hair') && familiaDoCabelo('long hair') === null, '(a) a familia do cabelo: cinza = branco, castanho e outra, "long hair" nao e cor')
 
   // Com quem a frase cita e o rosto separado da fala (o servico manda os dois): a metade mostra
   // o citado que o plano tem, na ordem da frase (a montagem enquadra nele).
@@ -705,23 +741,27 @@ function parBom(): void {
   // O f21 de verdade: o 0243 tem a fadinha na ponta, mas a metade enquadra o Lent; embaixo, o Lent.
   const f21 = naFrase(['lent'], (id) => (lado(id) === 1 ? ['lent', 'empee'] : lado(id) === 2 ? ['lent'] : []))
   confere(quantos({ quem: f21 }).length === 0, '(a) a frase cita so o Lent e os dois planos tem o Lent: recusa', quantos({ quem: f21 }))
-  // O f07 de verdade: a frase cita o Lent e a fadinha; em cima os dois (enquadra o Lent), embaixo a fadinha.
+  // O f07 de verdade: a frase cita o Lent e a fadinha; em cima os dois (a fadinha na ponta, fora da janela), embaixo a fadinha.
   const f07 = naFrase(['lent', 'empee'], (id) => (lado(id) === 1 ? ['lent', 'empee'] : lado(id) === 2 ? ['empee'] : []))
-  confere(quantos({ quem: f07 }).length === 3, '(a) em cima o Lent (a fadinha fica fora da janela), embaixo a fadinha: entra', quantos({ quem: f07 }))
+  const naPonta = new Map(c.planos.map((p) => [p.id, [0, 1, 2].map(() => (lado(p.id) === 1 ? [{ cx: 0.38, cy: 0.4, w: 0.34, h: 0.6 }, { cx: 0.78, cy: 0.3, w: 0.06, h: 0.16 }] : comAltura(0.4)))]))
+  confere(quantos({ quem: f07, rostos: naPonta }).length === 3, '(a) o Lent enquadrado em cima (a fadinha na ponta, fora da janela de 9:8), a fadinha embaixo: entra', quantos({ quem: f07, rostos: naPonta }))
+  // O 0102: o Lent e a fadinha lado a lado, os dois na janela: a fadinha fica nas duas metades.
+  const ladoALado = new Map(c.planos.map((p) => [p.id, [0, 1, 2].map(() => (lado(p.id) === 1 ? [{ cx: 0.22, cy: 0.4, w: 0.26, h: 0.55 }, { cx: 0.58, cy: 0.3, w: 0.07, h: 0.14 }] : comAltura(0.4)))]))
+  confere(quantos({ quem: f07, rostos: ladoALado }).length === 0, '(a) o Lent e a fadinha lado a lado em cima (o 0102) e a fadinha embaixo: recusa')
   // O f12 de verdade: a frase cita o Guy; o Guy nas duas (embaixo o Lent caido, que so fala).
   const f12 = naFrase(['guy'], (id) => (lado(id) === 1 || lado(id) === 2 ? ['guy'] : []), (id) => (lado(id) === 2 ? ['lent'] : []))
   confere(quantos({ quem: f12 }).length === 0, '(a) o Guy nas duas metades (o MRM E02 f12): recusa', quantos({ quem: f12 }))
-  const soFala = naFrase(['lent'], () => [], (id) => (lado(id) === 1 || lado(id) === 2 ? ['lent'] : []))
-  confere(quantos({ quem: soFala }).length === 3, '(a) o Lent so pela fala nas duas (nenhum rosto reconhecido): nao veta pela pessoa', quantos({ quem: soFala }))
 
   // So o par da frase sai: o limite vai para outra frase.
   const semVeto = comGrid(gridsAutomaticos(entrada(c)).escolhas)
-  const naF08 = quem((id) => (id === '0081' || id === '0082' ? ['lent'] : []))
-  const comVeto = quantos({ quem: naF08 })
-  confere(semVeto.includes('f08') && !comVeto.includes('f08') && comVeto.length === 3, '(a) o Lent e o Lent so na f08: ela fica em tela cheia e o grid vai para outra frase', [semVeto, comVeto])
+  const alvo = semVeto[1] ?? 'f07'
+  const k = Number(alvo.slice(1))
+  const lentNaFrase = quem((id) => (id === id4(10 * k + 1) || id === id4(10 * k + 2) ? ['lent'] : [`p${id}`]))
+  const comVeto = quantos({ quem: lentNaFrase })
+  confere(semVeto.includes(alvo) && !comVeto.includes(alvo) && comVeto.length === 3, `(a) o Lent e o Lent so na ${alvo}: ela fica em tela cheia e o grid vai para outra frase`, [semVeto, comVeto])
   // A parceira seguinte, com outra pessoa, entra no lugar da que repete o Lent.
-  const comAOutra = cenario((x) => x.escolhas.forEach((e, k) => e.fita.push(cand(x.planos, [id4(10 * (k + 1) + 4)], 40.5))))
-  const lentELent = quem((id) => (lado(id) === 1 || lado(id) === 2 ? ['lent'] : lado(id) === 4 ? ['guy'] : []))
+  const comAOutra = cenario((x) => x.escolhas.forEach((e, k2) => e.fita.push(cand(x.planos, [id4(10 * (k2 + 1) + 4)], 40.5))))
+  const lentELent = quem((id) => (lado(id) === 1 || lado(id) === 2 ? ['lent'] : lado(id) === 4 ? ['guy'] : [`p${id}`]))
   const metadesDe = (escolhas: readonly EscolhaDaFrase[]): string[] =>
     escolhas
       .filter((e) => temGrid(e))
@@ -731,11 +771,11 @@ function parBom(): void {
   confere(trocadas.length === 3 && trocadas.every((m) => m === '1+4'), '(a) a parceira do mesmo Lent (41) sai e a do Guy (40,5) entra', trocadas)
 
   // (b) Cada metade com o seu sujeito legivel: rosto visivel, ou o personagem inteiro e claro.
-  const rostosDe = (porLado: (l: number) => (number | null)[] | undefined): Map<string, (number | null)[]> => {
-    const m = new Map<string, (number | null)[]>()
+  const rostosDe = (porLado: (l: number) => (number | null)[] | undefined): Map<string, RostoDoPlano[][]> => {
+    const m = new Map<string, RostoDoPlano[][]>()
     for (const p of c.planos) {
       const r = porLado(lado(p.id))
-      if (r) m.set(p.id, r)
+      if (r) m.set(p.id, r.map((h) => comAltura(h)))
     }
     return m
   }
@@ -746,8 +786,11 @@ function parBom(): void {
   confere(quantos({ rostos: rostosDe(() => semRosto) }).length === 0, '(b) as duas sem rosto (de costas, so a cabeca): recusa')
   confere(quantos({ rostos: rostosDe((l) => (l === 2 ? semRosto : rosto)) }).length === 0, '(b) uma metade sem rosto: recusa')
   confere(quantos({ rostos: rostosDe((l) => (l === 2 ? [0.06, 0.06, 0.06] : rosto)) }).length === 0, '(b) rosto pequeno demais para ler (a Nia na cama ao longe, 0,06): recusa')
+  confere(quantos({ rostos: rostosDe((l) => (l === 2 ? [0.15, 0.19, 0.13] : rosto)) }).length === 0, '(b) rosto pequeno num plano aberto (o mordomo de longe, 0,13-0,19): recusa')
   confere(quantos({ rostos: rostosDe((l) => (l === 2 ? [0.3, null, null] : rosto)) }).length === 0, '(b) rosto em 1 so dos 3 instantes, sem personagem reconhecido: recusa')
-  confere(quantos({ rostos: rostosDe((l) => (l === 2 ? undefined : rosto)) }).length === 3, '(b) o detector nao olhou um plano: nao se sabe, entra')
+  confere(quantos({ rostos: rostosDe((l) => (l === 2 ? undefined : rosto)) }).length === 0, '(b) o detector nao olhou um plano: nao se sabe, recusa (falha fechado)')
+  confere(quantos({ rostos: rostosDe((l) => (l === 2 ? [null, 0.3, 0.3] : rosto)) }).length === 0, '(b) a metade abre sem o rosto (o 0315: sobe do vestido ate a Nia): recusa')
+  confere(quantos({ rostos: undefined }).length === 0, '(b) sem o detector (motor fora): nenhum grid automatico')
   // O personagem inteiro e claro: a fadinha voando (o rosto pequeno em 1 instante), reconhecida e citada.
   const fadinha = rostosDe((l) => (l === 2 ? [null, 0.08, null] : rosto))
   confere(quantos({ rostos: fadinha, quem: f07 }).length === 3, '(b) a fadinha voando, reconhecida e citada (o MRM E02 f07): entra', quantos({ rostos: fadinha, quem: f07 }))
@@ -758,21 +801,18 @@ function parBom(): void {
 
   // (c) O bonus: rostos de pessoas diferentes, ou rosto + o outro citado em acao.
   const nota = (extra: Partial<EntradaDoGrid>, x: Cenario = c): number => gridsAutomaticos(entrada(x, extra)).candidatas.find((o) => o.fraseId === 'f05')?.nota ?? NaN
-  const semNada = nota({ quem: outra })
-  const comBonus = nota({ rostos: rostosDe(() => rosto), quem: outra })
-  confere(Math.abs(comBonus - semNada - 3) < 0.05, '(c) rostos visiveis de pessoas diferentes: +3 na nota', [comBonus, semNada])
-  const doisPersonagens = naFrase(['lent', 'guy'], (id) => (lado(id) === 1 ? ['lent'] : lado(id) === 2 ? ['guy'] : []))
-  const semRostoVisivel = nota({ rostos: rostosDe(() => [null, 0.08, null]), quem: doisPersonagens })
-  confere(Math.abs(semRostoVisivel - nota({ quem: doisPersonagens })) < 0.05, '(c) dois personagens sem rosto visivel: sem bonus', [semRostoVisivel, nota({ quem: doisPersonagens })])
-  const reacao = nota({ rostos: rostosDe((l) => (l === 1 ? rosto : [null, 0.08, null])), quem: doisPersonagens })
-  confere(Math.abs(reacao - nota({ quem: doisPersonagens }) - 3) < 0.05, '(c) o rosto do Lent (reacao) + o Guy citado em acao: +3', [reacao, nota({ quem: doisPersonagens })])
-  // O bonus escolhe a parceira: o Lent de longe (sem rosto legivel) em cima; embaixo o Guy com
-  // rosto (40,5) ganha do Guy de longe (41): rosto + o Lent citado em acao.
-  const acao = naFrase(['lent', 'guy'], (id) => (lado(id) === 1 ? ['lent'] : lado(id) === 2 || lado(id) === 4 ? ['guy'] : []))
+  const doisPersonagens = naFrase(['lent', 'guy'], (id) => (lado(id) === 1 ? ['lent'] : lado(id) === 2 ? ['guy'] : [`p${id}`]))
   const longe = [null, 0.08, null]
-  const escolhida = metadesDe(gridsAutomaticos(entrada(comAOutra, { quem: acao, rostos: rostosDe((l) => (l === 4 ? rosto : l === 1 || l === 2 ? longe : undefined)) })).escolhas)
+  const semRostoVisivel = nota({ rostos: rostosDe(() => longe), quem: doisPersonagens })
+  const comRostosDiferentes = nota({ rostos: rostosDe(() => rosto), quem: doisPersonagens })
+  confere(Math.abs(comRostosDiferentes - semRostoVisivel - 3) < 0.05, '(c) rostos visiveis de pessoas diferentes: +3 na nota (contra dois personagens sem rosto visivel)', [comRostosDiferentes, semRostoVisivel])
+  const reacao = nota({ rostos: rostosDe((l) => (l === 1 ? rosto : longe)), quem: doisPersonagens })
+  confere(Math.abs(reacao - semRostoVisivel - 3) < 0.05, '(c) o rosto do Lent (reacao) + o Guy citado em acao: +3', [reacao, semRostoVisivel])
+  // O bonus escolhe a parceira: o Lent de longe em cima; embaixo o Guy com rosto (40,5) ganha do Guy de longe (41).
+  const acao = naFrase(['lent', 'guy'], (id) => (lado(id) === 1 ? ['lent'] : lado(id) === 2 || lado(id) === 4 ? ['guy'] : [`p${id}`]))
+  const escolhida = metadesDe(gridsAutomaticos(entrada(comAOutra, { quem: acao, rostos: rostosDe((l) => (l === 4 ? rosto : l === 1 || l === 2 ? longe : rosto)) })).escolhas)
   confere(escolhida.length === 3 && escolhida.every((m) => m === '1+4'), '(c) a parceira com rosto (40,5) ganha da de 41 sem rosto visivel, pelo bonus', escolhida)
-  const semOBonus = metadesDe(gridsAutomaticos(entrada(comAOutra, { quem: acao, rostos: rostosDe((l) => (l === 1 || l === 2 || l === 4 ? longe : undefined)) })).escolhas)
+  const semOBonus = metadesDe(gridsAutomaticos(entrada(comAOutra, { quem: acao, rostos: rostosDe((l) => (l === 1 || l === 2 || l === 4 ? longe : rosto)) })).escolhas)
   confere(semOBonus.every((m) => m === '1+2'), '(c) sem rosto em nenhuma, a de nota maior (41) continua', semOBonus)
 
   // A frase dividida pelo casar (os dois pedacos num grid so) e o grid no meio da cena: as mesmas regras.
@@ -781,17 +821,18 @@ function parBom(): void {
     const a = cand(x.planos, [id4(51)], 40)
     const b = cand(x.planos, [id4(55)], 38)
     x.escolhas[4] = { ...x.escolhas[4]!, hashTexto: hashDoTexto(x.frases[4]!.texto), cenas: [{ candidato: a, palavraInicio: 0 }, { candidato: b, palavraInicio: 5 }], fita: [a, b] }
-    x.escolhas.forEach((e, k) => {
-      if (k !== 4) e.fita = e.fita.slice(0, 1)
+    x.escolhas.forEach((e, k2) => {
+      if (k2 !== 4) e.fita = e.fita.slice(0, 1)
     })
   })
   const f05 = (x: Cenario, extra: Partial<EntradaDoGrid>): EscolhaDaFrase => gridsAutomaticos(entrada(x, extra)).escolhas.find((e) => e.fraseId === 'f05')!
-  const nia = quem((id) => (id === '0051' || id === '0055' ? ['nia'] : []))
+  const nia = quem((id) => (id === '0051' || id === '0055' ? ['nia'] : [`p${id}`]))
   const ed = f05(dividida, { quem: nia })
   confere(!temGrid(ed) && ed.cenas.length === 2, 'frase dividida com a Nia nos dois pedacos: as duas cenas ficam em sequencia', ed.cenas.map((x) => [x.candidato.planoIds, x.baixo?.planoIds]))
-  const artesaoENia = quem((id) => (id === '0051' ? ['artesao'] : id === '0055' ? ['nia'] : []))
+  const artesaoENia = quem((id) => (id === '0051' ? ['artesao'] : id === '0055' ? ['nia'] : [`p${id}`]))
   confere(temGrid(f05(dividida, { quem: artesaoENia })), 'frase dividida com o artesao e a Nia: vira o grid')
-  const semRostoEmbaixo = new Map<string, (number | null)[]>([['0051', rosto], ['0055', semRosto]])
+  const rostoBom = rosto.map((h) => comAltura(h))
+  const semRostoEmbaixo = new Map<string, RostoDoPlano[][]>([['0051', rostoBom], ['0055', [[], [], []]]])
   confere(!temGrid(f05(dividida, { quem: artesaoENia, rostos: semRostoEmbaixo })), 'frase dividida com um pedaco sem rosto: sem grid')
   const divididaNaMao = ligarGrid(entrada(dividida, { quem: nia }), 'f05')
   confere('escolha' in divididaNaMao && temGrid(divididaNaMao.escolha), 'na mao, a frase dividida com a mesma pessoa vira grid', divididaNaMao)
@@ -804,17 +845,97 @@ function parBom(): void {
     const span = cand(x.planos, ['0051', '0052'], 44.4)
     const outraCena = cand(x.planos, ['0055'], 40.9)
     x.escolhas[4] = { ...x.escolhas[4]!, hashTexto: hashDoTexto(x.frases[4]!.texto), cenas: [{ candidato: span, palavraInicio: 0 }], fita: [span, outraCena] }
+    x.escolhas.forEach((e, k2) => {
+      if (k2 !== 4) e.fita = e.fita.slice(0, 1)
+    })
+  })
+  const garotaEGarota = quem((id) => (id === '0052' || id === '0055' ? ['nia'] : id === '0051' ? ['criada'] : [`p${id}`]))
+  confere(!temGrid(f05(emendada, { quem: garotaEGarota })), 'no meio da cena com a garota nas duas metades: sem grid')
+  const criadaEGarota = quem((id) => (id === '0052' ? ['nia'] : id === '0055' ? ['criada'] : [`p${id}`]))
+  const em2 = f05(emendada, { quem: criadaEGarota })
+  confere(temGrid(em2) && em2.cenas[1]?.palavraInicio === 4, 'no meio da cena com a garota e a criada: o grid entra em "a garota"', em2.cenas.map((x) => [x.palavraInicio, x.candidato.planoIds, x.baixo?.planoIds]))
+  const semRostoNoMeio = new Map<string, RostoDoPlano[][]>([...c.planos.map((p) => [p.id, rostoBom] as [string, RostoDoPlano[][]]), ['0055', [[], [], []]]])
+  confere(!temGrid(f05(emendada, { quem: criadaEGarota, rostos: semRostoNoMeio })), 'no meio da cena com a metade de baixo sem rosto: sem grid')
+}
+
+// ------------------------------------------------------------ J. a emenda, o gancho e o texto de tela
+
+function emendaEGancho(): void {
+  secao('J. A emenda vira grid; nunca no gancho nem com texto de tela')
+  // O gancho inteiro (f01-f03) e a frase com texto de tela ficam de fora.
+  const c = cenario()
+  const postos = comGrid(gridsAutomaticos(entrada(c)).escolhas)
+  confere(!postos.some((id) => ['f01', 'f02', 'f03'].includes(id)), 'nunca no gancho inteiro (f01-f03, nao so a 1a frase)', postos)
+  const comTela = cenario((x) => (x.frases[3] = { ...x.frases[3]!, tela: 'MAGIA PROIBIDA' }))
+  const postosTela = comGrid(gridsAutomaticos(entrada(comTela)).escolhas)
+  confere(postos.includes('f04') && !postosTela.includes('f04') && postosTela.length === 3, 'frase com texto de tela (a f04): sem grid, ele vai para outra', [postos, postosTela])
+  confere('escolha' in ligarGrid(entrada(comTela), 'f04'), 'na mao, a frase com texto de tela ainda ganha grid')
+
+  // O Nia E01 f07 da rodada 4: a criada (0111, 1,5 s) emendada com a criada sorrindo (0112) e a
+  // Nia (0110) na fita. A emenda das duas criadas nao vira grid (a mesma pessoa); a 1a criada
+  // fica cheia e o grid entra em "a garota": a criada sorrindo e a Nia.
+  const nia = cenario((x) => {
+    x.frases[4] = { ...x.frases[4]!, texto: 'A criada percebe como a garota voltou cheia de energia.', dur: 3.3 }
+    x.planos[51]!.end = x.planos[51]!.start + 1.5
+    x.planos[52]!.start = x.planos[51]!.end
+    x.planos[52]!.end = x.planos[52]!.start + 2.75
+    const emenda = cand(x.planos, ['0051', '0052'], 44.8)
+    emenda.outSec = x.planos[51]!.start + 3.3
+    const aNia = cand(x.planos, ['0055'], 36.1)
+    x.escolhas[4] = { ...x.escolhas[4]!, hashTexto: hashDoTexto(x.frases[4]!.texto), cenas: [{ candidato: emenda, palavraInicio: 0 }], fita: [emenda, aNia] }
     x.escolhas.forEach((e, k) => {
       if (k !== 4) e.fita = e.fita.slice(0, 1)
     })
   })
-  const garotaEGarota = quem((id) => (id === '0052' || id === '0055' ? ['nia'] : id === '0051' ? ['criada'] : []))
-  confere(!temGrid(f05(emendada, { quem: garotaEGarota })), 'no meio da cena com a garota nas duas metades: sem grid')
-  const criadaEGarota = quem((id) => (id === '0052' ? ['nia'] : id === '0055' ? ['criada'] : []))
-  const em2 = f05(emendada, { quem: criadaEGarota })
-  confere(temGrid(em2) && em2.cenas[1]?.palavraInicio === 4, 'no meio da cena com a garota e a criada: o grid entra em "a garota"', em2.cenas.map((x) => [x.palavraInicio, x.candidato.planoIds, x.baixo?.planoIds]))
-  const semRostoNoMeio = new Map<string, (number | null)[]>([['0052', rosto], ['0055', semRosto]])
-  confere(!temGrid(f05(emendada, { quem: criadaEGarota, rostos: semRostoNoMeio })), 'no meio da cena com a metade de baixo sem rosto: sem grid')
+  const criadas = { quem: { citados: new Map(), noPlano: (id: string) => new Set(id === '0051' || id === '0052' ? ['criada'] : id === '0055' ? ['nia'] : [`p${id}`]) } as QuemNoGrid }
+  const r = gridsAutomaticos(entrada(nia, criadas))
+  const e = r.escolhas.find((x) => x.fraseId === 'f05')!
+  confere(temGrid(e) && e.cenas.length === 2, 'emenda das duas criadas: a 1a cheia, depois o grid', e.cenas.map((x) => [x.palavraInicio, x.candidato.planoIds, x.baixo?.planoIds]))
+  confere(e.cenas[0]?.candidato.planoIds.join() === '0051' && !e.cenas[0]?.baixo, 'antes do grid so o 1o plano da emenda, em tela cheia', e.cenas[0])
+  confere(e.cenas[1]?.palavraInicio === 4, 'o grid entra em "a garota" (a entrada natural perto do corte)', e.cenas[1]?.palavraInicio)
+  const metades = [e.cenas[1]?.candidato.planoIds[0], e.cenas[1]?.baixo?.planoIds[0]].sort()
+  confere(metades.join() === '0052,0055', 'as metades: a criada sorrindo (o 2o plano da emenda) e a Nia da fita', metades)
+  confere(r.candidatas.find((x) => x.fraseId === 'f05')?.como === 'emenda', 'a opcao e a da emenda', r.candidatas)
+  // A criada sorrindo abre com borrao (a entrada 1 s depois do comeco): dali ela nao cobre o bloco, e
+  // congelar faria o encaixe recuar para dentro do borrao: sem grid. A metade nunca comeca antes.
+  const borrao = new Map([['0052', nia.planos[52]!.start + 1]])
+  confere(!temGrid(gridsAutomaticos(entrada(nia, { ...criadas, entradas: borrao })).escolhas.find((x) => x.fraseId === 'f05')!), 'a criada sorrindo abre com borrao e dali nao cobre o bloco: sem grid')
+  const mapa = new Map(nia.planos.map((p) => [p.id, p]))
+  const m = metadeDoCandidato(cand(nia.planos, ['0010'], 40), 3, mapa, 60, new Map([['0010', 61]]))
+  confere(!!m && m.inSec >= 61 - 1e-9, 'a metade de um plano que abre com borrao comeca depois da entrada', m?.inSec)
+  // Nota longe (44,8 x 36,1): no grid de cena unica (um plano que cobre a frase) nao entra.
+  const unica = { ...nia, escolhas: nia.escolhas.map((x) => (x.fraseId === 'f05' ? { ...x, cenas: [{ candidato: cand(nia.planos, ['0053'], 44.8), palavraInicio: 0 }], fita: [cand(nia.planos, ['0053'], 44.8), cand(nia.planos, ['0055'], 36.1)] } : x)) }
+  confere(!temGrid(gridsAutomaticos(entrada(unica, criadas)).escolhas.find((x) => x.fraseId === 'f05')!), 'a mesma nota (44,8 x 36,1) numa cena unica: longe demais, sem grid')
+
+  // A emenda de duas pessoas diferentes: os dois planos ao mesmo tempo, na cena inteira (3 s). O
+  // 1o plano toca 1,2 s na emenda e recua no proprio plano para cobrir; o 2o congela ate 0,5 s.
+  const duasCom = (durA: number, durB: number): Cenario =>
+    cenario((x) => {
+      x.frases[4] = { ...x.frases[4]!, texto: 'O Lent olha o papel enquanto a fadinha voa.', dur: 3 }
+      const a = x.planos[51]!
+      const b = x.planos[52]!
+      a.end = a.start + durA
+      b.start = a.end
+      b.end = b.start + durB
+      const emenda = cand(x.planos, ['0051', '0052'], 50)
+      emenda.inSec = a.end - 1.2
+      emenda.outSec = emenda.inSec + 3
+      x.escolhas[4] = { ...x.escolhas[4]!, hashTexto: hashDoTexto(x.frases[4]!.texto), cenas: [{ candidato: emenda, palavraInicio: 0 }], fita: [emenda] }
+      x.escolhas.forEach((e5, k) => {
+        if (k !== 4) e5.fita = e5.fita.slice(0, 1)
+      })
+    })
+  const lentEFadinha = { quem: { citados: new Map(), noPlano: (id: string) => new Set(id === '0051' ? ['lent'] : id === '0052' ? ['empee'] : [`p${id}`]) } as QuemNoGrid }
+  const doisJuntos = (x: Cenario, extra: Partial<EntradaDoGrid> = lentEFadinha): boolean => {
+    const e5 = gridsAutomaticos(entrada(x, extra)).escolhas.find((y) => y.fraseId === 'f05')!
+    return e5.cenas.length === 1 && [e5.cenas[0]?.candidato.planoIds[0], e5.cenas[0]?.baixo?.planoIds[0]].sort().join() === '0051,0052'
+  }
+  confere(doisJuntos(duasCom(3, 3)), 'emenda do Lent com a fadinha: um grid so, os dois planos da emenda ao mesmo tempo')
+  confere(doisJuntos(duasCom(3, 2.6)), 'o 2o plano com 2,6 s num bloco de 3 s (falta 0,4 s): congela no fim e entra')
+  confere(!doisJuntos(duasCom(3, 2.3)), 'o 2o plano com 2,3 s (falta 0,7 s): desiste')
+  confere(doisJuntos(duasCom(2.7, 3)), 'o 1o plano com 2,7 s: recua no proprio plano e congela 0,3 s')
+  const mesmaPessoa = { quem: { citados: new Map(), noPlano: (id: string) => new Set(id === '0051' || id === '0052' ? ['lent'] : [`p${id}`]) } as QuemNoGrid }
+  confere(!doisJuntos(duasCom(3, 3), mesmaPessoa), 'emenda do Lent com o Lent: nao vira grid')
 }
 
 pecas()
@@ -826,6 +947,7 @@ naMaoEContrato()
 montagem()
 janelaEDetector()
 parBom()
+emendaEGancho()
 
 console.log(falhas === 0 ? '\nv-grid: tudo ok' : `\nv-grid: ${falhas} falha(s)`)
 process.exit(falhas === 0 ? 0 : 1)
