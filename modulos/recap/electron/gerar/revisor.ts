@@ -98,6 +98,7 @@ REGRAS (não negociáveis):
 - MESMO TAMANHO: o tempo do short é fixo. Cada frase reescrita fica com no máximo 2 palavras a mais que a original, e o roteiro inteiro não cresce (se uma frase ganhar palavras, outra perde).
 - CONECTIVO NÃO VIRA MULETA: o mesmo conectivo abrindo frase ("só que", "mas", "e aí", "até que", "então", "aí") aparece no máximo ${CONECTIVO_MAX} vezes no roteiro INTEIRO, contando as frases que você não reescreve. Se ele já está ${CONECTIVO_MAX} vezes, use outra virada ou nenhuma.
 - Nomes exatamente como no ELENCO; "ele"/"ela" só retomam o sujeito da frase anterior.
+- SEGURANÇA DA PLATAFORMA: nunca violência contra criança ("criança", "garotinha" com bater, espancar, socar...) nem pedido de morte ou suicídio ("implorando pra ser morto"). Frase assim no roteiro entra na lista, reescrita sem isso e sem mudar o fato.
 - Nada de markdown, emoji, hashtag nem rótulo de seção.
 - Frase que já está boa NÃO entra na lista. No máximo 12 frases: as que mais mudam o roteiro.
 

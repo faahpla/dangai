@@ -324,6 +324,12 @@ const REGRA_ZERO = `REGRA ZERO — FIDELIDADE FACTUAL (CRÍTICO, não negociáve
 - Pode dramatizar o TOM ("e o pior", "caraca"), NUNCA os FATOS. Na dúvida, omita o detalhe.
 - Não diga o que só a imagem mostraria (cor, roupa, cenário) se os acontecimentos não dizem.`
 
+const SEGURANCA_DA_PLATAFORMA = `SEGURANÇA DA PLATAFORMA (o YouTube e o TikTok derrubam ou desmonetizam o short por isso, mesmo sendo anime):
+- NUNCA descreva violência contra criança: nada de "criança", "bebê", "menor", "garotinha" ou "menininha" junto de bater, espancar, socar, chutar, machucar, matar, torturar ou abusar. Luta com personagem criança se conta pelo nome e pela luta em si, sem a criança como alvo da agressão. Ex.: "Ele achava que ia espancar uma criança indefesa" → "Ele achava que a luta ia ser fácil".
+- NUNCA pedido de morte, suicídio ou automutilação ("implorando pra ser morto", "queria se matar"): diga o resultado sem isso ("ele ficou no chão, derrotado").
+- Nada de gore explícito (sangue jorrando, partes do corpo), nada sexual com personagem menor de idade, nada de droga como coisa boa.
+- Isso vale mesmo quando o episódio mostra: reescreva o jeito de dizer, sem mudar o que aconteceu.`
+
 const NOMES_E_PRONOMES = `NOMES E PRONOMES:
 - Escreva os nomes exatamente como no ELENCO (é a grafia da legenda). Sem honoríficos japoneses (-kun, -chan, -san, -sama, -senpai, -sensei), a menos que seja o próprio apelido fixo do personagem.
 - Cada item é UMA frase, e o espectador ouve uma de cada vez: "ele", "ela", "o cara", "a garota" só retomam o SUJEITO da frase ANTERIOR. Se a frase anterior cita dois personagens, ou se o sujeito muda, repita o nome. Ambiguidade é pior que repetição.
@@ -361,6 +367,7 @@ function regrasFixas(comTitulos: boolean): string {
   return [
     'REGRAS FIXAS — valem com qualquer estilo. Só cuidam do que não pode quebrar (fidelidade, nomes e formato); nada aqui é sobre tom.',
     REGRA_ZERO,
+    SEGURANCA_DA_PLATAFORMA,
     NOMES_E_PRONOMES,
     FORMATO_DA_FRASE,
     ...(comTitulos ? [TITULO_E_THUMB] : []),

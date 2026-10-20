@@ -628,6 +628,23 @@ const PALAVRAS_DE_LIGACAO = new Set([
 ])
 
 /** Minusculas, sem acento: a forma de comparar texto em portugues e ingles. */
+/**
+ * (20/10) A frase que o YouTube/TikTok derrubam ou desmonetizam, mesmo em
+ * anime: violencia contra crianca e pedido de morte ou suicidio (o Nia E03
+ * saiu com "Ele achava que ia espancar uma crianca indefesa" e "implorando pra
+ * ser morto", e o Levi nao pode postar). So avisa: quem reescreve e ele, o
+ * prompt (SEGURANCA_DA_PLATAFORMA) ou o Melhorar texto. null = nada a ver.
+ */
+export function riscoDePlataforma(texto: string): string | null {
+  const t = semAcentos(texto)
+  const crianca = /\b(crianc\w*|bebe(s|zinh\w*)?|menor(es)? de idade|garotinh\w*|menininh\w*|filhinh\w*)\b/
+  const agressao = /\b(espanc\w*|bat(e|er|eu|endo|ia|eram)|soc(o|os|ar|ou|ando|ava)|soqu\w*|chut\w*|machuc\w*|mat(a|ar|ou|ando|aria|ava)|tortur\w*|abus\w*|agred\w*|surr(a|ar|ou)|arrebent\w*)\b/
+  if (crianca.test(t) && agressao.test(t)) return 'violencia com crianca'
+  if (/\b(implor\w*|ped(e|ia|iu|indo))\b[^.!?]{0,30}\b(ser mort\w*|morrer|que o mat\w*|pra morte)\b/.test(t)) return 'pedido de morte'
+  if (/\b(se mat(a|ar|ou|ando)|suicid\w*|se cort(a|ar|ou)|automutil\w*)\b/.test(t)) return 'suicidio ou automutilacao'
+  return null
+}
+
 export function semAcentos(texto: string): string {
   return texto.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 }
@@ -1228,6 +1245,7 @@ export type CodigoDoProblema =
   | 'tela-fora-do-evento'
   | 'tela-impossivel'
   | 'lista-de-fatos'
+  | 'risco-plataforma'
 
 /**
  * Um problema do roteiro. `erro` bloqueia "Aprovar roteiro"; `aviso` so
@@ -1531,6 +1549,8 @@ export function validarRoteiro(
       const citados = frase.eventoIds.map((id) => eventos.find((e) => e.id === id)).filter((e): e is Evento => !!e)
 
       if (dividirEmFrases(frase.texto).length > 1) aviso('duas-frases', 'Duas frases: o ponto vira duas cenas')
+      const risco = riscoDePlataforma(frase.textoDeTela ? `${frase.texto} ${frase.textoDeTela}` : frase.texto)
+      if (risco) aviso('risco-plataforma', `Pode derrubar o video: ${risco}`)
       if (/^\s*(\.\.\.|…)/.test(frase.texto)) aviso('frase-partida', 'Comeca com reticencias')
       // Tom: com o estilo dele, o pedido de comentario e o "Mano" abrindo sao do jeito dele.
       if (tomDoApp && CTA.test(texto)) aviso('cta', 'Pedido de like ou comentario')
