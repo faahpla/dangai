@@ -122,7 +122,15 @@ export function notaDaFalha(provedor: ProvedorDeVoz, falha: Falha, chave: string
     return `A chave vale, mas nao tem permissao para isso. Libere a leitura (User e Voices) na chave, no site do ${nome}.`
   }
   if (falha.status === 401 || falha.status === 403) {
-    return `Chave invalida: o ${nome} recusou. Confira se colou a chave inteira, sem espaco.`
+    // (21/10) O amigo do Levi seguiu recebendo "Chave invalida" sem saber por que: diz o
+    // formato esperado e o motivo que o site deu (o codigo, nunca a chave).
+    if (provedor === 'elevenlabs' && !chave.trim().startsWith('sk_')) {
+      return 'Isso nao parece a chave do ElevenLabs: ela comeca com sk_. Em Developers > API Keys, crie uma chave e copie o valor inteiro na hora (ele so aparece uma vez).'
+    }
+    const motivo = falha.codigo && falha.codigo !== 'http' ? ` (${falha.codigo})` : ''
+    return provedor === 'elevenlabs'
+      ? `Chave invalida: o ElevenLabs recusou${motivo}. A chave pode ter sido apagada ou trocada no site, ou faltou um pedaco: crie uma nova em Developers > API Keys e cole inteira.`
+      : `Chave invalida: o ${nome} recusou${motivo}. Confira se colou a chave inteira, sem espaco.`
   }
   // (21/10) O amigo do Levi colou o ID da chave (a lista do site mostra o ID, ex. "...cc77"), nao a chave:
   // a chave de verdade comeca com sk_ e so aparece na hora de criar (ou girar) a chave.
