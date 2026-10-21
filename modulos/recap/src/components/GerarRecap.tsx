@@ -28,6 +28,8 @@ import { RodapeDaVoz } from './RodapeDaVoz'
 import { RodapeDasCenas } from './RodapeDasCenas'
 import { RodapeDoRoteiro } from './RodapeDoRoteiro'
 import { Botao, COR_DE_AVISO } from './pecas'
+import { AvisoDeReconhecer } from './AvisoDeReconhecer'
+import { seguirDoEpisodio } from '../store/aviso-reconhecer'
 
 /**
  * O ASSISTENTE "GERAR RECAP": do episodio ao projeto, em quatro paradas
@@ -311,6 +313,8 @@ function Assistente() {
 
       {/* Reconhecer na mao: a tela de grupos por cima de tudo do assistente (z-36). */}
       <ReconhecerNaMao />
+      {/* (21/10) Sem personagens reconhecidos: a pergunta antes de seguir do passo 1. */}
+      <AvisoDeReconhecer />
     </div>
   )
 }
@@ -411,7 +415,13 @@ function Passos() {
         return (
           <li key={p.n} aria-current={atual ? 'step' : undefined}>
             {clicavel ? (
-              <button type="button" onClick={() => irParaPasso(p.n)} title={dica} className={classe}>
+              <button
+                type="button"
+                // Do passo 1 para frente: o mesmo aviso do "Proximo: Roteiro" (sem personagens reconhecidos).
+                onClick={() => (passo === 1 && p.n > 1 ? seguirDoEpisodio(p.n) : irParaPasso(p.n))}
+                title={dica}
+                className={classe}
+              >
                 {conteudo}
               </button>
             ) : (
@@ -544,7 +554,9 @@ function Rodape() {
       {fase === 'pronto' && (
         <Botao
           principal
-          onClick={() => irParaPasso(2)}
+          foco="proximo-roteiro"
+          // (21/10) Sem personagens reconhecidos, pergunta antes (AvisoDeReconhecer).
+          onClick={() => seguirDoEpisodio(2)}
           disabled={!pode2}
           title={pode2 ? 'Ir ao roteiro (passo 2)' : 'Salve ou desfaca as marcacoes de OP/ED antes'}
         >

@@ -9,6 +9,8 @@ import { avisosDasFrases, cenasNaTela, resumoDasCenas, useCenas, useIndiceDasCen
 import { nucleo } from '../nucleo'
 import { Botao, COR_DE_AVISO, focarBotao, Link } from './pecas'
 import { CaixinhaDaEdicaoRapida } from './CaixinhaDaEdicaoRapida'
+import { SeloSemPersonagens } from './AvisoDeReconhecer'
+import { esquecerSemPersonagens } from '../store/aviso-reconhecer'
 
 /**
  * A BARRA DE BAIXO do passo 4: voltar a voz, o recado do momento, "Sugerir de
@@ -143,8 +145,18 @@ export function RodapeDasCenas() {
         ) : null}
       </div>
 
+      {/* (21/10) Seguiu sem reconhecer: o selo com o [Reconhecer]; reconhecido depois, o lembrete do Sugerir de novo. */}
+      {pronto && !confirmando && <SeloSemPersonagens />}
       {pronto && !confirmando && (
-        <Botao onClick={() => void sugerirDeNovo(null)} disabled={ocupado} title="Sugere de novo as frases que voce nao mexeu">
+        <Botao
+          onClick={() => {
+            // (21/10) Reconhecido depois das cenas: o lembrete do selo sai.
+            if (indice) esquecerSemPersonagens(indice.id)
+            void sugerirDeNovo(null)
+          }}
+          disabled={ocupado}
+          title="Sugere de novo as frases que voce nao mexeu"
+        >
           <RotateCcw size={13} strokeWidth={1.5} />
           Sugerir de novo
         </Botao>

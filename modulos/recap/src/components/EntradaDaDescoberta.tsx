@@ -54,7 +54,7 @@ const DICA: Record<MotivoDaDescoberta, string> = {
 }
 
 /** A oferta para o episodio da tela, ou null (nao pode, ou ja esta rodando). */
-function useOferta(): { motivo: MotivoDaDescoberta; desligado: string | null } | null {
+export function useOferta(): { motivo: MotivoDaDescoberta; desligado: string | null } | null {
   const indice = useGerar((s) => s.indice)
   const corte = useGerar((s) => s.corte)
   const motor = useGerar((s) => s.motor)

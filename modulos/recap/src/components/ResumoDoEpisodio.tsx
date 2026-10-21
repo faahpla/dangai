@@ -12,7 +12,8 @@ import {
 import { nomeNatural } from '@shared/nomes'
 import { apelidosDoElenco, falantesUnidos } from '../../shared/apelidos'
 import { nomesDeUmaArte, ORIGEM_DO_BATISMO, podeReconhecerNaMao } from '../../shared/descoberta'
-import { devolverAoAncutNoFim, TRECHO_MINIMO, useGerar } from '../store/gerar'
+import { TRECHO_MINIMO, useGerar } from '../store/gerar'
+import { reconhecerAgora } from '../store/aviso-reconhecer'
 import { useAncut } from '../store/ancut'
 import { useDescoberta } from '../store/gerar-descoberta'
 import { SecaoDoCorte } from './AndamentoDoCorte'
@@ -262,7 +263,6 @@ export function ResumoDoEpisodio() {
  * mudancas, ele desliga.
  */
 function ReconhecerAgora() {
-  const analisar = useGerar((s) => s.analisar)
   const mudaram = useGerar((s) => s.exclusoesMudaram)
   const motor = useGerar((s) => s.motor)
   const anime = useGerar((s) => s.palpite?.anime ?? '')
@@ -273,17 +273,8 @@ function ReconhecerAgora() {
   const trazendo = useAncut((s) => (indiceId ? s.porEpisodio[indiceId]?.fase === 'trazendo' : false))
   const reconhecer = async (): Promise<void> => {
     if (mudaram || !pronto || semAnime || trazendo) return
-    // Mora no AnCut (movido pelo recap): volta antes -- o motor do recap so
-    // grava na biblioteca dele, e la reaproveita o corte. No fim, volta para la.
-    const atual = useGerar.getState().indice
-    if (atual?.biblioteca.origem === 'ancut' && atual.biblioteca.movidoDoRecap) {
-      const deVolta = await useAncut.getState().trazer(atual.id)
-      if (!deVolta) return
-      // O indice de volta ja na tela: a analise manda a pasta do anime dele (o corte e reaproveitado).
-      if (useGerar.getState().indice?.id === deVolta.id) useGerar.setState({ indice: deVolta })
-      devolverAoAncutNoFim(atual.id)
-    }
-    void analisar('studio', true)
+    // (21/10) O mesmo do aviso antes de seguir (store/aviso-reconhecer.ts): traz do AnCut se preciso.
+    await reconhecerAgora()
   }
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
