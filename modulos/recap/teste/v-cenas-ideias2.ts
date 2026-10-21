@@ -17,7 +17,7 @@
  * Nao escreve nada. Rodar da raiz do projeto:
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-cenas-ideias2.ts
  */
-import { casarFrases, porqueCurto, sujeitoHerdado, type FraseDoCasar, type ResultadoDoCasar } from '../electron/cenas/casar'
+import { casarFrases, porqueCurto, quemOMomentoCita, type FraseDoCasar, type ResultadoDoCasar } from '../electron/cenas/casar'
 import { aplicarVeredito, custoDoJuiz, julgar, pedidosDoJuiz, type GerarJsonComImagens } from '../electron/cenas/juiz'
 import type { EscolhaDaFrase } from '../shared/cenas'
 import type { Cue, EpisodeIndex, Plano } from '../shared/episodio'
@@ -170,8 +170,13 @@ function sincrono(): void {
     const her = casar([frase('f01', 'A Nia acorda cedo.', ['e01'], 'c0004'), frase('f02', 'Ela corre ate o patio.', ['e01'], 'c0001')])
     const f02 = her.casadas.find((c) => c.escolha.fraseId === 'f02')!.fita[0]!
     confere(f02.termos.some((t) => t.chave === 'pessoa' && t.rotulo === 'Nia'), 'o "ela" herda a Nia da frase anterior', f02.termos.map((t) => t.chave))
-    confere(sujeitoHerdado('O dia nasce.', [{ ficha: 'nia', rotulo: 'Nia' }]).length === 0, 'sem pronome nao herda')
-    confere(sujeitoHerdado('Elas lutam.', [{ ficha: 'nia', rotulo: 'Nia' }, { ficha: 'lynokis', rotulo: 'Lynokis' }]).length === 2, '"elas" herda as duas')
+    // (E03) A regra do casar e a do recorte: quemOMomentoCita (v-regras-e03).
+    const semNomes = { nomesDaFicha: new Map<string, Set<string>>(), proprios: new Set<string>() }
+    confere(quemOMomentoCita('O dia nasce.', [{ ficha: 'nia', rotulo: 'Nia' }], null, semNomes).citados.length === 0, 'sem pronome nao herda')
+    confere(
+      quemOMomentoCita('Elas lutam.', [{ ficha: 'nia', rotulo: 'Nia' }, { ficha: 'lynokis', rotulo: 'Lynokis' }], null, semNomes).citados.length === 2,
+      '"elas" herda as duas',
+    )
     // As duas juntas no 0013.
     const duas = casar([frase('f01', 'A Nia e a Lynokis treinam juntas.', ['e01'], 'c0010')])
     const d = primeira(duas, 'f01')!

@@ -295,7 +295,10 @@ function conta(): void {
     f03: 'A Elle achou tudo aquilo muito chato.',
     f04: 'Anos se passaram e o mundo inteiro mudou de vez.',
   }
+  // (E03) O gancho (a 1a frase) sai sempre com 2 ou 3 cenas (v-regras-e03): a f00 curta abre o video
+  // e a f01 segue as regras de dividir de sempre.
   const frases = [
+    fr('f00', 'Olha isso.', { eventoIds: ['e03'] }),
     fr('f01', textos.f01, { eventoIds: ['e01'], cueDoMomento: 'c0003', intencaoVisual: 'Guy sufocando o Lent' }),
     // A seguinte tem o momento no plano 0007 (o Guy): o pedaco do Guy da f01 nao pega esse plano.
     fr('f02', textos.f02, { eventoIds: ['e01'], cueDoMomento: 'c0007' }),
@@ -303,6 +306,7 @@ function conta(): void {
     fr('f04', textos.f04, { eventoIds: ['e03'] }),
   ]
   const take = takeDe([
+    { id: 'f00', texto: 'Olha isso.', dur: 1 },
     { id: 'f01', texto: textos.f01, dur: 3.6 },
     { id: 'f02', texto: textos.f02, dur: 2.2 },
     { id: 'f03', texto: textos.f03, dur: 2.4 },
@@ -328,7 +332,7 @@ function conta(): void {
   confere(junta !== null && escolhaDaFraseSchema.safeParse(junta).success && !divididaPeloCasar(junta), 'Juntar em 1: passa no schema e nao e mais dividida')
   confere(juntarEmUma({ ...f01.escolha, inteira: undefined }) === null, 'frase nao dividida pelo casar nao junta')
   // Os tempos no take: o pedaco 2 comeca no start da palavra do corte.
-  const tempos = temposDasCenas(f01.escolha, frases[0]!, take)
+  const tempos = temposDasCenas(f01.escolha, frases[1]!, take)
   confere(tempos.length === 2 && tempos[1]!.inicio >= PEDACO_MIN_SEC && tempos[1]!.fim - tempos[1]!.inicio >= PEDACO_MIN_SEC, 'os dois pedacos com pelo menos 1 s no take', tempos)
   // Sem plano repetido no roteiro inteiro.
   const todos = r.casadas.flatMap((c) => c.escolha.cenas.flatMap((x) => x.candidato.planoIds))
@@ -340,7 +344,8 @@ function conta(): void {
   const f04 = da(r, 'f04')!
   confere(f04.escolha.cenas.length === 1, 'f04: longa, mas nenhum pedaco ganha -- uma cena (regra 3)', f04.pedacos?.map((p) => p.texto))
   // A ordem tambem entre as frases: cada frase depois da anterior (ou no mesmo evento).
-  const inicios = r.casadas.flatMap((c) => c.escolha.cenas.map((x) => x.candidato.inSec))
+  // (A f00, o gancho, vai a qualquer ponto do episodio: ordem livre.)
+  const inicios = r.casadas.filter((c) => c.escolha.fraseId !== 'f00').flatMap((c) => c.escolha.cenas.map((x) => x.candidato.inSec))
   confere(inicios.every((t, i) => i === 0 || t >= inicios[i - 1]! - 4), 'a sequencia anda em frente no episodio', inicios)
 
   // O momento fica com o PRIMEIRO pedaco: o segundo cita o Lent (planos 0003-0004, ANTES do
@@ -434,7 +439,8 @@ function desligadoEGuloso(): void {
   confere(sem.casadas.every((c) => c.escolha.cenas.length === 1 && c.escolha.inteira === undefined), 'desligado: uma cena por frase, sem "inteira"')
   const guloso = casar(frases, take, { camadas: { conta: false } })
   const g1 = da(guloso, 'f01')!
-  confere(g1.escolha.cenas.length === 2, 'o guloso (sem a conta) tambem divide')
+  // (E03) Aqui a f01 e o gancho (3,6 s): sai com 3 cenas (v-regras-e03).
+  confere(g1.escolha.cenas.length >= 2, 'o guloso (sem a conta) tambem divide', g1.escolha.cenas.length)
   const [a, b] = g1.escolha.cenas
   confere(!!a && !!b && b.candidato.inSec >= a.candidato.inSec && !b.candidato.planoIds.some((id) => a.candidato.planoIds.includes(id)), 'o guloso: ordem e planos diferentes dentro da frase')
   confere(escolhaDaFraseSchema.safeParse(g1.escolha).success, 'o guloso: a escolha passa no schema')
