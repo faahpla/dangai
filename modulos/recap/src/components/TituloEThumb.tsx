@@ -50,7 +50,7 @@ export function TituloEThumb({ tela }: { tela: Roteiro }) {
 }
 
 /** Copia para a area de transferencia (com o jeito antigo de reserva, se a API nao deixar). */
-async function copiarTexto(texto: string): Promise<boolean> {
+export async function copiarTexto(texto: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(texto)
     return true
@@ -68,7 +68,7 @@ async function copiarTexto(texto: string): Promise<boolean> {
 }
 
 /** O botao de copiar: vira um check por um instante. */
-function Copiar({ texto, rotulo, pequeno = false }: { texto: string; rotulo: string; pequeno?: boolean }) {
+export function Copiar({ texto, rotulo, pequeno = false }: { texto: string; rotulo: string; pequeno?: boolean }) {
   const [copiado, setCopiado] = useState(false)
   const relogio = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(

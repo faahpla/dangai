@@ -324,7 +324,7 @@ const REGRA_ZERO = `REGRA ZERO — FIDELIDADE FACTUAL (CRÍTICO, não negociáve
 - Pode dramatizar o TOM ("e o pior", "caraca"), NUNCA os FATOS. Na dúvida, omita o detalhe.
 - Não diga o que só a imagem mostraria (cor, roupa, cenário) se os acontecimentos não dizem.`
 
-const SEGURANCA_DA_PLATAFORMA = `SEGURANÇA DA PLATAFORMA (o YouTube e o TikTok derrubam ou desmonetizam o short por isso, mesmo sendo anime):
+export const SEGURANCA_DA_PLATAFORMA = `SEGURANÇA DA PLATAFORMA (o YouTube e o TikTok derrubam ou desmonetizam o short por isso, mesmo sendo anime):
 - NUNCA descreva violência contra criança: nada de "criança", "bebê", "menor", "garotinha" ou "menininha" junto de bater, espancar, socar, chutar, machucar, matar, torturar ou abusar. Luta com personagem criança se conta pelo nome e pela luta em si, sem a criança como alvo da agressão. Ex.: "Ele achava que ia espancar uma criança indefesa" → "Ele achava que a luta ia ser fácil".
 - NUNCA pedido de morte, suicídio ou automutilação ("implorando pra ser morto", "queria se matar"): diga o resultado sem isso ("ele ficou no chão, derrotado").
 - Nada de gore explícito (sangue jorrando, partes do corpo), nada sexual com personagem menor de idade, nada de droga como coisa boa.
@@ -346,7 +346,7 @@ const FORMATO_DA_FRASE = `FORMATO DE CADA FRASE:
 - tags: de 2 a 5 etiquetas do Danbooru, em INGLÊS e minúsculas, do que a tela mostra: ação, objeto, lugar, hora, emoção ("crying", "punching", "sword", "night", "explosion", "hospital bed"). Nada de nome de personagem, cor de cabelo ou "1girl".
 - visualEn: a intencaoVisual em INGLÊS, curta e concreta, como legenda de imagem ("a small girl lying weak in a hospital bed", "two men shaking hands on a ship deck"). Sem nome de personagem: descreva quem é ("a white-haired boy").`
 
-const TITULO_E_THUMB = `TÍTULO E THUMB (junto do roteiro):
+export const TITULO_E_THUMB = `TÍTULO E THUMB (junto do roteiro):
 - titulos: 3 títulos do short, curtos (até uns 60 caracteres), chamativos e com curiosidade, sobre o ângulo do roteiro, com as palavras principais em maiúscula — o jeito de "Ele Despertou o Maior Poder da História". Nada de título genérico ("Resumo do episódio 5", "Anime muito bom"). Fiel: o título não promete o que não aconteceu.
 - textosDeThumb: 3 textos de thumbnail, de 2 a 5 palavras, em CAIXA ALTA, fortes e fáceis de ler — o jeito de "ELE DESPERTOU" ou "DUAS GAROTAS?!". Não precisam explicar: precisam gerar clique.
 - Nomes, se usar, como no ELENCO. Sem emoji nem hashtag.`

@@ -114,6 +114,8 @@ import type { PlanoNoMesclado } from '../shared/mesclas'
 import { encaixarNaVoz, montagemInterrompida, montarProjeto } from './montar'
 import { rostosDosPedacos } from './montar/rostos-motor'
 import { pngsDosTextos, telasDoRascunho } from './montar/textos'
+import { abrirPosRender, escreverTitulosEThumbs } from './pos-render'
+import { pedidoDeTitulosSchema, pedidoDoPosRenderSchema, type TextosDoPosRender, type TitulosNovos } from '../shared/pos-render'
 import { pedidoDeTextosSchema, type PedidoDeTextos, type PngDoTexto } from '../shared/textos-na-tela'
 import { registrarCanaisDoMotor } from './ipc-motor'
 import { registrarCanaisDaMigracao } from './migracao/ipc'
@@ -445,6 +447,9 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[string, number], Record<string, string | null> | null>(C.telasDoRascunho, async (rascunhoId, versao) =>
     telasDoRascunho(z.string().regex(/^rc_[0-9a-z_]+$/).parse(rascunhoId), z.number().int().positive().parse(versao)),
   )
+  // A tela pos-render (a do CapCut): so le o rascunho e publica o video.
+  ctx.handle<[unknown], TextosDoPosRender>(C.posRender, async (pedido) => abrirPosRender(pedidoDoPosRenderSchema.parse(pedido)))
+  ctx.handle<[unknown], TitulosNovos>(C.titulosDoVideo, async (pedido) => escreverTitulosEThumbs(pedidoDeTitulosSchema.parse(pedido)))
 }
 
 /** 'f' + numero, como Frase.id. */

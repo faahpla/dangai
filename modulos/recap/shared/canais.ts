@@ -66,6 +66,7 @@ import type {
 } from './edicao-rapida'
 import type { AjustesDaVoz, CampoDeChaveDaVoz, TesteDeVoz, VozPadrao } from './tipos-da-voz'
 import type { PedidoDeTextos, PngDoTexto } from './textos-na-tela'
+import type { PedidoDeTitulos, PedidoDoPosRender, TextosDoPosRender, TitulosNovos } from './pos-render'
 import type {
   AudioDoTake,
   EstimativaDeCusto,
@@ -190,6 +191,10 @@ export const CANAIS = {
   textosNaTela: 'recap:textos:png',
   /** Os textos de tela de uma versao do roteiro (projeto montado antes dos Textos na tela). */
   telasDoRascunho: 'recap:textos:do-rascunho',
+  /** A tela pos-render: o video pronto publicado e os titulos/thumbs do roteiro (pos-render.ts). */
+  posRender: 'recap:pos-render:abrir',
+  /** "Escrever de novo" nos titulos e thumbs da tela pos-render (um pedido de IA para os dois). */
+  titulosDoVideo: 'recap:pos-render:titulos',
 
   // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
   // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
@@ -384,6 +389,10 @@ export interface PonteDoRecap {
   textosNaTela(pedido: PedidoDeTextos): Promise<IpcResult<{ pngs: PngDoTexto[]; avisos: string[] }>>
   /** fraseId -> texto de tela da versao `versao` do rascunho. null = rascunho ou versao sumiu. */
   telasDoRascunho(rascunhoId: string, versao: number): Promise<IpcResult<Record<string, string | null> | null>>
+  /** A tela pos-render: a URL do video que o render gravou e os titulos/thumbs da versao do roteiro. */
+  posRender(pedido: PedidoDoPosRender): Promise<IpcResult<TextosDoPosRender>>
+  /** 3 titulos e 3 textos de thumb novos (diferentes dos `atuais`), pelo ctx.ia. */
+  titulosDoVideo(pedido: PedidoDeTitulos): Promise<IpcResult<TitulosNovos>>
 
   // O motor de personagens (parte 4), com os nomes do Studio.
   /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */

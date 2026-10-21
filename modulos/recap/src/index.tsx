@@ -14,6 +14,7 @@ import { GerarRecap } from './components/GerarRecap'
 import { InstalarMotor } from './components/motor-runtime/InstalarMotor'
 import { SecaoDoMotor } from './components/SecaoDoMotor'
 import { perguntarSeEpisodio, PerguntaDoEpisodio } from './components/PerguntaDoEpisodio'
+import { BotaoVideoPronto, comandoDoVideoPronto, PosRender } from './components/PosRender'
 import { guardarNucleo, nucleo } from './nucleo'
 import { ouvirOProjeto, rotuloDoClipe } from './projeto'
 import { useBoasVindas } from './store/boas-vindas'
@@ -42,6 +43,8 @@ import { useEdicaoRapida } from './store/edicao-rapida'
  *   na mao (dentro do assistente).
  * - a boas-vindas (18/10): ligar o modulo, ou clicar "Gerar recap", sem
  *   chave de IA abre a tela que pede a do Gemini (BoasVindas), na tela inicial.
+ * - a tela pos-render (20/10, PosRender): o video pronto e os textos para publicar;
+ *   o "Video pronto" (barra de status e paleta) reabre com o render anotado no projeto.
  */
 export const recap: ModuloDoRenderer = {
   id: 'recap',
@@ -73,6 +76,7 @@ export const recap: ModuloDoRenderer = {
       <PerguntaDoEpisodio />
       <BoasVindas />
       <InstalarMotor />
+      <PosRender />
     </>
   ),
 
@@ -95,6 +99,7 @@ export const recap: ModuloDoRenderer = {
       run: () => void gerarRecap(),
     },
     comandoDaEdicaoRapida(),
+    ...comandoDoVideoPronto(),
   ],
 
   // A Edicao rapida e a musica, antes do Renderizar (so com o projeto pronto para renderizar).
@@ -115,7 +120,13 @@ export const recap: ModuloDoRenderer = {
     )
   },
 
-  ItemDaBarraDeStatus: NaBarraDeStatus,
+  // O "Video pronto" (a tela pos-render de novo) mora aqui: na barra de render ele empurrava o Renderizar para fora.
+  ItemDaBarraDeStatus: () => (
+    <>
+      <BotaoVideoPronto />
+      <NaBarraDeStatus />
+    </>
+  ),
 
   rotuloDoClipe,
 

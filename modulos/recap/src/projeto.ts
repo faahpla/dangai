@@ -4,6 +4,7 @@ import { clipeParaOModulo, converterDoStudio, papelDaSobreposicao, recapDoProjet
 import type { ClipeDaFaixa } from '@/modulos/api'
 import { nucleo } from './nucleo'
 import { registrarMusicaDoProjeto, temEdicaoRapida } from './store/edicao-rapida'
+import { guardarORender, usePosRender } from './store/pos-render'
 
 /**
  * [recap] O MODULO E O PROJETO ABERTO: os eventos do nucleo que o recap ouve.
@@ -17,13 +18,19 @@ import { registrarMusicaDoProjeto, temEdicaoRapida } from './store/edicao-rapida
  *   veio): a fachada nao deixa o modulo tirar um campo da raiz.
  * - depoisDeSalvar / depoisDeRenderizar: a musica que o projeto TEM vai para o
  *   historico de "ja usada" (o proximo short nao repete). Nunca ao aplicar.
+ * - depoisDeRenderizar tambem abre a tela pos-render (store/pos-render.ts).
  */
 export function ouvirOProjeto(): () => void {
   const n = nucleo()
   const tirar = [
     n.ao('abrirProjeto', () => converterOAberto()),
     n.ao('depoisDeSalvar', () => anotarAMusica()),
-    n.ao('depoisDeRenderizar', () => anotarAMusica()),
+    n.ao('depoisDeRenderizar', ({ outputPath }) => {
+      anotarAMusica()
+      // A tela pos-render (a do CapCut): so em projeto do recap. O render fica anotado no projeto (o "Video pronto").
+      void guardarORender(outputPath)
+      void usePosRender.getState().abrir(outputPath)
+    }),
   ]
   return () => {
     for (const t of tirar) t()

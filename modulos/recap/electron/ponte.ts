@@ -86,6 +86,8 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     rostosDosPedacos: (lote) => invocar(C.rostosDosPedacos, lote),
     textosNaTela: (pedido) => invocar(C.textosNaTela, pedido),
     telasDoRascunho: (rascunhoId, versao) => invocar(C.telasDoRascunho, rascunhoId, versao),
+    posRender: (pedido) => invocar(C.posRender, pedido),
+    titulosDoVideo: (pedido) => invocar(C.titulosDoVideo, pedido),
 
     statusDoMotor: () => invocar(C.statusDoMotor),
     analisarEpisodio: (pedido) => invocar(C.analisarEpisodio, pedido),

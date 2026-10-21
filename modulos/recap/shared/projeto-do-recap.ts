@@ -88,6 +88,17 @@ export const recapNoProjetoSchema = z
     geradoEm: z.string(),
     /** Ausente no projeto montado antes da Edicao rapida. */
     secoes: z.array(secaoNoTempoSchema).optional(),
+    /**
+     * O ultimo render bom (20/10, a tela pos-render): o arquivo e quando. O
+     * "Video pronto" da barra de status reabre a tela por aqui, sem gerar nada
+     * de novo. Ausente = ainda sem render.
+     */
+    render: z.object({ arquivo: z.string().min(1), em: z.string() }).optional(),
+    /**
+     * Os titulos e textos de thumb do "Escrever de novo" da tela pos-render
+     * (20/10): valem no lugar dos do roteiro. Ausente = os do roteiro.
+     */
+    sugestoesDoVideo: z.object({ titulos: z.array(z.string()), thumbs: z.array(z.string()), em: z.string() }).optional(),
   })
   // Guarda o que nao conhece (um campo de versao futura do modulo).
   .loose()
