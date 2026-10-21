@@ -19,7 +19,7 @@ import {
   Sparkle,
   Library as LibraryIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   aplicarPreset,
   exportarEstiloAtual,
@@ -120,6 +120,48 @@ function Home() {
 }
 
 /**
+ * A BARRA NAO CABE NA JANELA? Os botoes do meio perdem o nome e ficam so com o
+ * icone (o nome continua no title). Numa janela de 1440 px, depois de um render,
+ * o "Abrir pasta" empurrava o Renderizar para fora da tela.
+ *
+ * Volta ao normal quando a barra ganha de novo a largura que tinha quando
+ * estourou -- medir com os nomes escondidos diria sempre que cabe, e a barra
+ * ficaria piscando entre os dois jeitos.
+ */
+function useNaoCabe(ref: RefObject<HTMLDivElement | null>): boolean {
+  const [naoCabe, setNaoCabe] = useState(false)
+  const larguraCheia = useRef(0)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const medir = (): void => {
+      if (el.scrollWidth > el.clientWidth + 1) {
+        larguraCheia.current = Math.max(larguraCheia.current, el.scrollWidth)
+        setNaoCabe(true)
+      } else if (el.clientWidth >= larguraCheia.current) {
+        larguraCheia.current = 0
+        setNaoCabe(false)
+      }
+    }
+    const tamanho = new ResizeObserver(medir)
+    tamanho.observe(el)
+    // Botao que aparece ou some (o "Abrir pasta", os dos modulos) muda a conta.
+    const filhos = new MutationObserver(() => {
+      larguraCheia.current = 0
+      setNaoCabe(false)
+      requestAnimationFrame(medir)
+    })
+    filhos.observe(el, { childList: true })
+    medir()
+    return () => {
+      tamanho.disconnect()
+      filhos.disconnect()
+    }
+  }, [ref])
+  return naoCabe
+}
+
+/**
  * Transporte e acao. Um botao primario so -- renderizar, que vira cancelar
  * durante o render. O rosa mora no preenchimento da timeline nesse momento,
  * entao aqui o botao fica cinza.
@@ -166,9 +208,15 @@ export function RenderBar() {
 
   const isRendering = render !== null
   const canRender = Boolean(audio) && images.length > 0
+  const barra = useRef<HTMLDivElement>(null)
+  const naoCabe = useNaoCabe(barra)
 
   return (
-    <div className="flex items-center gap-3">
+    <div
+      ref={barra}
+      data-compacto={naoCabe || undefined}
+      className="group/barra flex min-w-0 items-center gap-3"
+    >
       {!isRendering && <Home />}
 
       <button
@@ -198,7 +246,7 @@ export function RenderBar() {
           ].join(' ')}
         >
           <FileText size={12} strokeWidth={1.5} />
-          Roteiro
+          <span className="group-data-[compacto]/barra:hidden">Roteiro</span>
         </button>
       )}
 
@@ -217,7 +265,7 @@ export function RenderBar() {
           className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
         >
           <LibraryIcon size={12} strokeWidth={1.5} />
-          Selecao
+          <span className="group-data-[compacto]/barra:hidden">Selecao</span>
         </button>
       )}
 
@@ -234,7 +282,7 @@ export function RenderBar() {
           ].join(' ')}
         >
           <Pencil size={12} strokeWidth={1.5} />
-          Editar
+          <span className="group-data-[compacto]/barra:hidden">Editar</span>
         </button>
       )}
 
@@ -251,7 +299,7 @@ export function RenderBar() {
           ].join(' ')}
         >
           <FolderOpen size={12} strokeWidth={1.5} />
-          Bins
+          <span className="group-data-[compacto]/barra:hidden">Bins</span>
         </button>
       )}
 
@@ -272,7 +320,7 @@ export function RenderBar() {
           ) : (
             <CaptionsOff size={12} strokeWidth={1.5} />
           )}
-          Legendas
+          <span className="group-data-[compacto]/barra:hidden">Legendas</span>
         </button>
       )}
 
@@ -293,7 +341,7 @@ export function RenderBar() {
           className="lift flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
         >
           <FolderOpen size={12} strokeWidth={1.5} />
-          Abrir pasta
+          <span className="group-data-[compacto]/barra:hidden">Abrir pasta</span>
         </button>
       )}
 
@@ -340,7 +388,7 @@ export function RenderBar() {
             ].join(' ')}
           >
             <Sparkle size={12} strokeWidth={1.5} />
-            Upscale
+            <span className="group-data-[compacto]/barra:hidden">Upscale</span>
           </button>
 
           <button
