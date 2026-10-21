@@ -157,7 +157,8 @@ export function BotaoDaEdicaoRapida() {
             <WandSparkles size={12} strokeWidth={1.5} />
           )}
         </span>
-        <span>{rodando === 'tudo' ? 'Editando...' : 'Edicao rapida'}</span>
+        {/* Barra de render apertada (data-compacto do nucleo, aae00a3): so o icone, o title continua. */}
+        <span className="group-data-[compacto]/barra:hidden">{rodando === 'tudo' ? 'Editando...' : 'Edicao rapida'}</span>
       </button>
 
       {aberto && resumo && (

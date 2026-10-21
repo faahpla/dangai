@@ -65,7 +65,7 @@ export function ControleDaMusica() {
         onClick={() => void rodarSoAMusica()}
         disabled={ocupado}
         title={`${primeira.fileName} - clique para trocar pela proxima da pasta`}
-        className="max-w-[110px] truncate text-ink"
+        className="max-w-[110px] truncate text-ink group-data-[compacto]/barra:max-w-[44px]"
       >
         {primeira.fileName.replace(/\.[^.]+$/, '')}
       </button>
@@ -143,7 +143,7 @@ function Volume({ gainDb, abaixoDb, ocupado }: { gainDb: number; abaixoDb: numbe
         title={`Volume da musica nas pausas: ${valor} dB${sobVoz}`}
         className="dangai-range w-[56px] shrink-0 disabled:opacity-40"
       />
-      <span className="tnum min-w-[46px] shrink-0 whitespace-nowrap text-right text-ink-3" title={`Nas pausas${sobVoz}`}>
+      <span className="tnum min-w-[46px] shrink-0 whitespace-nowrap text-right text-ink-3 group-data-[compacto]/barra:hidden" title={`Nas pausas${sobVoz}`}>
         {valor} dB
       </span>
     </>
