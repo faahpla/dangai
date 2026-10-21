@@ -157,6 +157,9 @@ export type AcaoDaNarracao =
 /** Modelos do Fish Audio (cabecalho `model`, docs de 14/10/2026). O primeiro e o padrao. */
 export const MODELOS_FISH: readonly { id: string; nome: string }[] = [
   { id: 's2.1-pro', nome: 'S2.1 Pro' },
+  // (21/10) O modelo gratis da API (US$ 0, "uso justo", sem garantia; o Fish pode usar o texto
+  // para melhorar o modelo e pode encerrar a oferta). Para quem esta sem saldo.
+  { id: 's2.1-pro-free', nome: 'S2.1 Pro gratis' },
   { id: 's2-pro', nome: 'S2 Pro' },
   { id: 's1', nome: 'S1' },
 ]

@@ -279,7 +279,7 @@ export async function estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa)
     else if (aCobrar > 0) {
       estimativa.saldo = falsa ? SALDO_DE_TESTE : await saldoFish(s.fishApiKey)
       const saldo = estimativa.saldo !== null ? Number(estimativa.saldo) : Number.NaN
-      if (Number.isFinite(saldo) && saldo <= 0) avisos.push('Sem saldo no Fish Audio: recarregue em fish.audio.')
+      if (Number.isFinite(saldo) && saldo <= 0) avisos.push('Sem saldo no Fish Audio: escolha o modelo "S2.1 Pro gratis" (sem custo) ou recarregue em fish.audio.')
     }
   }
   estimativa.aviso = avisos.join(' ') || null

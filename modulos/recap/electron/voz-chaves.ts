@@ -285,7 +285,7 @@ export async function testarFish(chave: string): Promise<TesteDeVoz> {
   const bruto = (credito.json as { credit?: unknown }).credit
   const saldo = typeof bruto === 'string' || typeof bruto === 'number' ? String(bruto).trim() || null : null
   if (saldo !== null && Number.isFinite(Number(saldo)) && Number(saldo) <= 0) {
-    avisos.push(semCreditos('fish', 'o saldo da API esta zerado. Recarregue em fish.audio para gerar a voz.'))
+    avisos.push(semCreditos('fish', 'o saldo da API esta zerado. Da para usar o modelo "S2.1 Pro gratis" (Voz > Modelo), sem custo, ou recarregar em fish.audio.'))
   }
 
   let vozes: VozDoProvedor[] = []
