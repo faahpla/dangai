@@ -86,7 +86,7 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
   etiqueta no card dos "Projetos recentes" (`rotuloDoProjeto`: o recente guarda os ids com
   `modulos.<id>` no projeto) e `interceptarArquivos` (soltar/diálogo). O módulo usa a
   **fachada** (`src/modulos/nucleo.ts`) (com `usarEuMesmo`/`reler`: o `ModuloPublico` do próprio módulo — config pública e tem/dica
-  das chaves) e o **kit de interface** (`src/modulos/kit.ts`), nunca o `useProject` nem `@/components`
+  das chaves; e o `metadata`/`gerarMetadata`: título, descrição e hashtags do roteiro, os mesmos da barra de render) e o **kit de interface** (`src/modulos/kit.ts`), nunca o `useProject` nem `@/components`
   direto; mudar os dois é combinar antes. Cada módulo tem uma fronteira de erro sempre
   montada: erro de componente — inclusive na limpeza, ao desligar — some com ele, não com a janela.
 - **Ligar/desligar:** Configurações > Módulos (`Settings.modulosLigados`); desligado por padrão.

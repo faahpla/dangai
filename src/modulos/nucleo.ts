@@ -42,6 +42,7 @@ export type EstadoPublico = Pick<
   | 'playhead'
   | 'render'
   | 'lastOutput'
+  | 'metadata'
   | 'appVersion'
   | 'update'
   | 'modulos'
@@ -86,6 +87,12 @@ export interface Nucleo {
   mostrarNaBiblioteca(caminho: string): Promise<void>
   /** O projeto como iria para o disco agora (null sem narracao). */
   paraArquivo(): ReturnType<ProjectState['toProjectFile']>
+  /**
+   * Escreve o titulo, a descricao e as hashtags a partir do roteiro -- o mesmo
+   * "Titulo, descricao e hashtags" da barra de render (uma chamada de IA). O
+   * resultado cai em `metadata` (vai junto no arquivo); o erro, em `error`.
+   */
+  gerarMetadata(): Promise<void>
 
   /**
    * Muda o documento num passo SO de Ctrl+Z. A receita recebe o documento de
@@ -149,6 +156,7 @@ export function criarNucleo(id: string): Nucleo {
     sincronizarBiblioteca: () => store().syncLibrary(),
     mostrarNaBiblioteca: (caminho) => store().mostrarNaBiblioteca(caminho),
     paraArquivo: () => store().toProjectFile(),
+    gerarMetadata: () => store().generateMetadata(),
 
     aplicarNoDocumento: (receita) => {
       fecharPassoAgora()
