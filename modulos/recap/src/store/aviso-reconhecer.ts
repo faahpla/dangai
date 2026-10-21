@@ -6,6 +6,7 @@ import {
   lembrarSeguirAssim,
   type AvisoDeReconhecimento,
 } from '../../shared/aviso-reconhecer'
+import { SO_NO_ANCUT } from '../../shared/descoberta'
 import { devolverAoAncutNoFim, podeIrAoRoteiro, useGerar, type PassoDoAssistente } from './gerar'
 import { useAncut } from './ancut'
 
@@ -76,7 +77,7 @@ export function porqueNaoReconhecerAgora(
   if (!indice) return 'Sem episodio'
   // Cortado pelo recap: aqui, ou movido para o AnCut (o "Reconhecer agora" traz de volta, reconhece e devolve).
   const doRecap = indice.biblioteca.origem === 'studio' || indice.biblioteca.movidoDoRecap === true
-  if (!doRecap) return 'Cenas de outra biblioteca: o recap so le. Use Reconhecer na mao ou reconheca no AnCut.'
+  if (!doRecap) return SO_NO_ANCUT
   if (indice.reconhecimento !== 'pulado') return 'O reconhecimento ja rodou neste episodio: use Reconhecer na mao.'
   if (s.job) return 'Espere a analise acabar'
   if (s.exclusoesMudaram) return 'Salve ou desfaca as marcacoes de OP/ED antes'

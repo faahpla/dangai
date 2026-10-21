@@ -474,6 +474,13 @@ export interface OfertaDaDescoberta {
 }
 
 /**
+ * Cenas de outra biblioteca: nem o "Reconhecer agora" nem o "na mao" rodam aqui.
+ * (21/10) Antes cada um mandava para o outro, e o passo 4 ficava com um botao
+ * que nao clicava. O caminho e o AnCut, que reconhece as cenas dele.
+ */
+export const SO_NO_ANCUT = 'Cenas do AnCut: o recap so le. Reconheca os personagens no AnCut e volte.'
+
+/**
  * A tela mostra [Reconhecer na mao] / "Revisar personagens"? O main confere de
  * novo com o indice lido do disco (a mesma funcao) antes de subir o motor.
  *
@@ -500,7 +507,7 @@ export function podeReconhecerNaMao(
     return nao('As cenas ainda nao foram cortadas.')
   }
   if (indice.biblioteca.origem !== 'studio') {
-    return nao('Cenas de outra biblioteca: o Studio so le. Corte no Studio para reconhecer aqui.')
+    return nao(SO_NO_ANCUT)
   }
   const algum = indice.planos.some((p) => p.personagens.length > 0)
   return { pode: true, motivo: algum ? 'revisar' : 'sem-personagens', porque: '' }

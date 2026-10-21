@@ -10,7 +10,7 @@ import {
   textoDoAviso,
   tituloDoAviso,
 } from '../../shared/aviso-reconhecer'
-import { podeReconhecerNaMao } from '../../shared/descoberta'
+import { podeReconhecerNaMao, SO_NO_ANCUT } from '../../shared/descoberta'
 import { useGerar } from '../store/gerar'
 import { useAncut } from '../store/ancut'
 import { useIndiceDasCenas } from '../store/gerar-cenas'
@@ -29,7 +29,13 @@ import { useOferta } from './EntradaDaDescoberta'
 import { Botao, COR_DE_AVISO, focarBotao } from './pecas'
 
 /** As duas portas de reconhecer, com o porque de cada uma estar desligada. */
-function usePortas(): { agora: string | null; naMao: string | null; iniciarNaMao: () => void } {
+function usePortas(): {
+  agora: string | null
+  naMao: string | null
+  /** Os dois fechados: o que fazer, no lugar dos botoes (botao que nao clica so confunde). */
+  nenhum: string | null
+  iniciarNaMao: () => void
+} {
   const indice = useGerar((s) => s.indice)
   const corte = useGerar((s) => s.corte)
   const exclusoesMudaram = useGerar((s) => s.exclusoesMudaram)
@@ -45,7 +51,8 @@ function usePortas(): { agora: string | null; naMao: string | null; iniciarNaMao
     : oferta
       ? oferta.desligado
       : podeReconhecerNaMao(indice, corte).porque || 'O Reconhecer na mao ja esta aberto'
-  return { agora, naMao, iniciarNaMao: () => void iniciar() }
+  const nenhum = agora === null || naMao === null ? null : agora === SO_NO_ANCUT || naMao === SO_NO_ANCUT ? SO_NO_ANCUT : naMao
+  return { agora, naMao, nenhum, iniciarNaMao: () => void iniciar() }
 }
 
 /**
@@ -132,41 +139,52 @@ export function AvisoDeReconhecer() {
             <X size={13} strokeWidth={1.5} />
           </button>
         </header>
-        <footer className="flex flex-nowrap items-center justify-end gap-2 px-5 pb-5 pt-5">
-          {/* Fantasma: o caminho de fugir do conselho fica disponivel, mas nao chama o olho. */}
-          <button
-            type="button"
-            data-foco="aviso-seguir-assim"
-            onClick={seguirAssim}
-            title="Segue sem reconhecer. Neste episodio, nao pergunta de novo."
-            className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-3 text-[13px] font-medium text-ink-3 transition-colors duration-150 hover:bg-surface hover:text-ink"
-          >
-            Seguir assim
-          </button>
-          <Botao
-            principal={principal === 'aviso-reconhecer-na-mao'}
-            foco="aviso-reconhecer-na-mao"
-            onClick={() => {
-              fecharAviso()
-              portas.iniciarNaMao()
-            }}
-            disabled={portas.naMao !== null}
-            title={portas.naMao ?? 'O motor agrupa os rostos e voce da o nome de cada um'}
-          >
-            <Users size={13} strokeWidth={1.5} />
-            Reconhecer na mao
-          </Botao>
-          <Botao
-            principal={principal === 'aviso-reconhecer-agora'}
-            foco="aviso-reconhecer-agora"
-            onClick={() => void reconhecerAgoraESeguir(aberto.destino)}
-            disabled={portas.agora !== null}
-            title={portas.agora ?? 'Busca o elenco e reconhece os personagens nas cenas ja cortadas. Ao terminar, segue.'}
-          >
-            <Users size={13} strokeWidth={1.5} />
-            Reconhecer agora
-          </Botao>
-        </footer>
+        {portas.nenhum ? (
+          // Nenhum caminho daqui (o episodio do AnCut, sobretudo): o que fazer no lugar dos botoes mortos.
+          // pl-[68px]: o texto alinha com o do cabecalho (20 de margem + 36 do icone + 12 de vao).
+          <footer className="flex flex-nowrap items-center gap-3 pb-5 pl-[68px] pr-5 pt-4">
+            <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-2">{portas.nenhum}</p>
+            <Botao principal foco="aviso-seguir-assim" onClick={seguirAssim} title="Segue sem reconhecer. Neste episodio, nao pergunta de novo.">
+              Seguir assim
+            </Botao>
+          </footer>
+        ) : (
+          <footer className="flex flex-nowrap items-center justify-end gap-2 px-5 pb-5 pt-5">
+            {/* Fantasma: o caminho de fugir do conselho fica disponivel, mas nao chama o olho. */}
+            <button
+              type="button"
+              data-foco="aviso-seguir-assim"
+              onClick={seguirAssim}
+              title="Segue sem reconhecer. Neste episodio, nao pergunta de novo."
+              className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-3 text-[13px] font-medium text-ink-3 transition-colors duration-150 hover:bg-surface hover:text-ink"
+            >
+              Seguir assim
+            </button>
+            <Botao
+              principal={principal === 'aviso-reconhecer-na-mao'}
+              foco="aviso-reconhecer-na-mao"
+              onClick={() => {
+                fecharAviso()
+                portas.iniciarNaMao()
+              }}
+              disabled={portas.naMao !== null}
+              title={portas.naMao ?? 'O motor agrupa os rostos e voce da o nome de cada um'}
+            >
+              <Users size={13} strokeWidth={1.5} />
+              Reconhecer na mao
+            </Botao>
+            <Botao
+              principal={principal === 'aviso-reconhecer-agora'}
+              foco="aviso-reconhecer-agora"
+              onClick={() => void reconhecerAgoraESeguir(aberto.destino)}
+              disabled={portas.agora !== null}
+              title={portas.agora ?? 'Busca o elenco e reconhece os personagens nas cenas ja cortadas. Ao terminar, segue.'}
+            >
+              <Users size={13} strokeWidth={1.5} />
+              Reconhecer agora
+            </Botao>
+          </footer>
+        )}
       </div>
     </div>,
     document.body,
@@ -198,7 +216,6 @@ export function SeloSemPersonagens() {
       if (portas.agora === null) void reconhecerAgoraESeguir(4)
       else portas.iniciarNaMao()
     }
-    const porque = portas.agora === null ? null : portas.naMao
     return (
       <span className="flex min-w-0 items-center gap-2">
         <span
@@ -208,19 +225,23 @@ export function SeloSemPersonagens() {
           <TriangleAlert size={12} strokeWidth={1.75} className="shrink-0" />
           <span className="min-w-0 truncate">{seloDoAviso(aviso)}</span>
         </span>
-        <Botao
-          onClick={reconhecer}
-          disabled={porque !== null}
-          title={
-            porque ??
-            (portas.agora === null
-              ? 'Reconhece os personagens (o andamento aparece no passo 1) e volta para ca'
-              : 'O motor agrupa os rostos e voce da o nome de cada um')
-          }
-        >
-          <Users size={13} strokeWidth={1.5} />
-          Reconhecer
-        </Botao>
+        {portas.nenhum ? (
+          <span className="min-w-0 truncate text-[11px] text-ink-3" title={portas.nenhum}>
+            {portas.nenhum === SO_NO_ANCUT ? 'reconheca no AnCut e volte' : portas.nenhum}
+          </span>
+        ) : (
+          <Botao
+            onClick={reconhecer}
+            title={
+              portas.agora === null
+                ? 'Reconhece os personagens (o andamento aparece no passo 1) e volta para ca'
+                : 'O motor agrupa os rostos e voce da o nome de cada um'
+            }
+          >
+            <Users size={13} strokeWidth={1.5} />
+            Reconhecer
+          </Botao>
+        )}
       </span>
     )
   }
