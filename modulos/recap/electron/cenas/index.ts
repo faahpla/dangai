@@ -224,7 +224,7 @@ async function sinaisParaOCasar(rascunhoId: string, soCache = false): Promise<Si
     const divisao = divisaoDaConfig(cfg)
     const take = takeAtual(r)
     const pedacos = divisao.ligada
-      ? frases.flatMap((f) => (corteDaFrase(f, take, divisao)?.pedacos ?? []).map((p, k) => ({ id: idDoPedaco(f.id, k), texto: p.texto })))
+      ? frases.flatMap((f, i) => (corteDaFrase(f, take, divisao, i === 0)?.pedacos ?? []).map((p, k) => ({ id: idDoPedaco(f.id, k), texto: p.texto })))
       : []
     const dasFrases = cfg.visao ? await sinaisDasFrases([...frases, ...pedacos], { imagem: true, sentido: true, soCache }, consultasDaPonte(frases, pedacos)) : null
     if (dasFrases?.falha) avisos.push(`frases: ${dasFrases.falha}`)

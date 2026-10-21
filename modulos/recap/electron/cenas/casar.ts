@@ -181,6 +181,8 @@ export const PESOS = {
    * bate (termosDaLeitura).
    */
   ilegivelGancho: -25,
+  /** (E03) A 1a imagem do gancho sem quem a frase cita e sem rosto nenhum. */
+  ganchoSemRosto: -15,
   ilegivelSecao: -8,
   ilegivelForte: -5,
   /**
@@ -1842,6 +1844,8 @@ interface ContextoDaFrase {
   ordemLivre: boolean
   /** (5a rodada) A frase e do gancho (a 1a parte do roteiro). */
   gancho: boolean
+  /** (E03) A 1a cena do video (a frase do gancho inteira, ou o 1o pedaco dela): mostra quem a frase cita. */
+  primeiraDoGancho?: boolean
 }
 
 /** O que a frase de antes mostrou: a cronologia, a continuidade e a variedade olham. */
@@ -2228,6 +2232,7 @@ function pontuar(
       soma += v
       add(t.chave, v, t.rotulo)
     }
+
     let neg = 0
     for (const t of ausentes) {
       const v = Math.max(t.valor, PESOS.pessoaPiso - neg)
@@ -2235,7 +2240,9 @@ function pontuar(
       add(t.chave, v, t.rotulo)
     }
     // So ele / extras: pelos rostos (falante pode estar fora de quadro).
-    if (rostosDoSpan.length > 0) {
+    // (E03) No gancho, nao: quem a frase cita na imagem mais forte ("esse cara" no meio do trio de olhos
+    // vermelhos, o 0006 do MRM E02) vale tanto quanto ele sozinho.
+    if (rostosDoSpan.length > 0 && !ctx.gancho) {
       const deFora = new Set(
         rostosDoSpan.filter((r) => !pessoas.some((c) => r.fichas.some((f) => bate(c.ficha, f)))).map((r) => r.fichas.join(' ') || r.nome),
       )
@@ -2243,6 +2250,18 @@ function pontuar(
       if (deFora.size === 0 && algumCitado) add('so', PESOS.soEle, pessoas.length > 1 ? 'so eles' : 'so ele')
       else if (deFora.size > 0) add('extras', Math.max(PESOS.extrasPiso, PESOS.extra * deFora.size), `+${deFora.size} em cena`)
     }
+  }
+
+  // (E03) A 1a imagem do video mostra quem a frase cita: sem ele reconhecido e sem um rosto que se leia
+  // (o quarto escuro 0054 do Nia E01 no "Essa garotinha", rosto de 0,12 e sem o reconhecimento la), paga.
+  if (
+    ctx.primeiraDoGancho &&
+    (pessoas.length > 0 || retomaAlguem(ctx.frase.texto)) &&
+    !termos.some((t) => t.chave === 'pessoa') &&
+    ctx.visao &&
+    maiorRostoNoTrecho(planos, inSec, fimReal, ctx.visao) < ROSTO_NO_GANCHO
+  ) {
+    add('semRosto', PESOS.ganchoSemRosto, 'sem rosto')
   }
 
   // 4. Intencao visual: pessoas que so ela cita, paisagem, grupo, falando.
@@ -2962,7 +2981,8 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   if (divisao) {
     for (const [i, f] of e.frases.entries()) {
       if (!e.refazer.has(f.id)) continue
-      const c = corteDaFrase(f, e.take, divisao)
+      // (E03) A 1a frase e o gancho: 2 ou 3 cenas sempre que couber (cortarOGancho).
+      const c = corteDaFrase(f, e.take, divisao, i === 0)
       if (c) cortes.set(i, c)
     }
   }
@@ -3001,14 +3021,17 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   }
 
   // O que nao muda com as escolhas das outras frases: quem a frase cita, o que pede, quanto dura.
-  // C4: "ele", "ela", "o cara" sem nome herdam o sujeito da frase anterior.
+  // C4: "ele", "ela", "o cara" sem nome herdam o sujeito da frase anterior; (E03) "essa garotinha"
+  // sem sujeito antes (o gancho) e a protagonista -- as regras do recorte (quemOMomentoCita).
+  const protagonista = protagonistaDoRoteiro(e.frases.map((f) => f.texto), elenco)
+  const generos = generosDoRoteiro(e.frases.map((f) => f.texto), elenco)
   let sujeito: Citado[] = []
   const fixo = e.frases.map((frase, i) => {
     const sujeitoAntes = sujeito
-    const doTexto = citadosNoTexto(frase.texto, elenco)
-    const base = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(frase.texto, sujeito) : doTexto
     // (3a rodada) "os parceiros jogaram ele na rua": o grupo entra junto (depois do sujeito).
-    const citados = visao.camadas.personagemForte ? comOGrupo(frase.texto, base, elenco) : base
+    const citados = visao.camadas.personagemForte
+      ? quemOMomentoCita(frase.texto, sujeito, protagonista, elenco, generos).citados
+      : citadosNoTexto(frase.texto, elenco)
     sujeito = citados
     const daIntencao = citadosNoTexto(frase.intencaoVisual, elenco).filter((c) => !citados.some((x) => bate(x.ficha, c.ficha) || bate(c.ficha, x.ficha)))
     const palavrasIv = palavrasSimples(frase.intencaoVisual)
@@ -3045,6 +3068,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
         acao: acaoFisica(frase.texto),
         ordemLivre: secaoDe[i] === 0 || abreDe(i) !== null,
         gancho: secaoDe[i] === 0,
+        primeiraDoGancho: i === 0,
       } satisfies Omit<ContextoDaFrase, 'anteriores'>,
     }
   })
@@ -3073,12 +3097,16 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
       sinaisDaFrase(idDoPedaco(frase.id, k), todos, visao, { texto: p.texto, intencao: k === kIntencao ? frase.intencaoVisual : '' }),
     )
     // Quem cada pedaco cita: o nome dito, ou o sujeito herdado ("ele", "o rapaz").
+    // (E03) O pedaco sem ninguem depois do 1o continua a oracao ("Mano... essa garotinha | invadiu a
+    // mafia so pra arrumar briga"): o sujeito do pedaco de antes, como no recorte.
     let sujeitoK = fixo[i]!.sujeitoAntes
-    const citadosK = corte.pedacos.map((p) => {
-      const doTexto = citadosNoTexto(p.texto, elenco)
-      const base = doTexto.length === 0 && visao.camadas.personagemForte ? sujeitoHerdado(p.texto, sujeitoK) : doTexto
-      const c = visao.camadas.personagemForte ? comOGrupo(p.texto, base, elenco) : base
+    let doPedacoAntes: Citado[] = []
+    const citadosK = corte.pedacos.map((p, k) => {
+      if (!visao.camadas.personagemForte) return citadosNoTexto(p.texto, elenco)
+      const m = quemOMomentoCita(p.texto, sujeitoK, protagonista, elenco, generos)
+      const c = !m.referente && k > 0 ? [...doPedacoAntes] : m.citados
       if (c.length > 0) sujeitoK = c
+      doPedacoAntes = c
       return c
     })
     // A fala do momento fica com o PRIMEIRO pedaco: a frase comeca no momento dela, como a cena
@@ -3148,6 +3176,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
           acao: acaoFisica(p.texto),
           ordemLivre: secaoDe[i] === 0 || abreDe(i) !== null,
           gancho: secaoDe[i] === 0,
+          primeiraDoGancho: i === 0 && k === 0,
         },
       }
     })
@@ -3177,6 +3206,7 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
         citados: (t) => citadosNoTexto(t, elenco).map((c) => c.ficha),
         planoCurto,
         gancho,
+        abreOVideo: i === 0,
         ...(semMomento ? { semMomento } : {}),
         ...(ganha !== undefined ? { ganha } : {}),
       })
@@ -3594,6 +3624,8 @@ function pessoasDaCena(termos: readonly Termo[]): string[] {
 
 /** (4a rodada) O rosto que se ve no 9:16: a partir desta largura (fracao do 16:9) a pessoa aparece de verdade. */
 const ROSTO_VISIVEL = 0.1
+/** (E03) O rosto da 1a imagem do gancho, sem o reconhecimento: a partir desta largura ele se le (o 0073 do Nia E01 tem 0,34). */
+const ROSTO_NO_GANCHO = 0.15
 
 /**
  * (4a rodada) REGRA 3: a cena do pedaco MOSTRA o que ele diz -- a etiqueta forte,
@@ -3701,23 +3733,138 @@ function escolhaDividida(
   }
 }
 
-// ------------------------------------------------------- C4: o sujeito herdado
-
-/** "ele", "ela", "o cara"...: a frase fala de alguem sem dizer o nome. */
-const PRONOME_SINGULAR = /\b(ele|ela|dele|dela|o cara|a garota|o garoto|a menina|o menino|o velho|a velha|o moleque|a mocinha|o rapaz|a moca|a mulher|o homem|o sujeito|a pequena|o pequeno)\b/i
-const PRONOME_PLURAL = /\b(eles|elas|deles|delas|os dois|as duas|a dupla)\b/i
+// ------------------------------------------------------- C4: quem a frase retoma
 
 /**
- * C4: frase sem nome com pronome herda o SUJEITO da anterior (o roteiro so usa
- * "ele/ela" para retomar o sujeito da frase de antes -- regra do prompt):
- * no singular, o primeiro citado; no plural, ate dois. Sem pronome, ninguem.
+ * (4a rodada) A RETOMADA de alguem sem o nome: o PRONOME ("ela", "nela") ou a
+ * pessoa ja conhecida pela DESCRICAO ("a garota", "essa garotinha"). Sem
+ * acento, minusculo. O casar e o recorte (montar/edicao-rapida.ts) usam as
+ * mesmas regras (quemOMomentoCita).
  */
-export function sujeitoHerdado(texto: string, anteriores: readonly Citado[]): Citado[] {
-  if (anteriores.length === 0) return []
-  const sem = texto.normalize('NFD').replace(/\p{Mn}/gu, '')
-  if (PRONOME_PLURAL.test(sem)) return anteriores.slice(0, 2)
-  if (PRONOME_SINGULAR.test(sem)) return anteriores.slice(0, 1)
-  return []
+const PRONOME_SINGULAR = /\b(?:ele|ela|dele|dela|nele|nela|naquele|naquela)\b/
+const DESCRICAO_SINGULAR =
+  /\b(?:o cara|esse cara|a garota|essa garota|o garoto|esse garoto|a menina|essa menina|o menino|esse menino|o velho|a velha|o moleque|esse moleque|a mocinha|o rapaz|a moca|a mulher|o homem|o sujeito|a pequena|essa pequena|o pequeno|a garotinha|essa garotinha|a menininha|essa menininha|o garotinho|esse garotinho)\b/
+const RETOMADA_PLURAL = /\b(?:eles|elas|deles|delas|neles|nelas|os dois|as duas|a dupla)\b/
+/**
+ * (Nia E03) A descricao que pode ser a PROTAGONISTA: a crianca, o jovem ("essa
+ * garotinha", "o garoto", "esse cara"), com o genero do artigo. "O homem", "a
+ * mulher", "o velho" ficam de fora: quase sempre sao outra pessoa da cena ("O
+ * homem ficou no chao implorando", o mafioso da f17).
+ */
+const DESCRICAO_DA_PROTAGONISTA =
+  /\b(a|o|essa|esse|aquela|aquele)\s+(?:garot[ao]|garotinh[ao]|menin[ao]|menininh[ao]|moleque|cara|rapaz|moca|mocinha|pequen[ao])\b/
+/**
+ * (4a rodada) Um PAPEL: OUTRA pessoa que a frase poe em cena sem o nome -- o
+ * oficio ou o parentesco ("o artesao", "a criada", "o proprio irmao", "os
+ * pais") ou alguem novo ("um homem"). Nao e o sujeito da frase de antes.
+ */
+const PAPEL =
+  /\b(?:(?:o|a|os|as|esse|essa|aquele|aquela|do|da|dos|das|no|na|pro|pra|pros|pras|ao|aos|pelo|pela|seu|sua|seus|suas)\s+(?:proprio\s+|propria\s+|proprios\s+)?(?:artesaos?|artesas?|ferreiros?|ferreiras?|criadas?|criados?|empregadas?|empregados?|mordomos?|servos?|servas?|guardas?|soldados?|cavaleiros?|rei|reis|rainhas?|principes?|princesas?|mestres?|mestras?|professor|professores|professoras?|alunos?|alunas?|chefes?|donos?|donas?|vendedor|vendedores|vendedoras?|comerciantes?|medicos?|medicas?|padres?|sacerdotes?|sacerdotisas?|bruxas?|bruxos?|magos?|magas?|irmaos?|irmas?|pai|pais|mae|maes|avos?|tios?|tias?|filhos?|filhas?|primos?|primas?|marido|esposa|noivos?|noivas?|vilao|viloes|monstros?|bandidos?|ladrao|ladroes|lider|lideres|capitao|general|apresentador|apresentadora|clientes?|inimigos?|inimigas?|rivais|rival|demonios?|dragao|dragoes)|(?:um|uma)\s+(?:homem|mulher|velho|velha|garoto|garota|menino|menina|cara|rapaz|moca|sujeito|estranho|estranha|desconhecido|desconhecida))\b/
+
+/** (E03) O texto fala de alguem sem o nome ("essa garotinha", "esse cara", "ela"). */
+export function retomaAlguem(texto: string): boolean {
+  const sem = texto.normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase()
+  return PRONOME_SINGULAR.test(sem) || DESCRICAO_SINGULAR.test(sem) || RETOMADA_PLURAL.test(sem)
+}
+
+/** O genero de cada pessoa pelo artigo do roteiro: "a Nia" -> f, "o Anzel" -> m. */
+export type Generos = ReadonlyMap<string, 'f' | 'm'>
+
+/**
+ * (4a rodada, a edicao do Levi no Nia E01; Nia E03) QUEM O MOMENTO CITA -- o
+ * texto que soa enquanto um pedaco toca, ou a frase inteira:
+ *   1. o NOME no texto ("o lider Guy", "a fadinha MP"): ele;
+ *   2. sem nome, um PAPEL antes de qualquer retomada ("O artesao faz", "A
+ *      criada percebe", "Um homem usou"): OUTRA pessoa (`outro`) -- o sujeito
+ *      de antes nao e quem esta na tela; so o grupo, se o texto o cita;
+ *   3. a RETOMADA ("ela", "nela", "a garota"): o sujeito herdado (no plural,
+ *      ate dois); sem sujeito antes, a PROTAGONISTA ("Essa garotinha de
+ *      quatro anos", a 1a frase do Nia E01; "Mano... essa garotinha invadiu a
+ *      mafia", o gancho do E03). (E03) A descricao da protagonista ("a
+ *      garota", "esse cara") ANTES de um pronome sao duas pessoas: a descricao
+ *      e a protagonista, o pronome o sujeito de antes ("E a garota aceita ela
+ *      como aluna": a Nia, depois a Lynokis). Depois do pronome, so o sujeito
+ *      ("Mas ali ela viu que a menina era um monstro": a Lynokis, que ve).
+ *      Sujeito de antes do outro genero ("a garota" depois do Anzel): a
+ *      protagonista. "O homem", "a mulher" sem sujeito: ninguem;
+ *   4. nada disso: ninguem (o grupo, se o texto o cita) -- `referente` false:
+ *      no meio da frase, a oracao continua (nomesDaMontagem e o casar repetem
+ *      o momento de antes: "Ele emprestava mana | sem parar pros outros brilharem").
+ */
+export function quemOMomentoCita(
+  texto: string,
+  sujeito: readonly Citado[],
+  protagonista: Citado | null,
+  elenco: Elenco,
+  generos?: Generos,
+): { citados: Citado[]; outro: boolean; referente: boolean } {
+  const ditos = citadosNoTexto(texto, elenco)
+  if (ditos.length > 0) return { citados: comOGrupo(texto, ditos, elenco), outro: false, referente: true }
+  const sem = texto.normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase()
+  const papel = sem.search(PAPEL)
+  const pronome = sem.search(PRONOME_SINGULAR)
+  const descricao = sem.search(DESCRICAO_SINGULAR)
+  const singulares = [pronome, descricao].filter((x) => x >= 0)
+  const singular = singulares.length > 0 ? Math.min(...singulares) : -1
+  const plural = sem.search(RETOMADA_PLURAL)
+  const retomadas = [singular, plural].filter((x) => x >= 0)
+  const retomada = retomadas.length > 0 ? Math.min(...retomadas) : -1
+  if (papel >= 0 && (retomada < 0 || papel < retomada)) return { citados: comOGrupo(texto, [], elenco), outro: true, referente: true }
+  if (retomada < 0) {
+    const grupo = comOGrupo(texto, [], elenco)
+    return { citados: grupo, outro: false, referente: grupo.length > 0 }
+  }
+  const noPlural = plural >= 0 && (singular < 0 || plural < singular)
+  if (noPlural) return { citados: comOGrupo(texto, sujeito.slice(0, 2), elenco), outro: false, referente: true }
+  const herdado = sujeito[0] ?? null
+  const d = DESCRICAO_DA_PROTAGONISTA.exec(sem)
+  const generoD = d ? (/^(?:a|essa|aquela)$/.test(d[1]!) ? 'f' : 'm') : null
+  const generoDe = (c: Citado): 'f' | 'm' | null => generos?.get(c.ficha) ?? null
+  // A protagonista cabe na descricao quando o genero bate (ou nao se sabe).
+  const prot = d && protagonista && (generoDe(protagonista) ?? generoD) === generoD ? protagonista : null
+  let quem: Citado[]
+  if (pronome >= 0 && prot && herdado && herdado.ficha !== prot.ficha) quem = d!.index < pronome ? [prot, herdado] : [herdado]
+  else if (prot && herdado && generoDe(herdado) !== null && generoDe(herdado) !== generoD) quem = [prot]
+  else if (herdado) quem = [herdado]
+  else if (prot) quem = [prot]
+  // So o pronome, sem sujeito antes: a protagonista (como antes). So "o homem": ninguem.
+  else quem = pronome >= 0 && protagonista ? [protagonista] : []
+  return { citados: comOGrupo(texto, quem, elenco), outro: false, referente: true }
+}
+
+/**
+ * (4a rodada) A PROTAGONISTA do roteiro: quem o texto mais cita pelo nome (o
+ * empate, a 1a a aparecer). Ninguem citado duas vezes: null.
+ */
+export function protagonistaDoRoteiro(textos: readonly string[], elenco: Elenco): Citado | null {
+  const conta = new Map<string, { c: Citado; n: number; i: number }>()
+  textos.forEach((t, i) => {
+    for (const c of citadosNoTexto(t, elenco)) {
+      const x = conta.get(c.ficha) ?? { c, n: 0, i }
+      x.n += 1
+      conta.set(c.ficha, x)
+    }
+  })
+  const melhor = [...conta.values()].sort((a, b) => b.n - a.n || a.i - b.i)[0]
+  return melhor && melhor.n >= 2 ? melhor.c : null
+}
+
+/** (Nia E03) O genero de quem o roteiro cita, pelo artigo antes do nome ("a Nia", "do Anzel"); sem artigo, fica de fora. */
+export function generosDoRoteiro(textos: readonly string[], elenco: Elenco): Map<string, 'f' | 'm'> {
+  const conta = new Map<string, number>()
+  for (const t of textos) {
+    const sem = t.normalize('NFD').replace(/\p{Mn}/gu, '').toLowerCase()
+    for (const c of citadosNoTexto(t, elenco)) {
+      const nome = c.rotulo.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      for (const m of sem.matchAll(new RegExp(`\\b(a|da|na|pra|pela|o|do|no|pro|pelo|ao)\\s+${nome}\\b`, 'g'))) {
+        const f = /^(?:a|da|na|pra|pela)$/.test(m[1]!)
+        conta.set(c.ficha, (conta.get(c.ficha) ?? 0) + (f ? 1 : -1))
+      }
+    }
+  }
+  const saida = new Map<string, 'f' | 'm'>()
+  for (const [f, n] of conta) if (n !== 0) saida.set(f, n > 0 ? 'f' : 'm')
+  return saida
 }
 
 // --------------------------------------------- C5: a conta do roteiro inteiro
@@ -4012,9 +4159,10 @@ function casarPelaConta(
       continue
     }
     // Pedaco sem cena, forcado (repetido ou fora da ordem) ou longe do momento: metade fraca.
+    // (E03) O gancho (a 1a frase) vai ao episodio inteiro: longe do evento nao e fraco la.
     const fraca = ys.some((y) => {
       const esc = melhor.escolhas[y]
-      return !esc || esc.forcado || esc.c.repetido || longeDoEvento(esc.c.candidato, itens[y]!.janela)
+      return !esc || esc.forcado || esc.c.repetido || (i > 0 && longeDoEvento(esc.c.candidato, itens[y]!.janela))
     })
     if (fraca) fracas.push(i)
     const pedacos = ys.map((y) => ({
