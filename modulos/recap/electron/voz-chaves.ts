@@ -1,5 +1,6 @@
-import type { ProvedorDeVoz, TesteDeVoz, VozDoProvedor } from '../shared/tipos-da-voz'
+import type { BibliotecaDoFish, ProvedorDeVoz, TesteDeVoz, VozDoProvedor } from '../shared/tipos-da-voz'
 import { idDeVoz } from '../shared/config'
+import { modeloFishGratis } from '../shared/voz'
 
 /**
  * As chaves de voz: o "Testar" do ElevenLabs e do Fish Audio, e o "Importar do
@@ -163,6 +164,17 @@ export function testeDeVozFalso(provedor: ProvedorDeVoz): TesteDeVoz {
     : { provedor, plano: null, usados: null, limite: null, saldo: '7.51', vozes: [voz('voz-teste-fish-1', 'Voz Fish de teste 1'), voz('voz-teste-fish-2', 'Voz Fish de teste 2')], aviso: null }
 }
 
+/** TESTE (O2): a biblioteca do Fish com a voz falsa: tres vozes fixas, sem rede. */
+export function bibliotecaFishFalsa(busca: string): BibliotecaDoFish {
+  const todas: VozDoProvedor[] = [
+    { id: 'a1b2c3d4e5f60718293a4b5c6d7e8f90', nome: 'Narrador calmo', detalhe: 'pt, 120 mil usos', previewUrl: null },
+    { id: 'b1b2c3d4e5f60718293a4b5c6d7e8f90', nome: 'Locutora de trailer', detalhe: 'pt, 48 mil usos', previewUrl: null },
+    { id: 'c1b2c3d4e5f60718293a4b5c6d7e8f90', nome: 'Voz de anime', detalhe: 'pt, 9,1 mil usos', previewUrl: null },
+  ]
+  const termo = busca.trim().toLowerCase()
+  return { busca: busca.trim(), vozes: termo ? todas.filter((v) => v.nome.toLowerCase().includes(termo)) : todas, todasAsLinguas: false }
+}
+
 export async function testarEleven(chave: string): Promise<TesteDeVoz> {
   const avisos: string[] = []
   let plano: string | null = null
@@ -275,9 +287,13 @@ function urlOuNull(valor: unknown): string | null {
  * Confere a chave do Fish Audio: o saldo da API (GET /wallet/self/api-credit)
  * e as vozes proprias (GET /model?self=true). Lanca Error com a nota pronta se
  * a chave nao vale.
+ *
+ * `modelo` (21/10): o modelo escolhido. No gratis (s2.1-pro-free) o saldo
+ * zerado nao e aviso, so a nota neutra "Modelo gratis: nao usa saldo".
  */
-export async function testarFish(chave: string): Promise<TesteDeVoz> {
+export async function testarFish(chave: string, modelo = ''): Promise<TesteDeVoz> {
   const avisos: string[] = []
+  const notas: string[] = []
   const credito = await pedirJson(`${FISH_API}/wallet/self/api-credit`, { Authorization: `Bearer ${chave}` })
   if (!credito.ok) throw new Error(notaDaFalha('fish', credito.falha, chave))
 
@@ -285,18 +301,62 @@ export async function testarFish(chave: string): Promise<TesteDeVoz> {
   const bruto = (credito.json as { credit?: unknown }).credit
   const saldo = typeof bruto === 'string' || typeof bruto === 'number' ? String(bruto).trim() || null : null
   if (saldo !== null && Number.isFinite(Number(saldo)) && Number(saldo) <= 0) {
-    avisos.push(semCreditos('fish', 'o saldo da API esta zerado. Da para usar o modelo "S2.1 Pro gratis" (Voz > Modelo), sem custo, ou recarregar em fish.audio.'))
+    if (modeloFishGratis(modelo)) notas.push('Modelo gratis: nao usa saldo.')
+    else avisos.push(semCreditos('fish', 'o saldo da API esta zerado. Da para usar o modelo "S2.1 Pro gratis" (Voz > Modelo), sem custo, ou recarregar em fish.audio.'))
   }
 
   let vozes: VozDoProvedor[] = []
   try {
     vozes = await listarVozesFish(chave)
-    if (vozes.length === 0) avisos.push('A conta ainda nao tem voz propria no Fish Audio. Crie ou clone uma em fish.audio.')
+    // (21/10) Sem voz propria nao e mais problema: a biblioteca publica do Fish esta na lista.
+    if (vozes.length === 0) notas.push('A conta nao tem voz propria: escolha uma da Biblioteca do Fish na lista de vozes, ou cole o ID de uma voz de fish.audio.')
   } catch (err) {
     avisos.push(`As vozes nao vieram. ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  return { provedor: 'fish', plano: null, usados: null, limite: null, saldo, vozes, aviso: avisos.join(' ') || null }
+  return {
+    provedor: 'fish',
+    plano: null,
+    usados: null,
+    limite: null,
+    saldo,
+    vozes,
+    aviso: avisos.join(' ') || null,
+    // Uma linha por nota: a tela quebra a linha no \n.
+    nota: notas.join('\n') || null,
+  }
+}
+
+/** Um modelo do GET /model virado voz do select. null = nao serve (nao e TTS, nao terminou de treinar). */
+function vozDoModeloFish(item: unknown, comUsos: boolean): VozDoProvedor | null {
+  if (typeof item !== 'object' || item === null) return null
+  const m = item as Record<string, unknown>
+  if (m['type'] !== undefined && m['type'] !== 'tts') return null
+  if (m['state'] !== undefined && m['state'] !== 'trained') return null
+  const id = idDeVoz(m['_id'])
+  if (!id) return null
+  const idiomas = Array.isArray(m['languages'])
+    ? (m['languages'] as unknown[]).filter((x): x is string => typeof x === 'string')
+    : []
+  const amostras = Array.isArray(m['samples']) ? (m['samples'] as unknown[]) : []
+  const amostra =
+    typeof amostras[0] === 'object' && amostras[0] !== null ? (amostras[0] as Record<string, unknown>) : {}
+  // Na biblioteca o "quanto ja usaram" e o que separa a voz boa das mil parecidas.
+  const usos = comUsos ? numero(m['task_count']) : null
+  return {
+    id,
+    nome: textoDe(m['title']) || id,
+    detalhe: comUsos
+      ? detalheCurto([idiomas.slice(0, 3).join('/'), usos !== null && usos > 0 ? `${usosCurtos(usos)} usos` : ''])
+      : detalheCurto(idiomas),
+    previewUrl: urlOuNull(amostra['audio']),
+  }
+}
+
+/** 12345 -> "12 mil", 3400000 -> "3,4 mi". */
+function usosCurtos(n: number): string {
+  // O Intl separa o "mil" com espaco duro: no select vai espaco comum.
+  return new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }).format(n).replace(/\s/g, ' ')
 }
 
 /**
@@ -316,27 +376,78 @@ export async function listarVozesFish(chave: string): Promise<VozDoProvedor[]> {
     const corpo = r.json as { items?: unknown; total?: unknown; has_more?: unknown }
     const itens = Array.isArray(corpo.items) ? (corpo.items as unknown[]) : []
     for (const item of itens) {
-      if (typeof item !== 'object' || item === null) continue
-      const m = item as Record<string, unknown>
-      if (m['type'] !== undefined && m['type'] !== 'tts') continue
-      if (m['state'] !== undefined && m['state'] !== 'trained') continue
-      const id = idDeVoz(m['_id'])
-      if (!id) continue
-      const idiomas = Array.isArray(m['languages'])
-        ? (m['languages'] as unknown[]).filter((x): x is string => typeof x === 'string')
-        : []
-      const amostras = Array.isArray(m['samples']) ? (m['samples'] as unknown[]) : []
-      const amostra =
-        typeof amostras[0] === 'object' && amostras[0] !== null ? (amostras[0] as Record<string, unknown>) : {}
-      vozes.push({
-        id,
-        nome: textoDe(m['title']) || id,
-        detalhe: detalheCurto(idiomas),
-        previewUrl: urlOuNull(amostra['audio']),
-      })
+      const voz = vozDoModeloFish(item, false)
+      if (voz) vozes.push(voz)
     }
     const total = numero(corpo.total)
     if (itens.length < porPagina || corpo.has_more === false || (total !== null && pagina * porPagina >= total)) break
   }
   return vozes
+}
+
+// ------------------------------------------- Fish Audio: biblioteca publica
+
+/** Quantas vozes da biblioteca entram na lista: as mais usadas primeiro (sort_by=score). */
+const VOZES_DA_BIBLIOTECA = 40
+
+/**
+ * (21/10) As vozes PUBLICAS do Fish Audio (GET /model sem o self): as
+ * populares em portugues, ou as que tem `busca` no nome. Busca sem nada em
+ * portugues tenta de novo em todas as linguas. So leitura: nao gasta.
+ *
+ * Conferido na doc (docs.fish.audio, "List models", 21/10/2026): page_size
+ * (1-100), page_number, title, language, sort_by (score | task_count |
+ * created_at), Bearer.
+ */
+export async function bibliotecaFish(chave: string, busca: string): Promise<BibliotecaDoFish> {
+  const termo = busca.trim().slice(0, 80)
+  const pedir = async (idioma: string | null): Promise<VozDoProvedor[]> => {
+    const consulta = new URLSearchParams({ page_size: String(VOZES_DA_BIBLIOTECA), page_number: '1', sort_by: 'score' })
+    if (idioma) consulta.set('language', idioma)
+    if (termo) consulta.set('title', termo)
+    const r = await pedirJson(`${FISH_API}/model?${consulta.toString()}`, { Authorization: `Bearer ${chave}` })
+    if (!r.ok) throw new Error(notaDaFalha('fish', r.falha, chave))
+    const itens = (r.json as { items?: unknown }).items
+    const vozes: VozDoProvedor[] = []
+    for (const item of Array.isArray(itens) ? itens : []) {
+      const voz = vozDoModeloFish(item, true)
+      if (voz && !vozes.some((v) => v.id === voz.id)) vozes.push(voz)
+    }
+    return vozes
+  }
+  const emPortugues = await pedir('pt')
+  if (emPortugues.length > 0 || !termo) return { busca: termo, vozes: emPortugues, todasAsLinguas: false }
+  return { busca: termo, vozes: await pedir(null), todasAsLinguas: true }
+}
+
+/**
+ * O ID da voz do Fish no que ele colou: o ID puro ("e58b...abcb") ou o link
+ * (fish.audio/m/<id>, fish.audio/pt/m/<id>/, com ou sem https e ?query).
+ * '' = nao achou.
+ */
+export function idDaVozFish(entrada: string): string {
+  const texto = entrada.trim()
+  const doLink = /(?:^|[/.])fish\.audio\/(?:[a-z-]+\/)*m\/([A-Za-z0-9]{16,64})(?:[/?#]|$)/i.exec(texto)
+  if (doLink) return doLink[1]!
+  return /^[A-Za-z0-9]{16,64}$/.test(texto) ? texto : ''
+}
+
+/**
+ * (21/10) Uma voz do Fish pelo ID ou pelo link (GET /model/{id}): o nome para
+ * o select, e a conferencia de que existe e e uma voz pronta. So leitura.
+ */
+export async function vozDoFishPorId(chave: string, entrada: string): Promise<VozDoProvedor> {
+  const id = idDaVozFish(entrada)
+  if (!id) throw new Error('Isso nao parece o ID de uma voz do Fish. Cole o ID (letras e numeros) ou o link fish.audio/m/...')
+  const r = await pedirJson(`${FISH_API}/model/${id}`, { Authorization: `Bearer ${chave}` })
+  if (!r.ok) {
+    if (r.falha.status === 404 || r.falha.status === 422) throw new Error('Nao achei essa voz no Fish Audio. Confira o ID ou o link.')
+    throw new Error(notaDaFalha('fish', r.falha, chave))
+  }
+  const m = r.json as Record<string, unknown>
+  if (m['type'] !== undefined && m['type'] !== 'tts') throw new Error('Esse modelo do Fish nao e de voz (TTS). Escolha outro.')
+  if (m['state'] !== undefined && m['state'] !== 'trained') throw new Error('Essa voz ainda nao esta pronta no Fish (em treino). Tente mais tarde.')
+  const voz = vozDoModeloFish(m, true)
+  if (!voz) throw new Error('Nao achei essa voz no Fish Audio. Confira o ID ou o link.')
+  return voz
 }

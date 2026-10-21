@@ -764,7 +764,7 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
         vozesErro: { ...get().vozesErro, [provedor]: null },
       })
       // O "Testar" das Configuracoes: le o plano e a lista de vozes, sem gastar caractere.
-      const r = provedor === 'elevenlabs' ? await ponte.testarEleven(null) : await ponte.testarFish(null)
+      const r = provedor === 'elevenlabs' ? await ponte.testarEleven(null) : await ponte.testarFish(null, get().form.fish.modelId)
       set({ carregandoVozes: { ...get().carregandoVozes, [provedor]: false } })
       if (r.ok) {
         set({ vozes: { ...get().vozes, [provedor]: r.value.vozes } })

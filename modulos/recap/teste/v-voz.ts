@@ -168,7 +168,8 @@ async function testesDoFetch(): Promise<void> {
       ? { status: 200, corpo: { credit: '0' } }
       : { status: 200, corpo: { total: 0, items: [] } }
   const zerado = await testarFish(CHAVE_FISH)
-  conferir('saldo zerado e sem voz: os dois avisos', [zerado.aviso?.startsWith('Sem creditos no Fish Audio'), zerado.aviso?.includes('voz propria')], [true, true])
+  // (21/10) Sem voz propria virou nota neutra: a biblioteca publica do Fish esta na lista (v-voz-fish-biblioteca).
+  conferir('saldo zerado e sem voz: o aviso do saldo e a nota da biblioteca', [zerado.aviso?.startsWith('Sem creditos no Fish Audio'), zerado.nota?.includes('Biblioteca do Fish')], [true, true])
 
   rota = () => ({ status: 401, corpo: { status: 401, message: 'Unauthorized' } })
   conferir('401 do Fish', (await lancou(() => testarFish(CHAVE_FISH))).startsWith('Chave invalida: o Fish Audio'), true)

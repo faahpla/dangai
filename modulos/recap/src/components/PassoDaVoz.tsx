@@ -48,6 +48,8 @@ import { ErrosDoAudio } from './ErrosDoAudio'
 import { FrasesDaVoz } from './FrasesDaVoz'
 import { PerguntaDeCusto } from './PerguntaDeCusto'
 import { TocadorDaVoz } from './TocadorDaVoz'
+import { BibliotecaDoFish, OuvirNoFish } from './BibliotecaDoFish'
+import { rotuloDaVoz, useBibliotecaFish, vozesDaBiblioteca } from '../store/biblioteca-fish'
 import { Botao, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, Caixinha, Secao, focarBotao, formatarTempo } from './pecas'
 
 /**
@@ -358,6 +360,9 @@ function CamposDaVoz({ travado }: { travado: boolean }) {
   const carregandoVozes = useVoz((s) => s.carregandoVozes)
   const carregarVozes = useVoz((s) => s.carregarVozes)
   const mudarForm = useVoz((s) => s.mudarForm)
+  const temChaveFish = useVoz((s) => s.ajustes?.hasFishKey ?? false)
+  const bibliotecaLida = useBibliotecaFish((s) => s.vozes)
+  const avulsas = useBibliotecaFish((s) => s.avulsas)
   if (form.fonte === 'importado') return null
   const provedor: ProvedorDeVoz = form.fonte
   const lado = provedor === 'elevenlabs' ? 'eleven' : 'fish'
@@ -365,7 +370,9 @@ function CamposDaVoz({ travado }: { travado: boolean }) {
   const lista = vozes[provedor] ?? []
   const carregando = carregandoVozes[provedor]
   const erro = vozesErro[provedor]
-  const salvaFora = atual.voiceId !== '' && !lista.some((v) => v.id === atual.voiceId)
+  // (21/10) No Fish, alem das vozes da conta, as da biblioteca publica (populares, busca, coladas).
+  const daBiblioteca = provedor === 'fish' && temChaveFish ? vozesDaBiblioteca({ vozes: bibliotecaLida, avulsas }, lista) : []
+  const salvaFora = atual.voiceId !== '' && !lista.some((v) => v.id === atual.voiceId) && !daBiblioteca.some((v) => v.id === atual.voiceId)
   const modelos = provedor === 'elevenlabs' ? MODELOS_ELEVEN.map((m) => ({ id: m.id, nome: m.nome })) : MODELOS_FISH
   const modeloFora = atual.modelId !== '' && !modelos.some((m) => m.id === atual.modelId)
 
@@ -381,6 +388,8 @@ function CamposDaVoz({ travado }: { travado: boolean }) {
           canto={
             carregando ? (
               <Loader2 size={11} strokeWidth={1.5} className="animate-spin text-ink-3" aria-label="Carregando as vozes" />
+            ) : provedor === 'fish' ? (
+              <OuvirNoFish voiceId={atual.voiceId} />
             ) : null
           }
         >
@@ -399,11 +408,38 @@ function CamposDaVoz({ travado }: { travado: boolean }) {
             {salvaFora && (
               <option value={atual.voiceId}>{carregando ? 'Carregando...' : `${atual.voiceId} (salva)`}</option>
             )}
-            {lista.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.detalhe ? `${v.nome} (${v.detalhe})` : v.nome}
-              </option>
-            ))}
+            {provedor === 'fish' ? (
+              <>
+                <optgroup label="Suas vozes">
+                  {lista.length === 0 ? (
+                    <option value="" disabled>
+                      {carregando ? 'Carregando...' : 'Nenhuma voz propria na conta'}
+                    </option>
+                  ) : (
+                    lista.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {rotuloDaVoz(v)}
+                      </option>
+                    ))
+                  )}
+                </optgroup>
+                {daBiblioteca.length > 0 && (
+                  <optgroup label="Biblioteca do Fish">
+                    {daBiblioteca.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {rotuloDaVoz(v)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </>
+            ) : (
+              lista.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {rotuloDaVoz(v)}
+                </option>
+              ))
+            )}
           </select>
         </Campo>
         <Campo rotulo="Modelo" className="w-[200px]">
@@ -425,6 +461,14 @@ function CamposDaVoz({ travado }: { travado: boolean }) {
         <VelocidadeNativa travado={travado} />
         <Pos travado={travado} />
       </div>
+      {provedor === 'fish' && temChaveFish && (
+        <BibliotecaDoFish
+          escolhida={atual.voiceId}
+          daConta={vozes.fish}
+          onEscolher={(v) => mudar({ voiceId: v.id })}
+          travado={travado}
+        />
+      )}
       {erro && (
         <p className="flex min-w-0 items-center gap-2 text-[11px] text-danger" title={erro}>
           <TriangleAlert size={12} strokeWidth={1.5} className="shrink-0" />

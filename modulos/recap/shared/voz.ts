@@ -1142,6 +1142,14 @@ export const PRECO_DO_FISH_POR_MILHAO_DE_BYTES: Readonly<Record<string, number>>
 }
 const PRECO_DO_FISH_PADRAO = 15
 
+/**
+ * (21/10) O modelo do Fish que nao cobra (s2.1-pro-free): o saldo zerado nao e
+ * problema nele, e a estimativa nem le o saldo.
+ */
+export function modeloFishGratis(modelId: string): boolean {
+  return PRECO_DO_FISH_POR_MILHAO_DE_BYTES[modelId] === 0
+}
+
 /** Quanto o Fish cobra por estes bytes de texto, em dolar. */
 export function dolaresDoFish(bytes: number, modelId: string): number {
   const preco = PRECO_DO_FISH_POR_MILHAO_DE_BYTES[modelId] ?? PRECO_DO_FISH_PADRAO
@@ -1159,6 +1167,8 @@ export function textoDaEstimativa(e: EstimativaDeCusto): string {
   if (e.fonte === 'importado') return 'Audio importado, sem custo'
   if (e.aCobrar === 0) return 'Ja gerado, sem custo'
   const caracteres = `${e.pagos.toLocaleString('pt-BR')} caracteres`
+  // (21/10) O modelo gratis do Fish: nada de "US$ 0,00" nem de saldo, que ele nao usa.
+  if (e.fonte === 'fish' && e.dolares === 0) return `${caracteres} · ${ROTULO_DA_FONTE.fish} · modelo gratis, nao usa saldo`
   // O custo de fato ao lado dos caracteres: creditos no ElevenLabs, dolar no Fish.
   const custo =
     e.creditos !== null

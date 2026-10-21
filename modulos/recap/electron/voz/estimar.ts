@@ -8,6 +8,7 @@ import {
   frasesMudadas,
   frasesParaRegravar,
   modeloEleven,
+  modeloFishGratis,
   soMudaOPos,
   takeAtual,
   textoParaNarrar,
@@ -276,7 +277,8 @@ export async function estimarVoz(rascunhoId: string, pedido: PedidoDeEstimativa)
     }
   } else {
     if (!s.fishApiKey && !falsa) avisos.push('Cole a chave do Fish Audio em Configuracoes > Voz.')
-    else if (aCobrar > 0) {
+    // (21/10) O modelo gratis nao usa saldo: nem le (o "Sem saldo" ali mandava recarregar a toa).
+    else if (aCobrar > 0 && !modeloFishGratis(config.modelId)) {
       estimativa.saldo = falsa ? SALDO_DE_TESTE : await saldoFish(s.fishApiKey)
       const saldo = estimativa.saldo !== null ? Number(estimativa.saldo) : Number.NaN
       if (Number.isFinite(saldo) && saldo <= 0) avisos.push('Sem saldo no Fish Audio: escolha o modelo "S2.1 Pro gratis" (sem custo) ou recarregue em fish.audio.')

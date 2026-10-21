@@ -52,7 +52,14 @@ import {
   type VozGerada,
   type VozInterrompida,
 } from '../shared/voz'
-import { CAMPOS_DE_CHAVE_DA_VOZ, type AjustesDaVoz, type CampoDeChaveDaVoz, type TesteDeVoz } from '../shared/tipos-da-voz'
+import {
+  CAMPOS_DE_CHAVE_DA_VOZ,
+  type AjustesDaVoz,
+  type BibliotecaDoFish,
+  type CampoDeChaveDaVoz,
+  type TesteDeVoz,
+  type VozDoProvedor,
+} from '../shared/tipos-da-voz'
 import { AUDIO_EXTENSIONS, classifyFile } from '@shared/channels'
 import { listarModulos } from '../../../electron/modulos'
 import { acharAncut, conferirEnvio, enviarAoAncut, enviarSempreAoAncut, trazerDoAncut, unificarComOAncut } from './ancut/enviar'
@@ -83,7 +90,7 @@ import { esperaDaVozFalsa } from './voz/provedor'
 import { pedidoInterrompido } from './voz/pedidos'
 import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from './voz/gerar'
 import { aprovarVoz, audioDoTake, desaprovarVoz, escolherTakeDoRascunho } from './voz/takes'
-import { testarEleven, testarFish, testeDeVozFalso } from './voz-chaves'
+import { bibliotecaFish, bibliotecaFishFalsa, idDaVozFish, testarEleven, testarFish, testeDeVozFalso, vozDoFishPorId } from './voz-chaves'
 import { getSettings } from './settings'
 import { z } from 'zod'
 import {
@@ -375,11 +382,34 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
     return testarEleven(usada)
   })
 
-  ctx.handle<[string | null], TesteDeVoz>(C.testarFish, async (chave) => {
+  ctx.handle<[string | null, string?], TesteDeVoz>(C.testarFish, async (chave, modelo) => {
     if (esperaDaVozFalsa() !== null) return testeDeVozFalso('fish')
     const usada = (typeof chave === 'string' ? chave.trim() : '') || getSettings().fishApiKey
     if (!usada) throw new Error('Cole a chave do Fish Audio antes de testar.')
-    return testarFish(usada)
+    return testarFish(usada, typeof modelo === 'string' ? modelo : '')
+  })
+
+  // (21/10) A biblioteca publica do Fish e a voz pelo ID: so leitura (GET), com a chave salva.
+  const chaveDoFish = (): string => {
+    const chave = getSettings().fishApiKey
+    if (!chave) throw new Error('Salve a chave do Fish Audio em Configuracoes > Voz.')
+    return chave
+  }
+
+  ctx.handle<[string], BibliotecaDoFish>(C.bibliotecaFish, async (busca) => {
+    const termo = typeof busca === 'string' ? busca : ''
+    if (esperaDaVozFalsa() !== null) return bibliotecaFishFalsa(termo)
+    return bibliotecaFish(chaveDoFish(), termo)
+  })
+
+  ctx.handle<[string], VozDoProvedor>(C.vozDoFish, async (entrada) => {
+    const texto = typeof entrada === 'string' ? entrada.slice(0, 300) : ''
+    if (esperaDaVozFalsa() !== null) {
+      const id = idDaVozFish(texto)
+      if (!id) throw new Error('Isso nao parece o ID de uma voz do Fish. Cole o ID (letras e numeros) ou o link fish.audio/m/...')
+      return { id, nome: 'Voz colada de teste', detalhe: 'pt', previewUrl: null }
+    }
+    return vozDoFishPorId(chaveDoFish(), texto)
   })
 
   // --------------------------------------------------------- passo 4 (Cenas)

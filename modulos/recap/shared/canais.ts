@@ -64,7 +64,7 @@ import type {
   RostosDoLote,
   SfxDaEdicaoRapida,
 } from './edicao-rapida'
-import type { AjustesDaVoz, CampoDeChaveDaVoz, TesteDeVoz, VozPadrao } from './tipos-da-voz'
+import type { AjustesDaVoz, BibliotecaDoFish, CampoDeChaveDaVoz, TesteDeVoz, VozDoProvedor, VozPadrao } from './tipos-da-voz'
 import type { PedidoDeTextos, PngDoTexto } from './textos-na-tela'
 import type { PedidoDeTitulos, PedidoDoPosRender, TextosDoPosRender, TitulosNovos } from './pos-render'
 import type {
@@ -165,6 +165,10 @@ export const CANAIS = {
   salvarChaveDaVoz: 'recap:voz:salvar-chave',
   testarEleven: 'recap:voz:testar-eleven',
   testarFish: 'recap:voz:testar-fish',
+  /** (21/10) As vozes publicas do Fish: as populares em portugues ou uma busca por nome (so leitura). */
+  bibliotecaFish: 'recap:voz:fish-biblioteca',
+  /** (21/10) Uma voz do Fish pelo ID ou pelo link fish.audio/m/<id> (so leitura). */
+  vozDoFish: 'recap:voz:fish-voz',
 
   // passo 4 (Cenas) e o "Abrir no editor" (parte 3)
   sugerirCenas: 'recap:cenas:sugerir',
@@ -351,7 +355,10 @@ export interface PonteDoRecap {
   salvarChaveDaVoz(campo: CampoDeChaveDaVoz, valor: string): Promise<IpcResult<AjustesDaVoz>>
   /** Confere a chave sem gastar: plano/saldo e vozes. `chave` null testa a salva, que nunca volta para ca. */
   testarEleven(chave: string | null): Promise<IpcResult<TesteDeVoz>>
-  testarFish(chave: string | null): Promise<IpcResult<TesteDeVoz>>
+  /** `modelo`: o modelo do Fish escolhido; o gratis nao avisa de saldo zerado. */
+  testarFish(chave: string | null, modelo?: string): Promise<IpcResult<TesteDeVoz>>
+  bibliotecaFish(busca: string): Promise<IpcResult<BibliotecaDoFish>>
+  vozDoFish(entrada: string): Promise<IpcResult<VozDoProvedor>>
 
   // Passo 4 (Cenas), como no Studio: tudo que muda o rascunho devolve o
   // rascunho INTEIRO (CenasGravadas.rascunho). O casar e por regras, de graca.

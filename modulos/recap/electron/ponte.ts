@@ -66,7 +66,9 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     lerAjustesDaVoz: () => invocar(C.lerAjustesDaVoz),
     salvarChaveDaVoz: (campo, valor) => invocar(C.salvarChaveDaVoz, campo, valor),
     testarEleven: (chave) => invocar(C.testarEleven, chave),
-    testarFish: (chave) => invocar(C.testarFish, chave),
+    testarFish: (chave, modelo) => invocar(C.testarFish, chave, modelo ?? ''),
+    bibliotecaFish: (busca) => invocar(C.bibliotecaFish, busca),
+    vozDoFish: (entrada) => invocar(C.vozDoFish, entrada),
 
     sugerirCenas: (rascunhoId) => invocar(C.sugerirCenas, rascunhoId),
     candidatosDaFrase: (rascunhoId, fraseId, filtros) => invocar(C.candidatosDaFrase, rascunhoId, fraseId, filtros),

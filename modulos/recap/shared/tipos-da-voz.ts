@@ -51,6 +51,24 @@ export interface TesteDeVoz {
   vozes: VozDoProvedor[]
   /** A chave vale, mas algo ficou de fora (sem creditos, sem permissao, sem voz). null = tudo certo. */
   aviso: string | null
+  /**
+   * (21/10) Uma linha NEUTRA, sem cor de erro: "Modelo gratis: nao usa saldo",
+   * "a conta nao tem voz propria: escolha uma da biblioteca". null = nada.
+   */
+  nota?: string | null
+}
+
+/**
+ * (21/10) As vozes PUBLICAS da biblioteca do Fish Audio (GET /model, sem o
+ * self): as mais usadas em portugues, ou o resultado de uma busca por nome.
+ * Listar nao gasta nada.
+ */
+export interface BibliotecaDoFish {
+  /** A busca que deu esta lista ('' = as populares). */
+  busca: string
+  vozes: VozDoProvedor[]
+  /** Nada em portugues com esse nome: a lista veio de todas as linguas. */
+  todasAsLinguas: boolean
 }
 
 /** Os campos de chave do modulo (camposDeChave): os MESMOS nomes do settings do Studio, que a parte 5 migra. */

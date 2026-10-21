@@ -4,6 +4,8 @@ import { ponte } from '../ponte'
 import { modeloEleven } from '../../shared/voz'
 import { MODELOS_FISH, useVoz } from '../store/gerar-voz'
 import { VelocidadeDaVoz } from './VelocidadeDaVoz'
+import { BibliotecaDoFish, OuvirNoFish } from './BibliotecaDoFish'
+import { rotuloDaVoz, useBibliotecaFish, vozesDaBiblioteca } from '../store/biblioteca-fish'
 
 /**
  * A secao "Voz" das Configuracoes: a voz padrao, a velocidade e as chaves do
@@ -60,7 +62,7 @@ const LINK_DA_CHAVE: Record<ProvedorDeVoz, string> = {
   fish: 'https://fish.audio/app/api-keys/',
 }
 
-type Resultado = { tipo: 'ok' | 'erro'; texto: string; aviso: string | null }
+type Resultado = { tipo: 'ok' | 'erro'; texto: string; aviso: string | null; nota?: string | null }
 
 const CAMPO =
   'min-w-0 flex-1 select-text rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none'
@@ -97,6 +99,8 @@ export function AjustesDeVoz({
   const [testando, setTestando] = useState<ProvedorDeVoz | null>(null)
   const [resultado, setResultado] = useState<Partial<Record<ProvedorDeVoz, Resultado>>>({})
   const [salvando, setSalvando] = useState(false)
+  const bibliotecaLida = useBibliotecaFish((s) => s.vozes)
+  const avulsas = useBibliotecaFish((s) => s.avulsas)
   const ancora = useRef<HTMLDivElement>(null)
   // Veio do "Configurar" do passo 3: rola ate esta secao. Guarda ATE QUANDO rolar; 0 = nao rolar.
   const rolarAte = useRef(useVoz.getState().ajustesDeVozPedidos ? Date.now() + 1500 : 0)
@@ -151,14 +155,14 @@ export function AjustesDeVoz({
     const r =
       provedor === 'elevenlabs'
         ? await ponte.testarEleven(chave)
-        : await ponte.testarFish(chave)
+        : await ponte.testarFish(chave, modeloDoFish())
     setTestando(null)
     if (!r.ok) {
       mostrar(provedor, { tipo: 'erro', texto: r.error, aviso: null })
       return
     }
     lembrar(provedor, r.value.vozes)
-    mostrar(provedor, { tipo: 'ok', texto: resumoDoTeste(r.value), aviso: r.value.aviso })
+    mostrar(provedor, { tipo: 'ok', texto: resumoDoTeste(r.value), aviso: r.value.aviso, nota: r.value.nota ?? null })
   }
 
   const salvarChave = async (provedor: ProvedorDeVoz): Promise<void> => {
@@ -175,6 +179,7 @@ export function AjustesDeVoz({
     setEntrada((atual) => ({ ...atual, [provedor]: '' }))
     // A lista era da chave antiga. Testar a nova e de graca e ja enche o select.
     lembrar(provedor, [])
+    if (provedor === 'fish') useBibliotecaFish.getState().esquecer()
     void testar(provedor, null)
   }
 
@@ -199,15 +204,30 @@ export function AjustesDeVoz({
     })
   }
 
+  /*
+   * (21/10) O modelo do Fish escolhido: o do passo Voz (o select de modelo mora
+   * la), senao o da voz padrao. No gratis o saldo zerado nao vira "Sem creditos".
+   */
+  const modeloDoFish = (): string => {
+    const doPasso = useVoz.getState().form.fish.modelId
+    const v = settings?.vozPadrao
+    return doPasso || (v?.provedor === 'fish' ? v.modelId : '')
+  }
+
   const voz = settings?.vozPadrao
   const valorDoSelect = voz && voz.provedor && voz.voiceId ? `${voz.provedor}:${voz.voiceId}` : ''
   // A voz salva aparece mesmo antes do Testar (a importada, por exemplo), ou o
   // select mostraria "Nenhuma" mentindo.
+  // (21/10) A biblioteca publica do Fish (populares, busca, coladas): grupo proprio no select.
+  const daBiblioteca = settings?.hasFishKey ? vozesDaBiblioteca({ vozes: bibliotecaLida, avulsas }, vozes.fish) : []
   const opcoes = (provedor: ProvedorDeVoz): VozDoProvedor[] =>
-    voz?.provedor === provedor && voz.voiceId && !vozes[provedor].some((v) => v.id === voz.voiceId)
+    voz?.provedor === provedor &&
+    voz.voiceId &&
+    !vozes[provedor].some((v) => v.id === voz.voiceId) &&
+    !(provedor === 'fish' && daBiblioteca.some((v) => v.id === voz.voiceId))
       ? [{ id: voz.voiceId, nome: `${voz.voiceId} (salva)`, detalhe: '', previewUrl: null }, ...vozes[provedor]]
       : vozes[provedor]
-  const semLista = vozes.elevenlabs.length === 0 && vozes.fish.length === 0
+  const semLista = vozes.elevenlabs.length === 0 && vozes.fish.length === 0 && daBiblioteca.length === 0
 
   const blocoDaChave = (provedor: ProvedorDeVoz) => {
     const tem = provedor === 'elevenlabs' ? settings?.hasElevenKey : settings?.hasFishKey
@@ -271,6 +291,7 @@ export function AjustesDeVoz({
           >
             {r.texto}
             {r.aviso && <span className="block text-danger">{r.aviso}</span>}
+            {r.nota && <span className="block whitespace-pre-line text-ink-3">{r.nota}</span>}
           </p>
         )}
       </>
@@ -283,7 +304,11 @@ export function AjustesDeVoz({
 
   const blocoDaVoz = (
     <>
-      <label className={['mb-1.5 block text-[11px] font-medium text-ink-2', compacto ? 'mt-4' : ''].join(' ')}>Voz</label>
+      <div className={['mb-1.5 flex items-baseline gap-2', compacto ? 'mt-4' : ''].join(' ')}>
+        <label className="block text-[11px] font-medium text-ink-2">Voz</label>
+        <span className="flex-1" />
+        {voz?.provedor === 'fish' && <OuvirNoFish voiceId={voz.voiceId} />}
+      </div>
       {/* pr-7 + reticencias: as vozes da biblioteca do ElevenLabs tem nome longo
           ("Andrea Wolff - clear, youthful...") e o texto encostava na seta. */}
       <select
@@ -296,16 +321,34 @@ export function AjustesDeVoz({
           const lista = opcoes(provedor)
           if (lista.length === 0) return null
           return (
-            <optgroup key={provedor} label={NOME[provedor]}>
+            <optgroup key={provedor} label={provedor === 'fish' ? 'Fish Audio: suas vozes' : NOME[provedor]}>
               {lista.map((v) => (
                 <option key={v.id} value={`${provedor}:${v.id}`}>
-                  {v.detalhe ? `${v.nome} (${v.detalhe})` : v.nome}
+                  {rotuloDaVoz(v)}
                 </option>
               ))}
             </optgroup>
           )
         })}
+        {daBiblioteca.length > 0 && (
+          <optgroup label="Biblioteca do Fish">
+            {daBiblioteca.map((v) => (
+              <option key={v.id} value={`fish:${v.id}`}>
+                {rotuloDaVoz(v)}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
+      {settings?.hasFishKey && (
+        <div className="mt-2">
+          <BibliotecaDoFish
+            escolhida={voz?.provedor === 'fish' ? voz.voiceId : ''}
+            daConta={vozes.fish}
+            onEscolher={(v) => escolherVoz(`fish:${v.id}`)}
+          />
+        </div>
+      )}
       {((semLista && !compacto) || (voz?.provedor && voz.modelId)) && (
         <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
           {semLista && !compacto ? 'Teste uma chave para ver as vozes da conta. ' : ''}
