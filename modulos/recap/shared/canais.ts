@@ -362,7 +362,8 @@ export interface PonteDoRecap {
 
   // Passo 4 (Cenas), como no Studio: tudo que muda o rascunho devolve o
   // rascunho INTEIRO (CenasGravadas.rascunho). O casar e por regras, de graca.
-  sugerirCenas(rascunhoId: string): Promise<IpcResult<CenasGravadas>>
+  /** variar: o botao "Sugerir de novo" (a frase que voltaria igual sai sem os planos de antes). */
+  sugerirCenas(rascunhoId: string, variar?: boolean): Promise<IpcResult<CenasGravadas>>
   candidatosDaFrase(rascunhoId: string, fraseId: string, filtros: FiltrosDeCandidatos): Promise<IpcResult<CandidatosDaFrase>>
   salvarCenas(rascunhoId: string, escolhas: readonly EscolhaDaFrase[]): Promise<IpcResult<CenasGravadas>>
   encaixarNaVoz(rascunhoId: string): Promise<IpcResult<CenasGravadas>>

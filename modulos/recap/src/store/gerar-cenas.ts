@@ -196,7 +196,8 @@ interface EstadoDasCenasNaTela {
   /** O cadeado da frase: travada, "Sugerir de novo" (todas) nao mexe nela. */
   travar: (fraseId: string, travada: boolean) => void
   /** "Sugerir de novo": uma frase (mesmo travada) ou, com null, todas as nao travadas. */
-  sugerirDeNovo: (fraseId: string | null) => Promise<void>
+  /** variar (padrao): a frase que voltaria igual sai sem os planos de antes. */
+  sugerirDeNovo: (fraseId: string | null, variar?: boolean) => Promise<void>
   /**
    * (rodada 4) "Grid" (ligar) ou "Tela cheia" na frase: o main escolhe a outra
    * metade (a cena dele fica como uma das duas) e grava; a frase fica travada.
@@ -870,7 +871,7 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       agendarGravacao()
     },
 
-    sugerirDeNovo: async (fraseId) => {
+    sugerirDeNovo: async (fraseId, variar = true) => {
       const id = get().rascunhoId
       const rascunho = useRoteiro.getState().rascunho
       const roteiro = rascunho ? roteiroAtual(rascunho) : null
@@ -892,7 +893,7 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       set({ pendentes, sugerindo: fraseId ?? 'todas', erro: null, recado: null, confirmando: null })
       const ok = await naFila(async () => {
         if (!(await gravarPendentes())) return false
-        const r = await ponte.sugerirCenas(id)
+        const r = await ponte.sugerirCenas(id, variar)
         if (!ainda(id)) return false
         if (!r.ok) {
           set({ erro: r.error })

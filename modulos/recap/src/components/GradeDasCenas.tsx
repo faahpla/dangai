@@ -326,7 +326,7 @@ export function GradeDasCenas({
             type="button"
             onClick={() => void sugerirDeNovo(frase.id)}
             disabled={sugerindo !== null && sugerindo !== 'auto'}
-            title="Sugere de novo so esta frase (a escolha dela volta para a sugestao)"
+            title="Troca a cena desta frase por outra sugestao (a de agora sai da conta)"
             className="flex items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-[11px] text-ink-2 transition-colors duration-150 hover:border-accent hover:text-ink disabled:opacity-40"
           >
             {daFrase ? <Loader2 size={11} strokeWidth={1.5} className="animate-spin" /> : <RotateCcw size={11} strokeWidth={1.5} />}

@@ -416,7 +416,7 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   // Contrato em shared/cenas.ts. O casar (cenas/) e por regras, de graca; o
   // encaixe e a montagem moram em montar/.
 
-  ctx.handle<[string], CenasGravadas>(C.sugerirCenas, async (rascunhoId) => sugerirCenas(idDoRascunho(rascunhoId)))
+  ctx.handle<[string, unknown], CenasGravadas>(C.sugerirCenas, async (rascunhoId, variar) => sugerirCenas(idDoRascunho(rascunhoId), variar === true))
 
   ctx.handle<[string, string, FiltrosDeCandidatos], CandidatosDaFrase>(C.candidatosDaFrase, async (rascunhoId, fraseId, filtros) =>
     candidatosDaFrase(idDoRascunho(rascunhoId), idDaFrase(fraseId), filtrosDeCandidatosSchema.parse(filtros ?? {})),

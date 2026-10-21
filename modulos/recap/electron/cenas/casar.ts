@@ -2871,6 +2871,12 @@ export interface EntradaDoCasar {
   /** As frases que abrem uma parte do roteiro (a 1a de todas e o gancho). Ausente = so a 1a frase. */
   abrem?: ReadonlySet<string>
   /**
+   * (21/10) Planos que o "Sugerir de novo" pede para nao repetir: ocupados por
+   * inteiro antes de tudo, como os de uma frase fixa. Sem nada melhor, o
+   * tentar(true) ainda volta a eles. Ausente = nenhum.
+   */
+  evitar?: ReadonlySet<string>
+  /**
    * (19/10, 3a rodada) A largura (fracao do quadro) do maior rosto de cada plano
    * (largurasDosRostos no servico): acima de CLOSE_EXTREMO, o close extremo.
    * Ausente = sem a medida (como antes).
@@ -3018,6 +3024,10 @@ export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
   for (const [fraseId, esc] of e.fixas) {
     if (e.refazer.has(fraseId)) continue
     for (const c of cenasDaFixa(esc, fraseDe.get(fraseId), e.take)) ocupar(inicial.ocupacao, c.candidato, c.duracao)
+  }
+  for (const id of e.evitar ?? []) {
+    const p = porId.get(id)
+    if (p) ocupar(inicial.ocupacao, { planoIds: [id], inSec: p.plano.start, outSec: p.plano.end }, p.plano.end - p.plano.start)
   }
 
   // O que nao muda com as escolhas das outras frases: quem a frase cita, o que pede, quanto dura.

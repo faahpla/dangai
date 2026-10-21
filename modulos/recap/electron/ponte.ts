@@ -70,7 +70,7 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     bibliotecaFish: (busca) => invocar(C.bibliotecaFish, busca),
     vozDoFish: (entrada) => invocar(C.vozDoFish, entrada),
 
-    sugerirCenas: (rascunhoId) => invocar(C.sugerirCenas, rascunhoId),
+    sugerirCenas: (rascunhoId, variar) => invocar(C.sugerirCenas, rascunhoId, variar === true),
     candidatosDaFrase: (rascunhoId, fraseId, filtros) => invocar(C.candidatosDaFrase, rascunhoId, fraseId, filtros),
     salvarCenas: (rascunhoId, escolhas) => invocar(C.salvarCenas, rascunhoId, escolhas),
     encaixarNaVoz: (rascunhoId) => invocar(C.encaixarNaVoz, rascunhoId),

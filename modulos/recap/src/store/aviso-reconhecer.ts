@@ -4,6 +4,7 @@ import {
   avisoDeReconhecimento,
   esquecerSeguirAssim,
   lembrarSeguirAssim,
+  pedeSugerirDeNovo,
   type AvisoDeReconhecimento,
 } from '../../shared/aviso-reconhecer'
 import { SO_NO_ANCUT } from '../../shared/descoberta'
@@ -148,6 +149,16 @@ export async function reconhecerAgoraESeguir(destino: PassoDoAssistente): Promis
   })
   const comecou = await reconhecerAgora()
   if (!comecou) acabou()
+}
+
+/**
+ * O lembrete "Personagens reconhecidos: sugira de novo" esta na tela (o mesmo
+ * teste do selo). O "Sugerir de novo" dele so refaz com os personagens, sem
+ * variar: a frase que ficou igual e a certa agora.
+ */
+export function lembrandoDeSugerir(indice: Parameters<typeof pedeSugerirDeNovo>[0]): boolean {
+  if (avisoDeReconhecimento(indice)) return false
+  return useAvisoReconhecer.getState().vistoSem.includes(indice.id) || pedeSugerirDeNovo(indice, armazem())
 }
 
 /** "Sugerir de novo" (ou o X do lembrete) depois de reconhecer: a marca do "seguir assim" sai. */

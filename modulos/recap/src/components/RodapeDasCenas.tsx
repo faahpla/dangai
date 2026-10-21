@@ -10,7 +10,7 @@ import { nucleo } from '../nucleo'
 import { Botao, COR_DE_AVISO, focarBotao, Link } from './pecas'
 import { CaixinhaDaEdicaoRapida } from './CaixinhaDaEdicaoRapida'
 import { SeloSemPersonagens } from './AvisoDeReconhecer'
-import { esquecerSemPersonagens } from '../store/aviso-reconhecer'
+import { esquecerSemPersonagens, lembrandoDeSugerir } from '../store/aviso-reconhecer'
 
 /**
  * A BARRA DE BAIXO do passo 4: voltar a voz, o recado do momento, "Sugerir de
@@ -151,11 +151,12 @@ export function RodapeDasCenas() {
         <Botao
           onClick={() => {
             // (21/10) Reconhecido depois das cenas: o lembrete do selo sai.
+            const variar = !(indice && lembrandoDeSugerir(indice))
             if (indice) esquecerSemPersonagens(indice.id)
-            void sugerirDeNovo(null)
+            void sugerirDeNovo(null, variar)
           }}
           disabled={ocupado}
-          title="Sugere de novo as frases que voce nao mexeu"
+          title="Troca as cenas das frases que voce nao mexeu por outras sugestoes"
         >
           <RotateCcw size={13} strokeWidth={1.5} />
           Sugerir de novo

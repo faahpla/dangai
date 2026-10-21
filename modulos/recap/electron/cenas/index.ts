@@ -253,7 +253,7 @@ function abrirParaCenas(r: RascunhoDoRecap): { indice: EpisodeIndex; roteiro: No
  * mudado (as travadas ficam, e os planos delas nao se repetem). Escolhas de
  * frases que sairam do roteiro saem. Nada a fazer = nada gravado.
  */
-export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
+export async function sugerirCenas(rascunhoId: string, variar = false): Promise<CenasGravadas> {
   // Os sinais (dicas, motor) e a leitura dos keyframes antes: entre ler e gravar o rascunho nao ha await.
   const { sinais, camadas } = await sinaisParaOCasar(rascunhoId)
   const indiceAntes = abrirParaCenas(lerRascunhoDoDisco(rascunhoId)).indice
@@ -280,27 +280,53 @@ export async function sugerirCenas(rascunhoId: string): Promise<CenasGravadas> {
   if (refazer.size === 0 && velhas.orfas.length === 0) return { rascunho: r, avisos: [] }
 
   const frases = frasesDoRoteiro(roteiro)
-  const fixas = new Map(atual.escolhas.filter((e) => !refazer.has(e.fraseId)).map((e) => [e.fraseId, e]))
   const divisao = divisaoDaConfig(configDoRecap().cenas)
-  const { casadas, avisos } = casarFrases({
-    indice,
-    eventos: r.eventos,
-    frases,
-    take,
-    fixas,
-    refazer,
-    abremEscuro,
-    sinais,
-    camadas,
-    divisao,
-    leitura,
-    rostos,
-    imagem,
-    abrem: frasesQueAbrem(roteiro),
-  })
+  const casar = (de: typeof atual, quais: ReadonlySet<string>, evitar?: ReadonlySet<string>) =>
+    casarFrases({
+      indice,
+      eventos: r.eventos,
+      frases,
+      take,
+      fixas: new Map(de.escolhas.filter((e) => !quais.has(e.fraseId)).map((e) => [e.fraseId, e])),
+      refazer: quais,
+      abremEscuro,
+      sinais,
+      camadas,
+      divisao,
+      leitura,
+      rostos,
+      imagem,
+      abrem: frasesQueAbrem(roteiro),
+      evitar,
+    })
+  const primeira = casar(atual, refazer)
+  let escolhidas = aplicarEscolhas(atual, primeira.casadas.map((c) => c.escolha), roteiro)
+  const avisos = [...primeira.avisos]
+  // (21/10) "Sugerir de novo" sem nada mudado dava as MESMAS cenas ("nao muda nada", Levi). Pedido
+  // pelo botao, a frase que voltou igual sai de novo sem os planos de antes. O que mudou (personagens
+  // reconhecidos, texto novo) ja trocou na primeira passada e fica.
+  if (variar) {
+    const planosDe = (e: ReturnType<typeof escolhaDaFrase>): string[] =>
+      (e?.cenas ?? []).flatMap((c) => [...c.candidato.planoIds, ...(c.baixo?.planoIds ?? [])])
+    const chave = (ids: string[]): string => [...ids].sort().join('|')
+    const iguais = new Set<string>()
+    const evitar = new Set<string>()
+    for (const id of refazer) {
+      const antes = planosDe(escolhaDaFrase(atual, id))
+      if (antes.length > 0 && chave(antes) === chave(planosDe(escolhaDaFrase(escolhidas, id)))) {
+        iguais.add(id)
+        for (const p of antes) evitar.add(p)
+      }
+    }
+    if (iguais.size > 0) {
+      const segunda = casar(escolhidas, iguais, evitar)
+      escolhidas = aplicarEscolhas(escolhidas, segunda.casadas.map((c) => c.escolha), roteiro)
+      avisos.push(...segunda.avisos.filter((a) => !avisos.includes(a)))
+    }
+  }
   const quando = agora()
   const cenas = {
-    ...aplicarEscolhas(atual, casadas.map((c) => c.escolha), roteiro),
+    ...escolhidas,
     sugeridasEm: quando,
     roteiroVersao: roteiro.versao,
   }
