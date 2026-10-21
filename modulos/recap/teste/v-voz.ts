@@ -110,6 +110,10 @@ async function testesDoFetch(): Promise<void> {
   const invalida = await lancou(() => testarEleven(CHAVE))
   conferir('401 invalid_api_key', invalida.startsWith('Chave invalida'), true)
 
+  // (21/10) O ID da chave colado no lugar da chave (o site lista o ID; a chave comeca com sk_).
+  rota = () => ({ status: 400, corpo: { detail: { status: 'invalid_api_key', message: "API key ID used as API key - only valid API keys can be used. API keys start with 'sk_' and are shown when the key is created or rotated." } } })
+  conferir('400 ID da chave no lugar da chave', (await lancou(() => testarEleven(CHAVE))).startsWith('Isso e o ID da chave, nao a chave'), true)
+
   rota = () => ({ status: 401, corpo: { detail: { status: 'quota_exceeded', message: 'quota' } } })
   conferir('401 quota_exceeded', (await lancou(() => testarEleven(CHAVE))).startsWith('Sem creditos no ElevenLabs'), true)
 

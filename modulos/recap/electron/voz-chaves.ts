@@ -124,6 +124,11 @@ export function notaDaFalha(provedor: ProvedorDeVoz, falha: Falha, chave: string
   if (falha.status === 401 || falha.status === 403) {
     return `Chave invalida: o ${nome} recusou. Confira se colou a chave inteira, sem espaco.`
   }
+  // (21/10) O amigo do Levi colou o ID da chave (a lista do site mostra o ID, ex. "...cc77"), nao a chave:
+  // a chave de verdade comeca com sk_ e so aparece na hora de criar (ou girar) a chave.
+  if (provedor === 'elevenlabs' && /api key id used as api key|only valid api keys/i.test(falha.mensagem)) {
+    return 'Isso e o ID da chave, nao a chave. No ElevenLabs (Developers > API Keys), crie uma chave nova e copie o valor que comeca com sk_: ele so aparece uma vez, na hora de criar.'
+  }
   if (falha.status === 429) return `Muitos pedidos seguidos ao ${nome}. Espere um minuto e teste de novo.`
   if (falha.status >= 500) {
     return `O ${nome} esta fora do ar agora (erro ${falha.status}). Tente de novo em alguns minutos.`
