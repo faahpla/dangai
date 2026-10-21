@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, ChevronRight, Link2, Loader2, LocateFixed, Maximize2, RotateCcw, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Link2, Loader2, LocateFixed, Maximize2, RotateCcw, Rows2, Search, X } from 'lucide-react'
 import type { TiraDaCena } from '@shared/channels'
 import { FORMATO_PADRAO, medidasDo } from '@shared/contract'
 import { coberturaDaFonte } from '@shared/camera'
@@ -313,6 +313,8 @@ export function GradeDasCenas({
         </span>
       </div>
 
+      <AvisoDoGridNaMao fraseId={frase.id} escolha={escolha} />
+
       <Personagens nomes={personagens} ativo={filtros.personagem} onEscolher={(nome) => definirFiltros({ personagem: nome })} />
 
       {/* A fita da frase: o que o casar sugere, com o porque. Acima da grade, nunca no lugar dela. */}
@@ -396,6 +398,63 @@ export function GradeDasCenas({
 }
 
 /** O motivo da maioria, uma vez so no cabecalho (como a Biblioteca): repetir em cada cartao so enchia de texto. */
+/**
+ * (20/10) O AVISO DO GRID NA MAO, no topo da grade: o que falta fazer (a cena
+ * de cima na esquerda, ou a de baixo aqui), a sugestao do app que ja entrou e
+ * como sair (Esc cancela).
+ */
+function AvisoDoGridNaMao({ fraseId, escolha }: { fraseId: string; escolha: EscolhaDaFrase | null }) {
+  const g = useCenas((s) => (s.gridNaMao?.fraseId === fraseId ? s.gridNaMao : null))
+  const manterSugestao = useCenas((s) => s.manterSugestao)
+  const cancelarGrid = useCenas((s) => s.cancelarGrid)
+  if (!g) return null
+  const baixo = g.etapa === 'baixo' ? escolha?.cenas[g.cena]?.baixo : undefined
+  const sugerida = baixo !== undefined && baixo.origem !== 'usuario'
+  return (
+    <div
+      role="status"
+      className="flex shrink-0 items-center gap-2 border-b border-accent/40 bg-accent/15 px-4 py-2 text-[12px] text-ink"
+      data-grid-na-mao={g.etapa}
+    >
+      <Rows2 size={13} strokeWidth={2} className="shrink-0 text-accent" />
+      <span className="min-w-0 flex-1">
+        {g.etapa === 'cima' ? (
+          <>
+            <b className="font-semibold text-accent">Grid:</b> na esquerda, clique na cena que vai EM CIMA
+          </>
+        ) : (
+          <>
+            <b className="font-semibold text-accent">Agora clique na cena que vai EMBAIXO</b>
+            {g.buscando ? (
+              <span className="text-ink-3"> · procurando uma sugestao...</span>
+            ) : sugerida ? (
+              <span className="text-ink-3"> · a sugestao do app ja esta embaixo (clique numa cena para trocar)</span>
+            ) : null}
+          </>
+        )}
+      </span>
+      {sugerida && !g.buscando && (
+        <button
+          type="button"
+          onClick={manterSugestao}
+          title="Fica a sugestao do app embaixo"
+          className="shrink-0 rounded-sm border border-accent/60 px-2 py-0.5 text-[11px] text-ink transition-colors duration-150 hover:bg-accent/20"
+        >
+          Manter a sugestao
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={cancelarGrid}
+        title="Cancela o grid (Esc): a frase volta a como estava"
+        className="shrink-0 rounded-sm px-2 py-0.5 text-[11px] text-ink-3 transition-colors duration-150 hover:bg-elevated hover:text-ink"
+      >
+        Cancelar (Esc)
+      </button>
+    </div>
+  )
+}
+
 function motivoComum(candidatos: readonly CandidatoDeCena[]): string | null {
   const conta = new Map<string, number>()
   for (const c of candidatos) {

@@ -396,8 +396,13 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
 
   ctx.handle<[string], CenasGravadas>(C.encaixarNaVoz, async (rascunhoId) => encaixarNaVoz(idDoRascunho(rascunhoId)))
 
-  ctx.handle<[string, string, boolean], CenasGravadas>(C.gridDaFrase, async (rascunhoId, fraseId, ligar) =>
-    gridDaFrase(idDoRascunho(rascunhoId), idDaFrase(fraseId), ligar === true),
+  ctx.handle<[string, string, boolean, number | undefined], CenasGravadas>(C.gridDaFrase, async (rascunhoId, fraseId, ligar, cena) =>
+    gridDaFrase(
+      idDoRascunho(rascunhoId),
+      idDaFrase(fraseId),
+      ligar === true,
+      typeof cena === 'number' && Number.isInteger(cena) && cena >= 0 ? cena : undefined,
+    ),
   )
 
   ctx.handle<[string], Record<string, PlanoNoMesclado>>(C.mesclasDoEpisodio, async (episodioId) => mesclasDoEpisodio(idDoEpisodio(episodioId)))

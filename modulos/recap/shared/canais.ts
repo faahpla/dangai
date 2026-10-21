@@ -358,8 +358,11 @@ export interface PonteDoRecap {
    * (rodada 4) O "Grid" / "Tela cheia" da frase: `ligar` poe o grid na mao (a
    * cena dele fica como uma das metades); desligado volta a tela cheia e o
    * automatico nao poe mais. Erro (ASCII) quando nenhuma outra cena serve.
+   * (20/10) Com `cena` (o grid na mao): a cena k fica em cima e a sugestao
+   * do app entra embaixo; sem sugestao, nada muda e o aviso diz
+   * SEM_SUGESTAO_DE_BAIXO (ele escolhe na grade).
    */
-  gridDaFrase(rascunhoId: string, fraseId: string, ligar: boolean): Promise<IpcResult<CenasGravadas>>
+  gridDaFrase(rascunhoId: string, fraseId: string, ligar: boolean, cena?: number): Promise<IpcResult<CenasGravadas>>
   /** Os planos que o Dangai mesclou depois do indice: planoId -> o mesclado e o ponto dentro dele. So le. */
   mesclasDoEpisodio(episodioId: string): Promise<IpcResult<Record<string, PlanoNoMesclado>>>
   /** Grava o .dangai em <biblioteca do recap>/_projetos/. A tela abre pelo abrirProjeto do nucleo. */

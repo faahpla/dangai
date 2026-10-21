@@ -21,8 +21,16 @@ import {
   type EscolhaDaFrase,
   type EstadoDasCenas,
 } from '../../shared/cenas'
-import { encaixarEscolha, planoExcluido, PREFIXO_CENA_CURTA_DELE } from '../../shared/encaixe'
-import type { ModoDoGrid } from '../../shared/grid'
+import { encaixarEscolha, planoExcluido, PREFIXO_CENA_CURTA_DELE, SUFIXO_METADE_DO_GRID } from '../../shared/encaixe'
+import {
+  comGridNaMao,
+  inverterMetades,
+  metadeDeBaixoDele,
+  metadeDeCima,
+  SEM_SUGESTAO_DE_BAIXO,
+  tirarMetadeDeBaixo,
+  type ModoDoGrid,
+} from '../../shared/grid'
 import { aplicarMesclas, type PlanoNoMesclado } from '../../shared/mesclas'
 import { useGerar } from './gerar'
 import { useRoteiro } from './gerar-roteiro'
@@ -150,6 +158,8 @@ interface EstadoDasCenasNaTela {
   sugerindo: string | null
   /** (rodada 4) O "Grid" / "Tela cheia" de uma frase no ar: o id dela. */
   gridando: string | null
+  /** (20/10) O grid na mao em andamento (o "Grid" da frase ate ele escolher a de baixo). */
+  gridNaMao: GridNaMao | null
   encaixando: boolean
   montando: boolean
   /** O que a montagem esta fazendo agora (do main: "Rostos, sons e musica..."). null = sem recado. */
@@ -192,6 +202,26 @@ interface EstadoDasCenasNaTela {
    * metade (a cena dele fica como uma das duas) e grava; a frase fica travada.
    */
   alternarGrid: (fraseId: string, ligar: boolean) => Promise<void>
+  /**
+   * (20/10) O "Grid" da frase, NA MAO: com mais de uma cena, ele escolhe na
+   * esquerda a de cima (escolherCima); com uma, ela ja e a de cima. Depois o
+   * clique na grade poe a de baixo (porEmbaixo). A sugestao do app entra
+   * embaixo enquanto isso (quem nao quer escolher tem o grid de um clique).
+   */
+  pedirGrid: (fraseId: string) => void
+  escolherCima: (k: number) => void
+  /** O clique na grade com o grid na mao em andamento: a cena vai embaixo. */
+  porEmbaixo: (candidato: CandidatoDeCena) => void
+  /** O clique na metade de baixo, na esquerda: o proximo clique na grade troca so ela. */
+  trocarDeBaixo: (fraseId: string, k: number) => void
+  /** Inverter: a de cima vai para baixo e a de baixo para cima. */
+  inverterGrid: (fraseId: string, k: number) => void
+  /** Tirar a de baixo: a cena k volta a tela cheia. */
+  tirarDeBaixo: (fraseId: string, k: number) => void
+  /** "Manter a sugestao": a de baixo que o app pos fica (passa a ser dele). */
+  manterSugestao: () => void
+  /** Esc: o grid na mao para e a frase volta a como estava antes do "Grid". */
+  cancelarGrid: () => void
   pedirMiniaturas: (episodioId: string, planoIds: readonly string[]) => void
   publicarVideo: (arquivo: string) => Promise<string | null>
   carregarAudio: (rascunhoId: string, takeId: string) => Promise<void>
@@ -202,6 +232,20 @@ interface EstadoDasCenasNaTela {
   desistirDeAbrir: () => void
   limparErro: () => void
   limparRecado: () => void
+}
+
+/**
+ * (20/10) O grid na mao em andamento: 'cima' = ele escolhe na esquerda a
+ * cena que fica em cima; 'baixo' = o proximo clique na grade (ou no player)
+ * vai embaixo da cena `cena`. `antes` = a escolha de antes (o Esc volta a
+ * ela); `buscando` = a sugestao do app ainda no main.
+ */
+export interface GridNaMao {
+  fraseId: string
+  etapa: 'cima' | 'baixo'
+  cena: number
+  antes: EscolhaDaFrase | null
+  buscando: boolean
 }
 
 // ------------------------------------------------------------- constantes
@@ -232,6 +276,7 @@ const LIMPO = {
   salvando: false,
   sugerindo: null,
   gridando: null,
+  gridNaMao: null,
   encaixando: false,
   montando: false,
   etapaDaMontagem: null,
@@ -528,7 +573,9 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
     const curta = avisos.map((a) => a.slice(a.indexOf(': ') + 2)).find((a) => a.startsWith(PREFIXO_CENA_CURTA_DELE))
     const recadoAntes = get().recado
     const recado = curta
-      ? `Cena curta: ${curta.slice(PREFIXO_CENA_CURTA_DELE.length)}. O fim fica parado; "completar" na cena emenda o plano seguinte.`
+      ? curta.endsWith(SUFIXO_METADE_DO_GRID)
+        ? `Cena curta: ${curta.slice(PREFIXO_CENA_CURTA_DELE.length)}. O fim fica parado; troque a cena ou volte a Tela cheia.`
+        : `Cena curta: ${curta.slice(PREFIXO_CENA_CURTA_DELE.length)}. O fim fica parado; "completar" na cena emenda o plano seguinte.`
       : recadoAntes?.startsWith('Cena curta: ')
         ? null
         : recadoAntes
@@ -642,6 +689,8 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       set({
         fraseAtiva: fraseId,
         cenaAlvo: 0,
+        // O grid na mao e da frase aberta: trocar de frase para (o que ja foi feito fica).
+        gridNaMao: null,
         filtros: { ...get().filtros, vizinhasDe: null },
         // O player aberto segue a frase (setas para cima e para baixo dentro dele).
         ...(previa ? { previa: { fraseId, candidato: null, tocar: previa.tocar } } : {}),
@@ -698,6 +747,7 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
     trocarCena: (candidato, fraseId) => {
       const id = fraseDoClique(fraseId)
       if (!id) return
+      if (get().gridNaMao?.fraseId === id) return get().porEmbaixo(candidato)
       mudarEscolha(id, (atual, ctx) => {
         const base = atual ?? escolhaVazia(ctx)
         // (rodada 4) O cartao da metade de baixo do grid, de novo: sai so ela (a cena fica cheia).
@@ -727,6 +777,7 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
     adicionarCena: (candidato, fraseId) => {
       const id = fraseDoClique(fraseId)
       if (!id) return
+      if (get().gridNaMao?.fraseId === id) return get().porEmbaixo(candidato)
       mudarEscolha(id, (atual, ctx) => {
         const base = atual ?? escolhaVazia(ctx)
         if (base.cenas.length === 0) return { ...base, cenas: [{ candidato: dele(candidato), palavraInicio: 0 }] }
@@ -860,7 +911,9 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       const id = get().rascunhoId
       const rascunho = useRoteiro.getState().rascunho
       if (!id || !rascunho || rascunho.id !== id || get().gridando || get().montando) return
-      set({ gridando: fraseId, erro: null, recado: null, confirmando: null })
+      // (20/10) "Tela cheia" tambem encerra o grid na mao em andamento.
+      const naMao = get().gridNaMao?.fraseId === fraseId ? null : get().gridNaMao
+      set({ gridando: fraseId, gridNaMao: naMao, erro: null, recado: null, confirmando: null })
       await naFila(async () => {
         if (!(await gravarPendentes())) return
         const r = await ponte.gridDaFrase(id, fraseId, ligar)
@@ -873,6 +926,111 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       })
       if (get().rascunhoId === id) set({ gridando: null })
       agendarConferencia()
+    },
+
+    pedirGrid: (fraseId) => {
+      const ctx = contextoDaFrase(fraseId)
+      if (!ctx || get().montando) return
+      const atual = escolhaDaFrase(ctx.cenas, fraseId)
+      if (!atual || atual.cenas.length === 0) {
+        set({ recado: 'Escolha uma cena nesta frase antes do grid.' })
+        return
+      }
+      set({ gridNaMao: { fraseId, etapa: 'cima', cena: 0, antes: atual, buscando: false }, recado: null, confirmando: null })
+      // Uma cena so: ela ja e a de cima.
+      if (atual.cenas.length === 1) get().escolherCima(0)
+    },
+
+    escolherCima: (k) => {
+      const g = get().gridNaMao
+      if (!g || g.etapa !== 'cima') return
+      const id = get().rascunhoId
+      set({ gridNaMao: { ...g, etapa: 'baixo', cena: k, buscando: id !== null }, cenaAlvo: k })
+      if (!id) return
+      // A sugestao do app vai embaixo enquanto ele nao escolhe (o grid de um clique continua).
+      const vale = (): boolean => {
+        const x = get().gridNaMao
+        return x !== null && x.fraseId === g.fraseId && x.etapa === 'baixo' && x.cena === k
+      }
+      void naFila(async () => {
+        if (!(await gravarPendentes()) || !vale()) {
+          if (vale()) set({ gridNaMao: { ...get().gridNaMao!, buscando: false } })
+          return
+        }
+        const r = await ponte.gridDaFrase(id, g.fraseId, true, k)
+        if (!ainda(id)) return
+        if (r.ok) trocarRascunho(r.value.rascunho)
+        if (!vale()) return
+        // Sem sugestao que sirva (ou sem voz ainda): nada muda, ele escolhe na grade.
+        set({ gridNaMao: { ...get().gridNaMao!, buscando: false } })
+        if (!r.ok) set({ recado: r.error })
+        else if (r.value.avisos.includes(SEM_SUGESTAO_DE_BAIXO)) set({ recado: null })
+      })
+    },
+
+    porEmbaixo: (candidato) => {
+      const g = get().gridNaMao
+      if (!g) return
+      if (g.etapa === 'cima') {
+        set({ recado: 'Primeiro clique, na esquerda, na cena que fica em cima.' })
+        return
+      }
+      let feito = false
+      mudarEscolha(g.fraseId, (atual, ctx) => {
+        const cena = atual?.cenas[g.cena]
+        if (!atual || !cena) return null
+        if (cena.candidato.planoIds[0] === candidato.planoIds[0]) {
+          set({ recado: 'Essa cena ja esta em cima. Clique em outra.' })
+          return null
+        }
+        const planos = new Map(ctx.indice.planos.map((p) => [p.id, p]))
+        const t = temposDasCenas(atual, ctx.frase, ctx.take)[g.cena]
+        const dura = t ? t.fim - t.inicio : 0
+        feito = true
+        return comGridNaMao(atual, g.cena, metadeDeCima(cena, dura, planos), metadeDeBaixoDele(candidato, dura, planos))
+      })
+      if (feito) set({ gridNaMao: null })
+    },
+
+    trocarDeBaixo: (fraseId, k) => {
+      const ctx = contextoDaFrase(fraseId)
+      const atual = ctx ? escolhaDaFrase(ctx.cenas, fraseId) : null
+      if (!atual?.cenas[k]?.baixo) return
+      set({ gridNaMao: { fraseId, etapa: 'baixo', cena: k, antes: atual, buscando: false }, cenaAlvo: k, recado: null })
+    },
+
+    inverterGrid: (fraseId, k) => {
+      mudarEscolha(fraseId, (atual) => (atual ? inverterMetades(atual, k) : null))
+      if (get().gridNaMao?.fraseId === fraseId) set({ gridNaMao: null })
+    },
+
+    tirarDeBaixo: (fraseId, k) => {
+      mudarEscolha(fraseId, (atual) => (atual ? tirarMetadeDeBaixo(atual, k) : null))
+      if (get().gridNaMao?.fraseId === fraseId) set({ gridNaMao: null })
+    },
+
+    manterSugestao: () => {
+      const g = get().gridNaMao
+      if (!g) return
+      set({ gridNaMao: null })
+      mudarEscolha(g.fraseId, (atual) => {
+        const cena = atual?.cenas[g.cena]
+        if (!atual || !cena?.baixo || cena.baixo.origem === 'usuario') return null
+        return comGridNaMao(atual, g.cena, dele(cena.candidato), dele(cena.baixo))
+      })
+    },
+
+    cancelarGrid: () => {
+      const g = get().gridNaMao
+      if (!g) return
+      set({ gridNaMao: null, recado: null })
+      const ctx = contextoDaFrase(g.fraseId)
+      const atual = ctx ? escolhaDaFrase(ctx.cenas, g.fraseId) : null
+      // Com a sugestao ainda no main, a de antes vai para as pendentes do mesmo jeito: ela chega e nao vale.
+      if (!g.antes || !atual || (!g.buscando && JSON.stringify(atual) === JSON.stringify(g.antes))) return
+      // Volta exatamente ao de antes do "Grid" (a sugestao do app que entrou sai).
+      set({ pendentes: { ...get().pendentes, [g.fraseId]: g.antes }, confirmando: null })
+      agendarGravacao()
     },
 
     pedirMiniaturas: (episodioId, planoIds) => {

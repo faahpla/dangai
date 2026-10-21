@@ -149,10 +149,18 @@ export function encaixarEscolha(escolha: EscolhaDaFrase, ctx: ContextoDoEncaixe)
     if (cena.baixo && planosDoGrid) {
       const cima = encaixarMetade(cena.candidato, precisa, planosDoGrid)
       const baixo = encaixarMetade(cena.baixo, precisa, planosDoGrid)
-      const falta = Math.max(cima.falta, baixo.falta)
-      if (falta > FOLGA_SEM_EMENDA_SEC) {
+      // (20/10) A metade posta a mao ('usuario') e o plano dele: congela ate
+      // SEGURAR_EM_VEZ_DE_RELANCE_SEC sem aviso; mais que isso e "Cena curta" com o recado dele.
+      for (const [m, de] of [
+        [cima, cena.candidato],
+        [baixo, cena.baixo],
+      ] as const) {
+        const mao = de.origem === 'usuario'
+        if (m.falta <= (mao ? SEGURAR_EM_VEZ_DE_RELANCE_SEC : FOLGA_SEM_EMENDA_SEC) + 1e-6) continue
         daEscolha.add(AVISO_CENA_CURTA)
-        avisos.push(`${ctx.frase.id}: grid com uma metade curta, falta ${segundos(falta)} de imagem`)
+        avisos.push(
+          `${ctx.frase.id}: ${mao ? `${cenaCurtaDele(precisa - m.falta, precisa)}${SUFIXO_METADE_DO_GRID}` : `grid com uma metade curta, falta ${segundos(m.falta)} de imagem`}`,
+        )
       }
       return { ...cena, candidato: cima.candidato, baixo: baixo.candidato }
     }
@@ -246,6 +254,8 @@ function segundos(s: number): string {
 
 /** O recado da cena posta a mao que nao cobre o pedaco: "cena curta: 0,8 s para 1,4 s". */
 export const PREFIXO_CENA_CURTA_DELE = 'cena curta: '
+/** (20/10) O fim do recado da cena curta quando ela e uma metade do grid (nao ha "completar": a metade e um plano so). */
+export const SUFIXO_METADE_DO_GRID = ' na metade do grid'
 function cenaCurtaDele(tem: number, precisa: number): string {
   const s = (x: number): string => `${x.toFixed(1).replace('.', ',')} s`
   return `${PREFIXO_CENA_CURTA_DELE}${s(Math.max(0, tem))} para ${s(precisa)}`

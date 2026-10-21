@@ -221,6 +221,20 @@ function Mesa({ rascunho, roteiro, indice }: { rascunho: RascunhoDoRecap; roteir
     return () => window.removeEventListener('keydown', tecla)
   }, [])
 
+  // (20/10) Esc com o grid na mao em andamento: cancela so ele (na captura, antes do Esc que fecha o assistente).
+  useEffect(() => {
+    const esc = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const s = useCenas.getState()
+      if (!s.gridNaMao || s.previa || nucleo().haModalPorCima() || digitando(e.target)) return
+      e.preventDefault()
+      e.stopPropagation()
+      s.cancelarGrid()
+    }
+    window.addEventListener('keydown', esc, true)
+    return () => window.removeEventListener('keydown', esc, true)
+  }, [])
+
   // Primeira vez, antes de a sugestao automatica voltar: a tela espera (e de graca, segundos).
   if (cenas.escolhas.length === 0) {
     return (

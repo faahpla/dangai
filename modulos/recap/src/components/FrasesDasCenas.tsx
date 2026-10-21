@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { Reorder, useDragControls } from 'motion/react'
-import { Check, Copy, GripVertical, Link2, LocateFixed, Lock, LockOpen, Merge, Pause, Play, Rows2, TriangleAlert, X } from 'lucide-react'
+import { ArrowUpDown, Check, Copy, GripVertical, Link2, LocateFixed, Lock, LockOpen, Merge, Pause, Play, Rows2, TriangleAlert, X } from 'lucide-react'
 import type { Plano } from '../../shared/episodio'
 import { nomeNatural } from '@shared/nomes'
 import { ROTULO_DO_PAPEL, type Frase, type Roteiro } from '../../shared/roteiro'
@@ -458,6 +458,8 @@ function FitaDaFrase({
   const cenaAlvo = useCenas((s) => s.cenaAlvo)
   const reordenarCenas = useCenas((s) => s.reordenarCenas)
   const juntarCenas = useCenas((s) => s.juntarCenas)
+  // (20/10) O grid na mao desta frase: escolhendo a de cima, ou esperando a de baixo da cena k.
+  const naMao = useCenas((s) => (s.gridNaMao?.fraseId === frase.id ? s.gridNaMao : null))
   const cenas = escolha?.cenas ?? []
 
   if (cenas.length === 0) {
@@ -486,6 +488,11 @@ function FitaDaFrase({
 
   return (
     <>
+      {naMao?.etapa === 'cima' && (
+        <p className="mt-2 rounded-[3px] bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent" title="Esc cancela">
+          Escolha a cena de CIMA (clique nela)
+        </p>
+      )}
       <Reorder.Group
         axis="y"
         values={itens}
@@ -508,6 +515,7 @@ function FitaDaFrase({
             cena={c}
             alvo={i === alvo}
             multipla={cenas.length > 1}
+            naMao={naMao ? (naMao.etapa === 'cima' ? 'cima' : naMao.cena === i ? 'baixo' : null) : null}
             segundos={(tempos[i]?.fim ?? 0) - (tempos[i]?.inicio ?? 0)}
             plano={planos.porId.get(c.candidato.planoIds[0] ?? '') ?? null}
             janela={trechosDoCandidato(
@@ -539,16 +547,22 @@ function FitaDaFrase({
 
 /**
  * (rodada 4) GRID / TELA CHEIA da frase aberta: o grid poe duas cenas, uma em
- * cima da outra (o app escolhe a outra metade na fita; a cena que voce
- * escolheu fica). Tela cheia volta a uma cena por vez, e o automatico nao poe
- * mais grid nesta frase.
+ * cima da outra. (20/10) Na mao: "Grid", a cena de cima aqui (ja feita com
+ * uma cena so) e a de baixo na grade ao lado; a sugestao do app entra
+ * embaixo enquanto isso. Tela cheia volta a uma cena por vez (ou cancela o
+ * grid pela metade), e o automatico nao poe mais grid nesta frase.
  */
 function GridDaFrase({ fraseId, escolha }: { fraseId: string; escolha: EscolhaDaFrase | null }) {
   const alternarGrid = useCenas((s) => s.alternarGrid)
+  const pedirGrid = useCenas((s) => s.pedirGrid)
+  const cancelarGrid = useCenas((s) => s.cancelarGrid)
   const gridando = useCenas((s) => s.gridando)
-  const ligado = temGrid(escolha)
+  // (20/10) O grid na mao em andamento conta como ligado (o "Tela cheia" cancela).
+  const naMao = useCenas((s) => s.gridNaMao?.fraseId === fraseId)
+  const temMetade = temGrid(escolha)
+  const ligado = temMetade || naMao
   const ocupado = gridando !== null
-  const auto = ligado && escolha?.grid?.origem === 'auto'
+  const auto = temMetade && escolha?.grid?.origem === 'auto'
   return (
     <div
       className={['mt-1.5 flex items-center gap-2', ocupado ? 'pointer-events-none opacity-60' : ''].join(' ')}
@@ -559,7 +573,7 @@ function GridDaFrase({ fraseId, escolha }: { fraseId: string; escolha: EscolhaDa
       </span>
       <Segmentos
         opcoes={[
-          { valor: false, rotulo: 'Tela cheia', title: 'Uma cena por vez (o grid automatico nao entra nesta frase)' },
+          { valor: false, rotulo: 'Tela cheia', title: 'Uma cena por vez (o grid automatico nao entra nesta frase). Com o grid pela metade, cancela' },
           {
             valor: true,
             rotulo: (
@@ -568,12 +582,15 @@ function GridDaFrase({ fraseId, escolha }: { fraseId: string; escolha: EscolhaDa
                 Grid
               </>
             ),
-            title: 'Duas cenas, uma em cima da outra: a outra metade sai da fita desta frase (a sua cena fica)',
+            title: 'Duas cenas, uma em cima da outra: escolha a de cima aqui e a de baixo na grade ao lado',
           },
         ]}
         ativo={(v) => v === ligado}
         onChange={(v) => {
-          if (v !== ligado) void alternarGrid(fraseId, v)
+          if (v === ligado) return
+          if (v) pedirGrid(fraseId)
+          else if (temMetade) void alternarGrid(fraseId, false)
+          else cancelarGrid()
         }}
       />
     </div>
@@ -587,6 +604,7 @@ function LinhaDaCena({
   cena,
   alvo,
   multipla,
+  naMao,
   segundos,
   plano,
   janela,
@@ -598,6 +616,8 @@ function LinhaDaCena({
   /** A cena que o proximo clique na grade troca. */
   alvo: boolean
   multipla: boolean
+  /** (20/10) O grid na mao: 'cima' = o clique escolhe esta para cima; 'baixo' = a grade poe embaixo desta. */
+  naMao: 'cima' | 'baixo' | null
   /** Quanto a cena fica na tela (pelas palavras de inicio, no tempo da voz). */
   segundos: number
   plano: Plano | null
@@ -611,6 +631,10 @@ function LinhaDaCena({
   const definirCenaAlvo = useCenas((s) => s.definirCenaAlvo)
   const removerCena = useCenas((s) => s.removerCena)
   const completarCena = useCenas((s) => s.completarCena)
+  const escolherCima = useCenas((s) => s.escolherCima)
+  const trocarDeBaixo = useCenas((s) => s.trocarDeBaixo)
+  const inverterGrid = useCenas((s) => s.inverterGrid)
+  const tirarDeBaixo = useCenas((s) => s.tirarDeBaixo)
   const abrirPrevia = useCenas((s) => s.abrirPrevia)
   const definirFiltros = useCenas((s) => s.definirFiltros)
   const parada = segundos - janela
@@ -619,9 +643,11 @@ function LinhaDaCena({
   return (
     <Reorder.Item value={chave} as="li" dragListener={false} dragControls={controles} className="list-none">
       <div
-        onClick={() => definirCenaAlvo(posicao)}
+        onClick={() => (naMao === 'cima' ? escolherCima(posicao) : definirCenaAlvo(posicao))}
         title={
-          multipla
+          naMao === 'cima'
+            ? 'Clique: esta fica em cima'
+            : multipla
             ? alvo
               ? 'O proximo clique numa cena ao lado troca esta'
               : 'Clique para trocar esta cena'
@@ -629,7 +655,11 @@ function LinhaDaCena({
         }
         className={[
           'flex cursor-pointer items-center gap-2 rounded-[3px] py-1 pr-1',
-          multipla && alvo ? 'bg-surface pl-1 ring-1 ring-inset ring-accent/70' : 'pl-1',
+          naMao === 'cima'
+            ? 'pl-1 ring-1 ring-inset ring-accent/40 hover:bg-accent/10 hover:ring-accent'
+            : naMao === 'baixo' || (multipla && alvo)
+              ? 'bg-surface pl-1 ring-1 ring-inset ring-accent/70'
+              : 'pl-1',
         ].join(' ')}
       >
         <button
@@ -654,13 +684,68 @@ function LinhaDaCena({
           ) : (
             <span className="block h-[36px] w-[64px] rounded-[2px] border border-line bg-elevated" />
           )}
-          {/* (rodada 4) O grid: a metade de baixo logo embaixo da de cima, como no video. */}
-          {cena.baixo &&
-            (urlDeBaixo ? (
-              <img src={urlDeBaixo} alt="" draggable={false} className="mt-px block h-[36px] w-[64px] rounded-[2px] border border-line object-cover" />
-            ) : (
-              <span className="mt-px block h-[36px] w-[64px] rounded-[2px] border border-line bg-elevated" />
-            ))}
+          {/* (rodada 4) O grid: a metade de baixo logo embaixo da de cima, como no video.
+              (20/10) Clicar nela troca so ela; inverter e tirar a de baixo ficam em cima dela. */}
+          {cena.baixo && (
+            <span className="relative mt-px block">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  trocarDeBaixo(fraseId, posicao)
+                }}
+                title="Trocar a de baixo: clique aqui e depois numa cena ao lado"
+                className="block"
+              >
+                {urlDeBaixo ? (
+                  <img
+                    src={urlDeBaixo}
+                    alt=""
+                    draggable={false}
+                    className={[
+                      'block h-[36px] w-[64px] rounded-[2px] border object-cover',
+                      naMao === 'baixo' ? 'border-accent' : 'border-line',
+                    ].join(' ')}
+                  />
+                ) : (
+                  <span className="block h-[36px] w-[64px] rounded-[2px] border border-line bg-elevated" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  inverterGrid(fraseId, posicao)
+                }}
+                aria-label="Inverter cima e baixo"
+                title="Inverter cima e baixo"
+                className="absolute -top-[9px] right-0.5 grid size-[17px] place-items-center rounded-full border border-line bg-surface text-ink-2 shadow-sm hover:border-accent hover:text-accent"
+              >
+                <ArrowUpDown size={10} strokeWidth={2} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  tirarDeBaixo(fraseId, posicao)
+                }}
+                aria-label="Tirar a de baixo"
+                title="Tirar a de baixo (esta cena volta a tela cheia)"
+                className="absolute bottom-0.5 right-0.5 grid size-[15px] place-items-center rounded-sm bg-black/75 text-white hover:bg-danger"
+              >
+                <X size={10} strokeWidth={2.25} />
+              </button>
+            </span>
+          )}
+          {/* (20/10) Esperando a de baixo: o lugar dela, vazio. */}
+          {!cena.baixo && naMao === 'baixo' && (
+            <span
+              className="mt-px grid h-[36px] w-[64px] place-items-center rounded-[2px] border border-dashed border-accent text-[9px] leading-tight text-accent"
+              title="Clique numa cena ao lado: ela vai embaixo"
+            >
+              embaixo?
+            </span>
+          )}
           <span className="tnum absolute left-0 top-0 rounded-br-[2px] bg-black/75 px-1 text-[10px] text-white">{posicao + 1}</span>
         </span>
         <div className="flex min-w-0 flex-1 flex-col">
@@ -668,10 +753,15 @@ function LinhaDaCena({
           {cena.baixo && (
             <span
               className="flex items-center gap-1 truncate text-[10px] leading-tight text-accent"
-              title={`Grid: ${cena.candidato.planoIds[0] ?? ''} em cima, ${cena.baixo.planoIds[0] ?? ''} embaixo. Clique na cena de baixo na grade para tirar so ela.`}
+              title={`Grid: ${cena.candidato.planoIds[0] ?? ''} em cima, ${cena.baixo.planoIds[0] ?? ''} embaixo.`}
             >
               <Rows2 size={10} strokeWidth={2} />
               grid
+            </span>
+          )}
+          {cena.baixo && cena.baixo.origem !== 'usuario' && (
+            <span className="truncate text-[10px] leading-tight text-ink-3" title="Sugestao do app: clique na metade de baixo e depois numa cena ao lado para trocar">
+              sugestao do app
             </span>
           )}
           {emenda && <span className="truncate text-[10px] leading-tight text-ink-3">emendada</span>}

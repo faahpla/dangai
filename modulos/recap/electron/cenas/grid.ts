@@ -6,11 +6,14 @@ import type { EpisodeIndex } from '../../shared/episodio'
 import { aplicarEscolhas, cenasDoRascunho, frasesDoRoteiro, type CenasGravadas, type EscolhaDaFrase, type EstadoDasCenas } from '../../shared/cenas'
 import { encaixarEscolha, entradasDosPlanos } from '../../shared/encaixe'
 import {
+  comGridNaMao,
   desligarGrid,
   gridsAutomaticos,
   ligarGrid,
   familiaDoCabelo,
   referenciaDosRostos,
+  SEM_SUGESTAO_DE_BAIXO,
+  sugestaoDeBaixo,
   type EntradaDoGrid,
   type ModoDoGrid,
   type QuemNoGrid,
@@ -567,7 +570,7 @@ export function marcaDoGrid(modo?: ModoDoGrid): NonNullable<EstadoDasCenas['grid
  * "Grid" / "Tela cheia" no passo 4, frase a frase. Grava o rascunho e devolve
  * inteiro (como o salvarCenas). Lanca com o recado quando o grid nao cabe.
  */
-export async function gridDaFrase(rascunhoId: string, fraseId: string, ligar: boolean): Promise<CenasGravadas> {
+export async function gridDaFrase(rascunhoId: string, fraseId: string, ligar: boolean, cena?: number): Promise<CenasGravadas> {
   const antes = lerRascunhoDoDisco(rascunhoId)
   const roteiroAntes = roteiroAtual(antes)
   if (!roteiroAntes) throw new Error('Nao ha roteiro.')
@@ -592,7 +595,14 @@ export async function gridDaFrase(rascunhoId: string, fraseId: string, ligar: bo
   if (!escolha || escolha.cenas.length === 0) throw new Error('Escolha uma cena nesta frase antes.')
   const { modo, minimoSec } = daConfig()
   let nova: EscolhaDaFrase
-  if (ligar) {
+  if (ligar && cena !== undefined) {
+    // (20/10) O grid na mao: a cena k fica em cima e a sugestao do app entra embaixo.
+    // Sem sugestao que sirva, nada muda: ele escolhe a de baixo na grade.
+    const feito = sugestaoDeBaixo(entradaDoGrid(roteiro, take, indice, atual.escolhas, modo, sinais, minimoSec), fraseId, cena)
+    if ('erro' in feito) throw new Error(feito.erro)
+    if (!feito.baixo) return { rascunho: r, avisos: [SEM_SUGESTAO_DE_BAIXO] }
+    nova = comGridNaMao(escolha, cena, feito.cima, feito.baixo)
+  } else if (ligar) {
     const feito = ligarGrid(entradaDoGrid(roteiro, take, indice, atual.escolhas, modo, sinais, minimoSec), fraseId)
     if ('erro' in feito) throw new Error(feito.erro)
     nova = feito.escolha

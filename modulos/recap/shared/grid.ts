@@ -58,8 +58,9 @@ import { medidasDoQuadro } from './recorte'
  * frase, e sem isso pela nota (a cena do momento da frase).
  *
  * A frase travada (ele escolheu ou mexeu) e a "Tela cheia" dele nunca ganham
- * grid automatico; o "Grid" do passo 4 (ligarGrid) poe na mao, com a cena
- * dele como uma das metades.
+ * grid automatico; o "Grid" do passo 4 poe na mao: ele escolhe a cena de
+ * cima e a de baixo (o grid na mao, no fim deste arquivo; a sugestao do app
+ * entra embaixo enquanto ele nao escolhe).
  */
 
 // ------------------------------------------------------------------ config
@@ -1243,6 +1244,129 @@ export function ligarGrid(e: EntradaDoGrid, fraseId: string): { escolha: Escolha
 /** "TELA CHEIA" no passo 4: as cenas de antes do grid voltam, e o automatico nao poe mais nesta frase. */
 export function desligarGrid(x: EscolhaDaFrase): EscolhaDaFrase {
   const cenas = x.grid && temGrid(x) ? x.grid.antes.map((c) => semMetade(c)) : x.cenas.map((c) => semMetade(c))
+  const saida: EscolhaDaFrase = { ...x, cenas, telaCheia: true, travada: true }
+  delete saida.grid
+  return saida
+}
+
+// ------------------------------------------------------------ o grid na mao
+
+/*
+ * (20/10) O GRID NA MAO do passo 4, do jeito que o Levi pediu: "Grid" na
+ * frase, a cena de CIMA na esquerda (ja feita se a frase tem uma cena so) e a
+ * de BAIXO na grade da direita; na esquerda, inverter (cima <-> baixo) e
+ * tirar a de baixo. A cena que ele pos em cima ou embaixo e 'usuario' (posto
+ * a mao): o encaixe nunca a troca (encaixarMetade, o plano dele; falta ate
+ * SEGURAR_EM_VEZ_DE_RELANCE_SEC congela, mais que isso e "Cena curta") e o
+ * grid automatico nunca mexe na frase (grid 'mao' + travada). A sugestao do
+ * app (sugestaoDeBaixo) entra embaixo com a origem dela (nao 'usuario'): a
+ * tela diz "sugestao do app" e o proximo clique na grade troca.
+ */
+
+/** O aviso do "Grid" na mao quando nenhuma cena da fita serve de sugestao: ele escolhe na grade. */
+export const SEM_SUGESTAO_DE_BAIXO = 'sem sugestao de baixo'
+
+/** O candidato que ele pos: origem 'usuario' (o encaixe nunca troca o plano dele). */
+function daMao(c: CandidatoDeCena): CandidatoDeCena {
+  return c.origem === 'usuario' ? c : { ...c, origem: 'usuario' }
+}
+
+/** A marca do grid na mao, guardando as cenas de antes do primeiro grid (o "Tela cheia" volta a elas). */
+function naMao(x: EscolhaDaFrase, cenas: CenaDaFrase[]): EscolhaDaFrase {
+  const saida: EscolhaDaFrase = { ...x, cenas, grid: { origem: 'mao', antes: x.grid?.antes ?? x.cenas.map((c) => semMetade(c)) }, travada: true }
+  delete saida.telaCheia
+  return saida
+}
+
+/**
+ * A metade de CIMA da cena k: a cena dele (um plano so). A sugestao do casar
+ * emendada vira o plano dela que cobre a cena (metadeDoCandidato); a posta a
+ * mao, o plano dele mesmo que congele (o encaixe avisa).
+ */
+export function metadeDeCima(
+  cena: Pick<CenaDaFrase, 'candidato'>,
+  dura: number,
+  planos: ReadonlyMap<string, Plano>,
+  entradas?: ReadonlyMap<string, number>,
+): CandidatoDeCena {
+  const c = cena.candidato
+  const coberta = metadeDoCandidato(c, dura, planos, c.inSec, entradas)
+  return daMao(coberta ?? encaixarMetade({ ...c, planoIds: c.planoIds.slice(0, 1) }, dura, planos).candidato)
+}
+
+/**
+ * A metade de BAIXO que ele clicou: o plano dele (o primeiro do candidato),
+ * desde o comeco que ele viu, 'usuario'.
+ */
+export function metadeDeBaixoDele(c: CandidatoDeCena, dura: number, planos: ReadonlyMap<string, Plano>): CandidatoDeCena {
+  const p = planos.get(c.planoIds[0] ?? '')
+  const um = p ? { ...c, planoIds: [p.id], inSec: Math.min(Math.max(c.inSec, p.start), p.end), outSec: p.end, keyframe: p.keyframe } : c
+  return daMao(encaixarMetade(um, dura, planos).candidato)
+}
+
+/**
+ * A SUGESTAO DO APP para a metade de baixo da cena k, com a cena dele em
+ * cima: a melhor parceira da fita (a mesma conta do "Grid" de antes, sem o
+ * limite do video). null em `baixo` = nenhuma serve (ele escolhe na grade).
+ */
+export function sugestaoDeBaixo(
+  e: EntradaDoGrid,
+  fraseId: string,
+  k: number,
+): { cima: CandidatoDeCena; baixo: CandidatoDeCena | null } | { erro: string } {
+  if (!e.take) return { erro: 'O grid precisa da voz aprovada.' }
+  const f = frasesNoGrid(e).find((x) => x.fraseId === fraseId)
+  if (!f) return { erro: 'Essa frase nao tem voz ou cena.' }
+  const cena = f.escolha.cenas[k]
+  if (!cena) return { erro: 'Essa cena nao esta mais na frase.' }
+  const planos = new Map(e.indice.planos.map((p) => [p.id, p]))
+  const t = temposDasCenas(f.escolha, { id: f.fraseId, texto: f.texto }, e.take)[k]
+  const dura = t ? t.fim - t.inicio : 0
+  const cima = metadeDeCima(cena, dura, planos, e.entradas)
+  const ctx: ContextoDaFrase = {
+    f,
+    planos,
+    e,
+    blocos: iniciosDosBlocos(e.take, e.regras),
+    usadosFora: planosUsados(e.escolhas, fraseId),
+    forcado: true,
+  }
+  const par = melhorParceira(ctx, k, cima, dura, cena.candidato, true)
+  return { cima, baixo: par ? { ...par.metade, origem: par.metade.origem === 'usuario' ? 'sugestao' : par.metade.origem } : null }
+}
+
+/** A cena k com `cima` e `baixo` (o grid na mao). */
+export function comGridNaMao(x: EscolhaDaFrase, k: number, cima: CandidatoDeCena, baixo: CandidatoDeCena): EscolhaDaFrase {
+  if (!x.cenas[k]) return x
+  return naMao(
+    x,
+    x.cenas.map((c, j) => (j === k ? { ...c, candidato: cima, baixo } : c)),
+  )
+}
+
+/** Inverter: a de cima vai para baixo e a de baixo para cima (as duas ficam dele). */
+export function inverterMetades(x: EscolhaDaFrase, k: number): EscolhaDaFrase | null {
+  const c = x.cenas[k]
+  if (!c?.baixo) return null
+  return naMao(
+    x,
+    x.cenas.map((o, j) => (j === k ? { ...o, candidato: daMao(c.baixo!), baixo: daMao(c.candidato) } : o)),
+  )
+}
+
+/**
+ * Tirar a de baixo: a cena k volta a tela cheia, com a cena de cima (a de
+ * antes do grid quando era ela, inteira). Sem grid nenhum na frase, a frase
+ * fica em "Tela cheia" (o automatico nao poe mais).
+ */
+export function tirarMetadeDeBaixo(x: EscolhaDaFrase, k: number): EscolhaDaFrase | null {
+  const c = x.cenas[k]
+  if (!c?.baixo) return null
+  const id = c.candidato.planoIds[0] ?? ''
+  const deAntes = x.grid?.antes.find((a) => a.candidato.planoIds.includes(id))
+  const cheia = semMetade({ ...c, candidato: deAntes ? deAntes.candidato : c.candidato })
+  const cenas = x.cenas.map((o, j) => (j === k ? cheia : o))
+  if (cenas.some((o) => o.baixo)) return naMao(x, cenas)
   const saida: EscolhaDaFrase = { ...x, cenas, telaCheia: true, travada: true }
   delete saida.grid
   return saida
