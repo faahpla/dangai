@@ -7,7 +7,7 @@
  * Confere:
  *   1. o Testar com o modelo gratis e o saldo zerado: nenhum aviso, so a nota
  *      neutra; com o pago, o "Sem creditos" de sempre; 0 vozes = nota da biblioteca;
- *   2. a biblioteca: GET /model SEM o self, language=pt, sort_by=score; a busca
+ *   2. a biblioteca: GET /model SEM o self, language=pt, sort_by=task_count; a busca
  *      manda o title e, sem nada em portugues, tenta de todas as linguas;
  *   3. o "Colar ID da voz": o ID puro e os links fish.audio/m/<id>; 404, modelo
  *      que nao e TTS e voz em treino;
@@ -126,7 +126,7 @@ async function testes(): Promise<void> {
   })
   const populares = await bibliotecaFish(CHAVE, '')
   const q = pedidos[0]!.url.searchParams
-  conferir('GET /model sem o self, em portugues, as mais usadas', [pedidos[0]!.url.pathname, q.get('self'), q.get('language'), q.get('sort_by'), q.get('page_size'), q.get('title')], ['/model', null, 'pt', 'score', '40', null])
+  conferir('GET /model sem o self, em portugues, as mais usadas', [pedidos[0]!.url.pathname, q.get('self'), q.get('language'), q.get('sort_by'), q.get('page_size'), q.get('title')], ['/model', null, 'pt', 'task_count', '40', null])
   conferir('so as TTS prontas, com idioma e usos', populares.vozes.map((v) => [v.id, v.nome, v.detalhe, v.previewUrl]), [
     [PUBLICA, 'Narrador PT', 'pt, 1,2 mi usos', `https://x/${PUBLICA}.mp3`],
     ['99999999aaaaaaaabbbbbbbbcccccccc', 'Locutora', 'pt/en', 'https://x/99999999aaaaaaaabbbbbbbbcccccccc.mp3'],

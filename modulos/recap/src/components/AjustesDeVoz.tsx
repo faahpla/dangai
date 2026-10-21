@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Check } from 'lucide-react'
 import type { AjustesDaVoz, ProvedorDeVoz, TesteDeVoz, VozDoProvedor, VozPadrao } from '../../shared/tipos-da-voz'
 import { ponte } from '../ponte'
 import { modeloEleven } from '../../shared/voz'
@@ -238,6 +239,13 @@ export function AjustesDeVoz({
       <>
         <div className="mt-4 mb-1.5 flex items-baseline gap-2">
           <label className="block text-[11px] font-medium text-ink-2">Chave do {NOME[provedor]}</label>
+          {/* A dica cinza no campo parece campo vazio: depois de atualizar, o Faah achou que a chave tinha sumido. */}
+          {tem && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-ink-3">
+              <Check size={11} strokeWidth={2.5} />
+              salva
+            </span>
+          )}
           <span className="flex-1" />
           <a
             href={LINK_DA_CHAVE[provedor]}

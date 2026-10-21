@@ -387,7 +387,7 @@ export async function listarVozesFish(chave: string): Promise<VozDoProvedor[]> {
 
 // ------------------------------------------- Fish Audio: biblioteca publica
 
-/** Quantas vozes da biblioteca entram na lista: as mais usadas primeiro (sort_by=score). */
+/** Quantas vozes da biblioteca entram na lista: as mais usadas primeiro (sort_by=task_count; o score embaralhava a ordem dos usos que a lista mostra). */
 const VOZES_DA_BIBLIOTECA = 40
 
 /**
@@ -402,7 +402,7 @@ const VOZES_DA_BIBLIOTECA = 40
 export async function bibliotecaFish(chave: string, busca: string): Promise<BibliotecaDoFish> {
   const termo = busca.trim().slice(0, 80)
   const pedir = async (idioma: string | null): Promise<VozDoProvedor[]> => {
-    const consulta = new URLSearchParams({ page_size: String(VOZES_DA_BIBLIOTECA), page_number: '1', sort_by: 'score' })
+    const consulta = new URLSearchParams({ page_size: String(VOZES_DA_BIBLIOTECA), page_number: '1', sort_by: 'task_count' })
     if (idioma) consulta.set('language', idioma)
     if (termo) consulta.set('title', termo)
     const r = await pedirJson(`${FISH_API}/model?${consulta.toString()}`, { Authorization: `Bearer ${chave}` })
