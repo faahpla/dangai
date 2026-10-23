@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Wand2, Clapperboard, Lightbulb, Library as LibraryIcon, Loader2 } from 'lucide-react'
 import { useProject } from '@/store/project'
 import type { AutomountMode } from '@shared/channels'
@@ -22,8 +22,6 @@ export function Automount() {
   const automount = useProject((s) => s.automount)
   const openLibrary = useProject((s) => s.openLibrary)
   const library = useProject((s) => s.library)
-  const libraryBusy = useProject((s) => s.libraryBusy)
-  const syncLibrary = useProject((s) => s.syncLibrary)
   const serie = useProject((s) => s.automountSeries)
   const setSerie = useProject((s) => s.setAutomountSeries)
 
@@ -33,10 +31,23 @@ export function Automount() {
    * A lista de series vem da varredura, que pode nunca ter rodado nesta sessao.
    * Puxar aqui e o que faz a escolha existir antes do primeiro clique -- pedir
    * depois seria mostrar um seletor vazio.
+   *
+   * So os NOMES, e nao a biblioteca inteira: trazer as 51 mil cenas para a
+   * janela a congelava no instante de soltar a narracao ("da uma travada de uns
+   * 2s", o ajk). A biblioteca de verdade chega quando ela e aberta.
    */
+  const [series, setSeries] = useState<string[] | null>(null)
   useEffect(() => {
-    if (visivel && !library && !libraryBusy) void syncLibrary()
-  }, [visivel, library, libraryBusy, syncLibrary])
+    if (!visivel || library || series) return
+    let vivo = true
+    void window.dangai.seriesDaBiblioteca().then((r) => {
+      if (vivo) setSeries(r.ok ? r.value : [])
+    })
+    return () => {
+      vivo = false
+    }
+  }, [visivel, library, series])
+  const animes = library?.animes ?? series
 
   if (!visivel) return null
 
@@ -71,21 +82,21 @@ export function Automount() {
           id="automount-serie"
           value={serie ?? ''}
           onChange={(e) => setSerie(e.target.value || null)}
-          disabled={busy !== null || !library}
+          disabled={busy !== null || !animes}
           className="min-w-[200px] rounded-sm border border-line bg-bg px-2 py-1.5 text-[12px] text-ink disabled:opacity-40"
         >
           {/* Deduzir continua sendo o padrao, mas dizer e uma linha so a menos de
               trabalho para um resultado que ele controla. */}
           <option value="">
-            {library ? 'Descobrir pelo roteiro' : 'Lendo a biblioteca...'}
+            {animes ? 'Descobrir pelo roteiro' : 'Lendo a biblioteca...'}
           </option>
-          {(library?.animes ?? []).map((nome) => (
+          {(animes ?? []).map((nome) => (
             <option key={nome} value={nome}>
               {nome}
             </option>
           ))}
         </select>
-        {libraryBusy !== null && (
+        {!animes && (
           <Loader2 size={13} strokeWidth={1.5} className="animate-spin text-ink-3" />
         )}
       </div>

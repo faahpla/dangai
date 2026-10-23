@@ -7,6 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { ffmpegPath } from './ffmpeg-path'
@@ -105,6 +106,20 @@ export interface OpcoesDaVarredura {
   prefixoDoId?: string
 }
 
+/*
+ * A VARREDURA NAO PODE TRAVAR O APP. Ela roda no processo principal, e enquanto
+ * ele esta ocupado a janela inteira congela: "quando ele arrasta o audio+roteiro
+ * o programa dele da uma travada de uns 2s" (o ajk -- soltar a narracao sem
+ * imagens abre o "Montar sozinho", que puxa a biblioteca). Com 51 mil cenas
+ * eram ~650 ms de uma vez num PC rapido. Agora ela solta a vez entre um pedaco
+ * e outro, e o grosso (ordenar, comparar nomes) usa um Collator pronto, e nao
+ * um localeCompare com locale, que monta as regras de novo a cada comparacao.
+ */
+const daVez = (): Promise<void> => new Promise((r) => setImmediate(r))
+const ALFABETICA = new Intl.Collator('pt-BR')
+const NUMERICA = new Intl.Collator('pt-BR', { numeric: true })
+const NATURAL = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' })
+
 let cachePath: string | null = null
 let thumbsDir: string | null = null
 
@@ -131,7 +146,8 @@ export async function scanLibrary(
     throw new Error(`A pasta da biblioteca nao existe mais: ${root}`)
   }
 
-  const cache = lerCache()
+  const cache = await lerCache()
+  await daVez()
   const proximos: Record<string, CachedEpisode> = {}
   const clips: LibraryClip[] = []
   let scanned = 0
@@ -139,6 +155,7 @@ export async function scanLibrary(
   const episodios = [...episodiosEm(root, 0)]
 
   for (const [posicao, dir] of episodios.entries()) {
+    await daVez()
     const jsonPath = join(dir, 'metadata', 'shots.json')
 
     let mtimeMs: number
@@ -194,10 +211,22 @@ export async function scanLibrary(
   // de uma raiz, regravar so com esta apagaria o cache das outras a cada
   // sincronizacao. Sem raiz de modulo nao existe outro prefixo, e o arquivo
   // sai igual ao de sempre.
-  gravarCache({ version: CACHE_VERSION, episodes: { ...deOutrosPrefixos(cache.episodes, prefixo), ...proximos } })
+  // Nada relido e nenhum episodio sumiu: o cache no disco ja e este (sao
+  // dezenas de MB para serializar e gravar de novo a toa).
+  const mesmos =
+    scanned === 0 &&
+    Object.keys(cache.episodes).filter((k) => (cache.episodes[k]!.prefixo ?? '') === prefixo).length ===
+      Object.keys(proximos).length
+  await daVez()
+  if (!mesmos) {
+    gravarCache({ version: CACHE_VERSION, episodes: { ...deOutrosPrefixos(cache.episodes, prefixo), ...proximos } })
+    await daVez()
+  }
 
   unificarNomes(clips)
+  await daVez()
   clips.sort(ordemNatural)
+  await daVez()
 
   return {
     root,
@@ -380,7 +409,7 @@ function unificarNomes(clips: LibraryClip[]): void {
     if (!mapa) continue
     const vistos = new Set<string>()
     for (const nome of clip.characters) vistos.add(mapa.get(nome) ?? nome)
-    clip.characters = [...vistos].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+    clip.characters = [...vistos].sort(ALFABETICA.compare)
   }
 }
 
@@ -712,7 +741,7 @@ function personagens(cru: unknown, canonico: ReadonlyMap<string, string>): strin
     const nome = texto(item.name)
     if (nome) vistos.add(canonico.get(nome) ?? nome)
   }
-  return [...vistos].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  return [...vistos].sort(ALFABETICA.compare)
 }
 
 /**
@@ -762,7 +791,7 @@ export function* episodiosEm(dir: string, profundidade: number): Generator<strin
     return
   }
 
-  for (const nome of nomes.sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true }))) {
+  for (const nome of nomes.sort(NUMERICA.compare)) {
     if (nome.startsWith('_') || nome.startsWith('.')) continue
     const filho = join(dir, nome)
     if (ehPasta(filho)) yield* episodiosEm(filho, profundidade + 1)
@@ -797,10 +826,11 @@ function ehPasta(caminho: string): boolean {
 
 // ---------------------------------------------------------------------- cache
 
-function lerCache(): CacheFile {
+async function lerCache(): Promise<CacheFile> {
   if (!cachePath) throw new Error('Biblioteca nao configurada')
   try {
-    const cru: unknown = JSON.parse(readFileSync(cachePath, 'utf8'))
+    // A leitura (dezenas de MB) fora da vez do app; so o parse fica nela.
+    const cru: unknown = JSON.parse(await readFile(cachePath, 'utf8'))
     if (
       typeof cru === 'object' &&
       cru !== null &&
@@ -848,21 +878,21 @@ function gravarCache(dados: CacheFile): void {
  * lugares errados na comparacao letra a letra.
  */
 export function naturalmente(a: string, b: string): number {
-  return a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' })
+  return NATURAL.compare(a, b)
 }
 
 /** Ordem de leitura humana: anime, temporada, episodio, e a cena na sequencia. */
 function ordemNatural(a: LibraryClip, b: LibraryClip): number {
   return (
-    a.anime.localeCompare(b.anime, 'pt-BR') ||
+    ALFABETICA.compare(a.anime, b.anime) ||
     a.season - b.season ||
     a.episode - b.episode ||
-    a.shot.localeCompare(b.shot, 'pt-BR', { numeric: true })
+    NUMERICA.compare(a.shot, b.shot)
   )
 }
 
 function unicos(valores: readonly string[]): string[] {
-  return [...new Set(valores)].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  return [...new Set(valores)].sort(ALFABETICA.compare)
 }
 
 /**

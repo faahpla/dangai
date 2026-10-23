@@ -180,6 +180,12 @@ export function registerIpc(): void {
     return escanearRaizes(raizes, publish, broadcastLibrary)
   })
 
+  handle<[], string[]>(IPC.seriesDaBiblioteca, async () => {
+    const raizes = raizesDaBiblioteca()
+    if (raizes.length === 0) return []
+    return (await escanearRaizes(raizes, publish, broadcastLibrary)).animes
+  })
+
   handle<[], string | null>(IPC.pickLibraryDir, async () => {
     const result = await dialog.showOpenDialog({
       title: 'Escolher a pasta da biblioteca de cenas',

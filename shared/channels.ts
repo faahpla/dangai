@@ -77,6 +77,7 @@ export const IPC = {
   checkUpdate: 'update:check',
   appVersion: 'app:version',
   scanLibrary: 'library:scan',
+  seriesDaBiblioteca: 'library:series',
   pickLibraryDir: 'library:pick-dir',
   libraryClipUrl: 'library:clip-url',
   libraryClipStrip: 'library:clip-strip',
@@ -606,6 +607,13 @@ export interface DangaiBridge {
    * vigia de pasta rodando o tempo todo em cima de milhares de arquivos.
    */
   scanLibrary(): Promise<IpcResult<LibraryIndex>>
+  /**
+   * So os nomes dos animes da biblioteca (a mesma varredura, mas sem mandar as
+   * cenas). O "Montar sozinho" precisa so disto, e as dezenas de milhares de
+   * cenas atravessando para a janela a congelavam no instante de soltar a
+   * narracao.
+   */
+  seriesDaBiblioteca(): Promise<IpcResult<string[]>>
   /** Dialogo para apontar a raiz da biblioteca. null = fechou sem escolher. */
   pickLibraryDir(): Promise<IpcResult<string | null>>
   /** Publica um clipe no servidor local, so quando ele vai mesmo ser tocado. */

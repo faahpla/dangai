@@ -68,6 +68,7 @@ const bridge: DangaiBridge = {
   readScript: (path) => ipcRenderer.invoke(IPC.readScript, path) as Promise<IpcResult<string>>,
 
   scanLibrary: () => ipcRenderer.invoke(IPC.scanLibrary) as Promise<IpcResult<LibraryIndex>>,
+  seriesDaBiblioteca: () => ipcRenderer.invoke(IPC.seriesDaBiblioteca) as Promise<IpcResult<string[]>>,
 
   pickLibraryDir: () =>
     ipcRenderer.invoke(IPC.pickLibraryDir) as Promise<IpcResult<string | null>>,
