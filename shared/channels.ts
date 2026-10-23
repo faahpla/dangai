@@ -52,6 +52,7 @@ export const IPC = {
   generateMetadata: 'metadata:generate',
   testarGemini: 'ia:testar-gemini',
   copyText: 'clipboard:write',
+  copiarRelatorio: 'app:copiar-relatorio',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
   cancelAnalyze: 'plan:cancel',
@@ -781,6 +782,11 @@ export interface DangaiBridge {
   testarGemini(chave: string | null): Promise<IpcResult<TesteDoGemini>>
   /** Copia texto para a area de transferencia pelo Electron. */
   copyText(text: string): Promise<IpcResult<null>>
+  /**
+   * Copia o relatorio para o suporte: versao, maquina, o que esta na tela (o
+   * que a janela manda aqui) e o fim do registro do app (electron/services/registro.ts).
+   */
+  copiarRelatorio(tela: Record<string, string>): Promise<IpcResult<null>>
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>
   cancelRender(): Promise<IpcResult<null>>

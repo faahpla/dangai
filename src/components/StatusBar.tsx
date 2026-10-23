@@ -14,6 +14,7 @@ import {
   ShieldAlert,
 } from 'lucide-react'
 import { useProject } from '@/store/project'
+import { copiarRelatorio, useRelatorioCopiado } from '@/store/relatorio'
 import { RELEASES_URL } from '@shared/channels'
 import type { PlanOrigin } from '@shared/contract'
 
@@ -46,6 +47,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const videoPronto = useProject((s) => s.videoPronto)
   const videoProntoSaida = useProject((s) => s.videoProntoSaida)
   const cancelarVideoPronto = useProject((s) => s.cancelarVideoPronto)
+  const relatorioCopiado = useRelatorioCopiado((s) => s.copiado)
 
   // So o nome do arquivo: o caminho inteiro e ruido, e o botao "Abrir pasta"
   // esta a um clique de distancia.
@@ -85,15 +87,33 @@ export function StatusBar({ isDragging }: StatusBarProps) {
             <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" />
             {busy}
           </span>
+        ) : relatorioCopiado ? (
+          <span className="truncate text-[11px] text-ink-2">
+            Relatorio copiado. Cole no Discord para quem vai ajudar.
+          </span>
         ) : error ? (
-          <button
-            type="button"
-            onClick={dismissError}
-            className="truncate text-left text-[11px] text-danger"
-            title={error}
-          >
-            {error}
-          </button>
+          /*
+            O ERRO com o "Copiar relatorio" do lado: o print mostra o recado, o
+            relatorio mostra o que veio antes dele (o caso do meme do ajk).
+          */
+          <span className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={dismissError}
+              className="truncate text-left text-[11px] text-danger"
+              title={error}
+            >
+              {error}
+            </button>
+            <button
+              type="button"
+              onClick={() => void copiarRelatorio()}
+              title="Copia a versao, o computador e o que o app registrou, para mandar a quem vai ajudar"
+              className="shrink-0 rounded-sm border border-line bg-elevated px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink"
+            >
+              Copiar relatorio
+            </button>
+          </span>
         ) : videoProntoSaida ? (
           <span className="flex min-w-0 items-center gap-2 text-[11px] text-ink-2">
             <span className="truncate">Upscale pronto · {videoProntoSaida.split(/[\\/]/).pop()}</span>

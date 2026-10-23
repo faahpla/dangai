@@ -207,6 +207,7 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.testarGemini, chave) as Promise<IpcResult<TesteDoGemini>>,
 
   copyText: (text) => ipcRenderer.invoke(IPC.copyText, text) as Promise<IpcResult<null>>,
+  copiarRelatorio: (tela) => ipcRenderer.invoke(IPC.copiarRelatorio, tela) as Promise<IpcResult<null>>,
 
   startRender: (args: StartRenderArgs) =>
     ipcRenderer.invoke(IPC.startRender, args) as Promise<IpcResult<string | null>>,

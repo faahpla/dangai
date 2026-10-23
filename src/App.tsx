@@ -150,6 +150,16 @@ export function App() {
    */
   useEffect(() => ouvir('depoisDeSalvar', ({ path }) => void useRecentes.getState().lembrar(path)), [])
 
+  // O recado vermelho da barra tambem vai para o registro (logs/dangai.log): o
+  // "Copiar relatorio" mostra o que a pessoa viu, na ordem em que viu.
+  useEffect(
+    () =>
+      useProject.subscribe((s, antes) => {
+        if (s.error && s.error !== antes.error) console.warn(`[recado na tela] ${s.error}`)
+      }),
+    [],
+  )
+
   useEffect(() => {
     const arquivo = projectPath?.split(/[\\/]/).pop()
     const nome = arquivo ? semExtensaoDeProjeto(arquivo) : null

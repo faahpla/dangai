@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, Menu, shell } from 'electron'
 import { join } from 'node:path'
 import { readdirSync } from 'node:fs'
-import { registerIpc } from './ipc'
+import { registerIpc, textoDoRelatorio } from './ipc'
+import { iniciarRegistro, registrar } from './services/registro'
 import { startMediaServer } from './services/media-server'
 import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
@@ -25,6 +26,9 @@ import { MODULOS_DO_MAIN } from '../modulos/registro.main'
 
 const isDev = !app.isPackaged
 
+// Antes de tudo: o que der errado daqui em diante fica no registro (logs/dangai.log).
+iniciarRegistro(app.getPath('userData'), app.getVersion())
+
 /*
  * O COMPOSITOR DO REMOTION MORREU NO MEIO (um arquivo que ele nao consegue
  * abrir, como o .mp4 so de som com capa do ajk) e a escrita seguinte bate no
@@ -39,7 +43,24 @@ process.on('uncaughtException', (err) => {
     return
   }
   console.error('[main] erro nao tratado:', err)
-  dialog.showErrorBox('A JavaScript error occurred in the main process', err.stack ?? String(err))
+  if (!app.isReady()) {
+    dialog.showErrorBox('A JavaScript error occurred in the main process', err.stack ?? String(err))
+    return
+  }
+  // Com o "Copiar relatorio": e o que a pessoa manda para quem vai consertar.
+  void dialog
+    .showMessageBox({
+      type: 'error',
+      title: 'Dangai',
+      message: 'Deu um erro inesperado no Dangai.',
+      detail: err.stack ?? String(err),
+      buttons: ['OK', 'Copiar relatorio'],
+      defaultId: 0,
+      noLink: true,
+    })
+    .then(({ response }) => {
+      if (response === 1) clipboard.writeText(textoDoRelatorio({ erro: err.message }))
+    })
 })
 
 function createWindow(): void {
@@ -90,6 +111,19 @@ function createWindow(): void {
     window.show()
   })
 
+  /*
+   * O console da janela vai para o mesmo registro: os erros do lado da tela
+   * (um componente que quebrou, um recado vermelho) ficam junto dos do main.
+   */
+  window.webContents.on('console-message', (e) => {
+    if (e.level === 'debug') return
+    const onde = e.level === 'error' ? ` (${e.sourceId.split('/').pop()}:${e.lineNumber})` : ''
+    registrar(e.level === 'warning' ? 'warn' : e.level, `[janela] ${e.message}${onde}`)
+  })
+  window.webContents.on('render-process-gone', (_e, detalhes) => {
+    registrar('error', `[janela] a janela caiu: ${detalhes.reason} (codigo ${detalhes.exitCode})`)
+  })
+
   // Nada de navegacao para fora da janela.
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
@@ -103,6 +137,11 @@ function createWindow(): void {
     void window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+// O processo da GPU, um utilitario: quando um deles morre, a pista fica no registro.
+app.on('child-process-gone', (_e, detalhes) => {
+  registrar('error', `[processo] ${detalhes.type} caiu: ${detalhes.reason} (codigo ${detalhes.exitCode})`)
+})
 
 app.whenReady().then(async () => {
   /*

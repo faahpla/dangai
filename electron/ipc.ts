@@ -95,6 +95,7 @@ import { mesclarClipes, type ResultadoDaMescla } from './services/mesclar'
 import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 import { handle } from './handle'
+import { montarRelatorio } from './services/registro'
 import { motivoParaNaoAtualizar } from './modulos'
 
 
@@ -747,6 +748,11 @@ export function registerIpc(): void {
     return null
   })
 
+  handle<[Record<string, string>], null>(IPC.copiarRelatorio, async (tela) => {
+    clipboard.writeText(textoDoRelatorio(tela))
+    return null
+  })
+
   handle<[], PublicSettings>(IPC.getSettings, async () => getSettingsForRenderer())
 
   handle<[SettingsPatch], PublicSettings>(IPC.saveSettings, async (patch) => {
@@ -776,4 +782,23 @@ export function registerIpc(): void {
  */
 function semGrifo(texto: string): string {
   return texto.replace(/[*~`]/g, '')
+}
+
+/**
+ * O relatorio para o suporte, com o que importa das configuracoes -- nunca as
+ * chaves, so se existem. Tambem usado pela janela de erro do main.
+ */
+export function textoDoRelatorio(tela: Record<string, string>): string {
+  const s = getSettings()
+  const temChave = [s.geminiApiKey ? 'gemini' : null, s.anthropicApiKey ? 'anthropic' : null].filter(Boolean)
+  return montarRelatorio({
+    versao: app.getVersion(),
+    modulos: Object.entries(s.modulosLigados).filter(([, ligado]) => ligado).map(([id]) => id),
+    configuracoes: {
+      ia: `${s.iaProvedor} (chaves: ${temChave.length > 0 ? temChave.join(', ') : 'nenhuma'})`,
+      whisper: s.whisperModel,
+      biblioteca: s.libraryDir ? 'configurada' : 'nao configurada',
+    },
+    tela,
+  })
 }
