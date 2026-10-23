@@ -179,7 +179,7 @@ async function analisar(
         // A nota do llm.ts ja diz o que fazer (a cota do dia do Gemini, por
         // exemplo, renova a meia-noite); o friendlyAiNote fica para o resto.
         err instanceof ErroDeIa
-          ? `${err.nota} Cenas distribuidas pelas pausas da narracao.`
+          ? `${err.nota} Cenas distribuídas pelas pausas da narração.`
           : friendlyAiNote(note),
         scriptNote,
         porPartes.note,
@@ -227,7 +227,7 @@ export async function applyScript(
     }
   }
 
-  onProgress('Casando o roteiro com a narracao...')
+  onProgress('Casando o roteiro com a narração...')
   const aligned = transcriptFromScript(trimmed, measured)
 
   if ('falha' in aligned) {
@@ -235,10 +235,10 @@ export async function applyScript(
     // so parou antes da hora (e esse e facil de consertar).
     const scriptNote =
       aligned.falha === 'acaba-antes'
-        ? `A narracao acaba antes do roteiro: faltam ${aligned.faltam} palavras ("${aligned.trecho}"). Legendas mantidas pela transcricao.`
+        ? `A narração acaba antes do roteiro: faltam ${aligned.faltam} palavras ("${aligned.trecho}"). Legendas mantidas pela transcrição.`
         : aligned.falha === 'comeca-depois'
-          ? `A narracao comeca depois do inicio do roteiro: faltam ${aligned.faltam} palavras no comeco ("${aligned.trecho}"). Legendas mantidas pela transcricao.`
-          : 'Esse roteiro nao bate com essa narracao — legendas mantidas pela transcricao. Confira se e o texto deste audio.'
+          ? `A narração comeca depois do início do roteiro: faltam ${aligned.faltam} palavras no começo ("${aligned.trecho}"). Legendas mantidas pela transcrição.`
+          : 'Esse roteiro não bate com essa narração — legendas mantidas pela transcrição. Confira se e o texto deste áudio.'
     return { transcript: measured, scriptNote }
   }
 
@@ -256,7 +256,7 @@ export async function applyScript(
   if (measured.alinhado) {
     return {
       transcript: { ...aligned.transcript, alinhado: true },
-      scriptNote: 'Legendas do roteiro, sincronizadas palavra a palavra com a narracao.',
+      scriptNote: 'Legendas do roteiro, sincronizadas palavra a palavra com a narração.',
     }
   }
 
@@ -290,12 +290,12 @@ export async function sincronizar(
       transcript.words.map((w) => w.text),
       onProgress,
     )
-    if (!r) return { transcript: null, nota: 'Sincronia fina indisponivel para este roteiro.' }
+    if (!r) return { transcript: null, nota: 'Sincronia fina indisponível para este roteiro.' }
     // O mesmo limite do LegendAI: abaixo disto o texto nao e o que se ouve.
     if (r.score < 0.35) {
       return {
         transcript: null,
-        nota: 'A sincronia fina nao reconheceu o roteiro no audio — mantidos os tempos do Whisper.',
+        nota: 'A sincronia fina não reconheceu o roteiro no áudio — mantidos os tempos do Whisper.',
       }
     }
     const words = transcript.words.map((w, i) => ({
@@ -310,11 +310,11 @@ export async function sincronizar(
         cutCandidates: cutCandidatesFrom(words, transcript.segments),
         alinhado: true,
       },
-      nota: 'Legendas do roteiro, sincronizadas palavra a palavra com a narracao.',
+      nota: 'Legendas do roteiro, sincronizadas palavra a palavra com a narração.',
     }
   } catch (erro) {
     const motivo = erro instanceof Error ? erro.message : String(erro)
-    return { transcript: null, nota: `Sincronia fina indisponivel (${motivo.slice(0, 80)}).` }
+    return { transcript: null, nota: `Sincronia fina indisponível (${motivo.slice(0, 80)}).` }
   }
 }
 
@@ -342,7 +342,7 @@ function planFromSections(
   if (seccionadas.length !== images.length) {
     return {
       plan: null,
-      note: 'Ha material com parte e material solto no mesmo projeto. Cenas distribuidas como de costume — deixe tudo em partes para o app respeita-las.',
+      note: 'Ha material com parte e material solto no mesmo projeto. Cenas distribuídas como de costume — deixe tudo em partes para o app respeita-las.',
     }
   }
 
@@ -353,13 +353,13 @@ function planFromSections(
     contagem[s] = (contagem[s] ?? 0) + 1
   }
   if (contagem.some((c) => c === undefined)) {
-    return { plan: null, note: 'Uma das partes ficou sem material. Cenas distribuidas como de costume.' }
+    return { plan: null, note: 'Uma das partes ficou sem material. Cenas distribuídas como de costume.' }
   }
 
   if (!transcript || transcript.words.length < 2) {
     return {
       plan: null,
-      note: 'Sem roteiro cronometrado, o app nao sabe onde cada parte comeca. Cole o roteiro com uma linha em branco entre as partes.',
+      note: 'Sem roteiro cronometrado, o app não sabe onde cada parte comeca. Cole o roteiro com uma linha em branco entre as partes.',
     }
   }
 
@@ -367,7 +367,7 @@ function planFromSections(
   if (partesDoRoteiro !== contagem.length) {
     return {
       plan: null,
-      note: `Seu roteiro tem ${partesDoRoteiro} ${partesDoRoteiro === 1 ? 'parte' : 'partes'} e o material esta em ${contagem.length}. Separe as partes do roteiro com uma linha em branco, ou ajuste o material.`,
+      note: `Seu roteiro tem ${partesDoRoteiro} ${partesDoRoteiro === 1 ? 'parte' : 'partes'} e o material está em ${contagem.length}. Separe as partes do roteiro com uma linha em branco, ou ajuste o material.`,
     }
   }
 
@@ -375,7 +375,7 @@ function planFromSections(
   if (!plan) {
     return {
       plan: null,
-      note: 'As partes batem, mas nao cabe tanto material no tempo de cada uma. Cenas distribuidas como de costume.',
+      note: 'As partes batem, mas não cabe tanto material no tempo de cada uma. Cenas distribuídas como de costume.',
     }
   }
 
@@ -387,10 +387,10 @@ function planFromSections(
 
 function whyNoAI(hasKey: boolean, transcript: Transcript | null): string | null {
   if (!hasKey) {
-    return 'Sem chave da API — cenas distribuidas pelas pausas da narracao.'
+    return 'Sem chave da API — cenas distribuídas pelas pausas da narração.'
   }
   if (!transcript || transcript.text.length === 0) {
-    return 'Sem transcricao da narracao — cenas distribuidas pelas pausas. Solte o .srt junto do audio, ou conecte a internet uma vez para o Dangai baixar o Whisper.'
+    return 'Sem transcrição da narração — cenas distribuídas pelas pausas. Solte o .srt junto do áudio, ou conecte a internet uma vez para o Dangai baixar o Whisper.'
   }
   return null
 }
@@ -472,7 +472,7 @@ async function getTranscript(
     // Whisper indisponivel ou falhou: sobra a deteccao de pausas.
   }
 
-  onProgress('Procurando as pausas da narracao...')
+  onProgress('Procurando as pausas da narração...')
   try {
     const silences = await detectSilences(audioPath)
     if (silences.length === 0) return null
@@ -492,15 +492,15 @@ async function getTranscript(
 function friendlyAiNote(raw: string): string {
   const lower = raw.toLowerCase()
   if (lower.includes('401') || lower.includes('authentication') || lower.includes('api key')) {
-    return 'Chave da API recusada — confira em configuracoes. Cenas distribuidas pelas pausas.'
+    return 'Chave da API recusada — confira em configurações. Cenas distribuídas pelas pausas.'
   }
   if (lower.includes('429') || lower.includes('rate')) {
-    return 'Limite da API atingido. Cenas distribuidas pelas pausas da narracao.'
+    return 'Limite da API atingido. Cenas distribuídas pelas pausas da narração.'
   }
   if (lower.includes('fetch') || lower.includes('network') || lower.includes('enotfound')) {
-    return 'Sem conexao com a API. Cenas distribuidas pelas pausas da narracao.'
+    return 'Sem conexão com a API. Cenas distribuídas pelas pausas da narração.'
   }
-  return `A IA nao respondeu (${raw.slice(0, 60)}). Cenas distribuidas pelas pausas.`
+  return `A IA não respondeu (${raw.slice(0, 60)}). Cenas distribuídas pelas pausas.`
 }
 
 /**

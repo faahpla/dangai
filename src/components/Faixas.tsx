@@ -171,7 +171,7 @@ export function Linha({
                 role="separator"
                 aria-orientation="horizontal"
                 aria-label="Altura da faixa"
-                title="Arraste para mudar a altura desta faixa (dois cliques voltam ao padrao). Shift+roda muda todas."
+                title="Arraste para mudar a altura desta faixa (dois cliques voltam ao padrão). Shift+roda muda todas."
                 onPointerDown={(event) => {
                   if (event.button !== 0) return
                   event.preventDefault()
@@ -838,7 +838,7 @@ function Clipe({
       <span
         data-alca="inicio"
         onPointerDown={(event) => onPegar(event, 'inicio')}
-          title="Puxe para cortar o comeco"
+          title="Puxe para cortar o começo"
         className="absolute inset-y-0 left-0 w-[6px] cursor-col-resize hover:bg-white/30"
       />
       <span
@@ -891,7 +891,7 @@ export function ControleDoClipe({
   digitar?: { numero: number; aplicar: (n: number) => void }
 }) {
   return (
-    <label className="flex items-center gap-1" title={`${titulo} (duplo clique volta ao padrao)`}>
+    <label className="flex items-center gap-1" title={`${titulo} (duplo clique volta ao padrão)`}>
       <span className="text-[9px] uppercase tracking-wide text-ink-3">{rotulo}</span>
       <input
         type="range"

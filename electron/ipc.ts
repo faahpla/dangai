@@ -175,7 +175,7 @@ export function registerIpc(): void {
     const raizes = raizesDaBiblioteca()
     if (raizes.length === 0) {
       throw new Error(
-        'Nenhuma biblioteca escolhida. Abra as configuracoes (Ctrl+,) e aponte a pasta onde o AnCut grava as cenas.',
+        'Nenhuma biblioteca escolhida. Abra as configurações (Ctrl+,) e aponte a pasta onde o AnCut grava as cenas.',
       )
     }
     return escanearRaizes(raizes, publish, broadcastLibrary)
@@ -202,14 +202,14 @@ export function registerIpc(): void {
   // uma vez encheria o mapa de ids para 99% de coisa que ninguem vai abrir.
   handle<[string], string>(IPC.libraryClipUrl, async (path) => {
     if (!existsSync(path)) {
-      throw new Error(`Essa cena nao esta mais no disco: ${basename(path)}`)
+      throw new Error(`Essa cena não está mais no disco: ${basename(path)}`)
     }
     return publish(path)
   })
 
   handle<[string], TiraDaCena>(IPC.libraryClipStrip, async (path) => {
     if (!existsSync(path)) {
-      throw new Error(`Essa cena nao esta mais no disco: ${basename(path)}`)
+      throw new Error(`Essa cena não está mais no disco: ${basename(path)}`)
     }
     const { arquivo, ...resto } = await tiraDoClipe(path)
     return { ...resto, url: publish(arquivo) }
@@ -223,9 +223,9 @@ export function registerIpc(): void {
   handle<[string, string[]], LegendasSincronizadas>(
     IPC.sincronizarLegendas,
     async (audioPath, palavras) => {
-      if (!existsSync(audioPath)) throw new Error('A narracao nao esta mais no disco.')
+      if (!existsSync(audioPath)) throw new Error('A narração não está mais no disco.')
       const r = await alinharAoAudio(audioPath, palavras, broadcastAnalyze)
-      if (!r) throw new Error('Nao deu para alinhar este texto a narracao.')
+      if (!r) throw new Error('Não deu para alinhar este texto a narração.')
       return { tempos: r.tempos.map(({ start, end }) => ({ start, end })), score: r.score }
     },
   )
@@ -234,7 +234,7 @@ export function registerIpc(): void {
     [string],
     { url: string; tipo: 'video' | 'image' | 'som'; durationSec: number; aspecto: number }
   >(IPC.prepararSobreposicao, async (path) => {
-    if (!existsSync(path)) throw new Error(`Esse arquivo nao esta mais no disco: ${basename(path)}`)
+    if (!existsSync(path)) throw new Error(`Esse arquivo não está mais no disco: ${basename(path)}`)
     const pronta = await prepararSobreposicao(path)
     return { url: publish(pronta.arquivo), tipo: pronta.tipo, durationSec: pronta.durationSec, aspecto: pronta.aspecto }
   })
@@ -296,11 +296,11 @@ export function registerIpc(): void {
 
   handle<[], { video: string; roteiro: string | null } | null>(IPC.escolherVideo, async () => {
     const r = await dialog.showOpenDialog({
-      title: 'Escolher o video pronto (e o roteiro, se tiver)',
+      title: 'Escolher o vídeo pronto (e o roteiro, se tiver)',
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'Video e roteiro', extensions: [...VIDEO_EXTENSIONS, 'txt', 'md'] },
-        { name: 'Videos', extensions: [...VIDEO_EXTENSIONS] },
+        { name: 'Vídeo e roteiro', extensions: [...VIDEO_EXTENSIONS, 'txt', 'md'] },
+        { name: 'Vídeos', extensions: [...VIDEO_EXTENSIONS] },
       ],
     })
     if (r.canceled) return null
@@ -315,7 +315,7 @@ export function registerIpc(): void {
   )
 
   handle<[string], ArquivoDaBin[]>(IPC.listarPasta, async (pasta) => {
-    if (!existsSync(pasta)) throw new Error('Essa pasta nao existe mais.')
+    if (!existsSync(pasta)) throw new Error('Essa pasta não existe mais.')
     const achados: ArquivoDaBin[] = []
     const andar = (dir: string, nivel: number): void => {
       if (nivel > 3 || achados.length >= 3000) return
@@ -380,7 +380,7 @@ export function registerIpc(): void {
   handle<[], Record<string, string[]>>(IPC.tagLibrary, async () => {
     const raizes = raizesDaBiblioteca()
     if (raizes.length === 0) {
-      throw new Error('Escolha a pasta das cenas nas configuracoes antes de etiquetar.')
+      throw new Error('Escolha a pasta das cenas nas configurações antes de etiquetar.')
     }
     // A varredura e cacheada: pedir o indice de novo aqui custa quase nada e
     // garante que episodio recem-adicionado tambem seja etiquetado.
@@ -393,7 +393,7 @@ export function registerIpc(): void {
   handle<[string | null], Record<string, SceneDescription>>(IPC.describeLibrary, async (anime) => {
     const raizes = raizesDaBiblioteca()
     if (raizes.length === 0) {
-      throw new Error('Escolha a pasta das cenas nas configuracoes antes de ler as cenas.')
+      throw new Error('Escolha a pasta das cenas nas configurações antes de ler as cenas.')
     }
     const library = await escanearRaizes(raizes, publish, broadcastLibrary)
     /*
@@ -440,7 +440,7 @@ export function registerIpc(): void {
     IPC.upscaleAssets,
     async (assets, limites) => {
     if (!upscaleReady()) {
-      throw new Error('O modelo de upscale nao veio com esta instalacao do app.')
+      throw new Error('O modelo de upscale não veio com esta instalação do app.')
     }
     let mapa: Record<string, string>
     try {
@@ -499,7 +499,7 @@ export function registerIpc(): void {
 
   handle<[], string[]>(IPC.pickFiles, async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Selecionar audio, imagens e roteiro',
+      title: 'Selecionar áudio, imagens e roteiro',
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
@@ -518,9 +518,9 @@ export function registerIpc(): void {
         // Varios projetos de uma vez entram na fila de render.
         { name: 'Projetos do Dangai', extensions: [...PROJECT_EXTENSIONS_ABRIR] },
         { name: 'Roteiro', extensions: ['txt', 'md'] },
-        { name: 'Audio', extensions: [...AUDIO_EXTENSIONS] },
+        { name: 'Áudio', extensions: [...AUDIO_EXTENSIONS] },
         { name: 'Imagens', extensions: [...IMAGE_EXTENSIONS] },
-        { name: 'Videos', extensions: [...VIDEO_EXTENSIONS] },
+        { name: 'Vídeos', extensions: [...VIDEO_EXTENSIONS] },
       ],
     })
     return result.canceled ? [] : result.filePaths
@@ -528,9 +528,9 @@ export function registerIpc(): void {
 
   handle<[], MusicPick | null>(IPC.pickMusic, async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Escolher a musica de fundo',
+      title: 'Escolher a música de fundo',
       properties: ['openFile'],
-      filters: [{ name: 'Audio', extensions: [...AUDIO_EXTENSIONS] }],
+      filters: [{ name: 'Áudio', extensions: [...AUDIO_EXTENSIONS] }],
     })
     const picked = result.canceled ? undefined : result.filePaths[0]
     return picked ? { path: picked, fileName: basename(picked), url: publish(picked) } : null
@@ -540,7 +540,7 @@ export function registerIpc(): void {
   // a URL do servidor local morre junto com a sessao que a criou.
   handle<[string], MusicPick>(IPC.loadMusic, async (path) => {
     if (!existsSync(path)) {
-      throw new Error(`A musica "${basename(path)}" nao esta mais nesse lugar.`)
+      throw new Error(`A música "${basename(path)}" não está mais nesse lugar.`)
     }
     return { path, fileName: basename(path), url: publish(path) }
   })
@@ -609,12 +609,12 @@ export function registerIpc(): void {
    */
   handle<[], string | null>(IPC.upscaleVideoPronto, async () => {
     if (!upscaleReady()) {
-      throw new Error('O modelo de upscale nao veio com esta instalacao do app.')
+      throw new Error('O modelo de upscale não veio com esta instalação do app.')
     }
     const escolha = await dialog.showOpenDialog({
-      title: 'Escolher o video para melhorar',
+      title: 'Escolher o vídeo para melhorar',
       properties: ['openFile'],
-      filters: [{ name: 'Video', extensions: ['mp4', 'mov', 'mkv', 'webm', 'm4v'] }],
+      filters: [{ name: 'Vídeo', extensions: ['mp4', 'mov', 'mkv', 'webm', 'm4v'] }],
     })
     const entrada = escolha.canceled ? undefined : escolha.filePaths[0]
     if (!entrada) return null
@@ -641,7 +641,7 @@ export function registerIpc(): void {
 
   handle<[ImageAsset, boolean], ImageAsset>(IPC.inverterClipe, async (asset, invertido) => {
     if (!existsSync(asset.path)) {
-      throw new Error(`Esse clipe nao esta mais no disco: ${basename(asset.path)}`)
+      throw new Error(`Esse clipe não está mais no disco: ${basename(asset.path)}`)
     }
     return inverterAsset(asset, invertido)
   })
@@ -727,7 +727,7 @@ export function registerIpc(): void {
   handle<[string], Metadata>(IPC.generateMetadata, async (texto) => {
     if (!iaDisponivel()) {
       throw new Error(
-        'Sem chave de IA. Abra as configuracoes (Ctrl+,) e cole a do Gemini (gratis) ou a da Anthropic para gerar os textos.',
+        'Sem chave de IA. Abra as configurações (Ctrl+,) e cole a do Gemini (grátis) ou a da Anthropic para gerar os textos.',
       )
     }
     return generateMetadata({ texto })
@@ -797,7 +797,7 @@ export function textoDoRelatorio(tela: Record<string, string>): string {
     configuracoes: {
       ia: `${s.iaProvedor} (chaves: ${temChave.length > 0 ? temChave.join(', ') : 'nenhuma'})`,
       whisper: s.whisperModel,
-      biblioteca: s.libraryDir ? 'configurada' : 'nao configurada',
+      biblioteca: s.libraryDir ? 'configurada' : 'não configurada',
     },
     tela,
   })

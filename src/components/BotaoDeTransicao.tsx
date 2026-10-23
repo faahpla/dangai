@@ -51,14 +51,14 @@ export function BotaoDeTransicao() {
           // Abre para cima: o botao mora na barra logo acima da linha do tempo.
           setAberto(r ? { x: r.left + r.width / 2, y: r.top - 8 } : { x: 400, y: 300 })
         }}
-        title="Transicoes: Zoom, Light, Pan... (clique, ou botao direito num corte da linha do tempo)"
+        title="Transições: Zoom, Light, Pan... (clique, ou botão direito num corte da linha do tempo)"
         className={[
           'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
           aberto ? 'border-line-strong bg-elevated text-ink' : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
         ].join(' ')}
       >
         <ArrowLeftRight size={12} strokeWidth={1.5} className={temAlgo ? 'text-accent' : undefined} />
-        Transicao
+        Transição
       </button>
       {aberto && (
         <EditorDaEmenda
@@ -80,14 +80,14 @@ export function BotaoDeTransicao() {
                       lado === l ? 'border-accent bg-accent-dim text-ink' : 'border-line bg-elevated text-ink-3 hover:text-ink',
                     ].join(' ')}
                   >
-                    {l === 'entrada' ? `Entrada do bloco ${index + 1}` : `Saida do bloco ${index + 1}`}
+                    {l === 'entrada' ? `Entrada do bloco ${index + 1}` : `Saída do bloco ${index + 1}`}
                   </button>
                 ))}
               </div>
             ) : (
               <p className="text-[10px] text-ink-3">
-                Sem bloco escolhido: vale o corte mais perto da agulha. Arraste uma transicao ate qualquer corte, ou
-                clique com o botao direito nele.
+                Sem bloco escolhido: vale o corte mais perto da agulha. Arraste uma transição até qualquer corte, ou
+                clique com o botão direito nele.
               </p>
             )
           }

@@ -58,7 +58,7 @@ export function configureAlinhador(userDataDir: string): void {
 }
 
 function dir(): string {
-  if (!baseDir) throw new Error('Alinhador nao configurado')
+  if (!baseDir) throw new Error('Alinhador não configurado')
   return baseDir
 }
 
@@ -84,9 +84,9 @@ async function garantirModelo(onProgress: AlinhadorProgresso): Promise<void> {
     mkdirSync(dir(), { recursive: true })
     if (!existsSync(caminhoVocab())) await baixar(VOCAB_URL, caminhoVocab(), () => {})
     if (!existsSync(caminhoModelo())) {
-      onProgress(`Baixando o sincronizador de legendas (so na primeira vez)... 0/${MODEL_MB} MB`)
+      onProgress(`Baixando o sincronizador de legendas (só na primeira vez)... 0/${MODEL_MB} MB`)
       await baixar(MODEL_URL, caminhoModelo(), (mb) =>
-        onProgress(`Baixando o sincronizador de legendas (so na primeira vez)... ${mb}/${MODEL_MB} MB`),
+        onProgress(`Baixando o sincronizador de legendas (só na primeira vez)... ${mb}/${MODEL_MB} MB`),
       )
     }
   })().finally(() => {
@@ -99,7 +99,7 @@ async function garantirModelo(onProgress: AlinhadorProgresso): Promise<void> {
 async function baixar(url: string, alvo: string, onMb: (mb: number) => void): Promise<void> {
   const resposta = await fetch(url, { redirect: 'follow' })
   if (!resposta.ok || !resposta.body) {
-    throw new Error(`Nao deu para baixar o sincronizador (${resposta.status}).`)
+    throw new Error(`Não deu para baixar o sincronizador (${resposta.status}).`)
   }
   const parcial = `${alvo}.part`
   let baixado = 0
@@ -143,7 +143,7 @@ function lerAudio(caminho: string, signal?: AbortSignal): Promise<Float32Array> 
     child.on('close', (code) => {
       signal?.removeEventListener('abort', aoAbortar)
       if (code !== 0) {
-        reject(new Error(`Nao deu para ler o audio: ${stderr.trim()}`))
+        reject(new Error(`Não deu para ler o áudio: ${stderr.trim()}`))
         return
       }
       const bruto = Buffer.concat(pedacos)
@@ -279,7 +279,7 @@ export async function alinharAoAudio(
   await garantirModelo(onProgress)
   if (signal?.aborted) throw alinhamentoCancelado()
 
-  onProgress('Sincronizando as legendas com a narracao...')
+  onProgress('Sincronizando as legendas com a narração...')
   const audio = await lerAudio(audioPath, signal)
   const vocab = JSON.parse(readFileSync(caminhoVocab(), 'utf8')) as Vocabulario
   const ort = await import('onnxruntime-node')

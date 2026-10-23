@@ -38,7 +38,7 @@ const CAMPOS_DE_CHAVE: string[] = ['anthropicApiKey', 'geminiApiKey']
 export function registrarCampoDeChave(campo: string): void {
   // So nome simples: o campo vira chave do JSON e ganha o sufixo Enc.
   if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(campo) || campo.endsWith('Enc')) {
-    throw new Error(`Campo de chave invalido: ${campo}`)
+    throw new Error(`Campo de chave inválido: ${campo}`)
   }
   if (CAMPOS_DE_CHAVE.includes(campo)) return
   CAMPOS_DE_CHAVE.push(campo)
@@ -184,7 +184,7 @@ export function configureSettings(userDataDir: string, cofreDoTeste?: Cofre): vo
 
 export function getSettings(): Settings {
   if (cache) return cache
-  if (!filePath) throw new Error('Settings nao configurado')
+  if (!filePath) throw new Error('Settings não configurado')
 
   let raw: unknown
   try {
@@ -232,7 +232,7 @@ export function saveSettings(patch: Partial<Settings>): Settings {
 }
 
 function gravarSettings(patch: Partial<Settings>): Settings {
-  if (!filePath) throw new Error('Settings nao configurado')
+  if (!filePath) throw new Error('Settings não configurado')
 
   const next = coerce({ ...getSettings(), ...patch })
   // Chave nova (ou apagada de proposito) substitui a cifrada que nao abria.
@@ -246,7 +246,7 @@ function gravarSettings(patch: Partial<Settings>): Settings {
 }
 
 function gravar(settings: Settings): void {
-  if (!filePath) throw new Error('Settings nao configurado')
+  if (!filePath) throw new Error('Settings não configurado')
   mkdirSync(dirname(filePath), { recursive: true })
 
   // Escreve em temporario e renomeia: se o app morrer no meio, o arquivo

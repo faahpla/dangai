@@ -55,7 +55,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
     ? 'Solte para importar'
     : lastOutput
       ? `Renderizado · ${lastOutput.split(/[\\/]/).pop()}`
-      : (audio?.fileName ?? 'Solte a narracao e as prints')
+      : (audio?.fileName ?? 'Solte a narração e as prints')
 
   return (
     <footer className="flex h-[38px] shrink-0 items-center justify-between gap-4 border-t border-line px-6">
@@ -159,8 +159,8 @@ export function StatusBar({ isDragging }: StatusBarProps) {
       <button
         type="button"
         onClick={() => openSettings(true)}
-        aria-label="Configuracoes"
-        title="Configuracoes (Ctrl+,)"
+        aria-label="Configurações"
+        title="Configurações (Ctrl+,)"
         className="grid size-6 shrink-0 place-items-center rounded-sm text-ink-3 transition-colors duration-150 hover:text-ink"
       >
         <Settings2 size={13} strokeWidth={1.5} />
@@ -257,7 +257,7 @@ function UpdateChip({ appVersion }: { appVersion: string }) {
     return (
       <span className="tnum flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
         <Download size={12} strokeWidth={1.5} />
-        Baixando atualizacao {Math.round(update.percent * 100)}%
+        Baixando atualização {Math.round(update.percent * 100)}%
       </span>
     )
   }
@@ -273,9 +273,9 @@ function UpdateChip({ appVersion }: { appVersion: string }) {
 
   const resposta =
     perguntou && update?.state === 'atual'
-      ? 'ja esta na ultima'
+      ? 'já está na última'
       : perguntou && update?.state === 'erro'
-        ? 'nao consegui verificar'
+        ? 'não consegui verificar'
         : null
 
   if (!appVersion) return null
@@ -287,11 +287,11 @@ function UpdateChip({ appVersion }: { appVersion: string }) {
       title={
         update?.state === 'erro'
           ? update.message
-          : 'Versao instalada — clique para procurar atualizacao'
+          : 'Versão instalada — clique para procurar atualização'
       }
       className={[
         'tnum flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11px] transition-colors duration-150',
-        resposta === 'nao consegui verificar' ? 'text-danger' : 'text-ink-3 hover:text-ink',
+        resposta === 'não consegui verificar' ? 'text-danger' : 'text-ink-3 hover:text-ink',
       ].join(' ')}
     >
       v{appVersion}
@@ -319,7 +319,7 @@ function PlanBadge({ origin, note, pelaNarracao }: { origin: PlanOrigin; note: s
   }
   const { icon: Icon, label: rotulo } = config[origin]
   // Montado com um roteiro que NAO casou: foi pela narracao, e nao pelo roteiro.
-  const label = origin === 'auto' && pelaNarracao ? 'Montado pela narracao' : rotulo
+  const label = origin === 'auto' && pelaNarracao ? 'Montado pela narração' : rotulo
 
   return (
     <span

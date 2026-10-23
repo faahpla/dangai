@@ -44,7 +44,7 @@ export function configureRender(next: RenderPaths): void {
 }
 
 function requirePaths(): RenderPaths {
-  if (!paths) throw new Error('Render nao configurado')
+  if (!paths) throw new Error('Render não configurado')
   return paths
 }
 
@@ -140,7 +140,7 @@ export async function renderVideo(
   cancelRequested = false
 
   try {
-    onProgress({ progress: 0, stage: 'bundling', message: 'Preparando a composicao...' })
+    onProgress({ progress: 0, stage: 'bundling', message: 'Preparando a composição...' })
     const browserExecutable = await resolveBrowser(onProgress)
     const serveUrl = await getServeUrl()
 
@@ -205,7 +205,7 @@ export async function renderVideo(
       await renderizar(false)
     }
 
-    onProgress({ progress: 0.9, stage: 'muxing', message: 'Ajustando o audio...' })
+    onProgress({ progress: 0.9, stage: 'muxing', message: 'Ajustando o áudio...' })
     await muxWithNormalizedAudio(
       silentVideo,
       request.audioPath,
@@ -241,8 +241,8 @@ function traduzirErroDoRender(err: unknown): unknown {
   if (/No video stream found|expected pts/i.test(msg)) {
     return new Error(
       arquivo
-        ? `O arquivo ${arquivo} nao tem imagem de video (so som, ou uma capa). Tire ele da faixa de video ou troque por outro.`
-        : 'Um clipe da faixa de video nao tem imagem de video (so som, ou uma capa). Tire-o ou troque por outro.',
+        ? `O arquivo ${arquivo} não tem imagem de vídeo (só som, ou uma capa). Tire ele da faixa de vídeo ou troque por outro.`
+        : 'Um clipe da faixa de vídeo não tem imagem de vídeo (só som, ou uma capa). Tire-o ou troque por outro.',
     )
   }
   return msg === err.message ? err : new Error(msg.split('\n')[0]!.slice(0, 400))
@@ -281,7 +281,7 @@ async function getServeUrl(): Promise<string> {
      */
     if (bundleVencido(appPath, prebuiltBundle)) {
       throw new Error(
-        'A composicao de video mudou depois do ultimo bundle. Rode "npm run remotion:bundle" e tente de novo.',
+        'A composição de vídeo mudou depois do último bundle. Rode "npm run remotion:bundle" e tente de novo.',
       )
     }
     cachedServeUrl = prebuiltBundle
@@ -298,7 +298,7 @@ async function getServeUrl(): Promise<string> {
     return cachedServeUrl
   } catch {
     throw new Error(
-      'A composicao de video nao esta montada. Rode "npm run remotion:bundle" e tente de novo.',
+      'A composição de vídeo não está montada. Rode "npm run remotion:bundle" e tente de novo.',
     )
   }
 }
@@ -385,7 +385,7 @@ async function resolveBrowser(onProgress: ProgressSink): Promise<string | null> 
     const installed = findInstalledBrowser()
     if (!installed) {
       throw new Error(
-        'Nenhum navegador disponivel para o render. Conecte a internet uma vez para o Dangai baixar o navegador, ou instale o Google Chrome.',
+        'Nenhum navegador disponível para o render. Conecte a internet uma vez para o Dangai baixar o navegador, ou instale o Google Chrome.',
       )
     }
     return installed
@@ -771,7 +771,7 @@ function runFfmpeg(args: readonly string[]): Promise<string> {
       stderr += chunk.toString()
     })
 
-    child.on('error', (err) => reject(new Error(`FFmpeg nao pode ser executado: ${err.message}`)))
+    child.on('error', (err) => reject(new Error(`FFmpeg não pode ser executado: ${err.message}`)))
 
     child.on('close', (code) => {
       if (code === 0) {
@@ -803,7 +803,7 @@ function runFfmpeg(args: readonly string[]): Promise<string> {
       const ruim = /aist#(\d+):/.exec(erros.join(' '))
       const arquivo = ruim ? entradas[Number(ruim[1])] : undefined
       if (arquivo) {
-        reject(new Error(`Nao deu para ler o audio "${basename(arquivo)}" (${arquivo}). Troque ou tire esse som e renderize de novo.`))
+        reject(new Error(`Não deu para ler o áudio "${basename(arquivo)}" (${arquivo}). Troque ou tire esse som e renderize de novo.`))
         return
       }
       const detail = (erros.length > 0 ? erros.slice(-3) : linhas.slice(-3)).join(' | ')

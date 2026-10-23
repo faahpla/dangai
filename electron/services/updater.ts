@@ -206,7 +206,7 @@ export async function checkForUpdateNow(): Promise<void> {
   if (!ativo) {
     enviar({
       state: 'erro',
-      message: 'A atualizacao automatica so funciona no app instalado.',
+      message: 'A atualização automática só funciona no app instalado.',
     })
     return
   }
@@ -225,7 +225,7 @@ export async function checkForUpdateNow(): Promise<void> {
     enviar(
       semReleaseAinda(err)
         ? { state: 'atual' }
-        : { state: 'erro', message: err instanceof Error ? err.message : 'Nao consegui verificar agora.' },
+        : { state: 'erro', message: err instanceof Error ? err.message : 'Não consegui verificar agora.' },
     )
   }
 }

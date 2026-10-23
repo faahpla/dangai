@@ -20,7 +20,7 @@ export function parseSrt(path: string): Transcript {
     raw = readFileSync(path, 'utf8')
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
-    throw new Error(`Nao foi possivel ler "${basename(path)}" (${detail}).`)
+    throw new Error(`Não foi possível ler "${basename(path)}" (${detail}).`)
   }
 
   // Remove BOM e normaliza quebras de linha.
@@ -54,7 +54,7 @@ export function parseSrt(path: string): Transcript {
 
   if (segments.length === 0) {
     throw new Error(
-      `"${basename(path)}" nao tem legendas legiveis. Confira se o arquivo esta no formato SRT.`,
+      `"${basename(path)}" não tem legendas legíveis. Confira se o arquivo está no formato SRT.`,
     )
   }
 

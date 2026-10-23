@@ -53,7 +53,7 @@ export function SobreposicaoEdit({ id }: { id: string }) {
                 onClick={() =>
                   ajustar(id, { x: 0, y: 0, escala: 1, rotacao: 0, opacidade: 1, espelhar: false, chaves: undefined })
                 }
-                title="Volta posicao, tamanho, giro e opacidade ao padrao (e tira a animacao)"
+                title="Volta posição, tamanho, giro e opacidade ao padrão (e tira a animação)"
               >
                 <RotateCcw size={11} strokeWidth={1.5} />
                 Resetar
@@ -87,11 +87,11 @@ export function SobreposicaoEdit({ id }: { id: string }) {
               {o.espelhar ? 'Espelhado' : 'Espelhar horizontal'}
             </Botaozinho>
           </Linha>
-          <Linha label="Fade entra" title="A opacidade sobe do zero nesse tempo. Tambem da para puxar a alca no canto do clipe.">
+          <Linha label="Fade entra" title="A opacidade sobe do zero nesse tempo. Também dá para puxar a alça no canto do clipe.">
             <Deslizante valor={o.fadeInSec ?? 0} min={0} max={Math.max(0.1, toca)} step={0.05} padrao={0}
               texto={`${(o.fadeInSec ?? 0).toFixed(2)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
           </Linha>
-          <Linha label="Fade sai" title="A opacidade desce ate o zero nesse tempo">
+          <Linha label="Fade sai" title="A opacidade desce até o zero nesse tempo">
             <Deslizante valor={o.fadeOutSec ?? 0} min={0} max={Math.max(0.1, toca)} step={0.05} padrao={0}
               texto={`${(o.fadeOutSec ?? 0).toFixed(2)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
           </Linha>
@@ -141,12 +141,12 @@ export function SobreposicaoEdit({ id }: { id: string }) {
           revelando o que estiver por baixo. Tambem da para arrastar uma
           transicao ate o clipe na faixa (metade esquerda = entrada).
         */}
-        <Grupo titulo="Transicao">
+        <Grupo titulo="Transição">
           <Linha label="">
             <Segmentos
               opcoes={[
                 { valor: 'entrada' as const, rotulo: o.transicaoEntrada && o.transicaoEntrada.tipo !== 'cut' ? 'Entrada ●' : 'Entrada', title: 'Como o clipe aparece' },
-                { valor: 'saida' as const, rotulo: o.transicaoSaida && o.transicaoSaida.tipo !== 'cut' ? 'Saida ●' : 'Saida', title: 'Como o clipe some' },
+                { valor: 'saida' as const, rotulo: o.transicaoSaida && o.transicaoSaida.tipo !== 'cut' ? 'Saída ●' : 'Saída', title: 'Como o clipe some' },
               ]}
               ativo={(l) => l === lado}
               onChange={setLado}

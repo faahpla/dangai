@@ -73,7 +73,7 @@ const sondados = new Map<string, ClipInfo>()
 /** O arquivo so tem SOM (no maximo uma capa): nao serve como imagem de video. */
 export class ErroSoSom extends Error {
   constructor(path: string) {
-    super(`"${basename(path)}" so tem som, sem imagem de video.`)
+    super(`"${basename(path)}" só tem som, sem imagem de vídeo.`)
     this.name = 'ErroSoSom'
   }
 }
@@ -106,7 +106,7 @@ export async function probeClip(path: string): Promise<ClipInfo> {
   const duracao = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(saida)
   if (!dimensao && /Stream #.*Audio:/.test(saida)) throw new ErroSoSom(path)
   if (!dimensao || !duracao) {
-    throw new Error('nao foi possivel ler dimensoes ou duracao')
+    throw new Error('não foi possível ler dimensoes ou duração')
   }
 
   const width = Number(dimensao[1])
@@ -115,7 +115,7 @@ export async function probeClip(path: string): Promise<ClipInfo> {
     Number(duracao[1]) * 3600 + Number(duracao[2]) * 60 + Number(duracao[3])
 
   if (!Number.isFinite(durationSec) || durationSec <= 0) {
-    throw new Error('duracao invalida')
+    throw new Error('duração inválida')
   }
 
   const info = { width, height, durationSec, hdr: ehHdrPeloFfmpeg(saida) }
@@ -293,7 +293,7 @@ async function gerarMiniaturaDoClipe(path: string, alvo: string, durationSec?: n
      * mas a mensagem tem que dizer o que ele veria no video.
      */
     rmSync(alvo, { force: true })
-    throw new Error('nao ha imagem nesse clipe -- ele parece preto do comeco ao fim')
+    throw new Error('não há imagem nesse clipe -- ele parece preto do começo ao fim')
   }
 
   const { readFile } = await import('node:fs/promises')
@@ -543,7 +543,7 @@ async function gerarTira(path: string): Promise<TiraDoClipe> {
   const info = await probeClip(path)
   const taxa = TIRA_QUADROS / Math.max(info.durationSec, 0.05)
   const quadros = await quadrosEmSequencia(path, taxa, info.hdr)
-  if (quadros.length === 0) throw new Error('o clipe nao devolveu nenhum quadro')
+  if (quadros.length === 0) throw new Error('o clipe não devolveu nenhum quadro')
 
   const colunas = Math.min(TIRA_COLUNAS, quadros.length)
   const linhas = Math.ceil(quadros.length / colunas)

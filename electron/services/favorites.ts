@@ -23,7 +23,7 @@ export function configureFavorites(userDataDir: string): void {
 }
 
 export function readFavorites(): string[] {
-  if (!caminho) throw new Error('Favoritos nao configurados')
+  if (!caminho) throw new Error('Favoritos não configurados')
   try {
     const cru: unknown = JSON.parse(readFileSync(caminho, 'utf8'))
     if (!Array.isArray(cru)) return []
@@ -37,7 +37,7 @@ export function readFavorites(): string[] {
 
 /** Liga ou desliga um favorito. Devolve a lista inteira depois da troca. */
 export function toggleFavorite(id: string): string[] {
-  if (!caminho) throw new Error('Favoritos nao configurados')
+  if (!caminho) throw new Error('Favoritos não configurados')
   if (!id.trim()) throw new Error('Sem cena para favoritar.')
 
   const atuais = readFavorites()

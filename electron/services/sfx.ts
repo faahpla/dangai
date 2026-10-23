@@ -28,7 +28,7 @@ export function configureSfx(dirs: { userDir: string; bundledDir: string }): voi
 export function sfxDir(): string {
   const chosen = getSettings().sfxDir
   if (chosen && existsSync(chosen)) return chosen
-  if (!userDir) throw new Error('SFX nao configurado')
+  if (!userDir) throw new Error('SFX não configurado')
   return userDir
 }
 

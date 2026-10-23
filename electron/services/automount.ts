@@ -38,7 +38,7 @@ export async function automount(
   // A mesma lista da grade: o que aparece no Ctrl+B pode ser escolhido aqui.
   const raizes = raizesDaBiblioteca()
   if (raizes.length === 0) {
-    throw new Error('Escolha a pasta das cenas nas configuracoes antes de montar sozinho.')
+    throw new Error('Escolha a pasta das cenas nas configurações antes de montar sozinho.')
   }
 
   onProgress('Lendo a biblioteca...')
@@ -46,7 +46,7 @@ export async function automount(
 
   // Transcricao travada (a voz gerada ja trouxe os tempos): so casa o texto.
   const travada = request.transcript && request.transcript.words.length > 0 ? request.transcript : null
-  if (!travada) onProgress('Ouvindo a narracao...')
+  if (!travada) onProgress('Ouvindo a narração...')
   const { transcript, scriptNote } = travada
     ? await applyScript(request.script, { ...travada, alinhado: true }, onProgress, request.audioPath)
     : await transcriptOnly(
@@ -58,7 +58,7 @@ export async function automount(
       )
   if (!transcript || transcript.segments.length === 0) {
     throw new Error(
-      'Nao deu para ouvir a narracao. Sem o texto nao ha como saber quem esta em cada frase.',
+      'Não deu para ouvir a narração. Sem o texto não há como saber quem está em cada frase.',
     )
   }
 
@@ -124,7 +124,7 @@ export async function automount(
      */
     note:
       vazios > 0
-        ? `${vazios} ${vazios === 1 ? 'bloco ficou' : 'blocos ficaram'} sem cena -- a biblioteca nao tem material para ${vazios === 1 ? 'ele' : 'eles'}.`
+        ? `${vazios} ${vazios === 1 ? 'bloco ficou' : 'blocos ficaram'} sem cena -- a biblioteca não tem material para ${vazios === 1 ? 'ele' : 'eles'}.`
         : null,
   }
 }
@@ -169,7 +169,7 @@ export async function scriptBlocks(
   // O vocabulario e opcional: sem biblioteca apontada, transcreve igual.
   const vocab = await vocabularioDaBiblioteca(publishThumb)
 
-  onProgress('Ouvindo a narracao...')
+  onProgress('Ouvindo a narração...')
   const { transcript, scriptNote } = await transcriptOnly(
     request.audioPath,
     request.subtitlePath,
@@ -178,7 +178,7 @@ export async function scriptBlocks(
     onProgress,
   )
   if (!transcript || transcript.words.length === 0) {
-    throw new Error('Nao deu para ouvir a narracao. Sem o texto nao ha frase para marcar.')
+    throw new Error('Não deu para ouvir a narração. Sem o texto não há frase para marcar.')
   }
 
   /*

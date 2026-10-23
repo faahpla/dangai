@@ -74,7 +74,7 @@ interface Corrida {
 
 /** O erro de quem desistiu (signal abortado). */
 export function transcricaoCancelada(): Error {
-  const erro = new Error('Transcricao cancelada')
+  const erro = new Error('Transcrição cancelada')
   erro.name = 'AbortError'
   return erro
 }
@@ -124,7 +124,7 @@ export function encerrarWhisper(): void {
 
   const aguardando = [...pendentes]
   pendentes.clear()
-  for (const desistir of aguardando) desistir(new Error('Transcricao cancelada'))
+  for (const desistir of aguardando) desistir(new Error('Transcrição cancelada'))
 
   // A fila recomeca limpa, e o registro de compartilhamento tambem: uma entrada
   // que nunca resolve nao pode continuar recebendo caronas.
@@ -139,7 +139,7 @@ export function configureWhisper(dir: string): void {
 }
 
 function requireBaseDir(): string {
-  if (!baseDir) throw new Error('Whisper nao configurado')
+  if (!baseDir) throw new Error('Whisper não configurado')
   return baseDir
 }
 
@@ -300,7 +300,7 @@ async function transcrever(
   // O whisper.cpp so aceita WAV PCM 16kHz mono.
   const wav = join(tmpdir(), `dangai-whisper-${Date.now()}.wav`)
   try {
-    onProgress('Preparando o audio...')
+    onProgress('Preparando o áudio...')
     await toWav16k(audioPath, wav, corrida)
     seguir()
 
@@ -310,7 +310,7 @@ async function transcrever(
     seguir()
 
     if (!existsSync(jsonPath)) {
-      throw new Error('O Whisper terminou sem gerar a transcricao.')
+      throw new Error('O Whisper terminou sem gerar a transcrição.')
     }
 
     return parseWhisperJson(readFileSync(jsonPath, 'utf8'))
@@ -333,7 +333,7 @@ function toWav16k(input: string, output: string, corrida?: Corrida): Promise<voi
     child.stderr.on('data', (c: Buffer) => (stderr += c.toString()))
     child.on('error', reject)
     child.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`Conversao para WAV falhou: ${stderr.trim()}`)),
+      code === 0 ? resolve() : reject(new Error(`Conversão para WAV falhou: ${stderr.trim()}`)),
     )
   })
 }
@@ -404,7 +404,7 @@ function runWhisper(
     })
 
     child.on('error', (err) =>
-      reject(new Error(`Nao foi possivel executar o Whisper: ${err.message}`)),
+      reject(new Error(`Não foi possível executar o Whisper: ${err.message}`)),
     )
     child.on('close', (code) => {
       if (code === 0) {
@@ -490,7 +490,7 @@ export function parseWhisperJson(raw: string): Transcript {
   }
 
   if (segments.length === 0) {
-    throw new Error('O Whisper nao encontrou fala no audio.')
+    throw new Error('O Whisper não encontrou fala no áudio.')
   }
 
   return {

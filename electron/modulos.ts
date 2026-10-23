@@ -170,12 +170,12 @@ function criarContexto(def: ModuloDoMain, base: BaseDosModulos): ContextoDoModul
   const prefixo = prefixoDoModulo(def.id)
   const conferirCanal = (canal: string): void => {
     if (!canal.startsWith(prefixo) || canal.length <= prefixo.length) {
-      throw new Error(`O modulo "${def.id}" so pode usar canais "${prefixo}...": "${canal}" recusado.`)
+      throw new Error(`O módulo "${def.id}" só pode usar canais "${prefixo}...": "${canal}" recusado.`)
     }
   }
   const conferirChave = (campo: string): void => {
     if (!def.camposDeChave?.includes(campo)) {
-      throw new Error(`O modulo "${def.id}" nao registrou a chave "${campo}".`)
+      throw new Error(`O módulo "${def.id}" não registrou a chave "${campo}".`)
     }
   }
   const criada = (p: string): string => {
@@ -200,7 +200,7 @@ function criarContexto(def: ModuloDoMain, base: BaseDosModulos): ContextoDoModul
       return { libraryDir: s.libraryDir, iaProvedor: s.iaProvedor, whisperModel: s.whisperModel, modulo: configDe(def) }
     },
     salvarConfig(patch) {
-      if (!def.config) throw new Error(`O modulo "${def.id}" nao tem configuracao.`)
+      if (!def.config) throw new Error(`O módulo "${def.id}" não tem configuração.`)
       const atual = configDe(def)
       const nova = def.config.validarPatch
         ? def.config.validarPatch(patch, atual)
@@ -343,7 +343,7 @@ export async function ligarModulosNoInicio(): Promise<void> {
 /** Liga ou desliga pelas Configuracoes, e guarda a escolha. */
 export async function ligarModulo(id: string, ligado: boolean): Promise<void> {
   const m = instalados.find((x) => x.def.id === id)
-  if (!m) throw new Error(`Modulo desconhecido: ${id}`)
+  if (!m) throw new Error(`Módulo desconhecido: ${id}`)
   saveSettings({ modulosLigados: { ...getSettings().modulosLigados, [id]: ligado } })
   if (ligado) {
     await rodarLigar(m)

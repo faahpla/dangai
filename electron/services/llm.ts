@@ -142,11 +142,11 @@ export class ErroDeIa extends Error {
 }
 
 export const SEM_CHAVE =
-  'Sem chave de IA. Abra as configuracoes (Ctrl+,) e cole a do Gemini (gratis) ou a da Anthropic.'
+  'Sem chave de IA. Abra as configurações (Ctrl+,) e cole a do Gemini (grátis) ou a da Anthropic.'
 
 /** O automatico rodou a lista e nenhum modelo gratis atendeu. */
 export const SEM_MODELO_LIVRE =
-  'Nenhum modelo gratis do Gemini atendeu agora (sem cota ou lotado). Tente de novo em alguns minutos.'
+  'Nenhum modelo grátis do Gemini atendeu agora (sem cota ou lotado). Tente de novo em alguns minutos.'
 
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta'
 
@@ -227,9 +227,9 @@ function paradaNoReserva(reserva: string, agora = Date.now()): SoReserva {
     ok: false,
     motivo: 'so-reserva',
     nota: porCota
-      ? `Os modelos bons do Gemini acabaram a cota de hoje (renova a meia-noite do Pacifico, 4h ou 5h em Brasilia). So o ${reserva} esta livre.`
-      : `Os modelos bons do Gemini estao lotados agora. So o ${reserva} esta livre.`,
-    bruto: `so reserva livre (${reserva}); bom volta em ${Math.round((renovaEm - agora) / 60_000)} min`,
+      ? `Os modelos bons do Gemini acabaram a cota de hoje (renova a meia-noite do Pacifico, 4h ou 5h em Brasilia). Só o ${reserva} está livre.`
+      : `Os modelos bons do Gemini estão lotados agora. Só o ${reserva} está livre.`,
+    bruto: `só reserva livre (${reserva}); bom volta em ${Math.round((renovaEm - agora) / 60_000)} min`,
     provedor: 'gemini',
     reserva,
     renovaEm,
@@ -303,7 +303,7 @@ export async function gerarJson<S extends z.ZodType>(
     // Rede de seguranca: um schema que o zod nao converte, por exemplo. O
     // contrato daqui e nunca lancar.
     const bruto = err instanceof Error ? err.message : String(err)
-    resposta = falha(`A IA nao respondeu (${bruto.slice(0, 60)}).`, bruto, provedor)
+    resposta = falha(`A IA não respondeu (${bruto.slice(0, 60)}).`, bruto, provedor)
   }
   if (!resposta.ok) console.warn(`[llm:${pedido.etapa}] ${provedor}: ${resposta.bruto}`)
   return resposta
@@ -345,7 +345,7 @@ async function viaAnthropic<S extends z.ZodType>(
 
     const output = message.parsed_output
     if (output === null || output === undefined) {
-      return falha('A IA nao devolveu a resposta.', 'parsed_output vazio', 'anthropic')
+      return falha('A IA não devolveu a resposta.', 'parsed_output vazio', 'anthropic')
     }
     const uso = message.usage
       ? { entrada: message.usage.input_tokens ?? 0, saida: message.usage.output_tokens ?? 0 }
@@ -359,16 +359,16 @@ async function viaAnthropic<S extends z.ZodType>(
 
 function notaDaAnthropic(err: unknown, bruto: string, modelo: string): string {
   if (err instanceof Anthropic.APIConnectionError) {
-    return 'Sem conexao com a Anthropic. Confira a internet e tente de novo.'
+    return 'Sem conexão com a Anthropic. Confira a internet e tente de novo.'
   }
   const status = err instanceof Anthropic.APIError ? err.status : undefined
-  if (status === 401) return 'Chave da Anthropic recusada. Confira em configuracoes (Ctrl+,).'
-  if (status === 404) return `O modelo ${modelo} nao existe na Anthropic. Confira em configuracoes.`
+  if (status === 401) return 'Chave da Anthropic recusada. Confira em configurações (Ctrl+,).'
+  if (status === 404) return `O modelo ${modelo} não existe na Anthropic. Confira em configurações.`
   if (status === 429) return 'Limite da Anthropic atingido. Espere um pouco e tente de novo.'
   if (typeof status === 'number' && status >= 500) {
-    return 'A Anthropic esta instavel agora. Tente de novo em alguns minutos.'
+    return 'A Anthropic está instável agora. Tente de novo em alguns minutos.'
   }
-  return `A IA nao respondeu (${bruto.slice(0, 60)}).`
+  return `A IA não respondeu (${bruto.slice(0, 60)}).`
 }
 
 // ------------------------------------------------------------------- gemini
@@ -580,7 +580,7 @@ function lerResposta<S extends z.ZodType>(
     if (FIM_RECUSADO.has(fim)) {
       return falha('O Gemini recusou o pedido pelo filtro de seguranca.', `finishReason ${fim}`, 'gemini')
     }
-    return falha('O Gemini nao devolveu a resposta.', `sem texto (finishReason ${fim || '?'})`, 'gemini')
+    return falha('O Gemini não devolveu a resposta.', `sem texto (finishReason ${fim || '?'})`, 'gemini')
   }
 
   let dados: unknown
@@ -589,7 +589,7 @@ function lerResposta<S extends z.ZodType>(
   } catch {
     return fim === 'MAX_TOKENS'
       ? falha(cortada, 'JSON incompleto (finishReason MAX_TOKENS)', 'gemini')
-      : falha('O Gemini devolveu um formato inesperado.', `JSON invalido: ${texto.slice(0, 80)}`, 'gemini')
+      : falha('O Gemini devolveu um formato inesperado.', `JSON inválido: ${texto.slice(0, 80)}`, 'gemini')
   }
 
   // O schema da API guia o modelo; o zod e quem garante. Minimo e maximo, por
@@ -767,36 +767,36 @@ export function notaDoGemini(erro: ErroGemini, modelo: string): string {
   if (erro.status === null) {
     return erro.codigo === 'TIMEOUT'
       ? 'O Gemini demorou demais para responder. Tente de novo.'
-      : 'Sem conexao com o Gemini. Confira a internet e tente de novo.'
+      : 'Sem conexão com o Gemini. Confira a internet e tente de novo.'
   }
   if (erro.status === 429) {
     if (erro.semCotaGratis) {
-      return `O modelo ${modelo} nao tem cota gratis. Escolha outro em configuracoes (Ctrl+,) ou deixe no automatico.`
+      return `O modelo ${modelo} não tem cota grátis. Escolha outro em configurações (Ctrl+,) ou deixe no automático.`
     }
     if (erro.cotaDoDia) {
       return (
-        'A cota gratis do Gemini acabou por hoje; ela renova a meia-noite (horario do Pacifico, ' +
-        '4h ou 5h em Brasilia). Ate la, use a chave da Anthropic ou tente mais tarde.'
+        'A cota grátis do Gemini acabou por hoje; ela renova a meia-noite (horário do Pacifico, ' +
+        '4h ou 5h em Brasilia). Até la, use a chave da Anthropic ou tente mais tarde.'
       )
     }
     return 'Muitos pedidos ao Gemini em pouco tempo. Espere um minuto e tente de novo.'
   }
   if (erro.status === 401 || erro.codigo === 'API_KEY_INVALID' || /api key not valid/i.test(erro.mensagem)) {
-    return 'Chave do Gemini recusada. Confira em configuracoes (Ctrl+,).'
+    return 'Chave do Gemini recusada. Confira em configurações (Ctrl+,).'
   }
   if (erro.status === 403) {
-    return 'A chave do Gemini nao tem permissao para isto. Gere outra em aistudio.google.com/apikey.'
+    return 'A chave do Gemini não tem permissão para isto. Gere outra em aistudio.google.com/apikey.'
   }
   if (erro.status === 404) {
     const sucessor = sucessorSugerido(erro.mensagem)
     if (/no longer available/i.test(erro.mensagem)) {
-      return `O Google aposentou o ${modelo || 'modelo escolhido'} para chaves novas.${sucessor ? ` Ele indica o ${sucessor}.` : ''} Escolha outro em configuracoes ou deixe no automatico.`
+      return `O Google aposentou o ${modelo || 'modelo escolhido'} para chaves novas.${sucessor ? ` Ele indica o ${sucessor}.` : ''} Escolha outro em configurações ou deixe no automático.`
     }
-    return `O modelo ${modelo || 'escolhido'} nao existe no Gemini. Escolha outro em configuracoes ou deixe no automatico.`
+    return `O modelo ${modelo || 'escolhido'} não existe no Gemini. Escolha outro em configurações ou deixe no automático.`
   }
-  if (erro.status >= 500) return 'O Gemini esta instavel agora. Tente de novo em alguns minutos.'
+  if (erro.status >= 500) return 'O Gemini está instável agora. Tente de novo em alguns minutos.'
   if (/location is not supported/i.test(erro.mensagem)) {
-    return 'O Gemini nao atende a regiao desta conexao.'
+    return 'O Gemini não atende a regiao desta conexão.'
   }
   return `O Gemini recusou o pedido (${erro.mensagem.slice(0, 80)}).`
 }
@@ -1087,7 +1087,7 @@ async function modeloAutomatico(chave: string, soBons = false): Promise<string |
  * Os erros que nascem fora (plano, textos) continuam com ele.
  */
 function notaDoTeste(nota: string): string {
-  return nota.replace(/\s*Confira em configuracoes \(Ctrl\+,\)\.$/, '')
+  return nota.replace(/\s*Confira em configura[cç][oõ]es \(Ctrl\+,\)\.$/, '')
 }
 
 export async function testarGemini(chave: string, modeloConfigurado: string): Promise<TesteDoGemini> {

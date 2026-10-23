@@ -33,7 +33,7 @@ export function Divisor({
       role="separator"
       aria-orientation={eixo === 'x' ? 'vertical' : 'horizontal'}
       aria-label={titulo}
-      title={`${titulo} -- arraste; dois cliques voltam ao padrao`}
+      title={`${titulo} -- arraste; dois cliques voltam ao padrão`}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)
         inicio.current = { p: eixo === 'x' ? e.clientX : e.clientY, v: valor }

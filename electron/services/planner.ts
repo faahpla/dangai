@@ -84,7 +84,7 @@ export async function planWithAI(request: PlanRequest): Promise<ScenePlan> {
   // garante as regras do app.
   const parsed = scenePlanSchema.safeParse(resposta.valor)
   if (!parsed.success) {
-    throw new Error(`Plano invalido: ${parsed.error.issues[0]?.message ?? 'formato inesperado'}`)
+    throw new Error(`Plano inválido: ${parsed.error.issues[0]?.message ?? 'formato inesperado'}`)
   }
   return parsed.data
 }

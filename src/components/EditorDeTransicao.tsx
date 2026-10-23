@@ -95,7 +95,7 @@ export function PaletaDeTransicoes({
           draggable={t !== 'cut'}
           onDragStart={(e) => iniciarArrasteDeTransicao(e, { tipo: t })}
           onClick={() => onEscolher(t)}
-          title={t === 'cut' ? 'Sem transicao' : `${TRANSITION_LABEL[t]} -- clique aplica, ou arraste ate um corte da linha do tempo`}
+          title={t === 'cut' ? 'Sem transição' : `${TRANSITION_LABEL[t]} -- clique aplica, ou arraste até um corte da linha do tempo`}
           className={[
             'flex flex-col items-center gap-1 rounded-sm border px-1 py-1.5 text-[10px] leading-none transition-colors',
             atual === t ? 'border-accent bg-accent-dim text-ink' : 'border-line bg-elevated text-ink-2 hover:border-line-strong hover:text-ink',
@@ -131,7 +131,7 @@ export function AjusteDaTransicaoCampos({
   return (
     <div className="flex flex-col gap-1.5">
       <div className={linha}>
-        <span className={rotulo}>Duracao</span>
+        <span className={rotulo}>Duração</span>
         <Deslizante
           valor={frames}
           min={2}
@@ -143,7 +143,7 @@ export function AjusteDaTransicaoCampos({
       </div>
       {tipo !== 'crossfade' && (
         <div className={linha}>
-          <span className={rotulo}>{tipo === 'light' ? 'Forca da luz' : 'Intensidade'}</span>
+          <span className={rotulo}>{tipo === 'light' ? 'Força da luz' : 'Intensidade'}</span>
           <Deslizante
             valor={intensidade}
             min={0}
@@ -206,8 +206,8 @@ export function AjusteDaTransicaoCampos({
 const SEM_CENAS: never[] = []
 
 function tituloDaEmenda(e: number, n: number): string {
-  if (e === 0) return 'Entrada do video (bloco 1)'
-  if (e === n) return `Saida do video (bloco ${n})`
+  if (e === 0) return 'Entrada do vídeo (bloco 1)'
+  if (e === n) return `Saída do vídeo (bloco ${n})`
   return `Corte entre o bloco ${e} e o ${e + 1}`
 }
 
@@ -230,7 +230,7 @@ function PresetsDeTransicao({ onAplicar, atual }: { onAplicar: (p: { tipo: Trans
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1">
-        <span className="flex-1 text-[10px] uppercase tracking-wide text-ink-3">Presets de transicao</span>
+        <span className="flex-1 text-[10px] uppercase tracking-wide text-ink-3">Presets de transição</span>
         <button
           type="button"
           onClick={() => void importar().then(setRecado)}
@@ -253,7 +253,7 @@ function PresetsDeTransicao({ onAplicar, atual }: { onAplicar: (p: { tipo: Trans
               <button
                 type="button"
                 onClick={() => onAplicar(p)}
-                title={`${TRANSITION_LABEL[p.tipo]} -- clique aplica, ou arraste ate um corte`}
+                title={`${TRANSITION_LABEL[p.tipo]} -- clique aplica, ou arraste até um corte`}
                 className="flex items-center gap-1 py-1 pl-1.5 pr-1 text-[11px] text-ink-2 hover:text-ink"
               >
                 <IconeDaTransicao tipo={p.tipo} size={11} />
@@ -295,7 +295,7 @@ function PresetsDeTransicao({ onAplicar, atual }: { onAplicar: (p: { tipo: Trans
             value={nome}
             onChange={(e) => setNome(e.target.value)}
             placeholder="Guardar esta como preset..."
-            aria-label="Nome do preset de transicao"
+            aria-label="Nome do preset de transição"
             className="min-w-0 flex-1 rounded-sm border border-line bg-bg px-2 py-1 text-[11px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
           />
           <button
@@ -371,7 +371,7 @@ export function EditorDaEmenda({
     <div
       ref={painel}
       role="dialog"
-      aria-label="Transicao"
+      aria-label="Transição"
       onContextMenu={(e) => e.preventDefault()}
       className="glass enter fixed z-[70] flex w-[340px] flex-col gap-3 rounded-md p-3"
       style={{ left: pos.left, top: pos.top }}
@@ -396,8 +396,8 @@ export function EditorDaEmenda({
           {(emenda === 0 || emenda === scenes.length) && (
             <p className="text-[10px] leading-snug text-ink-3">
               {emenda === 0
-                ? 'Na entrada do video a imagem chega do preto (ou da luz).'
-                : 'Na saida do video a imagem vai para o preto (ou para a luz).'}
+                ? 'Na entrada do vídeo a imagem chega do preto (ou da luz).'
+                : 'Na saída do vídeo a imagem vai para o preto (ou para a luz).'}
             </p>
           )}
         </>

@@ -110,7 +110,7 @@ export function CommandPalette() {
           ref={inputRef}
           value={query}
           spellCheck={false}
-          placeholder="O que voce quer fazer?"
+          placeholder="O que você quer fazer?"
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
             event.stopPropagation()
@@ -245,7 +245,7 @@ function useCommands(): Command[] {
       },
       {
         id: 'upscale-video-pronto',
-        label: 'Upscale de um video pronto (MP4)',
+        label: 'Upscale de um vídeo pronto (MP4)',
         hint: 'sai ao lado, com -upscale no nome',
         icon: Sparkles,
         run: () => void store().melhorarVideoPronto(),
@@ -253,7 +253,7 @@ function useCommands(): Command[] {
       {
         id: 'edit-captions',
         label: captionsOpen ? 'Fechar o editor de legendas' : 'Mesclar e dividir legendas',
-        hint: captionCount > 0 ? `${captionCount} blocos` : 'sem transcricao',
+        hint: captionCount > 0 ? `${captionCount} blocos` : 'sem transcrição',
         icon: Pencil,
         disabled: captionCount === 0,
         run: () => store().openCaptions(!captionsOpen),
@@ -261,7 +261,7 @@ function useCommands(): Command[] {
       {
         id: 'captions',
         label: captionsEnabled ? 'Desligar legendas' : 'Ligar legendas',
-        hint: captionCount > 0 ? `${captionCount} blocos` : 'sem transcricao',
+        hint: captionCount > 0 ? `${captionCount} blocos` : 'sem transcrição',
         icon: CaptionsIcon,
         disabled: captionCount === 0,
         run: () => store().toggleCaptions(),
@@ -272,7 +272,7 @@ function useCommands(): Command[] {
         // So os sons postos a mao (sfxManual) tocam: o rodizio automatico saiu
         // (o render manda sfxCues vazio), e o numero de antes sugeria sons que
         // nao tocam mais.
-        hint: sfxManual > 0 ? `${sfxManual} postos a mao` : 'so os postos a mao',
+        hint: sfxManual > 0 ? `${sfxManual} postos a mão` : 'só os postos a mão',
         icon: Volume2,
         disabled: sfxCount === 0,
         run: () => store().toggleSfx(),
@@ -320,7 +320,7 @@ function useCommands(): Command[] {
         : []),
       {
         id: 'metadata',
-        label: 'Escrever titulo, descricao e hashtags',
+        label: 'Escrever título, descrição e hashtags',
         hint: 'pelo roteiro',
         icon: Hash,
         disabled: !temTexto || rendering,
@@ -328,7 +328,7 @@ function useCommands(): Command[] {
       },
       {
         id: 'reveal',
-        label: 'Abrir a pasta do video',
+        label: 'Abrir a pasta do vídeo',
         icon: FolderOpen,
         disabled: lastOutput === null,
         run: () => {
@@ -337,7 +337,7 @@ function useCommands(): Command[] {
       },
       {
         id: 'settings',
-        label: 'Configuracoes',
+        label: 'Configurações',
         hint: 'Ctrl ,',
         icon: Settings2,
         run: () => store().openSettings(true),
@@ -345,7 +345,7 @@ function useCommands(): Command[] {
       {
         id: 'relatorio',
         label: 'Copiar relatório para o suporte',
-        hint: 'versao, computador e o que deu errado',
+        hint: 'versão, computador e o que deu errado',
         icon: LifeBuoy,
         run: () => void copiarRelatorio(),
       },

@@ -31,7 +31,7 @@ function chaveDoArquivo(path: string): string {
 }
 
 export async function medirSom(path: string): Promise<MedidaDoSom> {
-  if (!existsSync(path)) throw new Error(`Som nao encontrado: ${path}`)
+  if (!existsSync(path)) throw new Error(`Som não encontrado: ${path}`)
   const chave = chaveDoArquivo(path)
   const pronta = prontas.get(chave)
   if (pronta) return pronta
@@ -124,7 +124,7 @@ function decodificarEMedir(path: string): Promise<MedidaDoSom> {
     })
     child.on('error', (err) => {
       clearTimeout(teto)
-      reject(new Error(`FFmpeg nao pode ser executado (${err.message}).`))
+      reject(new Error(`FFmpeg não pode ser executado (${err.message}).`))
     })
     child.on('close', (code) => {
       clearTimeout(teto)
@@ -132,7 +132,7 @@ function decodificarEMedir(path: string): Promise<MedidaDoSom> {
         // Com loglevel info a ultima linha e cabecalho: vale a ultima com cara de erro.
         const linhas = stderr.trim().split(/\r?\n/)
         const detalhe = linhas.filter((l) => /error|invalid|no such|denied|not found/i.test(l)).at(-1) ?? linhas.at(-1) ?? `codigo ${code}`
-        reject(new Error(`Nao deu para medir o som (${detalhe}).`))
+        reject(new Error(`Não deu para medir o som (${detalhe}).`))
         return
       }
       const r = acc.resultado()

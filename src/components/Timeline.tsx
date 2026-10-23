@@ -605,6 +605,12 @@ export function Timeline() {
       scenes.map((scene, index) => {
         const image = images[scene.imageIndex]
         if (!image) return null
+        /*
+         * O NUMERO SO QUANDO CABE. Bloco estreito (zoom longe, video longo) com
+         * a pilula inteira empurrava o numero para cima do vizinho -- "3 3",
+         * "38 3 40" na faixa. Sem caber, o numero continua no title.
+         */
+        const cabeONumero = ((scene.end - scene.start) / duration) * largura >= 10 + String(index + 1).length * 6
 
 
         /*
@@ -641,7 +647,7 @@ export function Timeline() {
              * miniatura: tela dividida e transicao de entrada.
              */
             className="pointer-events-auto group/bloco relative min-w-0 px-px"
-            title={image.fileName}
+            title={`${index + 1} · ${image.fileName}`}
             aria-label={`Bloco ${index + 1}: ${image.fileName}`}
           >
             <div
@@ -670,9 +676,11 @@ export function Timeline() {
                 draggable={false}
               />
               <span className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 to-transparent" />
-              <span className="tnum pointer-events-none absolute bottom-0.5 left-0.5 rounded-[3px] bg-black/55 px-1 text-[9px] font-semibold leading-[13px] text-white/90">
-                {index + 1}
-              </span>
+              {cabeONumero && (
+                <span className="tnum pointer-events-none absolute bottom-0.5 left-0.5 rounded-[3px] bg-black/55 px-1 text-[9px] font-semibold leading-[13px] text-white/90">
+                  {index + 1}
+                </span>
+              )}
               <span className="pointer-events-none absolute right-0.5 bottom-0.5 flex gap-0.5">
                 {scene.imageIndexB !== null && (
                   <span title="Tela dividida" className="grid size-[13px] place-items-center rounded-[3px] bg-black/55 text-white/85">
@@ -710,6 +718,7 @@ export function Timeline() {
       scenes,
       images,
       duration,
+      largura,
       selectedScene,
       selecionados,
       dropAt,
@@ -772,8 +781,8 @@ export function Timeline() {
               aria-pressed={imaLigado}
               title={
                 imaLigado
-                  ? `Ima ligado: clipes e agulha grudam nos cortes dos blocos, nas legendas e nas bordas dos clipes. Alt solta.${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
-                  : `Ima desligado: clipes e agulha andam livres${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
+                  ? `Ímã ligado: clipes e agulha grudam nos cortes dos blocos, nas legendas e nas bordas dos clipes. Alt solta.${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
+                  : `Ímã desligado: clipes e agulha andam livres${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
               }
               className={[
                 'grid size-[24px] place-items-center rounded-sm border',
@@ -946,7 +955,7 @@ export function Timeline() {
           cabecalho={
             <Cabecalho
               nome="Cenas"
-              detalhe={cenasTrancadas ? 'trancada' : audio ? 'narracao' : undefined}
+              detalhe={cenasTrancadas ? 'trancada' : audio ? 'narração' : undefined}
               extra={
                 <button
                   type="button"
@@ -955,8 +964,8 @@ export function Timeline() {
                   aria-label={cenasTrancadas ? 'Destrancar a faixa de cenas' : 'Trancar a faixa de cenas'}
                   title={
                     cenasTrancadas
-                      ? 'Faixa trancada: os cortes nao se mexem, o C nao corta bloco e nada entra ou sai por aqui. Clique para destrancar.'
-                      : 'Trancar a faixa de cenas: protege os cortes enquanto voce mexe nas outras faixas'
+                      ? 'Faixa trancada: os cortes não se mexem, o C não corta bloco e nada entra ou sai por aqui. Clique para destrancar.'
+                      : 'Trancar a faixa de cenas: protege os cortes enquanto você mexe nas outras faixas'
                   }
                   className={[
                     'grid size-[18px] shrink-0 place-items-center rounded-[3px] border',
@@ -1039,7 +1048,7 @@ export function Timeline() {
               />
             ) : (
               <div className="flex h-full items-center justify-center text-[11px] text-ink-3">
-                Solte a narracao para ver o waveform
+                Solte a narração para ver o waveform
               </div>
             )}
           </div>
@@ -1143,7 +1152,7 @@ export function Timeline() {
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => setEditorDaEmenda({ emenda: e, x: event.clientX, y: event.clientY })}
                   title={`${TRANSITION_LABEL[emenda.tipo]} (${segundosDaEmenda(emenda).toFixed(2)}s) -- clique para ajustar`}
-                  aria-label={`Transicao ${TRANSITION_LABEL[emenda.tipo]} na emenda ${e}`}
+                  aria-label={`Transição ${TRANSITION_LABEL[emenda.tipo]} na emenda ${e}`}
                   className="absolute z-[3] flex h-[16px] items-center justify-center gap-0.5 overflow-hidden rounded-[4px] border border-accent/70 bg-[linear-gradient(90deg,rgba(255,62,128,0.15),rgba(255,62,128,0.55),rgba(255,62,128,0.15))] text-white shadow-[0_1px_6px_rgba(0,0,0,0.5)] backdrop-blur-[2px] transition-colors hover:border-accent hover:bg-accent/60"
                   style={{
                     left: e === scenes.length ? undefined : `${pos}%`,
@@ -1387,7 +1396,7 @@ function FaixaSfx({
     >
       {sfxManual.length === 0 ? (
         <span className="pointer-events-none absolute inset-0 flex items-center px-2 text-[10px] text-ink-3">
-          Solte um som aqui para posicionar na mao. Vazia, os SFX entram sozinhos
+          Solte um som aqui para posicionar na mão. Vazia, os SFX entram sozinhos
           a cada dois cortes.
         </span>
       ) : (
@@ -1534,7 +1543,7 @@ function FaixaSfx({
             <button
               type="button"
               onClick={clearSfxManual}
-              title="Tira todos e devolve o rodizio automatico"
+              title="Tira todos e devolve o rodízio automático"
               className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-ink-3 hover:text-ink-2"
             >
               limpar
@@ -1739,7 +1748,7 @@ function ControlesDaTrilha({ id }: { id: string }) {
               event.preventDefault()
               removerPreset(db)
             }}
-            title={`Volume em ${db} dB (botao direito tira este preset)`}
+            title={`Volume em ${db} dB (botão direito tira este preset)`}
             className={[
               'tnum h-[18px] rounded-[3px] border px-1 text-[10px]',
               t.gainDb === db ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
@@ -1784,7 +1793,7 @@ function ControlesDaTrilha({ id }: { id: string }) {
       </div>
       <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={t.fadeInSec} min={0} max={Math.max(0.1, Math.round(duracaoDoTrecho(t) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${t.fadeInSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
-      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={t.fadeOutSec} min={0} max={Math.max(0.1, Math.round(duracaoDoTrecho(t) * 10) / 10)} passo={0.1} padrao={0}
+      <ControleDoClipe rotulo="sai" titulo="Fade de saída" valor={t.fadeOutSec} min={0} max={Math.max(0.1, Math.round(duracaoDoTrecho(t) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${t.fadeOutSec.toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
     </>
   )
@@ -1817,7 +1826,7 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
     <>
       <ControleDoClipe rotulo="entra" titulo="Fade de entrada" valor={o.fadeInSec ?? 0} min={0} max={Math.max(0.1, Math.round((o.usarSec ?? o.durationSec - o.inicioSec) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${(o.fadeInSec ?? 0).toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeInSec: v })} />
-      <ControleDoClipe rotulo="sai" titulo="Fade de saida" valor={o.fadeOutSec ?? 0} min={0} max={Math.max(0.1, Math.round((o.usarSec ?? o.durationSec - o.inicioSec) * 10) / 10)} passo={0.1} padrao={0}
+      <ControleDoClipe rotulo="sai" titulo="Fade de saída" valor={o.fadeOutSec ?? 0} min={0} max={Math.max(0.1, Math.round((o.usarSec ?? o.durationSec - o.inicioSec) * 10) / 10)} passo={0.1} padrao={0}
         texto={`${(o.fadeOutSec ?? 0).toFixed(1)}s`} onChange={(v) => ajustar(id, { fadeOutSec: v })} />
     </>
   )
@@ -1849,16 +1858,16 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
         Posicao, tamanho e giro passam pela MESMA conta do painel e do preview
         (patchDoTransform): livres, e com quadros-chave gravam a chave na agulha.
       */}
-      <ControleDoClipe rotulo="x" titulo="Posicao horizontal" valor={vt.x} min={-150} max={150} passo={1} padrao={0}
+      <ControleDoClipe rotulo="x" titulo="Posição horizontal" valor={vt.x} min={-150} max={150} passo={1} padrao={0}
         texto={`${Math.round(vt.x)}%`} onChange={(v) => transformar({ x: v })}
         digitar={{ numero: vt.x, aplicar: (v) => transformar({ x: v }) }} />
-      <ControleDoClipe rotulo="y" titulo="Posicao vertical" valor={vt.y} min={-150} max={150} passo={1} padrao={0}
+      <ControleDoClipe rotulo="y" titulo="Posição vertical" valor={vt.y} min={-150} max={150} passo={1} padrao={0}
         texto={`${Math.round(vt.y)}%`} onChange={(v) => transformar({ y: v })}
         digitar={{ numero: vt.y, aplicar: (v) => transformar({ y: v }) }} />
       <ControleDoClipe rotulo="tam" titulo="Escala" valor={vt.escala} min={0.1} max={8} passo={0.05} padrao={1}
         texto={`${Math.round(vt.escala * 100)}%`} onChange={(v) => transformar({ escala: v })}
         digitar={{ numero: vt.escala * 100, aplicar: (v) => transformar({ escala: v / 100 }) }} />
-      <ControleDoClipe rotulo="rot" titulo="Rotacao" valor={vt.rotacao} min={-180} max={180} passo={1} padrao={0}
+      <ControleDoClipe rotulo="rot" titulo="Rotação" valor={vt.rotacao} min={-180} max={180} passo={1} padrao={0}
         texto={`${Math.round(vt.rotacao)}°`} onChange={(v) => transformar({ rotacao: v })}
         digitar={{ numero: vt.rotacao, aplicar: (v) => transformar({ rotacao: v }) }} />
       <ControleDoClipe rotulo="opac" titulo="Opacidade" valor={o.opacidade} min={0} max={1} passo={0.05} padrao={1}
@@ -1916,7 +1925,7 @@ function BotaoDeAjuste() {
           faixa += 1
         add(faixa)
       }}
-      title="Camada de ajuste: correcao de cor (curvas, exposicao, contraste, saturacao...) de tudo o que estiver embaixo dela"
+      title="Camada de ajuste: correção de cor (curvas, exposição, contraste, saturação...) de tudo o que estiver embaixo dela"
       className="flex h-[24px] items-center gap-1.5 rounded-sm border border-line px-2 text-[11px] text-ink-3 hover:text-ink"
     >
       <SlidersHorizontal size={12} strokeWidth={1.5} />
@@ -1941,8 +1950,8 @@ function BotaoDaFerramenta() {
       aria-pressed={ferramenta === 'selecao'}
       title={
         ferramenta === 'selecao'
-          ? `Ferramenta de selecao: arraste no vazio das faixas para escolher varios clipes${dica ? ` (${dica})` : ''}`
-          : `Ferramenta de selecao${dica ? ` (${dica})` : ''}: arrastar no vazio escolhe varios clipes`
+          ? `Ferramenta de seleção: arraste no vazio das faixas para escolher vários clipes${dica ? ` (${dica})` : ''}`
+          : `Ferramenta de seleção${dica ? ` (${dica})` : ''}: arrastar no vazio escolhe vários clipes`
       }
       className={[
         'flex h-[24px] items-center gap-1.5 rounded-sm border px-2 text-[11px]',
@@ -1950,7 +1959,7 @@ function BotaoDaFerramenta() {
       ].join(' ')}
     >
       <SquareDashedMousePointer size={12} strokeWidth={1.5} />
-      Selecao
+      Seleção
     </button>
   )
 }

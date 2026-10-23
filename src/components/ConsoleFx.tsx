@@ -179,7 +179,7 @@ export function ConsoleFx() {
         nome: p.nome,
         tipo: p.tipo,
         ajuste: p.ajuste,
-        busca: normal(`${p.nome} transicao preset ${TRANSITION_LABEL[p.tipo]} ${p.tipo} ${SINONIMOS[p.tipo] ?? ''}`),
+        busca: normal(`${p.nome} transição preset ${TRANSITION_LABEL[p.tipo]} ${p.tipo} ${SINONIMOS[p.tipo] ?? ''}`),
       })),
       ...TRANSITIONS_NA_TELA.filter((t) => t !== 'cut').map((t) => ({
         chave: `t-${t}`,
@@ -302,8 +302,8 @@ export function ConsoleFx() {
         {total === 0 ? (
           <p className="px-4 py-6 text-center text-[12px] text-ink-3">
             {bins.length === 0
-              ? 'Nenhuma bin ainda. Crie uma no botao Bins e ponha seus SFX nela. Para transicoes, digite zoom, light ou pan.'
-              : 'Nada com esse nome nas bins nem nas transicoes.'}
+              ? 'Nenhuma bin ainda. Crie uma no botão Bins e ponha seus SFX nela. Para transições, digite zoom, light ou pan.'
+              : 'Nada com esse nome nas bins nem nas transições.'}
           </p>
         ) : (
           <div ref={lista} className="min-h-0 overflow-y-auto p-1.5">
@@ -315,7 +315,7 @@ export function ConsoleFx() {
                 onDragStart={(e) => iniciarArrasteDeTransicao(e, { tipo: t.tipo, ajuste: t.ajuste })}
                 onMouseEnter={() => setEscolhido(i)}
                 onDoubleClick={() => porNoCorte(t)}
-                title="Arraste ate um corte da linha do tempo, ou Enter / dois cliques para por no corte mais perto da agulha"
+                title="Arraste até um corte da linha do tempo, ou Enter / dois cliques para por no corte mais perto da agulha"
                 className={[
                   'flex cursor-grab items-center gap-2 rounded-sm px-2 py-1.5 text-[12px]',
                   i === escolhido ? 'bg-accent-dim text-ink' : 'text-ink-2',
@@ -326,7 +326,7 @@ export function ConsoleFx() {
                 </span>
                 <span className="min-w-0 flex-1 truncate">{t.nome}</span>
                 <span className="shrink-0 text-[10px] text-ink-3">
-                  {t.chave.startsWith('p-') ? `preset · ${TRANSITION_LABEL[t.tipo]}` : 'transicao'}
+                  {t.chave.startsWith('p-') ? `preset · ${TRANSITION_LABEL[t.tipo]}` : 'transição'}
                 </span>
               </div>
             ))}
@@ -369,7 +369,7 @@ export function ConsoleFx() {
           </div>
         )}
         <p className="border-t border-line px-3 py-1.5 text-[10px] text-ink-3">
-          Arraste para a linha do tempo · Enter poe na agulha · zoom, light, pan acham transicoes · Esc fecha
+          Arraste para a linha do tempo · Enter poe na agulha · zoom, light, pan acham transições · Esc fecha
         </p>
       </div>
     </>

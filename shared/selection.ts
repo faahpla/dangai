@@ -260,7 +260,7 @@ function pontuar(
     // segundos o olho nao acha quem a narracao esta citando.
     if (clip.characters.length === tem.length) {
       score += 25
-      porques.push('so ele em cena')
+      porques.push('só ele em cena')
     } else {
       score -= (clip.characters.length - tem.length) * 8
     }
@@ -327,7 +327,7 @@ function pontuar(
       (clip.season === ultimo.season && clip.episode > ultimo.episode)
     ) {
       score += 15
-      porques.push('episodio seguinte')
+      porques.push('episódio seguinte')
     } else {
       score -= 20
     }

@@ -236,7 +236,7 @@ export async function importarEstilo(): Promise<string | null> {
   const fonte = r.dados.fontNome
   const semFonte = fonte && !useProject.getState().fontes.some((f) => f.nome === fonte)
   return semFonte
-    ? `"${nome}" importado e aplicado. A fonte "${fonte}" nao esta na sua pasta de fontes -- ficou a embutida.`
+    ? `"${nome}" importado e aplicado. A fonte "${fonte}" não está na sua pasta de fontes -- ficou a embutida.`
     : `"${nome}" importado e aplicado.`
 }
 

@@ -27,7 +27,7 @@ export function configureFontes(dir: string): void {
 }
 
 export function fontesDir(): string {
-  if (!userDir) throw new Error('Fontes nao configurado')
+  if (!userDir) throw new Error('Fontes não configurado')
   return userDir
 }
 

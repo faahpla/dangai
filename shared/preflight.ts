@@ -21,7 +21,7 @@ export function roteiroNaoBate(
   scriptNote: string | null,
 ): string | null {
   if (!script?.trim() || !transcript || transcript.source === 'script') return null
-  return scriptNote ?? 'O roteiro nao bate com esta narracao.'
+  return scriptNote ?? 'O roteiro não bate com esta narração.'
 }
 
 /**
@@ -113,7 +113,7 @@ export function preflight({
   if (notaDoRoteiro) {
     avisos.push({
       tipo: 'roteiro-nao-bate',
-      texto: `O roteiro nao bate com a narracao: as legendas e os cortes seguem o que foi falado, e nao o roteiro. ${notaDoRoteiro}`,
+      texto: `O roteiro não bate com a narração: as legendas e os cortes seguem o que foi falado, e não o roteiro. ${notaDoRoteiro}`,
     })
   }
 
@@ -156,7 +156,7 @@ export function preflight({
   } else if (captions.length > 0) {
     avisos.push({
       tipo: 'legenda-desligada',
-      texto: `Ha ${captions.length} legendas prontas, mas elas nao vao entrar no video`,
+      texto: `Ha ${captions.length} legendas prontas, mas elas não vão entrar no vídeo`,
     })
   }
 
@@ -164,7 +164,7 @@ export function preflight({
   if (durationSec - fim > SOBRA_SEC) {
     avisos.push({
       tipo: 'sobra-de-audio',
-      texto: `Sobram ${(durationSec - fim).toFixed(1)}s de narracao depois da ultima imagem — esse trecho sai preto`,
+      texto: `Sobram ${(durationSec - fim).toFixed(1)}s de narração depois da última imagem — esse trecho sai preto`,
       scene: plan.scenes.length - 1,
     })
   }

@@ -57,7 +57,7 @@ export function Automount() {
       icon: Clapperboard,
       label: 'Montar recap',
       // A cronologia e a unica diferenca entre os dois modos, e e decisiva.
-      hint: 'Segue a ordem do episodio: cada cena vem depois da anterior',
+      hint: 'Segue a ordem do episódio: cada cena vem depois da anterior',
     },
     {
       mode: 'theory',
@@ -120,7 +120,7 @@ export function Automount() {
           type="button"
           onClick={() => void openLibrary(true)}
           disabled={busy !== null}
-          title="Escolher as cenas na mao (Ctrl+B)"
+          title="Escolher as cenas na mão (Ctrl+B)"
           className="flex items-center gap-2 rounded-sm border border-line bg-bg px-4 py-2 text-[13px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink disabled:opacity-40"
         >
           <LibraryIcon size={14} strokeWidth={1.5} className="text-accent" />
@@ -129,8 +129,8 @@ export function Automount() {
       </div>
 
       <p className="max-w-[440px] text-center text-[11px] leading-relaxed text-ink-3">
-        Montar sozinho le a narracao, descobre quem esta em cada frase e traz uma
-        cena para cada uma. Depois voce troca o que nao gostou.
+        Montar sozinho lê a narração, descobre quem está em cada frase e traz uma
+        cena para cada uma. Depois você troca o que não gostou.
       </p>
     </div>
   )

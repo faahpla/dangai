@@ -150,10 +150,10 @@ export function SceneEdit() {
       bloco: index,
       texto:
         ateOnde === null
-          ? 'Nao deu para seguir nada no centro do retangulo. Ele precisa de textura para se agarrar -- ceu liso, parede lisa e desfoque nao dao ponto nenhum. Tente centralizar melhor o alvo, ou fechar mais o retangulo nele.'
+          ? 'Não deu para seguir nada no centro do retangulo. Ele precisa de textura para se agarrar -- ceu liso, parede lisa e desfoque não dao ponto nenhum. Tente centralizar melhor o alvo, ou fechar mais o retangulo nele.'
           : ateOnde > 0.95
             ? 'Seguiu o alvo pelo bloco inteiro. Confira no preview e ajuste as chaves se precisar.'
-            : `Seguiu ate ${Math.round(ateOnde * 100)}% do bloco e perdeu o alvo. Dali ate o fim a camera segura o ultimo enquadramento.`,
+            : `Seguiu até ${Math.round(ateOnde * 100)}% do bloco e perdeu o alvo. Dali até o fim a câmera segura o último enquadramento.`,
     })
   }
 
@@ -174,8 +174,8 @@ export function SceneEdit() {
         achou === 'ambos'
           ? 'Rosto encontrado nas duas pontas. Confira e ajuste se precisar.'
           : achou === 'um'
-            ? 'Rosto encontrado em uma ponta so -- a outra repetiu esse enquadramento. Confira a que ficou errada.'
-          : 'Nenhum rosto reconhecido neste bloco. O detector so enxerga rosto de frente, entao perfil, nuca e plano aberto passam batido -- aqui e na mao.',
+            ? 'Rosto encontrado em uma ponta só -- a outra repetiu esse enquadramento. Confira a que ficou errada.'
+          : 'Nenhum rosto reconhecido neste bloco. O detector só enxerga rosto de frente, então perfil, nuca e plano aberto passam batido -- aqui é na mão.',
     })
   }
 
@@ -213,7 +213,7 @@ export function SceneEdit() {
 
   /* Os efeitos com icone: as sete escolhas cabem numa linha so. */
   const efeitos = opcoesDeEfeito(image.kind === 'video')
-  const avisoDoClipe = 'Este clipe ja se move: movimento por cima pede pouca intensidade. Confira no preview.'
+  const avisoDoClipe = 'Este clipe já se move: movimento por cima pede pouca intensidade. Confira no preview.'
 
   /*
    * O ritmo aparece sempre que ALGO se move: um efeito em qualquer metade, ou
@@ -316,8 +316,8 @@ export function SceneEdit() {
                 <div className="flex items-start gap-2 rounded-sm border border-accent/50 bg-accent-dim px-2 py-1.5 text-[11px] leading-snug text-ink-2">
                   <Video size={12} strokeWidth={1.5} className="mt-0.5 shrink-0 text-accent" />
                   <span className="min-w-0 flex-1">
-                    A camera livre esta ligada e manda no quadro: este enquadramento nao muda o video. Ajuste o
-                    comeco e o fim dela ao lado, ou desligue.
+                    A câmera livre está ligada e manda no quadro: este enquadramento não muda o vídeo. Ajuste o
+                    começo e o fim dela ao lado, ou desligue.
                   </span>
                   <button
                     type="button"
@@ -392,7 +392,7 @@ export function SceneEdit() {
             <>
               <Botaozinho
                 onClick={() => copiarAjustes(index)}
-                title="Copia movimento, ritmo, giro e transicao. O enquadramento e a camera ficam, porque sao daquele clipe."
+                title="Copia movimento, ritmo, giro e transição. O enquadramento e a câmera ficam, porque são daquele clipe."
               >
                 <Copy size={11} strokeWidth={1.5} />
                 Copiar
@@ -400,7 +400,7 @@ export function SceneEdit() {
               {ajustesCopiados !== null && (
                 <Botaozinho
                   onClick={() => colarAjustes(alvos)}
-                  title="Marque varios blocos na timeline com Shift ou Ctrl para colar em todos de uma vez."
+                  title="Marque vários blocos na timeline com Shift ou Ctrl para colar em todos de uma vez."
                 >
                   <ClipboardPaste size={11} strokeWidth={1.5} />
                   {alvos.length > 1 ? `Colar nos ${alvos.length}` : 'Colar'}
@@ -423,7 +423,7 @@ export function SceneEdit() {
             !imageB && (
               <Botaozinho
                 active={scene.camera != null}
-                title="Desenhar a mao o enquadramento do comeco e do fim do bloco"
+                title="Desenhar a mão o enquadramento do começo e do fim do bloco"
                 onClick={() =>
                   updateScene(index, {
                     camera:
@@ -437,7 +437,7 @@ export function SceneEdit() {
                 }
               >
                 <Video size={11} strokeWidth={1.5} />
-                Camera livre
+                Câmera livre
               </Botaozinho>
             )
           }
@@ -469,7 +469,7 @@ export function SceneEdit() {
                       updateScene(index, { camera: { ...scene.camera!, keys: [] } })
                       setRecado(null)
                     }}
-                    title="Apaga as chaves do meio: a camera volta a ir reto de uma ponta a outra"
+                    title="Apaga as chaves do meio: a câmera volta a ir reto de uma ponta a outra"
                   >
                     <X size={11} strokeWidth={1.5} />
                     Linha reta
@@ -704,7 +704,7 @@ export function opcoesDeEfeito(video: boolean): Segmento<Scene['effect']>[] {
     {
       valor: 'nenhum',
       rotulo: <Ban size={12} strokeWidth={1.5} />,
-      title: video ? 'Nenhum (so o movimento do clipe)' : 'Nenhum (parada)',
+      title: video ? 'Nenhum (só o movimento do clipe)' : 'Nenhum (parada)',
     },
     ...KEN_BURNS_EFFECTS.map((effect) => {
       const Icone = EFFECT_ICON[effect]
@@ -754,7 +754,7 @@ export function ControleDeRitmo({
                   Curva
                 </>
               ),
-              title: 'Desenhar a curva do ritmo a mao',
+              title: 'Desenhar a curva do ritmo a mão',
             },
           ]}
           ativo={(c) => (c === 'desenho' ? curvePoints !== null : curvePoints === null && curve === c)}
@@ -811,7 +811,7 @@ export function ControleDeRitmo({
             </div>
             {recado && <p className="text-[10px] text-ink-3">{recado}</p>}
             <p className="text-[10px] leading-snug text-ink-3">
-              Quanto do movimento ja aconteceu ao longo do tempo. Plana e pausa, ingreme e disparada.
+              Quanto do movimento já aconteceu ao longo do tempo. Plana e pausa, ingreme e disparada.
             </p>
           </div>
         </div>
@@ -1006,8 +1006,8 @@ const CURVE_LABEL: Readonly<Record<MotionCurve, string>> = {
 
 const CURVE_HINT: Readonly<Record<MotionCurve, string>> = {
   'ease-in-out': 'Parte devagar e para devagar. E o que o app sempre fez.',
-  linear: 'Mesma velocidade do inicio ao fim. Num movimento lento, fica menos travado que o suave.',
-  'ease-out': 'Parte rapido e pousa. Bom para revelacao.',
+  linear: 'Mesma velocidade do início ao fim. Num movimento lento, fica menos travado que o suave.',
+  'ease-out': 'Parte rápido e pousa. Bom para revelacao.',
   'ease-in': 'Parte devagar e acelera. Cria tensao entrando no corte.',
 }
 
@@ -1051,7 +1051,7 @@ function CameraDaMetade({
 
   return (
     <>
-      <Linha label="Camera" title="Desenhar a mao o enquadramento do comeco e do fim desta metade">
+      <Linha label="Câmera" title="Desenhar a mão o enquadramento do começo e do fim desta metade">
         <Botaozinho
           active={cam != null}
           onClick={() =>
@@ -1063,7 +1063,7 @@ function CameraDaMetade({
           }
         >
           <Video size={11} strokeWidth={1.5} />
-          {cam == null ? 'Camera livre' : 'Camera livre ligada'}
+          {cam == null ? 'Câmera livre' : 'Câmera livre ligada'}
         </Botaozinho>
       </Linha>
       {cam != null && (

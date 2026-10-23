@@ -192,8 +192,8 @@ export function Bins() {
       >
         {!bin ? (
           <div className="grid flex-1 place-items-center px-6 text-center text-[11px] leading-relaxed text-ink-3">
-            Crie uma bin e solte aqui seus SFX, musicas e .mov -- ou ligue a bin a uma pasta. Depois e
-            so arrastar para a linha do tempo.
+            Crie uma bin e solte aqui seus SFX, músicas e .mov -- ou ligue a bin a uma pasta. Depois e
+            só arrastar para a linha do tempo.
           </div>
         ) : (
           <>
@@ -253,7 +253,7 @@ export function Bins() {
                   apagarBin(bin.id)
                   setAtiva(null)
                 }}
-                titulo="Apaga a bin, nao os arquivos"
+                titulo="Apaga a bin, não os arquivos"
               >
                 <Trash2 size={11} strokeWidth={1.5} />
               </Botao>
@@ -270,7 +270,7 @@ export function Bins() {
                     filtro === f ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink-2',
                   ].join(' ')}
                 >
-                  {{ tudo: 'Tudo', audio: 'Audio', video: 'Video', image: 'Imagem' }[f]}
+                  {{ tudo: 'Tudo', audio: 'Áudio', video: 'Vídeo', image: 'Imagem' }[f]}
                 </button>
               ))}
               <input
@@ -332,7 +332,7 @@ export function Bins() {
               )}
             </div>
             <p className="text-[10px] text-ink-3">
-              Arraste para a faixa de SFX, para uma faixa de audio ou para a faixa de video.
+              Arraste para a faixa de SFX, para uma faixa de áudio ou para a faixa de vídeo.
               {bin.pasta ? ` Pasta: ${bin.pasta}` : ''}
             </p>
           </>

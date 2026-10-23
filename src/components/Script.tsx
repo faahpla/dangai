@@ -75,7 +75,7 @@ export function Script() {
             if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) aplicar()
           }}
           spellCheck={false}
-          placeholder={'Cole aqui o texto exato que voce narrou.\n\nMarcacoes entre [colchetes] ou (parenteses) sao ignoradas.'}
+          placeholder={'Cole aqui o texto exato que você narrou.\n\nMarcacoes entre [colchetes] ou (parenteses) são ignoradas.'}
           className="min-h-0 flex-1 select-text resize-none rounded-sm border border-line bg-elevated px-3 py-2.5 text-[13px] leading-relaxed text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
         />
 

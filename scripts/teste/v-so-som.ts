@@ -41,7 +41,7 @@ async function principal(): Promise<void> {
     erro = e
   }
   ok('a capa nao passa por imagem de video', erro instanceof ErroSoSom, String(erro))
-  ok('o recado diz o nome do arquivo', erro instanceof Error && /meme-com-capa\.mp4.*so tem som/.test(erro.message), erro instanceof Error ? erro.message : '')
+  ok('o recado diz o nome do arquivo', erro instanceof Error && /meme-com-capa\.mp4.*só tem som/.test(erro.message), erro instanceof Error ? erro.message : '')
   const p = await prepararSobreposicao(comCapa)
   ok('na faixa de video ele volta como som', p.tipo === 'som', p.tipo)
   const v = await probeClip(video)

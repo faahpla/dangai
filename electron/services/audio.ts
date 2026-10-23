@@ -22,7 +22,7 @@ export async function analyzeAudio(path: string): Promise<AudioAnalysis> {
 
   if (sampleCount === 0) {
     throw new Error(
-      `Nao foi possivel ler audio de "${basename(path)}". O arquivo pode estar corrompido ou vazio. Tente exportar a narracao novamente.`,
+      `Não foi possível ler áudio de "${basename(path)}". O arquivo pode estar corrompido ou vazio. Tente exportar a narração novamente.`,
     )
   }
 
@@ -93,7 +93,7 @@ function decodeToPcm(path: string): Promise<Buffer> {
     })
 
     child.on('error', (err) => {
-      reject(new Error(`FFmpeg nao pode ser executado (${err.message}). Reinstale as dependencias com "npm install".`))
+      reject(new Error(`FFmpeg não pode ser executado (${err.message}). Reinstale as dependencias com "npm install".`))
     })
 
     child.on('close', (code) => {

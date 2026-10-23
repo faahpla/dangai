@@ -126,7 +126,7 @@ try {
 } catch (e) {
   recado = (e as Error).message
 }
-ok('versao 3 e recusada pedindo para atualizar', /versao mais nova/.test(recado), recado)
+ok('versao 3 e recusada pedindo para atualizar', /versão mais nova/.test(recado), recado)
 
 rmSync(dir, { recursive: true, force: true })
 console.log(falhas === 0 ? '\nTUDO PASSOU' : `\n${falhas} FALHA(S)`)

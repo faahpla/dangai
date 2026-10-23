@@ -98,7 +98,7 @@ ok('a etiqueta fica dentro do botao que abre', com.indexOf('data-rotulo-do-proje
 const sumiu = desenhar(['Recap'], true)
 ok(
   'arquivo sumido: a etiqueta continua dentro do botao apagado',
-  etiquetas(sumiu) === 1 && sumiu.includes('disabled=""') && sumiu.includes('arquivo nao encontrado'),
+  etiquetas(sumiu) === 1 && sumiu.includes('disabled=""') && sumiu.includes('arquivo não encontrado'),
 )
 ok('dois modulos: duas etiquetas', etiquetas(desenhar(['Recap', 'Outro'])) === 2)
 

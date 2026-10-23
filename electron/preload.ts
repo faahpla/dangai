@@ -287,7 +287,7 @@ function pontesDosModulos(): DangaiBridge['modulos'] {
   for (const [id, criar] of Object.entries(PONTES) as [string, CriarPonte][]) {
     const prefixo = prefixoDoModulo(id)
     const conferir = (canal: string): void => {
-      if (!canal.startsWith(prefixo)) throw new Error(`O modulo "${id}" so pode usar canais "${prefixo}...".`)
+      if (!canal.startsWith(prefixo)) throw new Error(`O módulo "${id}" só pode usar canais "${prefixo}...".`)
     }
     try {
       pontes[id] = criar({

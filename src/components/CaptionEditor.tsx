@@ -89,7 +89,7 @@ export function CaptionEditor() {
   if (captions.length === 0) {
     return (
       <div className="grid flex-1 place-items-center rounded-md border border-line bg-surface px-6 text-center text-[11px] leading-relaxed text-ink-3">
-        Sem legendas ainda. Elas aparecem depois que a narracao e transcrita —
+        Sem legendas ainda. Elas aparecem depois que a narração é transcrita —
         cole o roteiro para o texto sair exato.
       </div>
     )
@@ -107,7 +107,7 @@ export function CaptionEditor() {
           type="button"
           onClick={() => void ressincronizar()}
           disabled={!temPalavras || busy !== null}
-          title="Mede de novo onde cada palavra soa na narracao (o mesmo modelo do LegendAI)"
+          title="Mede de novo onde cada palavra soa na narração (o mesmo modelo do LegendAI)"
           className={[
             'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px] disabled:opacity-40',
             alinhado
@@ -116,13 +116,13 @@ export function CaptionEditor() {
           ].join(' ')}
         >
           <AudioLines size={12} strokeWidth={1.5} />
-          {alinhado ? 'Sincronizada' : 'Sincronizar com a narracao'}
+          {alinhado ? 'Sincronizada' : 'Sincronizar com a narração'}
         </button>
 
         <button
           type="button"
           onClick={() => setRegrasAbertas((v) => !v)}
-          title="Palavras por legenda, duracao, adiantar e fechar vaos"
+          title="Palavras por legenda, duração, adiantar e fechar vaos"
           className={[
             'lift flex items-center gap-1.5 rounded-sm border border-line px-2.5 py-1.5 text-[11px]',
             regrasAbertas ? 'bg-accent-dim text-ink' : 'bg-elevated text-ink-2 hover:text-ink',
@@ -153,7 +153,7 @@ export function CaptionEditor() {
               setSelected([])
               setEditing(null)
             }}
-            title="Descarta as edicoes e refaz as legendas pelas regras"
+            title="Descarta as edições e refaz as legendas pelas regras"
             className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-3 hover:text-ink-2"
           >
             <RotateCcw size={12} strokeWidth={1.5} />
@@ -343,7 +343,7 @@ function EdicaoDoTexto({
           saiu.current = true
           onDividir(campo.current.value, palavrasAntesDoCursor())
         }}
-        title="Parte a legenda antes da palavra onde o cursor esta"
+        title="Parte a legenda antes da palavra onde o cursor está"
         className="lift flex shrink-0 items-center gap-1 rounded-sm border border-line bg-elevated px-2 py-1 text-[11px] text-ink-2 hover:text-ink disabled:opacity-40"
       >
         <Scissors size={11} strokeWidth={1.5} />
@@ -367,12 +367,12 @@ function JuntarComAProxima({ onJuntar }: { onJuntar: () => void }) {
           e.stopPropagation()
           onJuntar()
         }}
-        title="Mesclar com a proxima"
-        aria-label="Mesclar com a proxima"
+        title="Mesclar com a próxima"
+        aria-label="Mesclar com a próxima"
         className="absolute left-[64px] top-1/2 z-10 flex h-4 items-center gap-1 rounded-full border border-line bg-elevated px-1.5 text-[10px] text-ink-3 opacity-0 transition-opacity hover:border-accent hover:text-ink focus-visible:opacity-100 group-hover/vao:opacity-100 -translate-y-1/2"
       >
         <Plus size={9} strokeWidth={2} />
-        mesclar com a proxima
+        mesclar com a próxima
       </button>
     </div>
   )
@@ -437,15 +437,15 @@ function PainelDeRegras() {
       {numero('Caracteres por linha', 'caracteres', { passo: 1, min: 4, max: 30, sufixo: '' },
         'Teto da linha. Palavra maior que isso fica sozinha, inteira.')}
       {numero('Adiantar', 'adiantar', { passo: 10, min: 0, max: 300, fator: 1000, sufixo: 'ms' },
-        'Quanto a legenda entra antes da palavra. O olho le como "na hora" quando o texto chega um fio antes do som.')}
-      {numero('Duracao minima', 'minimo', { passo: 0.05, min: 0, max: 2, sufixo: 's' },
-        'Legenda curta cresce para dentro do silencio depois dela, nunca atrasando a proxima.')}
-      {numero('Duracao maxima', 'maximo', { passo: 0.25, min: 0.5, max: 10, sufixo: 's' },
+        'Quanto a legenda entra antes da palavra. O olho lê como "na hora" quando o texto chega um fio antes do som.')}
+      {numero('Duração mínima', 'minimo', { passo: 0.05, min: 0, max: 2, sufixo: 's' },
+        'Legenda curta cresce para dentro do silêncio depois dela, nunca atrasando a próxima.')}
+      {numero('Duração máxima', 'maximo', { passo: 0.25, min: 0.5, max: 10, sufixo: 's' },
         'Legenda que ficaria mais que isso na tela sai antes.')}
-      {numero('Fechar vaos ate', 'fecharVaos', { passo: 0.1, min: 0, max: 2, sufixo: 's' },
-        'Vao menor que isso entre duas legendas e fechado: a de cima fica ate a de baixo entrar. 0 desliga.')}
+      {numero('Fechar vaos até', 'fecharVaos', { passo: 0.1, min: 0, max: 2, sufixo: 's' },
+        'Vão menor que isso entre duas legendas e fechado: a de cima fica até a de baixo entrar. 0 desliga.')}
       <p className="col-span-2 text-[10.5px] leading-relaxed text-ink-3">
-        Sempre valem as regras do portugues: artigo, preposicao e conjuncao nunca fecham a linha —
+        Sempre valem as regras do português: artigo, preposicao e conjuncao nunca fecham a linha —
         descem junto com o que apresentam — e pontuacao fecha a linha.
       </p>
     </div>

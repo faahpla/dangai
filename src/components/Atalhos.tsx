@@ -109,11 +109,11 @@ export function Atalhos() {
           className="flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] text-ink-3 hover:text-ink-2"
         >
           <RotateCcw size={11} strokeWidth={1.5} />
-          Voltar aos atalhos de fabrica
+          Voltar aos atalhos de fábrica
         </button>
       </div>
       <p className="text-[11px] leading-relaxed text-ink-3">
-        Tecla solta (sem Ctrl) nao dispara com o cursor num campo de texto: ali ela e so uma letra.
+        Tecla solta (sem Ctrl) não dispara com o cursor num campo de texto: ali ela é só uma letra.
       </p>
     </div>
   )

@@ -52,7 +52,7 @@ export function configureProjects(userDataDir: string): void {
  * ser ele o caminho da perda.
  */
 function anteriorPath(): string {
-  if (!autosavePath) throw new Error('Projetos nao configurados')
+  if (!autosavePath) throw new Error('Projetos não configurados')
   return autosavePath.replace(/\.dangai$/, '-anterior.dangai')
 }
 
@@ -116,7 +116,7 @@ export function saveProjectFile(path: string, file: ProjectFile): void {
  * sozinho, e nesse momento nao ha ninguem para responder um "onde salvo?".
  */
 export function writeAutosave(file: ProjectFile, projectPath: string | null): void {
-  if (!autosavePath) throw new Error('Projetos nao configurados')
+  if (!autosavePath) throw new Error('Projetos não configurados')
 
   /*
    * Antes de sobrescrever: o que esta saindo valia mais do que o que entra?
@@ -257,7 +257,7 @@ function parse(raw: string, nome: string): ProjectFile {
   try {
     json = JSON.parse(raw)
   } catch {
-    throw new Error(`"${nome}" nao e um projeto do Dangai valido.`)
+    throw new Error(`"${nome}" não é um projeto do Dangai válido.`)
   }
 
   /*
@@ -272,13 +272,13 @@ function parse(raw: string, nome: string): ProjectFile {
   const versao = (json as { version?: unknown } | null)?.version
   if (typeof versao === 'number' && versao > PROJECT_FILE_VERSION) {
     throw new Error(
-      `"${nome}" foi salvo por uma versao mais nova do Dangai. Atualize o app e abra de novo.`,
+      `"${nome}" foi salvo por uma versão mais nova do Dangai. Atualize o app e abra de novo.`,
     )
   }
 
   const parsed = projectFileSchema.safeParse(json)
   if (!parsed.success) {
-    throw new Error(`"${nome}" esta corrompido e nao pode ser aberto.`)
+    throw new Error(`"${nome}" está corrompido e não pode ser aberto.`)
   }
 
   return parsed.data
@@ -316,7 +316,7 @@ function relocate(file: ProjectFile, base: string | null, nome: string, avisos: 
     }
     if (!mesclado.exato) {
       avisos.push(
-        `${ref.fileName} foi mesclado em ${basename(mesclado.path)} e a lixeira do episodio ja foi esvaziada: o bloco usa o clipe mesclado, confira o trecho dele.`,
+        `${ref.fileName} foi mesclado em ${basename(mesclado.path)} e a lixeira do episódio já foi esvaziada: o bloco usa o clipe mesclado, confira o trecho dele.`,
       )
     }
     return { ...ref, path: mesclado.path }
@@ -335,7 +335,7 @@ function relocate(file: ProjectFile, base: string | null, nome: string, avisos: 
     const lista = faltando.slice(0, 4).join(', ')
     const resto = faltando.length > 4 ? ` e mais ${faltando.length - 4}` : ''
     throw new Error(
-      `"${nome}" aponta para ${faltando.length} ${faltando.length === 1 ? 'arquivo que nao esta' : 'arquivos que nao estao'} mais no lugar: ${lista}${resto}. Devolva ${faltando.length === 1 ? 'ele' : 'eles'} para a pasta original ou mova o projeto inteiro junto.`,
+      `"${nome}" aponta para ${faltando.length} ${faltando.length === 1 ? 'arquivo que não está' : 'arquivos que não estão'} mais no lugar: ${lista}${resto}. Devolva ${faltando.length === 1 ? 'ele' : 'eles'} para a pasta original ou mova o projeto inteiro junto.`,
     )
   }
 

@@ -95,17 +95,17 @@ export function montarRelatorio(dados: DadosDoRelatorio): string {
   const nucleos = cpus()
   const gb = (bytes: number): string => `${Math.round(bytes / 1024 ** 3)} GB`
   const partes = [
-    'RELATORIO DO DANGAI',
-    `versao: ${dados.versao}`,
+    'RELATÓRIO DO DANGAI',
+    `versão: ${dados.versao}`,
     `quando: ${new Date().toLocaleString('pt-BR')}`,
     `sistema: ${process.platform} ${release()}, ${nucleos.length} nucleos (${nucleos[0]?.model.trim() ?? '?'}), ${gb(totalmem())} de RAM (${gb(freemem())} livres)`,
-    `modulos ligados: ${dados.modulos.length > 0 ? dados.modulos.join(', ') : 'nenhum'}`,
+    `módulos ligados: ${dados.modulos.length > 0 ? dados.modulos.join(', ') : 'nenhum'}`,
     ...Object.entries(dados.configuracoes).map(([k, v]) => `${k}: ${v}`),
     '',
     '--- na tela',
     ...Object.entries(dados.tela).map(([k, v]) => `${k}: ${v}`),
     '',
-    `--- o que o app registrou (ultimas ${LINHAS_NO_RELATORIO} linhas)`,
+    `--- o que o app registrou (últimas ${LINHAS_NO_RELATORIO} linhas)`,
     ultimasLinhas(LINHAS_NO_RELATORIO),
   ]
   return limpar(partes.join('\n'))

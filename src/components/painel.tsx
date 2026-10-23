@@ -215,7 +215,7 @@ export function Deslizante({
         value={valor}
         onChange={(event) => onChange(Number(event.target.value))}
         onDoubleClick={padrao === undefined ? undefined : () => onChange(padrao)}
-        title={[dica, padrao === undefined ? null : 'Duplo clique volta ao padrao'].filter(Boolean).join(' · ') || undefined}
+        title={[dica, padrao === undefined ? null : 'Duplo clique volta ao padrão'].filter(Boolean).join(' · ') || undefined}
         className="dangai-range min-w-0 flex-1"
       />
       {digitar ? (

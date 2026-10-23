@@ -40,6 +40,8 @@ const ok = (nome: string, c: boolean, d = ''): void => {
 const repo = resolve(__dirname, '..', '..')
 const tmp = mkdtempSync(join(tmpdir(), 'dangai-raizes-'))
 const pub = (p: string): string => `url:${p}`
+/** O texto sem acento: o recado de hoje comparado com o de um commit antigo. */
+const semAcento = (t: string): string => t.normalize('NFD').replace(/\p{Diacritic}/gu, '')
 
 // ------------------------------------------------------------ pastas sinteticas
 
@@ -147,7 +149,8 @@ ok(
 apontar(join(tmp, 'sumiu'))
 ok(
   'libraryDir que sumiu: o mesmo erro de antes',
-  (await erro(() => escanearRaizes(raizesDaBiblioteca(), pub))) ===
+  // O mesmo recado de antes, agora com acento (v1.78).
+  semAcento(await erro(() => escanearRaizes(raizesDaBiblioteca(), pub))) ===
     (await erro(() => antigo.scanLibrary(join(tmp, 'sumiu'), pub))),
 )
 

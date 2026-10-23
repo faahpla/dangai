@@ -228,7 +228,7 @@ async function importClip(
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     throw new Error(
-      `Nao foi possivel ler o clipe "${fileName}" (${detail}). Exporte como MP4 H.264 e solte de novo.`,
+      `Não foi possível ler o clipe "${fileName}" (${detail}). Exporte como MP4 H.264 e solte de novo.`,
     )
   }
 }
@@ -293,7 +293,7 @@ async function importImage(
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err)
     throw new Error(
-      `Nao foi possivel ler "${fileName}" (${detail}). Salve a imagem como PNG ou JPG e solte de novo.`,
+      `Não foi possível ler "${fileName}" (${detail}). Salve a imagem como PNG ou JPG e solte de novo.`,
     )
   }
 }
@@ -476,7 +476,7 @@ export async function rostoNosInstantes(
  * de um mesmo clipe se devolveriam um ao outro.
  */
 export async function inverterAsset(asset: ImageAsset, invertido: boolean): Promise<ImageAsset> {
-  if (asset.kind !== 'video') throw new Error('So clipe pode tocar invertido.')
+  if (asset.kind !== 'video') throw new Error('Só clipe pode tocar invertido.')
   const comum = await versaoSdr(asset.path)
   const fonte = invertido ? await clipeInvertido(comum) : comum
   const render = await makeClipRenderReady(

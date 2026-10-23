@@ -1053,7 +1053,7 @@ function substituirNaFita(
     thumbUrl: clip?.thumbUrl ?? '',
     label: clip ? `${clip.anime} S${clip.season}E${clip.episode} #${clip.shot}` : 'Cena escolhida',
     durationSec: clip?.duration ?? 0,
-    reason: 'escolhida por voce na biblioteca',
+    reason: 'escolhida por você na biblioteca',
   }
   return blocos.map((b, i) =>
     i === alvo
@@ -1421,7 +1421,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       set({
         error:
           ignored.length > 0
-            ? 'Esses arquivos nao servem. Solte um audio (.mp3, .wav, .m4a), imagens (.png, .jpg, .webp) e o roteiro (.txt).'
+            ? 'Esses arquivos não servem. Solte um áudio (.mp3, .wav, .m4a), imagens (.png, .jpg, .webp) e o roteiro (.txt).'
             : 'Nada para importar.',
       })
       return
@@ -1469,7 +1469,7 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     const audioPath = audioPaths[0]
     if (audioPath) {
-      set({ busy: 'Analisando a narracao...' })
+      set({ busy: 'Analisando a narração...' })
       const anterior = get().audio?.path ?? null
       const result = await window.dangai.analyzeAudio(audioPath)
       if (result.ok) {
@@ -1516,7 +1516,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   automount: async (mode, series) => {
     const { audio, subtitlePath, script } = get()
     if (!audio) {
-      set({ error: 'Carregue a narracao antes de montar sozinho.' })
+      set({ error: 'Carregue a narração antes de montar sozinho.' })
       return
     }
 
@@ -1545,9 +1545,9 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (nota) {
       set({ busy: null })
       const seguir = await perguntar({
-        titulo: 'O roteiro nao bate com a narracao',
-        texto: `${nota}\n\nMontando assim, os cortes e as legendas seguem o que foi falado, e nao o roteiro. Confira se a narracao e o roteiro sao do mesmo video.`,
-        sim: 'Montar pela narracao',
+        titulo: 'O roteiro não bate com a narração',
+        texto: `${nota}\n\nMontando assim, os cortes e as legendas seguem o que foi falado, e não o roteiro. Confira se a narração e o roteiro são do mesmo vídeo.`,
+        sim: 'Montar pela narração',
         nao: 'Cancelar',
       })
       if (!seguir) {
@@ -1562,8 +1562,8 @@ export const useProject = create<ProjectState>((set, get) => ({
         busy: null,
         error:
           series
-            ? `Nao ha cena de "${series}" para nenhum bloco desta narracao.`
-            : 'A biblioteca nao tem cena para nenhum bloco desta narracao. Confira a pasta das cenas nas configuracoes.',
+            ? `Não há cena de "${series}" para nenhum bloco desta narração.`
+            : 'A biblioteca não tem cena para nenhum bloco desta narração. Confira a pasta das cenas nas configurações.',
       })
       return
     }
@@ -1627,7 +1627,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ busy: 'Trocando a cena...', error: null, libraryOpen: false })
     const importada = await window.dangai.importImages([path])
     if (!importada.ok || !importada.value[0]) {
-      set({ busy: null, replaceTarget: null, error: importada.ok ? 'Nao deu para abrir essa cena.' : importada.error })
+      set({ busy: null, replaceTarget: null, error: importada.ok ? 'Não deu para abrir essa cena.' : importada.error })
       return
     }
 
@@ -1711,7 +1711,7 @@ export const useProject = create<ProjectState>((set, get) => ({
      */
     if (lendoRoteiro) return
 
-    set({ scriptBlocksBusy: 'Ouvindo a narracao...' })
+    set({ scriptBlocksBusy: 'Ouvindo a narração...' })
     const pedido = window.dangai.scriptBlocks({
       audioPath: audio.path,
       subtitlePath,
@@ -1806,7 +1806,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       return
     }
     if (!r.ok) {
-      set({ scriptBlocksBusy: null, busy: null, libraryError: `O roteiro novo nao entrou (${r.error}). As escolhas ficaram como estavam.` })
+      set({ scriptBlocksBusy: null, busy: null, libraryError: `O roteiro novo não entrou (${r.error}). As escolhas ficaram como estavam.` })
       return
     }
     const novos = r.value.blocks
@@ -2193,8 +2193,8 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (perdidas.length > 0) {
       set({
         libraryError:
-          `${perdidas.length} ${perdidas.length === 1 ? 'trecho marcado nao existe' : 'trechos marcados nao existem'} ` +
-          'mais no roteiro -- ele mudou depois que voce marcou. Limpe e marque de novo.',
+          `${perdidas.length} ${perdidas.length === 1 ? 'trecho marcado não existe' : 'trechos marcados não existem'} ` +
+          'mais no roteiro -- ele mudou depois que você marcou. Limpe e marque de novo.',
       })
       return
     }
@@ -2306,7 +2306,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ busy: 'Trocando a cena...', error: null })
     const importada = await window.dangai.importImages([escolhido.path])
     if (!importada.ok || !importada.value[0]) {
-      set({ busy: null, error: importada.ok ? 'Nao deu para abrir essa cena.' : importada.error })
+      set({ busy: null, error: importada.ok ? 'Não deu para abrir essa cena.' : importada.error })
       return
     }
 
@@ -2449,13 +2449,13 @@ export const useProject = create<ProjectState>((set, get) => ({
     set((state) => ({
       cenasTrancadas: !state.cenasTrancadas,
       // O aviso de "trancada" sai junto com a tranca.
-      error: state.error?.startsWith('A faixa de cenas esta trancada') ? null : state.error,
+      error: state.error?.startsWith('A faixa de cenas está trancada') ? null : state.error,
       projectDirty: true,
     })),
 
   insertImages: async (paths, seconds) => {
     if (get().cenasTrancadas) {
-      set({ error: 'A faixa de cenas esta trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
+      set({ error: 'A faixa de cenas está trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
       return
     }
     if (paths.length === 0) return
@@ -2580,7 +2580,7 @@ export const useProject = create<ProjectState>((set, get) => ({
    */
   removeScene: (index) => {
     if (get().cenasTrancadas) {
-      set({ error: 'A faixa de cenas esta trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
+      set({ error: 'A faixa de cenas está trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
       return
     }
     const { plan, images } = get()
@@ -2727,28 +2727,28 @@ export const useProject = create<ProjectState>((set, get) => ({
     }
     if (!caminho) return
 
-    set({ busy: 'Lendo o video...', error: null })
+    set({ busy: 'Lendo o vídeo...', error: null })
     const sonda = await window.dangai.sondarVideo(caminho)
     if (!sonda.ok) {
       set({ busy: null, error: sonda.error })
       return
     }
     if (!sonda.value.temAudio) {
-      set({ busy: null, error: 'Esse video nao tem audio: nao ha fala para legendar nem para mandar no tempo.' })
+      set({ busy: null, error: 'Esse vídeo não tem áudio: não há fala para legendar nem para mandar no tempo.' })
       return
     }
 
     // Antes de importar: o recorte do clipe sai no quadro do formato.
     await get().definirFormato(sonda.value.width > sonda.value.height ? 'long' : 'short')
 
-    set({ busy: 'Preparando o video...' })
+    set({ busy: 'Preparando o vídeo...' })
     const importado = await window.dangai.importImages([caminho])
     if (!importado.ok || importado.value.length === 0) {
-      set({ busy: null, error: importado.ok ? 'Nao deu para abrir esse video.' : importado.error })
+      set({ busy: null, error: importado.ok ? 'Não deu para abrir esse vídeo.' : importado.error })
       return
     }
 
-    set({ busy: 'Lendo o audio do video...' })
+    set({ busy: 'Lendo o áudio do vídeo...' })
     const audio = await window.dangai.analyzeAudio(caminho)
     if (!audio.ok) {
       set({ busy: null, error: audio.error })
@@ -2799,7 +2799,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const r = await window.dangai.upscaleVideoPronto()
     set({ videoPronto: null })
     if (!r.ok) {
-      set({ error: `O upscale do video falhou: ${r.error}` })
+      set({ error: `O upscale do vídeo falhou: ${r.error}` })
       return
     }
     // null: fechou o dialogo ou cancelou. Nada a dizer.
@@ -2895,7 +2895,7 @@ export const useProject = create<ProjectState>((set, get) => ({
    */
   splitSceneAtPlayhead: () => {
     if (get().cenasTrancadas) {
-      set({ error: 'A faixa de cenas esta trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
+      set({ error: 'A faixa de cenas está trancada. Clique no cadeado da faixa Cenas para mexer nos cortes.' })
       return
     }
     const { plan, playhead, images } = get()
@@ -3129,20 +3129,20 @@ export const useProject = create<ProjectState>((set, get) => ({
   ressincronizarLegendas: async () => {
     const { audio, transcript } = get()
     if (!audio || !transcript || transcript.words.length === 0) return
-    set({ busy: 'Sincronizando as legendas com a narracao...', error: null })
+    set({ busy: 'Sincronizando as legendas com a narração...', error: null })
     const r = await window.dangai.sincronizarLegendas(
       audio.path,
       transcript.words.map((w) => w.text),
     )
     if (!r.ok) {
-      set({ busy: null, error: `Nao deu para sincronizar: ${r.error}` })
+      set({ busy: null, error: `Não deu para sincronizar: ${r.error}` })
       return
     }
     // O mesmo limite do LegendAI: abaixo disto o texto nao e o que se ouve.
     if (r.value.score < 0.35) {
       set({
         busy: null,
-        error: 'A sincronia nao reconheceu o texto na narracao. Confira se o roteiro e deste audio.',
+        error: 'A sincronia não reconheceu o texto na narração. Confira se o roteiro e deste áudio.',
       })
       return
     }
@@ -3197,11 +3197,11 @@ export const useProject = create<ProjectState>((set, get) => ({
     const texto = script?.trim() || transcript?.text?.trim() || ''
 
     if (texto.length < 40) {
-      set({ error: 'Cole o roteiro para eu escrever o titulo e a descricao.' })
+      set({ error: 'Cole o roteiro para eu escrever o título e a descrição.' })
       return
     }
 
-    set({ busy: 'Escrevendo titulo e descricao...', error: null })
+    set({ busy: 'Escrevendo título e descrição...', error: null })
     const result = await window.dangai.generateMetadata(texto)
 
     if (!result.ok) {
@@ -3409,7 +3409,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set((state) => ({
       trilhas: [...state.trilhas, trecho],
       projectDirty: true,
-      error: `"${r.value.fileName}" so tem som (a imagem dele e so uma capa): foi para a faixa de audio A${faixa + 1}.`,
+      error: `"${r.value.fileName}" só tem som (a imagem dele e só uma capa): foi para a faixa de áudio A${faixa + 1}.`,
     }))
     return true
   },
@@ -3481,7 +3481,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
     let cursor = Math.max(0, seconds)
     for (const [i, path] of visuais.entries()) {
-      set({ busy: 'Preparando o video para a faixa...' })
+      set({ busy: 'Preparando o vídeo para a faixa...' })
       const r = await window.dangai.prepararSobreposicao(path)
       set({ busy: null })
       if (!r.ok) {
@@ -4066,16 +4066,16 @@ export const useProject = create<ProjectState>((set, get) => ({
     await get().syncLibrary()
     const banco =
       r.value.ancut === 'atualizado'
-        ? 'O AnCut ja ve o mesmo.'
+        ? 'O AnCut já ve o mesmo.'
         : r.value.ancut === 'episodio-nao-encontrado'
-          ? 'O AnCut nao conhece este episodio, entao so os arquivos mudaram.'
+          ? 'O AnCut não conhece este episódio, então só os arquivos mudaram.'
           : r.value.ancut === 'sem-banco'
-            ? 'O AnCut nao esta instalado aqui; so os arquivos mudaram.'
-            : 'Nao deu para atualizar o banco do AnCut (ele esta aberto?); os arquivos ja mudaram.'
+            ? 'O AnCut não está instalado aqui; só os arquivos mudaram.'
+            : 'Não deu para atualizar o banco do AnCut (ele está aberto?); os arquivos já mudaram.'
     return {
       ok: true,
       path: novo,
-      recado: `${paths.length} cenas viraram ${nomeNovo} (${r.value.segundos.toFixed(1)}s). Os pedacos foram para a _lixeira do episodio. ${banco}`,
+      recado: `${paths.length} cenas viraram ${nomeNovo} (${r.value.segundos.toFixed(1)}s). Os pedacos foram para a _lixeira do episódio. ${banco}`,
     }
   },
 
@@ -4347,7 +4347,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       set({
         error:
           `${orfas.length} ${orfas.length === 1 ? 'bloco aponta' : 'blocos apontam'} para uma cena ` +
-          'que nao esta mais no projeto, e sairiam do video sem aviso. ' +
+          'que não está mais no projeto, e sairiam do vídeo sem aviso. ' +
           'Monte de novo antes de renderizar.',
       })
       return null
@@ -4818,7 +4818,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const state = get()
     const file = state.toProjectFile()
     if (!file || !state.audio) {
-      set({ error: 'Nao ha projeto para salvar. Solte a narracao e as imagens primeiro.' })
+      set({ error: 'Não há projeto para salvar. Solte a narração e as imagens primeiro.' })
       return
     }
 
@@ -4994,7 +4994,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       } else {
         marcar(proximo.path, {
           status: 'falhou',
-          error: get().error ?? 'O render nao terminou.',
+          error: get().error ?? 'O render não terminou.',
         })
         set({ error: null })
       }

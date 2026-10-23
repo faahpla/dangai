@@ -61,7 +61,7 @@ async function principal(): Promise<void> {
     configuracoes: { ia: 'gemini (chaves: gemini)', whisper: 'small' },
     tela: { erro: 'O arquivo "meme.mp4" nao tem imagem de video', projeto: '59 blocos, 1:08' },
   })
-  ok('o relatorio tem versao, modulos e configuracoes', rel.includes('versao: 9.9.9') && rel.includes('modulos ligados: recap') && rel.includes('whisper: small'))
+  ok('o relatorio tem versao, modulos e configuracoes', rel.includes('versão: 9.9.9') && rel.includes('módulos ligados: recap') && rel.includes('whisper: small'))
   ok('o relatorio tem a maquina', /sistema: .+ nucleos .+ de RAM/.test(rel))
   ok('o relatorio tem o que estava na tela', rel.includes('erro: O arquivo "meme.mp4"') && rel.includes('projeto: 59 blocos'))
   ok('o relatorio tem o fim do registro', rel.includes('[teste] uma linha do main') && rel.includes('[janela] um recado da tela'))
@@ -74,7 +74,7 @@ async function principal(): Promise<void> {
   ok('o grande vira dangai-anterior.log', existsSync(join(dir, 'logs', 'dangai-anterior.log')) && readFileSync(log, 'utf8').length < 1000)
   const rel2 = montarRelatorio({ versao: '9.9.10', modulos: [], configuracoes: {}, tela: {} })
   ok('o relatorio completa com o fim do anterior', rel2.includes('a ultima linha da sessao passada') && rel2.includes('primeira linha da sessao nova'))
-  ok('sem modulo: "nenhum"', rel2.includes('modulos ligados: nenhum'))
+  ok('sem modulo: "nenhum"', rel2.includes('módulos ligados: nenhum'))
   ok('uma linha por chamada (o console nao e embrulhado duas vezes)', readFileSync(log, 'utf8').split('primeira linha da sessao nova').length === 2)
 
   encerrarRegistro() // solta o arquivo antes de apagar a pasta

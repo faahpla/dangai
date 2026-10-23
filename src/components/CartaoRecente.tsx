@@ -42,7 +42,7 @@ export function CartaoRecente({ recente: r, sumiu, rotulos, abrir, esquecer }: P
         type="button"
         disabled={sumiu}
         onClick={abrir}
-        title={sumiu ? `Nao encontrado: ${r.path}` : r.path}
+        title={sumiu ? `Não encontrado: ${r.path}` : r.path}
         className="lift flex w-full flex-col overflow-hidden rounded-md border border-line bg-surface text-left transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-45"
       >
         <div className="relative h-[86px] w-full bg-elevated">
@@ -74,7 +74,7 @@ export function CartaoRecente({ recente: r, sumiu, rotulos, abrir, esquecer }: P
           </span>
           <span className="tnum text-[10px] text-ink-3">
             {sumiu
-              ? "arquivo nao encontrado"
+              ? "arquivo não encontrado"
               : [
                   r.blocos > 0 ? `${r.blocos} blocos` : null,
                   r.duracaoSec > 0 ? duracao(r.duracaoSec) : null,
@@ -89,7 +89,7 @@ export function CartaoRecente({ recente: r, sumiu, rotulos, abrir, esquecer }: P
         type="button"
         onClick={esquecer}
         aria-label={`Tirar ${r.nome} dos recentes`}
-        title="Tirar da lista (o arquivo continua onde esta)"
+        title="Tirar da lista (o arquivo continua onde está)"
         className="absolute right-1.5 top-1.5 grid size-5 place-items-center rounded-sm bg-bg/80 text-ink-3 opacity-0 transition-opacity hover:text-ink group-hover/recente:opacity-100"
       >
         <X size={11} strokeWidth={1.75} />

@@ -45,7 +45,7 @@ function Fita({ index }: { index: number }) {
   if (!bloco || bloco.candidates.length < 2) return null
 
   return (
-    <Field label={`Trocar a cena (${bloco.candidates.length - 1} opcoes)`}>
+    <Field label={`Trocar a cena (${bloco.candidates.length - 1} opções)`}>
       <div className="flex flex-col gap-1.5">
         <p className="text-[11px] leading-relaxed text-ink-3">{bloco.candidates[0]!.reason}</p>
         <div className="flex flex-wrap gap-1">
@@ -218,7 +218,7 @@ export function SceneCard() {
           </Chip>
         </div>
         <p className="text-[11px] leading-relaxed text-ink-3">
-          O tempo sai deste bloco, entao o resto da linha do tempo nao se mexe. Arrastar imagens
+          O tempo sai deste bloco, então o resto da linha do tempo não se mexe. Arrastar imagens
           direto na timeline faz o mesmo.
         </p>
       </Field>
@@ -487,7 +487,7 @@ function PontoDeEntrada({
           <button
             type="button"
             onClick={() => setTocando((v) => !v)}
-            title={tocando ? 'Parar' : 'Tocar so este trecho, em loop'}
+            title={tocando ? 'Parar' : 'Tocar só este trecho, em loop'}
             aria-label={tocando ? 'Parar o trecho' : 'Tocar o trecho'}
             className="absolute bottom-1.5 left-1.5 grid size-6 place-items-center rounded-full bg-black/70 text-white hover:bg-accent"
           >
@@ -552,7 +552,7 @@ function PontoDeEntrada({
           {parada > 0.05 && (
             <span
               className="text-accent"
-              title="O bloco dura mais que o resto do clipe a partir daqui: nesse fim a imagem fica parada no ultimo quadro. Puxe a janela para a esquerda para encurtar isso."
+              title="O bloco dura mais que o resto do clipe a partir daqui: nesse fim a imagem fica parada no último quadro. Puxe a janela para a esquerda para encurtar isso."
             >
               {' '}
               · imagem parada {parada.toFixed(1)}s no fim

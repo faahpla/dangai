@@ -643,7 +643,7 @@ export function Library() {
         <h2 className="text-[15px] font-semibold text-ink">Biblioteca</h2>
         {library && (
           <span className="tnum text-[11px] text-ink-3">
-            {library.clips.length.toLocaleString('pt-BR')} cenas · {library.episodes} episodios
+            {library.clips.length.toLocaleString('pt-BR')} cenas · {library.episodes} episódios
           </span>
         )}
 
@@ -656,7 +656,7 @@ export function Library() {
             <button
               type="button"
               onClick={() => setApelidosAbertos(true)}
-              title="Como voce chama esses personagens no roteiro sem usar o nome"
+              title="Como você chama esses personagens no roteiro sem usar o nome"
               className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink"
             >
               <Tags size={12} strokeWidth={1.5} />
@@ -677,8 +677,8 @@ export function Library() {
             disabled={taggerBusy || busy !== null}
             title={
               etiquetadas > 0
-                ? `${etiquetadas.toLocaleString('pt-BR')} cenas ja descritas. Etiqueta as que faltam.`
-                : 'Descobre o que aparece em cada cena (cenario, objetos, acao) para a busca alcancar as cenas sem personagem'
+                ? `${etiquetadas.toLocaleString('pt-BR')} cenas já descritas. Etiqueta as que faltam.`
+                : 'Descobre o que aparece em cada cena (cenário, objetos, ação) para a busca alcancar as cenas sem personagem'
             }
             className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
           >
@@ -708,7 +708,7 @@ export function Library() {
             disabled={describeBusy || busy !== null || doAnime === 0}
             title={
               anime
-                ? `Le emocao, acao e cenario das cenas de ${anime}. ${lidas.toLocaleString('pt-BR')} de ${doAnime.toLocaleString('pt-BR')} ja lidas. Precisa do Ollama aberto.`
+                ? `Lê emoção, ação e cenário das cenas de ${anime}. ${lidas.toLocaleString('pt-BR')} de ${doAnime.toLocaleString('pt-BR')} já lidas. Precisa do Ollama aberto.`
                 : 'Abra um anime na lista ao lado para ler as cenas dele. Ler o acervo inteiro levaria mais de 24 horas.'
             }
             className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
@@ -729,7 +729,7 @@ export function Library() {
             type="button"
             onClick={() => void syncLibrary()}
             disabled={busy !== null}
-            title="Procura episodios novos na pasta"
+            title="Procura episódios novos na pasta"
             className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
           >
             {busy ? (
@@ -1001,14 +1001,14 @@ export function Library() {
           <span className="tnum text-[12px] text-ink-2">
             {blocosSaem > 0 && avisouSaida ? (
               <span className="text-accent">
-                {blocosSaem} {blocosSaem === 1 ? 'bloco da timeline nao esta' : 'blocos da timeline nao estao'} na
-                selecao e {blocosSaem === 1 ? 'vai sair' : 'vao sair'}. Os outros mantem os ajustes.
+                {blocosSaem} {blocosSaem === 1 ? 'bloco da timeline não está' : 'blocos da timeline não estão'} na
+                seleção e {blocosSaem === 1 ? 'vai sair' : 'vão sair'}. Os outros mantém os ajustes.
               </span>
             ) : trechosVazios > 0 && avisouVazios ? (
               <span className="text-accent">
-                {trechosVazios} {trechosVazios === 1 ? 'trecho esta' : 'trechos estao'} sem cena — o tempo{' '}
+                {trechosVazios} {trechosVazios === 1 ? 'trecho está' : 'trechos estão'} sem cena — o tempo{' '}
                 {trechosVazios === 1 ? 'dele vai' : 'deles vai'} para a cena anterior. Tab pula para{' '}
-                {trechosVazios === 1 ? 'ele' : 'o proximo'}.
+                {trechosVazios === 1 ? 'ele' : 'o próximo'}.
               </span>
             ) : totalMarcado > 0 ? (
               `${totalMarcado} ${totalMarcado === 1 ? 'cena marcada' : 'cenas marcadas'} em ${Object.values(blockClips).filter((c) => c.length > 0).length} de ${blocos.length} trechos`
@@ -1033,8 +1033,8 @@ export function Library() {
               }}
               title={
                 remontando
-                  ? 'Refaz o video com esta selecao. Os blocos cuja cena nao mudou mantem os ajustes -- camera, efeito, curva, trecho do clipe e enquadramento.'
-                  : 'Cada frase se divide entre as cenas que voce marcou nela'
+                  ? 'Refaz o vídeo com esta seleção. Os blocos cuja cena não mudou mantém os ajustes -- câmera, efeito, curva, trecho do clipe e enquadramento.'
+                  : 'Cada frase se divide entre as cenas que você marcou nela'
               }
               className="lift rounded-sm border border-accent bg-accent-dim px-3.5 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
             >
@@ -1074,7 +1074,7 @@ export function Library() {
               type="button"
               disabled={escolhidos.length === 0}
               onClick={() => adicionar(nomeDaLeva())}
-              title="Vira uma parte do roteiro. A tela fica aberta para voce montar a proxima."
+              title="Vira uma parte do roteiro. A tela fica aberta para você montar a próxima."
               className="lift rounded-sm border border-line bg-elevated px-3 py-1.5 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
             >
               Adicionar como parte {partesNoProjeto + 1}
@@ -1083,7 +1083,7 @@ export function Library() {
               type="button"
               disabled={escolhidos.length === 0}
               onClick={() => adicionar()}
-              title="Entra no fim da fila, na ordem em que voce marcou"
+              title="Entra no fim da fila, na ordem em que você marcou"
               className="lift rounded-sm border border-accent bg-accent-dim px-3.5 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
             >
               Adicionar ao projeto
@@ -1147,7 +1147,7 @@ function SemBiblioteca({ mensagem }: { mensagem: string }) {
           Escolher a pasta da biblioteca
         </button>
         <p className="mt-3 text-[11px] leading-relaxed text-ink-3">
-          E a pasta onde o AnCut grava, a que contem uma pasta por anime. O Dangai so le: ele
+          E a pasta onde o AnCut grava, a que contem uma pasta por anime. O Dangai só lê: ele
           nunca renomeia, move nem apaga nada la dentro.
         </p>
       </div>
@@ -1286,7 +1286,7 @@ function Rail({
               <button
                 type="button"
                 onClick={() => alternarEpisodios(nome)}
-                aria-label={aberto ? `Fechar os episodios de ${nome}` : `Ver os episodios de ${nome}`}
+                aria-label={aberto ? `Fechar os episódios de ${nome}` : `Ver os episódios de ${nome}`}
                 className="grid size-5 shrink-0 place-items-center rounded-sm text-ink-3 hover:text-ink"
               >
                 {aberto ? (
@@ -1383,8 +1383,8 @@ function Rail({
       )}
 
       <p className="mt-3 px-1.5 text-[10px] leading-relaxed text-ink-3">
-        {semRosto.toLocaleString('pt-BR')} cenas sem personagem identificado — cenario, planos
-        abertos e detalhes. Chegue nelas pelo episodio, ou buscando o que aparece
+        {semRosto.toLocaleString('pt-BR')} cenas sem personagem identificado — cenário, planos
+        abertos e detalhes. Chegue nelas pelo episódio, ou buscando o que aparece
         (&ldquo;floresta&rdquo;, &ldquo;noite&rdquo;).
       </p>
     </nav>
@@ -1531,7 +1531,7 @@ interface FiltrosProps {
  */
 const FAIXAS: readonly { nome: string; min: number; max: number }[] = [
   { nome: 'Qualquer', min: 0, max: 0 },
-  { nome: 'ate 2s', min: 0, max: 2 },
+  { nome: 'até 2s', min: 0, max: 2 },
   { nome: '2 a 5s', min: 2, max: 5 },
   { nome: 'mais de 5s', min: 5, max: 0 },
 ]
@@ -1561,7 +1561,7 @@ function Filtros({
           value={texto}
           onChange={(event) => onTexto(event.target.value)}
           onKeyDown={(event) => event.stopPropagation()}
-          placeholder="Buscar por anime, personagem ou episodio (ex.: ichigo, s01e42)"
+          placeholder="Buscar por anime, personagem ou episódio (ex.: ichigo, s01e42)"
           spellCheck={false}
           className="w-full select-text rounded-sm border border-line bg-elevated py-1.5 pl-7 pr-2.5 text-[12px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
         />
@@ -1574,7 +1574,7 @@ function Filtros({
         ele usa o tempo todo, estava perdendo.
       */}
       {/* O tamanho dos cartoes (tambem com Ctrl+roda em cima da grade). */}
-      <div className="flex shrink-0 items-center gap-1.5" title="Tamanho das cenas na grade (Ctrl+roda tambem muda)">
+      <div className="flex shrink-0 items-center gap-1.5" title="Tamanho das cenas na grade (Ctrl+roda também muda)">
         <button
           type="button"
           onClick={() => onTamanho(tamanho / 1.25)}
@@ -1606,7 +1606,7 @@ function Filtros({
       <button
         type="button"
         onClick={onFavoritos}
-        title={favoritos ? 'Mostrando so os favoritos' : 'Mostrar so os favoritos'}
+        title={favoritos ? 'Mostrando só os favoritos' : 'Mostrar só os favoritos'}
         className={[
           'lift flex shrink-0 items-center gap-1.5 rounded-sm border px-2.5 py-1 text-[11px] transition-colors duration-150',
           favoritos
@@ -1629,7 +1629,7 @@ function Filtros({
           const [min, max] = event.target.value.split('-')
           onFaixa(Number(min), Number(max))
         }}
-        title="Duracao da cena"
+        title="Duração da cena"
         className="shrink-0 rounded-sm border border-line bg-elevated px-2 py-1 text-[11px] text-ink-2 focus:border-line-strong focus:outline-none"
       >
         {FAIXAS.map((faixa) => (
@@ -1861,8 +1861,8 @@ function Comeco({ animes, cenas }: { animes: number; cenas: number }) {
           {cenas.toLocaleString('pt-BR')} cenas em {animes} {animes === 1 ? 'anime' : 'animes'}.
         </p>
         <p className="mt-1.5 text-[12px] leading-relaxed text-ink-3">
-          Escolha um anime ou episodio na coluna ao lado, ou busque pelo que aparece na cena —
-          um personagem, um cenario, uma emocao.
+          Escolha um anime ou episódio na coluna ao lado, ou busque pelo que aparece na cena —
+          um personagem, um cenário, uma emoção.
         </p>
       </div>
     </div>
@@ -1928,7 +1928,7 @@ function Sugestoes({
   return (
     <div className="border-b border-line px-3 pb-3 pt-2">
       <div className="mb-1.5 flex items-baseline gap-2">
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-3">Sugestoes para este trecho</span>
+        <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-3">Sugestões para este trecho</span>
         {comum && <span className="min-w-0 truncate text-[11px] text-ink-3">· {comum}</span>}
         <span className="ml-auto flex shrink-0 items-baseline gap-3">
           {pastas.map((p) => (
@@ -1954,7 +1954,7 @@ function Sugestoes({
               }
               className="flex items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-[11px] text-ink-2 transition-colors duration-150 hover:border-accent hover:text-ink"
             >
-              {expandida ? 'Ver menos' : 'Ver mais sugestoes'}
+              {expandida ? 'Ver menos' : 'Ver mais sugestões'}
               {expandida ? (
                 <ChevronDown size={11} strokeWidth={1.5} className="rotate-180" />
               ) : (
@@ -2154,7 +2154,7 @@ function Cartao({
        * imagem, pode tirar tudo". Quem precisa do episodio ou do personagem
        * passa o mouse -- e a previa em video ja toca no mesmo gesto.
        */
-      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · ja usada em outra frase' : ''}
+      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · já usada em outra frase' : ''}
 Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
       className={[
         'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
@@ -2402,14 +2402,14 @@ function BarraDeMescla({
   let problema: string | null = null
   const episodio = escolhidas[0] ? `${escolhidas[0].anime}|${chaveEpisodio(escolhidas[0])}` : ''
   if (escolhidas.length < 2) problema = 'Ctrl+clique em mais uma cena para mesclar.'
-  else if (escolhidas.some((c) => `${c.anime}|${chaveEpisodio(c)}` !== episodio)) problema = 'As cenas precisam ser do mesmo episodio.'
+  else if (escolhidas.some((c) => `${c.anime}|${chaveEpisodio(c)}` !== episodio)) problema = 'As cenas precisam ser do mesmo episódio.'
   else {
     const faixas = escolhidas.map((c) => faixaDaCena(c.shot)).sort((a, b) => (a?.[0] ?? 0) - (b?.[0] ?? 0))
-    if (faixas.some((f) => f === null)) problema = 'Alguma dessas cenas nao veio do corte do AnCut.'
+    if (faixas.some((f) => f === null)) problema = 'Alguma dessas cenas não veio do corte do AnCut.'
     else {
       for (let k = 1; k < faixas.length; k++) {
         if (faixas[k]![0] !== faixas[k - 1]![1] + 1) {
-          problema = 'So da para mesclar cenas SEGUIDAS do episodio (ex.: 0010, 0011, 0012).'
+          problema = 'Só dá para mesclar cenas SEGUIDAS do episódio (ex.: 0010, 0011, 0012).'
           break
         }
       }
@@ -2429,7 +2429,7 @@ function BarraDeMescla({
           {(problema || recado) && <span className="block text-[11px] text-ink-3">{problema ?? recado}</span>}
           {confirmando && !problema && (
             <span className="block text-[11px] text-ink-3">
-              Viram um clipe so; os pedacos vao para a _lixeira do episodio e o AnCut e atualizado junto.
+              Viram um clipe só; os pedacos vão para a _lixeira do episódio e o AnCut e atualizado junto.
             </span>
           )}
         </span>
@@ -2570,7 +2570,7 @@ function Tocador({
             type="button"
             disabled={!proximo}
             onClick={() => proximo && onIr(proximo)}
-            aria-label="Proxima cena"
+            aria-label="Próxima cena"
             className="absolute right-2 z-10 grid size-10 place-items-center rounded-full bg-black/60 text-white hover:bg-accent disabled:opacity-20"
           >
             <ChevronRight size={20} />

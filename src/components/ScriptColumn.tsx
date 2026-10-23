@@ -89,7 +89,7 @@ export function ScriptColumn() {
     return (
       <Coluna>
         <p className="p-4 text-[12px] leading-relaxed text-ink-3">
-          Solte a narracao para ver o roteiro aqui e marcar as cenas de cada frase.
+          Solte a narração para ver o roteiro aqui e marcar as cenas de cada frase.
         </p>
       </Coluna>
     )
@@ -164,7 +164,7 @@ export function ScriptColumn() {
           {vazios > 0 && (
             <span
               className="text-accent"
-              title={`${vazios} ${vazios === 1 ? 'trecho ainda sem cena. O tempo dele vai para o trecho anterior.' : 'trechos ainda sem cena. O tempo deles vai para o trecho anterior.'} Tab pula para o proximo.`}
+              title={`${vazios} ${vazios === 1 ? 'trecho ainda sem cena. O tempo dele vai para o trecho anterior.' : 'trechos ainda sem cena. O tempo deles vai para o trecho anterior.'} Tab pula para o próximo.`}
             >
               {' '}
               · {vazios} {vazios === 1 ? 'vazio' : 'vazios'}
@@ -315,8 +315,8 @@ export function ScriptColumn() {
                         className="flex items-center gap-1 text-[10px] text-accent"
                         title={
                           (congelamentos.length === 1
-                            ? `Uma cena e mais curta que o tempo que ganhou: o ultimo quadro dela fica PARADO por ${congelamentos[0]!.toFixed(1)}s.`
-                            : `${congelamentos.length} cenas sao mais curtas que o tempo que ganharam; a pior fica PARADA por ${Math.max(...congelamentos).toFixed(1)}s.`) +
+                            ? `Uma cena é mais curta que o tempo que ganhou: o último quadro dela fica PARADO por ${congelamentos[0]!.toFixed(1)}s.`
+                            : `${congelamentos.length} cenas são mais curtas que o tempo que ganharam; a pior fica PARADA por ${Math.max(...congelamentos).toFixed(1)}s.`) +
                           ' Abra o trecho: a barra riscada mostra onde. Para resolver, de menos tempo a ela (-), troque por um clipe mais longo ou ponha mais uma cena.'
                         }
                       >
@@ -392,11 +392,11 @@ export function ScriptColumn() {
                         event.stopPropagation()
                         juntar(i)
                       }}
-                      title={`Junta com "${blocos[i + 1]!.text}" num trecho so. As cenas dos dois somam.`}
+                      title={`Junta com "${blocos[i + 1]!.text}" num trecho só. As cenas dos dois somam.`}
                       className="flex items-center gap-1 text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink"
                     >
                       <Merge size={11} strokeWidth={1.5} />
-                      Juntar com o proximo
+                      Juntar com o próximo
                     </button>
                   )}
                   {(bloco.partes?.length ?? 0) >= 2 && (
@@ -562,7 +562,7 @@ function Frase({
                     'block w-[3px] rounded-full transition-all duration-100',
                     puxando === grupo.slot - 1
                       ? 'h-4 bg-accent shadow-[0_0_6px_rgba(255,62,128,0.8)]'
-                      : 'h-3 bg-accent/60 group-hover/alca:h-4 group-hover/alca:bg-accent',
+                      : 'h-3 bg-accent/60 group-hover/alça:h-4 group-hover/alça:bg-accent',
                   ].join(' ')}
                 />
               </span>
@@ -607,7 +607,7 @@ function Frase({
           }}
           className="mt-1 text-[10px] text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline"
         >
-          voltar a divisao automatica
+          voltar a divisão automática
         </button>
       )}
     </>
@@ -853,7 +853,7 @@ function LinhaDaFita({
           {clip && congela > 0.05 && (
             <span
               className="mt-0.5 flex items-center gap-1.5"
-              title={`O clipe tem ${clip.duration.toFixed(1)}s, mas esta cena ganha ${fatia.toFixed(1)}s: nos ultimos ${congela.toFixed(1)}s a imagem fica PARADA no ultimo quadro. Para resolver: menos tempo para ela (-), um clipe mais longo, ou mais uma cena no trecho.`}
+              title={`O clipe tem ${clip.duration.toFixed(1)}s, mas esta cena ganha ${fatia.toFixed(1)}s: nos últimos ${congela.toFixed(1)}s a imagem fica PARADA no último quadro. Para resolver: menos tempo para ela (-), um clipe mais longo, ou mais uma cena no trecho.`}
             >
               <span className="relative flex h-[5px] w-[54px] shrink-0 overflow-hidden rounded-full bg-elevated">
                 <span className="h-full bg-ink-3/70" style={{ width: `${(clip.duration / fatia) * 100}%` }} />
@@ -872,7 +872,7 @@ function LinhaDaFita({
           */}
           {clip && (
             <AcaoDaLinha
-              rotulo="Mostrar este clipe na biblioteca (episodio e posicao)"
+              rotulo="Mostrar este clipe na biblioteca (episódio e posição)"
               onClick={() => void mostrarNaBiblioteca(clip.path)}
             >
               <LocateFixed size={12} strokeWidth={1.5} />
@@ -902,7 +902,7 @@ function LinhaDaFita({
           title={
             emCima
               ? 'Voltar as duas para a tela inteira, uma depois da outra'
-              : 'As duas tocam juntas: esta na metade de cima, a proxima na de baixo'
+              : 'As duas tocam juntas: está na metade de cima, a próxima na de baixo'
           }
           className={[
             'flex w-full items-center gap-1 py-0.5 text-[10px] transition-colors duration-150',
@@ -912,7 +912,7 @@ function LinhaDaFita({
           ].join(' ')}
         >
           <Rows2 size={11} strokeWidth={1.5} />
-          {emCima ? 'Tela dividida · separar' : 'Dividir tela com a proxima'}
+          {emCima ? 'Tela dividida · separar' : 'Dividir tela com a próxima'}
         </button>
       )}
     </Reorder.Item>

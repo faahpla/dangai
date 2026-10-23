@@ -49,7 +49,7 @@ export function configureDescribe(userDataDir: string): void {
 }
 
 function caminhoCache(): string {
-  if (!baseDir) throw new Error('Descritor nao configurado')
+  if (!baseDir) throw new Error('Descritor não configurado')
   return join(baseDir, 'descricoes.json')
 }
 
@@ -90,9 +90,9 @@ export async function describeReady(): Promise<{ ok: boolean; motivo: string | n
     const tem = (j.models ?? []).some((m) => m.name === MODELO)
     return tem
       ? { ok: true, motivo: null }
-      : { ok: false, motivo: `O modelo ${MODELO} nao esta baixado. Rode: ollama pull ${MODELO}` }
+      : { ok: false, motivo: `O modelo ${MODELO} não está baixado. Rode: ollama pull ${MODELO}` }
   } catch {
-    return { ok: false, motivo: 'O Ollama nao esta rodando. Abra o Ollama e tente de novo.' }
+    return { ok: false, motivo: 'O Ollama não está rodando. Abra o Ollama e tente de novo.' }
   }
 }
 
@@ -175,7 +175,7 @@ export async function describeClips(
   onProgress: DescribeProgress,
 ): Promise<Record<string, SceneDescription>> {
   const pronto = await describeReady()
-  if (!pronto.ok) throw new Error(pronto.motivo ?? 'O leitor de cenas nao esta disponivel.')
+  if (!pronto.ok) throw new Error(pronto.motivo ?? 'O leitor de cenas não está disponível.')
 
   const descriptions = readDescriptions()
   const faltando = clips.filter((c) => !descriptions[c.id] && c.keyframe && existsSync(c.keyframe))

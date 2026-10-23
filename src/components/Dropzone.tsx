@@ -66,10 +66,10 @@ export function Dropzone({ isDragging }: DropzoneProps) {
                 destaque ? "text-accent" : "text-ink",
               ].join(" ")}
             >
-              {busy ?? "Soltar audio e imagens aqui"}
+              {busy ?? "Soltar áudio e imagens aqui"}
             </span>
             <span className="text-[13px] text-ink-3">
-              A ordem em que voce solta as imagens e a ordem no video
+              A ordem em que você solta as imagens e a ordem no vídeo
             </span>
             <span className="text-[11px] text-ink-3">
               Solte o roteiro em .txt junto e as legendas saem com o texto exato
@@ -257,7 +257,7 @@ function Recuperar() {
       <button
         type="button"
         onClick={() => void restoreAutosave()}
-        title="Reabre a narracao, as imagens, os cortes e as legendas como estavam"
+        title="Reabre a narração, as imagens, os cortes e as legendas como estavam"
         className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
       >
         <History size={13} strokeWidth={1.5} className="text-accent" />
@@ -303,11 +303,11 @@ function LegendarVideoPronto() {
         event.stopPropagation();
         void legendar(video, caminhos.find((p) => classifyFile(p) === "script") ?? null);
       }}
-      title="Abre um video ja editado para legendar, cortar, por transicao, zoom, cor ou SFX. A fala dele vira a narracao. Mande o roteiro (.txt) junto e a legenda sai com o texto dele. (Clique e escolha os dois, ou solte os dois aqui.)"
+      title="Abre um vídeo já editado para legendar, cortar, por transição, zoom, cor ou SFX. A fala dele vira a narração. Mande o roteiro (.txt) junto e a legenda sai com o texto dele. (Clique e escolha os dois, ou solte os dois aqui.)"
       className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
     >
       <Clapperboard size={13} strokeWidth={1.5} className="text-accent" />
-      Legendar video pronto
+      Legendar vídeo pronto
     </button>
   );
 }
@@ -332,11 +332,11 @@ function MelhorarVideoPronto() {
       type="button"
       onClick={() => void melhorar()}
       disabled={rodando}
-      title="Escolhe um MP4 pronto e passa pelo upscale. Sai ao lado, com o dobro da resolucao."
+      title="Escolhe um MP4 pronto e passa pelo upscale. Sai ao lado, com o dobro da resolução."
       className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink disabled:opacity-40"
     >
       <Sparkles size={13} strokeWidth={1.5} className="text-accent" />
-      Upscale de video pronto
+      Upscale de vídeo pronto
     </button>
   );
 }

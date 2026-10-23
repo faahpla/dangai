@@ -134,7 +134,7 @@ export function Settings() {
         ].join(" ")}
       >
         <header className="mb-4 flex shrink-0 items-center gap-3">
-          <h2 className="text-[15px] font-semibold text-ink">Configuracoes</h2>
+          <h2 className="text-[15px] font-semibold text-ink">Configurações</h2>
           <div className="flex gap-0.5 rounded-sm border border-line bg-elevated p-0.5">
             {(["geral", "atalhos"] as const).map((qual) => (
               <button
@@ -169,12 +169,12 @@ export function Settings() {
           ) : (
             <>
               <label data-secao="ia" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Inteligencia artificial
+                Inteligência artificial
               </label>
               <div className="flex gap-1.5">
                 {(
                   [
-                    ["gemini", "Gemini (gratis)"],
+                    ["gemini", "Gemini (grátis)"],
                     ["anthropic", "Anthropic"],
                   ] as const
                 ).map(([qual, nome]) => (
@@ -212,7 +212,7 @@ export function Settings() {
                   rel="noreferrer"
                   className="text-[11px] text-ink-3 underline-offset-2 hover:text-ink hover:underline"
                 >
-                  Pegar chave gratis
+                  Pegar chave grátis
                 </a>
               </div>
               {/* Chave nova refaz o plano: o usuario acabou de habilitar a IA,
@@ -234,7 +234,7 @@ export function Settings() {
                 }
                 className="w-full rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink"
               >
-                <option value="">Automatico</option>
+                <option value="">Automático</option>
                 {opcoesDeModelo.map((modelo) => (
                   <option key={modelo} value={modelo}>
                     {modelo}
@@ -245,7 +245,7 @@ export function Settings() {
                 {modelos.length === 0
                   ? "Teste a chave para ver a lista. "
                   : ""}
-                No automatico, usa o melhor flash e troca sozinho se lotar.
+                No automático, usa o melhor flash e troca sozinho se lotar.
               </p>
 
               <label className="mt-4 mb-1.5 block text-[11px] font-medium text-ink-2">
@@ -277,9 +277,9 @@ export function Settings() {
                 </button>
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                As chaves ficam so nesta maquina
+                As chaves ficam só nesta máquina
                 {settings?.chavesProtegidas ? ", cifradas" : ""}. Sem nenhuma,
-                as cenas sao distribuidas pelas pausas da narracao.
+                as cenas são distribuídas pelas pausas da narração.
               </p>
               <SecoesDosModulos depoisDe="ia" />
 
@@ -306,7 +306,7 @@ export function Settings() {
                 ))}
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Baixado uma vez na primeira transcricao. Maior transcreve melhor
+                Baixado uma vez na primeira transcrição. Maior transcreve melhor
                 e mais devagar.
               </p>
               <SecoesDosModulos depoisDe="whisper" />
@@ -314,7 +314,7 @@ export function Settings() {
               <div className="my-5 h-px bg-line" />
 
               <label data-secao="sons" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Sons de transicao
+                Sons de transição
               </label>
               <button
                 type="button"
@@ -332,8 +332,8 @@ export function Settings() {
                 </span>
               </button>
               <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Solte os seus .mp3 ou .wav ai dentro. Eles entram em rodizio,
-                uma transicao sim e outra nao — som em todo corte vira ruido de
+                Solte os seus .mp3 ou .wav aí dentro. Eles entram em rodízio,
+                uma transição sim e outra não — som em todo corte vira ruído de
                 fundo.
               </p>
               <SecoesDosModulos depoisDe="sons" />
@@ -354,8 +354,8 @@ export function Settings() {
                 </span>
               </button>
               <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                A pasta onde o AnCut grava as cenas. O Dangai so le: nunca
-                renomeia, move nem apaga nada ai dentro. Ctrl+B abre a busca.
+                A pasta onde o AnCut grava as cenas. O Dangai só lê: nunca
+                renomeia, move nem apaga nada aí dentro. Ctrl+B abre a busca.
               </p>
               <SecoesDosModulos depoisDe="biblioteca" />
               <SecoesDosModulos depoisDe="fim" />

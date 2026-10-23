@@ -97,7 +97,7 @@ export function Framing({
   if (!adjustable) {
     return (
       <p className="text-[11px] leading-relaxed text-ink-3">
-        {image.kind === 'video' ? 'Este clipe' : 'Esta imagem'} ja tem o formato do video. Nao
+        {image.kind === 'video' ? 'Este clipe' : 'Esta imagem'} já tem o formato do vídeo. Não
         sobra nada para enquadrar.
       </p>
     )

@@ -8,7 +8,7 @@ import ffmpegStatic from 'ffmpeg-static'
 function resolveFfmpeg(): string {
   if (!ffmpegStatic) {
     throw new Error(
-      'Binario do FFmpeg nao encontrado. Rode "npm install" para restaurar as dependencias.',
+      'Binario do FFmpeg não encontrado. Rode "npm install" para restaurar as dependencias.',
     )
   }
   return ffmpegStatic.replace('app.asar', 'app.asar.unpacked')

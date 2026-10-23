@@ -196,7 +196,7 @@ export function ModulosNasConfiguracoes() {
   return (
     <div data-secao="modulos">
       <div className="my-5 h-px bg-line" />
-      <label className="mb-1.5 block text-[11px] font-medium text-ink-2">Modulos</label>
+      <label className="mb-1.5 block text-[11px] font-medium text-ink-2">Módulos</label>
       <div className="flex flex-col gap-1.5">
         {lista.map((m) => (
           <label
@@ -220,7 +220,7 @@ export function ModulosNasConfiguracoes() {
               </span>
               {m.descricao && <span className="mt-0.5 block text-[11px] leading-snug text-ink-3">{m.descricao}</span>}
               {m.falhou && (
-                <span className="mt-0.5 block text-[11px] leading-snug text-danger">Nao subiu: {m.falhou}</span>
+                <span className="mt-0.5 block text-[11px] leading-snug text-danger">Não subiu: {m.falhou}</span>
               )}
             </span>
           </label>

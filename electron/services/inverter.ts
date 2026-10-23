@@ -30,7 +30,7 @@ export function configureInverter(userDataDir: string): void {
 }
 
 function dir(): string {
-  if (!cacheDir) throw new Error('Inverter nao configurado')
+  if (!cacheDir) throw new Error('Inverter não configurado')
   mkdirSync(cacheDir, { recursive: true })
   return cacheDir
 }
@@ -126,7 +126,7 @@ function contarQuadros(path: string): Promise<number> {
       const todos = [...stderr.matchAll(/frame=\s*(\d+)/g)]
       const n = Number(todos.at(-1)?.[1])
       if (Number.isFinite(n) && n > 0) resolve(n)
-      else reject(new Error('Nao deu para contar os quadros do clipe.'))
+      else reject(new Error('Não deu para contar os quadros do clipe.'))
     })
   })
 }

@@ -53,7 +53,7 @@ function runSilenceDetect(audioPath: string): Promise<string> {
     child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()))
     child.on('error', (err) => reject(new Error(`FFmpeg falhou: ${err.message}`)))
     child.on('close', (code) =>
-      code === 0 ? resolve(stderr) : reject(new Error('Nao foi possivel analisar as pausas do audio.')),
+      code === 0 ? resolve(stderr) : reject(new Error('Não foi possível analisar as pausas do áudio.')),
     )
   })
 }

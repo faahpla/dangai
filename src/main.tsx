@@ -6,7 +6,7 @@ import { App } from './App'
 import { useProject } from './store/project'
 
 const container = document.getElementById('root')
-if (!container) throw new Error('Elemento #root nao encontrado')
+if (!container) throw new Error('Elemento #root não encontrado')
 
 // Em dev, o store fica alcancavel pelo console do devtools. Serve para inspecionar
 // estado e para carregar fixtures sem arrastar arquivo a mao a cada recarga.

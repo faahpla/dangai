@@ -33,7 +33,7 @@ export function configureNicknames(userDataDir: string): void {
 }
 
 export function readNicknames(): Record<string, Nickname[]> {
-  if (!caminho) throw new Error('Apelidos nao configurados')
+  if (!caminho) throw new Error('Apelidos não configurados')
   try {
     const cru: unknown = JSON.parse(readFileSync(caminho, 'utf8'))
     return coerce(cru)
@@ -55,8 +55,8 @@ export function saveNicknames(
   series: string,
   lista: readonly Nickname[],
 ): Record<string, Nickname[]> {
-  if (!caminho) throw new Error('Apelidos nao configurados')
-  if (!series.trim()) throw new Error('Sem serie para guardar o apelido.')
+  if (!caminho) throw new Error('Apelidos não configurados')
+  if (!series.trim()) throw new Error('Sem série para guardar o apelido.')
 
   const todos = readNicknames()
   const limpos = limpar(lista)
@@ -142,7 +142,7 @@ export async function suggestNicknames(
   const modelo = await modeloDisponivel()
   if (!modelo) {
     throw new Error(
-      'O Ollama nao respondeu. Ele e opcional -- da para cadastrar os apelidos na mao.',
+      'O Ollama não respondeu. Ele e opcional -- dá para cadastrar os apelidos na mão.',
     )
   }
 
@@ -182,7 +182,7 @@ export async function suggestNicknames(
   try {
     cru = JSON.parse(corpo.response ?? '')
   } catch {
-    throw new Error('O modelo respondeu algo que nao era JSON. Tente de novo, ou cadastre na mao.')
+    throw new Error('O modelo respondeu algo que não era JSON. Tente de novo, ou cadastre na mão.')
   }
 
   const lista = (cru as { apelidos?: unknown }).apelidos

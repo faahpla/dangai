@@ -70,7 +70,7 @@ export function aplicarNaEmenda(e: number, tipo: Transition, ajuste?: AjusteDaTr
   const n = scenes.length
   if (n === 0 || e < 0 || e > n) return
   if (s.cenasTrancadas) {
-    useProject.setState({ error: 'A faixa de cenas esta trancada. Destranque no cadeado da faixa Cenas.' })
+    useProject.setState({ error: 'A faixa de cenas está trancada. Destranque no cadeado da faixa Cenas.' })
     return
   }
   if (e === n) {

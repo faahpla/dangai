@@ -76,7 +76,7 @@ export function cancelarUpscale(): void {
 }
 
 export function modeloPath(): string {
-  if (!modeloDir) throw new Error('Upscale nao configurado')
+  if (!modeloDir) throw new Error('Upscale não configurado')
   return join(modeloDir, 'realesr-animevideov3.onnx')
 }
 
@@ -154,7 +154,7 @@ function limparVersoesVelhas(): void {
 }
 
 function exigirCache(): string {
-  if (!cacheDir) throw new Error('Cache do upscale nao configurado')
+  if (!cacheDir) throw new Error('Cache do upscale não configurado')
   mkdirSync(cacheDir, { recursive: true })
   return cacheDir
 }
@@ -838,7 +838,7 @@ async function sondarVideo(
   const dim = /,\s(\d{2,5})x(\d{2,5})[\s,]/.exec(video)
   const dur = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(texto)
   const fps = /([\d.]+)\s+fps/.exec(video)
-  if (!dim || !dur) throw new Error('Nao deu para ler esse video. Ele e um MP4 de verdade?')
+  if (!dim || !dur) throw new Error('Não deu para ler esse vídeo. Ele e um MP4 de verdade?')
   const bruto = fps ? Number(fps[1]) : 24000 / 1001
   const ntsc: Record<string, string> = { '23.98': '24000/1001', '29.97': '30000/1001', '59.94': '60000/1001', '47.95': '48000/1001' }
   const fpsTexto = ntsc[bruto.toFixed(2)] ?? String(bruto)

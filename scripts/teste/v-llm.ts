@@ -463,7 +463,7 @@ async function main(): Promise<void> {
       (caminho) => caminho,
     )
     conferir('analise: nao veio da IA', resultado.origin === 'ai', false)
-    conferir('analise: a nota de sempre', resultado.aiNote, 'Sem chave da API — cenas distribuidas pelas pausas da narracao.')
+    conferir('analise: a nota de sempre', resultado.aiNote, 'Sem chave da API — cenas distribuídas pelas pausas da narração.')
     conferir('analise: duas cenas', resultado.plan.scenes.length, 2)
     conferir('nenhuma chamada de rede', pedidos.length, 0)
   }
@@ -505,7 +505,7 @@ async function main(): Promise<void> {
     preparar([cota(true, '50000s')])
     {
       const err = await erroDe(generateMetadata({ texto: ROTEIRO }))
-      conferir('a nota da cota gratis', (err as Error).message.startsWith('A cota gratis do Gemini acabou por hoje; ela renova a meia-noite (horario do Pacifico'), true)
+      conferir('a nota da cota gratis', (err as Error).message.startsWith('A cota grátis do Gemini acabou por hoje; ela renova a meia-noite (horário do Pacifico'), true)
     }
     conferir('a mao: nao tenta de novo nem troca', pedidos.length, 1)
     saveSettings({ geminiModelo: '' })
@@ -549,7 +549,7 @@ async function main(): Promise<void> {
     preparar([cota(true, null, 0)])
     {
       const err = await erroDe(generateMetadata({ texto: ROTEIRO }))
-      conferir('diz para trocar de modelo', (err as Error).message.includes('nao tem cota gratis'), true)
+      conferir('diz para trocar de modelo', (err as Error).message.includes('não tem cota grátis'), true)
     }
     saveSettings({ geminiModelo: '' })
   }
@@ -568,7 +568,7 @@ async function main(): Promise<void> {
     preparar([fora, fora, fora])
     {
       const err = await erroDe(generateMetadata({ texto: ROTEIRO }))
-      conferir('desiste com a nota', (err as Error).message, 'O Gemini esta instavel agora. Tente de novo em alguns minutos.')
+      conferir('desiste com a nota', (err as Error).message, 'O Gemini está instável agora. Tente de novo em alguns minutos.')
     }
     conferir('1 chamada + 2 retentativas no mesmo modelo', pedidos.slice(0, 3).every((p) => p.url.includes('gemini-3.5-flash:')), true)
 
@@ -597,14 +597,14 @@ async function main(): Promise<void> {
     ])
     {
       const err = await erroDe(generateMetadata({ texto: ROTEIRO }))
-      conferir('chave recusada', (err as Error).message, 'Chave do Gemini recusada. Confira em configuracoes (Ctrl+,).')
+      conferir('chave recusada', (err as Error).message, 'Chave do Gemini recusada. Confira em configurações (Ctrl+,).')
     }
     conferir('chave errada nao repete', pedidos.length, 1)
 
     preparar([{ rede: 'ENOTFOUND' }])
     {
       const err = await erroDe(generateMetadata({ texto: ROTEIRO }))
-      conferir('sem internet', (err as Error).message, 'Sem conexao com o Gemini. Confira a internet e tente de novo.')
+      conferir('sem internet', (err as Error).message, 'Sem conexão com o Gemini. Confira a internet e tente de novo.')
     }
   }
 
@@ -658,7 +658,7 @@ async function main(): Promise<void> {
       const err = await erroDe(planWithAI({ imageCount: 2, durationSec: 4, transcript, imageNames: ['a.png', 'b.png'] }))
       const e = err as ErroDeIa
       conferir('message tecnica com 429 (o friendlyAiNote acha "429")', e.message.includes('429'), true)
-      conferir('nota pronta junto', e.nota.startsWith('A cota gratis do Gemini acabou por hoje'), true)
+      conferir('nota pronta junto', e.nota.startsWith('A cota grátis do Gemini acabou por hoje'), true)
     }
   }
 
@@ -674,7 +674,7 @@ async function main(): Promise<void> {
 
     preparar([...listaDeModelos(), cota(true, null)])
     const semCota = await testarGemini('AIza-digitada-0007', 'gemini-3.5-flash')
-    conferir('chave boa sem cota vira aviso', [semCota.modelo, semCota.aviso?.startsWith('A cota gratis') ?? false], ['gemini-3.5-flash', true])
+    conferir('chave boa sem cota vira aviso', [semCota.modelo, semCota.aviso?.startsWith('A cota grátis') ?? false], ['gemini-3.5-flash', true])
 
     // O caso real de 13/10/2026: o modelo aparece na lista mas da 404 para
     // chave nova, e a mensagem indica o sucessor.
@@ -874,7 +874,7 @@ async function main(): Promise<void> {
       const err = await erroDe(planWithAI({ imageCount: 1, durationSec: 2, transcript: { source: 'srt', words: [], segments: [], text: 'x', cutCandidates: [] } as any, imageNames: ['a'] }))
       const e = err as ErroDeIa
       conferir('401: message tecnica como antes', e.message.startsWith('401'), true)
-      conferir('401: nota pronta', e.nota, 'Chave da Anthropic recusada. Confira em configuracoes (Ctrl+,).')
+      conferir('401: nota pronta', e.nota, 'Chave da Anthropic recusada. Confira em configurações (Ctrl+,).')
     }
   }
 

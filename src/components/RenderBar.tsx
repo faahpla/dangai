@@ -104,7 +104,7 @@ function Home() {
       title={
         perguntando
           ? 'Clique de novo para limpar. Ctrl+Z traz de volta.'
-          : 'Comecar outro video (Ctrl+Z traz de volta)'
+          : 'Comecar outro vídeo (Ctrl+Z traz de volta)'
       }
       className={[
         'lift flex h-8 shrink-0 items-center gap-1.5 rounded-sm border px-2 text-[11px]',
@@ -261,11 +261,11 @@ export function RenderBar() {
         <button
           type="button"
           onClick={() => void voltarParaSelecao()}
-          title="Voltar a selecao na biblioteca, no trecho deste bloco (Ctrl+B). Ao remontar, os blocos cuja cena nao mudou mantem os ajustes."
+          title="Voltar a seleção na biblioteca, no trecho deste bloco (Ctrl+B). Ao remontar, os blocos cuja cena não mudou mantém os ajustes."
           className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
         >
           <LibraryIcon size={12} strokeWidth={1.5} />
-          <span className="group-data-[compacto]/barra:hidden">Selecao</span>
+          <span className="group-data-[compacto]/barra:hidden">Seleção</span>
         </button>
       )}
 
@@ -290,7 +290,7 @@ export function RenderBar() {
         <button
           type="button"
           onClick={() => openBins(!binsOpen)}
-          title="Power Bins: seus SFX, musicas e .mov, para arrastar na linha do tempo"
+          title="Power Bins: seus SFX, músicas e .mov, para arrastar na linha do tempo"
           className={[
             'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
             binsOpen
@@ -307,7 +307,7 @@ export function RenderBar() {
         <button
           type="button"
           onClick={toggleCaptions}
-          title={captionsEnabled ? 'Legendas queimadas no video' : 'Sem legendas'}
+          title={captionsEnabled ? 'Legendas queimadas no vídeo' : 'Sem legendas'}
           className={[
             'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
             captionsEnabled
@@ -337,7 +337,7 @@ export function RenderBar() {
           type="button"
           onClick={() => void window.dangai.revealFile(lastOutput)}
           aria-label="Abrir pasta"
-          title="Abrir a pasta do video"
+          title="Abrir a pasta do vídeo"
           className="lift flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
         >
           <FolderOpen size={12} strokeWidth={1.5} />
@@ -436,7 +436,7 @@ function Publicacao() {
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        title="Titulo, descricao e hashtags a partir do roteiro"
+        title="Título, descrição e hashtags a partir do roteiro"
         className={[
           'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
           metadata
@@ -447,7 +447,7 @@ function Publicacao() {
         ].join(' ')}
       >
         <Hash size={12} strokeWidth={1.5} />
-        Publicacao
+        Publicação
       </button>
 
       {aberto && (
@@ -457,8 +457,8 @@ function Publicacao() {
             {!metadata ? (
               <div className="flex flex-col items-start gap-2">
                 <p className="text-[12px] leading-snug text-ink-3">
-                  Escrevo tres titulos, a descricao e as hashtags a partir do seu roteiro. So o
-                  texto sai da sua maquina.
+                  Escrevo três títulos, a descrição e as hashtags a partir do seu roteiro. Só o
+                  texto sai da sua máquina.
                 </p>
                 <button
                   type="button"
@@ -472,7 +472,7 @@ function Publicacao() {
             ) : (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10px] uppercase tracking-wide text-ink-3">Titulos</span>
+                  <span className="text-[10px] uppercase tracking-wide text-ink-3">Títulos</span>
                   {metadata.titles.map((titulo, index) => (
                     <button
                       key={titulo}
@@ -489,7 +489,7 @@ function Publicacao() {
                 </div>
 
                 <Copiavel
-                  rotulo="Descricao"
+                  rotulo="Descrição"
                   texto={metadata.description}
                   copiado={copiado === 'desc'}
                   onCopiar={() => copiar('desc', metadata.description)}
@@ -695,7 +695,7 @@ function EstiloControl() {
                 ativo={captionMark === 'palavra'}
                 onClick={() => setCaptionMark('palavra')}
               >
-                So na palavra dita <span className="text-ink-3">(acompanha a narracao)</span>
+                Só na palavra dita <span className="text-ink-3">(acompanha a narração)</span>
               </Opcao>
               <Opcao ativo={captionMark === 'tudo'} onClick={() => setCaptionMark('tudo')}>
                 No texto inteiro <span className="text-ink-3">(sem marcar palavra)</span>
@@ -712,7 +712,7 @@ function EstiloControl() {
                 disabled={captionY === CAPTION_Y_DEFAULT}
                 className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
               >
-                voltar ao padrao
+                voltar ao padrão
               </button>
             </div>
             <input
@@ -727,10 +727,10 @@ function EstiloControl() {
             />
             <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
               {captionY < CAPTION_Y_DEFAULT - 0.02
-                ? 'Abaixo do padrao: no TikTok e no Reels a faixa de baixo fica coberta pela interface do app.'
+                ? 'Abaixo do padrão: no TikTok e no Reels a faixa de baixo fica coberta pela interface do app.'
                 : captionY > 0.45
                   ? 'Perto do meio da tela, onde o card de fechamento aparece.'
-                  : 'Fora da area que a interface do TikTok e do Reels cobre.'}
+                  : 'Fora da área que a interface do TikTok e do Reels cobre.'}
             </p>
 
             <div className="my-3 h-px bg-line" />
@@ -743,7 +743,7 @@ function EstiloControl() {
                 disabled={captionScale === CAPTION_SCALE_DEFAULT}
                 className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
               >
-                voltar ao padrao
+                voltar ao padrão
               </button>
             </div>
             <input
@@ -758,8 +758,8 @@ function EstiloControl() {
             />
             <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
               {captionScale === CAPTION_SCALE_DEFAULT
-                ? 'Tamanho padrao.'
-                : `${Math.round(captionScale * 100)}% do padrao. A linha comprida encolhe assim mesmo, para nao sair pela borda.`}
+                ? 'Tamanho padrão.'
+                : `${Math.round(captionScale * 100)}% do padrão. A linha comprida encolhe assim mesmo, para não sair pela borda.`}
             </p>
 
             <div className="my-3 h-px bg-line" />
@@ -791,13 +791,13 @@ function EstiloControl() {
                 }
                 className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
               >
-                voltar ao padrao
+                voltar ao padrão
               </button>
             </div>
             {/* Opacidade primeiro: e o controle que APAGA a sombra, e quem quer
                 desligar procura por ele antes de qualquer ajuste fino. */}
             <Medida
-              rotulo="Forca"
+              rotulo="Força"
               valor={`${Math.round(sombra.opacidade * 100)}%`}
               min={0}
               max={100}
@@ -805,7 +805,7 @@ function EstiloControl() {
               onChange={(v) => setCaptionShadow({ opacidade: v / 100 })}
             />
             <Medida
-              rotulo="Distancia"
+              rotulo="Distância"
               valor={`${sombra.distancia}px`}
               min={0}
               max={24}
@@ -870,13 +870,13 @@ function EstiloControl() {
                 ativo={captionAnimation === 'nenhuma'}
                 onClick={() => setCaptionAnimation('nenhuma')}
               >
-                Sem animacao
+                Sem animação
               </Opcao>
               <Opcao
                 ativo={captionAnimation === 'elastica'}
                 onClick={() => setCaptionAnimation('elastica')}
               >
-                Elastica <span className="text-ink-3">(cresce e repica)</span>
+                Elástica <span className="text-ink-3">(cresce e repica)</span>
               </Opcao>
             </div>
 
@@ -1015,7 +1015,7 @@ function CardsControl() {
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        title="Texto grande no comeco e no fim do video"
+        title="Texto grande no começo e no fim do vídeo"
         className={[
           'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
           ativos > 0
@@ -1046,7 +1046,7 @@ function CardsControl() {
             <div className="my-3 h-px bg-line" />
             <CardField
               rotulo="Fechamento"
-              dica="Aparece no centro, no fim do video"
+              dica="Aparece no centro, no fim do vídeo"
               text={endText}
               seconds={endSec}
               onText={(text) => setCard('end', { text })}
@@ -1111,7 +1111,7 @@ function CardField({
           step={0.5}
           value={seconds}
           onChange={(event) => onSeconds(Number(event.target.value))}
-          aria-label={`Duracao do ${rotulo.toLowerCase()}`}
+          aria-label={`Duração do ${rotulo.toLowerCase()}`}
           className="dangai-range flex-1"
         />
         <span className="tnum w-[34px] shrink-0 text-right text-[11px] text-ink-3">
@@ -1153,7 +1153,7 @@ function Preflight() {
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        title="Coisas que talvez voce queira ver antes de renderizar"
+        title="Coisas que talvez você queira ver antes de renderizar"
         className={[
           'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
           aberto
@@ -1162,7 +1162,9 @@ function Preflight() {
         ].join(' ')}
       >
         <TriangleAlert size={12} strokeWidth={1.5} />
+        {/* "⚠ 8" sozinho ninguem adivinhava o que era: agora diz "8 avisos". */}
         <span className="tnum">{avisos.length}</span>
+        <span className="group-data-[compacto]/barra:hidden">{avisos.length === 1 ? 'aviso' : 'avisos'}</span>
       </button>
 
       {aberto && (
@@ -1215,11 +1217,11 @@ function MusicControl() {
       <button
         type="button"
         onClick={() => void pickMusic()}
-        title="Uma faixa por baixo da narracao, em volume bem menor"
+        title="Uma faixa por baixo da narração, em volume bem menor"
         className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-3 hover:text-ink-2"
       >
         <Music size={12} strokeWidth={1.5} />
-        Musica
+        Música
       </button>
     )
   }
@@ -1243,8 +1245,8 @@ function MusicControl() {
         step={1}
         value={gainDb}
         onChange={(event) => setMusicGain(Number(event.target.value))}
-        aria-label="Volume da musica"
-        title="Quanto a musica fica abaixo da narracao"
+        aria-label="Volume da música"
+        title="Quanto a música fica abaixo da narração"
         className="dangai-range w-[68px]"
       />
       <span className="tnum w-[38px] shrink-0 text-right text-[11px] text-ink-3">{gainDb} dB</span>
@@ -1252,8 +1254,8 @@ function MusicControl() {
       <button
         type="button"
         onClick={clearMusic}
-        aria-label="Tirar a musica"
-        title="Tirar a musica"
+        aria-label="Tirar a música"
+        title="Tirar a música"
         className="grid size-4 shrink-0 place-items-center rounded-sm text-ink-3 hover:text-ink"
       >
         <X size={11} strokeWidth={1.5} />
@@ -1330,7 +1332,7 @@ function PresetsDeEstilo() {
         <button
           type="button"
           onClick={() => void importarEstilo().then(setRecado)}
-          title="Importar um estilo de legenda (.dangai-legenda) -- vira preset e ja e aplicado"
+          title="Importar um estilo de legenda (.dangai-legenda) -- vira preset e já é aplicado"
           className="rounded-sm px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink"
         >
           Importar
@@ -1423,7 +1425,7 @@ function BotaoDeLayout() {
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        title="Onde fica o preview, e voltar o layout ao padrao"
+        title="Onde fica o preview, e voltar o layout ao padrão"
         className={[
           'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
           aberto ? 'border-line-strong bg-elevated text-ink' : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
@@ -1450,11 +1452,11 @@ function BotaoDeLayout() {
               }}
               className="mt-1 rounded-sm px-2 py-1 text-left text-[11px] text-ink-3 hover:text-ink-2"
             >
-              Voltar o layout ao padrao
+              Voltar o layout ao padrão
             </button>
             <p className="px-2 text-[10px] leading-relaxed text-ink-3">
               Arraste as divisorias para mudar a altura da linha do tempo e a largura da coluna do bloco.
-              Dois cliques numa divisoria voltam aquele tamanho ao padrao.
+              Dois cliques numa divisoria voltam aquele tamanho ao padrão.
             </p>
           </div>
         </>

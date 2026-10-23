@@ -43,7 +43,7 @@ export function Queue() {
           <button
             type="button"
             onClick={stopQueue}
-            title="Para depois que o video atual terminar"
+            title="Para depois que o vídeo atual terminar"
             className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[11px] text-ink-2 hover:text-ink"
           >
             <Square size={11} strokeWidth={1.5} />
@@ -94,7 +94,7 @@ export function Queue() {
               <button
                 type="button"
                 onClick={() => void window.dangai.revealFile(item.output!)}
-                aria-label="Abrir a pasta do video"
+                aria-label="Abrir a pasta do vídeo"
                 className="shrink-0 text-ink-3 hover:text-ink"
               >
                 <FolderOpen size={12} strokeWidth={1.5} />

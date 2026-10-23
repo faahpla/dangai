@@ -34,7 +34,7 @@ export async function generateMetadata(request: MetadataRequest): Promise<Metada
   const texto = request.texto.trim()
   if (texto.length < 40) {
     throw new Error(
-      'Nao ha roteiro suficiente para gerar os textos. Cole o roteiro ou deixe a transcricao terminar.',
+      'Não há roteiro suficiente para gerar os textos. Cole o roteiro ou deixe a transcrição terminar.',
     )
   }
 

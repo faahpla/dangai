@@ -113,10 +113,10 @@ export function AjusteEdit({ id }: { id: string }) {
             <p className="text-[11px] text-accent">{alvos.length} camadas escolhidas -- mexer aqui muda todas.</p>
           )}
           <p className="text-[10px] leading-snug text-ink-3">
-            Corrige tudo o que esta embaixo dela (as cenas e as faixas de video de numero menor) durante{' '}
+            Corrige tudo o que está embaixo dela (as cenas e as faixas de vídeo de número menor) durante{' '}
             <span className="tnum">{toca.toFixed(2)}s</span>. Estique ou arraste na linha do tempo.
           </p>
-          <Linha label="Intensidade" title="Quanto do ajuste vale: 0% e o original">
+          <Linha label="Intensidade" title="Quanto do ajuste vale: 0% é o original">
             <Deslizante
               valor={cor.intensidade}
               min={0}
@@ -127,7 +127,7 @@ export function AjusteEdit({ id }: { id: string }) {
               onChange={(x) => mudar({ intensidade: x })}
             />
           </Linha>
-          <Linha label="Fade entra" title="A correcao entra aos poucos nesse tempo">
+          <Linha label="Fade entra" title="A correção entra aos poucos nesse tempo">
             <Deslizante
               valor={o.fadeInSec ?? 0}
               min={0}
@@ -138,7 +138,7 @@ export function AjusteEdit({ id }: { id: string }) {
               onChange={(x) => mudarClipe({ fadeInSec: x })}
             />
           </Linha>
-          <Linha label="Fade sai" title="A correcao sai aos poucos nesse tempo">
+          <Linha label="Fade sai" title="A correção sai aos poucos nesse tempo">
             <Deslizante
               valor={o.fadeOutSec ?? 0}
               min={0}
@@ -164,7 +164,7 @@ export function AjusteEdit({ id }: { id: string }) {
                   ajustar(alvo, { x: 0, y: 0, escala: 1, rotacao: 0, chaves: undefined })
                 }
               }}
-              title="Volta posicao, tamanho e giro ao padrao (e tira a animacao)"
+              title="Volta posição, tamanho e giro ao padrão (e tira a animação)"
             >
               <RotateCcw size={11} strokeWidth={1.5} />
               Resetar
@@ -172,8 +172,8 @@ export function AjusteEdit({ id }: { id: string }) {
           }
         >
           <p className="text-[10px] leading-snug text-ink-3">
-            Move, escala e gira tudo o que esta embaixo -- tambem arrastando no preview. Para animar, ponha a agulha
-            no comeco, clique em Animar, ande com a agulha e mexa.
+            Move, escala e gira tudo o que está embaixo -- também arrastando no preview. Para animar, ponha a agulha
+            no começo, clique em Animar, ande com a agulha e mexa.
           </p>
           <TransformDoClipe o={o} alvos={alvos} />
         </Grupo>
@@ -273,7 +273,7 @@ export function AjusteEdit({ id }: { id: string }) {
         </Grupo>
 
         <Grupo titulo="Luz">
-          <Linha label="Exposicao" title="Em stops: +1 dobra a luz">
+          <Linha label="Exposição" title="Em stops: +1 dobra a luz">
             <Deslizante
               valor={cor.exposicao}
               min={-3}
@@ -295,8 +295,8 @@ export function AjusteEdit({ id }: { id: string }) {
         <Grupo titulo="Cor">
           {lado('temperatura', 'Temperatura', 'Negativo esfria (azul), positivo esquenta (laranja)')}
           {lado('tint', 'Tint', 'Negativo puxa para o verde, positivo para o magenta')}
-          {lado('saturacao', 'Saturacao', '-100 deixa preto e branco')}
-          {lado('vibrance', 'Vibrance', 'Satura mais o que tem pouca cor e poupa o que ja e saturado, como pele')}
+          {lado('saturacao', 'Saturação', '-100 deixa preto e branco')}
+          {lado('vibrance', 'Vibrance', 'Satura mais o que tem pouca cor e poupa o que já é saturado, como pele')}
         </Grupo>
 
         <Grupo titulo="Detalhe">
@@ -331,7 +331,7 @@ export function AjusteEdit({ id }: { id: string }) {
             opcoes={(['mestre', 'r', 'g', 'b'] as const).map((c) => ({
               valor: c,
               rotulo: c === 'mestre' ? 'RGB' : c.toUpperCase(),
-              title: c === 'mestre' ? 'Os tres canais juntos (luminosidade)' : `So o canal ${c.toUpperCase()}`,
+              title: c === 'mestre' ? 'Os três canais juntos (luminosidade)' : `Só o canal ${c.toUpperCase()}`,
             }))}
             ativo={(c) => c === canal}
             onChange={setCanal}
@@ -342,7 +342,7 @@ export function AjusteEdit({ id }: { id: string }) {
             onChange={mudarCurva}
           />
           <p className="text-[10px] leading-snug text-ink-3">
-            Clique na linha para criar um ponto e arraste. Dois cliques num ponto o tiram. Esquerda sao as sombras,
+            Clique na linha para criar um ponto e arraste. Dois cliques num ponto o tiram. Esquerda são as sombras,
             direita os realces; subir clareia.
           </p>
         </Grupo>

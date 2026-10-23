@@ -143,7 +143,7 @@ export async function scanLibrary(
   const prefixo = opcoes.prefixoDoId ?? ''
   if (!root) throw new Error('Nenhuma pasta de biblioteca escolhida.')
   if (!ehPasta(root)) {
-    throw new Error(`A pasta da biblioteca nao existe mais: ${root}`)
+    throw new Error(`A pasta da biblioteca não existe mais: ${root}`)
   }
 
   const cache = await lerCache()
@@ -273,10 +273,10 @@ export function registrarRaizDaBiblioteca(nova: RaizContribuida): void {
   // O prefixo precisa ser nao vazio (vazio e o da libraryDir) e sem barra: o id
   // e "<prefixo><serie>/<SxxEyy>/<cena>" e o resto le o episodio pelas barras.
   if (!nova.id || !/^[A-Za-z0-9_-]+:$/.test(nova.prefixo)) {
-    throw new Error(`Raiz de biblioteca invalida: ${nova.id} (${nova.prefixo})`)
+    throw new Error(`Raiz de biblioteca inválida: ${nova.id} (${nova.prefixo})`)
   }
   const outra = CONTRIBUIDAS.find((r) => r.prefixo === nova.prefixo && r.id !== nova.id)
-  if (outra) throw new Error(`O prefixo ${nova.prefixo} ja e da raiz ${outra.id}`)
+  if (outra) throw new Error(`O prefixo ${nova.prefixo} já é da raiz ${outra.id}`)
   const i = CONTRIBUIDAS.findIndex((r) => r.id === nova.id)
   if (i >= 0) CONTRIBUIDAS[i] = nova
   else CONTRIBUIDAS.push(nova)
@@ -827,7 +827,7 @@ function ehPasta(caminho: string): boolean {
 // ---------------------------------------------------------------------- cache
 
 async function lerCache(): Promise<CacheFile> {
-  if (!cachePath) throw new Error('Biblioteca nao configurada')
+  if (!cachePath) throw new Error('Biblioteca não configurada')
   try {
     // A leitura (dezenas de MB) fora da vez do app; so o parse fica nela.
     const cru: unknown = JSON.parse(await readFile(cachePath, 'utf8'))

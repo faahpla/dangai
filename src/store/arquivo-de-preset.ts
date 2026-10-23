@@ -18,7 +18,7 @@ const INFO: Record<TipoDePreset, { extensao: string; descricao: string; nome: st
   legenda: { extensao: 'dangai-legenda', descricao: 'Estilo de legenda do Dangai', nome: 'estilo de legenda' },
   cor: { extensao: 'dangai-cor', descricao: 'Preset de cor do Dangai', nome: 'preset de cor' },
   movimento: { extensao: 'dangai-movimento', descricao: 'Curva de movimento do Dangai', nome: 'curva de movimento' },
-  transicao: { extensao: 'dangai-transicao', descricao: 'Transicao do Dangai', nome: 'transicao' },
+  transicao: { extensao: 'dangai-transicao', descricao: 'Transição do Dangai', nome: 'transicao' },
 }
 
 const marca = (tipo: TipoDePreset): string => `dangai.${tipo}`
@@ -52,7 +52,7 @@ export async function importarPreset<T>(
   })
   if (!r.ok) return { erro: r.error }
   if (!r.value) return null
-  const errado = { erro: `Esse arquivo nao e um ${info.nome} do Dangai.` }
+  const errado = { erro: `Esse arquivo não é um ${info.nome} do Dangai.` }
   let bruto: unknown
   try {
     bruto = JSON.parse(r.value.conteudo)

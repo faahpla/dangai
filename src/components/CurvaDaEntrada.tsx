@@ -29,7 +29,7 @@ const vDe = (y: number): number => Math.min(Math.max(((H - PAD - y) / (H - 2 * P
 
 /** Formatos prontos, para partir de algum lugar. */
 const PRONTAS: { nome: string; curva: CurvaDaEntrada }[] = [
-  { nome: 'Padrao', curva: CURVA_DA_ENTRADA_PADRAO },
+  { nome: 'Padrão', curva: CURVA_DA_ENTRADA_PADRAO },
   {
     nome: 'Pop',
     curva: [
@@ -130,11 +130,11 @@ async function importarCurva(): Promise<string | null> {
   try {
     dados = JSON.parse(r.value.conteudo)
   } catch {
-    return 'Esse arquivo nao e uma curva do Dangai.'
+    return 'Esse arquivo não é uma curva do Dangai.'
   }
   const bruto = dados as { tipo?: unknown; nome?: unknown; curva?: unknown }
   const curva = curvaDaEntradaSchema.safeParse(bruto?.curva)
-  if (bruto?.tipo !== TIPO_DO_ARQUIVO || !curva.success) return 'Esse arquivo nao e uma curva do Dangai.'
+  if (bruto?.tipo !== TIPO_DO_ARQUIVO || !curva.success) return 'Esse arquivo não é uma curva do Dangai.'
   const base = (typeof bruto.nome === 'string' && bruto.nome.trim() ? bruto.nome.trim() : r.value.nome).slice(0, 26)
   const usados = new Set(useProject.getState().curvasDeEntrada.map((c) => c.nome))
   let nome = base
@@ -380,7 +380,7 @@ export function CurvaDaEntradaEditor({
                     setPuxando({ i: sel, qual })
                   }}
                 >
-                  <title>Alca: puxe para mudar a suavidade e a inclinacao. Alt solta da outra.</title>
+                  <title>Alça: puxe para mudar a suavidade e a inclinacao. Alt solta da outra.</title>
                 </circle>
               </g>
             )
@@ -424,12 +424,12 @@ export function CurvaDaEntradaEditor({
       {sel !== null && !desenhando && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1 rounded-sm border border-line bg-elevated/60 px-1.5 py-1">
           <span className="mr-0.5 text-[10px] text-ink-3">
-            {sel === 0 ? 'Inicio' : sel === ultimo ? 'Fim' : `Ponto ${sel + 1}`}:
+            {sel === 0 ? 'Início' : sel === ultimo ? 'Fim' : `Ponto ${sel + 1}`}:
           </span>
           {(
             [
-              ['suave', 'Easy ease', 'Alcas deitadas: a curva chega e sai devagar deste ponto'],
-              ['auto', 'Auto', 'Volta a suavidade automatica'],
+              ['suave', 'Easy ease', 'Alças deitadas: a curva chega e sai devagar deste ponto'],
+              ['auto', 'Auto', 'Volta a suavidade automática'],
               ['quina', 'Quina', 'Chega e sai reta, sem suavizar'],
             ] as const
           ).map(([forma, rotulo, dica]) => (
@@ -443,7 +443,7 @@ export function CurvaDaEntradaEditor({
               {rotulo}
             </button>
           ))}
-          <label className="ml-1 flex min-w-[110px] flex-1 items-center gap-1.5 text-[10px] text-ink-3" title="O comprimento das alcas: mais longa, mais suave">
+          <label className="ml-1 flex min-w-[110px] flex-1 items-center gap-1.5 text-[10px] text-ink-3" title="O comprimento das alças: mais longa, mais suave">
             Suavidade
             <input
               type="range"
@@ -470,7 +470,7 @@ export function CurvaDaEntradaEditor({
           ].join(' ')}
         >
           <Pencil size={9} strokeWidth={1.75} />
-          {desenhando ? 'Risque no grafico...' : 'Desenhar a mao'}
+          {desenhando ? 'Risque no gráfico...' : 'Desenhar a mão'}
         </button>
         {PRONTAS.filter((p) => !ocultas.includes(p.nome)).map((p) => (
           <span key={p.nome} className="group/pronta flex items-center rounded-sm border border-line bg-elevated">
@@ -562,7 +562,7 @@ export function CurvaDaEntradaEditor({
         <button
           type="button"
           onClick={() => void importarCurva().then(setRecado)}
-          title="Importar uma curva que alguem exportou (.dangai-curva)"
+          title="Importar uma curva que alguém exportou (.dangai-curva)"
           className="flex items-center gap-1 rounded-sm border border-dashed border-line px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink-2"
         >
           <Download size={9} strokeWidth={2} />
@@ -571,7 +571,7 @@ export function CurvaDaEntradaEditor({
         <button
           type="button"
           onClick={() => void exportarCurva('curva', pontos)}
-          title="Exportar a curva que esta no grafico agora"
+          title="Exportar a curva que está no gráfico agora"
           className="flex items-center gap-1 rounded-sm border border-dashed border-line px-1.5 py-0.5 text-[10px] text-ink-3 hover:text-ink-2"
         >
           <Upload size={9} strokeWidth={2} />
@@ -580,7 +580,7 @@ export function CurvaDaEntradaEditor({
         {recado && <span className="w-full text-[10px] text-accent">{recado}</span>}
       </div>
       <p className="mt-1 text-[10px] leading-relaxed text-ink-3">
-        Arraste os pontos, ou desenhe a mao. Clique num ponto para ver as alcas (Alt solta uma da outra). Clique duplo
+        Arraste os pontos, ou desenhe a mão. Clique num ponto para ver as alças (Alt solta uma da outra). Clique duplo
         no vazio cria um ponto; num ponto, apaga.
         {ocultas.length > 0 && (
           <>

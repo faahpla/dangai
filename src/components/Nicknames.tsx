@@ -81,7 +81,7 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
     const jaTem = new Set(lista.map((n) => n.term.toLowerCase()))
     const novas = result.value.filter((s) => !jaTem.has(s.term.toLowerCase()))
     setSugestoes(novas)
-    if (novas.length === 0) setAvisoSugestao('O modelo nao sugeriu nada novo.')
+    if (novas.length === 0) setAvisoSugestao('O modelo não sugeriu nada novo.')
   }
 
   const podeAcrescentar = termo.trim().length >= 3 && personagem.length > 0
@@ -99,8 +99,8 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
           <div className="min-w-0">
             <h2 className="truncate text-[15px] font-semibold text-ink">Apelidos · {series}</h2>
             <p className="mt-1 text-[11px] leading-relaxed text-ink-3">
-              Como voce chama os personagens no roteiro sem usar o nome. O app ja entende nome
-              escrito e "ele/ela" sozinho — isto e so para apelido.
+              Como você chama os personagens no roteiro sem usar o nome. O app já entende nome
+              escrito e "ele/ela" sozinho — isto é só para apelido.
             </p>
           </div>
           <button
@@ -115,7 +115,7 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
 
         {personagens.length === 0 ? (
           <p className="text-[12px] leading-relaxed text-ink-2">
-            Esta serie ainda nao tem nenhum personagem identificado na biblioteca, entao nao ha a
+            Esta série ainda não tem nenhum personagem identificado na biblioteca, então não há a
             que apontar um apelido.
           </p>
         ) : (
@@ -144,12 +144,12 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
                           ].join(' ')}
                           title={
                             orfao
-                              ? 'Este personagem nao existe mais na biblioteca desta serie'
+                              ? 'Este personagem não existe mais na biblioteca desta série'
                               : undefined
                           }
                         >
                           {n.character}
-                          {orfao && ' (nao existe mais)'}
+                          {orfao && ' (não existe mais)'}
                         </span>
                         <button
                           type="button"
@@ -168,7 +168,7 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
               {sugestoes && sugestoes.length > 0 && (
                 <div className="mt-4">
                   <h3 className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-ink-3">
-                    Sugestoes do modelo local
+                    Sugestões do modelo local
                   </h3>
                   {/*
                     O modelo sugere, ele decide. Medido: acerta o apelido famoso
@@ -193,7 +193,7 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
                             acrescentar({ term: s.term, character: s.character })
                             setSugestoes((atual) => (atual ?? []).filter((x) => x.term !== s.term))
                           }}
-                          title="Aceitar esta sugestao"
+                          title="Aceitar esta sugestão"
                           className="grid size-5 shrink-0 place-items-center rounded-sm text-ink-3 hover:text-accent"
                         >
                           <Plus size={12} strokeWidth={1.5} />
@@ -203,7 +203,7 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
                           onClick={() =>
                             setSugestoes((atual) => (atual ?? []).filter((x) => x.term !== s.term))
                           }
-                          aria-label={`Descartar a sugestao ${s.term}`}
+                          aria-label={`Descartar a sugestão ${s.term}`}
                           className="grid size-5 shrink-0 place-items-center rounded-sm text-ink-3 hover:text-ink"
                         >
                           <X size={11} strokeWidth={1.5} />
@@ -260,7 +260,7 @@ export function Nicknames({ series, onClose }: { series: string; onClose: () => 
                   type="button"
                   disabled={sugerindo}
                   onClick={() => void sugerir()}
-                  title="Usa um modelo rodando na sua maquina pelo Ollama. Opcional."
+                  title="Usa um modelo rodando na sua máquina pelo Ollama. Opcional."
                   className="lift flex shrink-0 items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[11px] text-ink-2 hover:text-ink disabled:opacity-40"
                 >
                   {sugerindo ? (

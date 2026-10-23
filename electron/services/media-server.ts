@@ -82,7 +82,7 @@ export function startMediaServer(): Promise<string> {
 
     server.on('error', (err) => {
       starting = null
-      reject(new Error(`Servidor de midia local nao subiu: ${err.message}`))
+      reject(new Error(`Servidor de mídia local não subiu: ${err.message}`))
     })
 
     // Porta 0: o SO escolhe uma livre. Escuta so em loopback.
@@ -113,7 +113,7 @@ export function nomearArquivosPublicados(texto: string): string {
 
 export function publish(absolutePath: string): string {
   if (!baseUrl) {
-    throw new Error('Servidor de midia ainda nao subiu')
+    throw new Error('Servidor de mídia ainda não subiu')
   }
 
   const existing = byPath.get(absolutePath)

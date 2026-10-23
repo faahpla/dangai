@@ -66,11 +66,11 @@ export function TransformDoClipe({
 
   return (
     <>
-      <Linha label="Posicao X">
+      <Linha label="Posição X">
         <Deslizante valor={v.x} min={-150} max={150} step={0.5} padrao={0} texto={`${Math.round(v.x)}%`}
           onChange={(x) => mudar({ x })} digitar={{ numero: v.x, aplicar: (x) => mudar({ x }) }} />
       </Linha>
-      <Linha label="Posicao Y">
+      <Linha label="Posição Y">
         <Deslizante valor={v.y} min={-150} max={150} step={0.5} padrao={0} texto={`${Math.round(v.y)}%`}
           onChange={(y) => mudar({ y })} digitar={{ numero: v.y, aplicar: (y) => mudar({ y }) }} />
       </Linha>
@@ -79,7 +79,7 @@ export function TransformDoClipe({
           texto={`${Math.round(v.escala * 100)}%`} onChange={(escala) => mudar({ escala })}
           digitar={{ numero: v.escala * 100, aplicar: (n) => mudar({ escala: n / 100 }) }} />
       </Linha>
-      <Linha label="Rotacao" title="Duplo clique no slider volta para 0°. Com chaves, passa de 180° para dar voltas.">
+      <Linha label="Rotação" title="Duplo clique no slider volta para 0°. Com chaves, passa de 180° para dar voltas.">
         <Deslizante valor={v.rotacao} min={tem ? -720 : -180} max={tem ? 720 : 180} step={1} padrao={0}
           texto={`${Math.round(v.rotacao)}°`} onChange={(rotacao) => mudar({ rotacao })}
           digitar={{ numero: v.rotacao, aplicar: (rotacao) => mudar({ rotacao }) }} />
@@ -100,7 +100,7 @@ export function TransformDoClipe({
       */}
       <Linha
         label="Animar"
-        title="Grava uma chave na agulha com a posicao, o tamanho e o giro de agora. Com chaves, mexer em qualquer valor grava outra."
+        title="Grava uma chave na agulha com a posição, o tamanho e o giro de agora. Com chaves, mexer em qualquer valor grava outra."
       >
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <Botaozinho
@@ -135,8 +135,8 @@ export function TransformDoClipe({
                 type="button"
                 disabled={!proxima}
                 onClick={() => proxima && irPara(proxima.t)}
-                title="Proxima chave"
-                aria-label="Proxima chave"
+                title="Próxima chave"
+                aria-label="Próxima chave"
                 className="grid size-6 place-items-center rounded-sm text-ink-3 hover:text-ink disabled:opacity-30"
               >
                 <ChevronRight size={13} strokeWidth={1.75} />
@@ -145,7 +145,7 @@ export function TransformDoClipe({
                 type="button"
                 onClick={() => paraCada((x) => patchSemAnimacao(x, playhead))}
                 title="Parar de animar: fica o que se ve na agulha, sem chave nenhuma"
-                aria-label="Apagar a animacao"
+                aria-label="Apagar a animação"
                 className="ml-auto grid size-6 place-items-center rounded-sm text-ink-3 hover:text-danger"
               >
                 <Trash2 size={12} strokeWidth={1.5} />
@@ -176,7 +176,7 @@ export function TransformDoClipe({
               ))}
             </div>
           </Linha>
-          <Linha label="Ritmo" title="Como cada passagem de uma chave para a proxima acelera e freia">
+          <Linha label="Ritmo" title="Como cada passagem de uma chave para a próxima acelera e freia">
             <Segmentos
               opcoes={MOTION_CURVES.map((c) => ({ valor: c, rotulo: RITMO[c] }))}
               ativo={(c) => (o.curvaDasChaves ?? 'ease-in-out') === c}

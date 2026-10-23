@@ -26,7 +26,7 @@ export function configureSobreposicao(userDataDir: string): void {
 }
 
 function dir(): string {
-  if (!cacheDir) throw new Error('Sobreposicao nao configurada')
+  if (!cacheDir) throw new Error('Sobreposição não configurada')
   mkdirSync(cacheDir, { recursive: true })
   return cacheDir
 }
@@ -214,7 +214,7 @@ function rodar(args: string[]): Promise<void> {
     child.on('close', (code) =>
       code === 0
         ? resolve()
-        : reject(new Error(`Nao deu para preparar o video: ${stderr.trim().split('\n').slice(-2).join(' ')}`)),
+        : reject(new Error(`Não deu para preparar o vídeo: ${stderr.trim().split('\n').slice(-2).join(' ')}`)),
     )
   })
 }

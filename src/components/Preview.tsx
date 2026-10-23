@@ -311,7 +311,7 @@ export function Preview() {
         </>
       ) : (
         <div className="grid h-full place-items-center px-6 text-center text-[11px] text-ink-3">
-          {images.length === 0 ? 'Solte imagens para ver o preview' : 'Solte a narracao'}
+          {images.length === 0 ? 'Solte imagens para ver o preview' : 'Solte a narração'}
         </div>
       )}
 
@@ -398,7 +398,7 @@ function ZoomDoVisor() {
   return (
     <div
       className="absolute bottom-2 left-2 z-20 flex items-center rounded-[6px] bg-black/60 text-[10px]"
-      title="Zoom do visor (Ctrl+roda): menor, sobra espaco em volta para as alcas de um insert grande"
+      title="Zoom do visor (Ctrl+roda): menor, sobra espaço em volta para as alças de um insert grande"
     >
       <button type="button" className={botao} disabled={zoom <= ZOOM_DO_VISOR_MIN} onClick={() => passo(-1)} aria-label="Diminuir o zoom do visor">
         −

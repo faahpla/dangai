@@ -214,30 +214,30 @@ export async function mesclarClipes(paths: readonly string[]): Promise<Resultado
   if (paths.length < 2) throw new Error('Escolha pelo menos duas cenas para mesclar.')
 
   const shots = dirname(paths[0]!)
-  if (basename(shots).toLowerCase() !== 'shots') throw new Error('So da para mesclar cenas cortadas pelo AnCut (pasta shots).')
+  if (basename(shots).toLowerCase() !== 'shots') throw new Error('Só dá para mesclar cenas cortadas pelo AnCut (pasta shots).')
   if (paths.some((p) => normal(dirname(p)) !== normal(shots))) {
-    throw new Error('As cenas precisam ser do mesmo episodio.')
+    throw new Error('As cenas precisam ser do mesmo episódio.')
   }
   const episodio = dirname(shots)
 
   const itens = paths
     .map((p) => ({ p, faixa: faixaDoNome(basename(p)) }))
     .sort((a, b) => (a.faixa?.[0] ?? 0) - (b.faixa?.[0] ?? 0))
-  if (itens.some((i) => i.faixa === null)) throw new Error('Alguma cena tem um nome que o AnCut nao gera.')
+  if (itens.some((i) => i.faixa === null)) throw new Error('Alguma cena tem um nome que o AnCut não gera.')
   for (let k = 1; k < itens.length; k++) {
     if (itens[k]!.faixa![0] !== itens[k - 1]!.faixa![1] + 1) {
       throw new Error(
-        'So da para mesclar cenas SEGUIDAS do episodio (ex.: 0010, 0011, 0012). O nome do clipe mesclado diz ao Dangai quais cenas estao dentro, e um buraco no meio deixaria duracao e personagens errados.',
+        'Só dá para mesclar cenas SEGUIDAS do episódio (ex.: 0010, 0011, 0012). O nome do clipe mesclado diz ao Dangai quais cenas estão dentro, e um buraco no meio deixaria duração e personagens errados.',
       )
     }
   }
   const faltando = itens.find((i) => !existsSync(i.p))
-  if (faltando) throw new Error(`Essa cena nao esta mais no disco: ${basename(faltando.p)}`)
+  if (faltando) throw new Error(`Essa cena não está mais no disco: ${basename(faltando.p)}`)
 
   const de = itens[0]!.faixa![0]
   const ate = itens.at(-1)!.faixa![1]
   const destino = join(shots, `${quatro(de)}-${quatro(ate)}.mp4`)
-  if (existsSync(destino)) throw new Error(`Ja existe ${basename(destino)} nesse episodio.`)
+  if (existsSync(destino)) throw new Error(`Já existe ${basename(destino)} nesse episódio.`)
 
   let modo = 'off'
   try {
@@ -258,7 +258,7 @@ export async function mesclarClipes(paths: readonly string[]): Promise<Resultado
     ])
   } catch (err) {
     rmSync(destino, { force: true })
-    throw new Error(`Nao deu para mesclar: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error(`Não deu para mesclar: ${err instanceof Error ? err.message : String(err)}`)
   } finally {
     rmSync(lista, { force: true })
   }

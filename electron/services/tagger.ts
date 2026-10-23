@@ -85,7 +85,7 @@ export function configureTagger(userDataDir: string): void {
 }
 
 function exigirDir(): string {
-  if (!baseDir) throw new Error('Etiquetador nao configurado')
+  if (!baseDir) throw new Error('Etiquetador não configurado')
   return baseDir
 }
 
@@ -368,7 +368,7 @@ async function baixarModelo(onProgress: TaggerProgress): Promise<void> {
 async function baixar(url: string, alvo: string, onMb: (mb: number) => void): Promise<void> {
   const resposta = await fetch(url, { redirect: 'follow' })
   if (!resposta.ok || !resposta.body) {
-    throw new Error(`Nao deu para baixar o etiquetador (${resposta.status}).`)
+    throw new Error(`Não deu para baixar o etiquetador (${resposta.status}).`)
   }
 
   const parcial = `${alvo}.part`
