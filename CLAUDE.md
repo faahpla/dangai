@@ -16,6 +16,7 @@ encerra uma cena.
 | pasta | o que é |
 |---|---|
 | `src/` | renderer — `App.tsx`, `components/`, `hooks/`, `store/` |
+| `src/store/projeto/` | o store do editor em fatias (`useProject` continua um só, em `store/project.ts`): cada arquivo é um grupo de ações — faixas, legendas, render, arquivo, fila... — e `apoio.ts` as funções puras que elas dividem |
 | `src/remotion/` | composições Remotion que geram o vídeo |
 | `electron/` | processo main e `electron/services/` |
 | `shared/` | contrato entre main e renderer: `channels.ts`, `contract.ts`, `plan.ts`, `align.ts`, `rhythm.ts`, `sfx.ts`, `selection.ts` |
