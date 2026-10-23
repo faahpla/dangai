@@ -89,7 +89,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
           </span>
         ) : relatorioCopiado ? (
           <span className="truncate text-[11px] text-ink-2">
-            Relatorio copiado. Cole no Discord para quem vai ajudar.
+            Relatório copiado. Cole no Discord para quem vai ajudar.
           </span>
         ) : error ? (
           /*
@@ -108,10 +108,10 @@ export function StatusBar({ isDragging }: StatusBarProps) {
             <button
               type="button"
               onClick={() => void copiarRelatorio()}
-              title="Copia a versao, o computador e o que o app registrou, para mandar a quem vai ajudar"
+              title="Copia a versão, o computador e o que o app anotou, para mandar a quem vai ajudar"
               className="shrink-0 rounded-sm border border-line bg-elevated px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink"
             >
-              Copiar relatorio
+              Copiar relatório
             </button>
           </span>
         ) : videoProntoSaida ? (

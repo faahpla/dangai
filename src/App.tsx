@@ -31,6 +31,7 @@ import { VIDEO_FPS } from '@shared/contract'
 import { semExtensaoDeProjeto } from '@shared/project-file'
 import { startModulos, TelasDosModulos } from '@/modulos'
 import { Pergunta } from '@/components/Pergunta'
+import { Novidades, verNovidadesAoAbrir } from '@/components/Novidades'
 import { useTelaCheia } from '@/modulos/nucleo'
 import { ouvir } from '@/modulos/ganchos'
 
@@ -133,6 +134,8 @@ export function App() {
   useEffect(() => void aplicarEstiloGuardado(), [])
   useEffect(() => void carregarBins(), [])
   useEffect(() => void checkAutosave(), [checkAutosave])
+  // Depois de atualizar: o que mudou (shared/novidades.ts).
+  useEffect(() => void verNovidadesAoAbrir(), [])
 
   /*
    * A barra de titulo da janela e o unico lugar onde cabe dizer QUAL projeto
@@ -524,6 +527,7 @@ export function App() {
       </div>
       <TelasDosModulos />
       <Pergunta />
+      <Novidades />
       <Settings />
       <Script />
       <Library />

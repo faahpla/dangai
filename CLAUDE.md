@@ -34,6 +34,10 @@ npm run dist         # instalador em release/
 
 `GH_TOKEN` (de `gh auth token`) só é necessário para **publicar** release.
 
+**Cada versão publicada tem uma entrada em `shared/novidades.ts`** (o que mudou, para quem usa;
+aparece numa janelinha depois de atualizar). Escreva antes do `npm version`: o `v-novidades`
+falha sem ela, e o GitHub não publica com teste falhando.
+
 Ambiente: Node 24, ffmpeg 9 no PATH. Ver `E:\Projetos\COMO-RODAR.md`.
 
 ## Módulos (o Gerar recap do Levi)

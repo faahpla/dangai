@@ -54,7 +54,7 @@ process.on('uncaughtException', (err) => {
       title: 'Dangai',
       message: 'Deu um erro inesperado no Dangai.',
       detail: err.stack ?? String(err),
-      buttons: ['OK', 'Copiar relatorio'],
+      buttons: ['OK', 'Copiar relatório'],
       defaultId: 0,
       noLink: true,
     })

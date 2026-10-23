@@ -18,12 +18,14 @@ import {
   Undo2,
   Redo2,
   LifeBuoy,
+  Gift,
   type LucideIcon,
   Sparkles,
 } from 'lucide-react'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { copiarRelatorio } from '@/store/relatorio'
+import { abrirNovidades } from '@/components/Novidades'
 import { desfazer, podeDesfazer, podeRefazer, refazer } from '@/store/undo'
 import { comandosDosModulos, useModulosLigados } from '@/modulos'
 
@@ -342,10 +344,16 @@ function useCommands(): Command[] {
       },
       {
         id: 'relatorio',
-        label: 'Copiar relatorio para o suporte',
+        label: 'Copiar relatório para o suporte',
         hint: 'versao, computador e o que deu errado',
         icon: LifeBuoy,
         run: () => void copiarRelatorio(),
+      },
+      {
+        id: 'novidades',
+        label: 'O que mudou nesta versão',
+        icon: Gift,
+        run: abrirNovidades,
       },
       {
         id: 'reset',
