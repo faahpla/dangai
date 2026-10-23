@@ -1,0 +1,43 @@
+name: testes
+
+# OS TESTES DO NUCLEO no GitHub, em dois momentos:
+#
+# - a cada push no main. Dois donos empurram direto, sem PR (o Faah e o Levi):
+#   quem quebrou fica sabendo pelo e-mail do GitHub na hora, e nao pelo ajk
+#   dias depois;
+# - antes de cada versao sair: o release.yml chama este arquivo e so empacota
+#   se ele passar. Versao com teste quebrado nao chega em ninguem.
+#
+# O comando e o mesmo da maquina de casa: `npm run typecheck` e `npm test`
+# (scripts/testar.mjs).
+
+on:
+  push:
+    branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: 'O que testar (a tag da versao)'
+        type: string
+        required: false
+
+jobs:
+  testes:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test

@@ -56,7 +56,7 @@ por commit. Antes de cada push: `git pull --rebase`, `npm run typecheck` e os te
   desce sob a voz pelo envelope das palavras do transcript (`shared/ducking.ts`),
   o mesmo no preview e no render; sem ele, nada muda (`v-som-mix.ts`).
 
-Testes: `npx tsx --tsconfig tsconfig.node.json scripts/teste/v-<nome>.ts`.
+Testes: `npx tsx --tsconfig tsconfig.node.json scripts/teste/v-<nome>.ts`. Todos de uma vez: `npm test` (scripts/testar.mjs). O GitHub roda `typecheck` + `npm test` a cada push no `main` e antes de cada versao (`.github/workflows/testes.yml`, chamado pelo `release.yml`): teste quebrado nao publica.
 
 **Os ganchos** (fase 2). Um módulo só fala com o núcleo por aqui; o núcleo só conhece
 o módulo pelos três arquivos de registro, uma linha por módulo:

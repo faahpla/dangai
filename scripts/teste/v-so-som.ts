@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ErroSoSom, probeClip } from '../../electron/services/clips.ts'
+import { ffmpegPath } from '../../electron/services/ffmpeg-path.ts'
 import { configureSobreposicao, prepararSobreposicao } from '../../electron/services/sobreposicao.ts'
 
 let falhas = 0
@@ -17,7 +18,8 @@ const ok = (nome: string, c: boolean, d = ''): void => {
   if (!c) falhas++
 }
 const ff = (args: string[]): void => {
-  execFileSync('ffmpeg', ['-v', 'error', '-y', ...args])
+  // O ffmpeg do app (ffmpeg-static), e nao o do PATH: no GitHub nao ha outro.
+  execFileSync(ffmpegPath, ['-v', 'error', '-y', ...args])
 }
 
 async function principal(): Promise<void> {

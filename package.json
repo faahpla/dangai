@@ -10,6 +10,7 @@
     "build": "npm run typecheck && electron-vite build && npm run remotion:bundle",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node scripts/testar.mjs",
     "sfx": "node --experimental-strip-types scripts/make-sfx.ts",
     "icon": "node --experimental-strip-types scripts/make-icon.ts",
     "pack": "npm run build && electron-builder --dir",
