@@ -237,7 +237,7 @@ for (const [nome, arquivo] of Object.entries(leitores)) {
   ok(`${nome}: le a lista e nunca a libraryDir direto`, lista > 0 && lista === varre && !direto)
 }
 const ipc = readFileSync(join(repo, 'electron/ipc.ts'), 'utf8')
-ok('ipc.ts: os tres handlers (scan, tag, describe) passam pela lista', (ipc.match(/raizesDaBiblioteca\(\)/g)?.length ?? 0) === 3)
+ok('ipc.ts: os quatro handlers (scan, series, tag, describe) passam pela lista', (ipc.match(/raizesDaBiblioteca\(\)/g)?.length ?? 0) === 4)
 
 rmSync(tmp, { recursive: true, force: true })
 console.log(falhas === 0 ? '\nTudo certo.' : `\n${falhas} falha(s).`)
