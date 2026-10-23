@@ -6,7 +6,7 @@ import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legend
 import { carregarBins } from '@/store/bins'
 import { Bins } from '@/components/Bins'
 import { Divisor } from '@/components/Divisor'
-import { LAYOUT_PADRAO, useConsoleFx, useFerramenta, useIma, useLayout } from '@/store/layout'
+import { LAYOUT_PADRAO, useConsoleFx, useFerramenta, useIma, useLayout, useVisorCheio } from '@/store/layout'
 import { ConsoleFx } from '@/components/ConsoleFx'
 import { useRecentes } from '@/store/recentes'
 import { acaoDoCombo, comboDoEvento, ehTeclaSolta, useAtalhos } from '@/store/atalhos'
@@ -180,6 +180,23 @@ export function App() {
       const rendering = store.phase() === 'rendering'
       const combo = comboDoEvento(event)
       const acao = combo ? acaoDoCombo(combo) : null
+
+      /*
+       * ASSISTINDO EM TELA CHEIA: so o que e de assistir passa (tocar, andar
+       * na agulha) e salvar. Esc ou F fecham. O resto fica quieto -- um X ali
+       * apagaria um bloco que ninguem esta vendo.
+       */
+      if (useVisorCheio.getState().aberto) {
+        if (event.key === 'Escape' || acao === 'visorCheio') {
+          event.preventDefault()
+          useVisorCheio.getState().fechar()
+          return
+        }
+        const deAssistir: readonly (string | null)[] = [
+          'tocar', 'quadroAnterior', 'quadroSeguinte', 'corteAnterior', 'corteSeguinte', 'inicio', 'fim', 'salvar', 'salvarComo',
+        ]
+        if (!deAssistir.includes(acao)) return
+      }
 
       // A paleta e os modais tratam o proprio teclado; enquanto abertos, os
       // atalhos globais ficam quietos para nao disparar por baixo.
@@ -400,6 +417,9 @@ export function App() {
           break
         case 'configuracoes':
           store.openSettings(!store.settingsOpen)
+          break
+        case 'visorCheio':
+          if (store.audio && store.images.length > 0) useVisorCheio.getState().alternar()
           break
       }
     }

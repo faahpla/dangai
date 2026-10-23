@@ -41,6 +41,7 @@ export const ACOES = [
   { id: 'bins', nome: 'Bins', grupo: 'Telas', padrao: [] },
   { id: 'consoleFx', nome: 'FX Console (buscar nas bins)', grupo: 'Telas', padrao: ['Ctrl+Space'] },
   { id: 'configuracoes', nome: 'Configuracoes', grupo: 'Telas', padrao: ['Ctrl+,'] },
+  { id: 'visorCheio', nome: 'Assistir em tela cheia', grupo: 'Telas', padrao: ['F'] },
 ] as const satisfies readonly { id: string; nome: string; grupo: string; padrao: readonly string[] }[]
 
 export type Acao = (typeof ACOES)[number]['id']

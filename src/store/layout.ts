@@ -88,6 +88,18 @@ export const useVisor = create<{ zoom: number; definir: (zoom: number) => void }
   },
 }))
 
+/**
+ * ASSISTIR EM TELA CHEIA: o preview do tamanho da janela, por cima de tudo. O
+ * video e em pe, e a altura e o que limita o visor -- ao lado da linha do tempo
+ * ele mede uns 600 px; aqui, a janela inteira. Tecla F (ou o botao no canto do
+ * preview) abre e fecha; Esc fecha. Nao fica guardado: e um jeito de olhar.
+ */
+export const useVisorCheio = create<{ aberto: boolean; alternar: () => void; fechar: () => void }>((set, get) => ({
+  aberto: false,
+  alternar: () => set({ aberto: !get().aberto }),
+  fechar: () => set({ aberto: false }),
+}))
+
 function lerIma(): boolean {
   try {
     return localStorage.getItem('dangai.ima') !== 'nao'

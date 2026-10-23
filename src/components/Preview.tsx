@@ -8,7 +8,8 @@ import { useProject } from '@/store/project'
 import { useAjusteDasFaixas, useDucking } from './som-do-preview'
 import { Video } from '@/remotion/Video'
 import { TransformNoPreview } from './TransformNoPreview'
-import { useVisor, ZOOM_DO_VISOR_MIN } from '@/store/layout'
+import { useVisor, useVisorCheio, ZOOM_DO_VISOR_MIN } from '@/store/layout'
+import { Maximize2, Minimize2, Pause, Play } from 'lucide-react'
 import { create } from 'zustand'
 
 /*
@@ -36,7 +37,10 @@ function useTocando(): boolean {
  * O plano vem de shared/plan, tambem o mesmo que o main usa no render.
  */
 export function Preview() {
-  const zoomDoVisor = useVisor((s) => s.zoom)
+  const cheio = useVisorCheio((s) => s.aberto)
+  // Em tela cheia o quadro ocupa o visor inteiro: a margem do zoom e para as
+  // alcas de um insert, e ali nao se edita.
+  const zoomDoVisor = useVisor((s) => (cheio ? 1 : s.zoom))
   const quadroRef = useRef<HTMLDivElement | null>(null)
   const visorRef = useRef<HTMLDivElement | null>(null)
   // Ctrl+roda no preview: o zoom do visor (a roda sozinha, em cima de um
@@ -219,6 +223,17 @@ export function Preview() {
 
   return (
     /*
+     * A MOLDURA DA TELA CHEIA. Fechada, ela nao existe para o layout
+     * ('contents'); aberta, cobre o editor. O visor continua o MESMO elemento
+     * nos dois jeitos -- trocar de pai remontaria o Player e a imagem piscaria.
+     * O tamanho sai do espaco que sobra acima da barra (o miolo flex-1), e nao
+     * da janela: o editor e quem contem a moldura.
+     */
+    <div
+      className={cheio ? 'fixed inset-0 z-[60] flex flex-col items-center gap-3 bg-black px-6 pt-6 pb-4' : 'contents'}
+    >
+    <div className={cheio ? 'flex min-h-0 w-full flex-1 items-center justify-center' : 'contents'}>
+    {/*
      * A CAIXA TEM O FORMATO DO PROJETO, e o eixo que manda muda com ele.
      *
      * No vertical a altura manda e a largura sai do aspecto -- o preview em pe
@@ -226,16 +241,18 @@ export function Preview() {
      * um jeito ruim: um 16:9 com a altura da coluna mediria quase setecentos
      * pixels de largura e comeria a area de edicao inteira. Ali quem manda e a
      * largura, presa numa faixa, e a altura sai dela.
-     */
+     */}
     <div
       ref={visorRef}
-      style={{ aspectRatio: `${quadro.width} / ${quadro.height}` }}
+      style={{
+        aspectRatio: `${quadro.width} / ${quadro.height}`,
+        // Na tela cheia: o maior que couber no miolo.
+        ...(cheio ? { height: '100%', maxWidth: '100%' } : {}),
+      }}
       className={[
         'relative shrink-0 overflow-hidden rounded-md border border-line',
         zoomDoVisor < 1 ? 'bg-bg' : 'bg-surface',
-        quadro.width > quadro.height
-          ? 'w-[clamp(320px,32vw,560px)] self-start'
-          : 'h-full',
+        cheio ? '' : quadro.width > quadro.height ? 'w-[clamp(320px,32vw,560px)] self-start' : 'h-full',
       ].join(' ')}
     >
       {images.length > 0 && audio ? (
@@ -271,8 +288,17 @@ export function Preview() {
             />
           </div>
           {/* A caixa do insert escolhido: mover, escalar e girar no proprio preview. */}
-          <TransformNoPreview quadroRef={quadroRef} />
-          <ZoomDoVisor />
+          {!cheio && <TransformNoPreview quadroRef={quadroRef} />}
+          {!cheio && <ZoomDoVisor />}
+          {/* Na tela cheia, clicar no video toca e pausa, como num player. */}
+          {cheio && (
+            <button
+              type="button"
+              aria-label="Tocar ou pausar"
+              className="absolute inset-0 z-10 cursor-default"
+              onClick={() => useProject.getState().togglePlay()}
+            />
+          )}
           {/*
             A narracao toca por fora da composicao porque o Remotion entrega
             video puro e o audio so entra no mux -- ver Video.tsx.
@@ -289,9 +315,72 @@ export function Preview() {
         </div>
       )}
 
-      <span className="tnum pointer-events-none absolute bottom-2 right-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
-        {quadro.width} x {quadro.height}
+      {!cheio && (
+        <span className="tnum pointer-events-none absolute bottom-2 right-2 rounded-[6px] bg-black/60 px-1.5 py-0.5 text-[10px] text-white/70">
+          {quadro.width} x {quadro.height}
+        </span>
+      )}
+      {!cheio && images.length > 0 && audio && (
+        <button
+          type="button"
+          onClick={() => useVisorCheio.getState().alternar()}
+          title="Assistir em tela cheia (F)"
+          aria-label="Assistir em tela cheia"
+          className="absolute right-2 top-2 z-20 grid h-6 w-6 place-items-center rounded-[6px] bg-black/60 text-white/70 hover:text-white"
+        >
+          <Maximize2 size={12} strokeWidth={1.75} />
+        </button>
+      )}
+    </div>
+    </div>
+    {cheio && <BarraDaTelaCheia duracaoSec={durationInFrames / VIDEO_FPS} />}
+    </div>
+  )
+}
+
+/**
+ * A BARRA DE BAIXO da tela cheia: tocar/pausar, o tempo, a agulha (arrastar
+ * anda no video) e sair. O teclado continua valendo: espaco, setas, Esc.
+ */
+function BarraDaTelaCheia({ duracaoSec }: { duracaoSec: number }) {
+  const playing = useProject((s) => s.playing)
+  const playhead = useProject((s) => s.playhead)
+  const relogio = (t: number): string => {
+    const s = Math.max(0, Math.floor(t))
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  }
+  return (
+    <div className="flex w-full max-w-[720px] shrink-0 items-center gap-3 text-white/80">
+      <button
+        type="button"
+        onClick={() => useProject.getState().togglePlay()}
+        aria-label={playing ? 'Pausar' : 'Tocar'}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/10 hover:bg-white/20"
+      >
+        {playing ? <Pause size={14} strokeWidth={1.75} /> : <Play size={14} strokeWidth={1.75} />}
+      </button>
+      <span className="tnum w-[88px] shrink-0 text-[12px]">
+        {relogio(playhead)} / {relogio(duracaoSec)}
       </span>
+      <input
+        type="range"
+        min={0}
+        max={duracaoSec}
+        step={1 / VIDEO_FPS}
+        value={Math.min(playhead, duracaoSec)}
+        onChange={(e) => useProject.getState().setPlayhead(Number(e.target.value))}
+        aria-label="Agulha"
+        className="dangai-range min-w-0 flex-1"
+      />
+      <button
+        type="button"
+        onClick={() => useVisorCheio.getState().fechar()}
+        title="Sair da tela cheia (Esc ou F)"
+        className="flex shrink-0 items-center gap-1.5 rounded-sm bg-white/10 px-2.5 py-1.5 text-[12px] hover:bg-white/20"
+      >
+        <Minimize2 size={12} strokeWidth={1.75} />
+        Sair
+      </button>
     </div>
   )
 }
