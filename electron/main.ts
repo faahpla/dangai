@@ -80,8 +80,15 @@ function createWindow(): void {
     })
   }
 
-  // Sem flash branco na abertura: mostra apenas quando ha algo para ver.
-  window.once('ready-to-show', () => window.show())
+  /*
+   * Sem flash branco na abertura: mostra apenas quando ha algo para ver. E ja
+   * MAXIMIZADA: "quero q agora sempre q abrir o programa ele ja abra em janela
+   * cheia". Os 1440x900 acima ficam para quando ela sai do maximizado.
+   */
+  window.once('ready-to-show', () => {
+    window.maximize()
+    window.show()
+  })
 
   // Nada de navegacao para fora da janela.
   window.webContents.setWindowOpenHandler(({ url }) => {
