@@ -32,6 +32,7 @@ import { semExtensaoDeProjeto } from '@shared/project-file'
 import { startModulos, TelasDosModulos } from '@/modulos'
 import { Pergunta } from '@/components/Pergunta'
 import { useTelaCheia } from '@/modulos/nucleo'
+import { ouvir } from '@/modulos/ganchos'
 
 /**
  * Deslizante, caixinha e botao nao tem texto para desfazer: depois de arrastar
@@ -142,6 +143,12 @@ export function App() {
   useEffect(() => {
     if (projectPath) void useRecentes.getState().lembrar(projectPath)
   }, [projectPath])
+  /*
+   * E a CADA salvar, nao so no primeiro: quem salva logo depois de soltar a
+   * narracao (ainda sem cenas) ficava com o card sem miniatura e sem blocos ate
+   * abrir o projeto de novo (o caso do ajk).
+   */
+  useEffect(() => ouvir('depoisDeSalvar', ({ path }) => void useRecentes.getState().lembrar(path)), [])
 
   useEffect(() => {
     const arquivo = projectPath?.split(/[\\/]/).pop()
