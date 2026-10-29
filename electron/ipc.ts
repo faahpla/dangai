@@ -96,6 +96,8 @@ import { alinharAoAudio } from './services/alinhador'
 import { checkForUpdateNow, installUpdate } from './services/updater'
 import { handle } from './handle'
 import { montarRelatorio } from './services/registro'
+import { componentesDoDangai, prepararDangai } from './services/preparar'
+import type { ComponenteDoDangai } from '@shared/channels'
 import { motivoParaNaoAtualizar } from './modulos'
 
 
@@ -747,6 +749,14 @@ export function registerIpc(): void {
     clipboard.writeText(text)
     return null
   })
+
+  handle<[], ComponenteDoDangai[]>(IPC.componentesDoDangai, async () => componentesDoDangai())
+
+  handle<[], ComponenteDoDangai[]>(IPC.prepararDangai, async () =>
+    prepararDangai((p) => {
+      for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send(IPC.prepararProgresso, p)
+    }),
+  )
 
   handle<[Record<string, string>], null>(IPC.copiarRelatorio, async (tela) => {
     clipboard.writeText(textoDoRelatorio(tela))

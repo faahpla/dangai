@@ -15,6 +15,7 @@ import { classifyFile } from "@shared/channels";
 import { useRecentes } from "@/store/recentes";
 import { FORMATOS, medidasDo, type Formato } from "@shared/contract";
 import { CartaoRecente, rotulosDoRecente } from "./CartaoRecente";
+import { PrepararODangai } from "./PrepararODangai";
 
 interface DropzoneProps {
   isDragging: boolean;
@@ -108,6 +109,7 @@ export function Dropzone({ isDragging }: DropzoneProps) {
           </div>
         </div>
         <Recuperar />
+        <PrepararODangai />
       </div>
       <Recentes />
     </div>

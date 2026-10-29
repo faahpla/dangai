@@ -392,6 +392,29 @@ async function resolveBrowser(onProgress: ProgressSink): Promise<string | null> 
   }
 }
 
+/**
+ * O navegador do render ja baixado? Ele mora em <userData>/.remotion -- o cwd
+ * do main e o userData (ver main.ts), e o Remotion guarda ao lado dele.
+ */
+export function navegadorDoRenderPronto(): boolean {
+  return existsSync(join(process.cwd(), '.remotion', 'chrome-headless-shell'))
+}
+
+/** Aproximado (o Chrome Headless Shell do Remotion), so para a tela dizer o tamanho. */
+export const TAMANHO_DO_NAVEGADOR_MB = 113
+
+/** Baixa ja, sem renderizar: o "Preparar o Dangai" da tela inicial. */
+export async function prepararNavegadorDoRender(onProgress: (mensagem: string) => void): Promise<void> {
+  await ensureBrowser({
+    onBrowserDownload: () => ({
+      version: null,
+      onProgress: ({ percent, alreadyAvailable }) => {
+        if (!alreadyAvailable) onProgress(`Baixando o navegador do render... ${Math.round(percent * 100)}%`)
+      },
+    }),
+  })
+}
+
 function findInstalledBrowser(): string | null {
   const candidates =
     process.platform === 'win32'

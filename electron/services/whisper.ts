@@ -508,7 +508,30 @@ export function parseWhisperJson(raw: string): Transcript {
  * Baixa binario e modelo na primeira vez. Sem internet devolve false e o app
  * segue pelo fallback de silencio -- transcrever e um ganho, nao um requisito.
  */
-async function tryInstall(
+/**
+ * Uma instalacao por vez, compartilhada: o "Preparar o Dangai" e uma
+ * transcricao pedindo juntos brigariam pelo mesmo .part.
+ */
+let instalando: Promise<boolean> | null = null
+
+function tryInstall(model: Settings['whisperModel'], onProgress: WhisperProgress): Promise<boolean> {
+  instalando ??= instalar(model, onProgress).finally(() => {
+    instalando = null
+  })
+  return instalando
+}
+
+/** Baixa ja, sem transcrever nada: o "Preparar o Dangai" da tela inicial. */
+export function prepararWhisper(model: Settings['whisperModel'], onProgress: WhisperProgress): Promise<boolean> {
+  return isWhisperReady(model) ? Promise.resolve(true) : tryInstall(model, onProgress)
+}
+
+/** Quanto o modelo pesa, para a tela dizer o tamanho antes de baixar. */
+export function tamanhoDoWhisperMb(model: Settings['whisperModel']): number {
+  return MODEL_SIZE_MB[model]
+}
+
+async function instalar(
   model: Settings['whisperModel'],
   onProgress: WhisperProgress,
 ): Promise<boolean> {

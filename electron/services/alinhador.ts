@@ -95,6 +95,13 @@ async function garantirModelo(onProgress: AlinhadorProgresso): Promise<void> {
   await baixando
 }
 
+/** Baixa ja, sem alinhar nada: o "Preparar o Dangai" da tela inicial. */
+export function prepararAlinhador(onProgress: AlinhadorProgresso): Promise<void> {
+  return garantirModelo(onProgress)
+}
+
+export const TAMANHO_DO_ALINHADOR_MB = MODEL_MB
+
 /** .part e rename so no fim: download interrompido nao passa por modelo pronto. */
 async function baixar(url: string, alvo: string, onMb: (mb: number) => void): Promise<void> {
   const resposta = await fetch(url, { redirect: 'follow' })

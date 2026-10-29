@@ -53,6 +53,9 @@ export const IPC = {
   testarGemini: 'ia:testar-gemini',
   copyText: 'clipboard:write',
   copiarRelatorio: 'app:copiar-relatorio',
+  componentesDoDangai: 'preparar:estado',
+  prepararDangai: 'preparar:baixar',
+  prepararProgresso: 'preparar:progresso',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
   cancelAnalyze: 'plan:cancel',
@@ -397,6 +400,26 @@ export interface ScriptBlock {
    * trocar a lista de blocos por uma arvore.
    */
   sentence: number
+}
+
+/** Um dos downloads da primeira vez (electron/services/preparar.ts). */
+export interface ComponenteDoDangai {
+  id: 'whisper' | 'sincronizador' | 'navegador'
+  nome: string
+  /** Para que serve, em uma linha. */
+  para: string
+  /** Tamanho aproximado do download. */
+  mb: number
+  pronto: boolean
+}
+
+/** Como vai o "Preparar o Dangai". */
+export interface PreparoDoDangai {
+  id: ComponenteDoDangai['id']
+  mensagem: string
+  /** Qual dos que faltavam (1, 2, 3) e de quantos. */
+  passo: number
+  de: number
 }
 
 export interface ScriptBlocksResult {
@@ -787,6 +810,11 @@ export interface DangaiBridge {
    * que a janela manda aqui) e o fim do registro do app (electron/services/registro.ts).
    */
   copiarRelatorio(tela: Record<string, string>): Promise<IpcResult<null>>
+  /** O que o Dangai baixa na primeira vez, e o que ja esta aqui. */
+  componentesDoDangai(): Promise<IpcResult<ComponenteDoDangai[]>>
+  /** Baixa tudo o que falta, um de cada vez; devolve como ficou. */
+  prepararDangai(): Promise<IpcResult<ComponenteDoDangai[]>>
+  onPrepararProgresso(listener: (p: PreparoDoDangai) => void): () => void
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>
   cancelRender(): Promise<IpcResult<null>>
