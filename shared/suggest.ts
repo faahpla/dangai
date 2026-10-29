@@ -60,6 +60,52 @@ export function seriesDoRoteiro(ctx: ContextoDeSugestao): string[] {
 }
 
 /**
+ * O anime em que a Biblioteca deve ABRIR para este roteiro, ou null.
+ *
+ * Nome de personagem colide entre series: o roteiro da Kiwi cita Kiwi,
+ * Rebecca, David e Lucy -- e existe uma Lucy em Mushoku Tensei. Pela lista de
+ * `seriesDoRoteiro` eram duas series, e a Biblioteca abria em "Todos", com 52
+ * mil cenas. Vale a serie com MAIS personagens citados (Cyberpunk, 4 a 1). No
+ * empate, desempata o nome do anime escrito no roteiro ("...EM CYBERPUNK?");
+ * sem nenhum personagem citado, o nome sozinho decide. Ainda empatado: null.
+ */
+export function serieDoRoteiro(ctx: ContextoDeSugestao): string | null {
+  if (ctx.blocks.length === 0) return null
+  const index = buildScriptIndex(ctx.characters, ctx.nicknames)
+  const linhas = readScript(
+    ctx.blocks.map((b) => b.text),
+    index,
+  )
+  const citados = new Set(linhas.flatMap((l) => l.matches.map((m) => m.character)))
+
+  const porSerie = new Map<string, Set<string>>()
+  for (const clip of ctx.clips) {
+    for (const c of clip.characters) {
+      if (!citados.has(c)) continue
+      const tem = porSerie.get(clip.anime) ?? new Set<string>()
+      tem.add(c)
+      porSerie.set(clip.anime, tem)
+    }
+  }
+
+  // O anime escrito no texto: alguma palavra longa do nome dele ("Cyberpunk",
+  // "Apothecary", "Mushoku"), sem caixa e sem acento.
+  const plano = (t: string): string => t.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase()
+  const texto = plano(ctx.blocks.map((b) => b.text).join(' '))
+  const escrito = (serie: string): boolean =>
+    plano(serie)
+      .split(/[^a-z0-9]+/)
+      .some((p) => p.length >= 5 && new RegExp(`\\b${p}\\b`).test(texto))
+
+  const ranking = [...porSerie].map(([serie, quem]) => ({ serie, quantos: quem.size })).sort((a, b) => b.quantos - a.quantos)
+  const topo = ranking.filter((r) => r.quantos === (ranking[0]?.quantos ?? 0))
+  if (topo.length === 1) return topo[0]!.serie
+  const candidatas = topo.length > 1 ? topo.map((r) => r.serie) : [...new Set(ctx.clips.map((c) => c.anime))]
+  const comNome = candidatas.filter(escrito)
+  return comNome.length === 1 ? comNome[0]! : null
+}
+
+/**
  * Quem o trecho cita, na ordem de confianca do leitor.
  *
  * E a mesma leitura que alimenta as sugestoes -- no contexto do roteiro

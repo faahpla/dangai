@@ -23,7 +23,7 @@ import {
   MAIS_SUGESTOES,
   SUGESTOES,
   personagensDoBloco,
-  seriesDoRoteiro,
+  serieDoRoteiro,
   sugerirParaBloco,
 } from '@shared/suggest'
 import type { SelectionCandidate } from '@shared/selection'
@@ -357,9 +357,10 @@ export function Library() {
   /*
    * Abrir ja no anime que o roteiro cita.
    *
-   * Só quando a deducao aponta para UMA serie: roteiro que mistura duas -- ou
-   * que nao cita ninguem -- nao pre-seleciona nada, porque escolher errado por
-   * ele custaria mais do que nao escolher. E acontece uma vez so, entao clicar
+   * Só quando a deducao aponta UMA serie (serieDoRoteiro: a com mais
+   * personagens citados, desempatada pelo nome do anime no texto): roteiro que
+   * mistura duas por igual -- ou que nao cita ninguem -- nao pre-seleciona
+   * nada, porque escolher errado por ele custaria mais do que nao escolher. E acontece uma vez so, entao clicar
    * em "Todos" ou em outro episodio vale a partir dali.
    */
   /*
@@ -375,8 +376,8 @@ export function Library() {
     const trava = transcript ?? contexto?.blocks
     if (!open || !contexto || preSelecionadoPara.current === trava) return
     preSelecionadoPara.current = trava
-    const series = seriesDoRoteiro(contexto)
-    if (series.length === 1) setAnime(series[0]!)
+    const serie = serieDoRoteiro(contexto)
+    if (serie) setAnime(serie)
   }, [open, contexto, transcript])
 
   const favoritosSet = useMemo(() => new Set(favorites), [favorites])
