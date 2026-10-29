@@ -18,7 +18,9 @@ import {
   House,
   Sparkle,
   Library as LibraryIcon,
+  Wand2,
 } from 'lucide-react'
+import { aplicarMeuJeito, resumoDoPerfil, useMeuJeito } from '@/store/meu-jeito'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import {
   aplicarPreset,
@@ -208,6 +210,7 @@ export function RenderBar() {
 
   const isRendering = render !== null
   const canRender = Boolean(audio) && images.length > 0
+  const busy = useProject((s) => s.busy)
   const barra = useRef<HTMLDivElement>(null)
   const naoCabe = useNaoCabe(barra)
 
@@ -302,6 +305,8 @@ export function RenderBar() {
           <span className="group-data-[compacto]/barra:hidden">Bins</span>
         </button>
       )}
+
+      {!isRendering && <BotaoDoMeuJeito desligado={!canRender || busy !== null} />}
 
       {captionCount > 0 && !isRendering && !formatoLongo && (
         <button
@@ -402,6 +407,29 @@ export function RenderBar() {
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * "DO MEU JEITO": abertura, musica, sons nos cortes e a cor dele, aprendidos
+ * dos projetos (shared/meu-jeito.ts), num clique. O title diz o que ele
+ * aprendeu; rodar de novo troca so o que o botao mesmo pos.
+ */
+function BotaoDoMeuJeito({ desligado }: { desligado: boolean }) {
+  const perfil = useMeuJeito((s) => s.perfil)
+  const carregar = useMeuJeito((s) => s.carregar)
+  useEffect(() => void carregar(), [carregar])
+  return (
+    <button
+      type="button"
+      onClick={() => void aplicarMeuJeito()}
+      disabled={desligado}
+      title={resumoDoPerfil(perfil)}
+      className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink disabled:opacity-40"
+    >
+      <Wand2 size={12} strokeWidth={1.5} className="text-accent" />
+      <span className="group-data-[compacto]/barra:hidden">Do meu jeito</span>
+    </button>
   )
 }
 

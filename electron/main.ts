@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { readdirSync } from 'node:fs'
 import { registerIpc, textoDoRelatorio } from './ipc'
 import { iniciarRegistro, registrar } from './services/registro'
+import { aprenderDasPastas, configureMeuJeito } from './services/meu-jeito'
 import { startMediaServer } from './services/media-server'
 import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
@@ -186,6 +187,7 @@ app.whenReady().then(async () => {
   process.chdir(userData)
 
   configureSettings(userData)
+  configureMeuJeito(userData)
   // O autosave mora no userData e nao ao lado do projeto: ele precisa existir
   // mesmo antes de haver um projeto com pasta propria.
   configureProjects(userData)
@@ -267,6 +269,8 @@ app.whenReady().then(async () => {
   })
   createWindow()
   void ligarModulosNoInicio()
+  // O "Do meu jeito" le os projetos que ainda nao conhece, sem atrasar a janela.
+  setTimeout(() => void aprenderDasPastas().catch((err: unknown) => console.warn('[meu-jeito] varredura:', err)), 5000)
 
   // Com catch: sem ele, uma falha aqui vira UnhandledPromiseRejection no
   // stdout do processo main -- que ninguem le -- e a atualizacao simplesmente

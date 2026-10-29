@@ -18,6 +18,7 @@ import {
   Undo2,
   Redo2,
   LifeBuoy,
+  Wand2,
   Gift,
   type LucideIcon,
   Sparkles,
@@ -26,6 +27,7 @@ import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { copiarRelatorio } from '@/store/relatorio'
 import { abrirNovidades } from '@/components/Novidades'
+import { aplicarMeuJeito } from '@/store/meu-jeito'
 import { desfazer, podeDesfazer, podeRefazer, refazer } from '@/store/undo'
 import { comandosDosModulos, useModulosLigados } from '@/modulos'
 
@@ -348,6 +350,14 @@ function useCommands(): Command[] {
         hint: 'versão, computador e o que deu errado',
         icon: LifeBuoy,
         run: () => void copiarRelatorio(),
+      },
+      {
+        id: 'meu-jeito',
+        label: 'Fazer do meu jeito (sons, música e cor)',
+        hint: 'aprendido dos seus vídeos',
+        icon: Wand2,
+        disabled: !pronto || rendering,
+        run: () => void aplicarMeuJeito(),
       },
       {
         id: 'novidades',

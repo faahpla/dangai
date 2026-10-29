@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { copiarRelatorio, useRelatorioCopiado } from '@/store/relatorio'
+import { useAviso } from '@/store/aviso'
 import { RELEASES_URL } from '@shared/channels'
 import type { PlanOrigin } from '@shared/contract'
 
@@ -48,6 +49,7 @@ export function StatusBar({ isDragging }: StatusBarProps) {
   const videoProntoSaida = useProject((s) => s.videoProntoSaida)
   const cancelarVideoPronto = useProject((s) => s.cancelarVideoPronto)
   const relatorioCopiado = useRelatorioCopiado((s) => s.copiado)
+  const aviso = useAviso((s) => s.texto)
 
   // So o nome do arquivo: o caminho inteiro e ruido, e o botao "Abrir pasta"
   // esta a um clique de distancia.
@@ -86,6 +88,10 @@ export function StatusBar({ isDragging }: StatusBarProps) {
           <span className="flex items-center gap-2 text-[11px] text-ink-2">
             <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" />
             {busy}
+          </span>
+        ) : aviso ? (
+          <span className="truncate text-[11px] text-ink-2" title={aviso}>
+            {aviso}
           </span>
         ) : relatorioCopiado ? (
           <span className="truncate text-[11px] text-ink-2">

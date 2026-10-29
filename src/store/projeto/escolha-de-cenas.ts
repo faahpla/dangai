@@ -80,15 +80,58 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
     }
 
     set({ busy: `Trazendo ${uteis.length} cenas...` })
-    const importadas = await window.dangai.importImages(uteis.map((b) => b.candidates[0]!.path))
-    if (!importadas.ok) {
-      set({ busy: null, error: importadas.error })
+    /*
+     * CLIPE QUE NAO ABRE vira a PROXIMA SUGESTAO do mesmo bloco, e o resto
+     * segue. Antes um clipe preto da biblioteca (o 0440.mp4, 10/2026) jogava
+     * fora as 34 cenas escolhidas. Ate tres tentativas por bloco; sem nenhuma
+     * que abra, o bloco sai e o vizinho de antes estica ate o proximo.
+     */
+    const escolha = uteis.map(() => 0)
+    const imagens: (ImageAsset | null)[] = uteis.map(() => null)
+    const pulados: string[] = []
+    let faltam = uteis.map((_, i) => i)
+    for (let rodada = 0; rodada < 3 && faltam.length > 0; rodada++) {
+      const r = await window.dangai.importImagesPulando(faltam.map((i) => uteis[i]!.candidates[escolha[i]!]!.path))
+      if (!r.ok) {
+        set({ busy: null, error: r.error })
+        return
+      }
+      const deNovo: number[] = []
+      faltam.forEach((i, k) => {
+        const img = r.value.imagens[k]
+        if (img) {
+          imagens[i] = img
+          return
+        }
+        pulados.push(uteis[i]!.candidates[escolha[i]!]!.path.split(/[\\/]/).pop() ?? '?')
+        escolha[i]! += 1
+        if (uteis[i]!.candidates[escolha[i]!]) deNovo.push(i)
+      })
+      faltam = deNovo
+    }
+    // A fita de cada bloco passa a comecar pela cena que abriu (e a "trocar
+    // cena" continua dali); bloco sem nenhuma fica sem fita, como os sem cena.
+    let k = 0
+    const blocosFinais = blocks.map((b) => {
+      if (b.candidates.length === 0) return b
+      const i = k++
+      return imagens[i] ? { ...b, candidates: b.candidates.slice(escolha[i]) } : { ...b, candidates: [] }
+    })
+    const ficam = blocosFinais.filter((b) => b.candidates.length > 0)
+    if (ficam.length === 0) {
+      set({ busy: null, error: `Nenhuma das cenas escolhidas abriu (${pulados.slice(0, 3).join(', ')}). Confira a pasta das cenas.` })
       return
     }
+    const plano = planoDosBlocos(ficam, audio.durationSec)
+    // Bloco que saiu deixaria um buraco: quem vem antes estica ate o proximo.
+    plano.scenes.forEach((cena, i) => {
+      const proxima = plano.scenes[i + 1]
+      if (proxima) cena.end = proxima.start
+    })
 
     set({
-      images: importadas.value,
-      plan: planoDosBlocos(uteis, audio.durationSec),
+      images: imagens.filter((img): img is ImageAsset => img !== null),
+      plan: plano,
       planOrigin: 'auto',
       /*
        * Marcado como editado de proposito. O plano da montagem automatica sai
@@ -97,7 +140,7 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
        * escolheu.
        */
       planEdited: true,
-      automountBlocks: blocks,
+      automountBlocks: blocosFinais,
       automountMode: mode,
       /*
        * A transcricao vem junto da proposta, e nao de uma segunda analise.
@@ -117,6 +160,9 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       selectedScene: null,
       selecionados: [],
       busy: null,
+      error: pulados.length
+        ? `${pulados.length === 1 ? 'Uma cena não abriu' : `${pulados.length} cenas não abriram`} (${pulados.slice(0, 3).join(', ')}): usei a próxima sugestão no lugar.`
+        : null,
     })
   },
 

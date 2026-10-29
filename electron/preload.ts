@@ -35,7 +35,7 @@ import type {
 } from '@shared/contract'
 import type { OpenedProject, ProjectFile } from '@shared/project-file'
 import type { MedidaDoSom } from '@shared/loudness'
-import type { ComponenteDoDangai, PreparoDoDangai } from '@shared/channels'
+import type { ComponenteDoDangai, PerfilDoMeuJeito, PreparoDoDangai } from '@shared/channels'
 
 /**
  * Unica superficie entre renderer e sistema. Tipada por DangaiBridge, entao um
@@ -211,6 +211,11 @@ const bridge: DangaiBridge = {
   copiarRelatorio: (tela) => ipcRenderer.invoke(IPC.copiarRelatorio, tela) as Promise<IpcResult<null>>,
   componentesDoDangai: () => ipcRenderer.invoke(IPC.componentesDoDangai) as Promise<IpcResult<ComponenteDoDangai[]>>,
   prepararDangai: () => ipcRenderer.invoke(IPC.prepararDangai) as Promise<IpcResult<ComponenteDoDangai[]>>,
+  perfilDoMeuJeito: () => ipcRenderer.invoke(IPC.perfilDoMeuJeito) as Promise<IpcResult<PerfilDoMeuJeito>>,
+  importImagesPulando: (paths) =>
+    ipcRenderer.invoke(IPC.importImagesPulando, paths) as Promise<
+      IpcResult<{ imagens: (ImageAsset | null)[]; erros: { indice: number; motivo: string }[] }>
+    >,
   onPrepararProgresso: (listener) => {
     const handler = (_event: unknown, p: PreparoDoDangai): void => listener(p)
     ipcRenderer.on(IPC.prepararProgresso, handler)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Wand2, Clapperboard, Lightbulb, Library as LibraryIcon, Loader2 } from 'lucide-react'
 import { useProject } from '@/store/project'
+import { aplicarMeuJeito } from '@/store/meu-jeito'
 import type { AutomountMode } from '@shared/channels'
 
 /**
@@ -102,6 +103,28 @@ export function Automount() {
       </div>
 
       <div className="flex gap-2">
+        {/*
+          MONTAR TUDO: as cenas (o mesmo "Montar recap") e, em seguida, o "Do meu
+          jeito" -- abertura, musica, sons nos cortes e a cor. Ele so revisa e
+          troca o que nao gostou. "Seleciona o anime e ele faz o processo rapido."
+        */}
+        <button
+          type="button"
+          onClick={() =>
+            void (async () => {
+              await automount('recap', serie)
+              const s = useProject.getState()
+              if (s.plan && s.plan.scenes.length > 0 && s.images.length > 0) await aplicarMeuJeito()
+            })()
+          }
+          disabled={busy !== null}
+          title="Escolhe uma cena para cada frase (como o Montar recap) e já põe os sons, a música e a cor do seu jeito"
+          className="flex items-center gap-2 rounded-sm border border-accent bg-accent-dim px-4 py-2 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-accent/30 disabled:opacity-40"
+        >
+          <Wand2 size={14} strokeWidth={1.5} className="text-accent" />
+          Montar tudo
+        </button>
+
         {opcoes.map(({ mode, icon: Icon, label, hint }) => (
           <button
             key={mode}

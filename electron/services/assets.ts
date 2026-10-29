@@ -83,25 +83,63 @@ export async function importImages(
   sections?: readonly (ImportSection | null)[],
   onProgress?: ImportProgress,
 ): Promise<ImageAsset[]> {
+  const { imagens, erros } = await importar(paths, focus, sections, onProgress, false)
+  if (erros[0]) throw erros[0].erro
+  return imagens as ImageAsset[]
+}
+
+/**
+ * Como importImages, mas o arquivo que nao abre vira null (e o motivo vai em
+ * `erros`) em vez de derrubar a leva inteira. E o da montagem automatica: um
+ * clipe preto na biblioteca (o 0440.mp4 do Faah, 10/2026) jogava fora as 34
+ * cenas escolhidas.
+ */
+export function importImagesPulando(
+  paths: readonly string[],
+  onProgress?: ImportProgress,
+): Promise<{ imagens: (ImageAsset | null)[]; erros: { indice: number; erro: Error }[] }> {
+  return importar(paths, undefined, undefined, onProgress, true)
+}
+
+async function importar(
+  paths: readonly string[],
+  focus: readonly ImportFocus[] | undefined,
+  sections: readonly (ImportSection | null)[] | undefined,
+  onProgress: ImportProgress | undefined,
+  pular: boolean,
+): Promise<{ imagens: (ImageAsset | null)[]; erros: { indice: number; erro: Error }[] }> {
   mkdirSync(cacheDir, { recursive: true })
 
-  const saida = new Array<ImageAsset>(paths.length)
+  const saida = new Array<ImageAsset | null>(paths.length).fill(null)
+  const erros: { indice: number; erro: Error }[] = []
   let proxima = 0
   let feitos = 0
 
+  /*
+   * NADA DEPOIS DO FIM. Antes, o primeiro erro rejeitava o Promise.all na hora
+   * e os outros trabalhadores seguiam -- mandando "Preparando cena 33 de 34"
+   * DEPOIS de a janela ja ter tratado o erro, e o recado ficava preso na barra
+   * com os botoes travados. Agora cada um termina o que pegou e para; o erro
+   * (quando nao e para pular) so sai quando todos pararam.
+   */
   const trabalhar = async (): Promise<void> => {
-    while (proxima < paths.length) {
+    while (proxima < paths.length && (pular || erros.length === 0)) {
       const i = proxima++
-      // A ORDEM da saida e a da entrada, e nao a de quem terminou primeiro: ela
-      // e a ordem do video.
-      saida[i] = await importOne(paths[i]!, focus?.[i], sections?.[i] ?? null)
+      try {
+        // A ORDEM da saida e a da entrada, e nao a de quem terminou primeiro: ela
+        // e a ordem do video.
+        saida[i] = await importOne(paths[i]!, focus?.[i], sections?.[i] ?? null)
+      } catch (err) {
+        erros.push({ indice: i, erro: err instanceof Error ? err : new Error(String(err)) })
+        if (!pular) return
+      }
       feitos += 1
       onProgress?.(feitos, paths.length)
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(IMPORTE_PARALELO, paths.length) }, trabalhar))
-  return saida
+  return { imagens: saida, erros }
 }
 
 /**

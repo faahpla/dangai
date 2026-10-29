@@ -108,7 +108,15 @@ export function App() {
 
   // Andamento da analise: Whisper e a chamada da IA levam tempo e nenhum
   // carregamento pode ficar sem sinal visivel.
-  useEffect(() => window.dangai.onAnalyzeProgress((message) => setBusy(message)), [setBusy])
+  // So enquanto ha algo andando: um recado atrasado nao ressuscita o "ocupado"
+  // (o "Preparando cena 33 de 34" que ficava preso com os botoes travados).
+  useEffect(
+    () =>
+      window.dangai.onAnalyzeProgress((message) => {
+        if (useProject.getState().busy !== null) setBusy(message)
+      }),
+    [setBusy],
+  )
   useEffect(
     () => window.dangai.onVideoProntoProgress((p) => useProject.getState().setVideoProntoProgresso(p)),
     [],

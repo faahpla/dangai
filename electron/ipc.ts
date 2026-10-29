@@ -51,6 +51,7 @@ import type { MedidaDoSom } from '@shared/loudness'
 import { publish } from './services/media-server'
 import {
   importImages,
+  importImagesPulando,
   reframeImage,
   rostoNosInstantes,
   type ImportFocus,
@@ -97,7 +98,8 @@ import { checkForUpdateNow, installUpdate } from './services/updater'
 import { handle } from './handle'
 import { montarRelatorio } from './services/registro'
 import { componentesDoDangai, prepararDangai } from './services/preparar'
-import type { ComponenteDoDangai } from '@shared/channels'
+import { aprenderDoProjeto, perfilDoMeuJeito } from './services/meu-jeito'
+import type { ComponenteDoDangai, PerfilDoMeuJeito } from '@shared/channels'
 import { motivoParaNaoAtualizar } from './modulos'
 
 
@@ -141,6 +143,16 @@ export function registerIpc(): void {
     importImages(paths, focus, sections, (feitos, total) => {
       if (total > 1) broadcastAnalyze(`Preparando cena ${feitos} de ${total}...`)
     }),
+  )
+
+  handle<[readonly string[]], { imagens: (ImageAsset | null)[]; erros: { indice: number; motivo: string }[] }>(
+    IPC.importImagesPulando,
+    async (paths) => {
+      const r = await importImagesPulando(paths, (feitos, total) => {
+        if (total > 1) broadcastAnalyze(`Preparando cena ${feitos} de ${total}...`)
+      })
+      return { imagens: r.imagens, erros: r.erros.map((e) => ({ indice: e.indice, motivo: e.erro.message })) }
+    },
   )
 
   handle<[ReframeArgs], string>(IPC.reframeImage, ({ id, path, focusX, focusY }) =>
@@ -687,6 +699,8 @@ export function registerIpc(): void {
       }
 
       saveProjectFile(alvo, file)
+      // O "Do meu jeito" aprende com o que ele acabou de salvar.
+      aprenderDoProjeto(alvo, file)
       // O projeto salvo passa a ser a verdade; o autosave existia so para cobrir
       // o intervalo ate aqui.
       clearAutosave()
@@ -707,8 +721,12 @@ export function registerIpc(): void {
       alvo = result.filePaths[0]!
     }
 
-    return openProjectFile(alvo)
+    const aberto = await openProjectFile(alvo)
+    if (aberto?.path) aprenderDoProjeto(aberto.path, aberto.file)
+    return aberto
   })
+
+  handle<[], PerfilDoMeuJeito>(IPC.perfilDoMeuJeito, async () => perfilDoMeuJeito())
 
   handle<[ProjectFile, string | null], null>(
     IPC.autosaveProject,

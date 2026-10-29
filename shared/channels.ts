@@ -56,6 +56,8 @@ export const IPC = {
   componentesDoDangai: 'preparar:estado',
   prepararDangai: 'preparar:baixar',
   prepararProgresso: 'preparar:progresso',
+  perfilDoMeuJeito: 'meu-jeito:perfil',
+  importImagesPulando: 'images:import-pulando',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
   cancelAnalyze: 'plan:cancel',
@@ -421,6 +423,9 @@ export interface PreparoDoDangai {
   passo: number
   de: number
 }
+
+export type { PerfilDoMeuJeito } from './meu-jeito'
+import type { PerfilDoMeuJeito } from './meu-jeito'
 
 export interface ScriptBlocksResult {
   blocks: ScriptBlock[]
@@ -815,6 +820,13 @@ export interface DangaiBridge {
   /** Baixa tudo o que falta, um de cada vez; devolve como ficou. */
   prepararDangai(): Promise<IpcResult<ComponenteDoDangai[]>>
   onPrepararProgresso(listener: (p: PreparoDoDangai) => void): () => void
+  /** O jeito dele de editar som e cor, aprendido dos projetos (shared/meu-jeito.ts). */
+  perfilDoMeuJeito(): Promise<IpcResult<PerfilDoMeuJeito>>
+  /**
+   * Importa os clipes da montagem automatica: o que nao abre volta null, com o
+   * motivo em `erros` (pelo indice), em vez de derrubar a leva inteira.
+   */
+  importImagesPulando(paths: readonly string[]): Promise<IpcResult<{ imagens: (ImageAsset | null)[]; erros: { indice: number; motivo: string }[] }>>
   /** Resolve com o caminho do MP4, ou com null se o usuario cancelou. */
   startRender(args: StartRenderArgs): Promise<IpcResult<string | null>>
   cancelRender(): Promise<IpcResult<null>>
