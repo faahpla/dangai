@@ -284,14 +284,8 @@ export function Library() {
          * se nada acontecer, e porque nao falta nenhum.
          */
         event.preventDefault()
-        const total = blocos.length
-        for (let passo = 1; passo <= total; passo++) {
-          const i = (atual + passo) % total
-          if ((blockClips[i] ?? []).length === 0) {
-            setActiveBlock(i)
-            break
-          }
-        }
+        const i = proximoVazio(blocos.length, atual, blockClips)
+        if (i !== null) setActiveBlock(i)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -590,8 +584,30 @@ export function Library() {
       return
     }
     if (porRoteiro) {
-      const path = library?.clips.find((c) => c.id === id)?.path
-      if (path) toggleBlockClip(path)
+      const clip = library?.clips.find((c) => c.id === id)
+      if (!clip) return
+      const trecho = activeBlock
+      const jaEstava = trecho !== null && (blockClips[trecho] ?? []).includes(clip.path)
+      toggleBlockClip(clip.path)
+      /*
+       * MARCOU A CENA QUE COBRE O TRECHO: vai sozinho para o proximo vazio.
+       *
+       * Antes ele marcava e o app ficava parado no mesmo trecho; o proximo era
+       * outro clique na coluna da esquerda -- uns 54 cliques num video de 27
+       * trechos. So pula quando as cenas marcadas ja duram o trecho inteiro:
+       * com uma cena curta demais, ele ainda vai querer por outra ali. Para
+       * por uma segunda mesmo assim, e so clicar de volta no trecho.
+       */
+      if (trecho !== null && !jaEstava && blocos?.[trecho]) {
+        const duracao = new Map(library?.clips.map((c) => [c.path, c.duration]) ?? [])
+        const marcadas = [...(blockClips[trecho] ?? []), clip.path]
+        const cobre = marcadas.reduce((t, p) => t + (duracao.get(p) ?? 0), 0)
+        const trechoDura = blocos[trecho]!.end - blocos[trecho]!.start
+        if (cobre >= trechoDura - 0.05) {
+          const i = proximoVazio(blocos.length, trecho, { ...blockClips, [trecho]: marcadas })
+          if (i !== null) setActiveBlock(i)
+        }
+      }
       return
     }
     alternarEscolhido(id)
@@ -2305,6 +2321,18 @@ Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
 
     </div>
   )
+}
+
+/**
+ * O proximo trecho AINDA VAZIO depois de `de`, dando a volta no fim; null se
+ * nao falta nenhum. E o Tab da Biblioteca e o pulo depois de marcar.
+ */
+function proximoVazio(total: number, de: number, blockClips: Record<number, readonly string[]>): number | null {
+  for (let passo = 1; passo <= total; passo++) {
+    const i = (de + passo) % total
+    if ((blockClips[i] ?? []).length === 0) return i
+  }
+  return null
 }
 
 /**
