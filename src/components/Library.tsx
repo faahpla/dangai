@@ -2235,7 +2235,7 @@ Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
             onFavoritar()
           }}
           className={[
-            'absolute right-1 top-1 grid size-[20px] cursor-pointer place-items-center rounded-sm bg-black/60 transition-opacity duration-150',
+            'absolute right-1 top-1 z-10 grid size-[20px] cursor-pointer place-items-center rounded-sm bg-black/60 transition-opacity duration-150',
             favorito ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
           ].join(' ')}
         >
@@ -2262,7 +2262,7 @@ Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
               event.stopPropagation()
               onAbrir()
             }}
-            className="absolute bottom-1 left-1 grid size-[20px] cursor-pointer place-items-center rounded-sm bg-black/60 text-white opacity-0 transition-opacity duration-150 hover:bg-accent group-hover:opacity-100"
+            className="absolute bottom-1 left-1 z-10 grid size-[20px] cursor-pointer place-items-center rounded-sm bg-black/60 text-white opacity-0 transition-opacity duration-150 hover:bg-accent group-hover:opacity-100"
           >
             <Maximize2 size={11} strokeWidth={1.75} />
           </span>
@@ -2276,10 +2276,16 @@ Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
             </span>
           </>
         )}
+        {/*
+          A MOLDURA DA MARCADA nao pega clique: por cima de tudo, ela engolia o
+          da estrela -- favoritar uma cena ja escolhida desmarcava a cena. O
+          clique passa para o cartao (marcar/desmarcar) ou para a estrela e o
+          player, que ficam acima dela.
+        */}
         {marcado && (
           <>
-            <span className="absolute inset-0 border-2 border-accent bg-accent-dim/30" />
-            <span className="tnum absolute left-1 top-1 grid size-[18px] place-items-center rounded-full bg-accent text-[10px] font-semibold text-white">
+            <span className="pointer-events-none absolute inset-0 border-2 border-accent bg-accent-dim/30" />
+            <span className="tnum pointer-events-none absolute left-1 top-1 grid size-[18px] place-items-center rounded-full bg-accent text-[10px] font-semibold text-white">
               {ordem}
             </span>
           </>
