@@ -8,10 +8,14 @@
       recusada pela propria politica: o preview caia calado na Komika Axis e o
       aviso ia para um console que ninguem ve. O servidor tambem precisa
       mandar CORS para arquivo de fonte -- ver electron/services/media-server.ts.
+
+      media-src aceita data: porque o Player do Remotion destrava o som com um
+      mp3 mudo em data: (as "shared audio tags"). Recusado, ele dava 5 erros a
+      cada play no registro do app (logs/dangai.log, 10/2026).
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; media-src 'self' blob: http://127.0.0.1:*; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data: http://127.0.0.1:*; script-src 'self'"
+      content="default-src 'self'; img-src 'self' data: blob: http://127.0.0.1:*; media-src 'self' data: blob: http://127.0.0.1:*; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data: http://127.0.0.1:*; script-src 'self'"
     />
     <title>Dangai</title>
   </head>
