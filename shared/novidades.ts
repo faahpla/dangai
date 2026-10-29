@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.81.0',
+    itens: [
+      '"Do meu jeito" (barra de baixo): o Dangai aprendeu com os seus vídeos como você edita o som e a cor, e faz igual com um clique: a abertura (Illuminati / Return By Death), a música de fundo, os whooshes, stingers, shutters e risers nos cortes, e a sua camada de cor. Tudo editável, e Ctrl+Z desfaz tudo de uma vez.',
+      'Ele continua aprendendo: cada vídeo que você salva entra na conta. Passe o mouse no botão para ver o que ele aprendeu.',
+      '"Montar tudo": solte a narração e o roteiro e clique uma vez. Ele escolhe uma cena para cada frase e já põe os sons e a cor do seu jeito. Você só revisa.',
+      'Uma cena da Biblioteca que não abre (vídeo preto ou estragado) não derruba mais a montagem: ele usa a próxima sugestão no lugar e avisa qual foi.',
+    ],
+  },
+  {
     versao: '1.80.0',
     itens: [
       'Biblioteca por roteiro: ela já abre no anime do roteiro, mesmo quando um nome de personagem existe em dois animes (a "Lucy" de Cyberpunk e a de Mushoku Tensei). Para ver tudo, clique em "Todos".',
