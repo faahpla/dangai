@@ -99,6 +99,13 @@ export const recapNoProjetoSchema = z
      * (20/10): valem no lugar dos do roteiro. Ausente = os do roteiro.
      */
     sugestoesDoVideo: z.object({ titulos: z.array(z.string()), thumbs: z.array(z.string()), em: z.string() }).optional(),
+    /**
+     * A thumbnail da tela pos-render (30/10, shared/thumb.ts): layout, textos,
+     * cores, imagens e enquadramento, para reabrir e continuar. `unknown` de
+     * proposito: uma thumb que nao passa no schema dela (versao futura) nao
+     * pode derrubar o resto do recap -- quem le e o thumbDoProjeto.
+     */
+    thumb: z.unknown().optional(),
   })
   // Guarda o que nao conhece (um campo de versao futura do modulo).
   .loose()
