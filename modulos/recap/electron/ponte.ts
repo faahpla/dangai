@@ -90,6 +90,13 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     telasDoRascunho: (rascunhoId, versao) => invocar(C.telasDoRascunho, rascunhoId, versao),
     posRender: (pedido) => invocar(C.posRender, pedido),
     titulosDoVideo: (pedido) => invocar(C.titulosDoVideo, pedido),
+    sugestoesDaThumb: (pedido) => invocar(C.sugestoesDaThumb, pedido),
+    quadroDaThumb: (pedido) => invocar(C.quadroDaThumb, pedido),
+    rostosDaThumb: (pedido) => invocar(C.rostosDaThumb, pedido),
+    recorteDaThumb: (pedido) => invocar(C.recorteDaThumb, pedido),
+    salvarThumb: (pedido) => invocar(C.salvarThumb, pedido),
+    escolherImagemDaThumb: (pasta) => invocar(C.escolherImagemDaThumb, pasta),
+    upscaleDaThumb: () => invocar(C.upscaleDaThumb),
 
     statusDoMotor: () => invocar(C.statusDoMotor),
     analisarEpisodio: (pedido) => invocar(C.analisarEpisodio, pedido),

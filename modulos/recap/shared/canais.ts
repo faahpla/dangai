@@ -68,6 +68,17 @@ import type { AjustesDaVoz, BibliotecaDoFish, CampoDeChaveDaVoz, TesteDeVoz, Voz
 import type { PedidoDeTextos, PngDoTexto } from './textos-na-tela'
 import type { PedidoDeTitulos, PedidoDoPosRender, TextosDoPosRender, TitulosNovos } from './pos-render'
 import type {
+  PedidoDeQuadro,
+  PedidoDeRecorte,
+  PedidoDeSalvar,
+  PedidoDeSugestoes,
+  QuadroDaThumb,
+  RecorteDaThumb,
+  ResultadoDoSalvar,
+  RostosDoQuadro,
+  SugestoesDaThumb,
+} from './thumb'
+import type {
   AudioDoTake,
   EstimativaDeCusto,
   PedidoDeAjuste,
@@ -199,6 +210,14 @@ export const CANAIS = {
   posRender: 'recap:pos-render:abrir',
   /** "Escrever de novo" nos titulos e thumbs da tela pos-render (um pedido de IA para os dois). */
   titulosDoVideo: 'recap:pos-render:titulos',
+  /** O gerador de thumbnail da tela pos-render (shared/thumb.ts, electron/thumb.ts). */
+  sugestoesDaThumb: 'recap:thumb:sugestoes',
+  quadroDaThumb: 'recap:thumb:quadro',
+  rostosDaThumb: 'recap:thumb:rostos',
+  recorteDaThumb: 'recap:thumb:recorte',
+  salvarThumb: 'recap:thumb:salvar',
+  escolherImagemDaThumb: 'recap:thumb:escolher-imagem',
+  upscaleDaThumb: 'recap:thumb:upscale',
 
   // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
   // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
@@ -401,6 +420,23 @@ export interface PonteDoRecap {
   posRender(pedido: PedidoDoPosRender): Promise<IpcResult<TextosDoPosRender>>
   /** 3 titulos e 3 textos de thumb novos (diferentes dos `atuais`), pelo ctx.ia. */
   titulosDoVideo(pedido: PedidoDeTitulos): Promise<IpcResult<TitulosNovos>>
+  /** Thumbnail: os ~8 quadros sugeridos das cenas do video (o gancho primeiro), com os rostos. */
+  sugestoesDaThumb(pedido: PedidoDeSugestoes): Promise<IpcResult<SugestoesDaThumb>>
+  /** Thumbnail: o quadro `t` de um arquivo (cena, video pronto ou imagem), para a previa. */
+  quadroDaThumb(pedido: PedidoDeQuadro): Promise<IpcResult<QuadroDaThumb>>
+  /** Thumbnail: os rostos desse quadro (o motor; sem ele, o detector antigo). */
+  rostosDaThumb(pedido: PedidoDeQuadro): Promise<IpcResult<RostosDoQuadro>>
+  /** Thumbnail: um painel do PNG final (a janela da fonte com upscale, reduzida ao painel). */
+  recorteDaThumb(pedido: PedidoDeRecorte): Promise<IpcResult<RecorteDaThumb>>
+  /** Thumbnail: grava `<video>-thumb.png`; 'perguntar' nunca sobrescreve. */
+  salvarThumb(pedido: PedidoDeSalvar): Promise<IpcResult<ResultadoDoSalvar>>
+  /**
+   * Thumbnail: o dialogo de escolher uma imagem do PC; a imagem e COPIADA para
+   * `<pasta>/thumb` (o projeto nao depende do caminho de fora). null = desistiu.
+   */
+  escolherImagemDaThumb(pasta: string | null): Promise<IpcResult<string | null>>
+  /** Thumbnail: o modelo do upscale do nucleo esta no lugar. */
+  upscaleDaThumb(): Promise<IpcResult<boolean>>
 
   // O motor de personagens (parte 4), com os nomes do Studio.
   /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */

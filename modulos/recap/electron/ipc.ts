@@ -123,6 +123,18 @@ import { rostosDosPedacos } from './montar/rostos-motor'
 import { pngsDosTextos, telasDoRascunho } from './montar/textos'
 import { abrirPosRender, escreverTitulosEThumbs } from './pos-render'
 import { pedidoDeTitulosSchema, pedidoDoPosRenderSchema, type TextosDoPosRender, type TitulosNovos } from '../shared/pos-render'
+import { copiarParaOProjeto, quadroDaThumb, recorteDaThumb, rostosDoQuadro, salvarThumb, sugestoesDaThumb, temUpscale } from './thumb'
+import {
+  pedidoDeQuadroSchema,
+  pedidoDeRecorteSchema,
+  pedidoDeSalvarSchema,
+  pedidoDeSugestoesSchema,
+  type QuadroDaThumb,
+  type RecorteDaThumb,
+  type ResultadoDoSalvar,
+  type RostosDoQuadro,
+  type SugestoesDaThumb,
+} from '../shared/thumb'
 import { pedidoDeTextosSchema, type PedidoDeTextos, type PngDoTexto } from '../shared/textos-na-tela'
 import { registrarCanaisDoMotor } from './ipc-motor'
 import { registrarCanaisDaMigracao } from './migracao/ipc'
@@ -480,6 +492,23 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   // A tela pos-render (a do CapCut): so le o rascunho e publica o video.
   ctx.handle<[unknown], TextosDoPosRender>(C.posRender, async (pedido) => abrirPosRender(pedidoDoPosRenderSchema.parse(pedido)))
   ctx.handle<[unknown], TitulosNovos>(C.titulosDoVideo, async (pedido) => escreverTitulosEThumbs(pedidoDeTitulosSchema.parse(pedido)))
+
+  // O gerador de thumbnail (thumb.ts): le as cenas e o video, grava so o <video>-thumb.png e o cache local.
+  ctx.handle<[unknown], SugestoesDaThumb>(C.sugestoesDaThumb, async (pedido) => sugestoesDaThumb(pedidoDeSugestoesSchema.parse(pedido)))
+  ctx.handle<[unknown], QuadroDaThumb>(C.quadroDaThumb, async (pedido) => quadroDaThumb(pedidoDeQuadroSchema.parse(pedido)))
+  ctx.handle<[unknown], RostosDoQuadro>(C.rostosDaThumb, async (pedido) => rostosDoQuadro(pedidoDeQuadroSchema.parse(pedido)))
+  ctx.handle<[unknown], RecorteDaThumb>(C.recorteDaThumb, async (pedido) => recorteDaThumb(pedidoDeRecorteSchema.parse(pedido)))
+  ctx.handle<[unknown], ResultadoDoSalvar>(C.salvarThumb, async (pedido) => salvarThumb(pedidoDeSalvarSchema.parse(pedido)))
+  ctx.handle<[], boolean>(C.upscaleDaThumb, async () => temUpscale())
+  ctx.handle<[unknown], string | null>(C.escolherImagemDaThumb, async (pasta) => {
+    const r = await dialog.showOpenDialog({
+      title: 'Escolher a imagem da thumbnail',
+      properties: ['openFile'],
+      filters: [{ name: 'Imagens', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+    })
+    const escolhida = r.canceled ? null : (r.filePaths[0] ?? null)
+    return escolhida ? copiarParaOProjeto(escolhida, z.string().max(1024).nullable().parse(pasta ?? null)) : null
+  })
 }
 
 /** 'f' + numero, como Frase.id. */
