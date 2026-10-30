@@ -26,6 +26,9 @@ export interface QuadroDaCena {
   arquivo: string
   t: number
   nome: string
+  /** O trecho da cena no arquivo (o "Quadro dentro da cena" anda nele). */
+  de: number
+  ate: number
 }
 
 /** O que o video mostra no instante: a cena (e, no grid, a metade de baixo). */
@@ -49,9 +52,12 @@ export function cenaNoInstante(e: PlanoMinimo, t: number): CenaNoInstante | null
   const a = e.images[s.imageIndex]
   if (!a) return null
   const b = s.imageIndexB !== null && s.imageIndexB !== undefined ? e.images[s.imageIndexB] : undefined
+  const dur = Math.max(0, s.end - s.start)
+  const de = s.sourceStart ?? 0
+  const deB = s.sourceStartB ?? 0
   return {
-    a: { arquivo: a.path, t: (s.sourceStart ?? 0) + dentro, nome: nome(a.path) },
-    b: b ? { arquivo: b.path, t: (s.sourceStartB ?? 0) + dentro, nome: nome(b.path) } : null,
+    a: { arquivo: a.path, t: de + dentro, nome: nome(a.path), de, ate: de + dur },
+    b: b ? { arquivo: b.path, t: deB + dentro, nome: nome(b.path), de: deB, ate: deB + dur } : null,
   }
 }
 

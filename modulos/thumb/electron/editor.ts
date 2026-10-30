@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join } from 'node:path'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { basename, dirname, extname, join } from 'node:path'
 import sharp from 'sharp'
 import type { InferenceSession } from 'onnxruntime-node'
 import { ffmpegPath } from '../../../electron/services/ffmpeg-path'
@@ -190,6 +190,62 @@ async function ampliar4x(rgb: Buffer, largura: number, altura: number): Promise<
   return { rgb: saida, largura: ow, altura: oh }
 }
 
+// ------------------------------------------------- fps e quadro rapido
+
+const fpsGuardado = new Map<string, number | null>()
+
+/** Os quadros por segundo do video (o "23.98 fps" que o ffmpeg imprime); null = nao deu. */
+export function fpsDoVideo(arquivo: string): Promise<number | null> {
+  const k = arquivo.toLowerCase()
+  if (fpsGuardado.has(k)) return Promise.resolve(fpsGuardado.get(k) ?? null)
+  return new Promise((resolve) => {
+    const child = spawn(ffmpegPath, ['-nostdin', '-hide_banner', '-i', arquivo], { windowsHide: true })
+    let stderr = ''
+    child.stderr.on('data', (c: Buffer) => (stderr += c.toString()))
+    const fim = (): void => {
+      const m = /Video:.*?(\d+(?:\.\d+)?) fps/.exec(stderr)
+      const fps = m ? Number(m[1]) : null
+      const valido = fps !== null && fps > 1 && fps < 240 ? fps : null
+      fpsGuardado.set(k, valido)
+      resolve(valido)
+    }
+    child.on('error', () => resolve(null))
+    child.on('close', fim)
+  })
+}
+
+/**
+ * O QUADRO RAPIDO para o arrastar do "Quadro dentro da cena": um JPEG pequeno
+ * (480 px de largura) direto do ffmpeg, sem cache e sem PNG cheio -- so para a
+ * previa enquanto ele arrasta. Ao soltar, vale o quadro cheio (quadroDaThumb).
+ */
+export async function quadroRapido(arquivo: string, t: number): Promise<Uint8Array> {
+  if (!existsSync(arquivo)) throw new Error('O arquivo dessa imagem nao esta mais no lugar.')
+  if (IMAGENS_DA_THUMB.has(extname(arquivo).toLowerCase())) {
+    return new Uint8Array(await sharp(arquivo).rotate().resize({ width: 480 }).jpeg({ quality: 80 }).toBuffer())
+  }
+  const jpeg = await quadroPeloFfmpeg([
+    '-ss',
+    Math.max(0, t).toFixed(3),
+    '-i',
+    arquivo,
+    '-frames:v',
+    '1',
+    '-an',
+    '-vf',
+    'scale=480:-2:flags=bilinear,format=yuvj420p',
+    '-q:v',
+    '4',
+    '-f',
+    'image2pipe',
+    '-vcodec',
+    'mjpeg',
+    '-',
+  ])
+  if (jpeg.length === 0) throw new Error('Nao deu para tirar o quadro desse video.')
+  return new Uint8Array(jpeg)
+}
+
 // ---------------------------------------------------------------- a fabrica
 
 export interface OpcoesDoEditorNoMain {
@@ -268,6 +324,7 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
   async function quadroDaThumb(p: PedidoDeQuadro): Promise<QuadroDaThumb> {
     const caminho = await quadroEmCache(p.arquivo, p.t)
     const meta = await sharp(caminho).metadata()
+    const fps = IMAGENS_DA_THUMB.has(extname(p.arquivo).toLowerCase()) ? null : await fpsDoVideo(p.arquivo)
     const previa = await sharp(caminho)
       .resize({
         width: 2048,
@@ -281,6 +338,7 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
       largura: meta.width ?? 1,
       altura: meta.height ?? 1,
       previa: new Uint8Array(previa),
+      ...(fps ? { fps } : {}),
     }
   }
 
@@ -449,6 +507,7 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
       arquivo: string
       t: number
       rotulo: string
+      trecho: { de: number; ate: number }
     }
     const itens = new Map<string, Item>()
     for (const cena of cenas) {
@@ -477,6 +536,7 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
         arquivo: cena.arquivo,
         t,
         rotulo: nome.replace(/\.[^.]+$/, ''),
+        trecho: { de: cena.de, ate: cena.ate },
       })
     }
     for (const it of itens.values()) {
@@ -502,7 +562,7 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
       const it = porChave.get(e.candidato.chave)
       if (!it?.imagem) continue
       try {
-        sugestoes.push(await sugestaoDe(it.imagem, it.arquivo, it.t, e.candidato, e.nota, it.rotulo))
+        sugestoes.push(await sugestaoDe(it.imagem, it.arquivo, it.t, e.candidato, e.nota, it.rotulo, it.trecho))
       } catch {
         continue
       }
@@ -521,6 +581,7 @@ export async function sugestaoDe(
   candidato: CandidatoDaThumb,
   nota: number,
   rotulo: string,
+  trecho?: { de: number; ate: number },
 ): Promise<SugestaoDaThumb> {
   const meta = await sharp(imagem).metadata()
   const miniatura = await sharp(imagem).resize({ width: 400, height: 400, fit: 'inside' }).jpeg({ quality: 82 }).toBuffer()
@@ -534,6 +595,7 @@ export async function sugestaoDe(
     nota,
     ordem: candidato.ordem,
     miniatura: new Uint8Array(miniatura),
+    ...(trecho ? { trecho } : {}),
     rotulo,
   }
 }
@@ -644,4 +706,41 @@ export async function salvarPngEm(destino: string, png: Uint8Array): Promise<str
   if (!existsSync(dirname(destino))) throw new Error('Essa pasta nao existe mais.')
   gravarJunto(destino, bytes)
   return destino
+}
+
+// ------------------------------------------------------- o projeto
+
+/** As cenas espalhadas pelo video inteiro, ate `max`. */
+export function espalhar<T>(lista: readonly T[], max: number): T[] {
+  if (lista.length <= max) return [...lista]
+  const passo = lista.length / max
+  return Array.from({ length: max }, (_, i) => lista[Math.floor(i * passo)]!)
+}
+
+/**
+ * O video do projeto: o ultimo render desta sessao, ou o mais novo
+ * `<narracao>-short*.mp4` ao lado da narracao (o nome que o render do
+ * nucleo usa). null = nunca renderizou.
+ */
+export function videoDoProjeto(audio: string | null, ultimo: string | null): string | null {
+  if (ultimo && existsSync(ultimo)) return ultimo
+  if (!audio) return null
+  const pasta = dirname(audio)
+  const tronco = basename(audio, extname(audio)).toLowerCase()
+  const doRender = (nome: string): boolean => {
+    const n = nome.toLowerCase()
+    return n.startsWith(`${tronco}-short`) && /^(-\d+)?\.mp4$/.test(n.slice(tronco.length + '-short'.length))
+  }
+  let melhor: { caminho: string; em: number } | null = null
+  try {
+    for (const nome of readdirSync(pasta)) {
+      if (!doRender(nome)) continue
+      const caminho = join(pasta, nome)
+      const em = statSync(caminho).mtimeMs
+      if (!melhor || em > melhor.em) melhor = { caminho, em }
+    }
+  } catch {
+    return null
+  }
+  return melhor?.caminho ?? null
 }

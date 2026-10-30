@@ -6,7 +6,6 @@ import {
   contornoDaSeta,
   contornoDaSetaPx,
   degradeDaCor,
-  ESTICADA_Y,
   LARGURA,
   LOOK,
   SOMBRA_DESFOQUE,
@@ -57,16 +56,28 @@ export interface EntradaDoDesenho {
   guias?: GuiasDaPrevia | null
 }
 
-/** O medidor do texto pelo proprio canvas (a fonte ja carregada). */
+/**
+ * O medidor do texto pelo proprio canvas (a fonte ja carregada): a caixa REAL
+ * da tinta da linha (actualBoundingBox*), nao a caixa da linha da fonte -- cada
+ * fonte tem ascendente e descendente diferentes, e a tinta e o que aparece.
+ */
 export function medidorDoCanvas(ctx: CanvasRenderingContext2D, fonte: ThumbDoProjeto['fonte']): MedirTexto {
   const familia = familiaDaFonte(fonte)
   return (texto, px) => {
     ctx.save()
     ctx.font = `${px}px "${familia}"`
-    const largura = ctx.measureText(texto).width
-    const cap = ctx.measureText('H').actualBoundingBoxAscent
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'alphabetic'
+    const m = ctx.measureText(texto)
     ctx.restore()
-    return { largura, cap: cap > 0 ? cap : px * 0.7 }
+    const cap = m.actualBoundingBoxAscent
+    return {
+      largura: m.width,
+      cap: cap > 0 ? cap : px * 0.7,
+      desce: Math.max(0, m.actualBoundingBoxDescent),
+      esquerda: m.actualBoundingBoxLeft,
+      direita: m.actualBoundingBoxRight,
+    }
   }
 }
 
@@ -108,12 +119,12 @@ function desenharTexto(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho): void
   e.geo.linhas.forEach((l, i) => {
     const cor = e.thumb.cores[Math.min(i, 1)]!
     const relativo = l.px / CORPO_PX
-    const capLocal = l.cap / ESTICADA_Y
+    const capLocal = l.cap / l.esticada
     ctx.save()
-    ctx.translate(LARGURA / 2, l.base)
-    ctx.scale(1, ESTICADA_Y)
+    ctx.translate(l.x, l.base)
+    ctx.scale(1, l.esticada)
     ctx.font = `${l.px}px "${familia}"`
-    ctx.textAlign = 'center'
+    ctx.textAlign = 'left'
     ctx.textBaseline = 'alphabetic'
     ctx.lineJoin = 'round'
     ctx.miterLimit = 2

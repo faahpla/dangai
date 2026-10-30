@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { create } from 'zustand'
-import { ArrowUpDown, Check, FolderOpen, ImagePlus, Loader2, LocateFixed, Save, ScanFace, TriangleAlert } from 'lucide-react'
+import { ArrowUpDown, Check, ChevronLeft, ChevronRight, FolderOpen, ImagePlus, Loader2, LocateFixed, Save, ScanFace, TriangleAlert } from 'lucide-react'
 import { Deslizante, Segmentos } from '@/modulos/kit'
 import {
   ALTURA,
   CORES_DA_THUMB,
+  CORPO_LEGIVEL,
+  CORPO_PX,
   enquadramentoPreso,
   escalaQueCobre,
   FONTES_DA_THUMB,
@@ -13,6 +15,7 @@ import {
   recorteDaImagem,
   textoYPadrao,
   thumbEfetiva,
+  trechoDoQuadro,
   type Ponto,
   type ThumbDoProjeto,
 } from '../../shared/thumb'
@@ -314,9 +317,11 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
           </div>
         )}
         {aoSoltar && vazia && !carregando && (
-          <div className="pointer-events-none absolute inset-x-6 top-1/2 flex -translate-y-1/2 flex-col items-center gap-2 text-center text-[12px] text-ink-3" data-thumb="previa-vazia">
-            <ImagePlus size={20} strokeWidth={1.25} className="text-ink-3" />
-            <span>Solte uma imagem aqui, ou escolha ao lado.</span>
+          <div className="pointer-events-none absolute inset-x-0 top-[70%] flex justify-center px-6" data-thumb="previa-vazia">
+            <div className="flex flex-col items-center gap-2 rounded-md border border-dashed border-line-strong bg-black/60 px-4 py-3 text-center text-[12px] text-ink-2">
+              <ImagePlus size={20} strokeWidth={1.25} className="text-accent" />
+              <span>Solte uma imagem aqui, ou escolha ao lado.</span>
+            </div>
           </div>
         )}
       </div>
@@ -499,6 +504,7 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
             </Botao>
           </div>
         )}
+        {img && <QuadroNaCena key={`${slot}|${img.arquivo}`} slot={slot} />}
         {previas[slot]?.erro && <Aviso>{previas[slot]?.erro}</Aviso>}
         {extraDoSlot}
         {jeitos.length > 1 && (
@@ -658,6 +664,104 @@ function CartaoDoSlot({ slot, ativo, rotulo, aoSoltar }: { slot: 0 | 1; ativo: b
   )
 }
 
+/** Quadros por segundo quando o video nao disse (o anime e 23,976). */
+const FPS_PADRAO = 24
+
+/**
+ * "QUADRO DENTRO DA CENA" (pedido do Levi, 30/10): a imagem veio de uma cena
+ * (sugestao ou quadro do video): a barrinha anda SO no trecho daquele clipe na
+ * fonte, com as setas de 1 quadro. Arrastando, a previa troca na hora pela
+ * miniatura rapida; ao soltar (ou um instante depois da seta), o quadro cheio
+ * e limpo da fonte, o rosto de novo e o enquadramento automatico refeito --
+ * o que ele ajustou a mao fica.
+ */
+function QuadroNaCena({ slot }: { slot: 0 | 1 }) {
+  const useThumb = useLoja()
+  const img = useThumb((s) => s.thumb?.imagens[slot] ?? null)
+  const previa = useThumb((s) => s.previas[slot])
+  const [arrastando, setArrastando] = useState<number | null>(null)
+  const apertado = useRef(false)
+  const depois = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Confirmado (o instante da imagem chegou nele): a barra volta a seguir a imagem.
+  useEffect(() => {
+    if (arrastando !== null && img && Math.abs(img.t - arrastando) < 1e-6) setArrastando(null)
+  }, [img?.t])
+  useEffect(() => () => void (depois.current && clearTimeout(depois.current)), [])
+  const trecho = img ? trechoDoQuadro(img) : null
+  if (!img || !trecho) return null
+  const fps = previa?.fps ?? FPS_PADRAO
+  const passo = 1 / fps
+  const valor = arrastando ?? previa?.espiando ?? img.t
+  const confirmar = (t: number): void => {
+    if (depois.current) clearTimeout(depois.current)
+    depois.current = null
+    if (Math.abs(t - img.t) < 1e-6) {
+      setArrastando(null)
+      return
+    }
+    void useThumb.getState().mudarInstante(slot, t)
+  }
+  const ir = (t: number, jaConfirma: boolean): void => {
+    const preso = Math.max(trecho.de, Math.min(trecho.ate, t))
+    setArrastando(preso)
+    useThumb.getState().espiarInstante(slot, preso)
+    if (depois.current) clearTimeout(depois.current)
+    if (jaConfirma) depois.current = setTimeout(() => confirmar(preso), 320)
+  }
+  const quadro = Math.round((valor - trecho.de) * fps) + 1
+  const total = Math.max(1, Math.round((trecho.ate - trecho.de) * fps))
+  return (
+    <div className="flex flex-col gap-1.5" data-thumb="quadro-na-cena">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-ink-2">Quadro dentro da cena</span>
+        <span className="flex-1" />
+        {previa?.carregando && <Loader2 size={11} strokeWidth={1.5} className="animate-spin text-ink-3" />}
+        <span className="tnum text-[11px] text-ink-3" title={`${formatarTempo(valor, 2)} no arquivo (a cena vai de ${formatarTempo(trecho.de, 1)} a ${formatarTempo(trecho.ate, 1)})`}>
+          quadro {Math.min(quadro, total)} de {total}
+        </span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => ir(valor - passo, true)}
+          disabled={valor <= trecho.de + 1e-6}
+          aria-label="Um quadro antes"
+          title="Um quadro antes"
+          className="grid size-6 shrink-0 place-items-center rounded-sm border border-line bg-elevated text-ink-2 transition-colors hover:text-ink disabled:opacity-40"
+        >
+          <ChevronLeft size={13} strokeWidth={1.75} />
+        </button>
+        <input
+          type="range"
+          min={trecho.de}
+          max={trecho.ate}
+          step={passo}
+          value={Math.max(trecho.de, Math.min(trecho.ate, valor))}
+          onPointerDown={() => (apertado.current = true)}
+          onPointerUp={(e) => {
+            apertado.current = false
+            confirmar(Number(e.currentTarget.value))
+          }}
+          onChange={(e) => ir(Number(e.target.value), !apertado.current)}
+          aria-label="Quadro dentro da cena"
+          title="Arraste para escolher outro quadro desta cena (sai limpo, sem legenda); as setas andam 1 quadro"
+          className="dangai-range min-w-0 flex-1"
+        />
+        <button
+          type="button"
+          onClick={() => ir(valor + passo, true)}
+          disabled={valor >= trecho.ate - 1e-6}
+          aria-label="Um quadro depois"
+          title="Um quadro depois"
+          className="grid size-6 shrink-0 place-items-center rounded-sm border border-line bg-elevated text-ink-2 transition-colors hover:text-ink disabled:opacity-40"
+        >
+          <ChevronRight size={13} strokeWidth={1.75} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function EtiquetaDoGancho() {
   return <span className="rounded-[3px] bg-accent px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-white">Gancho</span>
 }
@@ -745,7 +849,11 @@ export function DoComputador({ explicacao }: { explicacao: string }) {
 function LinhaDeTexto({ linha }: { linha: 0 | 1 }) {
   const useThumb = useLoja()
   const thumb = useThumb((s) => s.thumb)
+  const ef = useEfetiva()
   if (!thumb) return null
+  // A linha comprida encolhe sozinha; pequena demais para ler, o aviso discreto.
+  const naThumb = ef?.geo.linhas.find((l) => l.linha === linha)
+  const pequena = naThumb && naThumb.px < CORPO_LEGIVEL ? Math.round(naThumb.px) : null
   const cor = thumb.cores[linha]
   const mudarCor = (c: string): void => {
     const cores = [...thumb.cores] as ThumbDoProjeto['cores']
@@ -770,6 +878,14 @@ function LinhaDeTexto({ linha }: { linha: 0 | 1 }) {
           className={`${CLASSE_DO_CAMPO} ${CAMPO_NORMAL} flex-1 font-semibold tracking-wide`}
         />
       </div>
+      {pequena !== null && (
+        <p className={`flex items-center gap-1.5 pl-[76px] text-[11px] ${COR_DE_AVISO}`} data-thumb={`texto-longo-${linha + 1}`}>
+          <TriangleAlert size={12} strokeWidth={1.75} className="shrink-0" />
+          <span title={`A linha encolheu para caber: corpo de ${pequena} px (as refs usam ${CORPO_PX}; abaixo de ${CORPO_LEGIVEL} fica dificil de ler no celular).`}>
+            Texto longo: fica pequeno ({pequena} px; o normal e {CORPO_PX}). Encurte ou passe uma palavra para a outra linha.
+          </span>
+        </p>
+      )}
       <div className="flex flex-wrap items-center gap-1.5 pl-[76px]">
         {CORES_DA_THUMB.map((c) => (
           <button

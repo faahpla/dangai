@@ -26,7 +26,7 @@ import { abrirIndicePorId } from './episodio/abrir-indice'
 import { lerRascunhoDoDisco } from './gerar/rascunho'
 import { rodarMotorDeRostos } from './montar/rostos-motor'
 
-export { copiarParaOProjeto, rostosDoMotor, salvarThumb, temUpscale } from '../../thumb/electron/editor'
+export { copiarParaOProjeto, quadroRapido, rostosDoMotor, salvarThumb, temUpscale } from '../../thumb/electron/editor'
 
 /**
  * [recap] O GERADOR DE THUMBNAIL da tela "Video pronto", no main. O editor
@@ -142,6 +142,8 @@ export async function sugestoesDaThumb(p: PedidoDeSugestoes, rodar: typeof rodar
     arquivo: string
     t: number
     rotulo: string
+    /** O trecho da cena no arquivo (o "Quadro dentro da cena" anda nele). */
+    trecho: { de: number; ate: number }
   }
   const itens = new Map<string, Item>()
   const juntar = (it: Item): void => {
@@ -182,6 +184,7 @@ export async function sugestoesDaThumb(p: PedidoDeSugestoes, rodar: typeof rodar
           arquivo: cena.arquivo,
           t,
           rotulo: `Cena ${plano.id}`,
+          trecho: { de: cena.de, ate: cena.ate },
         })
       }
     } else {
@@ -203,6 +206,7 @@ export async function sugestoesDaThumb(p: PedidoDeSugestoes, rodar: typeof rodar
         arquivo: cena.arquivo,
         t,
         rotulo: plano ? `Cena ${plano.id}` : nome.replace(/\.[^.]+$/, ''),
+        trecho: { de: cena.de, ate: cena.ate },
       })
     }
   }
@@ -228,7 +232,7 @@ export async function sugestoesDaThumb(p: PedidoDeSugestoes, rodar: typeof rodar
     const it = porChave.get(e.candidato.chave)
     if (!it?.imagem) continue
     try {
-      sugestoes.push(await sugestaoDe(it.imagem, it.arquivo, it.t, e.candidato, e.nota, it.rotulo))
+      sugestoes.push(await sugestaoDe(it.imagem, it.arquivo, it.t, e.candidato, e.nota, it.rotulo, it.trecho))
     } catch {
       continue
     }

@@ -218,6 +218,7 @@ export const CANAIS = {
   salvarThumb: 'recap:thumb:salvar',
   escolherImagemDaThumb: 'recap:thumb:escolher-imagem',
   upscaleDaThumb: 'recap:thumb:upscale',
+  miniaturaDaThumb: 'recap:thumb:miniatura',
 
   // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
   // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
@@ -437,6 +438,8 @@ export interface PonteDoRecap {
   escolherImagemDaThumb(pasta: string | null): Promise<IpcResult<string | null>>
   /** Thumbnail: o modelo do upscale do nucleo esta no lugar. */
   upscaleDaThumb(): Promise<IpcResult<boolean>>
+  /** Thumbnail: um JPEG pequeno do instante, para o arrastar do "Quadro dentro da cena". */
+  miniaturaDaThumb(pedido: PedidoDeQuadro): Promise<IpcResult<Uint8Array>>
 
   // O motor de personagens (parte 4), com os nomes do Studio.
   /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */

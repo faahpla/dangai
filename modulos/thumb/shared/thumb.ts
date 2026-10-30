@@ -48,6 +48,14 @@ export const FOLGA_DA_AREA = 0.03
 export const CORPO_PX = 182
 /** A esticada vertical do PSD (202 / 182): a letra fica mais alta que larga. */
 export const ESTICADA_Y = 1.11
+/**
+ * Abaixo disto de corpo (px no quadro de 1080) a linha que encolheu fica
+ * pequena para ler numa thumb no celular (a letra com ~78 px de altura, 4%
+ * da tela): o editor avisa "Texto longo: fica pequeno". As refs usam 182.
+ */
+export const CORPO_LEGIVEL = 100
+/** O piso do encolher (40 letras de Luckiest Guy ainda cabem). */
+const CORPO_MINIMO = 24
 /** A linha (com o contorno) nunca passa disto: a que passa encolhe sozinha. */
 export const LARGURA_UTIL = 0.86
 /** O contorno por fora, proporcional ao corpo (12 px nos 182 das refs). */
@@ -55,7 +63,7 @@ export const CONTORNO_POR_PX = 12 / 182
 /** A sombra do PSD: preta, 100%, 13 px para baixo, desfoque gaussiano de 11,4. */
 export const SOMBRA_Y = 13
 export const SOMBRA_DESFOQUE = 11.446
-/** As duas linhas quase encostam (os contornos se tocam), como nas refs. */
+/** As duas linhas quase encostam (os contornos se tocam), como nas refs: o vao e 10% da altura da letra da linha menor. */
 export const VAO_ENTRE_LINHAS = 0.1
 /** Cor mais viva, sem estourar (o "look" das refs). */
 export const LOOK = { saturacao: 1.22, contraste: 1.1 } as const
@@ -250,6 +258,12 @@ export const imagemDaThumbSchema = z.object({
   enquadramento: enquadramentoSchema.nullable(),
   /** A cena e do gancho (a 1a frase do roteiro). */
   gancho: z.boolean().optional(),
+  /**
+   * O trecho da CENA de onde o quadro saiu, em segundos dentro do arquivo
+   * (sugestao ou quadro do video): o "Quadro dentro da cena" anda so nele.
+   * Sem isto (imagem do PC, thumb antiga), a barra nao aparece.
+   */
+  trecho: z.object({ de: z.number().nonnegative(), ate: z.number().nonnegative() }).optional(),
 })
 export type ImagemDaThumb = z.infer<typeof imagemDaThumbSchema>
 
@@ -314,19 +328,47 @@ export function textoYPadrao(layout: ThumbDoProjeto['layout']): number {
 
 // ------------------------------------------------------------ a geometria
 
-/** O que so quem tem a fonte carregada sabe medir: a largura e a altura da maiuscula num corpo. */
-export type MedirTexto = (texto: string, px: number) => { largura: number; cap: number }
+/**
+ * O que so quem tem a fonte carregada sabe medir, num corpo: a caixa REAL das
+ * letras desenhadas (a tinta, nao a caixa da linha da fonte), com a origem a
+ * esquerda na linha de base. `cap` = quanto a tinta sobe; `desce` = quanto
+ * desce (o "Q", o "J" e a sobra do "O"); `esquerda`/`direita` = ate onde vai
+ * para cada lado da origem. Sem os opcionais (o teste): a largura do avanco,
+ * nada abaixo da base.
+ */
+export type MedirTexto = (texto: string, px: number) => { largura: number; cap: number; desce?: number; esquerda?: number; direita?: number }
+
+/**
+ * O AJUSTE FINO DE CADA FONTE: a esticada vertical do PSD (1,11) e da Luckiest
+ * Guy, a das refs; Bangers e Anton ja sao altas e estreitas e a Komika Axis
+ * inclinada -- esticadas, ficavam desproporcionais. A posicao nao precisa de
+ * ajuste: o empilhar e o centralizar vem da tinta medida (MedirTexto).
+ */
+export const AJUSTE_DA_FONTE: Record<FonteDaThumb, { esticada: number }> = {
+  luckiest: { esticada: ESTICADA_Y },
+  bangers: { esticada: 1 },
+  anton: { esticada: 1 },
+  komika: { esticada: 1 },
+}
 
 export interface LinhaNaThumb {
+  /** Qual das duas linhas do editor (a vazia nao entra na geometria). */
+  linha: 0 | 1
   texto: string
   /** O corpo (horizontal) depois de caber na largura. */
   px: number
-  /** A largura do texto sem o contorno. */
+  /** A largura da TINTA (as letras desenhadas), sem o contorno. */
   largura: number
-  /** A altura da maiuscula JA esticada. */
+  /** Quanto a tinta sobe da linha de base, JA esticada. */
   cap: number
+  /** Quanto a tinta desce da linha de base, ja esticada (0 nas maiusculas retas). */
+  desce: number
   /** A linha de base (y do quadro). */
   base: number
+  /** A origem do texto alinhado a esquerda (x do quadro): a tinta fica centrada na largura. */
+  x: number
+  /** A esticada vertical desta fonte (AJUSTE_DA_FONTE). */
+  esticada: number
   contorno: number
 }
 
@@ -356,38 +398,62 @@ const FOLGA_DO_TEXTO = 28
 /** Faixa menor que isto (o texto arrastado para a ponta): vale a area segura inteira do painel. */
 const FAIXA_MINIMA = 160
 
-export function geometriaDaThumb(t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'>, medir: MedirTexto): GeometriaDaThumb {
+export function geometriaDaThumb(
+  t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & { fonte?: FonteDaThumb },
+  medir: MedirTexto,
+): GeometriaDaThumb {
   const maxLargura = LARGURA * LARGURA_UTIL
+  const esticada = AJUSTE_DA_FONTE[t.fonte ?? FONTE_PADRAO]?.esticada ?? ESTICADA_Y
+  /** A tinta da linha: a largura, os lados e a altura (para cima e para baixo da base). */
+  const tinta = (texto: string, px: number) => {
+    const m = medir(texto, px)
+    const esquerda = m.esquerda ?? 0
+    const direita = m.direita ?? m.largura
+    return { largura: Math.max(1, esquerda + direita), esquerda, direita, cap: m.cap > 0 ? m.cap : px * 0.7, desce: Math.max(0, m.desce ?? 0) }
+  }
   const textos = t.linhas.map((l) => l.trim().toLocaleUpperCase('pt-BR'))
   const linhas: LinhaNaThumb[] = []
-  for (const texto of textos) {
+  for (const [i, texto] of textos.entries()) {
     if (!texto) continue
     let px = CORPO_PX
-    let m = medir(texto, px)
+    let m = tinta(texto, px)
     const total = m.largura + 2 * px * CONTORNO_POR_PX
     if (total > maxLargura) {
       // Palavra comprida ("ENCONTRO"): so esta linha encolhe, sem quebrar.
-      px = Math.max(40, (px * maxLargura) / total)
-      m = medir(texto, px)
+      // O contorno e a sombra encolhem junto (sao proporcionais ao corpo): a linha inteira cabe em LARGURA_UTIL.
+      px = Math.max(CORPO_MINIMO, (px * maxLargura) / total)
+      m = tinta(texto, px)
     }
     linhas.push({
+      linha: i === 0 ? 0 : 1,
       texto,
       px,
       largura: m.largura,
-      cap: m.cap * ESTICADA_Y,
+      cap: m.cap * esticada,
+      desce: m.desce * esticada,
       base: 0,
+      // A tinta centrada na largura (a Komika inclinada e a sobra de cada letra nao puxam para um lado).
+      x: LARGURA / 2 - (m.direita - m.esquerda) / 2,
+      esticada,
       contorno: px * CONTORNO_POR_PX,
     })
   }
   const centro = (t.textoY ?? textoYPadrao(t.layout)) * ALTURA
   let bloco: GeometriaDaThumb['bloco'] = null
   if (linhas.length > 0) {
-    const vao = linhas[0]!.cap * VAO_ENTRE_LINHAS
-    const altura = linhas.reduce((s, l) => s + l.cap, 0) + vao * (linhas.length - 1)
+    // Cada linha na altura REAL dela (depois de encolher para caber): o vao e o "quase encostado" das
+    // refs proporcional a linha MENOR, e nunca menor que o contorno mais grosso -- o contorno de uma
+    // encosta nas letras da outra, sem invadir. As duas grandes: o vao das refs, igual a antes.
+    const menor = Math.min(...linhas.map((l) => l.cap))
+    const contornoMaior = Math.max(...linhas.map((l) => l.contorno))
+    const vao = linhas.length > 1 ? Math.max(menor * VAO_ENTRE_LINHAS, contornoMaior) : 0
+    // Empilhadas pela TINTA: o fundo das letras de uma, o vao, o topo das letras da outra -- o mesmo
+    // espaco com qualquer fonte, e o bloco das letras no meio da altura do slider.
+    const altura = linhas.reduce((s, l) => s + l.cap + l.desce, 0) + vao * (linhas.length - 1)
     let y = centro - altura / 2
     for (const l of linhas) {
       l.base = y + l.cap
-      y = l.base + vao
+      y = l.base + l.desce + vao
     }
     const maior = Math.max(...linhas.map((l) => l.largura))
     bloco = {
@@ -748,6 +814,15 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: { x1: number; y1: numbe
     base.y = Math.min(geo.bloco?.base ?? base.y, ponta.y + uy * SETA_MINIMA)
   }
   if (Math.hypot(ponta.x - base.x, ponta.y - base.y) < 160) ponta = { x: base.x + lado * 90, y: base.y - 180 }
+  // A cauda nunca em cima de uma linha (a linha comprida que encolheu ocupa a largura toda): sai para a
+  // beirada dela, por fora do contorno e da sombra.
+  for (const l of geo.linhas) {
+    const meia = l.largura / 2 + l.contorno + 18
+    const topo = l.base - l.cap - l.contorno
+    const fundo = l.base + l.desce + l.contorno + SOMBRA_Y * (l.px / CORPO_PX)
+    if (base.y < topo || base.y > fundo) continue
+    if (base.x > LARGURA / 2 - meia && base.x < LARGURA / 2 + meia) base.x = Math.max(24, Math.min(LARGURA - 24, LARGURA / 2 - lado * meia))
+  }
   return { base, ponta, lado }
 }
 
@@ -962,6 +1037,8 @@ export interface SugestaoDaThumb {
   ordem: number
   /** A miniatura (JPEG pequeno) para a grade. */
   miniatura: Uint8Array
+  /** O trecho da cena no arquivo (o "Quadro dentro da cena" anda nele). */
+  trecho?: { de: number; ate: number }
   /** "Cena 0360 - 0:01" */
   rotulo: string
 }
@@ -984,6 +1061,8 @@ export interface QuadroDaThumb {
   altura: number
   /** A imagem para a previa (JPEG, no maximo 2048 de lado). */
   previa: Uint8Array
+  /** Quadros por segundo do video (as setas andam 1 quadro). Ausente = imagem, ou nao deu para ler. */
+  fps?: number
 }
 
 export interface RostosDoQuadro {
@@ -1022,6 +1101,18 @@ export const pedidoDeSalvarSchema = z.object({
 export type PedidoDeSalvar = z.infer<typeof pedidoDeSalvarSchema>
 
 export type ResultadoDoSalvar = { salvo: string } | { existe: string }
+
+/**
+ * O trecho em que o "Quadro dentro da cena" anda: o da cena, alargado para
+ * conter o instante escolhido (o keyframe a 75% de um plano curto pode cair
+ * um pouco fora do trecho mostrado). null = sem cena (imagem do PC).
+ */
+export function trechoDoQuadro(img: Pick<ImagemDaThumb, 'origem' | 't' | 'trecho'>): { de: number; ate: number } | null {
+  if (img.origem === 'arquivo' || !img.trecho) return null
+  const de = Math.min(img.trecho.de, img.t)
+  const ate = Math.max(img.trecho.ate, img.t)
+  return ate - de > 0.05 ? { de, ate } : null
+}
 
 /** `X-short.mp4` -> `X-short-thumb.png`; `n` > 1 -> `X-short-thumb-2.png`. */
 export function nomeDaThumb(video: string, n = 1): string {

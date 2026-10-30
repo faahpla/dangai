@@ -48,6 +48,10 @@ export interface ImagemNaPrevia {
   carregando: boolean
   procurandoRosto: boolean
   erro: string | null
+  /** Quadros por segundo do video (as setas do "Quadro dentro da cena"); null = imagem ou nao leu. */
+  fps?: number | null
+  /** O instante que a previa mostra enquanto ele arrasta na cena (a miniatura rapida); null = o da imagem. */
+  espiando?: number | null
 }
 
 export interface SugestaoNaTela extends Omit<SugestaoDaThumb, 'miniatura'> {
@@ -77,6 +81,8 @@ export interface FonteDoEditor {
   /** Guarda (ja juntado: no maximo um a cada ~450 ms, e na hora ao fechar). */
   gravar(thumb: ThumbDoProjeto): void
   quadro(p: PedidoDeQuadro): Promise<IpcResult<QuadroDaThumb>>
+  /** Um JPEG pequeno do instante (o arrastar do "Quadro dentro da cena"); sem isto, so o quadro cheio ao soltar. */
+  miniatura?(p: PedidoDeQuadro): Promise<IpcResult<Uint8Array>>
   /** Os rostos do quadro; `null` = sem detector agora (a imagem fica no meio, e procura de novo depois). */
   rostos(p: PedidoDeQuadro): Promise<IpcResult<RostoDaThumb[] | null>>
   recorte(p: PedidoDeRecorte): Promise<IpcResult<RecorteDaThumb>>
@@ -92,6 +98,8 @@ export interface FonteDoEditor {
   /** Pode salvar agora (ha para onde). */
   podeSalvar(): boolean
   salvar: SalvarDoEditor
+  /** O tempo do "Salvo: (x s)" conta so o PNG (o salvar abre um dialogo, que nao entra na conta). */
+  tempoSoDoPng?: boolean
 }
 
 export interface EstadoDoEditor {
@@ -130,6 +138,15 @@ export interface EstadoDoEditor {
   /** Um arquivo de imagem que ele soltou (ja no lugar certo) no slot. */
   usarCaminho(caminho: string, slot?: 0 | 1): Promise<void>
   enquadrar(slot: 0 | 1, e: Enquadramento | null): void
+  /** "Quadro dentro da cena", arrastando: a previa mostra a miniatura rapida do instante (nada muda no projeto). */
+  espiarInstante(slot: 0 | 1, t: number): void
+  /**
+   * "Quadro dentro da cena", soltou: o quadro cheio e LIMPO do instante, os
+   * rostos dele de novo e, se o enquadramento era o automatico, ele se refaz
+   * pelo rosto novo; o que ele ajustou a mao fica (os avisos dizem se o rosto
+   * saiu da area segura). O instante fica guardado.
+   */
+  mudarInstante(slot: 0 | 1, t: number): Promise<void>
   /** Procura de novo o rosto de quem ficou sem (o motor acabou de ficar pronto), e as sugestoes. */
   procurarRostosDeNovo(): Promise<void>
   salvar(modo: 'perguntar' | 'substituir' | 'novo'): Promise<void>
@@ -176,6 +193,7 @@ function imagemDaSugestao(s: SugestaoNaTela): ImagemDaThumb {
     rostos: s.rostos,
     enquadramento: null,
     ...(s.gancho ? { gancho: true } : {}),
+    ...(s.trecho ? { trecho: s.trecho } : {}),
   }
 }
 
@@ -197,6 +215,11 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
   let gravarDepois: ReturnType<typeof setTimeout> | null = null
   /** A ultima vez que cada slot pediu imagem: a resposta velha nao cai por cima da nova. */
   const pedidoDoSlot: [number, number] = [0, 0]
+  /** O arrastar na cena: um pedido de miniatura por vez por slot, e so o ultimo instante pedido. */
+  const espia: [{ emVoo: boolean; proximo: number | null }, { emVoo: boolean; proximo: number | null }] = [
+    { emVoo: false, proximo: null },
+    { emVoo: false, proximo: null },
+  ]
 
   const loja: LojaDoEditor = create<EstadoDoEditor>((set, get) => {
     function gravarAgora(): void {
@@ -223,6 +246,8 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
           carregando: false,
           procurandoRosto: false,
           erro: null,
+          fps: null,
+          espiando: null,
           ...previas[slot],
           ...p,
           ...(previas[slot]?.chave === chave ? {} : { chave }),
@@ -300,6 +325,8 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         url,
         carregando: false,
         erro: bitmap ? null : 'A imagem nao abriu.',
+        fps: r.value.fps ?? null,
+        espiando: null,
       })
       // O tamanho de verdade do quadro (a sugestao mede o keyframe): o enquadramento e em fracao, nao muda.
       atualizarImagem(slot, chave, (atual) =>
@@ -467,6 +494,7 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
           altura: 1080,
           rostos: null,
           enquadramento: null,
+          trecho: { de: de.de, ate: de.ate },
         })
       },
 
@@ -501,6 +529,94 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         gravarLogo()
       },
 
+      espiarInstante: (slot, t) => {
+        const e = espia[slot]
+        e.proximo = t
+        if (e.emVoo || !fonte.miniatura) return
+        e.emVoo = true
+        void (async () => {
+          try {
+            while (e.proximo !== null) {
+              const alvo = e.proximo
+              e.proximo = null
+              const img = get().thumb?.imagens[slot]
+              const meu = pedidoDoSlot[slot]
+              if (!img) break
+              const r = await fonte.miniatura!({ arquivo: img.arquivo, t: alvo }).catch(() => null)
+              if (!r?.ok || meu !== pedidoDoSlot[slot]) continue
+              let bitmap: ImageBitmap
+              try {
+                bitmap = await createImageBitmap(new Blob([r.value as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }))
+              } catch {
+                continue
+              }
+              const previas = [...get().previas] as EstadoDoEditor['previas']
+              const p = previas[slot]
+              if (meu !== pedidoDoSlot[slot] || !p) {
+                bitmap.close()
+                continue
+              }
+              // So o bitmap da previa troca (a miniatura); o cartao e o projeto ficam com o quadro de antes.
+              p.bitmap?.close()
+              previas[slot] = { ...p, bitmap, espiando: alvo }
+              set({ previas })
+            }
+          } finally {
+            e.emVoo = false
+          }
+        })()
+      },
+
+      mudarInstante: async (slot, t) => {
+        const img = get().thumb?.imagens[slot]
+        if (!img) return
+        espia[slot].proximo = null
+        const meu = ++pedidoDoSlot[slot]
+        const marcar = marcador(slot, meu, chaveDa(img))
+        marcar({ carregando: true, erro: null })
+        const r = await fonte.quadro({ arquivo: img.arquivo, t }).catch((e: unknown) => ({
+          ok: false as const,
+          error: e instanceof Error ? e.message : String(e),
+        }))
+        if (meu !== pedidoDoSlot[slot]) return
+        if (!r.ok) {
+          marcar({ carregando: false, erro: r.error })
+          return
+        }
+        let bitmap: ImageBitmap | null = null
+        try {
+          bitmap = await createImageBitmap(new Blob([r.value.previa as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }))
+        } catch {
+          bitmap = null
+        }
+        const thumb = get().thumb
+        const atual = thumb?.imagens[slot]
+        if (meu !== pedidoDoSlot[slot] || !thumb || !atual || atual.arquivo !== img.arquivo || !bitmap) {
+          bitmap?.close()
+          if (meu === pedidoDoSlot[slot]) marcar({ carregando: false, erro: bitmap ? null : 'A imagem nao abriu.' })
+          return
+        }
+        // O enquadramento fica como estava: null (o automatico) se refaz pelo rosto novo; o da mao fica.
+        const nova: ImagemDaThumb = { ...atual, t, rostos: null, largura: r.value.largura, altura: r.value.altura }
+        const imagens = [...thumb.imagens] as ThumbDoProjeto['imagens']
+        imagens[slot] = nova
+        const previas = [...get().previas] as EstadoDoEditor['previas']
+        soltar(previas[slot])
+        previas[slot] = {
+          chave: chaveDa(nova),
+          bitmap,
+          url: urlDe(r.value.previa, 'image/jpeg'),
+          carregando: false,
+          procurandoRosto: false,
+          erro: null,
+          fps: r.value.fps ?? null,
+          espiando: null,
+        }
+        set({ thumb: { ...thumb, imagens }, previas, salvo: null })
+        gravarLogo()
+        await procurarRosto(slot, meu, nova)
+      },
+
       procurarRostosDeNovo: async () => {
         const thumb = get().thumb
         if (!thumb) return
@@ -522,6 +638,7 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         try {
           await carregarFontesDaThumb()
           const png = await pngDaThumb(thumb, fonte.recorte)
+          const doPng = performance.now() - inicio
           const r = await fonte.salvar(png.bytes, modo)
           if (!r.ok) throw new Error(r.error)
           if (r.value === null) {
@@ -534,7 +651,7 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
           }
           const salvo = {
             caminho: r.value.salvo,
-            ms: Math.round(performance.now() - inicio),
+            ms: Math.round(fonte.tempoSoDoPng ? doPng : performance.now() - inicio),
             ampliado: png.ampliado,
           }
           set({ salvando: false, salvo })

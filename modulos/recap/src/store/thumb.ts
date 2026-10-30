@@ -66,6 +66,7 @@ const daAba: FonteDoEditor = {
     nucleo().gravarNoProjeto({ ...cru, thumb })
   },
   quadro: (p) => ponte.quadroDaThumb(p),
+  miniatura: (p) => ponte.miniaturaDaThumb(p),
   rostos: async (p) => {
     const r = await ponte.rostosDaThumb(p)
     return r.ok ? { ok: true, value: r.value.rostos } : r
