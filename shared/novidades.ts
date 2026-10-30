@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.85.0',
+    itens: [
+      'Thumbnail: novo botão na tela inicial (ligue em Configurações > Módulos). Faz a capa 1080x1920 sem precisar do Gerar recap: suba as imagens do computador, ou escolha um projeto e pegue os quadros das cenas, sempre sem legenda.',
+      'Na thumbnail, a barra "Quadro dentro da cena" deixa escolher qualquer quadro do mesmo clipe, quadro a quadro.',
+      'Texto longo na thumbnail: a linha comprida encolhe sozinha sem passar por cima da outra, e as quatro fontes ficam alinhadas no mesmo lugar.',
+    ],
+  },
+  {
     versao: '1.84.0',
     itens: [
       'Ler cenas do B-roll: com um B-roll aberto, o botão "Ler cenas do B-roll" (em cima, na Biblioteca) faz uma IA olhar cada cena dos episódios dele e escrever o que acontece nela. Roda no seu PC, de graça, pelo Ollama.',
