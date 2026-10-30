@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, CircleCheck, Clapperboard, Copy, FolderOpen, Loader2, Pause, Play, WandSparkles, X } from 'lucide-react'
+import { Segmentos } from '@/modulos/kit'
 import { hashtagsEmTexto, textoDeCopiarTudo, TITULO_MAX } from '../../shared/pos-render'
 import { nucleo } from '../nucleo'
 import { useGerar } from '../store/gerar'
 import { renderDoProjeto, usePosRender } from '../store/pos-render'
+import { gravarThumbPendente, useThumb } from '../store/thumb'
 import { Aviso, Botao, COR_DE_AVISO, focarBotao, formatarTempo, Secao } from './pecas'
+import { AjustesDaThumb, PreviaDaThumb, RodapeDaThumb } from './Thumbnail'
 import { Copiar, copiarTexto } from './TituloEThumb'
 
 /**
@@ -20,6 +23,9 @@ import { Copiar, copiarTexto } from './TituloEThumb'
  * pelo "Video pronto" (barra de status e paleta) depois; projeto normal do
  * Dangai nao abre. Tela cheia do modulo (o resto inerte); Esc, o X e o
  * "Fechar" fecham. O assistente abrindo por cima (a paleta) fecha esta.
+ *
+ * Duas partes (30/10): "Publicar" (a de sempre) e "Thumbnail" (o gerador da
+ * capa 1080x1920, Thumbnail.tsx): a previa da thumb toma o lugar do video.
  */
 export function PosRender() {
   const aberta = usePosRender((s) => s.aberta)
@@ -33,6 +39,12 @@ export function PosRender() {
     })
     return () => {
       pararDeOuvir()
+      // O ultimo toque na thumb ainda no relogio do "juntar": vai para o projeto agora.
+      try {
+        gravarThumbPendente()
+      } catch (err) {
+        console.error('[recap] pos-render: gravar a thumb na limpeza falhou:', err)
+      }
       // Nunca lancar na limpeza: o erro derrubaria a janela inteira.
       try {
         nucleo().telaCheia(useGerar.getState().aberto)
@@ -87,6 +99,8 @@ const CAIXA_INICIAL = { largura: 1040, altura: 740 }
 const DIREITA_MIN = 460
 /** Os controles do player (32) e o espaco acima deles (8). */
 const CONTROLES = 40
+/** Embaixo da previa da thumb: os avisos da area segura e o "Ver area segura". */
+const AVISOS_DA_THUMB = 76
 
 /** A janela em si (exportada para o teste desenhar sem o portal). */
 export function JanelaDoPosRender() {
@@ -105,6 +119,11 @@ export function JanelaDoPosRender() {
   const fechar = (): void => usePosRender.getState().fechar()
   const janela = useRef<HTMLDivElement | null>(null)
   const [caixa, setCaixa] = useState(CAIXA_INICIAL)
+  const [aba, setAba] = useState<'publicar' | 'thumb'>('publicar')
+  const abrirAba = (a: 'publicar' | 'thumb'): void => {
+    setAba(a)
+    if (a === 'thumb') void useThumb.getState().iniciar()
+  }
 
   // Roteiro de antes das sugestoes (ou colado): os titulos do "Titulo, descricao e hashtags".
   const titulos = titulosDoRoteiro.length > 0 ? titulosDoRoteiro : (metadata?.titles ?? [])
@@ -178,7 +197,9 @@ export function JanelaDoPosRender() {
         style={{ backgroundColor: 'var(--color-elevated)' }}
         className="glass enter flex h-[min(780px,100%)] w-[min(1180px,100%)] min-h-0 gap-5 rounded-lg p-5"
       >
-        {videoUrl ? (
+        {aba === 'thumb' ? (
+          <PreviaDaThumb altura={Math.max(200, caixa.altura - AVISOS_DA_THUMB)} larguraMax={larguraMax} />
+        ) : videoUrl ? (
           <Tocador url={videoUrl} altura={alturaDoVideo} larguraMax={larguraMax} />
         ) : (
           <div
@@ -201,6 +222,16 @@ export function JanelaDoPosRender() {
             <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3" title={outputPath ?? undefined}>
               {nome}
             </span>
+            <div className="w-[190px] shrink-0" data-pos="abas">
+              <Segmentos
+                opcoes={[
+                  { valor: 'publicar' as const, rotulo: 'Publicar', title: 'Titulos, descricao e hashtags' },
+                  { valor: 'thumb' as const, rotulo: 'Thumbnail', title: 'A capa 1080x1920 do short' },
+                ]}
+                ativo={(v) => aba === v}
+                onChange={abrirAba}
+              />
+            </div>
             <button
               type="button"
               onClick={fechar}
@@ -212,6 +243,11 @@ export function JanelaDoPosRender() {
             </button>
           </header>
 
+          {aba === 'thumb' ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
+              <AjustesDaThumb />
+            </div>
+          ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
             <Secao titulo="Titulos" acao={escreverDeNovo('titulos')}>
               {titulos.length > 0 ? (
@@ -308,7 +344,11 @@ export function JanelaDoPosRender() {
               )}
             </Secao>
           </div>
+          )}
 
+          {aba === 'thumb' ? (
+            <RodapeDaThumb fechar={fechar} />
+          ) : (
           <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3">
             <CopiarTudo texto={tudo} />
             <Botao
@@ -325,6 +365,7 @@ export function JanelaDoPosRender() {
               Fechar
             </Botao>
           </footer>
+          )}
         </div>
       </div>
     </div>
