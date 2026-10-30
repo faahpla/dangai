@@ -21,6 +21,8 @@ import { useBoasVindas } from './store/boas-vindas'
 import { useGerar } from './store/gerar'
 import { partesLigadas, nadaLigado, CONFIG_DA_EDICAO_RAPIDA_PADRAO } from '../shared/edicao-rapida'
 import { useEdicaoRapida } from './store/edicao-rapida'
+import { quandoOMotorFicarPronto, useMotorRuntime } from './store/motor-runtime'
+import { emprestarInstaladorDoMotor } from '../../thumb/src/motor'
 
 /**
  * [recap] O GERAR RECAP no renderer: o assistente do AniRecap Studio dentro do
@@ -54,8 +56,14 @@ export const recap: ModuloDoRenderer = {
     const pararDeOuvir = ouvirOProjeto()
     // Ligou (abrindo o app ou nas Configuracoes) sem chave de IA: a boas-vindas.
     boasVindasAoLigar()
+    // A tela "Instalar motor" emprestada ao modulo Thumbnail (o aviso "Enquadramento automatico precisa do motor").
+    const devolverInstalador = emprestarInstaladorDoMotor({
+      abrir: (depois) => useMotorRuntime.getState().abrir(depois),
+      quandoFicarPronto: quandoOMotorFicarPronto,
+    })
     return () => {
       pararDeOuvir()
+      devolverInstalador()
       // Desligar e ligar de novo e outra sessao do modulo: ligar volta a perguntar.
       useBoasVindas.getState().reiniciar()
       // Desligado com a tela aberta: ela fecha (o nucleo ja solta o inerte).

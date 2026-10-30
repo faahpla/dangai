@@ -650,6 +650,16 @@ function backend(o: OpcoesDoRostoPeloMotor): Backend | { erro: string } {
   }
 }
 
+/**
+ * O motor de rostos roda agora? null = sim; senao, a frase do motivo (sem
+ * runtime, instalando, desatualizado). O modulo Thumbnail pergunta por aqui
+ * (o motor emprestado em ../index.ts) antes de mostrar o aviso.
+ */
+export function motivoDoMotorDeRostos(): string | null {
+  const b = backend({})
+  return 'erro' in b ? b.erro : null
+}
+
 /** Processos vivos, para a saida do app nao deixar orfao. */
 const vivos = new Set<ChildProcess>()
 

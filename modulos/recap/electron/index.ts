@@ -6,7 +6,9 @@ import { configDoRecap } from './config'
 import { guardarContexto } from './contexto'
 import { configurarEpisodios } from './episodio/indice'
 import { registrarCanais } from './ipc'
-import { encerrarRostosDoMotor, rostosRodando } from './montar/rostos-motor'
+import { emprestarMotorDeRostos } from '../../thumb/electron/motor'
+import { encerrarRostosDoMotor, motivoDoMotorDeRostos, rostosRodando } from './montar/rostos-motor'
+import { detectorDoMotor } from './thumb'
 import { encerrarVisao, visaoRodando } from './cenas/visao'
 import { configurarMotor, encerrarMotor, motorRodando } from './motor'
 import {
@@ -82,6 +84,14 @@ export const recap: ModuloDoMain = {
       resourcesPath: process.resourcesPath,
       empacotado: ctx.empacotado,
       versaoDoApp: ctx.versaoDoApp,
+    })
+    // O motor de rostos emprestado ao modulo Thumbnail (que nao conhece o recap):
+    // so detectando, a pedido da tela dele. Aqui no configurar, que roda ligado
+    // ou nao: quem tem o motor instalado e o recap desligado tambem enquadra.
+    emprestarMotorDeRostos({
+      motivoParaNaoRodar: motivoDoMotorDeRostos,
+      detector: detectorDoMotor(),
+      encerrar: encerrarRostosDoMotor,
     })
     registrarRaizDaBiblioteca({
       id: 'recap',
