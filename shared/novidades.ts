@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.83.1',
+    itens: [
+      'Gerar recap: a tela "Vídeo pronto" ganhou a aba Thumbnail. Uma ou duas imagens (em cima e embaixo, com o botão ⇅ para inverter), texto em duas linhas na fonte Luckiest Guy com contorno e sombra, seta apontando o rosto, e "Salvar PNG" em 1080x1920 ao lado do vídeo.',
+      'As imagens vêm das cenas do vídeo (as do gancho primeiro), de qualquer quadro do vídeo (sempre sem a legenda) ou do seu computador. Cada uma já entra enquadrada pelo rosto, fora das faixas que o TikTok cobre; dá para ajustar com zoom e arrastando.',
+      'Você muda o texto, as cores, a fonte e a altura do texto. O PNG passa pelo upscale do Dangai e fica nítido. Tudo fica salvo no projeto.',
+    ],
+  },
+  {
     versao: '1.82.0',
     itens: [
       'B-roll: solte o .txt do B-roll junto da narração e do roteiro (qualquer nome). O Dangai lê de que episódio sai cada parte do vídeo, e o "Montar tudo", o "Montar recap" e as sugestões da Biblioteca passam a preferir as cenas desses episódios.',
