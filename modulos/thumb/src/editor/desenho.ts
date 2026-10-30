@@ -21,7 +21,7 @@ import {
 import { familiaDaFonte } from './fontes'
 
 /**
- * [recap] O DESENHO DA THUMBNAIL num canvas (o mesmo codigo na previa e no
+ * [thumb] O DESENHO DA THUMBNAIL num canvas (o mesmo codigo na previa e no
  * PNG final; so a escala muda): as imagens com o "look" (saturacao e
  * contraste leves), a seta, as 2 linhas de texto (sombra, contorno por fora,
  * degrade vertical, esticada 1,11x) e, SO NA PREVIA, as guias da area segura

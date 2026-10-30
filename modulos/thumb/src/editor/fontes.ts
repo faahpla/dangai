@@ -5,10 +5,10 @@ import komika from '../../../../assets/fonts/KomikaAxis.ttf'
 import { FONTES_DA_THUMB, type FonteDaThumb } from '../../shared/thumb'
 
 /**
- * [recap] As fontes da thumbnail, carregadas do arquivo que vai no bundle
+ * [thumb] As fontes da thumbnail, carregadas do arquivo que vai no bundle
  * (como a Komika das legendas: o canvas nao enxerga fonte so instalada no
  * Windows). Luckiest Guy (Apache 2.0), Bangers e Anton (OFL), com a licenca
- * ao lado em modulos/recap/assets/fonts; a Komika Axis e a do app.
+ * ao lado em modulos/thumb/assets/fonts; a Komika Axis e a do app.
  *
  * Familia com prefixo ("Thumb ...") para nao brigar com uma fonte de mesmo
  * nome instalada no PC dele.
@@ -32,7 +32,7 @@ export function carregarFontesDaThumb(): Promise<void> {
         const face = new FontFace(f.familia, `url(${ARQUIVOS[f.id]}) format("truetype")`)
         document.fonts.add(await face.load())
       } catch (e) {
-        console.warn(`[recap] thumb: a fonte ${f.nome} nao carregou:`, e)
+        console.warn(`[thumb] a fonte ${f.nome} nao carregou:`, e)
       }
     }),
   ).then(() => undefined)
