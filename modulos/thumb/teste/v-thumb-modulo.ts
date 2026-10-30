@@ -16,6 +16,10 @@
  *   dentro da cena" (arrastando so a previa troca; soltando, o instante novo
  *   fica guardado, o rosto e procurado de novo, o enquadramento automatico se
  *   refaz e o da mao fica);
+ * - o divisor e o tamanho do texto: desligado/100% por padrao (e nas thumbs
+ *   salvas antes), salvos e lidos de volta, as camadas na ordem (imagens ->
+ *   divisor -> seta e texto, com um canvas falso que anota), o recolorir dos
+ *   PNGs de verdade sem mudar o alpha, e o tamanho com a largura como teto;
  * - a tela (SSR): o editor solto e o do projeto, em ASCII.
  *
  * Rodar da raiz:
@@ -127,6 +131,7 @@ async function principal(): Promise<void> {
   confere(centros.every((c) => Math.abs(c - 0.5 * T.ALTURA) < 0.01), 'com qualquer fonte, o bloco das letras no mesmo lugar do slider')
   confere(T.AJUSTE_DA_FONTE.luckiest.esticada === T.ESTICADA_Y && T.AJUSTE_DA_FONTE.anton.esticada === 1, 'a esticada 1,11 so na Luckiest Guy (a tabela por fonte)')
 
+  await testarDivisoresETamanho(T, D)
   await testarMain()
   await testarLoja()
   await testarTela()
@@ -345,12 +350,161 @@ async function testarTela(): Promise<void> {
   Object.assign(useTela.getInitialState(), useTela.getState())
   const projeto = renderToStaticMarkup(createElement(JanelaDaThumb))
   const texto = (h: string): string => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
-  for (const rotulo of ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Linha 1', 'Seta vermelha apontando o rosto'])
+  for (const rotulo of ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Linha 1', 'Seta vermelha apontando o rosto', 'Tamanho', 'Divisor entre as imagens'])
     confere(texto(solta).includes(rotulo), `solta: "${rotulo}"`)
   for (const rotulo of ['Normal.dangai', 'Trocar projeto...', 'Sugestoes', 'Quadro do projeto', 'Do computador', 'Quadro dentro da cena', 'Sem render ainda'])
     confere(texto(projeto).includes(rotulo), `projeto: "${rotulo}"`)
   confere(ascii(texto(solta)) && ascii(texto(projeto)), 'os textos da tela em ASCII')
   void gravacoes
+}
+
+async function testarDivisoresETamanho(T: typeof import('../shared/thumb'), D: typeof import('../shared/pedidos')): Promise<void> {
+  console.log('\n== o divisor')
+  const padrao = T.thumbPadrao('PODER SUPREMO')
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  confere(padrao.divisor.ligado === false && T.thumbEfetiva(padrao, medir).divisor === null, 'o padrao: divisor DESLIGADO (as thumbs de antes nao mudam)')
+  // Uma thumb gravada antes do divisor e do tamanho: abre com os dois no padrao.
+  const { tamanho: _t, divisor: _d, ...antiga } = padrao
+  const lida = T.thumbDoProjeto(JSON.parse(JSON.stringify(antiga)))
+  confere(lida !== null && lida.tamanho === 1 && lida.divisor.ligado === false && lida.divisor.modelo === 'rasgo-brilho' && lida.divisor.cor === null, 'thumb salva antes (sem divisor e sem tamanho): abre com 100% e divisor desligado')
+  const ligado = { ...padrao, divisor: { ligado: true, modelo: 'slash' as const, cor: '#2fb4ff', contorno: true }, tamanho: 1.3 }
+  const volta = T.thumbDoProjeto(JSON.parse(JSON.stringify(ligado)))
+  confere(volta !== null && JSON.stringify(volta.divisor) === JSON.stringify(ligado.divisor) && volta.tamanho === 1.3, 'o estado (ligado, modelo, cor, tamanho) e salvo e lido de volta')
+  confere(T.thumbDoProjeto({ ...ligado, divisor: { ...ligado.divisor, modelo: 'raio' } }) === null && T.thumbDoProjeto({ ...ligado, tamanho: 3 }) === null, 'modelo desconhecido ou tamanho fora da faixa: nao passa')
+  const preset = D.presetDe(ligado)
+  const doPreset = D.thumbDoPreset(D.presetDaThumbSchema.parse(JSON.parse(JSON.stringify(preset))), T.thumbPadrao(null))
+  confere(doPreset.divisor.modelo === 'slash' && doPreset.divisor.cor === '#2fb4ff' && doPreset.tamanho === 1.3, 'o editor solto lembra o divisor e o tamanho (preset)')
+  const { tamanho: _pt, divisor: _pd, ...presetAntigo } = preset
+  const pa = D.presetDaThumbSchema.safeParse(presetAntigo)
+  confere(pa.success && pa.data.tamanho === 1 && !pa.data.divisor.ligado, 'preset de antes: 100% e divisor desligado')
+  const ef = T.thumbEfetiva(ligado, medir)
+  confere(ef.divisor?.modelo === 'slash' && T.thumbEfetiva({ ...ligado, layout: 'uma' }, medir).divisor === null, 'ligado: entra na emenda; com 1 imagem, nao')
+
+  console.log('\n== as camadas (imagens -> divisor -> seta e texto)')
+  const chamadas: string[] = []
+  const fontes = { cima: { nome: 'cima' }, baixo: { nome: 'baixo' }, divisor: { nome: 'divisor' } }
+  const guardado: Record<string | symbol, unknown> = {}
+  const ctx = new Proxy(guardado, {
+    get(alvo, prop) {
+      if (prop in alvo) return alvo[prop]
+      if (prop === 'createLinearGradient') return () => ({ addColorStop: () => {} })
+      return (...args: unknown[]) => {
+        const f = args[0] as { nome?: string } | undefined
+        chamadas.push(prop === 'drawImage' ? `drawImage:${f?.nome ?? '?'}` : String(prop))
+      }
+    },
+    set(alvo, prop, valor) {
+      alvo[prop] = valor
+      return true
+    },
+  }) as unknown as CanvasRenderingContext2D
+  const { desenharThumb } = await import('../src/editor/desenho')
+  const desenhar = (divisor: import('../src/editor/desenho').DivisorPronto | null, layout: 'uma' | 'duas' = 'duas'): string[] => {
+    chamadas.length = 0
+    const t = { ...ligado, layout }
+    const e = T.thumbEfetiva(t, medir)
+    desenharThumb(ctx, {
+      thumb: t,
+      geo: e.geo,
+      paineis: [
+        { fonte: fontes.cima as unknown as CanvasImageSource, sx: 0, sy: 0, sw: 10, sh: 10 },
+        layout === 'duas' ? { fonte: fontes.baixo as unknown as CanvasImageSource, sx: 0, sy: 0, sw: 10, sh: 10 } : null,
+      ],
+      seta: e.seta,
+      divisor,
+      escala: 1,
+      guias: null,
+    })
+    return [...chamadas]
+  }
+  const ordem = desenhar({ tipo: 'imagem', fonte: fontes.divisor as unknown as CanvasImageSource, largura: 1080, altura: 1920, centro: 974 })
+  const i = (nome: string): number => ordem.indexOf(nome)
+  const primeiroTexto = Math.min(i('strokeText'), i('fillText'))
+  confere(
+    i('drawImage:cima') >= 0 && i('drawImage:cima') < i('drawImage:baixo') && i('drawImage:baixo') < i('drawImage:divisor') && i('drawImage:divisor') < i('stroke') && i('stroke') < primeiroTexto,
+    'a ordem: imagem de cima, imagem de baixo, DIVISOR, seta, texto',
+  )
+  const linha = desenhar({ tipo: 'linha', cor: '#ffffff', contorno: true })
+  const ultimaImagem = linha.lastIndexOf('drawImage:baixo')
+  const retangulos = linha.map((n, k) => (n === 'fillRect' ? k : -1)).filter((k) => k > ultimaImagem && k < linha.indexOf('stroke'))
+  confere(retangulos.length === 2, 'a Linha: o contorno e a linha depois das imagens e antes da seta')
+  confere(!desenhar(null).includes('drawImage:divisor') && !desenhar({ tipo: 'imagem', fonte: fontes.divisor as unknown as CanvasImageSource, largura: 1080, altura: 1920, centro: 974 }, 'uma').includes('drawImage:divisor'), 'sem divisor, ou com 1 imagem: nada entre as imagens e o texto')
+
+  console.log('\n== recolorir (a forma nao muda)')
+  const sharp = (await import('sharp')).default
+  const pasta = join(process.cwd(), 'modulos', 'thumb', 'assets', 'divisores')
+  const ler = async (nome: string): Promise<import('../shared/thumb').PixelsRgba> => {
+    const { data, info } = await sharp(join(pasta, nome)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    return { largura: info.width, altura: info.height, dados: new Uint8ClampedArray(data.buffer, data.byteOffset, data.length) }
+  }
+  const forma = await ler(T.PNG_DA_FORMA_DO_RASGO)
+  for (const modelo of ['rasgo-brilho', 'rasgo', 'slash'] as const) {
+    const png = await ler(T.PNG_DO_DIVISOR[modelo])
+    // O centro da forma confere com o arquivo (a media dos pixels opacos).
+    let soma = 0
+    let n = 0
+    for (let k = 3; k < png.dados.length; k += 4) {
+      if (png.dados[k]! > 200) {
+        soma += Math.floor(k / 4 / png.largura)
+        n += 1
+      }
+    }
+    confere(png.largura === 1080 && png.altura === 1920 && Math.abs(soma / n - T.CENTRO_DO_DIVISOR[modelo]) < 1, `${modelo}: 1080x1920, o centro da forma em y ${T.CENTRO_DO_DIVISOR[modelo]} (medido ${(soma / n).toFixed(1)})`)
+    for (const cor of ['#2fb4ff', '#ff2b2b', '#ffffff']) {
+      const novo = T.recolorirDivisor(modelo, cor, png, forma)
+      let alphaIgual = true
+      let mudou = 0
+      let pretoFicou = true
+      for (let k = 0; k < novo.length; k += 4) {
+        if (novo[k + 3] !== png.dados[k + 3]) alphaIgual = false
+        if (novo[k] !== png.dados[k] || novo[k + 1] !== png.dados[k + 1] || novo[k + 2] !== png.dados[k + 2]) mudou += 1
+        // O contorno e a sombra do Slash (pretos) continuam pretos.
+        if (modelo === 'slash' && png.dados[k + 3]! > 0 && png.dados[k]! + png.dados[k + 1]! + png.dados[k + 2]! === 0 && novo[k]! + novo[k + 1]! + novo[k + 2]! !== 0) pretoFicou = false
+      }
+      confere(alphaIgual && mudou > 1000 && pretoFicou, `${modelo} em ${cor}: o alpha igual pixel a pixel (a forma, o brilho e a sombra), a cor mudou${modelo === 'slash' ? ', o contorno e a sombra pretos' : ''}`)
+    }
+  }
+  // O degrade do Slash e o do texto: topo mais claro, base mais escura.
+  const slash = await ler(T.PNG_DO_DIVISOR.slash)
+  const azul = T.recolorirDivisor('slash', '#2fb4ff', slash)
+  const luz = (k: number): number => azul[k]! + azul[k + 1]! + azul[k + 2]!
+  const coluna = (x: number): number[] => {
+    const ys: number[] = []
+    for (let y = 0; y < 1920; y++) {
+      const k = (y * 1080 + x) * 4
+      if (slash.dados[k + 3]! > 250 && slash.dados[k]! > 200) ys.push(k)
+    }
+    return ys
+  }
+  const col = coluna(900)
+  confere(col.length > 10 && luz(col[0]!) > luz(col[col.length - 1]!), 'Slash recolorido: o topo da faixa mais claro que a base (como o texto)')
+  const rasgo = T.recolorirDivisor('rasgo', '#ff2b2b', await ler(T.PNG_DO_DIVISOR.rasgo))
+  const k540 = (y: number): number => (y * 1080 + 540) * 4
+  confere(rasgo[k540(1000)]! > 200 && rasgo[k540(1000) + 1]! < 120, 'Rasgo em vermelho: a forma vira a cor')
+  const brilho = T.recolorirDivisor('rasgo-brilho', '#ff2b2b', await ler(T.PNG_DO_DIVISOR['rasgo-brilho']), forma)
+  const kb = k540(1060)
+  confere(brilho[kb + 3]! > 0 && brilho[kb]! > 150 && brilho[kb + 2]! < 120, 'Rasgo com brilho em vermelho: o brilho em volta vira um tom da cor (era azul)')
+
+  console.log('\n== o tamanho do texto')
+  for (const [nome, linhas] of [
+    ['curto', ['poder', 'supremo']],
+    ['longo', ['ele despertou', 'surpreendentemente']],
+  ] as [string, [string, string]][]) {
+    for (const tamanho of [0.8, 1, 1.4]) {
+      const g = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: 0.5, tamanho }, medir)
+      const [a, b] = g.linhas
+      const cabem = g.linhas.every((l) => l.largura + 2 * l.contorno <= T.LARGURA * T.LARGURA_UTIL + 0.5)
+      const semSobrepor = b!.base - b!.cap - b!.contorno >= a!.base - 0.01
+      const proporcional = g.linhas.every((l) => Math.abs(l.contorno / l.px - T.CONTORNO_POR_PX) < 1e-9)
+      const certo = g.linhas.every((l) => (l.noMaximo ? l.px < T.CORPO_PX * tamanho : Math.abs(l.px - T.CORPO_PX * tamanho) < 1e-9))
+      confere(cabem && semSobrepor && proporcional && certo, `${nome} a ${Math.round(tamanho * 100)}%: ${g.linhas.map((l) => `${Math.round(l.px)}px${l.noMaximo ? ' (no maximo)' : ''}`).join(' / ')}, cabe, sem sobrepor, contorno junto`)
+    }
+  }
+  const media80 = T.geometriaDaThumb({ layout: 'duas', linhas: ['poder', 'encontro'], textoY: 0.5, tamanho: 0.8 }, medir).linhas[1]!
+  const media140 = T.geometriaDaThumb({ layout: 'duas', linhas: ['poder', 'encontro'], textoY: 0.5, tamanho: 1.4 }, medir).linhas[1]!
+  confere(!media80.noMaximo && media140.noMaximo && media140.px > media80.px && media140.px < T.CORPO_PX * 1.4, `linha comprida: a 80% cabe (${Math.round(media80.px)}px); a 140% so cresce ate caber (${Math.round(media140.px)}px, no maximo da largura)`)
+  const curta140 = T.geometriaDaThumb({ layout: 'duas', linhas: ['poder', 'supremo'], textoY: null, tamanho: 1.4 }, medir).linhas[0]!
+  confere(Math.abs(curta140.px - T.CORPO_PX * 1.4) < 1e-9 && !curta140.noMaximo, 'linha curta a 140%: cresce 1,4x (contorno e sombra pelo corpo)')
 }
 
 function T_ok(t: unknown): boolean {
