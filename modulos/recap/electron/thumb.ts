@@ -210,9 +210,14 @@ export async function sugestoesDaThumb(p: PedidoDeSugestoes, rodar: typeof rodar
       })
     }
   }
-  // Sem keyframe no disco: o quadro do proprio video (no cache).
+  // Sem keyframe no disco: o quadro do proprio video (no cache). Com keyframe: ele sem as barras
+  // pretas (como o quadro do video sai do cache), para os rostos baterem com a imagem usada.
   for (const it of itens.values()) {
-    if (it.imagem) continue
+    if (it.imagem) {
+      const keyframe = it.imagem
+      it.imagem = await editor.imagemSemBarras(keyframe).catch(() => keyframe)
+      continue
+    }
     try {
       it.imagem = await quadroEmCache(it.arquivo, it.t)
     } catch {

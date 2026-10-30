@@ -330,10 +330,15 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         espiando: null,
       })
       // O tamanho de verdade do quadro (a sugestao mede o keyframe): o enquadramento e em fracao, nao muda.
-      atualizarImagem(slot, chave, (atual) =>
-        atual.largura === r.value.largura && atual.altura === r.value.altura ? atual : { ...atual, largura: r.value.largura, altura: r.value.altura },
-      )
-      if (img.rostos === null) await procurarRosto(slot, meu, img)
+      // Outra PROPORCAO (uma thumb salva antes do corte das barras pretas): os rostos de antes eram de
+      // outra imagem -- procura de novo.
+      let outraProporcao = false
+      atualizarImagem(slot, chave, (atual) => {
+        if (atual.largura === r.value.largura && atual.altura === r.value.altura) return atual
+        outraProporcao = Math.abs(atual.largura / atual.altura - r.value.largura / r.value.altura) > 0.01 * (atual.largura / atual.altura)
+        return { ...atual, largura: r.value.largura, altura: r.value.altura, ...(outraProporcao ? { rostos: null } : {}) }
+      })
+      if (img.rostos === null || outraProporcao) await procurarRosto(slot, meu, get().thumb?.imagens[slot] ?? img)
     }
 
     /** Muda a imagem do slot so se ainda for a mesma (o arquivo|t). */

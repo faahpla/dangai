@@ -24,6 +24,7 @@ import {
   LARGURA,
   ALTURA,
 } from '../shared/thumb'
+import { areaSemBarras } from '../shared/barras'
 
 /**
  * [thumb] O EDITOR DE THUMBNAIL no main, em comum (shared/thumb.ts): tirar o
@@ -190,6 +191,20 @@ async function ampliar4x(rgb: Buffer, largura: number, altura: number): Promise<
   return { rgb: saida, largura: ow, altura: oh }
 }
 
+// ------------------------------------------------- as barras pretas
+
+/**
+ * A imagem sem as barras pretas embutidas (letterbox/pillarbox, ver
+ * shared/barras.ts), no mesmo formato. null = nao tem barra (use a de entrada).
+ */
+export async function semBarras(imagem: Buffer | string, formato: 'png' | 'jpeg'): Promise<Buffer | null> {
+  const { data, info } = await sharp(imagem).rotate().greyscale().raw().toBuffer({ resolveWithObject: true })
+  const a = areaSemBarras(data, info.width, info.height)
+  if (a.largura === info.width && a.altura === info.height) return null
+  const corte = sharp(imagem).rotate().extract({ left: a.x, top: a.y, width: a.largura, height: a.altura })
+  return formato === 'png' ? corte.png().toBuffer() : corte.jpeg({ quality: 85 }).toBuffer()
+}
+
 // ------------------------------------------------- fps e quadro rapido
 
 const fpsGuardado = new Map<string, number | null>()
@@ -222,7 +237,9 @@ export function fpsDoVideo(arquivo: string): Promise<number | null> {
 export async function quadroRapido(arquivo: string, t: number): Promise<Uint8Array> {
   if (!existsSync(arquivo)) throw new Error('O arquivo dessa imagem nao esta mais no lugar.')
   if (IMAGENS_DA_THUMB.has(extname(arquivo).toLowerCase())) {
-    return new Uint8Array(await sharp(arquivo).rotate().resize({ width: 480 }).jpeg({ quality: 80 }).toBuffer())
+    const jpeg = await sharp(arquivo).rotate().resize({ width: 480 }).jpeg({ quality: 80 }).toBuffer()
+    // Sem as barras pretas, como o quadro cheio (o arrastar mostra o mesmo enquadramento).
+    return new Uint8Array((await semBarras(jpeg, 'jpeg').catch(() => null)) ?? jpeg)
   }
   const jpeg = await quadroPeloFfmpeg([
     '-ss',
@@ -243,7 +260,7 @@ export async function quadroRapido(arquivo: string, t: number): Promise<Uint8Arr
     '-',
   ])
   if (jpeg.length === 0) throw new Error('Nao deu para tirar o quadro desse video.')
-  return new Uint8Array(jpeg)
+  return new Uint8Array((await semBarras(jpeg, 'jpeg').catch(() => null)) ?? jpeg)
 }
 
 // ---------------------------------------------------------------- a fabrica
@@ -261,6 +278,8 @@ export interface OpcoesDoEditorNoMain {
 
 export interface EditorNoMain {
   quadroEmCache(arquivo: string, t: number): Promise<string>
+  /** Uma imagem de fora (o keyframe da biblioteca) sem as barras pretas: ela mesma, ou uma copia cortada no cache. */
+  imagemSemBarras(imagem: string): Promise<string>
   quadroDaThumb(p: PedidoDeQuadro): Promise<QuadroDaThumb>
   /** Os rostos de varias IMAGENS: cache, motor (um processo para todas) e o antigo. Nunca lanca. */
   rostosDasImagens(
@@ -294,7 +313,8 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
   async function quadroEmCache(arquivo: string, t: number): Promise<string> {
     if (!existsSync(arquivo)) throw new Error('O arquivo dessa imagem nao esta mais no lugar.')
     const ehImagem = IMAGENS_DA_THUMB.has(extname(arquivo).toLowerCase())
-    const chave = hash(`${impressao(arquivo)}|${ehImagem ? 0 : t.toFixed(3)}`)
+    // `sb`: o quadro sai sem as barras pretas (os de antes, com barra, ficam para tras no cache).
+    const chave = hash(`${impressao(arquivo)}|${ehImagem ? 0 : t.toFixed(3)}|sb`)
     const destino = join(pastaDaThumb(), 'quadros', `${chave}.png`)
     if (existsSync(destino)) return destino
     const ja = quadrosEmAndamento.get(destino)
@@ -311,6 +331,7 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
         }
         if (png.length === 0) throw new Error('Nao deu para tirar o quadro desse video.')
       }
+      png = (await semBarras(png, 'png').catch(() => null)) ?? png
       const tmp = `${destino}.${process.pid}.tmp`
       writeFileSync(tmp, png)
       renameSync(tmp, destino)
@@ -318,6 +339,33 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
     })().finally(() => quadrosEmAndamento.delete(destino))
     quadrosEmAndamento.set(destino, conta)
     return conta
+  }
+
+  const semBarrasGuardado = new Map<string, Promise<string>>()
+
+  async function imagemSemBarras(imagem: string): Promise<string> {
+    let k: string
+    try {
+      k = hash(`${impressao(imagem)}|sb`)
+    } catch {
+      return imagem
+    }
+    let p = semBarrasGuardado.get(k)
+    if (!p) {
+      p = (async () => {
+        const destino = join(pastaDaThumb(), 'quadros', `${k}.png`)
+        if (existsSync(destino)) return destino
+        const cortada = await semBarras(imagem, 'png').catch(() => null)
+        if (!cortada) return imagem
+        const tmp = `${destino}.${process.pid}.tmp`
+        writeFileSync(tmp, cortada)
+        renameSync(tmp, destino)
+        return destino
+      })()
+      semBarrasGuardado.set(k, p)
+      p.catch(() => semBarrasGuardado.delete(k))
+    }
+    return p
   }
 
   /** O quadro para a previa: o tamanho de verdade e um JPEG de ate 2048 de lado. */
@@ -570,7 +618,7 @@ export function criarEditorNoMain(o: OpcoesDoEditorNoMain): EditorNoMain {
     return { sugestoes, detector: achados.detector }
   }
 
-  return { quadroEmCache, quadroDaThumb, rostosDasImagens, rostosDoQuadro, recorteDaThumb, sugestoesDasCenas }
+  return { quadroEmCache, imagemSemBarras, quadroDaThumb, rostosDasImagens, rostosDoQuadro, recorteDaThumb, sugestoesDasCenas }
 }
 
 /** Uma sugestao pronta para a tela: o tamanho de verdade e a miniatura (JPEG pequeno). */

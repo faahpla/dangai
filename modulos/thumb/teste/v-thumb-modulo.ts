@@ -136,6 +136,7 @@ async function principal(): Promise<void> {
 
   await testarDivisoresETamanho(T, D)
   testarSeta(T)
+  await testarCobrirEBarras(T)
   await testarMain()
   await testarLoja()
   await testarTela()
@@ -199,6 +200,22 @@ async function testarMain(): Promise<void> {
     const nd = await M.nitidezDaImagem(detalhe)
     const nb = await M.nitidezDaImagem(borrada)
     confere(nd !== null && nb !== null && nd > nb && nitida !== null, `a nitidez: o quadro com detalhe mede mais que o borrado (${nd?.toFixed(0)} > ${nb?.toFixed(0)})`)
+
+    // As barras pretas embutidas saem do quadro em cache, do quadro rapido e do keyframe de fora.
+    const comBarras = join(pasta, 'com-barras.png')
+    const listras = Buffer.alloc(854 * 480 * 3)
+    for (let y = 73; y < 407; y++) for (let x = 0; x < 854; x++) listras.fill((x * 3 + y * 5) % 200 + 40, (y * 854 + x) * 3, (y * 854 + x) * 3 + 3)
+    await sharp(listras, { raw: { width: 854, height: 480, channels: 3 } }).png().toFile(comBarras)
+    const semBarra = await sharp(await editor.quadroEmCache(comBarras, 0)).metadata()
+    const qb = await editor.quadroDaThumb({ arquivo: comBarras, t: 0 })
+    const rb = await sharp(Buffer.from(await M.quadroRapido(comBarras, 0))).metadata()
+    const keyframe = await editor.imagemSemBarras(comBarras)
+    const kb = await sharp(keyframe).metadata()
+    confere(
+      semBarra.width === 854 && semBarra.height === 334 && qb.altura === 334 && rb.width === 480 && Math.abs((rb.height ?? 0) - 188) <= 2 && keyframe !== comBarras && kb.height === 334,
+      `com letterbox: o quadro em cache, a previa, o quadro rapido e o keyframe saem sem as barras (${semBarra.width}x${semBarra.height}, rapido ${rb.width}x${rb.height})`,
+    )
+    confere((await editor.imagemSemBarras(imagem)) === imagem, 'sem barra: o keyframe e ele mesmo (nada copiado)')
 
     // Emprestado e pronto: o editor usa o detector dele.
     emprestarMotorDeRostos({ motivoParaNaoRodar: () => null, detector: async () => null, encerrar: () => {} })
@@ -563,6 +580,76 @@ function testarSeta(T: typeof import('../shared/thumb')): void {
   confere(s.lado === 1 && s.base.x <= larga.bloco!.esquerda && s.base.y > larga.bloco!.base && s.ponta.x < 330 && s.ponta.y < larga.bloco!.topo - 60, '"CANCELOU": nasce embaixo a esquerda, abaixo do texto, e a ponta chega pelo lado do rosto, acima das letras')
   const espelhada = T.setaSozinha(larga, { x1: 60, y1: 560, x2: 300, y2: 820 })!
   confere(espelhada.lado === -1 && espelhada.base.x >= larga.bloco!.direita && T.caixaDaSeta(espelhada).x2 <= T.LARGURA, 'o rosto a esquerda: tudo espelhado, nasce embaixo a direita')
+}
+
+/**
+ * A IMAGEM SEMPRE COBRE O SLOT (pedido de 30/10): nenhum enquadramento -- o
+ * automatico (rosto na beira), o da mao (zoom abaixo do minimo, centro fora)
+ * -- abre buraco, com imagem deitada, em pe ou 16:9; e as barras pretas
+ * EMBUTIDAS no quadro (o letterbox da cena do Yami no Black Clover S02E04,
+ * ~15% em cima e embaixo, que aparecia como faixa preta no topo da previa)
+ * saem do quadro antes de tudo, sem comer cena escura.
+ */
+async function testarCobrirEBarras(T: typeof import('../shared/thumb')): Promise<void> {
+  console.log('\n== a imagem cobre o slot e as barras pretas saem')
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  const IMAGENS = { deitada: { largura: 3000, altura: 600 }, 'em pe': { largura: 600, altura: 2400 }, '16:9': { largura: 854, altura: 480 }, '9:16': { largura: 1080, altura: 1920 } }
+  const NA_MAO = [
+    { zoom: 1, cx: 0, cy: 0 },
+    { zoom: 4, cx: 1, cy: 1 },
+    { zoom: 0.3, cx: 0.5, cy: 0.5 },
+    { zoom: 1.7, cx: -2, cy: 3 },
+  ]
+  const BEIRAS = [
+    { x: 0.45, y: 0, w: 0.1, h: 0.2, conf: 0.9 },
+    { x: 0.45, y: 0.8, w: 0.1, h: 0.2, conf: 0.9 },
+    { x: 0, y: 0.4, w: 0.08, h: 0.2, conf: 0.9 },
+  ]
+  for (const [nome, tam] of Object.entries(IMAGENS)) {
+    let buracos = 0
+    let casos = 0
+    for (const layout of ['uma', 'duas'] as const) {
+      for (const rosto of [null, ...BEIRAS]) {
+        for (const enq of [null, ...NA_MAO]) {
+          const img = { origem: 'arquivo' as const, arquivo: 'x.png', t: 0, ...tam, rostos: rosto ? [rosto] : null, enquadramento: enq }
+          const t = { ...T.thumbPadrao(null), layout, linhas: ['poder', 'supremo'] as [string, string], imagens: [img, img] as T.ThumbDoProjeto['imagens'] }
+          const ef = T.thumbEfetiva(t, medir)
+          ef.geo.paineis.forEach((painel, i) => {
+            casos++
+            const r = T.recorteDaImagem(painel, tam, ef.enquadramentos[i] ?? null)
+            const dentro = r.sx >= -1e-6 && r.sy >= -1e-6 && r.sx + r.sw <= tam.largura + 1e-6 && r.sy + r.sh <= tam.altura + 1e-6
+            const cobre = r.sw * r.escala >= T.LARGURA - 1e-6 && r.sh * r.escala >= painel.y1 - painel.y0 - 1e-6
+            if (!dentro || !cobre) buracos++
+          })
+        }
+      }
+    }
+    confere(buracos === 0, `${nome} (${tam.largura}x${tam.altura}): ${casos} enquadramentos (automatico com o rosto em cada beira, e a mao fora do limite), todos dentro da imagem e cobrindo o slot`)
+  }
+  // Sem como tirar o rosto da faixa: cobre o slot e avisa (nunca abre buraco para empurrar o rosto).
+  const colada = { origem: 'arquivo' as const, arquivo: 'x.png', t: 0, largura: 854, altura: 480, rostos: [BEIRAS[0]!], enquadramento: null }
+  const efColada = T.thumbEfetiva({ ...T.thumbPadrao(null), linhas: ['poder', 'supremo'], imagens: [colada, null] }, medir)
+  confere(efColada.avisos.some((a) => a.texto.includes('faixa proibida de cima')), 'a cabeca colada no topo da imagem: o slot coberto e o aviso da faixa proibida')
+
+  const { areaSemBarras } = await import('../shared/barras')
+  const quadro = (w: number, h: number, preto: (x: number, y: number) => boolean): Uint8Array => {
+    const c = new Uint8Array(w * h)
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) c[y * w + x] = preto(x, y) ? 6 : 60 + ((x * 7 + y * 13) % 150)
+    return c
+  }
+  const letterbox = quadro(854, 480, (_x, y) => y < 73 || y >= 407)
+  // Um pouco de ruido (e um logo pequeno) dentro da barra: continua barra.
+  for (let i = 0; i < 3; i++) letterbox[10 * 854 + 400 + i] = 255
+  confere(JSON.stringify(areaSemBarras(letterbox, 854, 480)) === JSON.stringify({ x: 0, y: 73, largura: 854, altura: 334 }), 'letterbox (a cena do Yami): as duas barras saem, a cena inteira fica')
+  confere(JSON.stringify(areaSemBarras(quadro(640, 480, (x) => x < 80 || x >= 560), 640, 480)) === JSON.stringify({ x: 80, y: 0, largura: 480, altura: 480 }), 'pillarbox (4:3 no 16:9): as barras do lado saem')
+  confere(areaSemBarras(quadro(854, 480, (_x, y) => y < 90), 854, 480).altura === 480, 'ceu escuro so em cima (sem a barra de baixo): nada sai')
+  confere(areaSemBarras(quadro(854, 480, (_x, y) => y < 40 || y >= 400), 854, 480).altura === 480, 'barras de espessuras bem diferentes: nada sai')
+  confere(areaSemBarras(quadro(854, 480, () => true), 854, 480).altura === 480, 'quadro todo preto (fade): nada sai')
+  // A vinheta escura dos lados (o porco do Magic Repo Man, a cena noturna do Cyberpunk): escura, mas nao lisa.
+  const vinheta = quadro(854, 480, () => false)
+  for (let y = 0; y < 480; y++) for (let x = 0; x < 854; x++) if (x < 60 || x >= 794) vinheta[y * 854 + x] = Math.round(4 + (32 * Math.abs(y - 240)) / 240)
+  confere(areaSemBarras(vinheta, 854, 480).largura === 854, 'vinheta escura nos lados (escura, mas nao lisa): nada sai')
+  confere(areaSemBarras(quadro(854, 480, (_x, y) => y < 4 || y >= 476), 854, 480).altura === 480, 'borda fina de encode (< 2%): fica')
 }
 
 function T_ok(t: unknown): boolean {
