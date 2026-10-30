@@ -288,6 +288,19 @@ async function testarLoja(): Promise<void> {
   const depois = L.getState().thumb!.imagens[0]!
   confere(depois.t === 1.4 && JSON.stringify(depois.enquadramento) === JSON.stringify(aMao) && depois.rostos?.[0]?.x === ROSTO_A.x, 'ajustado a mao: o ajuste fica, so o rosto e o quadro mudam (os avisos dizem se saiu da area)')
   confere(fechados > 0, 'as miniaturas soltas fecham (sem vazar bitmap)')
+
+  // A MESMA imagem de novo no slot (soltar de novo): a previa nao recarrega, o tamanho e o rosto ficam.
+  await L.getState().porImagem({ origem: 'arquivo', arquivo: 'C:/pc/a.png', t: 0, largura: 1920, altura: 1080, rostos: null, enquadramento: null }, 1)
+  await esperar(20)
+  const primeira = L.getState().thumb!.imagens[1]!
+  const quadrosAntes = pedidos.filter((p) => p.tipo === 'quadro').length
+  await L.getState().porImagem({ origem: 'arquivo', arquivo: 'C:/pc/a.png', t: 0, largura: 1920, altura: 1080, rostos: null, enquadramento: null }, 1)
+  await esperar(20)
+  const denovo = L.getState().thumb!.imagens[1]!
+  confere(
+    primeira.largura === 854 && denovo.largura === 854 && denovo.altura === 480 && denovo.rostos?.length === 1 && pedidos.filter((p) => p.tipo === 'quadro').length === quadrosAntes,
+    'a mesma imagem de novo no slot: sem recarregar, fica com o tamanho medido e o rosto (o PNG recorta igual a previa)',
+  )
 }
 
 async function testarTela(): Promise<void> {

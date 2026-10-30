@@ -475,10 +475,18 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         const thumb = get().thumb
         if (!thumb) return
         const imagens = [...thumb.imagens] as ThumbDoProjeto['imagens']
-        imagens[slot] = img
+        // A MESMA imagem de novo no slot (soltar de novo, o mesmo arquivo no dialogo): a previa
+        // nao recarrega, entao o tamanho medido e os rostos ja achados ficam (senao o recorte do
+        // PNG sairia no tamanho chutado, 1920x1080, e o rosto nunca seria procurado).
+        const antes = imagens[slot]
+        const nova: ImagemDaThumb =
+          antes && chaveDa(antes) === chaveDa(img)
+            ? { ...img, largura: antes.largura, altura: antes.altura, rostos: img.rostos ?? antes.rostos }
+            : img
+        imagens[slot] = nova
         set({ thumb: { ...thumb, imagens }, salvo: null })
         gravarLogo()
-        await carregarSlot(slot, img)
+        await carregarSlot(slot, nova)
       },
 
       usarSugestao: async (s) => get().porImagem(imagemDaSugestao(s)),
