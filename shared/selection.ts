@@ -72,7 +72,31 @@ export interface SelectionOptions {
    * aberturas e os episodios que ele puxa de fora da lista sao parte do video.
    */
   broll?: readonly (PreferenciaDoBroll | null)[]
+  /**
+   * O quanto cada cena lida PARECE com a frase, uma entrada por linha: id ->
+   * desvios acima da media (shared/visao.ts). So vem quem se destaca.
+   *
+   * E o que acha a cena certa DENTRO do episodio que o B-roll deu: o AnCut so
+   * sabe quem aparece em um quarto das cenas, e o resto empatava.
+   */
+  visao?: readonly (Readonly<Record<string, number>> | null)[]
 }
+
+/**
+ * Quanto vale cada desvio acima da media no que a cena mostra.
+ *
+ * Medido nos dois videos do Bleach, contra as cenas que ele marcou no episodio
+ * 50 (scripts/teste/medir-visao.ts, 32 trechos): a cena dele, ou uma do mesmo
+ * momento, nas 12 primeiras sugestoes foi de 25% para 47%. Com metade do peso
+ * achava menos; com o dobro, a cena certa saia das 3 primeiras.
+ */
+const PESO_DA_IMAGEM = 25
+
+/**
+ * Teto dos desvios. Uma cena muito parecida ganha no maximo ~90 -- o mesmo que
+ * o episodio do B-roll, menos que um personagem certo (100).
+ */
+const TETO_DA_IMAGEM = 3.5
 
 /** Cena do episodio que o B-roll da para ESTA frase. Quase um personagem certo. */
 const BONUS_DO_ITEM = 90
@@ -115,11 +139,12 @@ export function selectClips(
     // ~19 mil clipes por bloco no acervo dele.
     const frase = palavrasUteis(linha.text)
     const broll = options.broll?.[iLinha] ?? null
+    const visao = options.visao?.[iLinha] ?? null
 
     const pontuados: SelectionCandidate[] = []
     for (const clip of acervo) {
       if (usados.has(clip.id)) continue
-      const p = pontuar(clip, querem, precisa, options.mode, ultimo, frase, descricoes[clip.id], broll)
+      const p = pontuar(clip, querem, precisa, options.mode, ultimo, frase, descricoes[clip.id], broll, visao?.[clip.id])
       if (p === null) continue
       pontuados.push({ clip, score: p.score, reason: p.reason })
     }
@@ -255,15 +280,36 @@ function pontuar(
   frase: Set<string>,
   descricao: SceneDescription | undefined,
   broll: PreferenciaDoBroll | null,
+  /** Desvios acima da media do que a cena mostra para esta frase. */
+  parecido: number | undefined,
 ): Nota | null {
   let score = 0
   const porques: string[] = []
 
-  const casou = descricao ? casarDescricao(frase, descricao) : null
+  const palavras = descricao ? casarDescricao(frase, descricao) : null
+  const pelaImagem =
+    parecido !== undefined && parecido > 0 && descricao
+      ? { score: Math.round(Math.min(parecido, TETO_DA_IMAGEM) * PESO_DA_IMAGEM), reason: `a imagem: ${descricao.cena.replace(/[.\s]+$/, '')}` }
+      : null
+  // O que a cena mostra conversa com a frase -- pela palavra igual ou pelo sentido.
+  const casou =
+    palavras && pelaImagem
+      ? { score: palavras.score + pelaImagem.score, reason: `${palavras.reason}, ${pelaImagem.reason}` }
+      : (palavras ?? pelaImagem)
   /** Quem o item do B-roll cita e esta na cena ("Ryuken entregando a flecha a Uryu"). */
   const doItem = broll ? broll.personagens.filter((p) => clip.characters.includes(p)) : []
 
-  if (querem.length > 0) {
+  if (querem.length > 0 && clip.characters.length === 0 && pelaImagem) {
+    /*
+     * A frase nomeia alguem e o AnCut nao sabe quem esta na cena -- mas a
+     * imagem bate com a frase. Cena SEM etiqueta nao e personagem errado, e
+     * desconhecido: o AnCut so etiquetou um quarto do episodio 50 do Bleach, e
+     * em 8 das 48 frases que ele marcou nos dois videos do Bleach a cena dele
+     * era sem etiqueta ("Aizen voltou para a prisao de Muken"). Entra sem o
+     * ponto de personagem, entao a cena etiquetada certa continua na frente
+     * quando a imagem dela bate igual.
+     */
+  } else if (querem.length > 0) {
     const tem = querem.filter((p) => clip.characters.includes(p))
     if (tem.length === 0) return null // personagem errado nao entra na fita
 

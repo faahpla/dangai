@@ -1,7 +1,8 @@
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
+import { avisar } from '../aviso'
 
 /** Do store do editor (ver ../project.ts): a Biblioteca, os apelidos, favoritos, etiquetas e descricoes. */
-export type FatiaDaBiblioteca = Pick<ProjectState, 'openPalette' | 'mostrarNaBiblioteca' | 'esquecerIrParaClipe' | 'definirTrechoAoVivo' | 'mesclarCenas' | 'openLibrary' | 'loadNicknames' | 'loadFavorites' | 'loadTags' | 'loadDescriptions' | 'describeLibrary' | 'tagLibrary' | 'toggleFavorite' | 'saveNicknames' | 'setLibraryBusy' | 'syncLibrary' | 'addFromLibrary'>
+export type FatiaDaBiblioteca = Pick<ProjectState, 'openPalette' | 'mostrarNaBiblioteca' | 'esquecerIrParaClipe' | 'definirTrechoAoVivo' | 'mesclarCenas' | 'openLibrary' | 'loadNicknames' | 'loadFavorites' | 'loadTags' | 'loadDescriptions' | 'describeLibrary' | 'pararLeitura' | 'tagLibrary' | 'toggleFavorite' | 'saveNicknames' | 'setLibraryBusy' | 'syncLibrary' | 'addFromLibrary'>
 
 export const fatiaDaBiblioteca = (set: SetProjeto, get: GetProjeto): FatiaDaBiblioteca => ({
 
@@ -111,19 +112,28 @@ export const fatiaDaBiblioteca = (set: SetProjeto, get: GetProjeto): FatiaDaBibl
     if (result.ok) set({ descriptions: result.value })
   },
 
-  describeLibrary: async (anime) => {
+  describeLibrary: async (anime, ids) => {
     if (get().describeBusy) return
     /*
-     * Um anime por vez, e nunca sozinho.
+     * Pouco e o que importa, e nunca sozinho.
      *
-     * Sao ~4,9s por cena: um episodio leva meia hora e o acervo inteiro passa
-     * de 24. Por isso o botao le o anime aberto, e nao tudo -- ele consegue
-     * trabalhar no mesmo dia em vez de esperar uma noite antes do primeiro uso.
+     * Sao ~3,3s por cena: um episodio leva meia hora e o acervo inteiro passa
+     * de dois dias. Por isso o botao le os episodios do B-roll, ou o anime
+     * aberto, e nao tudo -- ele trabalha no mesmo dia em vez de esperar.
      */
     set({ describeBusy: true, libraryError: null, libraryBusy: 'Preparando o leitor de cenas...' })
-    const result = await window.dangai.describeLibrary(anime)
-    if (result.ok) set({ descriptions: result.value, describeBusy: false, libraryBusy: null })
-    else set({ libraryError: result.error, describeBusy: false, libraryBusy: null })
+    const result = await window.dangai.describeLibrary(anime, ids)
+    // O ultimo recado do leitor e o resumo ("2.286 cenas lidas em 2h", "Leitura
+    // parada: ..."): fica na barra de baixo depois que o botao volta ao normal.
+    const resumo = get().libraryBusy
+    if (result.ok) {
+      set({ descriptions: result.value, describeBusy: false, libraryBusy: null })
+      if (resumo && !resumo.startsWith('Preparando')) avisar(resumo, 12000)
+    } else set({ libraryError: result.error, describeBusy: false, libraryBusy: null })
+  },
+
+  pararLeitura: async () => {
+    await window.dangai.stopDescribe()
   },
 
   tagLibrary: async () => {

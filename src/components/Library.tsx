@@ -32,6 +32,8 @@ import { TAGS_PT } from '@shared/tags-pt'
 import { nomeNatural } from '@shared/nomes'
 import { clipeNoAlvo, rotuloDoItem } from '@shared/broll'
 import { useBrollDosTrechos, useItensDoBroll } from '@/hooks/useBroll'
+import { useVisaoDosTrechos } from '@/hooks/useVisao'
+import { tempoDeLeitura } from '@shared/visao'
 import { useProject } from '@/store/project'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
@@ -118,6 +120,7 @@ export function Library() {
   const descriptions = useProject((s) => s.descriptions)
   const describeBusy = useProject((s) => s.describeBusy)
   const describeLibrary = useProject((s) => s.describeLibrary)
+  const pararLeitura = useProject((s) => s.pararLeitura)
   const applyBlockClips = useProject((s) => s.applyBlockClips)
   const cancelAnalyze = useProject((s) => s.cancelAnalyze)
   const itensDoBroll = useItensDoBroll()
@@ -342,7 +345,7 @@ export function Library() {
    * biblioteca, apelidos dele, o que cada cena mostra --, so que aqui servem
    * para ORDENAR, nunca para decidir.
    */
-  const contexto = useMemo(() => {
+  const contextoBase = useMemo(() => {
     if (!porRoteiro || !library || !blocos) return null
     return {
       blocks: blocos,
@@ -353,6 +356,26 @@ export function Library() {
       broll: itensDoBroll,
     }
   }, [porRoteiro, library, blocos, nicknames, descriptions, itensDoBroll])
+
+  /*
+   * As cenas da serie do roteiro: as dos episodios do B-roll (o que o botao de
+   * ler cenas le) e as ja lidas (o que a comparacao com o roteiro olha).
+   */
+  const { cenasDoBroll, lidasDaSerie } = useMemo(() => {
+    if (!contextoBase || !library) return { cenasDoBroll: [] as string[], lidasDaSerie: [] as string[] }
+    const series = seriesDoRoteiro(contextoBase)
+    const alvos = itensDoBroll.flatMap((i) => i.alvos)
+    const daSerie = series.length > 0 ? library.clips.filter((c) => series.includes(c.anime)) : library.clips
+    return {
+      cenasDoBroll: alvos.length > 0 ? daSerie.filter((c) => clipeNoAlvo(c, alvos)).map((c) => c.id) : [],
+      lidasDaSerie: daSerie.filter((c) => descriptions[c.id]?.cena).map((c) => c.id),
+    }
+  }, [contextoBase, library, itensDoBroll, descriptions])
+  const visao = useVisaoDosTrechos(porRoteiro ? blocos : null, lidasDaSerie)
+  const contexto = useMemo(
+    () => (contextoBase && visao ? { ...contextoBase, visao } : contextoBase),
+    [contextoBase, visao],
+  )
 
   /*
    * Abrir ja no anime que o roteiro cita.
@@ -471,9 +494,15 @@ export function Library() {
    */
   const { lidas, doAnime } = useMemo(() => {
     if (!library) return { lidas: 0, doAnime: 0 }
-    const alvo = anime ? library.clips.filter((c) => c.anime === anime) : library.clips
+    // Com B-roll, o alvo sao os episodios dele: e o que acha a cena certa hoje.
+    const ids = cenasDoBroll.length > 0 ? new Set(cenasDoBroll) : null
+    const alvo = ids
+      ? library.clips.filter((c) => ids.has(c.id))
+      : anime
+        ? library.clips.filter((c) => c.anime === anime)
+        : library.clips
     return { lidas: alvo.filter((c) => descriptions[c.id]).length, doAnime: alvo.length }
-  }, [library, anime, descriptions])
+  }, [library, anime, descriptions, cenasDoBroll])
 
   const totalFavoritos = useMemo(() => {
     if (!library) return 0
@@ -726,21 +755,36 @@ export function Library() {
             )}
           </button>
           {/*
-            Ler cenas e SEMPRE do anime aberto, nunca do acervo.
+            Ler cenas e dos episodios do B-roll, ou do anime aberto -- nunca do acervo.
 
-            Sao ~4,9s por cena: um episodio leva meia hora, o acervo inteiro
-            passa de 24 horas. Um botao que so funcionasse "para tudo" seria um
-            botao que ele nunca clicaria. Com o anime aberto ele le o que vai
-            usar hoje e monta hoje.
+            Sao ~3,3s por cena: um episodio leva meia hora, o acervo inteiro
+            passa de dois dias. Um botao que so funcionasse "para tudo" seria um
+            botao que ele nunca clicaria. Com o B-roll ele le os episodios do
+            video de hoje; sem, o anime aberto. Lendo, o mesmo botao para -- e o
+            que ja foi lido fica.
           */}
+          {/* Lendo, o andamento fica ao lado do botao: a leitura dos episodios de um B-roll leva horas. */}
+          {describeBusy && busy && <span className="tnum text-[11px] text-ink-3">{busy}</span>}
           <button
             type="button"
-            onClick={() => void describeLibrary(anime)}
-            disabled={describeBusy || busy !== null || doAnime === 0}
+            onClick={() =>
+              void (describeBusy
+                ? pararLeitura()
+                : cenasDoBroll.length > 0
+                  ? describeLibrary(null, cenasDoBroll)
+                  : describeLibrary(anime))
+            }
+            disabled={!describeBusy && (busy !== null || doAnime === 0 || (cenasDoBroll.length === 0 && !anime))}
             title={
-              anime
-                ? `Lê emoção, ação e cenário das cenas de ${anime}. ${lidas.toLocaleString('pt-BR')} de ${doAnime.toLocaleString('pt-BR')} já lidas. Precisa do Ollama aberto.`
-                : 'Abra um anime na lista ao lado para ler as cenas dele. Ler o acervo inteiro levaria mais de 24 horas.'
+              describeBusy
+                ? 'Para a leitura. O que já foi lido fica, e a próxima continua de onde parou.'
+                : cenasDoBroll.length > 0
+                  ? `Lê o que acontece em cada cena dos episódios do B-roll: ${lidas.toLocaleString('pt-BR')} de ${doAnime.toLocaleString('pt-BR')} já lidas` +
+                    (doAnime > lidas ? `, faltam ~${tempoDeLeitura(doAnime - lidas)}` : '') +
+                    '. Com isso as sugestões acham a cena certa dentro do episódio. Roda no seu PC, pelo Ollama; dá para parar quando quiser.'
+                  : anime
+                    ? `Lê o que acontece nas cenas de ${anime}. ${lidas.toLocaleString('pt-BR')} de ${doAnime.toLocaleString('pt-BR')} já lidas. Precisa do Ollama aberto.`
+                    : 'Abra um anime na lista ao lado para ler as cenas dele. Ler o acervo inteiro levaria dias.'
             }
             className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink disabled:opacity-40"
           >
@@ -749,8 +793,8 @@ export function Library() {
             ) : (
               <Eye size={12} strokeWidth={1.5} className="text-accent" />
             )}
-            Ler cenas
-            {doAnime > 0 && (
+            {describeBusy ? 'Parar leitura' : cenasDoBroll.length > 0 ? 'Ler cenas do B-roll' : 'Ler cenas'}
+            {!describeBusy && doAnime > 0 && (
               <span className="tnum text-[10px] text-ink-3">
                 {Math.round((lidas / doAnime) * 100)}%
               </span>

@@ -8,9 +8,11 @@ import type {
 import { episodiosQueFaltam, lerBroll, preferenciasDoBroll, resolverTemporadas, rotuloDoItem } from '@shared/broll'
 import { buildScriptIndex, readScript, toPieces, toSentences } from '@shared/script-reader'
 import { selectClips } from '@shared/selection'
+import { consultasDosTrechos } from '@shared/visao'
 import { applyScript, transcriptOnly } from './transcribe'
 import { readNicknames } from './nicknames'
 import { readDescriptions } from './describe'
+import { compararCenas } from './visao'
 import { escanearRaizes, raizesDaBiblioteca } from './library'
 import { vocabulario, vocabularioDaBiblioteca } from './vocabulario'
 
@@ -91,6 +93,20 @@ export async function automount(
   // "Episodio 4" sem temporada vira o 4 da temporada de quem o B-roll cita.
   const itens = request.broll ? resolverTemporadas(lerBroll(request.broll), library.clips, series, index) : []
   const faltam = episodiosQueFaltam(itens, library.clips, series)
+  const descricoes = readDescriptions()
+  /*
+   * O que as cenas lidas mostram, comparado com cada frase (shared/visao.ts).
+   * Sem cena lida ou sem o comparador no Ollama sai vazio, e a escolha e a de antes.
+   */
+  const cenasLidas = library.clips.filter(
+    (c) => descricoes[c.id]?.cena && (series.length === 0 || series.includes(c.anime)),
+  )
+  if (cenasLidas.length > 0) onProgress('Comparando as cenas lidas com o roteiro...')
+  // Comparador com erro nao derruba a montagem: ela so sai como era antes.
+  const visao = await compararCenas(
+    consultasDosTrechos(linhas),
+    cenasLidas.map((c) => c.id),
+  ).catch(() => linhas.map(() => ({})))
   const blocos = selectClips(linhas, library.clips, {
     mode: request.mode,
     series: request.series ? [request.series] : undefined,
@@ -99,7 +115,8 @@ export async function automount(
      * escolha continua sendo a de antes -- ligar o leitor e escolha dele, nao
      * um pedagio antes do primeiro video.
      */
-    descriptions: readDescriptions(),
+    descriptions: descricoes,
+    visao,
     // O B-roll casa pela frase INTEIRA: aqui a frase longa ja veio partida no
     // teto de 3s, e a vizinhanca do casamento junta os pedacos de volta.
     broll: preferenciasDoBroll(

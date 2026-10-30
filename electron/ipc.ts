@@ -65,7 +65,8 @@ import { escanearRaizes, raizesDaBiblioteca } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
 import { automount, scriptBlocks } from './services/automount'
 import { readFavorites, toggleFavorite } from './services/favorites'
-import { describeClips, readDescriptions } from './services/describe'
+import { describeClips, readDescriptions, stopDescribe } from './services/describe'
+import { compararCenas } from './services/visao'
 import { readTags, tagClips } from './services/tagger'
 import {
   clearAutosave,
@@ -404,23 +405,34 @@ export function registerIpc(): void {
 
   handle<[], Record<string, SceneDescription>>(IPC.readDescriptions, async () => readDescriptions())
 
-  handle<[string | null], Record<string, SceneDescription>>(IPC.describeLibrary, async (anime) => {
+  handle<[string | null, (readonly string[])?], Record<string, SceneDescription>>(IPC.describeLibrary, async (anime, ids) => {
     const raizes = raizesDaBiblioteca()
     if (raizes.length === 0) {
       throw new Error('Escolha a pasta das cenas nas configurações antes de ler as cenas.')
     }
     const library = await escanearRaizes(raizes, publish, broadcastLibrary)
     /*
-     * Um anime por vez e o uso esperado: sao ~4,7s por cena, entao o acervo
-     * inteiro passa de 24 horas e um episodio sai em meia hora. null le tudo,
-     * para quem quiser deixar rodando de madrugada.
+     * Pouco e o que importa: sao ~3,3s por cena, entao o acervo inteiro passa
+     * de dois dias. `ids` sao os episodios do B-roll do video de hoje; o anime
+     * e o botao da Biblioteca. null le tudo, para quem quiser deixar rodando.
      */
-    const alvo = anime ? library.clips.filter((c) => c.anime === anime) : library.clips
+    const querem = ids ? new Set(ids) : null
+    const alvo = querem
+      ? library.clips.filter((c) => querem.has(c.id))
+      : anime
+        ? library.clips.filter((c) => c.anime === anime)
+        : library.clips
     if (alvo.length === 0) {
       throw new Error(`Nenhuma cena encontrada${anime ? ` em "${anime}"` : ''}.`)
     }
     return describeClips(alvo, broadcastLibrary)
   })
+
+  handle<[], void>(IPC.stopDescribe, async () => stopDescribe())
+
+  handle<[readonly string[], readonly string[]], Record<string, number>[]>(IPC.compararCenas, async (consultas, ids) =>
+    compararCenas(consultas, ids),
+  )
 
   handle<[], string[]>(IPC.readFavorites, async () => readFavorites())
   handle<[string], string[]>(IPC.toggleFavorite, async (id) => toggleFavorite(id))

@@ -107,6 +107,8 @@ export const IPC = {
   readTags: 'tagger:read',
   describeLibrary: 'describe:run',
   readDescriptions: 'describe:read',
+  stopDescribe: 'describe:stop',
+  compararCenas: 'describe:comparar',
   readFavorites: 'favorites:read',
   toggleFavorite: 'favorites:toggle',
   /** main -> renderer, andamento da varredura da biblioteca */
@@ -591,6 +593,11 @@ export interface TesteDoGemini {
  * soube dizer -- diferente de nao estar no mapa, que significa nao lida.
  */
 export interface SceneDescription {
+  /**
+   * O que acontece, numa frase: "homem de oculos entrega um objeto a um rapaz".
+   * E o que casa com o B-roll e com a frase do roteiro (shared/visao.ts).
+   */
+  cena: string
   /** O sentimento dominante, uma palavra. */
   emocao: string
   /** O que acontece, poucas palavras. */
@@ -731,12 +738,20 @@ export interface DangaiBridge {
   /** As etiquetas ja guardadas. Vazio antes da primeira etiquetagem. */
   readTags(): Promise<IpcResult<Record<string, string[]>>>
   /**
-   * Le o que cada cena mostra: emocao, acao, cenario e plano.
+   * Le o que cada cena mostra: a frase do que acontece, emocao, acao, cenario e plano.
    *
-   * Passe o nome do anime para ler so ele. O acervo inteiro leva horas -- um
-   * anime por vez e o uso esperado. null le tudo que ainda falta.
+   * Passe o nome do anime para ler so ele, ou `ids` para ler so essas cenas (os
+   * episodios do B-roll). O acervo inteiro leva dias -- null le tudo que falta.
    */
-  describeLibrary(anime: string | null): Promise<IpcResult<Record<string, SceneDescription>>>
+  describeLibrary(anime: string | null, ids?: readonly string[]): Promise<IpcResult<Record<string, SceneDescription>>>
+  /** Para a leitura em andamento. O que ja foi lido fica guardado. */
+  stopDescribe(): Promise<IpcResult<void>>
+  /**
+   * O quanto cada cena lida PARECE com cada consulta (o texto de um trecho do
+   * roteiro, ver shared/visao.ts). Uma entrada por consulta: id -> nota, so as
+   * que se destacam. Vazio quando o comparador nao esta no Ollama.
+   */
+  compararCenas(consultas: readonly string[], ids: readonly string[]): Promise<IpcResult<Record<string, number>[]>>
   /** O que ja foi lido. Vazio antes da primeira leitura. */
   readDescriptions(): Promise<IpcResult<Record<string, SceneDescription>>>
   /** Ids das cenas favoritadas. O anime esta dentro do proprio id. */

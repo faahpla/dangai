@@ -34,6 +34,11 @@ export interface ContextoDeSugestao {
   descriptions: Record<string, SceneDescription>
   /** Os itens do B-roll do projeto, quando ele soltou um (ver shared/broll.ts). */
   broll?: readonly ItemDoBroll[]
+  /**
+   * O quanto cada cena lida parece com cada trecho, na ordem dos trechos
+   * (electron/services/visao.ts). Ausente sem cenas lidas ou sem o comparador.
+   */
+  visao?: readonly (Readonly<Record<string, number>> | null)[]
 }
 
 /**
@@ -194,6 +199,7 @@ export function sugerirParaBloco(
       // nenhum liberaria o acervo todo e traria Bleach num video de Re:Zero.
       series: seriesDoRoteiro(ctx),
       broll: [brollDosTrechos(ctx)[bloco] ?? null],
+      visao: [ctx.visao?.[bloco] ?? null],
     },
   )
   const candidatos = saida[0]?.candidates ?? []

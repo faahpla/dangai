@@ -140,8 +140,13 @@ const bridge: DangaiBridge = {
 
   readTags: () => ipcRenderer.invoke(IPC.readTags) as Promise<IpcResult<Record<string, string[]>>>,
 
-  describeLibrary: (anime: string | null) =>
-    ipcRenderer.invoke(IPC.describeLibrary, anime) as Promise<IpcResult<Record<string, SceneDescription>>>,
+  describeLibrary: (anime: string | null, ids?: readonly string[]) =>
+    ipcRenderer.invoke(IPC.describeLibrary, anime, ids) as Promise<IpcResult<Record<string, SceneDescription>>>,
+
+  stopDescribe: () => ipcRenderer.invoke(IPC.stopDescribe) as Promise<IpcResult<void>>,
+
+  compararCenas: (consultas: readonly string[], ids: readonly string[]) =>
+    ipcRenderer.invoke(IPC.compararCenas, consultas, ids) as Promise<IpcResult<Record<string, number>[]>>,
 
   readDescriptions: () =>
     ipcRenderer.invoke(IPC.readDescriptions) as Promise<IpcResult<Record<string, SceneDescription>>>,

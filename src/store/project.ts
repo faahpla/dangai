@@ -719,8 +719,13 @@ export interface ProjectState {
   /** Le as etiquetas ja guardadas. */
   loadTags: () => Promise<void>
   loadDescriptions: () => Promise<void>
-  /** Le as cenas de UM anime. null le o acervo inteiro, que leva horas. */
-  describeLibrary: (anime: string | null) => Promise<void>
+  /**
+   * Le as cenas de UM anime, ou so `ids` (os episodios do B-roll). null sem ids
+   * le o acervo inteiro, que leva dias.
+   */
+  describeLibrary: (anime: string | null, ids?: readonly string[]) => Promise<void>
+  /** Para a leitura de cenas. O que ja foi lido fica. */
+  pararLeitura: () => Promise<void>
   /** Etiqueta as cenas que ainda nao tem etiqueta. */
   tagLibrary: () => Promise<void>
   /** Liga ou desliga o favorito de uma cena. */
