@@ -3,9 +3,11 @@ import {
   AREA_SEGURA_BASE,
   AREA_SEGURA_TOPO,
   CORPO_PX,
+  CONTORNO_DA_LINHA,
   contornoDaSeta,
   contornoDaSetaPx,
   degradeDaCor,
+  ESPESSURA_DA_LINHA,
   LARGURA,
   LOOK,
   SOMBRA_DESFOQUE,
@@ -22,7 +24,8 @@ import { familiaDaFonte } from './fontes'
 /**
  * [thumb] O DESENHO DA THUMBNAIL num canvas (o mesmo codigo na previa e no
  * PNG final; so a escala muda): as imagens com o "look" (saturacao e
- * contraste leves), a seta, as 2 linhas de texto (sombra, contorno por fora,
+ * contraste leves), o DIVISOR na emenda (por cima das imagens, por baixo da
+ * seta e do texto), a seta, as 2 linhas de texto (sombra, contorno por fora,
  * degrade vertical, esticada 1,11x) e, SO NA PREVIA, as guias da area segura
  * do TikTok (as faixas proibidas, as linhas de 16% e 84%, a emenda e as
  * caixas dos rostos).
@@ -46,11 +49,22 @@ export interface GuiasDaPrevia {
   pontasDaSeta: boolean
 }
 
+/**
+ * O divisor pronto para desenhar (src/editor/divisores.ts prepara): o PNG do
+ * quadro inteiro (ja recolorido) com o centro da forma posto na emenda, ou a
+ * linha desenhada aqui.
+ */
+export type DivisorPronto =
+  | { tipo: 'imagem'; fonte: CanvasImageSource; largura: number; altura: number; centro: number }
+  | { tipo: 'linha'; cor: string; contorno: boolean }
+
 export interface EntradaDoDesenho {
   thumb: Pick<ThumbDoProjeto, 'layout' | 'cores' | 'fonte'>
   geo: GeometriaDaThumb
   paineis: readonly (PainelPronto | null)[]
   seta: SetaNoQuadro | null
+  /** O divisor na emenda (null/ausente = sem). */
+  divisor?: DivisorPronto | null
   /** Pixels do canvas por pixel do quadro 1080 (1 no PNG final). */
   escala: number
   guias?: GuiasDaPrevia | null
@@ -111,6 +125,25 @@ function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala:
   ctx.fillStyle = g
   caminhoDaSeta(ctx, seta)
   ctx.fill()
+  ctx.restore()
+}
+
+function desenharDivisor(ctx: CanvasRenderingContext2D, d: DivisorPronto, emenda: number): void {
+  ctx.save()
+  if (d.tipo === 'imagem') {
+    // O PNG e do quadro inteiro (1080x1920): 1 px dele = 1 px da thumb, so deslocado para a forma cair na emenda.
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(d.fonte, 0, emenda - d.centro, LARGURA, (d.altura * LARGURA) / d.largura)
+  } else {
+    const y = emenda - ESPESSURA_DA_LINHA / 2
+    if (d.contorno) {
+      ctx.fillStyle = 'rgba(0,0,0,0.85)'
+      ctx.fillRect(0, y - CONTORNO_DA_LINHA, LARGURA, ESPESSURA_DA_LINHA + 2 * CONTORNO_DA_LINHA)
+    }
+    ctx.fillStyle = d.cor
+    ctx.fillRect(0, y, LARGURA, ESPESSURA_DA_LINHA)
+  }
   ctx.restore()
 }
 
@@ -244,6 +277,8 @@ export function desenharThumb(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho
     }
     ctx.restore()
   })
+  // As camadas: imagens -> divisor -> seta e texto.
+  if (e.divisor && e.geo.emenda !== null && e.thumb.layout === 'duas') desenharDivisor(ctx, e.divisor, e.geo.emenda)
   if (e.seta) desenharSeta(ctx, e.seta, e.escala)
   desenharTexto(ctx, e)
   if (e.guias) desenharGuias(ctx, e, e.guias)

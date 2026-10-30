@@ -4,6 +4,7 @@ import { ArrowUpDown, Check, ChevronLeft, ChevronRight, FolderOpen, ImagePlus, L
 import { Deslizante, Segmentos } from '@/modulos/kit'
 import {
   ALTURA,
+  COR_ORIGINAL_DO_DIVISOR,
   CORES_DA_THUMB,
   CORPO_LEGIVEL,
   CORPO_PX,
@@ -11,16 +12,21 @@ import {
   escalaQueCobre,
   FONTES_DA_THUMB,
   LARGURA,
+  MODELOS_DE_DIVISOR,
   partirEmDuasLinhas,
   recorteDaImagem,
+  TAMANHO_MAXIMO,
+  TAMANHO_MINIMO,
   textoYPadrao,
   thumbEfetiva,
   trechoDoQuadro,
+  type DivisorDaThumb,
   type Ponto,
   type ThumbDoProjeto,
 } from '../../shared/thumb'
 import { medidor, type LojaDoEditor, type SugestaoNaTela } from './loja'
 import { desenharThumb, type PainelPronto } from './desenho'
+import { divisorAgora, useDivisoresProntos } from './divisores'
 import { Aviso, Botao, Caixinha, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, formatarTempo, Link, Secao } from './pecas'
 
 /**
@@ -28,7 +34,7 @@ import { Aviso, Botao, Caixinha, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, fo
  * loja.ts): a previa 1080x1920 e os ajustes -- layout (1 ou 2 imagens), as
  * imagens (de onde vem cada uma e quem usa que diz: as sugestoes das cenas,
  * um quadro do video, um arquivo do PC), o texto (2 linhas, cores, fonte,
- * altura) e a seta. O estilo e fixo (o preset das refs); ele so mexe no que o
+ * tamanho, altura), o divisor na emenda (2 imagens) e a seta. O estilo e fixo (o preset das refs); ele so mexe no que o
  * pedido deixou. A aba "Thumbnail" do recap e o modulo Thumbnail montam ESTAS
  * pecas, cada um com a sua loja (ProvedorDoEditor).
  *
@@ -115,6 +121,8 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
   const ef = useEfetiva()
   const ver = useGuias((s) => s.ver)
   const ajustando = useAjustando()
+  // O PNG do divisor (e cada cor dele) fica pronto depois: a previa redesenha.
+  const divisoresProntos = useDivisoresProntos((s) => s.versao)
   const canvas = useRef<HTMLCanvasElement | null>(null)
   const arrasto = useRef<Arrasto | null>(null)
   const [cursor, setCursor] = useState('default')
@@ -146,10 +154,11 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
       geo: ef.geo,
       paineis,
       seta: ef.seta,
+      divisor: divisorAgora(ef.divisor),
       escala: w / LARGURA,
       guias: { zonas: guias, rostos: guias ? ef.rostos : [], pontasDaSeta: guias || emCima },
     })
-  }, [thumb, ef, previas, largura, alto, guias, emCima])
+  }, [thumb, ef, previas, largura, alto, guias, emCima, divisoresProntos])
 
   // A rodinha amplia em volta do ponteiro (listener nao passivo: o preventDefault segura a rolagem).
   useEffect(() => {
@@ -559,6 +568,7 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
             onChange={(v) => mudar({ fonte: v })}
           />
         </div>
+        <TamanhoDoTexto />
         <div className="flex items-center gap-2" data-thumb="altura-do-texto">
           <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Altura</span>
           <Deslizante
@@ -576,6 +586,8 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
           />
         </div>
       </Secao>
+
+      <SecaoDoDivisor />
 
       <Secao
         titulo="Seta"
@@ -886,42 +898,165 @@ function LinhaDeTexto({ linha }: { linha: 0 | 1 }) {
           </span>
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-1.5 pl-[76px]">
-        {CORES_DA_THUMB.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => mudarCor(c.cor)}
-            title={c.nome}
-            aria-label={`Cor ${c.nome} na linha ${linha + 1}`}
-            aria-pressed={cor === c.cor}
-            style={{ backgroundColor: c.cor }}
-            className={[
-              'size-5 shrink-0 rounded-full border border-black/60 transition-transform hover:scale-110',
-              cor === c.cor ? 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-surface)]' : '',
-            ].join(' ')}
-          />
-        ))}
-        <label
-          title="Outra cor"
-          className={[
-            'relative grid size-5 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full border border-line-strong',
-            CORES_DA_THUMB.some((c) => c.cor === cor) ? '' : 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-surface)]',
-          ].join(' ')}
-          style={{
-            background: CORES_DA_THUMB.some((c) => c.cor === cor) ? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' : cor,
-          }}
-        >
-          <input
-            type="color"
-            value={cor}
-            onChange={(e) => mudarCor(e.target.value)}
-            aria-label={`Outra cor na linha ${linha + 1}`}
-            className="absolute inset-0 cursor-pointer opacity-0"
-          />
-        </label>
+      <div className="pl-[76px]">
+        <SeletorDeCor cor={cor} onChange={mudarCor} onde={`na linha ${linha + 1}`} />
       </div>
     </div>
+  )
+}
+
+/**
+ * As cores prontas do texto e uma a mao (o seletor do sistema). `original` =
+ * a bolinha "Original" na frente (o divisor: a cor que o PNG ja tem), e `cor`
+ * null = ela escolhida.
+ */
+function SeletorDeCor({
+  cor,
+  onChange,
+  onde,
+  original,
+}: {
+  cor: string | null
+  onChange: (cor: string) => void
+  /** O fim do aria-label ("na linha 1", "no divisor"). */
+  onde: string
+  original?: { cor: string; escolher: () => void }
+}) {
+  const pronta = cor !== null && CORES_DA_THUMB.some((c) => c.cor === cor)
+  const anel = 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-surface)]'
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {original && (
+        <button
+          type="button"
+          onClick={original.escolher}
+          title="A cor original do modelo"
+          aria-label={`Cor original ${onde}`}
+          aria-pressed={cor === null}
+          className={[
+            'flex h-5 shrink-0 items-center gap-1 rounded-full border border-line-strong bg-elevated pl-0.5 pr-2 text-[10px] text-ink-2 transition-colors hover:text-ink',
+            cor === null ? anel : '',
+          ].join(' ')}
+        >
+          <span className="size-3.5 rounded-full border border-black/60" style={{ backgroundColor: original.cor }} />
+          Original
+        </button>
+      )}
+      {CORES_DA_THUMB.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => onChange(c.cor)}
+          title={c.nome}
+          aria-label={`Cor ${c.nome} ${onde}`}
+          aria-pressed={cor === c.cor}
+          style={{ backgroundColor: c.cor }}
+          className={['size-5 shrink-0 rounded-full border border-black/60 transition-transform hover:scale-110', cor === c.cor ? anel : ''].join(' ')}
+        />
+      ))}
+      <label
+        title="Outra cor"
+        className={[
+          'relative grid size-5 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full border border-line-strong',
+          cor === null || pronta ? '' : anel,
+        ].join(' ')}
+        style={{
+          background: cor === null || pronta ? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' : cor,
+        }}
+      >
+        <input
+          type="color"
+          value={cor ?? original?.cor ?? '#ffffff'}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={`Outra cor ${onde}`}
+          className="absolute inset-0 cursor-pointer opacity-0"
+        />
+      </label>
+    </div>
+  )
+}
+
+/** "Tamanho do texto": as duas linhas juntas, em fracao do preset; a largura util continua o teto de cada uma. */
+function TamanhoDoTexto() {
+  const useThumb = useLoja()
+  const tamanho = useThumb((s) => s.thumb?.tamanho ?? 1)
+  const ef = useEfetiva()
+  const noMaximo = (ef?.geo.linhas ?? []).filter((l) => l.noMaximo)
+  return (
+    <div className="flex flex-col gap-1" data-thumb="tamanho-do-texto">
+      <div className="flex items-center gap-2">
+        <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Tamanho</span>
+        <Deslizante
+          valor={tamanho}
+          min={TAMANHO_MINIMO}
+          max={TAMANHO_MAXIMO}
+          step={0.01}
+          texto={`${Math.round(tamanho * 100)}%`}
+          padrao={1}
+          dica="Aumenta ou diminui as duas linhas juntas (o contorno e a sombra vao junto)"
+          onChange={(v) => {
+            useThumb.getState().mudar({ tamanho: Math.abs(v - 1) < 0.005 ? 1 : v })
+            useGuias.getState().marcar()
+          }}
+        />
+        <Botao pequeno disabled={tamanho === 1} onClick={() => useThumb.getState().mudar({ tamanho: 1 })} title="Volta ao tamanho do preset (100%)">
+          Padrao
+        </Botao>
+      </div>
+      {noMaximo.length > 0 && tamanho > 1 && (
+        <p className="pl-[76px] text-[11px] text-ink-3" data-thumb="tamanho-no-maximo">
+          Essa linha ja esta no maximo da largura
+          {noMaximo.length === 1 ? ` (linha ${noMaximo[0]!.linha + 1})` : ' (as duas)'}: ela nao cresce mais.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** O divisor na emenda (so com 2 imagens): ligar, o modelo e a cor. */
+function SecaoDoDivisor() {
+  const useThumb = useLoja()
+  const thumb = useThumb((s) => s.thumb)
+  if (!thumb || thumb.layout !== 'duas') return null
+  const d = thumb.divisor
+  const mudar = (parcial: Partial<DivisorDaThumb>): void => useThumb.getState().mudar({ divisor: { ...d, ...parcial } })
+  return (
+    <Secao titulo="Divisor">
+      <div className="flex flex-wrap items-center gap-3" data-thumb="divisor">
+        <Caixinha ligada={d.ligado} onChange={(v) => mudar({ ligado: v })}>
+          Divisor entre as imagens
+        </Caixinha>
+        {d.ligado && <span className="text-[11px] text-ink-3">Por cima das imagens, por baixo do texto e da seta.</span>}
+      </div>
+      {d.ligado && (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Modelo</span>
+            <Segmentos
+              opcoes={MODELOS_DE_DIVISOR.map((m) => ({ valor: m.id, rotulo: m.nome, title: m.nome }))}
+              ativo={(v) => d.modelo === v}
+              onChange={(v) => mudar({ modelo: v })}
+            />
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="w-[68px] shrink-0 pt-0.5 text-[11px] text-ink-3">Cor</span>
+            <SeletorDeCor
+              cor={d.cor}
+              onChange={(c) => mudar({ cor: c.toLowerCase() })}
+              onde="no divisor"
+              original={{ cor: COR_ORIGINAL_DO_DIVISOR[d.modelo], escolher: () => mudar({ cor: null }) }}
+            />
+          </div>
+          {d.modelo === 'linha' && (
+            <div className="pl-[76px]">
+              <Caixinha ligada={d.contorno} onChange={(v) => mudar({ contorno: v })}>
+                Contorno escuro
+              </Caixinha>
+            </div>
+          )}
+        </>
+      )}
+    </Secao>
   )
 }
 

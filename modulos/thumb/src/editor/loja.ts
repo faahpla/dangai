@@ -21,6 +21,7 @@ import {
 } from '../../shared/thumb'
 import type { CenaNoInstante } from '../../shared/plano'
 import { desenharThumb, medidorDoCanvas } from './desenho'
+import { prepararDivisor } from './divisores'
 import { carregarFontesDaThumb } from './fontes'
 
 /**
@@ -699,8 +700,8 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
 
 /**
  * O PNG FINAL 1080x1920: cada painel vem do main (a janela da fonte com o
- * upscale, reduzida ao painel exato) e o resto e o MESMO desenho da previa,
- * na escala 1 e sem guias.
+ * upscale, reduzida ao painel exato) e o resto e o MESMO desenho da previa
+ * (o divisor, a seta e o texto), na escala 1 e sem guias.
  */
 export async function pngDaThumb(
   thumb: ThumbDoProjeto,
@@ -740,6 +741,8 @@ export async function pngDaThumb(
       }
     }),
   )
+  // O divisor no tamanho do arquivo (1 px dele = 1 px da thumb); o mesmo da previa.
+  const divisor = await prepararDivisor(ef.divisor)
   const canvas = document.createElement('canvas')
   canvas.width = LARGURA
   canvas.height = ALTURA
@@ -750,6 +753,7 @@ export async function pngDaThumb(
     geo: ef.geo,
     paineis,
     seta: ef.seta,
+    divisor,
     escala: 1,
     guias: null,
   })

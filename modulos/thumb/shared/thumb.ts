@@ -1,4 +1,9 @@
 import { z } from 'zod'
+import { COR_LINHA_1, COR_LINHA_2, corSchema } from './cor'
+import { divisorEfetivo, divisorPadrao, divisorSchema, type DivisorDaThumb } from './divisores'
+
+export * from './cor'
+export * from './divisores'
 
 /**
  * [thumb] O EDITOR DE THUMBNAIL (pedido do Levi, 30/10), em comum: a aba
@@ -15,7 +20,10 @@ import { z } from 'zod'
  *   PSD dele); a linha que nao cabe na largura encolhe sozinha (so ela);
  * - a seta vermelha "a mao" saindo de perto do texto e apontando o rosto da
  *   imagem de cima;
- * - cor mais viva (saturacao e contraste leves).
+ * - cor mais viva (saturacao e contraste leves);
+ * - opcionais (30/10): o "Tamanho do texto" (70-150% do corpo, a largura util
+ *   continua o teto de cada linha) e, com 2 imagens, um DIVISOR na emenda
+ *   (divisores.ts), por cima das imagens e por baixo da seta e do texto.
  *
  * A REGRA FIXA DA AREA SEGURA DO TIKTOK (o Levi insistiu): 0-13% e 87-100% da
  * altura sao proibidos para cabeca e rosto (so cenario); os personagens ficam
@@ -54,6 +62,9 @@ export const ESTICADA_Y = 1.11
  * da tela): o editor avisa "Texto longo: fica pequeno". As refs usam 182.
  */
 export const CORPO_LEGIVEL = 100
+/** A faixa do "Tamanho do texto" (fracao do corpo do preset). */
+export const TAMANHO_MINIMO = 0.7
+export const TAMANHO_MAXIMO = 1.5
 /** O piso do encolher (40 letras de Luckiest Guy ainda cabem). */
 const CORPO_MINIMO = 24
 /** A linha (com o contorno) nunca passa disto: a que passa encolhe sozinha. */
@@ -76,124 +87,6 @@ export const FONTES_DA_THUMB = [
 ] as const
 export type FonteDaThumb = (typeof FONTES_DA_THUMB)[number]['id']
 export const FONTE_PADRAO: FonteDaThumb = 'luckiest'
-
-/** Um ponto do degrade: 0 = topo da letra, 1 = base. */
-export interface ParadaDoDegrade {
-  em: number
-  cor: string
-}
-
-/**
- * As cores prontas. Branco e roxo com os degrades EXATOS do PSD dele (de
- * baixo para cima: 231 -> 243 em 19% -> 255; 125,0,229 -> 166,84,242 em 70%
- * -> 207,168,255); o amarelo segue a mesma ideia (base mais quente, topo mais
- * claro). As outras saem da conta (degradeDaCor).
- */
-export const CORES_DA_THUMB: readonly {
-  id: string
-  nome: string
-  cor: string
-  degrade?: readonly ParadaDoDegrade[]
-}[] = [
-  {
-    id: 'branco',
-    nome: 'Branco',
-    cor: '#ffffff',
-    degrade: [
-      { em: 0, cor: '#ffffff' },
-      { em: 0.81, cor: '#f3f3f3' },
-      { em: 1, cor: '#e7e7e7' },
-    ],
-  },
-  {
-    id: 'amarelo',
-    nome: 'Amarelo',
-    cor: '#fffd00',
-    degrade: [
-      { em: 0, cor: '#ffff8a' },
-      { em: 0.35, cor: '#fffd00' },
-      { em: 1, cor: '#ffd200' },
-    ],
-  },
-  {
-    id: 'roxo',
-    nome: 'Roxo',
-    cor: '#a654f2',
-    degrade: [
-      { em: 0, cor: '#cfa8ff' },
-      { em: 0.3, cor: '#a654f2' },
-      { em: 1, cor: '#7d00e5' },
-    ],
-  },
-  { id: 'vermelho', nome: 'Vermelho', cor: '#ff2b2b' },
-  { id: 'laranja', nome: 'Laranja', cor: '#ff8a00' },
-  { id: 'verde', nome: 'Verde', cor: '#39f05a' },
-  { id: 'azul', nome: 'Azul', cor: '#2fb4ff' },
-  { id: 'rosa', nome: 'Rosa', cor: '#ff3d81' },
-]
-export const COR_LINHA_1 = '#ffffff'
-export const COR_LINHA_2 = '#fffd00'
-
-const corSchema = z.string().regex(/^#[0-9a-f]{6}$/i)
-
-function hexParaRgb(hex: string): [number, number, number] {
-  const n = Number.parseInt(hex.slice(1), 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
-
-function rgbParaHex(r: number, g: number, b: number): string {
-  const c = (v: number): string =>
-    Math.round(Math.max(0, Math.min(255, v)))
-      .toString(16)
-      .padStart(2, '0')
-  return `#${c(r)}${c(g)}${c(b)}`
-}
-
-function rgbParaHsl(r: number, g: number, b: number): [number, number, number] {
-  const R = r / 255
-  const G = g / 255
-  const B = b / 255
-  const max = Math.max(R, G, B)
-  const min = Math.min(R, G, B)
-  const l = (max + min) / 2
-  if (max === min) return [0, 0, l]
-  const d = max - min
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-  const h = max === R ? (G - B) / d + (G < B ? 6 : 0) : max === G ? (B - R) / d + 2 : (R - G) / d + 4
-  return [h * 60, s, l]
-}
-
-function hslParaHex(h: number, s: number, l: number): string {
-  const k = (n: number): number => (n + h / 30) % 12
-  const a = s * Math.min(l, 1 - l)
-  const f = (n: number): number => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
-  return rgbParaHex(f(0) * 255, f(8) * 255, f(4) * 255)
-}
-
-/**
- * O degrade vertical de uma cor: a pronta usa o dela; a escolhida a mao segue
- * a conta do roxo do PSD (topo ~19 pontos de luz acima e saturado, a cor
- * pura a 30% do topo, a base ~19 pontos abaixo). Cor quase cinza escurece
- * menos na base (o branco: 255 -> 231).
- */
-export function degradeDaCor(hex: string): ParadaDoDegrade[] {
-  const cor = corSchema.safeParse(hex).success ? hex.toLowerCase() : COR_LINHA_1
-  const pronta = CORES_DA_THUMB.find((c) => c.cor === cor && c.degrade)
-  if (pronta?.degrade) return pronta.degrade.map((p) => ({ ...p }))
-  const [h, s, l] = rgbParaHsl(...hexParaRgb(cor))
-  const desce = 0.09 + 0.1 * s
-  return [
-    {
-      em: 0,
-      cor: hslParaHex(h, Math.min(1, s + 0.15), Math.min(0.97, l + 0.19)),
-    },
-    { em: 0.3, cor },
-    {
-      em: 1,
-      cor: hslParaHex(h, Math.min(1, s + 0.1), Math.max(0.05, l - desce)),
-    },
-  ]
-}
 
 /**
  * O texto de thumb do roteiro ("FUSAO DEMONIACA") em 2 linhas: a quebra que
@@ -292,6 +185,14 @@ export const thumbDoProjetoSchema = z.object({
   imagens: z.tuple([imagemDaThumbSchema.nullable(), imagemDaThumbSchema.nullable()]),
   /** O ultimo PNG salvo (so para mostrar). */
   salvoEm: z.string().max(1024).nullable().optional(),
+  /**
+   * "Tamanho do texto": o corpo das duas linhas em fracao do preset (1 = os
+   * 182 px das refs). A largura util continua o teto de cada linha. Ausente
+   * (thumb de antes) = 1.
+   */
+  tamanho: z.number().min(TAMANHO_MINIMO).max(TAMANHO_MAXIMO).default(1),
+  /** O divisor na emenda (divisores.ts). Ausente (thumb de antes) = desligado. */
+  divisor: divisorSchema.default(divisorPadrao),
 })
 export type ThumbDoProjeto = z.infer<typeof thumbDoProjetoSchema>
 
@@ -312,6 +213,8 @@ export function thumbPadrao(textoDeThumb: string | null): ThumbDoProjeto {
     seta: { ligada: true, base: null, ponta: null },
     imagens: [null, null],
     salvoEm: null,
+    tamanho: 1,
+    divisor: divisorPadrao(),
   }
 }
 
@@ -357,6 +260,8 @@ export interface LinhaNaThumb {
   texto: string
   /** O corpo (horizontal) depois de caber na largura. */
   px: number
+  /** A linha bateu na largura util (o corpo pedido nao coube e ela encolheu ate caber). */
+  noMaximo: boolean
   /** A largura da TINTA (as letras desenhadas), sem o contorno. */
   largura: number
   /** Quanto a tinta sobe da linha de base, JA esticada. */
@@ -399,7 +304,7 @@ const FOLGA_DO_TEXTO = 28
 const FAIXA_MINIMA = 160
 
 export function geometriaDaThumb(
-  t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & { fonte?: FonteDaThumb },
+  t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & { fonte?: FonteDaThumb; tamanho?: number },
   medir: MedirTexto,
 ): GeometriaDaThumb {
   const maxLargura = LARGURA * LARGURA_UTIL
@@ -411,14 +316,18 @@ export function geometriaDaThumb(
     const direita = m.direita ?? m.largura
     return { largura: Math.max(1, esquerda + direita), esquerda, direita, cap: m.cap > 0 ? m.cap : px * 0.7, desce: Math.max(0, m.desce ?? 0) }
   }
+  // O "Tamanho do texto": as duas linhas juntas; o teto de cada uma continua a largura util.
+  const tamanho = Math.max(TAMANHO_MINIMO, Math.min(TAMANHO_MAXIMO, t.tamanho ?? 1))
+  const corpo = CORPO_PX * tamanho
   const textos = t.linhas.map((l) => l.trim().toLocaleUpperCase('pt-BR'))
   const linhas: LinhaNaThumb[] = []
   for (const [i, texto] of textos.entries()) {
     if (!texto) continue
-    let px = CORPO_PX
+    let px = corpo
     let m = tinta(texto, px)
     const total = m.largura + 2 * px * CONTORNO_POR_PX
-    if (total > maxLargura) {
+    const noMaximo = total > maxLargura
+    if (noMaximo) {
       // Palavra comprida ("ENCONTRO"): so esta linha encolhe, sem quebrar.
       // O contorno e a sombra encolhem junto (sao proporcionais ao corpo): a linha inteira cabe em LARGURA_UTIL.
       px = Math.max(CORPO_MINIMO, (px * maxLargura) / total)
@@ -428,6 +337,7 @@ export function geometriaDaThumb(
       linha: i === 0 ? 0 : 1,
       texto,
       px,
+      noMaximo,
       largura: m.largura,
       cap: m.cap * esticada,
       desce: m.desce * esticada,
@@ -1143,6 +1053,8 @@ export interface ThumbEfetiva {
   seta: SetaNoQuadro | null
   avisos: AvisoDaArea[]
   rostos: RostoNaPrevia[]
+  /** O divisor que entra na emenda (null = desligado, ou 1 imagem). */
+  divisor: DivisorDaThumb | null
 }
 
 /**
@@ -1190,5 +1102,5 @@ export function thumbEfetiva(t: ThumbDoProjeto, medir: MedirTexto): ThumbEfetiva
       seta = { base, ponta, lado }
     }
   }
-  return { geo, enquadramentos, seta, avisos, rostos }
+  return { geo, enquadramentos, seta, avisos, rostos, divisor: geo.emenda === null ? null : divisorEfetivo(t) }
 }
