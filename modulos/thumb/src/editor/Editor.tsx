@@ -1088,7 +1088,7 @@ export function RodapeDaThumb({ fechar, destino, tituloDoSalvar, podeSalvar, alv
   if (perguntar) {
     return (
       <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3" data-thumb="perguntar">
-        <span className={`mr-auto flex min-w-0 items-center gap-1.5 text-[12px] ${COR_DE_AVISO}`}>
+        <span className={`flex min-w-0 flex-1 basis-0 items-center gap-1.5 text-[12px] ${COR_DE_AVISO}`}>
           <TriangleAlert size={13} strokeWidth={1.75} className="shrink-0" />
           <span className="truncate" title={perguntar}>
             Ja existe {nome(perguntar)}.
@@ -1107,13 +1107,15 @@ export function RodapeDaThumb({ fechar, destino, tituloDoSalvar, podeSalvar, alv
 
   return (
     <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line pt-3">
-      <span className="mr-auto min-w-0 truncate text-[11px] text-ink-3" data-thumb="estado-do-salvar" title={salvo?.caminho}>
+      <span className="min-w-0 flex-1 basis-0 truncate text-[11px] text-ink-3" data-thumb="estado-do-salvar" title={salvo?.caminho}>
         {erro ? (
-          <span className={COR_DE_AVISO}>{erro}</span>
+          <span className={`whitespace-normal ${COR_DE_AVISO}`}>{erro}</span>
         ) : salvo ? (
-          <span className="flex items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1.5">
             <Check size={12} strokeWidth={2} className="shrink-0 text-accent" />
-            Salvo: {nome(salvo.caminho)} ({(salvo.ms / 1000).toFixed(1)} s{salvo.ampliado ? ', com upscale' : ''})
+            <span className="truncate">
+              Salvo: {nome(salvo.caminho)} ({(salvo.ms / 1000).toFixed(1)} s{salvo.ampliado ? ', com upscale' : ''})
+            </span>
           </span>
         ) : temUpscale === false ? (
           'Sem o modelo de upscale: o PNG sai com o redimensionamento comum.'
