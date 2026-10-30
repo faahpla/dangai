@@ -40,6 +40,7 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       mode,
       series,
       transcript: get().transcriptTravado ? get().transcript : null,
+      broll: get().broll?.texto ?? null,
     })
     if (!proposta.ok) {
       set({ busy: null, error: proposta.error })

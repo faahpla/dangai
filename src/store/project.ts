@@ -1,5 +1,8 @@
 import { create } from 'zustand'
+import { episodiosQueFaltam, lerBroll, pareceBroll, resolverTemporadas, resumoDoBroll, rotuloDoItem } from '@shared/broll'
+import { buildScriptIndex } from '@shared/script-reader'
 import { classifyFile } from '@shared/channels'
+import { avisar } from './aviso'
 import type {
   AutomountBlock,
   AutomountMode,
@@ -134,6 +137,14 @@ export interface ProjectState {
    * continuam vindo da narracao -- ver shared/align.ts.
    */
   script: string | null
+  /**
+   * O B-ROLL: de que episodio sai cada parte do video (shared/broll.ts). Entra
+   * soltando o .txt dele junto do roteiro; a montagem automatica e as sugestoes
+   * da Biblioteca preferem as cenas desses episodios.
+   */
+  broll: { nome: string; texto: string } | null
+  /** Poe ou tira o B-roll do projeto. */
+  definirBroll: (broll: { nome: string; texto: string } | null) => void
   /** Como o roteiro se saiu no casamento com o audio. */
   scriptNote: string | null
   /** O que aconteceu com as pastas, quando o usuario soltou pastas. */
@@ -939,6 +950,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   captions: [],
   aiNote: null,
   script: null,
+  broll: null,
+  definirBroll: (broll) => set({ broll, projectDirty: true }),
   scriptNote: null,
   sectionNote: null,
   scriptOpen: false,
@@ -1180,11 +1193,38 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     set({ error: null })
 
+    /*
+     * Dois .txt na mesma leva: um e o roteiro, o outro o B-ROLL (de que episodio
+     * sai cada parte). Quem decide e o conteudo -- o B-roll e uma lista de
+     * "Episodio 50 / Cobre... / Cena principal..." -- ou o nome do arquivo.
+     */
+    let roteiroLido: { ok: true; value: string } | { ok: false; error: string } | null = null
+    for (const caminho of scriptPaths) {
+      const lido = await window.dangai.readScript(caminho)
+      const nome = caminho.split(/[\\/]/).pop() ?? ''
+      if (lido.ok && pareceBroll(lido.value, nome)) {
+        set({ broll: { nome, texto: lido.value }, projectDirty: true })
+        // Com a biblioteca ja lida, da para avisar na hora o episodio que falta
+        // cortar no AnCut; sem ela, o aviso vem na montagem.
+        const lib = get().library
+        const itens = lib
+          ? resolverTemporadas(lerBroll(lido.value), lib.clips, [], buildScriptIndex(lib.characters, Object.values(get().nicknames).flat()))
+          : lerBroll(lido.value)
+        const faltam = lib ? episodiosQueFaltam(itens, lib.clips, []) : []
+        avisar(
+          `B-roll: ${resumoDoBroll(itens)}. A montagem e as sugestões vão preferir as cenas deles.` +
+            (faltam.length > 0 ? ` Não achei na Biblioteca: ${faltam.map(rotuloDoItem).join(', ')}.` : ''),
+          12000,
+        )
+        continue
+      }
+      if (roteiroLido === null) roteiroLido = lido
+    }
+
     // O roteiro entra antes da analise: ele muda o texto das legendas, entao
     // precisa estar no estado quando a analise rodar la embaixo.
-    const scriptPath = scriptPaths[0]
-    if (scriptPath) {
-      const result = await window.dangai.readScript(scriptPath)
+    if (roteiroLido) {
+      const result = roteiroLido
       // Roteiro novo muda onde cada frase comeca e acaba: o que estava lido
       // deixa de valer.
       if (result.ok) {
@@ -1457,6 +1497,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       captions: [],
       aiNote: null,
       script: null,
+      broll: null,
       scriptNote: null,
       sectionNote: null,
       scriptOpen: false,

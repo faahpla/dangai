@@ -49,6 +49,7 @@ export const CAMPOS = [
   'endSec',
   'metadata',
   'script',
+  'broll',
   'subtitlePath',
   /*
    * AS ESCOLHAS DA BIBLIOTECA tambem sao o documento. Fora daqui, marcar cenas

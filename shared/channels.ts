@@ -324,6 +324,8 @@ export interface AutomountRequest {
   series: string | null
   /** Transcricao travada: usa esta em vez de ouvir a narracao. Ver AnalyzeArgs. */
   transcript?: Transcript | null
+  /** O texto do B-roll, quando ele soltou um: de que episodio sai cada parte (shared/broll.ts). */
+  broll?: string | null
 }
 
 /** Um clipe proposto para um bloco. */

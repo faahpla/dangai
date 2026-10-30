@@ -1,3 +1,4 @@
+import { preferenciasDoBroll, type ItemDoBroll, type PreferenciaDoBroll } from './broll'
 import type { LibraryClip, Nickname, ScriptBlock, SceneDescription } from './channels'
 import { buildScriptIndex, readScript } from './script-reader'
 import { selectClips, type SelectionCandidate } from './selection'
@@ -31,6 +32,23 @@ export interface ContextoDeSugestao {
   characters: readonly string[]
   nicknames: readonly Nickname[]
   descriptions: Record<string, SceneDescription>
+  /** Os itens do B-roll do projeto, quando ele soltou um (ver shared/broll.ts). */
+  broll?: readonly ItemDoBroll[]
+}
+
+/**
+ * O que o B-roll pede para cada trecho. Casado por FRASE: a virgula corta o
+ * trecho, e "em vez de encontrar as memorias dele," sozinho nao diz de que
+ * parte do B-roll ele e.
+ */
+export function brollDosTrechos(ctx: ContextoDeSugestao): (PreferenciaDoBroll | null)[] {
+  if (!ctx.broll || ctx.broll.length === 0) return ctx.blocks.map(() => null)
+  return preferenciasDoBroll(
+    ctx.blocks.map((b) => b.text),
+    ctx.broll,
+    buildScriptIndex(ctx.characters, ctx.nicknames),
+    ctx.blocks.map((b) => b.sentence),
+  )
 }
 
 /**
@@ -175,6 +193,7 @@ export function sugerirParaBloco(
       // A serie sai do roteiro inteiro, nao deste trecho: trecho sem nome
       // nenhum liberaria o acervo todo e traria Bleach num video de Re:Zero.
       series: seriesDoRoteiro(ctx),
+      broll: [brollDosTrechos(ctx)[bloco] ?? null],
     },
   )
   const candidatos = saida[0]?.candidates ?? []

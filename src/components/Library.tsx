@@ -24,11 +24,14 @@ import {
   SUGESTOES,
   personagensDoBloco,
   serieDoRoteiro,
+  seriesDoRoteiro,
   sugerirParaBloco,
 } from '@shared/suggest'
 import type { SelectionCandidate } from '@shared/selection'
 import { TAGS_PT } from '@shared/tags-pt'
 import { nomeNatural } from '@shared/nomes'
+import { clipeNoAlvo, rotuloDoItem } from '@shared/broll'
+import { useBrollDosTrechos, useItensDoBroll } from '@/hooks/useBroll'
 import { useProject } from '@/store/project'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
@@ -117,6 +120,8 @@ export function Library() {
   const describeLibrary = useProject((s) => s.describeLibrary)
   const applyBlockClips = useProject((s) => s.applyBlockClips)
   const cancelAnalyze = useProject((s) => s.cancelAnalyze)
+  const itensDoBroll = useItensDoBroll()
+  const brollPorTrecho = useBrollDosTrechos()
 
   /*
    * Com narracao carregada, marcar cena e marcar cena DE UMA FRASE.
@@ -345,8 +350,9 @@ export function Library() {
       characters: library.characters,
       nicknames: Object.values(nicknames).flat(),
       descriptions,
+      broll: itensDoBroll,
     }
-  }, [porRoteiro, library, blocos, nicknames, descriptions])
+  }, [porRoteiro, library, blocos, nicknames, descriptions, itensDoBroll])
 
   /*
    * Abrir ja no anime que o roteiro cita.
@@ -562,6 +568,30 @@ export function Library() {
    * series dele (medido: zero colisoes em 96 personagens de 7 series), entao
    * a primeira cena que o tem diz de onde ele e.
    */
+  /*
+   * O EPISODIO QUE O B-ROLL DA para o trecho aberto, como atalho: um clique e a
+   * grade abre nele. Quando ele nao esta na Biblioteca (nao foi cortado no
+   * AnCut), o botao vira o aviso -- sem ele, ele procuraria la sem achar.
+   */
+  const episodiosDoTrecho = useMemo(() => {
+    const item = activeBlock !== null ? brollPorTrecho[activeBlock]?.item : null
+    if (!item || !library || !contexto) return []
+    const series = seriesDoRoteiro(contexto)
+    const achados = new Map<string, { anime: string; chave: string }>()
+    for (const c of library.clips) {
+      if (series.length > 0 && !series.includes(c.anime)) continue
+      if (!clipeNoAlvo(c, item.alvos)) continue
+      const chave = chaveEpisodio(c)
+      achados.set(`${c.anime}|${chave}`, { anime: c.anime, chave })
+    }
+    if (achados.size === 0) return [{ rotulo: rotuloDoItem(item), titulo: item.titulo, onde: null }]
+    return [...achados.values()].slice(0, 3).map((onde) => ({
+      rotulo: achados.size > 1 ? onde.chave : rotuloDoItem(item),
+      titulo: item.titulo,
+      onde,
+    }))
+  }, [activeBlock, brollPorTrecho, library, contexto])
+
   const pastasDoTrecho = useMemo(() => {
     if (!contexto || !library || activeBlock === null) return []
     return personagensDoBloco(contexto, activeBlock)
@@ -872,6 +902,21 @@ export function Library() {
                  * num filtro que ele nem lembra de ter posto. O resto e o que o
                  * rail ja faz ao clicar no personagem.
                  */
+                episodios={episodiosDoTrecho
+                  .filter((e) => !(e.onde && episodio === e.onde.chave && anime === e.onde.anime))
+                  .map((e) => ({
+                    rotulo: e.rotulo,
+                    titulo: e.titulo,
+                    abrir: e.onde
+                      ? () => {
+                          setAnime(e.onde!.anime)
+                          setEpisodio(e.onde!.chave)
+                          setPersonagem(null)
+                          setTexto('')
+                          setSoFavoritos(false)
+                        }
+                      : null,
+                  }))}
                 pastas={pastasDoTrecho
                   .filter((p) => personagem !== p.nome)
                   .map((p) => ({
@@ -1878,6 +1923,7 @@ function Sugestoes({
   onEscolher,
   expandida,
   onExpandir,
+  episodios,
   pastas,
 }: {
   candidatos: readonly SelectionCandidate[]
@@ -1893,6 +1939,8 @@ function Sugestoes({
    * ali o botao nao faria nada, e botao que nao faz nada e pior que nenhum.
    */
   pastas: { nome: string; abrir: () => void }[]
+  /** O episodio que o B-roll da para o trecho. `abrir` null: ele nao esta na Biblioteca. */
+  episodios: { rotulo: string; titulo: string; abrir: (() => void) | null }[]
 }) {
   const ordens = new Map(escolhidos.map((id, i) => [id, i + 1]))
 
@@ -1932,6 +1980,28 @@ function Sugestoes({
         <span className="shrink-0 text-[11px] uppercase tracking-wide text-ink-3">Sugestões para este trecho</span>
         {comum && <span className="min-w-0 truncate text-[11px] text-ink-3">· {comum}</span>}
         <span className="ml-auto flex shrink-0 items-baseline gap-3">
+          {episodios.map((e) =>
+            e.abrir ? (
+              <button
+                key={e.rotulo}
+                type="button"
+                onClick={e.abrir}
+                title={`Pelo B-roll: ${e.titulo}\nAbre o episódio inteiro na grade abaixo`}
+                className="flex items-center gap-0.5 text-[11px] text-ink-3 transition-colors duration-150 hover:text-accent"
+              >
+                {e.rotulo} do B-roll
+                <ChevronRight size={11} strokeWidth={1.5} />
+              </button>
+            ) : (
+              <span
+                key={e.rotulo}
+                className="text-[11px] text-accent"
+                title={`O B-roll pede: ${e.titulo}\nEsse episódio não está na Biblioteca: corte ele no AnCut.`}
+              >
+                {e.rotulo} do B-roll não está na Biblioteca
+              </span>
+            ),
+          )}
           {pastas.map((p) => (
             <button
               key={p.nome}

@@ -73,7 +73,7 @@ export function Dropzone({ isDragging }: DropzoneProps) {
               A ordem em que você solta as imagens e a ordem no vídeo
             </span>
             <span className="text-[11px] text-ink-3">
-              Solte o roteiro em .txt junto e as legendas saem com o texto exato
+              Solte o roteiro em .txt junto e as legendas saem com o texto exato. Com o B-roll junto, ele procura as cenas nos episódios certos
             </span>
           </motion.div>
         </button>

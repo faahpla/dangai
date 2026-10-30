@@ -44,6 +44,7 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
         invertido: image.invertido === true,
       })),
       script: state.script,
+      broll: state.broll,
       subtitle: state.subtitlePath
         ? {
             path: state.subtitlePath,
@@ -304,6 +305,7 @@ async function applyProjectFile(
       endSec: file.endSec,
       metadata: file.metadata,
       script: file.script,
+      broll: file.broll,
       subtitlePath: file.subtitle?.path ?? null,
       formato: file.formato,
       // Conserta a metade de baixo que versoes anteriores desalinharam --

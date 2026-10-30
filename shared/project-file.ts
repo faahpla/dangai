@@ -208,6 +208,8 @@ export const projectFileSchema = z.object({
   audio: referenceSchema,
   images: z.array(savedImageSchema),
   script: z.string().nullable(),
+  /** O B-roll (de que episodio sai cada parte; ver shared/broll.ts). Projeto antigo abre sem. */
+  broll: z.object({ nome: z.string(), texto: z.string() }).nullable().default(null),
   subtitle: referenceSchema.nullable(),
   plan: scenePlanSchema.nullable(),
   planOrigin: z.enum(PLAN_ORIGINS).nullable(),

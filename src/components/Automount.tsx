@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Wand2, Clapperboard, Lightbulb, Library as LibraryIcon, Loader2 } from 'lucide-react'
+import { Wand2, Clapperboard, Lightbulb, Library as LibraryIcon, ListVideo, Loader2, X } from 'lucide-react'
+import { useItensDoBroll } from '@/hooks/useBroll'
 import { useProject } from '@/store/project'
 import { aplicarMeuJeito } from '@/store/meu-jeito'
+import { resumoDoBroll } from '@shared/broll'
 import type { AutomountMode } from '@shared/channels'
 
 /**
@@ -155,6 +157,42 @@ export function Automount() {
         Montar sozinho lê a narração, descobre quem está em cada frase e traz uma
         cena para cada uma. Depois você troca o que não gostou.
       </p>
+
+      <LinhaDoBroll />
+    </div>
+  )
+}
+
+/**
+ * O B-ROLL na hora de montar: se ele entrou (e de quais episodios), ou o
+ * convite para soltar. A montagem prefere as cenas desses episodios.
+ */
+function LinhaDoBroll() {
+  const itens = useItensDoBroll()
+  const definirBroll = useProject((s) => s.definirBroll)
+  const busy = useProject((s) => s.busy)
+
+  if (itens.length === 0) {
+    return (
+      <p className="text-[11px] text-ink-3">
+        Tem B-roll? Solte o .txt dele aqui: ele procura as cenas nos episódios certos.
+      </p>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] text-ink-2" title={itens.map((i) => i.titulo).join('\n')}>
+      <ListVideo size={12} strokeWidth={1.5} className="text-accent" />
+      B-roll: {resumoDoBroll(itens)}
+      <button
+        type="button"
+        onClick={() => definirBroll(null)}
+        disabled={busy !== null}
+        aria-label="Tirar o B-roll"
+        title="Tirar o B-roll: a montagem volta a procurar no anime inteiro"
+        className="grid place-items-center text-ink-3 transition-colors hover:text-ink disabled:opacity-40"
+      >
+        <X size={12} strokeWidth={1.5} />
+      </button>
     </div>
   )
 }

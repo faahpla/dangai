@@ -5,6 +5,7 @@ import type {
   AutomountBlock,
   ScriptBlocksResult,
 } from '@shared/channels'
+import { episodiosQueFaltam, lerBroll, preferenciasDoBroll, resolverTemporadas, rotuloDoItem } from '@shared/broll'
 import { buildScriptIndex, readScript, toPieces, toSentences } from '@shared/script-reader'
 import { selectClips } from '@shared/selection'
 import { applyScript, transcriptOnly } from './transcribe'
@@ -86,6 +87,10 @@ export async function automount(
   }))
 
   onProgress('Escolhendo as cenas...')
+  const series = request.series ? [request.series] : []
+  // "Episodio 4" sem temporada vira o 4 da temporada de quem o B-roll cita.
+  const itens = request.broll ? resolverTemporadas(lerBroll(request.broll), library.clips, series, index) : []
+  const faltam = episodiosQueFaltam(itens, library.clips, series)
   const blocos = selectClips(linhas, library.clips, {
     mode: request.mode,
     series: request.series ? [request.series] : undefined,
@@ -95,6 +100,13 @@ export async function automount(
      * um pedagio antes do primeiro video.
      */
     descriptions: readDescriptions(),
+    // O B-roll casa pela frase INTEIRA: aqui a frase longa ja veio partida no
+    // teto de 3s, e a vizinhanca do casamento junta os pedacos de volta.
+    broll: preferenciasDoBroll(
+      linhas.map((l) => l.text),
+      itens,
+      index,
+    ),
   })
 
   const saida: AutomountBlock[] = blocos.map((b) => ({
@@ -123,9 +135,18 @@ export async function automount(
      * quantos ficaram e melhor que preencher com qualquer coisa.
      */
     note:
-      vazios > 0
-        ? `${vazios} ${vazios === 1 ? 'bloco ficou' : 'blocos ficaram'} sem cena -- a biblioteca não tem material para ${vazios === 1 ? 'ele' : 'eles'}.`
-        : null,
+      [
+        vazios > 0
+          ? `${vazios} ${vazios === 1 ? 'bloco ficou' : 'blocos ficaram'} sem cena -- a biblioteca não tem material para ${vazios === 1 ? 'ele' : 'eles'}.`
+          : null,
+        // O B-roll pediu episodio que o AnCut ainda nao cortou: as cenas daquela
+        // parte vieram de outro lugar, e ele precisa saber por que.
+        faltam.length > 0
+          ? `O B-roll pede ${faltam.length === 1 ? 'um episódio que não está' : 'episódios que não estão'} na Biblioteca: ${faltam.map(rotuloDoItem).join(', ')}. Corte no AnCut para usar.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(' ') || null,
   }
 }
 

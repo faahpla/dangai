@@ -1,3 +1,4 @@
+import { clipeNoAlvo, rotuloDoItem, type PreferenciaDoBroll } from './broll'
 import type { LibraryClip, SceneDescription } from './channels'
 import type { ScriptLine } from './script-reader'
 
@@ -63,7 +64,21 @@ export interface SelectionOptions {
    * automatica "nao identificava nada do que o roteiro fala".
    */
   descriptions?: Record<string, SceneDescription>
+  /**
+   * O que o B-roll pede, uma entrada por linha (ver shared/broll.ts).
+   *
+   * Preferencia, nao trava: cena do episodio do item ganha muito, de outro
+   * episodio da lista ganha um pouco, e a de fora continua concorrendo -- as
+   * aberturas e os episodios que ele puxa de fora da lista sao parte do video.
+   */
+  broll?: readonly (PreferenciaDoBroll | null)[]
 }
+
+/** Cena do episodio que o B-roll da para ESTA frase. Quase um personagem certo. */
+const BONUS_DO_ITEM = 90
+
+/** Cena de outro episodio da lista do B-roll. */
+const BONUS_DO_BROLL = 35
 
 /** Quantos candidatos a fita mostra. */
 export const FITA_PADRAO = 6
@@ -93,17 +108,18 @@ export function selectClips(
 
   const saida: SelectionBlock[] = []
 
-  for (const linha of lines) {
+  lines.forEach((linha, iLinha) => {
     const querem = linha.matches.map((m) => m.character)
     const precisa = Math.max(linha.end - linha.start, 0.1)
     // As palavras da frase saem UMA vez por bloco, nao uma por clipe: sao
     // ~19 mil clipes por bloco no acervo dele.
     const frase = palavrasUteis(linha.text)
+    const broll = options.broll?.[iLinha] ?? null
 
     const pontuados: SelectionCandidate[] = []
     for (const clip of acervo) {
       if (usados.has(clip.id)) continue
-      const p = pontuar(clip, querem, precisa, options.mode, ultimo, frase, descricoes[clip.id])
+      const p = pontuar(clip, querem, precisa, options.mode, ultimo, frase, descricoes[clip.id], broll)
       if (p === null) continue
       pontuados.push({ clip, score: p.score, reason: p.reason })
     }
@@ -129,7 +145,7 @@ export function selectClips(
       characters: querem,
       candidates: candidatos,
     })
-  }
+  })
 
   return saida
 }
@@ -238,11 +254,14 @@ function pontuar(
   ultimo: LibraryClip | null,
   frase: Set<string>,
   descricao: SceneDescription | undefined,
+  broll: PreferenciaDoBroll | null,
 ): Nota | null {
   let score = 0
   const porques: string[] = []
 
   const casou = descricao ? casarDescricao(frase, descricao) : null
+  /** Quem o item do B-roll cita e esta na cena ("Ryuken entregando a flecha a Uryu"). */
+  const doItem = broll ? broll.personagens.filter((p) => clip.characters.includes(p)) : []
 
   if (querem.length > 0) {
     const tem = querem.filter((p) => clip.characters.includes(p))
@@ -262,8 +281,19 @@ function pontuar(
       score += 25
       porques.push('só ele em cena')
     } else {
-      score -= (clip.characters.length - tem.length) * 8
+      // Quem sobra e o B-roll pede para a cena nao atrapalha: e a cena dele.
+      const doBroll = doItem.filter((p) => !tem.includes(p)).slice(0, 2)
+      score -= (clip.characters.length - tem.length - doBroll.length) * 8
+      score += doBroll.length * 15
     }
+  } else if (doItem.length > 0) {
+    /*
+     * A frase nao nomeia ninguem, mas o item do B-roll nomeia: "E a flecha de
+     * Still Silver?" com "Ryuken entregando a ponta da flecha a Uryu". Vale
+     * menos que nome escrito na frase, e mais que cena sem ninguem.
+     */
+    score += Math.min(doItem.length, 2) * 40
+    porques.push(`${doItem.join(' e ')} (do B-roll)`)
   } else {
     /*
      * Frase que nao nomeia ninguem.
@@ -281,11 +311,21 @@ function pontuar(
      * cena sem personagem so ganha uma preferencia -- nao um veto.
      */
     if (!casou) {
-      if (clip.characters.length > 0) return null
+      /*
+       * A excecao e o episodio que o B-ROLL da para a frase: "Tres anos
+       * depois," nao nomeia ninguem, mas o B-roll diz que ela sai do episodio
+       * 50 -- e qualquer cena dele serve mais que um plano vazio de outro lugar.
+       * Medido no video do Bleach: as cenas que ele escolheu para essas frases
+       * tinham gente, e sem isto nenhuma entrava nem nas 60.
+       */
+      const doEpisodioDoItem = broll?.item ? clipeNoAlvo(clip, broll.item.alvos) : false
+      if (clip.characters.length > 0 && !doEpisodioDoItem) return null
       // Desempate, nao argumento: cena que nao casou nada com a frase nao pode
       // ganhar de cena que casou, so por lhe faltar etiqueta de personagem.
-      score += 15
-      porques.push('plano sem personagem')
+      if (!doEpisodioDoItem) {
+        score += 15
+        porques.push('plano sem personagem')
+      }
     } else if (clip.characters.length === 0) {
       score += 20
     }
@@ -294,6 +334,14 @@ function pontuar(
   if (casou) {
     score += casou.score
     porques.push(casou.reason)
+  }
+
+  if (broll?.item && clipeNoAlvo(clip, broll.item.alvos)) {
+    score += BONUS_DO_ITEM
+    porques.push(`B-roll: ${rotuloDoItem(broll.item)}`)
+  } else if (broll && clipeNoAlvo(clip, broll.todos)) {
+    score += BONUS_DO_BROLL
+    porques.push('episódio do B-roll')
   }
 
   const sobra = clip.duration - precisa

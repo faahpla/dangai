@@ -14,7 +14,9 @@ import {
   Split,
   X,
 } from 'lucide-react'
+import { useBrollDosTrechos, useItensDoBroll } from '@/hooks/useBroll'
 import { useProject } from '@/store/project'
+import { rotuloDoItem } from '@shared/broll'
 import type { LibraryClip } from '@shared/channels'
 import type { Word } from '@shared/contract'
 import {
@@ -68,6 +70,11 @@ export function ScriptColumn() {
   const reordenar = useProject((s) => s.reorderBlockClips)
   const juntar = useProject((s) => s.juntarTrechos)
   const separar = useProject((s) => s.separarTrecho)
+  const definirBroll = useProject((s) => s.definirBroll)
+  const nomeDoBroll = useProject((s) => s.broll?.nome ?? null)
+  // Antes das saidas antecipadas la embaixo: hook depois delas derruba o React.
+  const itensDoBroll = useItensDoBroll()
+  const brollPorTrecho = useBrollDosTrechos()
 
   const lista = useRef<HTMLDivElement>(null)
 
@@ -151,6 +158,23 @@ export function ScriptColumn() {
               {busy}
             </span>
           )}
+          {itensDoBroll.length > 0 && (
+            <span
+              className="flex items-center gap-0.5 rounded-sm border border-line px-1 text-[10px] font-normal text-ink-3"
+              title={`${nomeDoBroll ?? 'B-roll'}: as sugestões preferem as cenas destes episódios.\n\n${itensDoBroll.map((i) => i.titulo).join('\n')}`}
+            >
+              B-roll
+              <button
+                type="button"
+                onClick={() => definirBroll(null)}
+                aria-label="Tirar o B-roll"
+                title="Tirar o B-roll deste projeto"
+                className="grid place-items-center text-ink-3 transition-colors hover:text-ink"
+              >
+                <X size={10} strokeWidth={1.5} />
+              </button>
+            </span>
+          )}
         </span>
         {/*
           Duas ou tres contagens, nunca quatro.
@@ -188,10 +212,19 @@ export function ScriptColumn() {
               abaixo -- o mesmo numero duas vezes seguidas. Quem recebe cena e
               o trecho, entao o tempo fica com ele.
             */}
-            <div className="px-4 pb-0.5 pt-2">
+            <div className="flex items-baseline gap-1.5 px-4 pb-0.5 pt-2">
               <span className="text-[10px] font-medium uppercase tracking-wide text-ink-3">
                 Frase {iFrase + 1}
               </span>
+              {/* De que episodio o B-roll diz que esta frase sai: o mesmo que puxa as sugestoes. */}
+              {brollPorTrecho[frase.indices[0]!]?.item && (
+                <span
+                  className="truncate text-[10px] text-ink-3"
+                  title={`Pelo B-roll: ${brollPorTrecho[frase.indices[0]!]!.item!.titulo}`}
+                >
+                  · {rotuloDoItem(brollPorTrecho[frase.indices[0]!]!.item!)}
+                </span>
+              )}
             </div>
 
             {frase.indices.map((i) => {
