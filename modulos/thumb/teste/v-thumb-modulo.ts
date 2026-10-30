@@ -20,6 +20,9 @@
  *   salvas antes), salvos e lidos de volta, as camadas na ordem (imagens ->
  *   divisor -> seta e texto, com um canvas falso que anota), o recolorir dos
  *   PNGs de verdade sem mudar o alpha, e o tamanho com a largura como teto;
+ * - a seta automatica sempre grande (a ref "PODER SUPREMO" como minimo): ao
+ *   lado da 1a linha quando ha espaco, por tras do texto (a ref "CANCELOU")
+ *   quando nao ha, dentro do quadro e fora das faixas proibidas;
  * - a tela (SSR): o editor solto e o do projeto, em ASCII.
  *
  * Rodar da raiz:
@@ -132,6 +135,7 @@ async function principal(): Promise<void> {
   confere(T.AJUSTE_DA_FONTE.luckiest.esticada === T.ESTICADA_Y && T.AJUSTE_DA_FONTE.anton.esticada === 1, 'a esticada 1,11 so na Luckiest Guy (a tabela por fonte)')
 
   await testarDivisoresETamanho(T, D)
+  testarSeta(T)
   await testarMain()
   await testarLoja()
   await testarTela()
@@ -505,6 +509,47 @@ async function testarDivisoresETamanho(T: typeof import('../shared/thumb'), D: t
   confere(!media80.noMaximo && media140.noMaximo && media140.px > media80.px && media140.px < T.CORPO_PX * 1.4, `linha comprida: a 80% cabe (${Math.round(media80.px)}px); a 140% so cresce ate caber (${Math.round(media140.px)}px, no maximo da largura)`)
   const curta140 = T.geometriaDaThumb({ layout: 'duas', linhas: ['poder', 'supremo'], textoY: null, tamanho: 1.4 }, medir).linhas[0]!
   confere(Math.abs(curta140.px - T.CORPO_PX * 1.4) < 1e-9 && !curta140.noMaximo, 'linha curta a 140%: cresce 1,4x (contorno e sombra pelo corpo)')
+}
+
+function testarSeta(T: typeof import('../shared/thumb')): void {
+  console.log('\n== a seta grande (ao lado ou por tras do texto)')
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  const topoProibido = T.ZONA_PROIBIDA_TOPO * T.ALTURA
+  const baseProibida = T.ZONA_PROIBIDA_BASE * T.ALTURA
+  // O rosto de cima: colado no texto (o enquadramento automatico poe a cabeca logo acima dele) e longe.
+  const rostos = {
+    colado: (g: import('../shared/thumb').GeometriaDaThumb) => ({ x1: 420, y1: g.bloco!.topo - 230, x2: 640, y2: g.bloco!.topo - 30 }),
+    alto: () => ({ x1: 520, y1: 420, x2: 720, y2: 640 }),
+  }
+  for (const [nome, linhas] of [
+    ['curto', ['poder', 'supremo']],
+    ['longo', ['cancelou', 'encontro magico']],
+    ['cancelou', ['cancelou', 'encontro']],
+  ] as [string, [string, string]][]) {
+    for (const tamanho of [0.8, 1, 1.4]) {
+      for (const [qual, rosto] of Object.entries(rostos)) {
+        const g = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null, tamanho }, medir)
+        const s = T.setaSozinha(g, rosto(g))!
+        const L = Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
+        const c = T.caixaDaSeta(s)
+        const dentro = c.x1 >= 0 && c.x2 <= T.LARGURA && c.y1 >= topoProibido - 0.5 && c.y2 <= baseProibida + 0.5
+        const l1 = g.linhas[0]!
+        const livre = (T.LARGURA - l1.largura) / 2 - l1.contorno
+        const porTras = s.base.y > g.bloco!.base
+        const certo = livre < T.ESPACO_PARA_A_SETA ? porTras : true
+        confere(
+          L >= T.SETA_MINIMA - 1 && dentro && s.ponta.y < g.bloco!.topo && certo,
+          `${nome} ${Math.round(tamanho * 100)}%, rosto ${qual}: ${porTras ? 'por tras' : 'ao lado'} (livre ${Math.round(livre)} px), ${Math.round(L)} px, cabeca ${Math.round(Math.min(150, Math.max(60, 0.3 * L)))} px, dentro do quadro e fora das faixas proibidas`,
+        )
+      }
+    }
+  }
+  // A 1a linha larga: a seta nasce embaixo, do lado do texto, e sobe ate o lado do rosto (a ref "CANCELOU").
+  const larga = T.geometriaDaThumb({ layout: 'duas', linhas: ['cancelou', 'encontro'], textoY: null }, medir)
+  const s = T.setaSozinha(larga, { x1: 330, y1: 560, x2: 590, y2: 820 })!
+  confere(s.lado === 1 && s.base.x <= larga.bloco!.esquerda && s.base.y > larga.bloco!.base && s.ponta.x < 330 && s.ponta.y < larga.bloco!.topo - 60, '"CANCELOU": nasce embaixo a esquerda, abaixo do texto, e a ponta chega pelo lado do rosto, acima das letras')
+  const espelhada = T.setaSozinha(larga, { x1: 60, y1: 560, x2: 300, y2: 820 })!
+  confere(espelhada.lado === -1 && espelhada.base.x >= larga.bloco!.direita && T.caixaDaSeta(espelhada).x2 <= T.LARGURA, 'o rosto a esquerda: tudo espelhado, nasce embaixo a direita')
 }
 
 function T_ok(t: unknown): boolean {
