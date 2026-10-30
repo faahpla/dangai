@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.82.0',
+    itens: [
+      'B-roll: solte o .txt do B-roll junto da narração e do roteiro (qualquer nome). O Dangai lê de que episódio sai cada parte do vídeo, e o "Montar tudo", o "Montar recap" e as sugestões da Biblioteca passam a preferir as cenas desses episódios.',
+      'Na Biblioteca, cada frase mostra o episódio que o B-roll dá para ela, e o botão "Episódio 48 do B-roll" abre o episódio inteiro na grade. Para tirar o B-roll, clique no X ao lado dele.',
+      'Se o B-roll pedir um episódio que ainda não foi cortado no AnCut, o Dangai avisa qual é.',
+      'Marcar uma cena na Biblioteca não pula mais sozinho para a próxima frase. Para ir à próxima frase vazia, aperte Tab.',
+    ],
+  },
+  {
     versao: '1.81.0',
     itens: [
       '"Do meu jeito" (barra de baixo): o Dangai aprendeu com os seus vídeos como você edita o som e a cor, e faz igual com um clique: a abertura (Illuminati / Return By Death), a música de fundo, os whooshes, stingers, shutters e risers nos cortes, e a sua camada de cor. Tudo editável, e Ctrl+Z desfaz tudo de uma vez.',
