@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.86.0',
+    itens: [
+      'Thumbnail: divisor entre a imagem de cima e a de baixo (Rasgo com brilho, Rasgo, Slash ou Linha), com a cor que você quiser. Ele fica por cima das imagens e por baixo do texto.',
+      'Thumbnail: "Tamanho do texto" de 70% a 150%. A linha longa cresce até o limite da largura e avisa quando chegou lá.',
+      'Thumbnail: a seta fica sempre grande; quando o texto é largo, ela passa por trás da primeira letra e aponta para o rosto.',
+      'Thumbnail: quadros com faixa preta de cinema perdem a faixa, e a imagem sempre cobre o espaço inteiro, sem sobrar fundo preto.',
+    ],
+  },
+  {
     versao: '1.85.0',
     itens: [
       'Thumbnail: novo botão na tela inicial (ligue em Configurações > Módulos). Faz a capa 1080x1920 sem precisar do Gerar recap: suba as imagens do computador, ou escolha um projeto e pegue os quadros das cenas, sempre sem legenda.',
