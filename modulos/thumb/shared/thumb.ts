@@ -676,17 +676,71 @@ export interface SetaNoQuadro {
 }
 
 /**
- * A seta automatica (as refs): sai da esquerda da 1a linha, perto da base
- * dela, e sobe curvando ate parar na borda do rosto principal da imagem de
- * cima. Rosto muito a esquerda: sai da direita, espelhada. Sem rosto: aponta
- * o meio da imagem de cima.
+ * A SETA AUTOMATICA (as refs), sempre GRANDE (nunca abaixo de SETA_MINIMA, o
+ * tamanho da ref "PODER SUPREMO"), apontando a borda do rosto principal da
+ * imagem de cima. Rosto muito a esquerda: tudo espelhado (sai da direita).
+ * Sem rosto: aponta o meio da imagem de cima. Dois jeitos:
+ *
+ * - AO LADO (a ref "PODER SUPREMO"): com espaco livre ao lado da 1a linha,
+ *   sai da beirada dela, perto da base, e sobe curvando ate o rosto;
+ * - POR TRAS (a ref "CANCELOU ENCONTRO"): a 1a linha larga (140%, ou uma
+ *   palavra comprida) nao deixa espaco -- em vez de encolher no canto, a seta
+ *   nasce embaixo, do lado, abaixo do texto (o comeco da imagem de baixo), e
+ *   sobe pela borda passando POR TRAS da letra da ponta (o texto e desenhado
+ *   por cima) ate o rosto.
+ *
+ * Nos dois, a seta inteira (com o contorno) fica dentro do quadro e fora das
+ * faixas proibidas do TikTok (0-13% e 87-100%): o que passa e empurrado para
+ * dentro pela cauda.
  */
-/** A seta automatica nunca fica mais curta que isto (as refs: 300 a 700 px). */
-const SETA_MINIMA = 340
+/** A seta automatica nunca fica mais curta que isto (a ref "PODER SUPREMO": ~330 px; as refs vao de 300 a 700). */
+export const SETA_MINIMA = 340
+/** Espaco livre (px) entre a beirada do quadro e o contorno da 1a linha para a seta sair AO LADO dela. */
+export const ESPACO_PARA_A_SETA = 150
+/** Por tras do texto: a ponta fica pelo menos isto acima das letras (a cabeca inteira aparece). */
+const FOLGA_DA_CABECA = 90
+/** A margem da seta ate a beirada do quadro. */
+const MARGEM_DA_SETA = 12
+
+/** O retangulo que a seta ocupa (o poligono com o contorno preto). */
+export function caixaDaSeta(s: SetaNoQuadro): { x1: number; y1: number; x2: number; y2: number } {
+  const pontos = contornoDaSeta(s)
+  const c = contornoDaSetaPx(s)
+  return {
+    x1: Math.min(...pontos.map((p) => p.x)) - c,
+    y1: Math.min(...pontos.map((p) => p.y)) - c,
+    x2: Math.max(...pontos.map((p) => p.x)) + c,
+    y2: Math.max(...pontos.map((p) => p.y)) + c,
+  }
+}
+
+/** Empurra a seta para dentro do quadro e para fora das faixas proibidas (a cauda anda; a ponta, so o que precisar). */
+function setaDentroDoQuadro(s: SetaNoQuadro): SetaNoQuadro {
+  const topo = ZONA_PROIBIDA_TOPO * ALTURA
+  const fundo = ZONA_PROIBIDA_BASE * ALTURA
+  let seta = { base: { ...s.base }, ponta: { ...s.ponta }, lado: s.lado }
+  for (let i = 0; i < 8; i++) {
+    const c = caixaDaSeta(seta)
+    const dx = c.x1 < MARGEM_DA_SETA ? MARGEM_DA_SETA - c.x1 : c.x2 > LARGURA - MARGEM_DA_SETA ? LARGURA - MARGEM_DA_SETA - c.x2 : 0
+    const dyBase = c.y2 > fundo ? fundo - c.y2 : 0
+    const dyPonta = c.y1 < topo ? topo - c.y1 : 0
+    if (Math.abs(dx) < 0.5 && Math.abs(dyBase) < 0.5 && Math.abs(dyPonta) < 0.5) break
+    // A curva estufa no meio: empurrar a cauda inteira e a ponta pela metade tira a barriga da beirada.
+    seta = {
+      lado: seta.lado,
+      base: { x: seta.base.x + dx * 1.1, y: seta.base.y + dyBase * 1.1 },
+      ponta: { x: seta.ponta.x + dx * 0.5, y: seta.ponta.y + dyPonta * 1.1 },
+    }
+  }
+  return seta
+}
+
+const comprimento = (s: { base: Ponto; ponta: Ponto }): number => Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
 
 export function setaSozinha(geo: GeometriaDaThumb, alvo: { x1: number; y1: number; x2: number; y2: number } | null): SetaNoQuadro | null {
   const l1 = geo.linhas[0]
-  if (!l1) return null
+  if (!l1 || !geo.bloco) return null
+  const bloco = geo.bloco
   const painel = geo.paineis[0]!
   const rosto = alvo ?? {
     x1: LARGURA / 2 - 60,
@@ -697,43 +751,68 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: { x1: number; y1: numbe
   const cx = (rosto.x1 + rosto.x2) / 2
   const cy = (rosto.y1 + rosto.y2) / 2
   const lado: 1 | -1 = cx >= LARGURA * 0.4 ? 1 : -1
-  // A beirada da linha do lado da seta.
-  const beira = (largura: number): number => (lado === 1 ? (LARGURA - largura) / 2 - 50 : (LARGURA + largura) / 2 + 50)
   const presa = (x: number): number => Math.max(60, Math.min(LARGURA - 60, x))
+  // A ponta sempre acima do texto: a cabeca por baixo das letras some.
+  const topoDoTexto = bloco.topo - 36
   const pontaPara = (base: Ponto): Ponto => {
     // Para na borda do rosto (no lado da base), com folga.
     const dx = cx - base.x
     const dy = cy - base.y
     const d = Math.hypot(dx, dy) || 1
     const raio = 0.5 * Math.min(rosto.x2 - rosto.x1, rosto.y2 - rosto.y1) + 26
-    return { x: cx - (dx / d) * raio, y: cy - (dy / d) * raio }
+    const p = { x: cx - (dx / d) * raio, y: cy - (dy / d) * raio }
+    return p.y > topoDoTexto ? { x: p.x, y: topoDoTexto } : p
   }
-  // Sai do lado da 1a linha, perto da base dela (as refs), e sobe ate a borda do rosto -- sempre
-  // acima do texto: a cabeca da seta por baixo das letras some.
-  const topoDoTexto = (geo.bloco?.topo ?? l1.base - l1.cap) - 36
-  const base = { x: presa(beira(l1.largura)), y: l1.base - l1.cap * 0.45 }
-  let ponta = pontaPara(base)
-  if (ponta.y > topoDoTexto) ponta = { x: ponta.x, y: topoDoTexto }
-  // Curta demais (o rosto colado no texto): a cauda estica para tras (para baixo e para fora,
-  // pela beirada do bloco), como a seta longa das refs.
-  const L = Math.hypot(ponta.x - base.x, ponta.y - base.y) || 1
-  if (L < SETA_MINIMA) {
-    const ux = (base.x - ponta.x) / L
-    const uy = (base.y - ponta.y) / L
-    base.x = presa(ponta.x + ux * SETA_MINIMA)
-    base.y = Math.min(geo.bloco?.base ?? base.y, ponta.y + uy * SETA_MINIMA)
+
+  // 1) AO LADO da 1a linha, quando ha espaco livre ali.
+  const livre = (LARGURA - l1.largura) / 2 - l1.contorno
+  if (livre >= ESPACO_PARA_A_SETA) {
+    const base = { x: presa(lado === 1 ? (LARGURA - l1.largura) / 2 - 50 : (LARGURA + l1.largura) / 2 + 50), y: l1.base - l1.cap * 0.45 }
+    const ponta = pontaPara(base)
+    // Curta demais (o rosto colado no texto): a cauda estica para tras (para baixo e para fora).
+    const L = comprimento({ base, ponta }) || 1
+    if (L < SETA_MINIMA) {
+      const ux = (base.x - ponta.x) / L
+      const uy = (base.y - ponta.y) / L
+      base.x = presa(ponta.x + ux * SETA_MINIMA)
+      base.y = Math.min(bloco.base, ponta.y + uy * SETA_MINIMA)
+    }
+    // A cauda nunca em cima de uma linha: sai para a beirada dela, por fora do contorno e da sombra.
+    let emCima = false
+    for (const l of geo.linhas) {
+      const meia = l.largura / 2 + l.contorno + 18
+      const topo = l.base - l.cap - l.contorno
+      const fundo = l.base + l.desce + l.contorno + SOMBRA_Y * (l.px / CORPO_PX)
+      if (base.y < topo || base.y > fundo) continue
+      if (base.x > LARGURA / 2 - meia && base.x < LARGURA / 2 + meia) {
+        base.x = LARGURA / 2 - lado * meia
+        emCima = base.x < 60 || base.x > LARGURA - 60
+      }
+    }
+    const seta = setaDentroDoQuadro({ base, ponta, lado })
+    if (!emCima && comprimento(seta) >= SETA_MINIMA - 1) return seta
   }
-  if (Math.hypot(ponta.x - base.x, ponta.y - base.y) < 160) ponta = { x: base.x + lado * 90, y: base.y - 180 }
-  // A cauda nunca em cima de uma linha (a linha comprida que encolheu ocupa a largura toda): sai para a
-  // beirada dela, por fora do contorno e da sombra.
-  for (const l of geo.linhas) {
-    const meia = l.largura / 2 + l.contorno + 18
-    const topo = l.base - l.cap - l.contorno
-    const fundo = l.base + l.desce + l.contorno + SOMBRA_Y * (l.px / CORPO_PX)
-    if (base.y < topo || base.y > fundo) continue
-    if (base.x > LARGURA / 2 - meia && base.x < LARGURA / 2 + meia) base.x = Math.max(24, Math.min(LARGURA - 24, LARGURA / 2 - lado * meia))
+
+  // 2) POR TRAS do texto (a ref "CANCELOU"): nasce embaixo, do lado, logo abaixo do texto, e sobe
+  // pela borda passando atras da letra da ponta.
+  const beiradaDoTexto = lado === 1 ? bloco.esquerda : bloco.direita
+  const base = {
+    x: lado === 1 ? Math.max(70, beiradaDoTexto - 20) : Math.min(LARGURA - 70, beiradaDoTexto + 20),
+    y: Math.min(bloco.base + 0.1 * ALTURA, ZONA_PROIBIDA_BASE * ALTURA - 60),
   }
-  return { base, ponta, lado }
+  // A ponta chega pelo LADO do rosto (como na ref), alta o bastante para a cabeca da seta ficar
+  // inteira acima das letras.
+  const ponta = {
+    x: Math.max(60, Math.min(LARGURA - 60, lado === 1 ? rosto.x1 - 26 : rosto.x2 + 26)),
+    y: Math.min(cy, bloco.topo - FOLGA_DA_CABECA),
+  }
+  let seta = setaDentroDoQuadro({ base, ponta, lado })
+  // Ainda curta (o rosto baixo, colado no texto): a cauda desce mais, ate a faixa proibida.
+  if (comprimento(seta) < SETA_MINIMA) {
+    const falta = SETA_MINIMA - comprimento(seta)
+    seta = setaDentroDoQuadro({ ...seta, base: { x: seta.base.x, y: seta.base.y + falta } })
+  }
+  return seta
 }
 
 /**
