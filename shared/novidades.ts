@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.84.0',
+    itens: [
+      'Ler cenas do B-roll: com um B-roll aberto, o botão "Ler cenas do B-roll" (em cima, na Biblioteca) faz uma IA olhar cada cena dos episódios dele e escrever o que acontece nela. Roda no seu PC, de graça, pelo Ollama.',
+      'Com as cenas lidas, as sugestões e o "Montar tudo" acham a cena certa dentro do episódio, e não só o episódio certo: "Uryu virou médico" traz a cena do consultório. Passe o mouse numa sugestão para ver o que a IA viu nela.',
+      'A leitura leva uns 3 segundos por cena (um episódio, uns 25 minutos) e só é feita uma vez: o que foi lido fica guardado. O mesmo botão para a leitura, e na próxima vez ela continua de onde parou.',
+    ],
+  },
+  {
     versao: '1.83.1',
     itens: [
       'Gerar recap: a tela "Vídeo pronto" ganhou a aba Thumbnail. Uma ou duas imagens (em cima e embaixo, com o botão ⇅ para inverter), texto em duas linhas na fonte Luckiest Guy com contorno e sombra, seta apontando o rosto, e "Salvar PNG" em 1080x1920 ao lado do vídeo.',
