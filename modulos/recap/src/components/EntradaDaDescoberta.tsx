@@ -53,8 +53,16 @@ const DICA: Record<MotivoDaDescoberta, string> = {
   revisar: 'Refaz os personagens do episodio: o motor agrupa os rostos (os conhecidos ja vem com nome) e voce corrige.',
 }
 
+/**
+ * O corte pelo AnCut parou sem o elenco: nada foi para a biblioteca dele. A
+ * descoberta corta de novo com o motor do recap, na biblioteca do recap
+ * (31/10: antes o botao sumia e o Levi ficava sem saida).
+ */
+const DICA_DO_ANCUT =
+  'O AnCut parou sem o elenco e nao guardou o episodio. O recap corta de novo na biblioteca dele, agrupa os rostos e voce da o nome a cada grupo.'
+
 /** A oferta para o episodio da tela, ou null (nao pode, ou ja esta rodando). */
-export function useOferta(): { motivo: MotivoDaDescoberta; desligado: string | null } | null {
+export function useOferta(): { motivo: MotivoDaDescoberta; desligado: string | null; dica: string } | null {
   const indice = useGerar((s) => s.indice)
   const corte = useGerar((s) => s.corte)
   const motor = useGerar((s) => s.motor)
@@ -64,8 +72,9 @@ export function useOferta(): { motivo: MotivoDaDescoberta; desligado: string | n
   if (!indice || viva) return null
   const oferta = podeReconhecerNaMao(indice, corte)
   if (!oferta.pode || !oferta.motivo) return null
-  // So o motor do Studio agrupa (o corte pelo AnCut parou no AnCut).
-  if (!temPlanos(indice) && corte && corte.motor !== 'studio') return null
+  // Sem cenas, quem agrupa e sempre o motor do recap (iniciarDescoberta corta
+  // com motor 'studio'), mesmo se o corte que parou foi o do AnCut.
+  const doAncut = !temPlanos(indice) && corte !== null && corte.motor !== 'studio'
   // App instalado sem o motor: o clique abre a tela "Instalar motor" (pedirMotor) e segue depois.
   const desligado =
     job !== null
@@ -73,7 +82,7 @@ export function useOferta(): { motivo: MotivoDaDescoberta; desligado: string | n
       : motor?.studio.pronto !== true && !runtimeFora(runtime)
         ? (motor?.studio.erro ?? 'O motor nao esta pronto')
         : null
-  return { motivo: oferta.motivo, desligado }
+  return { motivo: oferta.motivo, desligado, dica: doAncut ? DICA_DO_ANCUT : DICA[oferta.motivo] }
 }
 
 /** [Reconhecer na mao]. Some quando nao pode ou quando ja esta rodando (a LinhaDaDescoberta fala). */
@@ -88,7 +97,7 @@ export function BotaoReconhecerNaMao({ principal = false, pequeno = false }: { p
       foco="reconhecer-na-mao"
       onClick={() => void iniciar()}
       disabled={oferta.desligado !== null}
-      title={oferta.desligado ?? DICA[oferta.motivo]}
+      title={oferta.desligado ?? oferta.dica}
     >
       <Users size={pequeno ? 12 : 13} strokeWidth={1.5} />
       Reconhecer na mao
@@ -102,7 +111,7 @@ export function LinkRevisarPersonagens() {
   const iniciar = useDescoberta((s) => s.iniciar)
   if (!oferta || oferta.motivo !== 'revisar') return null
   return (
-    <Link onClick={() => void iniciar()} disabled={oferta.desligado !== null} title={oferta.desligado ?? DICA.revisar}>
+    <Link onClick={() => void iniciar()} disabled={oferta.desligado !== null} title={oferta.desligado ?? oferta.dica}>
       Revisar personagens
     </Link>
   )
