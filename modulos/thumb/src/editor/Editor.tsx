@@ -11,8 +11,10 @@ import {
   enquadramentoPreso,
   escalaQueCobre,
   FONTES_DA_THUMB,
+  INCLINACAO_MAXIMA,
   LARGURA,
   MODELOS_DE_DIVISOR,
+  painelNoPonto,
   partirEmDuasLinhas,
   recorteDaImagem,
   ROTACAO_MAXIMA,
@@ -22,6 +24,7 @@ import {
   thumbEfetiva,
   trechoDoQuadro,
   type DivisorDaThumb,
+  type GeometriaDaThumb,
   type Ponto,
   type ThumbDoProjeto,
 } from '../../shared/thumb'
@@ -35,7 +38,7 @@ import { Aviso, Botao, Caixinha, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, fo
  * loja.ts): a previa 1080x1920 e os ajustes -- layout (1 ou 2 imagens), as
  * imagens (de onde vem cada uma e quem usa que diz: as sugestoes das cenas,
  * um quadro do video, um arquivo do PC), o texto (2 linhas, cores, fonte,
- * tamanho, rotacao, altura), o divisor na emenda (2 imagens) e a seta. O estilo e fixo (o preset das refs); ele so mexe no que o
+ * tamanho, rotacao, altura), o divisor e a inclinacao da emenda (2 imagens) e a seta. O estilo e fixo (o preset das refs); ele so mexe no que o
  * pedido deixou. A aba "Thumbnail" do recap e o modulo Thumbnail montam ESTAS
  * pecas, cada um com a sua loja (ProvedorDoEditor).
  *
@@ -171,7 +174,7 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
       const efetiva = t ? thumbEfetiva(t, medidor(t.fonte)) : null
       if (!t || !efetiva) return
       const p = paraQuadro(el, ev)
-      const slot = painelEm(t, efetiva.geo.emenda, p.y)
+      const slot = painelEm(t, efetiva.geo, p)
       const img = t.imagens[slot]
       const painel = efetiva.geo.paineis[slot]
       const enq = efetiva.enquadramentos[slot]
@@ -226,7 +229,7 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
           const el = canvas.current
           const caminhos = imagensDoSoltar(ev)
           if (!el || caminhos.length === 0) return
-          aoSoltar(caminhos, painelEm(thumb, ef.geo.emenda, paraQuadro(el, ev).y))
+          aoSoltar(caminhos, painelEm(thumb, ef.geo, paraQuadro(el, ev)))
         },
       }
     : {}
@@ -251,7 +254,7 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
                 outra: qual === 'base' ? ef.seta.ponta : ef.seta.base,
               }
             } else {
-              const slot = painelEm(thumb, ef.geo.emenda, p.y)
+              const slot = painelEm(thumb, ef.geo, p)
               const enq = ef.enquadramentos[slot]
               if (!thumb.imagens[slot] || !enq) return
               useThumb.getState().escolherSlot(slot)
@@ -274,7 +277,7 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
             const p = paraQuadro(el, ev)
             const a = arrasto.current
             if (!a) {
-              setCursor(pontaPerto(p) ? 'grab' : thumb.imagens[painelEm(thumb, ef.geo.emenda, p.y)] ? 'move' : 'default')
+              setCursor(pontaPerto(p) ? 'grab' : thumb.imagens[painelEm(thumb, ef.geo, p)] ? 'move' : 'default')
               return
             }
             const s = useThumb.getState()
@@ -348,8 +351,9 @@ function paraQuadro(el: HTMLCanvasElement, ev: { clientX: number; clientY: numbe
   }
 }
 
-function painelEm(t: ThumbDoProjeto, emenda: number | null, y: number): 0 | 1 {
-  return t.layout === 'duas' && emenda !== null && y >= emenda ? 1 : 0
+/** O painel do ponto: com 2 imagens, de que lado da emenda (inclinada ou nao) ele caiu. */
+function painelEm(t: ThumbDoProjeto, geo: GeometriaDaThumb, p: Ponto): 0 | 1 {
+  return t.layout === 'duas' ? painelNoPonto(geo, p) : 0
 }
 
 /** Embaixo da previa: os avisos da area segura, ou o "ok" discreto. */
@@ -1051,7 +1055,60 @@ function RotacaoDoTexto() {
   )
 }
 
-/** O divisor na emenda (so com 2 imagens): ligar, o modelo e a cor. */
+/**
+ * A "Inclinacao" da emenda (2 imagens): a emenda vira uma reta inclinada pelo
+ * meio dela e o divisor (ligado) gira junto. Desligado o divisor, o mesmo
+ * controle como "Inclinacao da emenda". "Reto" volta a 0; "= texto" copia a
+ * Rotacao do texto (o slash da ref do Faah acompanha o texto girado).
+ */
+function InclinacaoDaEmenda() {
+  const useThumb = useLoja()
+  const thumb = useThumb((s) => s.thumb)
+  if (!thumb) return null
+  const d = thumb.divisor
+  const inclinacao = d.inclinacao
+  const doTexto = Math.max(-INCLINACAO_MAXIMA, Math.min(INCLINACAO_MAXIMA, thumb.rotacao))
+  const mudar = (v: number): void => {
+    const atual = useThumb.getState().thumb
+    if (!atual) return
+    useThumb.getState().mudar({ divisor: { ...atual.divisor, inclinacao: v } })
+    useGuias.getState().marcar()
+  }
+  return (
+    <div className="flex flex-col gap-1" data-thumb="inclinacao-da-emenda">
+      <div className="flex items-center gap-2">
+        <span className="w-[68px] shrink-0 text-[11px] leading-tight text-ink-3">{d.ligado ? 'Inclinacao' : 'Inclinacao da emenda'}</span>
+        <Deslizante
+          valor={inclinacao}
+          min={-INCLINACAO_MAXIMA}
+          max={INCLINACAO_MAXIMA}
+          step={0.5}
+          texto={`${inclinacao > 0 ? '+' : ''}${inclinacao.toLocaleString('pt-BR')}`}
+          padrao={0}
+          dica={
+            d.ligado
+              ? 'Inclina a emenda e o divisor junto, em graus (negativo = sobe para a direita); cada imagem continua cobrindo o seu lado'
+              : 'Inclina a emenda entre as imagens, em graus (negativo = sobe para a direita); cada imagem continua cobrindo o seu lado'
+          }
+          onChange={(v) => mudar(Math.abs(v) < 0.25 ? 0 : Math.round(v * 2) / 2)}
+        />
+        <Botao pequeno disabled={inclinacao === 0} onClick={() => mudar(0)} title="Volta a emenda reta (0 graus)">
+          Reto
+        </Botao>
+        <Botao
+          pequeno
+          disabled={inclinacao === doTexto}
+          onClick={() => mudar(doTexto)}
+          title={`O mesmo angulo da Rotacao do texto (${doTexto > 0 ? '+' : ''}${doTexto.toLocaleString('pt-BR')})`}
+        >
+          = texto
+        </Botao>
+      </div>
+    </div>
+  )
+}
+
+/** O divisor na emenda (so com 2 imagens): ligar, o modelo, a cor e a inclinacao. */
 function SecaoDoDivisor() {
   const useThumb = useLoja()
   const thumb = useThumb((s) => s.thumb)
@@ -1094,6 +1151,7 @@ function SecaoDoDivisor() {
           )}
         </>
       )}
+      <InclinacaoDaEmenda />
     </Secao>
   )
 }

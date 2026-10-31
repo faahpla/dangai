@@ -29,6 +29,9 @@
  *   conferido por similaridade), a automatica e a arrastada;
  * - a rotacao do texto: guardada (as de antes = 0), cabe na largura girada, a
  *   caixa do bloco cobre o texto girado, o canvas gira e a sombra nao;
+ * - a inclinacao da emenda: guardada (as de antes = 0), a mascara sem fundo nem
+ *   lado trocado (rasterizada), cada imagem cobrindo o trapezio, o divisor
+ *   girado de borda a borda e o rosto do lado certo da reta no x dele;
  * - a tela (SSR): o editor solto e o do projeto, em ASCII.
  *
  * Rodar da raiz:
@@ -144,6 +147,7 @@ async function principal(): Promise<void> {
   testarSeta(T)
   testarFormaDaSeta(T)
   await testarRotacao(T, D)
+  await testarInclinacao(T, D)
   await testarCobrirEBarras(T)
   await testarMain()
   await testarLoja()
@@ -392,7 +396,7 @@ async function testarTela(): Promise<void> {
   Object.assign(useTela.getInitialState(), useTela.getState())
   const projeto = renderToStaticMarkup(createElement(JanelaDaThumb))
   const texto = (h: string): string => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
-  for (const rotulo of ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Linha 1', 'Seta vermelha apontando o rosto', 'Tamanho', 'Divisor entre as imagens'])
+  for (const rotulo of ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Linha 1', 'Seta vermelha apontando o rosto', 'Tamanho', 'Divisor entre as imagens', 'Inclinacao da emenda', '= texto'])
     confere(texto(solta).includes(rotulo), `solta: "${rotulo}"`)
   for (const rotulo of ['Normal.dangai', 'Trocar projeto...', 'Sugestoes', 'Quadro do projeto', 'Do computador', 'Quadro dentro da cena', 'Sem render ainda'])
     confere(texto(projeto).includes(rotulo), `projeto: "${rotulo}"`)
@@ -409,7 +413,7 @@ async function testarDivisoresETamanho(T: typeof import('../shared/thumb'), D: t
   const { tamanho: _t, divisor: _d, ...antiga } = padrao
   const lida = T.thumbDoProjeto(JSON.parse(JSON.stringify(antiga)))
   confere(lida !== null && lida.tamanho === 1 && lida.divisor.ligado === false && lida.divisor.modelo === 'rasgo-brilho' && lida.divisor.cor === null, 'thumb salva antes (sem divisor e sem tamanho): abre com 100% e divisor desligado')
-  const ligado = { ...padrao, divisor: { ligado: true, modelo: 'slash' as const, cor: '#2fb4ff', contorno: true }, tamanho: 1.3 }
+  const ligado = { ...padrao, divisor: { ligado: true, modelo: 'slash' as const, cor: '#2fb4ff', contorno: true, inclinacao: -6 }, tamanho: 1.3 }
   const volta = T.thumbDoProjeto(JSON.parse(JSON.stringify(ligado)))
   confere(volta !== null && JSON.stringify(volta.divisor) === JSON.stringify(ligado.divisor) && volta.tamanho === 1.3, 'o estado (ligado, modelo, cor, tamanho) e salvo e lido de volta')
   confere(T.thumbDoProjeto({ ...ligado, divisor: { ...ligado.divisor, modelo: 'raio' } }) === null && T.thumbDoProjeto({ ...ligado, tamanho: 3 }) === null, 'modelo desconhecido ou tamanho fora da faixa: nao passa')
@@ -841,6 +845,300 @@ async function testarCobrirEBarras(T: typeof import('../shared/thumb')): Promise
   for (let y = 0; y < 480; y++) for (let x = 0; x < 854; x++) if (x < 60 || x >= 794) vinheta[y * 854 + x] = Math.round(4 + (32 * Math.abs(y - 240)) / 240)
   confere(areaSemBarras(vinheta, 854, 480).largura === 854, 'vinheta escura nos lados (escura, mas nao lisa): nada sai')
   confere(areaSemBarras(quadro(854, 480, (_x, y) => y < 4 || y >= 476), 854, 480).altura === 480, 'borda fina de encode (< 2%): fica')
+}
+
+/**
+ * A INCLINACAO DA EMENDA (pedido do Levi, 31/10; a ref "FALTOU EXPLICAR!" do
+ * Faah, o slash subindo para a direita): guardada (as de antes = 0, preset
+ * junto), a 0 nada muda; inclinada, a MASCARA -- com um canvas falso que
+ * anota recortes e retangulos, rasterizado pixel a pixel -- nao deixa nenhum
+ * pixel de fundo e cada lado da reta e da sua imagem, em varios angulos; cada
+ * imagem cobre a caixa do seu trapezio; o divisor (os 4 modelos) gira com o
+ * angulo e cobre de borda a borda sem mudar a espessura; o rosto de cima fica
+ * acima da emenda NO X DELE e o de baixo abaixo; o painel do ponto segue a reta.
+ */
+async function testarInclinacao(T: typeof import('../shared/thumb'), D: typeof import('../shared/pedidos')): Promise<void> {
+  console.log('\n== a inclinacao da emenda')
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  const padrao = T.thumbPadrao('FALTOU EXPLICAR!')
+  confere(padrao.divisor.inclinacao === 0, 'o padrao: emenda reta (0)')
+  const { inclinacao: _i, ...divisorAntigo } = padrao.divisor
+  confere(T.thumbDoProjeto(JSON.parse(JSON.stringify({ ...padrao, divisor: divisorAntigo })))?.divisor.inclinacao === 0, 'thumb salva antes (divisor sem inclinacao): abre com 0')
+  const inclinada = { ...padrao, divisor: { ...padrao.divisor, ligado: true, modelo: 'slash' as const, inclinacao: -6 }, rotacao: -5 }
+  confere(T.thumbDoProjeto(JSON.parse(JSON.stringify(inclinada)))?.divisor.inclinacao === -6, 'o estado guarda a inclinacao')
+  confere(T.thumbDoProjeto({ ...inclinada, divisor: { ...inclinada.divisor, inclinacao: 16 } }) === null, 'fora de -15..15: nao passa')
+  const preset = D.presetDe(inclinada)
+  const volta = D.thumbDoPreset(D.presetDaThumbSchema.parse(JSON.parse(JSON.stringify(preset))), T.thumbPadrao(null))
+  const { inclinacao: _pi, ...presetDivisorAntigo } = preset.divisor
+  confere(volta.divisor.inclinacao === -6 && D.presetDaThumbSchema.parse({ ...preset, divisor: presetDivisorAntigo }).divisor.inclinacao === 0, 'o editor solto lembra a inclinacao; preset de antes = 0')
+
+  const linhas = ['faltou', 'explicar!'] as [string, string]
+  const reta = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null }, medir)
+  const zero = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null, divisor: { inclinacao: 0 } }, medir)
+  confere(
+    JSON.stringify(reta) === JSON.stringify(zero) && reta.paineis[0]!.y1 === reta.emenda && reta.paineis[1]!.y0 === reta.emenda && reta.inclinacao === 0,
+    'a 0: a geometria de antes (cima 0..emenda, baixo emenda..1920)',
+  )
+  confere(T.geometriaDaThumb({ layout: 'uma', linhas, textoY: null, divisor: { inclinacao: -10 } }, medir).inclinacao === 0, 'com 1 imagem: sem inclinacao')
+
+  // ---- a mascara: um canvas falso com a matriz, os recortes e os retangulos desenhados
+  type M = [number, number, number, number, number, number]
+  const vezes = (a: M, b: M): M => [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]]
+  const aplicar = (m: M, x: number, y: number): { x: number; y: number } => ({ x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5] })
+  type Desenho = { nome: string; cantos: { x: number; y: number }[]; recortes: { x: number; y: number }[][] }
+  const anotar = (): { ctx: CanvasRenderingContext2D; desenhos: Desenho[] } => {
+    const desenhos: Desenho[] = []
+    let m: M = [1, 0, 0, 1, 0, 0]
+    let recortes: { x: number; y: number }[][] = []
+    let caminho: { x: number; y: number }[] = []
+    const pilha: { m: M; recortes: { x: number; y: number }[][] }[] = []
+    const guardado: Record<string | symbol, unknown> = {}
+    const retangulo = (x: number, y: number, w: number, h: number) => [aplicar(m, x, y), aplicar(m, x + w, y), aplicar(m, x + w, y + h), aplicar(m, x, y + h)]
+    const funcoes: Record<string, (...a: never[]) => unknown> = {
+      save: () => pilha.push({ m: [...m] as M, recortes: [...recortes] }),
+      restore: () => {
+        const p = pilha.pop()
+        if (p) ({ m, recortes } = p)
+      },
+      setTransform: (a: number, b: number, c: number, d: number, e: number, f: number) => (m = [a, b, c, d, e, f]),
+      translate: (x: number, y: number) => (m = vezes(m, [1, 0, 0, 1, x, y])),
+      rotate: (a: number) => (m = vezes(m, [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0])),
+      scale: (x: number, y: number) => (m = vezes(m, [x, 0, 0, y, 0, 0])),
+      beginPath: () => (caminho = []),
+      moveTo: (x: number, y: number) => caminho.push(aplicar(m, x, y)),
+      lineTo: (x: number, y: number) => caminho.push(aplicar(m, x, y)),
+      closePath: () => {},
+      rect: (x: number, y: number, w: number, h: number) => caminho.push(...retangulo(x, y, w, h)),
+      clip: () => (recortes = [...recortes, caminho]),
+      drawImage: (...a: never[]) => {
+        const n = a as unknown as [{ nome?: string }, ...number[]]
+        const [x, y, w, h] = n.length === 9 ? (n.slice(5) as number[]) : (n.slice(1) as number[])
+        desenhos.push({ nome: n[0]?.nome ?? '?', cantos: retangulo(x!, y!, w!, h!), recortes })
+      },
+      fillRect: (x: number, y: number, w: number, h: number) => desenhos.push({ nome: String(guardado.fillStyle ?? 'fill'), cantos: retangulo(x, y, w, h), recortes }),
+      createLinearGradient: () => ({ addColorStop: () => {} }),
+    }
+    const ctx = new Proxy(guardado, {
+      get(alvo, prop) {
+        if (typeof prop === 'string' && funcoes[prop]) return funcoes[prop]
+        if (prop in alvo) return alvo[prop]
+        return () => {}
+      },
+      set(alvo, prop, valor) {
+        alvo[prop] = valor
+        return true
+      },
+    }) as unknown as CanvasRenderingContext2D
+    return { ctx, desenhos }
+  }
+  const dentro = (p: { x: number; y: number }, poli: { x: number; y: number }[]): boolean => {
+    let d = false
+    for (let i = 0, j = poli.length - 1; i < poli.length; j = i++) {
+      const a = poli[i]!
+      const b = poli[j]!
+      if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) d = !d
+    }
+    return d
+  }
+  const { desenharThumb } = await import('../src/editor/desenho')
+  const fontes = { cima: { nome: 'cima' }, baixo: { nome: 'baixo' }, divisor: { nome: 'divisor' } }
+  const ANGULOS = [-15, -12, -6, -0.5, 0, 3, 12, 15]
+  let fundo = 0
+  let trocados = 0
+  let cortados = 0
+  let pixels = 0
+  for (const graus of ANGULOS) {
+    for (const textoY of [null, 0.32, 0.7]) {
+      const t = { ...padrao, textoY, rotacao: -5, divisor: { ...padrao.divisor, inclinacao: graus } }
+      const ef = T.thumbEfetiva(t, medir)
+      const { ctx, desenhos } = anotar()
+      desenharThumb(ctx, {
+        thumb: t,
+        geo: ef.geo,
+        paineis: [
+          { fonte: fontes.cima as unknown as CanvasImageSource, sx: 0, sy: 0, sw: 10, sh: 10 },
+          { fonte: fontes.baixo as unknown as CanvasImageSource, sx: 0, sy: 0, sw: 10, sh: 10 },
+        ],
+        seta: null,
+        divisor: null,
+        escala: 1,
+        guias: null,
+      })
+      const imagens = desenhos.filter((d) => d.nome === 'cima' || d.nome === 'baixo')
+      const corte = ef.geo.paineis[1]!.corte!
+      let fundoAqui = 0
+      // Cada pixel (o centro dele): coberto por alguma imagem (dentro do recorte E do retangulo desenhado) e, longe
+      // da reta (> 0,75 px), a ULTIMA que cobre e a do lado certo.
+      // Todas as linhas em volta da emenda (onde a mascara trabalha) e, no resto, uma linha a cada 16.
+      const de = Math.floor(Math.min(T.emendaNoX(corte, 0), T.emendaNoX(corte, T.LARGURA))) - 4
+      const ate = Math.ceil(Math.max(T.emendaNoX(corte, 0), T.emendaNoX(corte, T.LARGURA))) + 4
+      for (let y = 0; y < T.ALTURA; y++) {
+        if ((y < de || y > ate) && y % 16 !== 0 && y !== T.ALTURA - 1) continue
+        for (let x = 0; x < T.LARGURA; x++) {
+          const p = { x: x + 0.5, y: y + 0.5 }
+          let ultima: string | null = null
+          for (const d of imagens) if (dentro(p, d.cantos) && d.recortes.every((r) => dentro(p, r))) ultima = d.nome
+          pixels++
+          if (!ultima) {
+            fundoAqui++
+            continue
+          }
+          const lado = (p.y - T.emendaNoX(corte, p.x)) * Math.cos(Math.atan(corte.tan))
+          if ((lado < -0.75 && ultima !== 'cima') || (lado > 0.75 && ultima !== 'baixo')) trocados++
+          // A borda suavizada da de baixo cai sobre a de cima, nunca sobre o fundo: o pixel que a reta corta (o
+          // quadradinho dele) fica inteiro dentro da de cima.
+          const ya = T.emendaNoX(corte, x)
+          const yb = T.emendaNoX(corte, x + 1)
+          if (Math.min(ya, yb) < y + 1 && Math.max(ya, yb) > y) {
+            const cantos = [
+              { x: x + 0.001, y: y + 0.001 },
+              { x: x + 0.999, y: y + 0.999 },
+            ]
+            if (!cantos.every((q) => imagens.some((d) => d.nome === 'cima' && dentro(q, d.cantos) && d.recortes.every((r) => dentro(q, r))))) cortados++
+          }
+        }
+      }
+      fundo += fundoAqui
+    }
+  }
+  if (fundo + trocados + cortados > 0) console.log(`      fundo ${fundo}, lado trocado ${trocados}, borda sem a de cima por baixo ${cortados}`)
+  confere(fundo === 0 && trocados === 0 && cortados === 0, `a mascara em ${ANGULOS.length} angulos x 3 alturas (${(pixels / 1e6).toFixed(1)} M pixels: todas as linhas da emenda, 1 a cada 16 no resto): nenhum pixel de fundo, cada lado da reta com a sua imagem, a borda da de baixo sempre sobre a de cima`)
+
+  // A emenda passa pelo meio da emenda reta e sobe para a direita com o angulo negativo.
+  const g6 = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null, divisor: { inclinacao: -6 } }, medir)
+  const c6 = g6.paineis[1]!.corte!
+  confere(
+    Math.abs(T.emendaNoX(c6, T.LARGURA / 2) - g6.emenda!) < 1e-9 && T.emendaNoX(c6, T.LARGURA) < T.emendaNoX(c6, 0) - 100 && Math.abs(Math.atan(c6.tan) * (180 / Math.PI) + 6) < 1e-9,
+    `-6 graus: a reta passa pelo meio da emenda e sobe ${Math.round(T.emendaNoX(c6, 0) - T.emendaNoX(c6, T.LARGURA))} px para a direita`,
+  )
+  confere(T.painelNoPonto(g6, { x: 1000, y: g6.emenda! - 20 }) === 1 && T.painelNoPonto(g6, { x: 80, y: g6.emenda! + 20 }) === 0, 'o painel do ponto (arrastar, rodinha, soltar) segue a reta: na direita, 20 px acima do meio ja e a de baixo')
+
+  // Cada imagem cobre a CAIXA do trapezio (o zoom minimo e o arrastar contam a ponta mais funda).
+  let buracos = 0
+  let casos = 0
+  const IMAGENS = [
+    { largura: 854, altura: 480 },
+    { largura: 1080, altura: 1920 },
+    { largura: 600, altura: 2400 },
+  ]
+  for (const graus of [-15, -6, 12]) {
+    for (const tam of IMAGENS) {
+      for (const enq of [null, { zoom: 1, cx: 0, cy: 0 }, { zoom: 1, cx: 1, cy: 1 }, { zoom: 2.5, cx: 0.2, cy: 0.9 }]) {
+        const img = { origem: 'arquivo' as const, arquivo: 'x.png', t: 0, ...tam, rostos: null, enquadramento: enq }
+        const t = { ...padrao, divisor: { ...padrao.divisor, inclinacao: graus }, imagens: [img, img] as T.ThumbDoProjeto['imagens'] }
+        const ef = T.thumbEfetiva(t, medir)
+        ef.geo.paineis.forEach((painel, i) => {
+          casos++
+          const regiao = T.regiaoDoPainel(painel)
+          const r = T.recorteDaImagem(painel, tam, ef.enquadramentos[i] ?? null)
+          const cobre = r.sw * r.escala >= T.LARGURA - 1e-6 && r.sh * r.escala >= painel.y1 - painel.y0 - 1e-6
+          const caixa = regiao.every((q) => q.y >= painel.y0 - 1e-6 && q.y <= painel.y1 + 1e-6)
+          if (!cobre || !caixa) buracos++
+        })
+      }
+    }
+  }
+  confere(buracos === 0, `${casos} paineis inclinados (16:9, 9:16, em pe; automatico e a mao nas beiras): a imagem cobre a caixa inteira do trapezio`)
+
+  // ---- o divisor inclinado: os 4 modelos de borda a borda, a espessura igual
+  const sharp = (await import('sharp')).default
+  const pasta = join(process.cwd(), 'modulos', 'thumb', 'assets', 'divisores')
+  for (const modelo of ['rasgo-brilho', 'rasgo', 'slash'] as const) {
+    const { data, info } = await sharp(join(pasta, T.PNG_DO_DIVISOR[modelo])).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    const f = T.FAIXA_DO_DIVISOR[modelo]
+    const linhaTemAlpha = (y: number): boolean => {
+      for (let x = 0; x < info.width; x++) if (data[(y * info.width + x) * 4 + 3]! > 0) return true
+      return false
+    }
+    confere(linhaTemAlpha(f.de) && linhaTemAlpha(f.ate) && !linhaTemAlpha(f.de - 1) && !linhaTemAlpha(f.ate + 1), `${modelo}: a faixa ${f.de}-${f.ate} do PNG e a forma inteira em volta do centro (alpha 0 logo fora)`)
+  }
+  const PRONTOS: [string, import('../src/editor/desenho').DivisorPronto][] = [
+    ...(['rasgo-brilho', 'rasgo', 'slash'] as const).map(
+      (m): [string, import('../src/editor/desenho').DivisorPronto] => [m, { tipo: 'imagem', fonte: fontes.divisor as unknown as CanvasImageSource, largura: 1080, altura: 1920, centro: T.CENTRO_DO_DIVISOR[m], faixa: T.FAIXA_DO_DIVISOR[m] }],
+    ),
+    ['linha', { tipo: 'linha', cor: '#ffffff', contorno: true }],
+  ]
+  for (const [nome, d] of PRONTOS) {
+    const resumo: string[] = []
+    let ok = true
+    for (const graus of [-15, -12, -6, 6, 12, 15]) {
+      const t = { ...padrao, divisor: { ...padrao.divisor, ligado: true, inclinacao: graus } }
+      const ef = T.thumbEfetiva(t, medir)
+      const { ctx, desenhos } = anotar()
+      desenharThumb(ctx, { thumb: t, geo: ef.geo, paineis: [null, null], seta: null, divisor: d, escala: 1, guias: null })
+      const faixas = desenhos.filter((x) => x.nome === 'divisor' || x.nome === '#ffffff' || x.nome === 'rgba(0,0,0,0.85)')
+      for (const fx of faixas) {
+        const [a, b, c, e] = fx.cantos as [{ x: number; y: number }, { x: number; y: number }, { x: number; y: number }, { x: number; y: number }]
+        // As duas quinas de cada ponta passam da borda; o lado curto (a espessura) com o comprimento de antes; o angulo e o da emenda.
+        const passa = Math.max(a.x, e.x) <= -0.5 && Math.min(b.x, c.x) >= T.LARGURA + 0.5
+        const angulo = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
+        const espessura = Math.hypot(e.x - a.x, e.y - a.y)
+        const esperada = d.tipo === 'imagem' ? d.faixa!.ate + 1 - d.faixa!.de : nome === 'linha' && fx.nome === '#ffffff' ? T.ESPESSURA_DA_LINHA : T.ESPESSURA_DA_LINHA + 2 * T.CONTORNO_DA_LINHA
+        // Esticada: o comprimento >= largura / cos (a regra) -- a sobra e a das quinas.
+        const comprido = Math.hypot(b.x - a.x, b.y - a.y) >= T.LARGURA / Math.cos((Math.abs(graus) * Math.PI) / 180)
+        if (!passa || !comprido || Math.abs(angulo - graus) > 1e-6 || Math.abs(espessura - esperada) > 1e-6) ok = false
+      }
+      if (faixas.length === 0) ok = false
+      resumo.push(`${graus > 0 ? '+' : ''}${graus}`)
+    }
+    confere(ok, `${nome} inclinado (${resumo.join(', ')}): gira com a emenda, as quinas passam das duas bordas e a espessura nao muda (so estica na largura)`)
+  }
+  // O centro da forma fica no meio da emenda: girando o PNG em volta de (540, emenda), o y do centro vai para la.
+  {
+    const t = { ...padrao, divisor: { ...padrao.divisor, ligado: true, modelo: 'slash' as const, inclinacao: -6 } }
+    const ef = T.thumbEfetiva(t, medir)
+    const { ctx, desenhos } = anotar()
+    const d = PRONTOS[2]![1] as Extract<import('../src/editor/desenho').DivisorPronto, { tipo: 'imagem' }>
+    desenharThumb(ctx, { thumb: t, geo: ef.geo, paineis: [null, null], seta: null, divisor: d, escala: 1, guias: null })
+    const fx = desenhos.find((x) => x.nome === 'divisor')!
+    const [a, b, c, e] = fx.cantos as { x: number; y: number }[]
+    // O ponto do PNG (540, centro) = a fracao (centro - de)/(ate+1-de) da altura, no meio da largura.
+    const fr = (d.centro - d.faixa!.de) / (d.faixa!.ate + 1 - d.faixa!.de)
+    const topoMeio = { x: (a!.x + b!.x) / 2, y: (a!.y + b!.y) / 2 }
+    const baseMeio = { x: (e!.x + c!.x) / 2, y: (e!.y + c!.y) / 2 }
+    const centro = { x: topoMeio.x + fr * (baseMeio.x - topoMeio.x), y: topoMeio.y + fr * (baseMeio.y - topoMeio.y) }
+    confere(Math.hypot(centro.x - T.LARGURA / 2, centro.y - ef.geo.emenda!) < 1e-6, 'o centro da forma (o y medido no PNG) fica no meio da emenda inclinada')
+    // Reto: o desenho de antes (o PNG inteiro, sem giro).
+    const r = anotar()
+    const t0 = { ...t, divisor: { ...t.divisor, inclinacao: 0 } }
+    desenharThumb(r.ctx, { thumb: t0, geo: T.thumbEfetiva(t0, medir).geo, paineis: [null, null], seta: null, divisor: d, escala: 1, guias: null })
+    const reto = r.desenhos.find((x) => x.nome === 'divisor')!
+    confere(reto.cantos[0]!.x === 0 && reto.cantos[2]!.y - reto.cantos[0]!.y === 1920 && reto.cantos[0]!.y === T.thumbEfetiva(t0, medir).geo.emenda! - d.centro, 'reto: o divisor como antes (o PNG inteiro, 1 px = 1 px)')
+  }
+
+  // ---- o rosto e a emenda inclinada
+  // Rostos que cabem JUSTOS (a emenda e o limite que segura, a poucos px): o automatico os poe do lado certo
+  // da reta NO X DELES -- a cabeca de cima acima do lado em que a emenda sobe, a de baixo abaixo do lado em
+  // que ela desce. Sem texto (a reta e o unico limite) e com o texto girado.
+  const ROSTO_CIMA = { x: 0.6, y: 0.2, w: 0.09, h: 0.2, conf: 0.9 }
+  const ROSTO_BAIXO = { x: 0.3, y: 0.2, w: 0.126, h: 0.28, conf: 0.9 }
+  for (const [nome, ls, rot] of [
+    ['sem texto', ['', ''], 0],
+    ['FALTOU EXPLICAR! a -5', linhas, -5],
+  ] as [string, [string, string], number][]) {
+    for (const graus of [-12, 12]) {
+      const cima = { origem: 'arquivo' as const, arquivo: 'c.png', t: 0, largura: 854, altura: 480, rostos: [ROSTO_CIMA], enquadramento: null }
+      const baixo = { ...cima, arquivo: 'b.png', rostos: [ROSTO_BAIXO] }
+      const t = { ...padrao, linhas: ls, rotacao: rot, divisor: { ...padrao.divisor, inclinacao: graus }, imagens: [cima, baixo] as T.ThumbDoProjeto['imagens'] }
+      const ef = T.thumbEfetiva(t, medir)
+      const corte = ef.geo.paineis[1]!.corte!
+      const caixas = ef.geo.paineis.map((painel, i) => T.cabecaNoQuadro(painel, t.imagens[i]!, ef.enquadramentos[i]!, t.imagens[i]!.rostos![0]!))
+      const [cc, cb] = caixas
+      const acima = !!cc && cc.y2 <= Math.min(T.emendaNoX(corte, cc.x1), T.emendaNoX(corte, cc.x2)) + 0.5
+      const abaixo = !!cb && cb.y1 >= Math.max(T.emendaNoX(corte, cb.x1), T.emendaNoX(corte, cb.x2)) - 0.5
+      const semAvisoNovo = ef.avisos.every((a) => a.tipo !== 'topo' && a.tipo !== 'base')
+      confere(
+        acima && abaixo && semAvisoNovo,
+        `${nome}, ${graus > 0 ? '+' : ''}${graus}: a cabeca de cima acima da emenda no x dela (base ${Math.round(cc?.y2 ?? 0)}, emenda ${Math.round(Math.min(T.emendaNoX(corte, cc?.x1 ?? 0), T.emendaNoX(corte, cc?.x2 ?? 0)))}), a de baixo abaixo (topo ${Math.round(cb?.y1 ?? 0)}, emenda ${Math.round(Math.max(T.emendaNoX(corte, cb?.x1 ?? 0), T.emendaNoX(corte, cb?.x2 ?? 0)))})`,
+      )
+    }
+  }
+  // Os avisos de sempre: a cabeca arrastada para a faixa proibida avisa igual, inclinada.
+  {
+    const colada = { origem: 'arquivo' as const, arquivo: 'x.png', t: 0, largura: 854, altura: 480, rostos: [{ x: 0.45, y: 0, w: 0.1, h: 0.2, conf: 0.9 }], enquadramento: null }
+    const ef = T.thumbEfetiva({ ...padrao, divisor: { ...padrao.divisor, inclinacao: -8 }, imagens: [colada, null] }, medir)
+    confere(ef.avisos.some((a) => a.texto.includes('faixa proibida de cima')), 'inclinada: a cabeca colada no topo ainda avisa a faixa proibida (os avisos de hoje)')
+  }
 }
 
 function T_ok(t: unknown): boolean {

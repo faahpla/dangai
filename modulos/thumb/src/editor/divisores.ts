@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {
   CENTRO_DO_DIVISOR,
   COR_ORIGINAL_DO_DIVISOR,
+  FAIXA_DO_DIVISOR,
   PNG_DA_FORMA_DO_RASGO,
   PNG_DO_DIVISOR,
   recolorirDivisor,
@@ -82,7 +83,7 @@ async function montar(modelo: ModeloComPng, cor: string | null): Promise<Divisor
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('O canvas nao abriu.')
   ctx.putImageData(new ImageData(dados as Uint8ClampedArray<ArrayBuffer>, png.largura, png.altura), 0, 0)
-  return { tipo: 'imagem', fonte: canvas, largura: png.largura, altura: png.altura, centro: CENTRO_DO_DIVISOR[modelo] }
+  return { tipo: 'imagem', fonte: canvas, largura: png.largura, altura: png.altura, centro: CENTRO_DO_DIVISOR[modelo], faixa: FAIXA_DO_DIVISOR[modelo] }
 }
 
 /** O divisor pronto para o desenho (esperando o PNG ficar pronto). null = sem divisor. */

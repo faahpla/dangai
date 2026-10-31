@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { COR_LINHA_1, COR_LINHA_2, corSchema } from './cor'
-import { divisorEfetivo, divisorPadrao, divisorSchema, type DivisorDaThumb } from './divisores'
+import { divisorEfetivo, divisorPadrao, divisorSchema, INCLINACAO_MAXIMA, type DivisorDaThumb } from './divisores'
 
 export * from './cor'
 export * from './divisores'
@@ -24,7 +24,9 @@ export * from './divisores'
  * - cor mais viva (saturacao e contraste leves);
  * - opcionais (30/10): o "Tamanho do texto" (70-150% do corpo, a largura util
  *   continua o teto de cada linha) e, com 2 imagens, um DIVISOR na emenda
- *   (divisores.ts), por cima das imagens e por baixo da seta e do texto.
+ *   (divisores.ts), por cima das imagens e por baixo da seta e do texto;
+ * - opcional (31/10): a "Inclinacao" da emenda (e do divisor), -15 a 15 graus:
+ *   a emenda vira uma reta inclinada pelo meio dela (CorteDaEmenda).
  *
  * A REGRA FIXA DA AREA SEGURA DO TIKTOK (o Levi insistiu): 0-13% e 87-100% da
  * altura sao proibidos para cabeca e rosto (so cenario); os personagens ficam
@@ -289,9 +291,33 @@ export interface LinhaNaThumb {
   contorno: number
 }
 
+/**
+ * A EMENDA INCLINADA: a reta y = y + (x - LARGURA/2) * tan, que passa pelo
+ * meio da emenda reta. A imagem de cima acaba nela e a de baixo comeca nela.
+ */
+export interface CorteDaEmenda {
+  y: number
+  tan: number
+}
+
+/** O y da emenda no x (a reta inclinada; reta = o y dela). */
+export function emendaNoX(corte: CorteDaEmenda, x: number): number {
+  return corte.y + (x - LARGURA / 2) * corte.tan
+}
+
 export interface PainelDaThumb {
+  /**
+   * O retangulo do painel (y do quadro). Com a emenda inclinada, e a caixa da
+   * regiao dele (um trapezio): a imagem cobre a caixa inteira (o zoom minimo e
+   * o arrastar contam a ponta que desce ate a emenda), e o desenho recorta a
+   * regiao (regiaoDoPainel).
+   */
   y0: number
   y1: number
+  /** Qual painel: a unica imagem, a de cima ou a de baixo. */
+  lugar: 'unica' | 'cima' | 'baixo'
+  /** A emenda (2 imagens): a de cima acaba nela, a de baixo comeca nela. null = 1 imagem. */
+  corte: CorteDaEmenda | null
   /** Onde a cabeca deve ficar (y do quadro): dentro da area segura e fora do texto. */
   faixa: { de: number; ate: number }
 }
@@ -315,8 +341,10 @@ export interface GeometriaDaThumb {
     esquerda: number
     direita: number
   } | null
-  /** A emenda das duas imagens (layout 'duas'). */
+  /** A emenda das duas imagens (layout 'duas'): o y no meio do quadro (inclinada, a reta passa por ele). */
   emenda: number | null
+  /** A inclinacao da emenda (graus, a conta do canvas; 0 = reta, e sempre 0 com 1 imagem). */
+  inclinacao: number
   paineis: PainelDaThumb[]
 }
 
@@ -370,7 +398,12 @@ const FOLGA_DO_TEXTO = 28
 const FAIXA_MINIMA = 160
 
 export function geometriaDaThumb(
-  t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & { fonte?: FonteDaThumb; tamanho?: number; rotacao?: number },
+  t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & {
+    fonte?: FonteDaThumb
+    tamanho?: number
+    rotacao?: number
+    divisor?: { inclinacao?: number } | null
+  },
   medir: MedirTexto,
 ): GeometriaDaThumb {
   const maxLargura = LARGURA * LARGURA_UTIL
@@ -489,10 +522,13 @@ export function geometriaDaThumb(
       pivo,
       bloco,
       emenda: null,
+      inclinacao: 0,
       paineis: [
         {
           y0: 0,
           y1: ALTURA,
+          lugar: 'unica',
+          corte: null,
           faixa: faixa(seguraDe, Math.min(seguraAte, acima), 0, ALTURA),
         },
       ],
@@ -500,25 +536,76 @@ export function geometriaDaThumb(
   }
   // A emenda no meio do bloco (o pivo, girado ou nao): o texto cobre a costura (as refs).
   const emenda = Math.round(Math.max(ALTURA * 0.3, Math.min(ALTURA * 0.7, centro)))
+  // Inclinada, a reta passa pelo meio dela: a caixa de cada painel vai ate a ponta mais funda da emenda
+  // (a de cima desce ate o lado mais baixo, a de baixo sobe ate o mais alto). Reta: os paineis de antes.
+  const inclinacao = Math.max(-INCLINACAO_MAXIMA, Math.min(INCLINACAO_MAXIMA, t.divisor?.inclinacao ?? 0))
+  const corte: CorteDaEmenda = { y: emenda, tan: inclinacao === 0 ? 0 : Math.tan((inclinacao * Math.PI) / 180) }
+  const meia = (Math.abs(corte.tan) * LARGURA) / 2
+  const fundo = Math.ceil(emenda + meia)
+  const alto = Math.floor(emenda - meia)
   return {
     linhas,
     rotacao: graus,
     pivo,
     bloco,
     emenda,
+    inclinacao,
     paineis: [
       {
         y0: 0,
-        y1: emenda,
-        faixa: faixa(seguraDe, Math.min(emenda, acima), 0, emenda),
+        y1: fundo,
+        lugar: 'cima',
+        corte,
+        // A faixa vai ate a ponta mais funda da emenda; no x do rosto, o enquadramento confere a reta.
+        faixa: faixa(seguraDe, Math.min(fundo, acima), 0, fundo),
       },
       {
-        y0: emenda,
+        y0: alto,
         y1: ALTURA,
-        faixa: faixa(Math.max(emenda, abaixo), seguraAte, emenda, ALTURA),
+        lugar: 'baixo',
+        corte,
+        faixa: faixa(Math.max(alto, abaixo), seguraAte, alto, ALTURA),
       },
     ],
   }
+}
+
+/**
+ * A REGIAO de um painel no quadro (o poligono que o desenho recorta): 1 imagem,
+ * o quadro inteiro; 2, acima da emenda (a de cima) ou abaixo dela (a de baixo).
+ */
+export function regiaoDoPainel(painel: Pick<PainelDaThumb, 'y0' | 'y1' | 'lugar' | 'corte'>): Ponto[] {
+  const c = painel.corte
+  if (!c || painel.lugar === 'unica') {
+    return [
+      { x: 0, y: painel.y0 },
+      { x: LARGURA, y: painel.y0 },
+      { x: LARGURA, y: painel.y1 },
+      { x: 0, y: painel.y1 },
+    ]
+  }
+  const esq = emendaNoX(c, 0)
+  const dir = emendaNoX(c, LARGURA)
+  return painel.lugar === 'cima'
+    ? [
+        { x: 0, y: 0 },
+        { x: LARGURA, y: 0 },
+        { x: LARGURA, y: dir },
+        { x: 0, y: esq },
+      ]
+    : [
+        { x: 0, y: esq },
+        { x: LARGURA, y: dir },
+        { x: LARGURA, y: ALTURA },
+        { x: 0, y: ALTURA },
+      ]
+}
+
+/** Em que painel cai um ponto do quadro (2 imagens: de que lado da emenda inclinada). */
+export function painelNoPonto(geo: Pick<GeometriaDaThumb, 'paineis'>, p: Ponto): 0 | 1 {
+  const c = geo.paineis[1]?.corte
+  if (!c) return 0
+  return p.y >= emendaNoX(c, p.x) ? 1 : 0
 }
 
 // ------------------------------------------------------- o enquadramento
@@ -655,15 +742,26 @@ export function enquadrarSozinho(
     const posicionar = (s: number): { ox: number; oy: number; sobra: number } => {
       const cy = (uniao.y1 + uniao.y2) / 2
       const cx = (uniao.x1 + uniao.x2) / 2
-      const oy = limitar((de + ate) / 2 - cy * s, PH - img.altura * s, 0)
       const ox = limitar(LARGURA / 2 - cx * s, LARGURA - img.largura * s, 0)
+      // A EMENDA INCLINADA no x do rosto (nao a reta): a cabeca de cima acima dela nas duas beiradas da
+      // cabeca, a de baixo abaixo dela.
+      let deX = de
+      let ateX = ate
+      const c = painel.corte
+      if (c && c.tan !== 0 && lugar !== 'unica') {
+        const ya = emendaNoX(c, ox + uniao.x1 * s) - painel.y0
+        const yb = emendaNoX(c, ox + uniao.x2 * s) - painel.y0
+        if (lugar === 'cima') ateX = Math.min(ate, ya, yb)
+        else deX = Math.max(de, ya, yb)
+      }
+      const oy = limitar((deX + ateX) / 2 - cy * s, PH - img.altura * s, 0)
       const topo = oy + uniao.y1 * s
       const base = oy + uniao.y2 * s
       // Passar para o lado da faixa PROIBIDA pesa 3x passar para o lado do texto: sem caber, o
       // rosto de cima pode descer para tras do texto, o de baixo subir -- nunca entrar nas faixas do TikTok.
       const pesoDoTopo = lugar === 'baixo' ? 1 : 3
       const pesoDaBase = lugar === 'baixo' ? 3 : 1
-      return { ox, oy, sobra: pesoDoTopo * Math.max(0, de - topo) + pesoDaBase * Math.max(0, base - ate) }
+      return { ox, oy, sobra: pesoDoTopo * Math.max(0, deX - topo) + pesoDaBase * Math.max(0, base - ateX) }
     }
     let melhor = { s: s0, ...posicionar(s0) }
     for (let s = s0; s <= cobre * ZOOM_PARA_CABER && melhor.sobra > 0.5; s *= 1.03) {
@@ -683,7 +781,7 @@ export function enquadrarSozinho(
 
 /** Um rosto da imagem no quadro 1080x1920 (a cabeca inteira), recortado ao painel. null = fora do painel. */
 export function cabecaNoQuadro(
-  painel: Pick<PainelDaThumb, 'y0' | 'y1'>,
+  painel: Pick<PainelDaThumb, 'y0' | 'y1'> & Partial<Pick<PainelDaThumb, 'lugar' | 'corte'>>,
   img: { largura: number; altura: number },
   e: Enquadramento | null,
   r: RostoDaThumb,
@@ -703,15 +801,24 @@ export function cabecaNoQuadro(
   })
   const cab = para(cabecaDoRosto(r))
   const rosto = para({ x1: r.x, y1: r.y, x2: r.x + r.w, y2: r.y + r.h })
+  // O pedaco do painel que aparece no x do rosto: com a emenda inclinada, a de cima acaba nela e a de
+  // baixo comeca nela (reta: o proprio painel).
+  let topo = painel.y0
+  let fim = painel.y1
+  if (painel.corte && painel.lugar && painel.lugar !== 'unica') {
+    const y = emendaNoX(painel.corte, (rosto.x1 + rosto.x2) / 2)
+    if (painel.lugar === 'cima') fim = Math.min(fim, y)
+    else topo = Math.max(topo, y)
+  }
   // So conta o rosto que aparece: pelo menos metade dele dentro do painel.
   const vx = Math.max(0, Math.min(rosto.x2, LARGURA) - Math.max(rosto.x1, 0))
-  const vy = Math.max(0, Math.min(rosto.y2, painel.y1) - Math.max(rosto.y1, painel.y0))
+  const vy = Math.max(0, Math.min(rosto.y2, fim) - Math.max(rosto.y1, topo))
   if (vx * vy < 0.5 * (rosto.x2 - rosto.x1) * (rosto.y2 - rosto.y1)) return null
   return {
     x1: Math.max(0, cab.x1),
-    y1: Math.max(painel.y0, cab.y1),
+    y1: Math.max(topo, cab.y1),
     x2: Math.min(LARGURA, cab.x2),
-    y2: Math.min(painel.y1, cab.y2),
+    y2: Math.min(fim, cab.y2),
     rosto,
   }
 }

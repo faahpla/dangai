@@ -9,13 +9,16 @@ import {
   DEGRADE_DA_SETA,
   degradeDaCor,
   degradeDaSeta,
+  emendaNoX,
   ESPESSURA_DA_LINHA,
+  esticadaDoDivisor,
   LARGURA,
   LOOK,
   SOMBRA_DESFOQUE,
   SOMBRA_Y,
   ZONA_PROIBIDA_BASE,
   ZONA_PROIBIDA_TOPO,
+  regiaoDoPainel,
   type GeometriaDaThumb,
   type MedirTexto,
   type SetaNoQuadro,
@@ -26,8 +29,9 @@ import { familiaDaFonte } from './fontes'
 /**
  * [thumb] O DESENHO DA THUMBNAIL num canvas (o mesmo codigo na previa e no
  * PNG final; so a escala muda): as imagens com o "look" (saturacao e
- * contraste leves), o DIVISOR na emenda (por cima das imagens, por baixo da
- * seta e do texto), a seta (a seta.png vetorizada, so escala, giro e espelho),
+ * contraste leves) -- com a emenda inclinada, a de baixo recortada pela reta
+ * por cima da de cima --, o DIVISOR na emenda (por cima das imagens, por baixo
+ * da seta e do texto; inclinado, girado e esticado de borda a borda), a seta (a seta.png vetorizada, so escala, giro e espelho),
  * as 2 linhas de texto (sombra, contorno por fora, degrade vertical, esticada
  * 1,11x, o bloco girado pela "Rotacao") e, SO NA PREVIA, as guias da area segura
  * do TikTok (as faixas proibidas, as linhas de 16% e 84%, a emenda e as
@@ -58,7 +62,15 @@ export interface GuiasDaPrevia {
  * linha desenhada aqui.
  */
 export type DivisorPronto =
-  | { tipo: 'imagem'; fonte: CanvasImageSource; largura: number; altura: number; centro: number }
+  | {
+      tipo: 'imagem'
+      fonte: CanvasImageSource
+      largura: number
+      altura: number
+      centro: number
+      /** As linhas do PNG em que a forma existe (FAIXA_DO_DIVISOR): inclinado, so elas sao desenhadas. Ausente = o PNG inteiro. */
+      faixa?: { de: number; ate: number }
+    }
   | { tipo: 'linha'; cor: string; contorno: boolean }
 
 export interface EntradaDoDesenho {
@@ -135,8 +147,45 @@ function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala:
   ctx.restore()
 }
 
-function desenharDivisor(ctx: CanvasRenderingContext2D, d: DivisorPronto, emenda: number): void {
+/**
+ * A meia espessura (px do quadro) da forma do divisor em volta da emenda: o
+ * quanto ele sobe e desce do centro (a esticada inclinada conta as quinas).
+ */
+export function meiaEspessuraDoDivisor(d: DivisorPronto): number {
+  if (d.tipo === 'linha') return ESPESSURA_DA_LINHA / 2 + (d.contorno ? CONTORNO_DA_LINHA : 0)
+  const k = LARGURA / d.largura
+  const f = d.faixa ?? { de: 0, ate: d.altura - 1 }
+  return Math.max(d.centro - f.de, f.ate + 1 - d.centro) * k
+}
+
+function desenharDivisor(ctx: CanvasRenderingContext2D, d: DivisorPronto, emenda: number, graus: number): void {
   ctx.save()
+  if (graus !== 0) {
+    // INCLINADO: gira em volta do meio da emenda e estica SO na largura (a espessura fica), o bastante para
+    // as quinas da faixa passarem das bordas do quadro (esticadaDoDivisor).
+    const estica = esticadaDoDivisor(graus, meiaEspessuraDoDivisor(d), LARGURA)
+    ctx.translate(LARGURA / 2, emenda)
+    ctx.rotate((graus * Math.PI) / 180)
+    if (d.tipo === 'imagem') {
+      ctx.scale(estica, 1)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      const k = LARGURA / d.largura
+      const f = d.faixa ?? { de: 0, ate: d.altura - 1 }
+      const linhas = f.ate + 1 - f.de
+      ctx.drawImage(d.fonte, 0, f.de, d.largura, linhas, -LARGURA / 2, (f.de - d.centro) * k, LARGURA, linhas * k)
+    } else {
+      const largura = LARGURA * estica
+      if (d.contorno) {
+        ctx.fillStyle = 'rgba(0,0,0,0.85)'
+        ctx.fillRect(-largura / 2, -ESPESSURA_DA_LINHA / 2 - CONTORNO_DA_LINHA, largura, ESPESSURA_DA_LINHA + 2 * CONTORNO_DA_LINHA)
+      }
+      ctx.fillStyle = d.cor
+      ctx.fillRect(-largura / 2, -ESPESSURA_DA_LINHA / 2, largura, ESPESSURA_DA_LINHA)
+    }
+    ctx.restore()
+    return
+  }
   if (d.tipo === 'imagem') {
     // O PNG e do quadro inteiro (1080x1920): 1 px dele = 1 px da thumb, so deslocado para a forma cair na emenda.
     ctx.imageSmoothingEnabled = true
@@ -232,13 +281,14 @@ function desenharGuias(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho, g: Gu
     ctx.fillText('ZONA PROIBIDA - SO CENARIO', LARGURA / 2, topo / 2)
     ctx.fillText('ZONA PROIBIDA - SO CENARIO', LARGURA / 2, base + (ALTURA - base) / 2)
   }
-  if (g.zonas && e.geo.emenda !== null && e.thumb.layout === 'duas') {
+  const corte = e.geo.paineis[1]?.corte
+  if (g.zonas && e.geo.emenda !== null && e.thumb.layout === 'duas' && corte) {
     ctx.setLineDash([8 * px, 8 * px])
     ctx.strokeStyle = 'rgba(255,255,255,0.55)'
     ctx.lineWidth = 1.5 * px
     ctx.beginPath()
-    ctx.moveTo(0, e.geo.emenda)
-    ctx.lineTo(LARGURA, e.geo.emenda)
+    ctx.moveTo(0, emendaNoX(corte, 0))
+    ctx.lineTo(LARGURA, emendaNoX(corte, LARGURA))
     ctx.stroke()
     ctx.setLineDash([])
   }
@@ -276,7 +326,15 @@ export function desenharThumb(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho
     const altura = painel.y1 - painel.y0
     ctx.save()
     ctx.beginPath()
-    ctx.rect(0, painel.y0, LARGURA, altura)
+    if (painel.lugar === 'baixo' && painel.corte && painel.corte.tan !== 0) {
+      // A EMENDA INCLINADA: a de cima cobre a caixa dela inteira (ate a ponta mais funda da emenda) e a de
+      // baixo, desenhada depois, so abaixo da reta -- a borda suavizada cai sobre a de cima, nunca sobre o
+      // fundo (sem fresta). Reta: os dois retangulos de antes.
+      const regiao = regiaoDoPainel(painel)
+      ctx.moveTo(regiao[0]!.x, regiao[0]!.y)
+      for (const q of regiao.slice(1)) ctx.lineTo(q.x, q.y)
+      ctx.closePath()
+    } else ctx.rect(0, painel.y0, LARGURA, altura)
     ctx.clip()
     if (p) {
       ctx.imageSmoothingEnabled = true
@@ -294,7 +352,7 @@ export function desenharThumb(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho
     ctx.restore()
   })
   // As camadas: imagens -> divisor -> seta e texto.
-  if (e.divisor && e.geo.emenda !== null && e.thumb.layout === 'duas') desenharDivisor(ctx, e.divisor, e.geo.emenda)
+  if (e.divisor && e.geo.emenda !== null && e.thumb.layout === 'duas') desenharDivisor(ctx, e.divisor, e.geo.emenda, e.geo.inclinacao)
   if (e.seta) desenharSeta(ctx, e.seta, e.escala)
   desenharTexto(ctx, e)
   if (e.guias) desenharGuias(ctx, e, e.guias)

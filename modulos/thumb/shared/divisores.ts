@@ -31,6 +31,16 @@ export const MODELOS_DE_DIVISOR = [
 export type ModeloDeDivisor = (typeof MODELOS_DE_DIVISOR)[number]['id']
 export type ModeloComPng = Exclude<ModeloDeDivisor, 'linha'>
 
+/**
+ * A "Inclinacao" (pedido do Levi, 31/10; a ref "FALTOU EXPLICAR!" do Faah, o
+ * slash subindo para a direita): graus, a mesma conta da Rotacao do texto
+ * (negativo = sobe para a direita). A EMENDA das duas imagens vira a reta
+ * inclinada que passa pelo meio da emenda reta (a imagem de cima acaba nela, a
+ * de baixo comeca nela) -- com o divisor ligado ou nao -- e o divisor gira
+ * junto, esticado na largura para ir de borda a borda (esticadaDoDivisor).
+ */
+export const INCLINACAO_MAXIMA = 15
+
 export const divisorSchema = z.object({
   ligado: z.boolean(),
   modelo: z.enum(MODELOS_DE_DIVISOR.map((m) => m.id) as [ModeloDeDivisor, ...ModeloDeDivisor[]]),
@@ -38,12 +48,14 @@ export const divisorSchema = z.object({
   cor: corSchema.nullable(),
   /** So a Linha: o contorno escuro fino. */
   contorno: z.boolean(),
+  /** A inclinacao da emenda e do divisor (graus, INCLINACAO_MAXIMA). Ausente (thumb e preset de antes) = 0. */
+  inclinacao: z.number().min(-INCLINACAO_MAXIMA).max(INCLINACAO_MAXIMA).default(0),
 })
 export type DivisorDaThumb = z.infer<typeof divisorSchema>
 
 /** O padrao: desligado, o rasgo com brilho do Levi na cor original. */
 export function divisorPadrao(): DivisorDaThumb {
-  return { ligado: false, modelo: 'rasgo-brilho', cor: null, contorno: true }
+  return { ligado: false, modelo: 'rasgo-brilho', cor: null, contorno: true, inclinacao: 0 }
 }
 
 /** Os arquivos de cada modelo (em modulos/thumb/assets/divisores). O rasgo com brilho usa o MEIO2 como a forma. */
@@ -63,6 +75,31 @@ export const CENTRO_DO_DIVISOR: Record<ModeloComPng, number> = {
   'rasgo-brilho': 1010,
   rasgo: 1010,
   slash: 974,
+}
+
+/**
+ * As linhas do PNG (y, de/ate inclusive) em que o divisor existe: a faixa
+ * continua de alpha > 0 em volta do centro (medida nos arquivos). Inclinado,
+ * so ela e desenhada (girada e esticada): o resto do quadro e transparente e,
+ * girado, o retangulo do PNG inteiro nao cobriria os cantos.
+ */
+export const FAIXA_DO_DIVISOR: Record<ModeloComPng, { de: number; ate: number }> = {
+  'rasgo-brilho': { de: 796, ate: 1203 },
+  rasgo: { de: 936, ate: 1095 },
+  slash: { de: 862, ate: 1142 },
+}
+
+/**
+ * Quanto o divisor INCLINADO estica na largura (so nela: a espessura fica) para
+ * ir de borda a borda: uma faixa de meia espessura `meia` (px), girada `graus`
+ * em volta do meio do quadro, cobre x = 0..LARGURA inteira (as quinas da faixa,
+ * nao so a linha do meio) quando a meia largura dela, vezes o cosseno, passa
+ * da meia largura do quadro mais `meia` vezes o seno. Mais 1% de margem. Reto: 1.
+ */
+export function esticadaDoDivisor(graus: number, meia: number, largura = 1080): number {
+  if (graus === 0) return 1
+  const a = (Math.abs(graus) * Math.PI) / 180
+  return (largura / 2 + Math.max(0, meia) * Math.sin(a)) / ((largura / 2) * Math.cos(a)) + 0.01
 }
 
 /** A faixa (y no PNG) onde o rasgo existe: o degrade da cor nova vai do topo dela a base. */
