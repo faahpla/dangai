@@ -15,6 +15,7 @@ import {
   MODELOS_DE_DIVISOR,
   partirEmDuasLinhas,
   recorteDaImagem,
+  ROTACAO_MAXIMA,
   TAMANHO_MAXIMO,
   TAMANHO_MINIMO,
   textoYPadrao,
@@ -34,7 +35,7 @@ import { Aviso, Botao, Caixinha, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, fo
  * loja.ts): a previa 1080x1920 e os ajustes -- layout (1 ou 2 imagens), as
  * imagens (de onde vem cada uma e quem usa que diz: as sugestoes das cenas,
  * um quadro do video, um arquivo do PC), o texto (2 linhas, cores, fonte,
- * tamanho, altura), o divisor na emenda (2 imagens) e a seta. O estilo e fixo (o preset das refs); ele so mexe no que o
+ * tamanho, rotacao, altura), o divisor na emenda (2 imagens) e a seta. O estilo e fixo (o preset das refs); ele so mexe no que o
  * pedido deixou. A aba "Thumbnail" do recap e o modulo Thumbnail montam ESTAS
  * pecas, cada um com a sua loja (ProvedorDoEditor).
  *
@@ -569,6 +570,7 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
           />
         </div>
         <TamanhoDoTexto />
+        <RotacaoDoTexto />
         <div className="flex items-center gap-2" data-thumb="altura-do-texto">
           <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Altura</span>
           <Deslizante
@@ -1007,6 +1009,42 @@ function TamanhoDoTexto() {
         <p className="pl-[76px] text-[11px] text-ink-3" data-thumb="tamanho-no-maximo">
           Essa linha ja esta no maximo da largura
           {noMaximo.length === 1 ? ` (linha ${noMaximo[0]!.linha + 1})` : ' (as duas)'}: ela nao cresce mais.
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** "Rotacao": o bloco de texto inteiro gira em volta do meio (a sombra continua caindo para baixo). */
+function RotacaoDoTexto() {
+  const useThumb = useLoja()
+  const rotacao = useThumb((s) => s.thumb?.rotacao ?? 0)
+  const ef = useEfetiva()
+  const encolheu = rotacao !== 0 && (ef?.geo.linhas ?? []).some((l) => l.noMaximo)
+  return (
+    <div className="flex flex-col gap-1" data-thumb="rotacao-do-texto">
+      <div className="flex items-center gap-2">
+        <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Rotacao</span>
+        <Deslizante
+          valor={rotacao}
+          min={-ROTACAO_MAXIMA}
+          max={ROTACAO_MAXIMA}
+          step={0.5}
+          texto={`${rotacao > 0 ? '+' : ''}${rotacao.toLocaleString('pt-BR')}`}
+          padrao={0}
+          dica="Gira o bloco de texto inteiro, em graus (negativo = sobe para a direita); o contorno gira junto e a sombra continua para baixo"
+          onChange={(v) => {
+            useThumb.getState().mudar({ rotacao: Math.abs(v) < 0.25 ? 0 : Math.round(v * 2) / 2 })
+            useGuias.getState().marcar()
+          }}
+        />
+        <Botao pequeno disabled={rotacao === 0} onClick={() => useThumb.getState().mudar({ rotacao: 0 })} title="Volta o texto reto (0 graus)">
+          Reto
+        </Botao>
+      </div>
+      {encolheu && (
+        <p className="pl-[76px] text-[11px] text-ink-3" data-thumb="rotacao-encolheu">
+          Girado, o texto encolheu um pouco para nao sair do quadro.
         </p>
       )}
     </div>

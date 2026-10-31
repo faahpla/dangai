@@ -21,8 +21,14 @@
  *   divisor -> seta e texto, com um canvas falso que anota), o recolorir dos
  *   PNGs de verdade sem mudar o alpha, e o tamanho com a largura como teto;
  * - a seta automatica sempre grande (a ref "PODER SUPREMO" como minimo): ao
- *   lado da 1a linha quando ha espaco, por tras do texto (a ref "CANCELOU")
- *   quando nao ha, dentro do quadro e fora das faixas proibidas;
+ *   lado da 1a linha quando ha espaco, por cima do texto (a ref "FALTOU" do
+ *   Faah) ou por tras dele (a ref "CANCELOU") quando nao ha, dentro do quadro e
+ *   fora das faixas proibidas, a cabeca fora do texto e sem cobrir o rosto --
+ *   com o texto reto e girado;
+ * - a FORMA da seta: sempre a seta.png (so escala uniforme, giro e espelho,
+ *   conferido por similaridade), a automatica e a arrastada;
+ * - a rotacao do texto: guardada (as de antes = 0), cabe na largura girada, a
+ *   caixa do bloco cobre o texto girado, o canvas gira e a sombra nao;
  * - a tela (SSR): o editor solto e o do projeto, em ASCII.
  *
  * Rodar da raiz:
@@ -136,6 +142,8 @@ async function principal(): Promise<void> {
 
   await testarDivisoresETamanho(T, D)
   testarSeta(T)
+  testarFormaDaSeta(T)
+  await testarRotacao(T, D)
   await testarCobrirEBarras(T)
   await testarMain()
   await testarLoja()
@@ -542,44 +550,227 @@ async function testarDivisoresETamanho(T: typeof import('../shared/thumb'), D: t
 }
 
 function testarSeta(T: typeof import('../shared/thumb')): void {
-  console.log('\n== a seta grande (ao lado ou por tras do texto)')
+  console.log('\n== a seta grande (ao lado, por cima ou por tras do texto)')
   const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
   const topoProibido = T.ZONA_PROIBIDA_TOPO * T.ALTURA
   const baseProibida = T.ZONA_PROIBIDA_BASE * T.ALTURA
-  // O rosto de cima: colado no texto (o enquadramento automatico poe a cabeca logo acima dele) e longe.
+  type G = import('../shared/thumb').GeometriaDaThumb
+  // O rosto de cima: colado no texto (o enquadramento automatico poe a cabeca logo acima dele), longe, a esquerda
+  // (espelha) e o close grande que encosta no texto (a ref "FALTOU" do Faah).
   const rostos = {
-    colado: (g: import('../shared/thumb').GeometriaDaThumb) => ({ x1: 420, y1: g.bloco!.topo - 230, x2: 640, y2: g.bloco!.topo - 30 }),
+    colado: (g: G) => ({ x1: 420, y1: g.bloco!.topo - 230, x2: 640, y2: g.bloco!.topo - 30 }),
     alto: () => ({ x1: 520, y1: 420, x2: 720, y2: 640 }),
+    esquerda: () => ({ x1: 60, y1: 560, x2: 300, y2: 820 }),
+    close: (g: G) => ({ x1: 360, y1: g.bloco!.topo - 420, x2: 900, y2: g.bloco!.topo + 60 }),
   }
+  /** Como a seta saiu: a vista (ao lado da 1a linha ou por cima do texto) ou por tras dele. */
+  const jeito = (g: G, s: import('../shared/thumb').SetaNoQuadro): 'a vista' | 'por tras' => (s.base.y > g.bloco!.base ? 'por tras' : 'a vista')
   for (const [nome, linhas] of [
     ['curto', ['poder', 'supremo']],
     ['longo', ['cancelou', 'encontro magico']],
     ['cancelou', ['cancelou', 'encontro']],
   ] as [string, [string, string]][]) {
     for (const tamanho of [0.8, 1, 1.4]) {
-      for (const [qual, rosto] of Object.entries(rostos)) {
-        const g = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null, tamanho }, medir)
-        const s = T.setaSozinha(g, rosto(g))!
-        const L = Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
-        const c = T.caixaDaSeta(s)
-        const dentro = c.x1 >= 0 && c.x2 <= T.LARGURA && c.y1 >= topoProibido - 0.5 && c.y2 <= baseProibida + 0.5
-        const l1 = g.linhas[0]!
-        const livre = (T.LARGURA - l1.largura) / 2 - l1.contorno
-        const porTras = s.base.y > g.bloco!.base
-        const certo = livre < T.ESPACO_PARA_A_SETA ? porTras : true
-        confere(
-          L >= T.SETA_MINIMA - 1 && dentro && s.ponta.y < g.bloco!.topo && certo,
-          `${nome} ${Math.round(tamanho * 100)}%, rosto ${qual}: ${porTras ? 'por tras' : 'ao lado'} (livre ${Math.round(livre)} px), ${Math.round(L)} px, cabeca ${Math.round(Math.min(150, Math.max(60, 0.3 * L)))} px, dentro do quadro e fora das faixas proibidas`,
-        )
+      for (const rotacao of [0, -5]) {
+        for (const [qual, rosto] of Object.entries(rostos)) {
+          const g = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null, tamanho, rotacao }, medir)
+          const r = rosto(g)
+          const s = T.setaSozinha(g, r)!
+          const L = Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
+          const c = T.caixaDaSeta(s)
+          const dentro = c.x1 >= 0 && c.x2 <= T.LARGURA && c.y1 >= topoProibido - 0.5 && c.y2 <= baseProibida + 0.5
+          const l1 = g.linhas[0]!
+          const livre = (T.LARGURA - l1.largura) / 2 - l1.contorno
+          const j = jeito(g, s)
+          const contorno = T.contornoDaSetaPx(s)
+          const cabecaFora = T.cabecaDaSeta(s).every((p) => !T.pontoNoTexto(g, p, contorno))
+          // Sem espaco ao lado da 1a linha, ela nunca fica espremida em cima das letras: a vista, o corpo inteiro
+          // fora do texto (por cima dele); por tras, so a cauda e a cabeca precisam aparecer.
+          const corpoFora = j === 'por tras' || T.contornoDaSeta(s).every((p) => !T.pontoNoTexto(g, p, contorno * 0.5))
+          const cobre = T.rostoCobertoPelaSeta(s, r)
+          const tamanhoOk = L >= T.SETA_MINIMA - 1 && L <= T.SETA_MAXIMA + 1
+          confere(
+            tamanhoOk && dentro && s.ponta.y < g.bloco!.topo && cabecaFora && corpoFora && cobre <= 0.03 && (qual === 'esquerda' ? s.lado === -1 : true),
+            `${nome} ${Math.round(tamanho * 100)}%${rotacao ? ` girado ${rotacao}` : ''}, rosto ${qual}: ${j} (livre ${Math.round(livre)} px), corda ${Math.round(L)} px, no quadro e fora das faixas, cabeca acima e fora do texto, cobre ${Math.round(cobre * 100)}% do rosto`,
+          )
+        }
       }
     }
   }
-  // A 1a linha larga: a seta nasce embaixo, do lado do texto, e sobe ate o lado do rosto (a ref "CANCELOU").
+  // O close colado no texto largo, sem espaco em cima (a ref "CANCELOU"): a cauda embaixo, do lado, e a seta
+  // sobe pela beirada passando por tras da letra da ponta; so a beirada se esconde.
   const larga = T.geometriaDaThumb({ layout: 'duas', linhas: ['cancelou', 'encontro'], textoY: null }, medir)
-  const s = T.setaSozinha(larga, { x1: 330, y1: 560, x2: 590, y2: 820 })!
-  confere(s.lado === 1 && s.base.x <= larga.bloco!.esquerda && s.base.y > larga.bloco!.base && s.ponta.x < 330 && s.ponta.y < larga.bloco!.topo - 60, '"CANCELOU": nasce embaixo a esquerda, abaixo do texto, e a ponta chega pelo lado do rosto, acima das letras')
+  const close = { x1: 240, y1: larga.bloco!.topo - 500, x2: 640, y2: larga.bloco!.topo + 40 }
+  const s = T.setaSozinha(larga, close)!
+  const escondido = T.contornoDaSeta(s).filter((p) => T.pontoNoTexto(larga, p))
+  confere(
+    s.lado === 1 && s.base.x <= larga.bloco!.esquerda + 40 && s.base.y > larga.bloco!.base && s.ponta.y < larga.bloco!.topo && escondido.length > 0 && escondido.every((p) => p.x < larga.bloco!.esquerda + 300) && T.rostoCobertoPelaSeta(s, close) <= 0.03,
+    '"CANCELOU": o close sem espaco em cima -- nasce embaixo a esquerda, sobe por tras da 1a letra (so a beirada se esconde) e a cabeca sai acima das letras',
+  )
   const espelhada = T.setaSozinha(larga, { x1: 60, y1: 560, x2: 300, y2: 820 })!
-  confere(espelhada.lado === -1 && espelhada.base.x >= larga.bloco!.direita && T.caixaDaSeta(espelhada).x2 <= T.LARGURA, 'o rosto a esquerda: tudo espelhado, nasce embaixo a direita')
+  confere(espelhada.lado === -1 && espelhada.base.x > espelhada.ponta.x && T.caixaDaSeta(espelhada).x2 <= T.LARGURA, 'o rosto a esquerda: espelhada, sai da direita')
+}
+
+/**
+ * A FORMA DA SETA (pedido do Levi, 31/10): sempre a seta.png dele -- a mesma
+ * silhueta, so escala UNIFORME, rotacao e espelho. Para qualquer par de pontas
+ * (a automatica ou as bolinhas arrastadas), o poligono e o da forma padrao
+ * levado por uma similaridade (o erro e zero); e o SVG guardado e o mesmo dos passos.
+ */
+function testarFormaDaSeta(T: typeof import('../shared/thumb')): void {
+  console.log('\n== a forma da seta (a seta.png, so escala, giro e espelho)')
+  const padrao = T.contornoDaSeta({ base: { x: 0, y: 0 }, ponta: { x: 1, y: 0 }, lado: 1 })
+  /** O erro da melhor similaridade (com espelho quando `lado` -1) que leva a forma padrao ao poligono. */
+  const erroDaSimilaridade = (poli: { x: number; y: number }[], lado: 1 | -1): number => {
+    const a = padrao.map((p) => ({ x: p.x, y: lado * p.y }))
+    const n = a.length
+    const ma = a.reduce((m, p) => ({ x: m.x + p.x / n, y: m.y + p.y / n }), { x: 0, y: 0 })
+    const mb = poli.reduce((m, p) => ({ x: m.x + p.x / n, y: m.y + p.y / n }), { x: 0, y: 0 })
+    // Minimos quadrados de b = z*a + t com z complexo (escala uniforme + rotacao).
+    let num = { re: 0, im: 0 }
+    let den = 0
+    a.forEach((p, i) => {
+      const ax = p.x - ma.x
+      const ay = p.y - ma.y
+      const bx = poli[i]!.x - mb.x
+      const by = poli[i]!.y - mb.y
+      num = { re: num.re + bx * ax + by * ay, im: num.im + by * ax - bx * ay }
+      den += ax * ax + ay * ay
+    })
+    const z = { re: num.re / den, im: num.im / den }
+    const escala = Math.hypot(z.re, z.im)
+    return (
+      Math.max(
+        ...a.map((p, i) => {
+          const ax = p.x - ma.x
+          const ay = p.y - ma.y
+          return Math.hypot(z.re * ax - z.im * ay + mb.x - poli[i]!.x, z.im * ax + z.re * ay + mb.y - poli[i]!.y)
+        }),
+      ) / escala
+    )
+  }
+  const casos: import('../shared/thumb').SetaNoQuadro[] = [
+    { base: { x: 100, y: 900 }, ponta: { x: 420, y: 640 }, lado: 1 },
+    { base: { x: 950, y: 1300 }, ponta: { x: 600, y: 500 }, lado: -1 },
+    { base: { x: 300, y: 700 }, ponta: { x: 310, y: 300 }, lado: 1 },
+    { base: { x: 500, y: 500 }, ponta: { x: 1000, y: 520 }, lado: -1 },
+  ]
+  for (const s of casos) {
+    const poli = T.contornoDaSeta(s)
+    const erro = erroDaSimilaridade(poli, s.lado)
+    const L = Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
+    confere(erro < 1e-9 && Math.abs(T.contornoDaSetaPx(s) / L - T.CONTORNO_DA_SETA) < 1e-12, `corda ${Math.round(L)} px, lado ${s.lado}: a forma padrao so escalada, girada${s.lado === -1 ? ' e espelhada' : ''} (erro ${erro.toExponential(1)}), o contorno na mesma proporcao`)
+  }
+  // Uma deformacao (a de antes: a curva esticada) NAO passa no teste: ele pega a forma diferente.
+  const torta = T.contornoDaSeta(casos[0]!).map((p, i) => (i > 10 && i < 20 ? { x: p.x + 15, y: p.y } : p))
+  confere(erroDaSimilaridade(torta, 1) > 1e-3, 'uma curva esticada a mao seria pega (o teste nao e de enfeite)')
+  // A automatica e a arrastada usam a mesma forma.
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  const t = { ...T.thumbPadrao('PODER SUPREMO'), seta: { ligada: true, base: { x: 980, y: 1200 }, ponta: { x: 500, y: 700 } } }
+  const arrastada = T.thumbEfetiva(t, medir).seta!
+  confere(arrastada.lado === -1 && erroDaSimilaridade(T.contornoDaSeta(arrastada), -1) < 1e-9, 'as bolinhas arrastadas (a ponta a esquerda da cauda): a mesma forma, espelhada')
+  // O SVG guardado (para quem le) e os passos (para o canvas) sao a mesma seta.
+  const numerosDoSvg = (T.SETA_PADRAO_SVG.match(/-?\d+(\.\d+)?/g) ?? []).map(Number)
+  const numerosDosPassos = T.FORMA_DA_SETA.flatMap((p) => (p.tipo === 'C' ? [p.c1.x, p.c1.y, p.c2.x, p.c2.y, p.p.x, p.p.y] : [p.p.x, p.p.y]))
+  confere(numerosDoSvg.length === numerosDosPassos.length && numerosDoSvg.every((v, i) => Math.abs(v - numerosDosPassos[i]!) < 1e-9), 'o SETA_PADRAO_SVG e os passos do canvas sao a mesma seta')
+  const ponta = T.FORMA_DA_SETA[0]!.p
+  const cauda = T.contornoDaSeta({ base: { x: 0, y: 0 }, ponta: { x: 1, y: 0 }, lado: 1 })
+  confere(ponta.x === 1 && ponta.y === 0 && cauda.some((p) => Math.hypot(p.x, p.y) < 0.01), 'a ponta da cabeca em (1,0) e a cauda em (0,0): as bolinhas ficam nas pontas de verdade')
+}
+
+/**
+ * A ROTACAO DO TEXTO (pedido do Faah, a ref "FALTOU EXPLICAR!" uns -5 graus):
+ * o bloco inteiro gira em volta do meio, a 0 nada muda, girado ainda cabe na
+ * largura util (encolhe se precisar), a caixa do bloco e a do texto girado,
+ * thumb e preset de antes abrem com 0, e no desenho o canvas gira mas a sombra
+ * continua para baixo.
+ */
+async function testarRotacao(T: typeof import('../shared/thumb'), D: typeof import('../shared/pedidos')): Promise<void> {
+  console.log('\n== a rotacao do texto')
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  const padrao = T.thumbPadrao('FALTOU EXPLICAR!')
+  confere(padrao.rotacao === 0, 'o padrao: reto (0)')
+  const { rotacao: _r, ...antiga } = padrao
+  confere(T.thumbDoProjeto(JSON.parse(JSON.stringify(antiga)))?.rotacao === 0, 'thumb salva antes (sem rotacao): abre com 0')
+  confere(T.thumbDoProjeto({ ...padrao, rotacao: -5 })?.rotacao === -5 && T.thumbDoProjeto({ ...padrao, rotacao: 20 }) === null, 'o estado guarda a rotacao; fora de -15..15 nao passa')
+  const preset = D.presetDe({ ...padrao, rotacao: -5 })
+  const volta = D.thumbDoPreset(D.presetDaThumbSchema.parse(JSON.parse(JSON.stringify(preset))), T.thumbPadrao(null))
+  const { rotacao: _pr, ...presetAntigo } = preset
+  confere(volta.rotacao === -5 && D.presetDaThumbSchema.parse(presetAntigo).rotacao === 0, 'o editor solto lembra a rotacao; preset de antes = 0')
+  const linhas = ['faltou', 'explicar!'] as [string, string]
+  const reta = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null }, medir)
+  const zero = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null, rotacao: 0 }, medir)
+  confere(JSON.stringify(reta) === JSON.stringify(zero) && reta.rotacao === 0, 'a 0: a geometria igual a de antes')
+  for (const [nome, ls, tamanho, rotacao] of [
+    ['FALTOU EXPLICAR!', linhas, 1, -5],
+    ['FALTOU EXPLICAR! 140%', linhas, 1.4, -5],
+    ['CANCELOU ENCONTRO', ['cancelou', 'encontro'], 1, 12],
+    ['texto longo a -15', ['inacreditavelmente', 'surpreendentemente'], 1, -15],
+  ] as [string, [string, string], number, number][]) {
+    const g = T.geometriaDaThumb({ layout: 'duas', linhas: ls, textoY: null, tamanho, rotacao }, medir)
+    const meia = (T.LARGURA * T.LARGURA_UTIL) / 2
+    let cabe = true
+    let naCaixa = true
+    for (const l of g.linhas) {
+      for (const [dx, dy, f] of [
+        [-1, -1, l.contorno],
+        [1, -1, l.contorno],
+        [1, 1, l.contorno],
+        [-1, 1, l.contorno],
+      ] as const) {
+        const local = { x: T.LARGURA / 2 + dx * (l.largura / 2 + f), y: dy < 0 ? l.base - l.cap - f : l.base + l.desce + f }
+        const p = T.paraATela(g, local)
+        if (Math.abs(p.x - T.LARGURA / 2) > meia + 0.5) cabe = false
+        const tinta = T.paraATela(g, { x: T.LARGURA / 2 + dx * (l.largura / 2), y: dy < 0 ? l.base - l.cap : l.base + l.desce })
+        if (tinta.x < g.bloco!.esquerda - 0.01 || tinta.x > g.bloco!.direita + 0.01 || tinta.y < g.bloco!.topo - 0.01 || tinta.y > g.bloco!.base + 0.01) naCaixa = false
+      }
+    }
+    const pivo = Math.abs(g.pivo.y - T.textoYPadrao('duas') * T.ALTURA) < 1e-9 && g.pivo.x === T.LARGURA / 2 && g.emenda === Math.round(g.pivo.y)
+    const encolheu = g.linhas.filter((l) => l.noMaximo).map((l) => `${l.linha + 1}:${Math.round(l.px)}px`)
+    confere(cabe && naCaixa && pivo && g.rotacao === rotacao, `${nome} girado ${rotacao}: com o contorno, cabe na largura util${encolheu.length ? ` (encolheu ${encolheu.join(', ')})` : ''}; a caixa do bloco cobre o texto girado; gira em volta do meio e a emenda fica`)
+  }
+  // Gira -5: a ponta direita sobe, a esquerda desce (a ref do Faah).
+  const g5 = T.geometriaDaThumb({ layout: 'duas', linhas, textoY: null, rotacao: -5 }, medir)
+  const l = g5.linhas[0]!
+  const esq = T.paraATela(g5, { x: T.LARGURA / 2 - l.largura / 2, y: l.base })
+  const dir = T.paraATela(g5, { x: T.LARGURA / 2 + l.largura / 2, y: l.base })
+  confere(dir.y < esq.y - 10, `-5 graus: o texto sobe para a direita (${Math.round(esq.y - dir.y)} px)`)
+  confere(T.pontoNoTexto(g5, T.paraATela(g5, { x: T.LARGURA / 2, y: l.base - l.cap / 2 })) && !T.pontoNoTexto(g5, { x: T.LARGURA / 2, y: g5.bloco!.topo - 40 }), 'o "ponto no texto" segue o texto girado')
+
+  // O desenho: o canvas gira em volta do pivo; a sombra (offset e desfoque) e a mesma do texto reto.
+  const { desenharThumb } = await import('../src/editor/desenho')
+  const registrar = (rotacao: number): { giros: number[]; sombras: number[]; desfoques: number[] } => {
+    const giros: number[] = []
+    const sombras: number[] = []
+    const desfoques: number[] = []
+    const guardado: Record<string | symbol, unknown> = {}
+    const ctx = new Proxy(guardado, {
+      get(alvo, prop) {
+        if (prop in alvo && typeof alvo[prop] !== 'function') return alvo[prop]
+        if (prop === 'createLinearGradient') return () => ({ addColorStop: () => {} })
+        return (...args: unknown[]) => {
+          if (prop === 'rotate') giros.push(args[0] as number)
+          if (prop === 'strokeText' && alvo.shadowColor !== 'transparent') {
+            sombras.push(alvo.shadowOffsetY as number)
+            desfoques.push(alvo.shadowBlur as number)
+          }
+        }
+      },
+      set(alvo, prop, valor) {
+        alvo[prop] = valor
+        return true
+      },
+    }) as unknown as CanvasRenderingContext2D
+    // PODER SUPREMO cabe girado sem encolher: a sombra de cada linha pode ser comparada com a reta.
+    const t = { ...T.thumbPadrao('PODER SUPREMO'), rotacao }
+    const e = T.thumbEfetiva(t, medir)
+    desenharThumb(ctx, { thumb: t, geo: e.geo, paineis: [null, null], seta: null, escala: 0.5, guias: null })
+    return { giros, sombras, desfoques }
+  }
+  const r0 = registrar(0)
+  const r5 = registrar(-5)
+  confere(r0.giros.length === 0 && r5.giros.length === 2 && r5.giros.every((a) => Math.abs(a - (-5 * Math.PI) / 180) < 1e-12), 'no canvas: as duas linhas giram -5 graus (reto: nenhum giro)')
+  confere(r5.sombras.length === 2 && JSON.stringify(r5.sombras) === JSON.stringify(r0.sombras) && JSON.stringify(r5.desfoques) === JSON.stringify(r0.desfoques), `a sombra continua caindo para baixo: o mesmo deslocamento (${r5.sombras.map((x) => x.toFixed(1)).join(', ')} px na tela) e desfoque do texto reto`)
 }
 
 /**

@@ -129,7 +129,7 @@ async function principal(): Promise<void> {
   confere(seta.ponta.y < a.ef.geo.bloco!.topo && seta.base.x < (T.LARGURA - a.ef.geo.linhas[0]!.largura) / 2, 'sai da esquerda do texto e a ponta fica ACIMA dele')
   confere(L >= 300 && seta.lado === 1, `comprida como nas refs (${Math.round(L)} px), curvando para a esquerda`)
   const contorno = T.contornoDaSeta(seta)
-  confere(contorno.length === 2 * 29 + 3 && contorno.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'o contorno: corpo curvo + cabeca (61 pontos)')
+  confere(contorno.length === 35 && contorno.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'o contorno: a seta padrao (3 curvas de 10 pontos + 5 cantos = 35 pontos)')
   const desligada = T.thumbEfetiva({ ...arrastada, seta: { ligada: false, base: null, ponta: null } }, medir)
   confere(desligada.seta === null, 'desligada: sem seta')
   const movida = T.thumbEfetiva({ ...arrastada, seta: { ligada: true, base: { x: 900, y: 900 }, ponta: { x: 600, y: 500 } } }, medir).seta

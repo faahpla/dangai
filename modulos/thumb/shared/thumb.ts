@@ -18,8 +18,9 @@ export * from './divisores'
  *   (1,11x), a 1a branca e a 2a amarela por padrao, com degrade vertical,
  *   contorno preto grosso por fora e sombra preta desfocada (as medidas do
  *   PSD dele); a linha que nao cabe na largura encolhe sozinha (so ela);
- * - a seta vermelha "a mao" saindo de perto do texto e apontando o rosto da
- *   imagem de cima;
+ * - a seta vermelha (a seta.png dele, so escala, giro e espelho) saindo de
+ *   perto do texto e apontando o rosto da imagem de cima;
+ * - opcional (31/10): a "Rotacao" do bloco de texto (-15 a 15 graus);
  * - cor mais viva (saturacao e contraste leves);
  * - opcionais (30/10): o "Tamanho do texto" (70-150% do corpo, a largura util
  *   continua o teto de cada linha) e, com 2 imagens, um DIVISOR na emenda
@@ -65,6 +66,14 @@ export const CORPO_LEGIVEL = 100
 /** A faixa do "Tamanho do texto" (fracao do corpo do preset). */
 export const TAMANHO_MINIMO = 0.7
 export const TAMANHO_MAXIMO = 1.5
+/**
+ * A "Rotacao" do bloco de texto (graus, a conta do canvas: negativo = sobe
+ * para a direita, como a ref "FALTOU EXPLICAR!" do Faah, uns -5). As duas
+ * linhas giram juntas em volta do meio do bloco; a sombra continua caindo
+ * para baixo na tela (o canvas nao gira o deslocamento da sombra, como o
+ * Photoshop).
+ */
+export const ROTACAO_MAXIMA = 15
 /** O piso do encolher (40 letras de Luckiest Guy ainda cabem). */
 const CORPO_MINIMO = 24
 /** A linha (com o contorno) nunca passa disto: a que passa encolhe sozinha. */
@@ -193,6 +202,8 @@ export const thumbDoProjetoSchema = z.object({
   tamanho: z.number().min(TAMANHO_MINIMO).max(TAMANHO_MAXIMO).default(1),
   /** O divisor na emenda (divisores.ts). Ausente (thumb de antes) = desligado. */
   divisor: divisorSchema.default(divisorPadrao),
+  /** A "Rotacao" do bloco de texto (graus, ROTACAO_MAXIMA). Ausente (thumb de antes) = 0. */
+  rotacao: z.number().min(-ROTACAO_MAXIMA).max(ROTACAO_MAXIMA).default(0),
 })
 export type ThumbDoProjeto = z.infer<typeof thumbDoProjetoSchema>
 
@@ -215,6 +226,7 @@ export function thumbPadrao(textoDeThumb: string | null): ThumbDoProjeto {
     salvoEm: null,
     tamanho: 1,
     divisor: divisorPadrao(),
+    rotacao: 0,
   }
 }
 
@@ -286,7 +298,17 @@ export interface PainelDaThumb {
 
 export interface GeometriaDaThumb {
   linhas: LinhaNaThumb[]
-  /** O bloco de texto (topo da 1a maiuscula ate a base da ultima), sem contorno. null = sem texto. */
+  /**
+   * A rotacao do bloco (graus, negativo = sobe para a direita) e o meio dele
+   * (o pivo): as linhas acima estao no referencial do bloco RETO; na tela, giram
+   * em volta do pivo (paraATela).
+   */
+  rotacao: number
+  pivo: Ponto
+  /**
+   * O bloco de texto (topo da 1a maiuscula ate a base da ultima), sem contorno.
+   * Girado: a caixa (alinhada a tela) do bloco girado. null = sem texto.
+   */
   bloco: {
     topo: number
     base: number
@@ -298,13 +320,57 @@ export interface GeometriaDaThumb {
   paineis: PainelDaThumb[]
 }
 
+/** Gira um ponto em volta do pivo (graus, a conta do canvas: y para baixo, positivo = horario). */
+export function girar(p: Ponto, pivo: Ponto, graus: number): Ponto {
+  if (graus === 0) return { x: p.x, y: p.y }
+  const a = (graus * Math.PI) / 180
+  const c = Math.cos(a)
+  const s = Math.sin(a)
+  const dx = p.x - pivo.x
+  const dy = p.y - pivo.y
+  return { x: pivo.x + dx * c - dy * s, y: pivo.y + dx * s + dy * c }
+}
+
+/** Os 4 cantos da tinta de uma linha (com `folga` em volta), no referencial do bloco reto. */
+function cantosDaLinha(l: Pick<LinhaNaThumb, 'largura' | 'cap' | 'desce' | 'base'>, folga: number): Ponto[] {
+  const x1 = LARGURA / 2 - l.largura / 2 - folga
+  const x2 = LARGURA / 2 + l.largura / 2 + folga
+  const y1 = l.base - l.cap - folga
+  const y2 = l.base + l.desce + folga
+  return [
+    { x: x1, y: y1 },
+    { x: x2, y: y1 },
+    { x: x2, y: y2 },
+    { x: x1, y: y2 },
+  ]
+}
+
+/** Um ponto da tela no referencial do bloco reto (o contrario de girar o bloco). */
+export function paraOBloco(geo: Pick<GeometriaDaThumb, 'rotacao' | 'pivo'>, p: Ponto): Ponto {
+  return girar(p, geo.pivo, -geo.rotacao)
+}
+
+/** Um ponto do referencial do bloco reto na tela (girado com o bloco). */
+export function paraATela(geo: Pick<GeometriaDaThumb, 'rotacao' | 'pivo'>, p: Ponto): Ponto {
+  return girar(p, geo.pivo, geo.rotacao)
+}
+
+/** O ponto da tela cai na tinta de alguma linha (girada), com o contorno e mais `folga`. */
+export function pontoNoTexto(geo: Pick<GeometriaDaThumb, 'rotacao' | 'pivo' | 'linhas'>, p: Ponto, folga = 0): boolean {
+  const q = paraOBloco(geo, p)
+  return geo.linhas.some((l) => {
+    const f = l.contorno + folga
+    return Math.abs(q.x - LARGURA / 2) <= l.largura / 2 + f && q.y >= l.base - l.cap - f && q.y <= l.base + l.desce + f
+  })
+}
+
 /** Folga entre a cabeca e o texto (o contorno e a sombra ocupam ~25 px). */
 const FOLGA_DO_TEXTO = 28
 /** Faixa menor que isto (o texto arrastado para a ponta): vale a area segura inteira do painel. */
 const FAIXA_MINIMA = 160
 
 export function geometriaDaThumb(
-  t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & { fonte?: FonteDaThumb; tamanho?: number },
+  t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & { fonte?: FonteDaThumb; tamanho?: number; rotacao?: number },
   medir: MedirTexto,
 ): GeometriaDaThumb {
   const maxLargura = LARGURA * LARGURA_UTIL
@@ -316,24 +382,9 @@ export function geometriaDaThumb(
     const direita = m.direita ?? m.largura
     return { largura: Math.max(1, esquerda + direita), esquerda, direita, cap: m.cap > 0 ? m.cap : px * 0.7, desce: Math.max(0, m.desce ?? 0) }
   }
-  // O "Tamanho do texto": as duas linhas juntas; o teto de cada uma continua a largura util.
-  const tamanho = Math.max(TAMANHO_MINIMO, Math.min(TAMANHO_MAXIMO, t.tamanho ?? 1))
-  const corpo = CORPO_PX * tamanho
-  const textos = t.linhas.map((l) => l.trim().toLocaleUpperCase('pt-BR'))
-  const linhas: LinhaNaThumb[] = []
-  for (const [i, texto] of textos.entries()) {
-    if (!texto) continue
-    let px = corpo
-    let m = tinta(texto, px)
-    const total = m.largura + 2 * px * CONTORNO_POR_PX
-    const noMaximo = total > maxLargura
-    if (noMaximo) {
-      // Palavra comprida ("ENCONTRO"): so esta linha encolhe, sem quebrar.
-      // O contorno e a sombra encolhem junto (sao proporcionais ao corpo): a linha inteira cabe em LARGURA_UTIL.
-      px = Math.max(CORPO_MINIMO, (px * maxLargura) / total)
-      m = tinta(texto, px)
-    }
-    linhas.push({
+  const linhaEm = (i: number, texto: string, px: number, noMaximo: boolean): LinhaNaThumb => {
+    const m = tinta(texto, px)
+    return {
       linha: i === 0 ? 0 : 1,
       texto,
       px,
@@ -346,11 +397,30 @@ export function geometriaDaThumb(
       x: LARGURA / 2 - (m.direita - m.esquerda) / 2,
       esticada,
       contorno: px * CONTORNO_POR_PX,
-    })
+    }
+  }
+  // O "Tamanho do texto": as duas linhas juntas; o teto de cada uma continua a largura util.
+  const tamanho = Math.max(TAMANHO_MINIMO, Math.min(TAMANHO_MAXIMO, t.tamanho ?? 1))
+  const graus = Math.max(-ROTACAO_MAXIMA, Math.min(ROTACAO_MAXIMA, t.rotacao ?? 0))
+  const corpo = CORPO_PX * tamanho
+  const textos = t.linhas.map((l) => l.trim().toLocaleUpperCase('pt-BR'))
+  let linhas: LinhaNaThumb[] = []
+  for (const [i, texto] of textos.entries()) {
+    if (!texto) continue
+    let px = corpo
+    const m = tinta(texto, px)
+    const total = m.largura + 2 * px * CONTORNO_POR_PX
+    const noMaximo = total > maxLargura
+    // Palavra comprida ("ENCONTRO"): so esta linha encolhe, sem quebrar.
+    // O contorno e a sombra encolhem junto (sao proporcionais ao corpo): a linha inteira cabe em LARGURA_UTIL.
+    if (noMaximo) px = Math.max(CORPO_MINIMO, (px * maxLargura) / total)
+    linhas.push(linhaEm(i, texto, px, noMaximo))
   }
   const centro = (t.textoY ?? textoYPadrao(t.layout)) * ALTURA
-  let bloco: GeometriaDaThumb['bloco'] = null
-  if (linhas.length > 0) {
+  const pivo = { x: LARGURA / 2, y: centro }
+  /** Empilha as linhas na altura (a base de cada uma); devolve a altura do bloco. */
+  const empilhar = (): number => {
+    if (linhas.length === 0) return 0
     // Cada linha na altura REAL dela (depois de encolher para caber): o vao e o "quase encostado" das
     // refs proporcional a linha MENOR, e nunca menor que o contorno mais grosso -- o contorno de uma
     // encosta nas letras da outra, sem invadir. As duas grandes: o vao das refs, igual a antes.
@@ -365,12 +435,44 @@ export function geometriaDaThumb(
       l.base = y + l.cap
       y = l.base + l.desce + vao
     }
+    return altura
+  }
+  let altura = empilhar()
+  if (graus !== 0 && linhas.length > 0) {
+    // GIRADO, a linha (com o contorno) ainda cabe na largura util: a ponta de cima de um lado e a de baixo
+    // do outro passam da largura reta. A que passa encolhe (so ela) ate caber; as alturas se refazem.
+    const meia = maxLargura / 2
+    for (let volta = 0; volta < 12; volta++) {
+      let mexeu = false
+      linhas = linhas.map((l) => {
+        const lado = Math.max(...cantosDaLinha(l, l.contorno).map((p) => Math.abs(girar(p, pivo, graus).x - pivo.x)))
+        if (lado <= meia + 0.25) return l
+        mexeu = true
+        const px = Math.max(CORPO_MINIMO, l.px * (meia / lado) * 0.999)
+        return { ...linhaEm(l.linha, l.texto, px, true), base: l.base }
+      })
+      if (!mexeu) break
+      altura = empilhar()
+    }
+  }
+  let bloco: GeometriaDaThumb['bloco'] = null
+  if (linhas.length > 0) {
     const maior = Math.max(...linhas.map((l) => l.largura))
     bloco = {
       topo: centro - altura / 2,
       base: centro + altura / 2,
       esquerda: (LARGURA - maior) / 2,
       direita: (LARGURA + maior) / 2,
+    }
+    if (graus !== 0) {
+      // A caixa do bloco girado (a tinta, sem o contorno): o rosto, a seta e as faixas a respeitam inteira.
+      const cantos = linhas.flatMap((l) => cantosDaLinha(l, 0).map((p) => girar(p, pivo, graus)))
+      bloco = {
+        topo: Math.min(...cantos.map((p) => p.y)),
+        base: Math.max(...cantos.map((p) => p.y)),
+        esquerda: Math.min(...cantos.map((p) => p.x)),
+        direita: Math.max(...cantos.map((p) => p.x)),
+      }
     }
   }
   // O automatico mira a area segura com a folga (19%-81%); o aviso so acusa as faixas proibidas.
@@ -383,6 +485,8 @@ export function geometriaDaThumb(
   if (t.layout === 'uma') {
     return {
       linhas,
+      rotacao: graus,
+      pivo,
       bloco,
       emenda: null,
       paineis: [
@@ -394,10 +498,12 @@ export function geometriaDaThumb(
       ],
     }
   }
-  // A emenda no meio do bloco: o texto cobre a costura (as refs).
-  const emenda = Math.round(Math.max(ALTURA * 0.3, Math.min(ALTURA * 0.7, bloco ? (bloco.topo + bloco.base) / 2 : centro)))
+  // A emenda no meio do bloco (o pivo, girado ou nao): o texto cobre a costura (as refs).
+  const emenda = Math.round(Math.max(ALTURA * 0.3, Math.min(ALTURA * 0.7, centro)))
   return {
     linhas,
+    rotacao: graus,
+    pivo,
     bloco,
     emenda,
     paineis: [
@@ -669,38 +775,165 @@ export function avisosDaAreaSegura(t: Pick<ThumbDoProjeto, 'layout' | 'imagens'>
 // ---------------------------------------------------------------- a seta
 
 export interface SetaNoQuadro {
+  /** A ponta da cauda. */
   base: Ponto
+  /** A ponta da cabeca. */
   ponta: Ponto
-  /** +1 = a curva estufa para a esquerda de quem vai da base a ponta (a seta.png dele); -1 = espelhada. */
+  /** +1 = a seta.png como e (a curva estufa para a esquerda de quem vai da cauda a ponta); -1 = espelhada. */
   lado: 1 | -1
 }
 
 /**
- * A SETA AUTOMATICA (as refs), sempre GRANDE (nunca abaixo de SETA_MINIMA, o
- * tamanho da ref "PODER SUPREMO"), apontando a borda do rosto principal da
- * imagem de cima. Rosto muito a esquerda: tudo espelhado (sai da direita).
- * Sem rosto: aponta o meio da imagem de cima. Dois jeitos:
+ * A SETA PADRAO (a `seta.png` do Levi, 360x360 -- a mesma das refs dele e do
+ * Faah) VETORIZADA: o contorno do vermelho, no referencial da CORDA (a cauda em
+ * (0,0), a ponta da cabeca em (1,0); y para a "direita" de quem vai da cauda a
+ * ponta, na tela). Corpo curvo grosso que afina na cauda e cabeca larga; o
+ * contorno preto e um traco por fora (CONTORNO_DA_SETA) com cantos redondos.
+ * Conferido sobrepondo a png (scratchpad seta/build.py, 31/10): a silhueta com
+ * o contorno bate em 98,7% (IoU), a borda a no maximo ~1,3 px da png.
  *
- * - AO LADO (a ref "PODER SUPREMO"): com espaco livre ao lado da 1a linha,
- *   sai da beirada dela, perto da base, e sobe curvando ate o rosto;
- * - POR TRAS (a ref "CANCELOU ENCONTRO"): a 1a linha larga (140%, ou uma
- *   palavra comprida) nao deixa espaco -- em vez de encolher no canto, a seta
- *   nasce embaixo, do lado, abaixo do texto (o comeco da imagem de baixo), e
- *   sobe pela borda passando POR TRAS da letra da ponta (o texto e desenhado
- *   por cima) ate o rosto.
- *
- * Nos dois, a seta inteira (com o contorno) fica dentro do quadro e fora das
- * faixas proibidas do TikTok (0-13% e 87-100%): o que passa e empurrado para
- * dentro pela cauda.
+ * A FORMA NUNCA MUDA: na tela, so escala uniforme, rotacao e espelho (a
+ * similaridade que leva a cauda a `base` e a ponta a `ponta`; `lado` -1
+ * espelha). Arrastar as bolinhas muda posicao, tamanho e giro, nunca a curva.
  */
-/** A seta automatica nunca fica mais curta que isto (a ref "PODER SUPREMO": ~330 px; as refs vao de 300 a 700). */
+export const SETA_PADRAO_SVG =
+  'M 1 0 L 0.83178 -0.22623 L 0.79924 -0.13612 C 0.66612 -0.18961 0.53348 -0.19626 0.38452 -0.16595 C 0.25961 -0.14053 0.09076 -0.07517 -0.00321 -0.00321 L 0.00321 0.00321 C 0.2467 -0.06725 0.53737 -0.08977 0.75552 0.02462 L 0.72898 0.11778 Z'
+
+export type PassoDaSeta = { tipo: 'M' | 'L'; p: Ponto } | { tipo: 'C'; c1: Ponto; c2: Ponto; p: Ponto }
+
+/** O SETA_PADRAO_SVG em passos (o canvas e os testes nao leem SVG). */
+export const FORMA_DA_SETA: readonly PassoDaSeta[] = [
+  { tipo: 'M', p: { x: 1, y: 0 } },
+  { tipo: 'L', p: { x: 0.83178, y: -0.22623 } },
+  { tipo: 'L', p: { x: 0.79924, y: -0.13612 } },
+  { tipo: 'C', c1: { x: 0.66612, y: -0.18961 }, c2: { x: 0.53348, y: -0.19626 }, p: { x: 0.38452, y: -0.16595 } },
+  { tipo: 'C', c1: { x: 0.25961, y: -0.14053 }, c2: { x: 0.09076, y: -0.07517 }, p: { x: -0.00321, y: -0.00321 } },
+  { tipo: 'L', p: { x: 0.00321, y: 0.00321 } },
+  { tipo: 'C', c1: { x: 0.2467, y: -0.06725 }, c2: { x: 0.53737, y: -0.08977 }, p: { x: 0.75552, y: 0.02462 } },
+  { tipo: 'L', p: { x: 0.72898, y: 0.11778 } },
+]
+
+/** O contorno preto da png (6,8 px numa corda de 324): fracao da corda. */
+export const CONTORNO_DA_SETA = 0.02107
+
+/**
+ * O degrade da png (linear, medido: o vermelho puro em cima a esquerda e o
+ * escuro na cabeca, embaixo), no referencial da corda: `de` = #ff0000, `ate` =
+ * #960000 (fora deles, a cor da ponta).
+ */
+export const DEGRADE_DA_SETA = {
+  de: { x: 0.44026, y: -0.2145 },
+  ate: { x: 0.50855, y: 0.27414 },
+  cores: ['#ff0000', '#960000'] as const,
+}
+
+/** A cabeca aponta 13,9 graus "para a direita" da corda (a png): e ESTA direcao que mira o rosto. */
+const ANGULO_DA_CABECA = (13.869 * Math.PI) / 180
+
+/** A cabeca (a ponta, as asas, o pescoco e o meio): o que nunca fica atras do texto nem fora do quadro. */
+const CABECA_DA_SETA: readonly Ponto[] = [
+  { x: 1, y: 0 },
+  { x: 0.83178, y: -0.22623 },
+  { x: 0.79924, y: -0.13612 },
+  { x: 0.75552, y: 0.02462 },
+  { x: 0.72898, y: 0.11778 },
+  { x: 0.85, y: -0.04 },
+]
+
+/** O ponto do referencial da corda na tela (a similaridade da seta). */
+function naTela(s: SetaNoQuadro, p: Ponto): Ponto {
+  const dx = s.ponta.x - s.base.x
+  const dy = s.ponta.y - s.base.y
+  return { x: s.base.x + p.x * dx - s.lado * p.y * dy, y: s.base.y + p.x * dy + s.lado * p.y * dx }
+}
+
+/** Os passos da seta na tela (a FORMA_DA_SETA levada pela similaridade). */
+export function caminhoDaSeta(s: SetaNoQuadro): PassoDaSeta[] {
+  return FORMA_DA_SETA.map((passo) =>
+    passo.tipo === 'C' ? { tipo: 'C', c1: naTela(s, passo.c1), c2: naTela(s, passo.c2), p: naTela(s, passo.p) } : { tipo: passo.tipo, p: naTela(s, passo.p) },
+  )
+}
+
+/** O degrade na tela (o comeco e o fim). */
+export function degradeDaSeta(s: SetaNoQuadro): { de: Ponto; ate: Ponto } {
+  return { de: naTela(s, DEGRADE_DA_SETA.de), ate: naTela(s, DEGRADE_DA_SETA.ate) }
+}
+
+/** Pontos por curva no poligono da seta. */
+const PONTOS_POR_CURVA = 10
+
+/**
+ * O CONTORNO DA SETA como poligono (o vermelho, sem o traco preto), no quadro
+ * 1080: as curvas viram PONTOS_POR_CURVA retas. Para a caixa, os testes e as
+ * contas; quem desenha usa caminhoDaSeta (as curvas de verdade).
+ */
+export function contornoDaSeta(s: SetaNoQuadro): Ponto[] {
+  const pontos: Ponto[] = []
+  let atual: Ponto = { x: 0, y: 0 }
+  for (const passo of caminhoDaSeta(s)) {
+    if (passo.tipo !== 'C') {
+      pontos.push(passo.p)
+      atual = passo.p
+      continue
+    }
+    for (let i = 1; i <= PONTOS_POR_CURVA; i++) {
+      const t = i / PONTOS_POR_CURVA
+      const a = (1 - t) ** 3
+      const b = 3 * (1 - t) ** 2 * t
+      const c = 3 * (1 - t) * t * t
+      const d = t ** 3
+      pontos.push({
+        x: a * atual.x + b * passo.c1.x + c * passo.c2.x + d * passo.p.x,
+        y: a * atual.y + b * passo.c1.y + c * passo.c2.y + d * passo.p.y,
+      })
+    }
+    atual = passo.p
+  }
+  return pontos
+}
+
+/** A largura do contorno preto da seta (proporcional ao tamanho, como na png). */
+export function contornoDaSetaPx(s: SetaNoQuadro): number {
+  return CONTORNO_DA_SETA * Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
+}
+
+/**
+ * A SETA AUTOMATICA (as refs): a seta padrao, sempre GRANDE (a corda nunca
+ * abaixo de SETA_MINIMA, o tamanho da ref "PODER SUPREMO"; e no maximo
+ * SETA_MAXIMA), com a CABECA MIRANDO o meio do rosto principal da imagem de
+ * cima e a ponta parando na borda dele. Rosto muito a esquerda: espelhada (sai
+ * da direita). Sem rosto: mira o meio da imagem de cima. Tres jeitos, nesta
+ * ordem:
+ *
+ * - AO LADO (a ref "PODER SUPREMO"): com espaco livre ao lado da 1a linha, a
+ *   cauda sai da beirada dela, perto da base, e o corpo inteiro fica fora do
+ *   texto (girado ou nao);
+ * - POR CIMA (a ref "FALTOU EXPLICAR!" do Faah): a 1a linha larga nao deixa
+ *   espaco ao lado -- a cauda fica logo acima da ponta dela e a seta inteira a
+ *   vista, entre o texto e o rosto;
+ * - POR TRAS (a ref "CANCELOU ENCONTRO"): nem em cima cabe (o close colado no
+ *   texto) -- a cauda nasce embaixo, do lado, abaixo do texto, e o corpo sobe
+ *   pela borda passando POR TRAS da letra da ponta (o texto e desenhado por
+ *   cima; so a beirada se esconde).
+ *
+ * Nos dois: a seta inteira (com o contorno) dentro do quadro e fora das faixas
+ * proibidas do TikTok, a cabeca inteira acima do texto e fora dele, e sem
+ * cobrir o rosto. A procura: o giro em volta do rosto e o tamanho; ganha a
+ * que deixa a cauda mais perto do lugar do jeito, com o giro mais perto o da
+ * png e a menor.
+ */
+/** A corda (cauda a ponta) automatica nunca fica mais curta que isto (a ref "PODER SUPREMO": ~330 px; as refs vao de 300 a 700). */
 export const SETA_MINIMA = 340
+/** Nem mais comprida que isto: a forma cresce inteira (nao estica), e mais que isso engole a imagem. */
+export const SETA_MAXIMA = 600
 /** Espaco livre (px) entre a beirada do quadro e o contorno da 1a linha para a seta sair AO LADO dela. */
 export const ESPACO_PARA_A_SETA = 150
-/** Por tras do texto: a ponta fica pelo menos isto acima das letras (a cabeca inteira aparece). */
-const FOLGA_DA_CABECA = 90
 /** A margem da seta ate a beirada do quadro. */
 const MARGEM_DA_SETA = 12
+/** A folga entre a ponta e a borda do rosto. */
+const FOLGA_DO_ROSTO = 26
+/** A ponta fica pelo menos isto acima do texto (a caixa dele). */
+const FOLGA_ACIMA_DO_TEXTO = 20
 
 /** O retangulo que a seta ocupa (o poligono com o contorno preto). */
 export function caixaDaSeta(s: SetaNoQuadro): { x1: number; y1: number; x2: number; y2: number } {
@@ -714,30 +947,149 @@ export function caixaDaSeta(s: SetaNoQuadro): { x1: number; y1: number; x2: numb
   }
 }
 
-/** Empurra a seta para dentro do quadro e para fora das faixas proibidas (a cauda anda; a ponta, so o que precisar). */
-function setaDentroDoQuadro(s: SetaNoQuadro): SetaNoQuadro {
-  const topo = ZONA_PROIBIDA_TOPO * ALTURA
-  const fundo = ZONA_PROIBIDA_BASE * ALTURA
-  let seta = { base: { ...s.base }, ponta: { ...s.ponta }, lado: s.lado }
-  for (let i = 0; i < 8; i++) {
-    const c = caixaDaSeta(seta)
-    const dx = c.x1 < MARGEM_DA_SETA ? MARGEM_DA_SETA - c.x1 : c.x2 > LARGURA - MARGEM_DA_SETA ? LARGURA - MARGEM_DA_SETA - c.x2 : 0
-    const dyBase = c.y2 > fundo ? fundo - c.y2 : 0
-    const dyPonta = c.y1 < topo ? topo - c.y1 : 0
-    if (Math.abs(dx) < 0.5 && Math.abs(dyBase) < 0.5 && Math.abs(dyPonta) < 0.5) break
-    // A curva estufa no meio: empurrar a cauda inteira e a ponta pela metade tira a barriga da beirada.
-    seta = {
-      lado: seta.lado,
-      base: { x: seta.base.x + dx * 1.1, y: seta.base.y + dyBase * 1.1 },
-      ponta: { x: seta.ponta.x + dx * 0.5, y: seta.ponta.y + dyPonta * 1.1 },
-    }
+/** O ponto dentro do poligono (par-impar). */
+function dentroDoPoligono(p: Ponto, poli: readonly Ponto[]): boolean {
+  let dentro = false
+  for (let i = 0, j = poli.length - 1; i < poli.length; j = i++) {
+    const a = poli[i]!
+    const b = poli[j]!
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) dentro = !dentro
   }
-  return seta
+  return dentro
 }
 
-const comprimento = (s: { base: Ponto; ponta: Ponto }): number => Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
+/** Quanto do rosto (fracao, numa grade 9x9) a seta cobre. */
+export function rostoCobertoPelaSeta(s: SetaNoQuadro, r: { x1: number; y1: number; x2: number; y2: number }): number {
+  const poli = contornoDaSeta(s)
+  let cobertos = 0
+  for (let i = 0; i < 9; i++)
+    for (let j = 0; j < 9; j++) {
+      const p = { x: r.x1 + ((i + 0.5) / 9) * (r.x2 - r.x1), y: r.y1 + ((j + 0.5) / 9) * (r.y2 - r.y1) }
+      if (dentroDoPoligono(p, poli)) cobertos += 1
+    }
+  return cobertos / 81
+}
 
-export function setaSozinha(geo: GeometriaDaThumb, alvo: { x1: number; y1: number; x2: number; y2: number } | null): SetaNoQuadro | null {
+/** A cabeca da seta na tela (os pontos que nunca ficam atras do texto). */
+export function cabecaDaSeta(s: SetaNoQuadro): Ponto[] {
+  return CABECA_DA_SETA.map((p) => naTela(s, p))
+}
+
+/** A seta com a cabeca mirando o ponto `alvo` (angulo `mira` da cabeca), a ponta a `raio` dele e a corda `L`. */
+function setaMirando(alvo: Ponto, raio: number, mira: number, L: number, lado: 1 | -1): SetaNoQuadro {
+  const ponta = { x: alvo.x - raio * Math.cos(mira), y: alvo.y - raio * Math.sin(mira) }
+  const corda = mira - lado * ANGULO_DA_CABECA
+  return { base: { x: ponta.x - L * Math.cos(corda), y: ponta.y - L * Math.sin(corda) }, ponta, lado }
+}
+
+/** O angulo da cabeca na png (lado +1) e espelhada (-1): a mira "natural". */
+function miraNatural(lado: 1 | -1): number {
+  const corda = Math.atan2(-186.65, 264.35)
+  const cabeca = corda + ANGULO_DA_CABECA
+  return lado === 1 ? cabeca : Math.PI - cabeca
+}
+
+/** A diferenca entre dois angulos (rad, 0..pi). */
+function entreAngulos(a: number, b: number): number {
+  const d = Math.abs(a - b) % (2 * Math.PI)
+  return d > Math.PI ? 2 * Math.PI - d : d
+}
+
+type JeitoDaSeta = 'lado' | 'tras'
+
+/** A linha do meio do corpo (da cauda ao meio da cabeca), no referencial da corda. */
+const MEIO_DA_SETA: readonly Ponto[] = [
+  { x: 0, y: 0 },
+  { x: 0.073, y: -0.033 },
+  { x: 0.148, y: -0.06 },
+  { x: 0.225, y: -0.082 },
+  { x: 0.304, y: -0.099 },
+  { x: 0.383, y: -0.111 },
+  { x: 0.464, y: -0.116 },
+  { x: 0.545, y: -0.114 },
+  { x: 0.625, y: -0.104 },
+  { x: 0.703, y: -0.084 },
+  { x: 0.777, y: -0.056 },
+  { x: 0.85, y: -0.04 },
+]
+/** Por tras do texto: no maximo isto da linha do meio escondido (a ref "CANCELOU": a cauda e a cabeca aparecem). */
+const ESCONDIDO_MAXIMO = 0.6
+/** Por tras do texto: o que se esconde fica a no maximo isto da beirada do texto (atras da 1a letra, nao do meio). */
+const ATRAS_DA_BEIRADA = 280
+
+type Caixa2 = { x1: number; y1: number; x2: number; y2: number }
+
+/**
+ * A seta cabe na regra do jeito: no quadro, fora das faixas, a cabeca acima e
+ * fora do texto, sem cobrir o rosto; AO LADO, o corpo inteiro fora do texto;
+ * POR TRAS, a cauda abaixo do texto e o que se esconde so perto da beirada.
+ */
+function setaBoa(s: SetaNoQuadro, geo: GeometriaDaThumb, rosto: Caixa2, jeito: JeitoDaSeta): boolean {
+  const bloco = geo.bloco!
+  const c = caixaDaSeta(s)
+  if (c.x1 < MARGEM_DA_SETA || c.x2 > LARGURA - MARGEM_DA_SETA) return false
+  if (c.y1 < ZONA_PROIBIDA_TOPO * ALTURA || c.y2 > ZONA_PROIBIDA_BASE * ALTURA) return false
+  if (s.ponta.y > bloco.topo - FOLGA_ACIMA_DO_TEXTO) return false
+  // A cabeca aponta para cima ou de lado, nunca para baixo (as refs: a seta SOBE ate o rosto).
+  if (Math.sin(direcaoDaCabeca(s)) > Math.sin((10 * Math.PI) / 180)) return false
+  const contorno = contornoDaSetaPx(s)
+  if (cabecaDaSeta(s).some((p) => pontoNoTexto(geo, p, contorno + 8))) return false
+  if (jeito === 'lado') {
+    // Ao lado: o corpo inteiro fora do texto (o poligono e a linha do meio dele).
+    if (contornoDaSeta(s).some((p) => pontoNoTexto(geo, p, contorno))) return false
+    if (MEIO_DA_SETA.some((p) => pontoNoTexto(geo, naTela(s, p), contorno))) return false
+  } else {
+    if (s.base.y < bloco.base || pontoNoTexto(geo, s.base, contorno)) return false
+    const escondidos = MEIO_DA_SETA.map((p) => naTela(s, p)).filter((p) => pontoNoTexto(geo, p))
+    if (escondidos.length > ESCONDIDO_MAXIMO * MEIO_DA_SETA.length) return false
+    // So atras da letra da ponta: perto da beirada do texto do lado da cauda (no referencial do bloco).
+    for (const p of escondidos) {
+      const q = paraOBloco(geo, p)
+      const l = geo.linhas.reduce((m, x) => (Math.abs(q.y - (x.base - x.cap / 2)) < Math.abs(q.y - (m.base - m.cap / 2)) ? x : m))
+      const beirada = s.lado === 1 ? LARGURA / 2 - l.largura / 2 : LARGURA / 2 + l.largura / 2
+      if (Math.abs(q.x - beirada) > ATRAS_DA_BEIRADA) return false
+    }
+  }
+  return rostoCobertoPelaSeta(s, rosto) <= 0.03
+}
+
+/** A direcao da cabeca (rad, na tela). */
+function direcaoDaCabeca(s: SetaNoQuadro): number {
+  return Math.atan2(s.ponta.y - s.base.y, s.ponta.x - s.base.x) + s.lado * ANGULO_DA_CABECA
+}
+
+/**
+ * A cabeca mira o rosto: o erro (graus) entre a direcao da cabeca e o meio dele, a distancia da ponta a
+ * caixa e se a reta da cabeca ACERTA a caixa (o close grande: mirar a beirada dele ja e apontar o rosto).
+ */
+function miraNoRosto(s: SetaNoQuadro, F: Ponto, rosto: Caixa2): { erro: number; folga: number; acerta: boolean } {
+  const cabeca = direcaoDaCabeca(s)
+  const erro = (entreAngulos(cabeca, Math.atan2(F.y - s.ponta.y, F.x - s.ponta.x)) * 180) / Math.PI
+  const fx = Math.max(rosto.x1 - s.ponta.x, 0, s.ponta.x - rosto.x2)
+  const fy = Math.max(rosto.y1 - s.ponta.y, 0, s.ponta.y - rosto.y2)
+  // A reta da ponta na direcao da cabeca cruza a caixa (encolhida 15%: nao vale raspar o canto)?
+  const ex = 0.15 * (rosto.x2 - rosto.x1)
+  const ey = 0.15 * (rosto.y2 - rosto.y1)
+  const d = { x: Math.cos(cabeca), y: Math.sin(cabeca) }
+  let t0 = 0
+  let t1 = 400
+  for (const [o, v, a, b] of [
+    [s.ponta.x, d.x, rosto.x1 + ex, rosto.x2 - ex],
+    [s.ponta.y, d.y, rosto.y1 + ey, rosto.y2 - ey],
+  ] as const) {
+    if (Math.abs(v) < 1e-9) {
+      if (o < a || o > b) t1 = -1
+      continue
+    }
+    const ta = (a - o) / v
+    const tb = (b - o) / v
+    t0 = Math.max(t0, Math.min(ta, tb))
+    t1 = Math.min(t1, Math.max(ta, tb))
+  }
+  return { erro, folga: Math.hypot(fx, fy), acerta: t0 <= t1 }
+}
+
+export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null): SetaNoQuadro | null {
   const l1 = geo.linhas[0]
   if (!l1 || !geo.bloco) return null
   const bloco = geo.bloco
@@ -748,127 +1100,87 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: { x1: number; y1: numbe
     x2: LARGURA / 2 + 60,
     y2: (painel.faixa.de + painel.faixa.ate) / 2 + 60,
   }
-  const cx = (rosto.x1 + rosto.x2) / 2
-  const cy = (rosto.y1 + rosto.y2) / 2
-  const lado: 1 | -1 = cx >= LARGURA * 0.4 ? 1 : -1
+  const F = { x: (rosto.x1 + rosto.x2) / 2, y: (rosto.y1 + rosto.y2) / 2 }
+  const raio = 0.5 * Math.min(rosto.x2 - rosto.x1, rosto.y2 - rosto.y1) + FOLGA_DO_ROSTO
+  const ladoDoRosto: 1 | -1 = F.x >= LARGURA * 0.4 ? 1 : -1
   const presa = (x: number): number => Math.max(60, Math.min(LARGURA - 60, x))
-  // A ponta sempre acima do texto: a cabeca por baixo das letras some.
-  const topoDoTexto = bloco.topo - 36
-  const pontaPara = (base: Ponto): Ponto => {
-    // Para na borda do rosto (no lado da base), com folga.
-    const dx = cx - base.x
-    const dy = cy - base.y
-    const d = Math.hypot(dx, dy) || 1
-    const raio = 0.5 * Math.min(rosto.x2 - rosto.x1, rosto.y2 - rosto.y1) + 26
-    const p = { x: cx - (dx / d) * raio, y: cy - (dy / d) * raio }
-    return p.y > topoDoTexto ? { x: p.x, y: topoDoTexto } : p
+  const primeira = (lista: { s: SetaNoQuadro; nota: number }[], regra: (s: SetaNoQuadro) => boolean): SetaNoQuadro | null => {
+    lista.sort((x, y) => x.nota - y.nota)
+    return lista.find((c) => regra(c.s))?.s ?? null
   }
 
-  // 1) AO LADO da 1a linha, quando ha espaco livre ali.
-  const livre = (LARGURA - l1.largura) / 2 - l1.contorno
-  if (livre >= ESPACO_PARA_A_SETA) {
-    const base = { x: presa(lado === 1 ? (LARGURA - l1.largura) / 2 - 50 : (LARGURA + l1.largura) / 2 + 50), y: l1.base - l1.cap * 0.45 }
-    const ponta = pontaPara(base)
-    // Curta demais (o rosto colado no texto): a cauda estica para tras (para baixo e para fora).
-    const L = comprimento({ base, ponta }) || 1
-    if (L < SETA_MINIMA) {
-      const ux = (base.x - ponta.x) / L
-      const uy = (base.y - ponta.y) / L
-      base.x = presa(ponta.x + ux * SETA_MINIMA)
-      base.y = Math.min(bloco.base, ponta.y + uy * SETA_MINIMA)
-    }
-    // A cauda nunca em cima de uma linha: sai para a beirada dela, por fora do contorno e da sombra.
-    let emCima = false
-    for (const l of geo.linhas) {
-      const meia = l.largura / 2 + l.contorno + 18
-      const topo = l.base - l.cap - l.contorno
-      const fundo = l.base + l.desce + l.contorno + SOMBRA_Y * (l.px / CORPO_PX)
-      if (base.y < topo || base.y > fundo) continue
-      if (base.x > LARGURA / 2 - meia && base.x < LARGURA / 2 + meia) {
-        base.x = LARGURA / 2 - lado * meia
-        emCima = base.x < 60 || base.x > LARGURA - 60
+  /**
+   * AO LADO: a cauda quer a beirada da 1a linha, perto da base (girada com o bloco); a cabeca mira o meio
+   * do rosto, a ponta na borda dele. Procura o giro em volta do rosto e o tamanho.
+   */
+  const aoLado = (lado: 1 | -1, regra: (s: SetaNoQuadro) => boolean, acima = false): SetaNoQuadro | null => {
+    const natural = miraNatural(lado)
+    const a = paraATela(
+      geo,
+      acima
+        ? { x: presa(lado === 1 ? (LARGURA - l1.largura) / 2 + 40 : (LARGURA + l1.largura) / 2 - 40), y: l1.base - l1.cap - l1.contorno - 60 }
+        : { x: presa(lado === 1 ? (LARGURA - l1.largura) / 2 - 50 : (LARGURA + l1.largura) / 2 + 50), y: l1.base - l1.cap * 0.45 },
+    )
+    const lista: { s: SetaNoQuadro; nota: number }[] = []
+    for (let g = -75; g <= 75; g += 2.5) {
+      const mira = natural + (lado * g * Math.PI) / 180
+      for (let L = SETA_MINIMA; L <= SETA_MAXIMA; L += 20) {
+        const s = setaMirando(F, raio, mira, L, lado)
+        lista.push({ s, nota: Math.hypot(s.base.x - a.x, s.base.y - a.y) + 3 * Math.abs(g) + 0.15 * (L - SETA_MINIMA) })
       }
     }
-    const seta = setaDentroDoQuadro({ base, ponta, lado })
-    if (!emCima && comprimento(seta) >= SETA_MINIMA - 1) return seta
+    return primeira(lista, regra)
   }
 
-  // 2) POR TRAS do texto (a ref "CANCELOU"): nasce embaixo, do lado, logo abaixo do texto, e sobe
-  // pela borda passando atras da letra da ponta.
-  const beiradaDoTexto = lado === 1 ? bloco.esquerda : bloco.direita
-  const base = {
-    x: lado === 1 ? Math.max(70, beiradaDoTexto - 20) : Math.min(LARGURA - 70, beiradaDoTexto + 20),
-    y: Math.min(bloco.base + 0.1 * ALTURA, ZONA_PROIBIDA_BASE * ALTURA - 60),
+  /**
+   * POR TRAS (a ref "CANCELOU"): a cauda embaixo do texto, do lado, e a seta sobe pela beirada; a cabeca sai
+   * acima das letras mirando o rosto (pode chegar pelo lado dele). Procura a cauda perto do lugar, o giro da
+   * corda e o tamanho; ganha a que mira melhor, com a ponta mais perto do rosto.
+   */
+  const porTras = (lado: 1 | -1, regra: (s: SetaNoQuadro) => boolean): SetaNoQuadro | null => {
+    const a = {
+      x: lado === 1 ? Math.max(70, bloco.esquerda - 20) : Math.min(LARGURA - 70, bloco.direita + 20),
+      y: Math.min(bloco.base + 0.06 * ALTURA, ZONA_PROIBIDA_BASE * ALTURA - 60),
+    }
+    const lista: { s: SetaNoQuadro; nota: number }[] = []
+    for (const dx of [-40, 0, 40, 80])
+      for (const dy of [-120, -80, -40, 0, 40, 80]) {
+        const base = { x: a.x + lado * dx, y: a.y + dy }
+        for (let g = -160; g <= -20; g += 2.5) {
+          // A corda sobe (g negativo); espelhada, para o outro lado.
+          const corda = lado === 1 ? (g * Math.PI) / 180 : Math.PI - (g * Math.PI) / 180
+          for (let L = SETA_MINIMA; L <= SETA_MAXIMA; L += 20) {
+            const s: SetaNoQuadro = { base, ponta: { x: base.x + L * Math.cos(corda), y: base.y + L * Math.sin(corda) }, lado }
+            const m = miraNoRosto(s, F, rosto)
+            if ((m.erro > 25 && !m.acerta) || m.folga < 8 || m.folga > 90) continue
+            lista.push({ s, nota: Math.hypot(dx, dy) + 2 * m.erro + 1.5 * Math.max(0, m.folga - FOLGA_DO_ROSTO) + 0.15 * (L - SETA_MINIMA) })
+          }
+        }
+      }
+    return primeira(lista, regra)
   }
-  // A ponta chega pelo LADO do rosto (como na ref), alta o bastante para a cabeca da seta ficar
-  // inteira acima das letras.
-  const ponta = {
-    x: Math.max(60, Math.min(LARGURA - 60, lado === 1 ? rosto.x1 - 26 : rosto.x2 + 26)),
-    y: Math.min(cy, bloco.topo - FOLGA_DA_CABECA),
-  }
-  let seta = setaDentroDoQuadro({ base, ponta, lado })
-  // Ainda curta (o rosto baixo, colado no texto): a cauda desce mais, ate a faixa proibida.
-  if (comprimento(seta) < SETA_MINIMA) {
-    const falta = SETA_MINIMA - comprimento(seta)
-    seta = setaDentroDoQuadro({ ...seta, base: { x: seta.base.x, y: seta.base.y + falta } })
-  }
-  return seta
-}
 
-/**
- * O CONTORNO DA SETA (a seta.png dele redesenhada, para ficar nitida grande):
- * um corpo curvo que nasce fino na cauda e engrossa ate o pescoco, e a
- * cabeca triangular na direcao da curva. Devolve o poligono (quadro 1080).
- */
-export function contornoDaSeta(s: SetaNoQuadro): Ponto[] {
-  const { base: B, ponta: P } = s
-  const dx = P.x - B.x
-  const dy = P.y - B.y
-  const L = Math.max(1, Math.hypot(dx, dy))
-  // A normal "esquerda de quem anda" na tela (y para baixo).
-  const nx = dy / L
-  const ny = -dx / L
-  const C = {
-    x: (B.x + P.x) / 2 + nx * s.lado * 0.3 * L,
-    y: (B.y + P.y) / 2 + ny * s.lado * 0.3 * L,
+  // A 1a linha deixa espaco ao lado: AO LADO; senao (ou nao coube), POR CIMA do texto (a cauda logo acima da
+  // ponta da 1a linha, como na ref do Faah: a seta inteira a vista); sem espaco acima (o close colado no texto,
+  // a ref "CANCELOU"), POR TRAS; e o outro lado por ultimo.
+  const livre = (LARGURA - l1.largura) / 2 - l1.contorno
+  const outro = -ladoDoRosto as 1 | -1
+  const tentativas: ['lado' | 'tras' | 'acima', 1 | -1][] = []
+  for (const lado of [ladoDoRosto, outro]) {
+    if (livre >= ESPACO_PARA_A_SETA) tentativas.push(['lado', lado])
+    tentativas.push(['acima', lado], ['tras', lado])
   }
-  const cabeca = limitar(0.3 * L, 60, 150)
-  let ux = P.x - C.x
-  let uy = P.y - C.y
-  const un = Math.hypot(ux, uy) || 1
-  ux /= un
-  uy /= un
-  const H = { x: P.x - ux * cabeca, y: P.y - uy * cabeca }
-  const meiaLargura = cabeca * 0.3
-  const N = 28
-  const esquerda: Ponto[] = []
-  const direita: Ponto[] = []
-  for (let i = 0; i <= N; i++) {
-    const t = i / N
-    const a = (1 - t) * (1 - t)
-    const b = 2 * (1 - t) * t
-    const c = t * t
-    const x = a * B.x + b * C.x + c * H.x
-    const y = a * B.y + b * C.y + c * H.y
-    let tx = 2 * (1 - t) * (C.x - B.x) + 2 * t * (H.x - C.x)
-    let ty = 2 * (1 - t) * (C.y - B.y) + 2 * t * (H.y - C.y)
-    const tn = Math.hypot(tx, ty) || 1
-    tx /= tn
-    ty /= tn
-    const w = meiaLargura * (0.06 + 0.94 * t ** 0.75)
-    esquerda.push({ x: x + ty * w, y: y - tx * w })
-    direita.push({ x: x - ty * w, y: y + tx * w })
+  for (const [jeito, lado] of tentativas) {
+    const regra = (c: SetaNoQuadro): boolean => setaBoa(c, geo, rosto, jeito === 'tras' ? 'tras' : 'lado')
+    const s = jeito === 'tras' ? porTras(lado, regra) : aoLado(lado, regra, jeito === 'acima')
+    if (s) return s
   }
-  const asa = cabeca * 0.62
-  const px = uy
-  const py = -ux
-  return [...esquerda, { x: H.x + px * asa, y: H.y + py * asa }, { x: P.x, y: P.y }, { x: H.x - px * asa, y: H.y - py * asa }, ...direita.reverse()]
-}
-
-/** A largura do contorno preto da seta (a cabeca grande pede contorno grosso). */
-export function contornoDaSetaPx(s: SetaNoQuadro): number {
-  const L = Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
-  return limitar(0.3 * L, 60, 150) * 0.085
+  // Nada cabe na regra inteira (o rosto enorme, colado no texto): ao menos no quadro e fora das faixas.
+  const noQuadro = (c: SetaNoQuadro): boolean => {
+    const k = caixaDaSeta(c)
+    return k.x1 >= MARGEM_DA_SETA && k.x2 <= LARGURA - MARGEM_DA_SETA && k.y1 >= ZONA_PROIBIDA_TOPO * ALTURA && k.y2 <= ZONA_PROIBIDA_BASE * ALTURA
+  }
+  return aoLado(ladoDoRosto, noQuadro) ?? setaMirando(F, raio, miraNatural(ladoDoRosto), SETA_MINIMA, ladoDoRosto)
 }
 
 // ----------------------------------------------------------- as sugestoes
@@ -1173,7 +1485,8 @@ export function thumbEfetiva(t: ThumbDoProjeto, medir: MedirTexto): ThumbEfetiva
   })
   let seta: SetaNoQuadro | null = null
   if (t.seta.ligada && geo.linhas.length > 0) {
-    const auto = setaSozinha(geo, alvo)
+    // A automatica so quando falta uma ponta (a procura custa; arrastando, as duas sao dele).
+    const auto = t.seta.base && t.seta.ponta ? null : setaSozinha(geo, alvo)
     const base = t.seta.base ?? auto?.base ?? null
     const ponta = t.seta.ponta ?? auto?.ponta ?? null
     if (base && ponta) {

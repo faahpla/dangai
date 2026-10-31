@@ -4,9 +4,11 @@ import {
   AREA_SEGURA_TOPO,
   CORPO_PX,
   CONTORNO_DA_LINHA,
-  contornoDaSeta,
+  caminhoDaSeta,
   contornoDaSetaPx,
+  DEGRADE_DA_SETA,
   degradeDaCor,
+  degradeDaSeta,
   ESPESSURA_DA_LINHA,
   LARGURA,
   LOOK,
@@ -25,8 +27,9 @@ import { familiaDaFonte } from './fontes'
  * [thumb] O DESENHO DA THUMBNAIL num canvas (o mesmo codigo na previa e no
  * PNG final; so a escala muda): as imagens com o "look" (saturacao e
  * contraste leves), o DIVISOR na emenda (por cima das imagens, por baixo da
- * seta e do texto), a seta, as 2 linhas de texto (sombra, contorno por fora,
- * degrade vertical, esticada 1,11x) e, SO NA PREVIA, as guias da area segura
+ * seta e do texto), a seta (a seta.png vetorizada, so escala, giro e espelho),
+ * as 2 linhas de texto (sombra, contorno por fora, degrade vertical, esticada
+ * 1,11x, o bloco girado pela "Rotacao") e, SO NA PREVIA, as guias da area segura
  * do TikTok (as faixas proibidas, as linhas de 16% e 84%, a emenda e as
  * caixas dos rostos).
  */
@@ -95,13 +98,17 @@ export function medidorDoCanvas(ctx: CanvasRenderingContext2D, fonte: ThumbDoPro
   }
 }
 
-function caminhoDaSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro): void {
-  const pontos = contornoDaSeta(seta)
+function tracarSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro): void {
   ctx.beginPath()
-  pontos.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+  for (const passo of caminhoDaSeta(seta)) {
+    if (passo.tipo === 'C') ctx.bezierCurveTo(passo.c1.x, passo.c1.y, passo.c2.x, passo.c2.y, passo.p.x, passo.p.y)
+    else if (passo.tipo === 'M') ctx.moveTo(passo.p.x, passo.p.y)
+    else ctx.lineTo(passo.p.x, passo.p.y)
+  }
   ctx.closePath()
 }
 
+/** A seta padrao (a seta.png vetorizada): a sombra, o contorno preto por fora e o degrade da png. */
 function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala: number): void {
   const contorno = contornoDaSetaPx(seta)
   ctx.save()
@@ -111,19 +118,19 @@ function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala:
   ctx.shadowColor = 'rgba(0,0,0,0.85)'
   ctx.shadowOffsetY = 8 * escala
   ctx.shadowBlur = 14 * escala
-  caminhoDaSeta(ctx, seta)
+  tracarSeta(ctx, seta)
   ctx.lineWidth = contorno * 2
   ctx.strokeStyle = '#000'
   ctx.stroke()
   ctx.shadowColor = 'transparent'
   ctx.fillStyle = '#000'
   ctx.fill()
-  const g = ctx.createLinearGradient(seta.base.x, seta.base.y, seta.ponta.x, seta.ponta.y)
-  g.addColorStop(0, '#ff3b30')
-  g.addColorStop(0.55, '#ec0d0d')
-  g.addColorStop(1, '#b80000')
+  const d = degradeDaSeta(seta)
+  const g = ctx.createLinearGradient(d.de.x, d.de.y, d.ate.x, d.ate.y)
+  g.addColorStop(0, DEGRADE_DA_SETA.cores[0])
+  g.addColorStop(1, DEGRADE_DA_SETA.cores[1])
   ctx.fillStyle = g
-  caminhoDaSeta(ctx, seta)
+  tracarSeta(ctx, seta)
   ctx.fill()
   ctx.restore()
 }
@@ -149,11 +156,20 @@ function desenharDivisor(ctx: CanvasRenderingContext2D, d: DivisorPronto, emenda
 
 function desenharTexto(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho): void {
   const familia = familiaDaFonte(e.thumb.fonte)
+  const { pivo, rotacao } = e.geo
   e.geo.linhas.forEach((l, i) => {
     const cor = e.thumb.cores[Math.min(i, 1)]!
     const relativo = l.px / CORPO_PX
     const capLocal = l.cap / l.esticada
     ctx.save()
+    // A "Rotacao": o bloco inteiro gira em volta do meio dele (o contorno e o degrade giram junto). A sombra
+    // NAO: o deslocamento e o desfoque da sombra do canvas ficam fora da transformacao, entao ela continua
+    // caindo para baixo na tela (o Photoshop).
+    if (rotacao !== 0) {
+      ctx.translate(pivo.x, pivo.y)
+      ctx.rotate((rotacao * Math.PI) / 180)
+      ctx.translate(-pivo.x, -pivo.y)
+    }
     ctx.translate(l.x, l.base)
     ctx.scale(1, l.esticada)
     ctx.font = `${l.px}px "${familia}"`
