@@ -51,6 +51,7 @@ import {
   CAPTION_Y_DEFAULT,
   CAPTION_Y_MAX,
   CAPTION_Y_MIN,
+  captionYNoMeio,
   MUSIC_GAIN_DB_MAX,
   MUSIC_GAIN_DB_MIN,
   VIDEO_FPS,
@@ -596,6 +597,7 @@ function EstiloControl() {
   const setCaptionY = useProject((s) => s.setCaptionY)
   const captionScale = useProject((s) => s.captionScale)
   const setCaptionScale = useProject((s) => s.setCaptionScale)
+  const formato = useProject((s) => s.formato)
   const fontes = useProject((s) => s.fontes)
   const captionFont = useProject((s) => s.captionFont)
   const setCaptionFont = useProject((s) => s.setCaptionFont)
@@ -734,14 +736,25 @@ function EstiloControl() {
 
             <div className="flex items-baseline justify-between">
               <span className="text-[10px] uppercase tracking-wide text-ink-3">Altura</span>
-              <button
-                type="button"
-                onClick={() => setCaptionY(CAPTION_Y_DEFAULT)}
-                disabled={captionY === CAPTION_Y_DEFAULT}
-                className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
-              >
-                voltar ao padrão
-              </button>
+              <span className="flex items-baseline gap-3">
+                {/* "Um botao pra centralizar": arrastar ate o meio exato no olho nao da. */}
+                <button
+                  type="button"
+                  onClick={() => setCaptionY(captionYNoMeio(captionScale, formato))}
+                  disabled={Math.abs(captionY - captionYNoMeio(captionScale, formato)) < 0.001}
+                  className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
+                >
+                  centralizar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCaptionY(CAPTION_Y_DEFAULT)}
+                  disabled={captionY === CAPTION_Y_DEFAULT}
+                  className="text-[10px] text-ink-3 hover:text-ink-2 disabled:opacity-0"
+                >
+                  voltar ao padrão
+                </button>
+              </span>
             </div>
             <input
               type="range"

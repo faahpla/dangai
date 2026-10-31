@@ -1152,6 +1152,20 @@ export const CAPTION_COLOR_DEFAULT: CaptionColor = 'rosa'
 export const CAPTION_Y_DEFAULT = 0.355
 export const CAPTION_Y_MIN = 0.08
 export const CAPTION_Y_MAX = 0.55
+
+/** Corpo padrao da legenda, na escala 1 (o Captions.tsx desenha com ele). */
+export const CAPTION_FONT_SIZE = 68
+
+/**
+ * O "Centralizar" da altura: o MEIO da legenda (uma linha) no meio da tela.
+ *
+ * O y e a distancia da BASE da legenda ao rodape, entao 0,5 deixaria a letra
+ * inteira acima do meio: desconta meia linha (corpo x escala x entrelinha 1,15).
+ */
+export function captionYNoMeio(scale: number, formato: Formato): number {
+  const meiaLinha = (CAPTION_FONT_SIZE * scale * 1.15) / 2
+  return Math.min(Math.max(0.5 - meiaLinha / medidasDo(formato).height, CAPTION_Y_MIN), CAPTION_Y_MAX)
+}
 export const captionYSchema = z
   .number()
   .min(CAPTION_Y_MIN)

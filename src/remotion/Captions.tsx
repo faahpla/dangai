@@ -2,6 +2,7 @@ import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig } from 'remotio
 import {
   activeWordIndex,
   CAPTION_CHARS_PER_LINE,
+  CAPTION_FONT_SIZE as FONT_SIZE,
   corDaLegenda,
   escalaDaEntrada,
   type CurvaDaEntrada,
@@ -22,9 +23,6 @@ import { carregarFonte, CAPTION_FONT_STACK } from './fonts'
  * paint-order o contorno e desenhado por cima da letra e come metade da
  * espessura do traco, deixando o texto magro e sujo.
  */
-
-/** Corpo padrao da legenda. */
-const FONT_SIZE = 68
 
 export function Captions({
   blocks,
