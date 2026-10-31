@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.87.1',
+    itens: [
+      'Gerar recap: quando o corte pelo AnCut para por falta de fotos do elenco, aparece o botão "Reconhecer na mão". O recap corta o episódio de novo na biblioteca dele, junta os rostos parecidos e você dá o nome de cada personagem. Antes o botão sumia e não tinha o que fazer.',
+    ],
+  },
+  {
     versao: '1.87.0',
     itens: [
       'Legenda: botão "centralizar" ao lado do "voltar ao padrão" da Altura. Põe a legenda bem no meio da tela, sem precisar arrastar no olho.',
