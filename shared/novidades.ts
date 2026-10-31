@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.87.0',
+    itens: [
+      'Legenda: botão "centralizar" ao lado do "voltar ao padrão" da Altura. Põe a legenda bem no meio da tela, sem precisar arrastar no olho.',
+      'Thumbnail: "Rotação" do texto (de -15 a +15 graus). As duas linhas giram juntas, e a sombra continua caindo reta, como no Photoshop.',
+      'Thumbnail: a seta tem sempre o formato da seta padrão (corpo grosso e ponta larga). O app só aumenta, gira ou espelha, nunca estica.',
+      'Thumbnail: "Inclinação" da emenda e do divisor. A imagem de cima e a de baixo passam a se encontrar numa linha inclinada, e o divisor acompanha de ponta a ponta. O botão "= texto" usa o mesmo ângulo do texto.',
+    ],
+  },
+  {
     versao: '1.86.0',
     itens: [
       'Thumbnail: divisor entre a imagem de cima e a de baixo (Rasgo com brilho, Rasgo, Slash ou Linha), com a cor que você quiser. Ele fica por cima das imagens e por baixo do texto.',
