@@ -134,9 +134,22 @@ function cabeca(linha: string, temporadaDoTrecho: number | null = null): AlvoDoB
 function secaoDeTemporada(linha: string): number | null {
   const limpa = semMarcacao(linha)
   if (limpa.length > 80) return null
-  const m = /(?:(\d{1,2})\s*[ªaº°]?\s*(?:temporada|season)|(?:temporada|season)\s*(\d{1,2}))\s*:?\s*$/i.exec(limpa)
-  return m ? Number(m[1] ?? m[2]) : null
+  const fim = /(?:(\d{1,2})\s*[ªaº°]?\s*(?:temporada|season)|(?:temporada|season)\s*(\d{1,2}))\s*:?\s*$/i.exec(limpa)
+  if (fim) return Number(fim[1] ?? fim[2])
+  /*
+   * A temporada na FRENTE, com um subtitulo: "Temporada 2 -- D e Capri". Sem
+   * isto, os episodios 3, 4 e 5 da 2a temporada do B-roll do "Ninguem e
+   * Especial em Cyberpunk" viraram os da 1a, e a montagem foi buscar la.
+   */
+  const inicio = /^(?:(\d{1,2})\s*[ªaº°]?\s*(?:temporada|season)|(?:temporada|season)\s*(\d{1,2}))\s*[-–—:|]/i.exec(limpa)
+  return inicio ? Number(inicio[1] ?? inicio[2]) : null
 }
+
+/** Topico de lista: "- ", "• ", "* " no comeco da linha. */
+const TOPICO = /^\s*[-–—•·*]\s+/
+
+/** Linha que abre um assunto que nao e episodio: "Observacao sobre V e Johnny". */
+const FORA_DO_ITEM = /^(?:observa[cç][aã]o|obs\b|nota\b|dica\b|extra\b|resumo\b|prioridade|conclus[aã]o|importante\b|aten[cç][aã]o)/i
 
 /** Negrito e sublinhado do markdown fora: o texto fica como ele leria. */
 function semMarcacao(linha: string): string {
@@ -146,7 +159,7 @@ function semMarcacao(linha: string): string {
 /** Os itens do B-roll, na ordem em que ele escreveu. Vazio quando o texto nao e um. */
 export function lerBroll(texto: string): ItemDoBroll[] {
   const itens: ItemDoBroll[] = []
-  let atual: { titulo: string; alvos: AlvoDoBroll[]; linhas: string[] } | null = null
+  let atual: { titulo: string; alvos: AlvoDoBroll[]; linhas: string[]; topicos: boolean } | null = null
   const fechar = (): void => {
     if (!atual) return
     const titulo = atual.titulo
@@ -173,12 +186,22 @@ export function lerBroll(texto: string): ItemDoBroll[] {
       atual.titulo = `${atual.titulo} · ${semMarcacao(linha)}`
     } else if (alvos) {
       fechar()
-      atual = { titulo: semMarcacao(linha), alvos, linhas: [] }
+      atual = { titulo: semMarcacao(linha), alvos, linhas: [], topicos: true }
     } else if (secaoDeTemporada(linha) !== null) {
       fechar()
       atual = null
       temporadaDoTrecho = secaoDeTemporada(linha)
+    } else if (atual && atual.linhas.length > 0 && ((atual.topicos && !TOPICO.test(linha)) || FORA_DO_ITEM.test(semMarcacao(linha)))) {
+      /*
+       * O item acabou: depois dos topicos dele veio texto solto, ou um
+       * "Observacao sobre V e Johnny". Grudar isso no ultimo episodio fazia o
+       * casamento mandar para ele metade do roteiro -- o texto da observacao
+       * citava Smasher, V, Johnny e "episodios 8 e 10".
+       */
+      fechar()
+      atual = null
     } else if (atual) {
+      if (!TOPICO.test(linha)) atual.topicos = false
       atual.linhas.push(semMarcacao(linha))
     }
   }

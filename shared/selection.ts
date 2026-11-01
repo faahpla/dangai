@@ -296,8 +296,14 @@ function pontuar(
     palavras && pelaImagem
       ? { score: palavras.score + pelaImagem.score, reason: `${palavras.reason}, ${pelaImagem.reason}` }
       : (palavras ?? pelaImagem)
-  /** Quem o item do B-roll cita e esta na cena ("Ryuken entregando a flecha a Uryu"). */
-  const doItem = broll ? broll.personagens.filter((p) => clip.characters.includes(p)) : []
+  /**
+   * Quem o item do B-roll cita e esta na cena ("Ryuken entregando a flecha a
+   * Uryu") -- so DENTRO do episodio do item. Fora dele, o nome do item puxava a
+   * pessoa de qualquer lugar: "O ultimo episodio foi lindo" (item: episodio 50,
+   * "o destino de Aizen e a energia de Yhwach") trazia Aizen e Yhwach do 48.
+   */
+  const doItem =
+    broll?.item && clipeNoAlvo(clip, broll.item.alvos) ? broll.personagens.filter((p) => clip.characters.includes(p)) : []
 
   if (querem.length > 0 && clip.characters.length === 0 && pelaImagem) {
     /*

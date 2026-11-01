@@ -236,5 +236,41 @@ const roteiroDeLugar = ['O que ninguém percebeu nessa história?', 'Kiril entre
 ok('o gancho vai com a abertura e a ultima frase com o encerramento', igual(casarFrasesComBroll(roteiroDeLugar, lugar), [0, 1, 1, 2]), JSON.stringify(casarFrasesComBroll(roteiroDeLugar, lugar)))
 ok('"encerramento com Number One" e o ED do anime, nao o fim do video', !/para o encerramento/.test(itens[0]!.texto) && casou[casou.length - 1] === 4)
 
+// 9. O B-roll do "Ninguem e Especial em Cyberpunk" (11/2026): a temporada NA FRENTE
+// da secao, com subtitulo, e uma observacao solta no fim.
+const ninguem = lerBroll(`Temporada 1 — David e Adam Smasher
+1. Episódio 10 — My Moon My Man
+- Mostra Adam Smasher em combate.
+- Use principalmente o primeiro confronto dos dois.
+
+Temporada 2 — D e Capri
+5. Episódio 3 — 0+2=1
+- D encontra o chip de Capri.
+
+7. Episódio 5 — Fades
+- O confronto com Kitano e os agentes da Arasaka.
+
+Observação sobre V e Johnny
+A explicação de Mike Pondsmith sobre Johnny Silverhand.
+
+Minha prioridade seria dar mais tempo aos episódios 8 e 10.`)
+ok('"Temporada 2 — D e Capri" poe os episodios de baixo na 2a', igual(ninguem.map(rotuloDoItem), ['S01E10', 'S02E03', 'S02E05']), ninguem.map(rotuloDoItem).join(', '))
+ok('a secao nao gruda no item de cima', !/Temporada 2/.test(ninguem[0]!.texto), ninguem[0]!.texto)
+ok('a observacao do fim nao gruda no ultimo episodio', !/Johnny|Pondsmith|prioridade/.test(ninguem[2]!.texto), ninguem[2]!.texto)
+const soltos = lerBroll('Episódio 2 — A\n- Lucy mostra a Lua.\nTexto solto depois dos topicos.\n\nEpisódio 7 — B\nDescricao corrida.\nOutra linha corrida.')
+ok('texto solto depois dos topicos encerra o item', !/solto/.test(soltos[0]!.texto), soltos[0]!.texto)
+ok('item sem topicos (texto corrido) continua inteiro', /Outra linha corrida/.test(soltos[1]!.texto), soltos[1]!.texto)
+
+// 10. Quem o item cita so vale DENTRO do episodio do item: "O ultimo episodio foi
+// lindo" (item: ep. 50, "o destino de Aizen e a energia de Yhwach") nao puxa os
+// dois do 48.
+const fim = lerBroll(
+  'Episódio 50 — DEATH & STRAWBERRY\nCobre o salto de dez anos, o destino de Aizen e a energia de Yhwach.\n\nEpisódio 48 — THE END TWO WORLD\nO confronto de Ichigo contra Yhwach.',
+)
+const doFim = [clipe('S01E48', 1, 48, ['Aizen, Sousuke', 'Yhwach'], '0282'), clipe('S01E50', 1, 50, [], '0384')]
+const t3 = ['O salto de dez anos foi lindo.']
+const ultimo = selectClips(linhas(t3), doFim, { mode: 'theory', fita: 6, broll: preferenciasDoBroll(t3, fim, indice) })[0]!
+ok('a cena do episodio 50 vem antes de Aizen e Yhwach do 48', ultimo.candidates[0]?.clip.episode === 50 && /B-roll: Episódio 50/.test(ultimo.candidates[0]?.reason ?? ''), ultimo.candidates.map((c) => `${c.clip.episode} ${c.reason}`).join(' | '))
+
 console.log(falhas === 0 ? '\nTUDO PASSOU' : `\n${falhas} FALHA(S)`)
 process.exit(falhas === 0 ? 0 : 1)
