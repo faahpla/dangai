@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Check } from 'lucide-react'
 import type { AjustesDaVoz, ProvedorDeVoz, TesteDeVoz, VozDoProvedor, VozPadrao } from '../../shared/tipos-da-voz'
 import { ponte } from '../ponte'
-import { modeloEleven } from '../../shared/voz'
+import { MODELO_PADRAO, MODELOS_ELEVEN } from '../../shared/voz'
 import { MODELOS_FISH, useVoz } from '../store/gerar-voz'
+import { Segmentos } from '@/modulos/kit'
 import { VelocidadeDaVoz } from './VelocidadeDaVoz'
 import { BibliotecaDoFish, OuvirNoFish } from './BibliotecaDoFish'
 import { rotuloDaVoz, useBibliotecaFish, vozesDaBiblioteca } from '../store/biblioteca-fish'
@@ -184,26 +185,59 @@ export function AjustesDeVoz({
     void testar(provedor, null)
   }
 
-  const gravarVoz = async (voz: VozPadrao): Promise<void> => {
-    const r = await ponte.salvarConfig({ vozPadrao: voz })
-    if (r.ok && settings) onSettings({ ...settings, vozPadrao: r.value.vozPadrao })
+  const gravar = async (patch: Parameters<typeof ponte.salvarConfig>[0]): Promise<void> => {
+    const r = await ponte.salvarConfig(patch)
+    if (r.ok && settings) onSettings({ ...settings, vozPadrao: r.value.vozPadrao, vozesGuardadas: r.value.vozesGuardadas })
+  }
+  const gravarVoz = (voz: VozPadrao): Promise<void> => gravar({ vozPadrao: voz })
+
+  /*
+   * (01/11) Um provedor por vez: a aba e o da voz que narra; trocar de aba
+   * volta a voz guardada daquele provedor (ou espera escolher uma).
+   */
+  const [aba, setAba] = useState<ProvedorDeVoz | null>(null)
+  const provedorDaAba: ProvedorDeVoz =
+    aba ?? (settings?.vozPadrao.provedor || (settings?.hasFishKey && !settings.hasElevenKey ? 'fish' : 'elevenlabs'))
+  const guardada = (provedor: ProvedorDeVoz) => settings?.vozesGuardadas?.[provedor] ?? { voiceId: '', modelId: '' }
+
+  const trocarDeProvedor = (provedor: ProvedorDeVoz): void => {
+    setAba(provedor)
+    const g = guardada(provedor)
+    if (settings?.vozPadrao.provedor !== provedor && g.voiceId) {
+      void gravarVoz({ provedor, voiceId: g.voiceId, modelId: g.modelId })
+    }
   }
 
-  const escolherVoz = (valor: string): void => {
-    if (!valor) {
-      void gravarVoz({ provedor: '', voiceId: '', modelId: '' })
-      return
-    }
-    const corte = valor.indexOf(':')
-    const provedor = valor.slice(0, corte) as ProvedorDeVoz
+  const escolherVoz = (provedor: ProvedorDeVoz, voiceId: string): void => {
+    if (!voiceId) return
     const atual = settings?.vozPadrao
     void gravarVoz({
       provedor,
-      voiceId: valor.slice(corte + 1),
-      // O modelo e do provedor: trocar de provedor volta ao padrao dele.
-      modelId: atual?.provedor === provedor ? atual.modelId : '',
+      voiceId,
+      // O modelo e do provedor: o que estava nele (ou o guardado dele).
+      modelId: atual?.provedor === provedor ? atual.modelId : guardada(provedor).modelId,
     })
   }
+
+  const escolherModelo = (provedor: ProvedorDeVoz, modelId: string): void => {
+    const atual = settings?.vozPadrao
+    if (atual?.provedor === provedor && atual.voiceId) {
+      void gravarVoz({ provedor, voiceId: atual.voiceId, modelId })
+      return
+    }
+    void gravar({ vozesGuardadas: { [provedor]: { ...guardada(provedor), modelId } } })
+  }
+
+  // A lista de vozes da aba sem o "Testar" (e de graca: so le as vozes da conta), uma vez por sessao.
+  const listou = useRef<Partial<Record<ProvedorDeVoz, boolean>>>({})
+  useEffect(() => {
+    if (!settings || compacto) return
+    const tem = provedorDaAba === 'elevenlabs' ? settings.hasElevenKey : settings.hasFishKey
+    if (!tem || vozes[provedorDaAba].length > 0 || listou.current[provedorDaAba] || testando) return
+    listou.current[provedorDaAba] = true
+    void testar(provedorDaAba, null)
+    // So quando a aba (ou a chave) muda.
+  }, [provedorDaAba, settings?.hasElevenKey, settings?.hasFishKey, compacto])
 
   /*
    * (21/10) O modelo do Fish escolhido: o do passo Voz (o select de modelo mora
@@ -216,19 +250,27 @@ export function AjustesDeVoz({
   }
 
   const voz = settings?.vozPadrao
-  const valorDoSelect = voz && voz.provedor && voz.voiceId ? `${voz.provedor}:${voz.voiceId}` : ''
-  // A voz salva aparece mesmo antes do Testar (a importada, por exemplo), ou o
-  // select mostraria "Nenhuma" mentindo.
   // (21/10) A biblioteca publica do Fish (populares, busca, coladas): grupo proprio no select.
   const daBiblioteca = settings?.hasFishKey ? vozesDaBiblioteca({ vozes: bibliotecaLida, avulsas }, vozes.fish) : []
+  /*
+   * A voz desta aba (a que narra, ou a guardada) aparece mesmo antes da lista
+   * chegar -- senao o select mostraria "Escolha" mentindo.
+   */
+  const vozDaAba = voz?.provedor === provedorDaAba ? voz.voiceId : guardada(provedorDaAba).voiceId
   const opcoes = (provedor: ProvedorDeVoz): VozDoProvedor[] =>
-    voz?.provedor === provedor &&
-    voz.voiceId &&
-    !vozes[provedor].some((v) => v.id === voz.voiceId) &&
-    !(provedor === 'fish' && daBiblioteca.some((v) => v.id === voz.voiceId))
-      ? [{ id: voz.voiceId, nome: `${voz.voiceId} (salva)`, detalhe: '', previewUrl: null }, ...vozes[provedor]]
+    vozDaAba &&
+    !vozes[provedor].some((v) => v.id === vozDaAba) &&
+    !(provedor === 'fish' && daBiblioteca.some((v) => v.id === vozDaAba))
+      ? [
+          {
+            id: vozDaAba,
+            nome: testando === provedor ? 'Carregando as vozes...' : `${vozDaAba} (salva)`,
+            detalhe: '',
+            previewUrl: null,
+          },
+          ...vozes[provedor],
+        ]
       : vozes[provedor]
-  const semLista = vozes.elevenlabs.length === 0 && vozes.fish.length === 0 && daBiblioteca.length === 0
 
   const blocoDaChave = (provedor: ProvedorDeVoz) => {
     const tem = provedor === 'elevenlabs' ? settings?.hasElevenKey : settings?.hasFishKey
@@ -310,58 +352,81 @@ export function AjustesDeVoz({
   // Na boas-vindas: sem chave de voz, voz e velocidade nao aparecem.
   const mostrarVoz = !compacto || temChaveDeVoz
 
+  const temChaveDaAba = provedorDaAba === 'elevenlabs' ? !!settings?.hasElevenKey : !!settings?.hasFishKey
+  const modelos = provedorDaAba === 'elevenlabs' ? MODELOS_ELEVEN : MODELOS_FISH
+  const modeloDaAba =
+    (voz?.provedor === provedorDaAba ? voz.modelId : guardada(provedorDaAba).modelId) || MODELO_PADRAO[provedorDaAba]
+  const quemNarra = voz?.provedor && voz.provedor !== provedorDaAba ? voz.provedor : null
+
   const blocoDaVoz = (
     <>
       <div className={['mb-1.5 flex items-baseline gap-2', compacto ? 'mt-4' : ''].join(' ')}>
         <label className="block text-[11px] font-medium text-ink-2">Voz</label>
         <span className="flex-1" />
-        {voz?.provedor === 'fish' && <OuvirNoFish voiceId={voz.voiceId} />}
+        {voz?.provedor === 'fish' && provedorDaAba === 'fish' && <OuvirNoFish voiceId={voz.voiceId} />}
       </div>
-      {/* pr-7 + reticencias: as vozes da biblioteca do ElevenLabs tem nome longo
-          ("Andrea Wolff - clear, youthful...") e o texto encostava na seta. */}
-      <select
-        value={valorDoSelect}
-        onChange={(event) => escolherVoz(event.target.value)}
-        className="w-full text-ellipsis rounded-sm border border-line bg-elevated py-1.5 pr-7 pl-2.5 text-[13px] text-ink"
-      >
-        <option value="">Nenhuma ainda</option>
-        {(['elevenlabs', 'fish'] as const).map((provedor) => {
-          const lista = opcoes(provedor)
-          if (lista.length === 0) return null
-          return (
-            <optgroup key={provedor} label={provedor === 'fish' ? 'Fish Audio: suas vozes' : NOME[provedor]}>
-              {lista.map((v) => (
-                <option key={v.id} value={`${provedor}:${v.id}`}>
-                  {rotuloDaVoz(v)}
-                </option>
-              ))}
-            </optgroup>
-          )
-        })}
-        {daBiblioteca.length > 0 && (
-          <optgroup label="Biblioteca do Fish">
-            {daBiblioteca.map((v) => (
-              <option key={v.id} value={`fish:${v.id}`}>
-                {rotuloDaVoz(v)}
+      <div className="mb-2 flex">
+        <Segmentos
+          opcoes={(['elevenlabs', 'fish'] as const).map((p) => ({ valor: p, rotulo: NOME[p], title: `Narrar com o ${NOME[p]}` }))}
+          ativo={(p) => p === provedorDaAba}
+          onChange={trocarDeProvedor}
+        />
+      </div>
+      {!temChaveDaAba ? (
+        <p className="text-[11px] leading-relaxed text-ink-3">Salve a chave do {NOME[provedorDaAba]} abaixo para ver as vozes.</p>
+      ) : (
+        <>
+          {/* pr-7 + reticencias: as vozes da biblioteca do ElevenLabs tem nome longo
+              ("Andrea Wolff - clear, youthful...") e o texto encostava na seta. */}
+          <select
+            value={vozDaAba}
+            onChange={(event) => escolherVoz(provedorDaAba, event.target.value)}
+            className="w-full text-ellipsis rounded-sm border border-line bg-elevated py-1.5 pr-7 pl-2.5 text-[13px] text-ink"
+          >
+            {!vozDaAba && <option value="">{testando === provedorDaAba ? 'Carregando as vozes...' : 'Escolha uma voz'}</option>}
+            {opcoes(provedorDaAba).length > 0 && (
+              <optgroup label={provedorDaAba === 'fish' ? 'Suas vozes' : 'Vozes da conta'}>
+                {opcoes(provedorDaAba).map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {rotuloDaVoz(v)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {provedorDaAba === 'fish' && daBiblioteca.length > 0 && (
+              <optgroup label="Biblioteca do Fish">
+                {daBiblioteca.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {rotuloDaVoz(v)}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          {provedorDaAba === 'fish' && (
+            <div className="mt-2">
+              <BibliotecaDoFish escolhida={vozDaAba} daConta={vozes.fish} onEscolher={(v) => escolherVoz('fish', v.id)} />
+            </div>
+          )}
+          <label className="mt-3 mb-1.5 block text-[11px] font-medium text-ink-2">Modelo</label>
+          <select
+            value={modeloDaAba}
+            onChange={(event) => escolherModelo(provedorDaAba, event.target.value)}
+            className="w-full rounded-sm border border-line bg-elevated py-1.5 pr-7 pl-2.5 text-[13px] text-ink"
+          >
+            {!modelos.some((m) => m.id === modeloDaAba) && <option value={modeloDaAba}>{modeloDaAba}</option>}
+            {modelos.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nome}
               </option>
             ))}
-          </optgroup>
-        )}
-      </select>
-      {settings?.hasFishKey && (
-        <div className="mt-2">
-          <BibliotecaDoFish
-            escolhida={voz?.provedor === 'fish' ? voz.voiceId : ''}
-            daConta={vozes.fish}
-            onEscolher={(v) => escolherVoz(`fish:${v.id}`)}
-          />
-        </div>
-      )}
-      {((semLista && !compacto) || (voz?.provedor && voz.modelId)) && (
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-          {semLista && !compacto ? 'Teste uma chave para ver as vozes da conta. ' : ''}
-          {voz?.provedor && voz.modelId ? `Modelo ${nomeDoModelo(voz.provedor, voz.modelId)}.` : ''}
-        </p>
+          </select>
+          {quemNarra && (
+            <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+              Quem narra continua sendo o {NOME[quemNarra]} ate voce escolher uma voz aqui.
+            </p>
+          )}
+        </>
       )}
       <VelocidadeDaVoz settings={settings} onSettings={onSettings} />
     </>
@@ -392,12 +457,6 @@ export function AjustesDeVoz({
       </p>
     </>
   )
-}
-
-/** O nome do modelo como o passo 3 mostra ("Multilingual v2"), nao o id cru ("eleven_multilingual_v2"). */
-function nomeDoModelo(provedor: 'elevenlabs' | 'fish', modelId: string): string {
-  if (provedor === 'elevenlabs') return modeloEleven(modelId).nome
-  return MODELOS_FISH.find((m) => m.id === modelId)?.nome ?? modelId
 }
 
 /** "Funcionando · 1.234 de 10.000 caracteres (creator)" ou "Funcionando · saldo US$ 4,20". */

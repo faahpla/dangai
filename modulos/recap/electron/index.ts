@@ -19,7 +19,6 @@ import {
   instalandoMotorRuntime,
   remocaoEmAndamento,
 } from './motor-runtime'
-import { trazendoDoStudio } from './migracao/ipc'
 import { configurarSom } from './som/medir'
 import { pastaDaBibliotecaStudio } from './settings'
 
@@ -33,8 +32,6 @@ import { pastaDaBibliotecaStudio } from './settings'
  * com `modulos.recap`) e a Edicao rapida. Parte 4: o MOTOR de personagens
  * (corte em segundo plano, reconhecimento, Reconhecer na mao, rosto da
  * Edicao rapida) e o runtime dele, instalado pela tela no 1o uso.
- * Parte 5: o "Trazer do AniRecap Studio" (migracao/), que so le o perfil do
- * Studio e junta no do modulo sem sobrescrever.
  *
  * A biblioteca do recap entra na Biblioteca do Dangai como a raiz `recap:`
  * -- so com o modulo LIGADO: desligado, a grade e a de sempre.
@@ -139,7 +136,6 @@ export const recap: ModuloDoMain = {
     if (motorRodando()) return 'O motor de personagens esta cortando. Espere terminar.'
     if (rostosRodando()) return 'O motor esta procurando os rostos.'
     if (visaoRodando()) return 'O motor esta vendo as cenas. Espere terminar.'
-    if (trazendoDoStudio()) return 'Trazendo os dados do AniRecap Studio. Espere terminar.'
     return null
   },
 }

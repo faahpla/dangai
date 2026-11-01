@@ -91,6 +91,7 @@ import { pedidoInterrompido } from './voz/pedidos'
 import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from './voz/gerar'
 import { aprovarVoz, audioDoTake, desaprovarVoz, escolherTakeDoRascunho } from './voz/takes'
 import { bibliotecaFish, bibliotecaFishFalsa, idDaVozFish, testarEleven, testarFish, testeDeVozFalso, vozDoFishPorId } from './voz-chaves'
+import { configDoRecap } from './contexto'
 import { getSettings } from './settings'
 import { z } from 'zod'
 import {
@@ -137,7 +138,6 @@ import {
 } from '../shared/thumb'
 import { pedidoDeTextosSchema, type PedidoDeTextos, type PngDoTexto } from '../shared/textos-na-tela'
 import { registrarCanaisDoMotor } from './ipc-motor'
-import { registrarCanaisDaMigracao } from './migracao/ipc'
 import { escolherMusica, listarMusicas, registrarMusicaUsada } from './som/musicas'
 import { planejarSom, sfxDaEdicaoRapida } from './som/planejar'
 
@@ -151,7 +151,6 @@ import { planejarSom, sfxDaEdicaoRapida } from './som/planejar'
  */
 export function registrarCanais(ctx: ContextoDoModulo): void {
   registrarCanaisDoMotor(ctx)
-  registrarCanaisDaMigracao(ctx)
 
   // ------------------------------------------------------------ configuracao
 
@@ -524,16 +523,17 @@ function idDaFrase(valor: unknown): string {
 /** O que a tela sabe da voz: das chaves, so o `chaves` do ModuloPublico (tem, dica). */
 function ajustesDaVoz(): AjustesDaVoz {
   const chaves = listarModulos().find((m) => m.id === 'recap')?.chaves ?? {}
-  // TESTE (O2): com a voz falsa (RECAP_TESTE_VOZ_FALSA) o ElevenLabs aparece com chave; nada sai para a rede.
+  // TESTE (O2): com a voz falsa (RECAP_TESTE_VOZ_FALSA) o ElevenLabs e o Fish aparecem com chave; nada sai para a rede.
   const falsa = esperaDaVozFalsa() !== null ? { tem: true, dica: 'teste' } : null
   const eleven = falsa ?? chaves['elevenlabsApiKey'] ?? { tem: false, dica: '' }
-  const fish = chaves['fishApiKey'] ?? { tem: false, dica: '' }
+  const fish = falsa ?? chaves['fishApiKey'] ?? { tem: false, dica: '' }
   return {
     hasElevenKey: eleven.tem,
     elevenKeyHint: eleven.dica,
     hasFishKey: fish.tem,
     fishKeyHint: fish.dica,
     vozPadrao: getSettings().vozPadrao,
+    vozesGuardadas: configDoRecap().vozesGuardadas,
   }
 }
 

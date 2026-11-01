@@ -123,11 +123,6 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     escolherPastaDoMotorRuntime: (padrao) => invocar(C.escolherPastaDoMotorRuntime, padrao === true),
     removerMotorRuntime: () => invocar(C.removerMotorRuntime),
     onMotorRuntime: (ouvinte) => assinar(C.motorRuntimeEstado, ouvinte),
-
-    acharStudio: () => invocar(C.acharStudio),
-    trazerDoStudio: (pedidoId) => invocar(C.trazerDoStudio, pedidoId),
-    cancelarTrazer: (pedidoId) => invocar(C.cancelarTrazer, pedidoId),
-    onTrazerProgresso: (ouvinte) => assinar(C.trazerProgresso, ouvinte),
   }
   return ponte
 }) satisfies CriarPonte

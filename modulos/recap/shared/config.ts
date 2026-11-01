@@ -31,6 +31,12 @@ export interface ConfigDoRecap {
   biblioteca: string
   /** A voz que narra o recap. Sem voz escolhida: provedor ''. */
   vozPadrao: Required<VozPadrao>
+  /**
+   * (01/11) A ultima voz e o modelo de CADA provedor: trocar de ElevenLabs para
+   * Fish e voltar devolve a voz que estava. O `vozPadrao` continua sendo quem
+   * narra; este so lembra.
+   */
+  vozesGuardadas: VozesGuardadas
   /** A pasta de musicas da Edicao rapida (so leitura). '' = nenhuma: sem musica. */
   pastaDeMusicas: string
   edicaoRapidaPadrao: PreferenciasDaEdicaoRapida
@@ -133,9 +139,31 @@ export interface ConfigDoRecapNaTela extends ConfigDoRecap {
 /** Sem voz: o "sem voz" da parte 1, na velocidade nativa padrao (1,2). */
 export const SEM_VOZ: Required<VozPadrao> = { provedor: '', voiceId: '', modelId: '', velocidadeNativa: VELOCIDADE_NATIVA_PADRAO }
 
+/** A voz e o modelo guardados de um provedor ('' = nenhum ainda / o padrao). */
+export interface VozGuardada {
+  voiceId: string
+  modelId: string
+}
+export type VozesGuardadas = Record<'elevenlabs' | 'fish', VozGuardada>
+
+const NENHUMA_GUARDADA: VozesGuardadas = { elevenlabs: { voiceId: '', modelId: '' }, fish: { voiceId: '', modelId: '' } }
+
+/** As guardadas do disco; a do provedor da voz padrao e sempre ela (perfil de antes do campo). */
+function vozesGuardadasSalvas(raw: unknown, padrao: Required<VozPadrao>): VozesGuardadas {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const uma = (v: unknown): VozGuardada => {
+    const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : {}
+    return { voiceId: idDeVoz(o['voiceId']), modelId: nomeDeModelo(o['modelId'], '') }
+  }
+  const out: VozesGuardadas = { elevenlabs: uma(r['elevenlabs']), fish: uma(r['fish']) }
+  if (padrao.provedor) out[padrao.provedor] = { voiceId: padrao.voiceId, modelId: padrao.modelId }
+  return out
+}
+
 export const CONFIG_PADRAO: ConfigDoRecap = {
   biblioteca: '',
   vozPadrao: SEM_VOZ,
+  vozesGuardadas: NENHUMA_GUARDADA,
   pastaDeMusicas: '',
   edicaoRapidaPadrao: PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO,
   revisarAoGerar: true,
@@ -151,9 +179,11 @@ export function coerceConfig(raw: unknown): ConfigDoRecap {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const biblioteca = typeof r['biblioteca'] === 'string' ? r['biblioteca'].trim() : ''
   const pastaDeMusicas = typeof r['pastaDeMusicas'] === 'string' ? r['pastaDeMusicas'].trim() : ''
+  const vozPadrao = vozSalva(r['vozPadrao'])
   return {
     biblioteca,
-    vozPadrao: vozSalva(r['vozPadrao']),
+    vozPadrao,
+    vozesGuardadas: vozesGuardadasSalvas(r['vozesGuardadas'], vozPadrao),
     pastaDeMusicas,
     edicaoRapidaPadrao: preferenciasDaEdicaoRapidaSchema.catch(PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO).parse(r['edicaoRapidaPadrao'] ?? {}),
     revisarAoGerar: r['revisarAoGerar'] !== false,
@@ -184,7 +214,12 @@ export function aplicarPatch(atual: ConfigDoRecap, patch: unknown): ConfigDoReca
       : p
   // As cenas por campo: mudar so o juiz nao liga de novo o que estava desligado.
   const cenas = p['cenas'] && typeof p['cenas'] === 'object' ? { ...atual.cenas, ...(p['cenas'] as object) } : atual.cenas
-  return coerceConfig({ ...atual, ...comVelocidade, cenas })
+  // As guardadas por provedor: gravar o modelo do Fish nao apaga a voz do ElevenLabs.
+  const vozesGuardadas =
+    p['vozesGuardadas'] && typeof p['vozesGuardadas'] === 'object'
+      ? { ...atual.vozesGuardadas, ...(p['vozesGuardadas'] as object) }
+      : atual.vozesGuardadas
+  return coerceConfig({ ...atual, ...comVelocidade, cenas, vozesGuardadas })
 }
 
 /**

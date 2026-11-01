@@ -5,7 +5,6 @@ import type { ConfigDoRecapNaTela } from '../../shared/config'
 import { ponte } from '../ponte'
 import { useGerar } from '../store/gerar'
 import { Botao, Caixinha, Link, meioDoCaminho, nuvemDoCaminho } from './pecas'
-import { TrazerDoStudio } from './TrazerDoStudio'
 
 /**
  * [recap] A BIBLIOTECA DO RECAP nas Configuracoes (a secao do modulo, depois
@@ -17,8 +16,7 @@ import { TrazerDoStudio } from './TrazerDoStudio'
  * ou do Corte Cenas e recusada no main, e a frase dele vira o aviso. A
  * biblioteca do AnCut tem recado proprio: quem escolhe ela quer uma biblioteca
  * so, e isso e o "Enviar sempre" (o recap corta aqui e move pra la), com o
- * botao que liga. Embaixo, com dado do Studio neste PC, o "Trazer do
- * AniRecap Studio" (parte 5).
+ * botao que liga. (O "Trazer do AniRecap Studio" saiu em 01/11: ninguem usa.)
  */
 export function AjustesDoRecap() {
   const [config, setConfig] = useState<ConfigDoRecapNaTela | null>(null)
@@ -131,7 +129,6 @@ export function AjustesDoRecap() {
         </Caixinha>
         <p className="mt-1 pl-6 text-[11px] leading-relaxed text-ink-3">Uma copia so, na biblioteca do AnCut.</p>
       </div>
-      <TrazerDoStudio />
     </div>
   )
 }

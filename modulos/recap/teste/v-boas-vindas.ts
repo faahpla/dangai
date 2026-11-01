@@ -75,6 +75,7 @@ const vozSemChave = (): AjustesDaVoz => ({
   hasFishKey: false,
   fishKeyHint: '',
   vozPadrao: { provedor: '', voiceId: '', modelId: '', velocidadeNativa: 1.2 },
+  vozesGuardadas: { elevenlabs: { voiceId: '', modelId: '' }, fish: { voiceId: '', modelId: '' } },
 })
 
 function motor(fase: FaseDoMotorRuntime, extra: Partial<EstadoDoMotorRuntime> = {}): EstadoDoMotorRuntime {

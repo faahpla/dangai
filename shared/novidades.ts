@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.87.5',
+    itens: [
+      'Configurações > Voz do recap: escolha primeiro ElevenLabs ou Fish Audio, depois a voz e o modelo daquele serviço (Multilingual v2, Eleven v4, Flash v2.5, Eleven v3; S2.1 Pro, S2.1 Pro grátis, S2 Pro, S1). Cada um lembra a sua voz: trocar de um para o outro e voltar devolve a que estava.',
+      'A lista de vozes carrega sozinha ao abrir, sem precisar clicar em "Testar".',
+      'Saiu o "Trazer do AniRecap Studio".',
+    ],
+  },
+  {
     versao: '1.87.4',
     itens: [
       'Gerar recap: todos os personagens ganham as fotos da galeria do MyAnimeList, e não só os 18 principais. No Black Clover, a Vanessa foi de 1 para 7 fotos e a Zora de 1 para 6. Os elencos já guardados buscam essas fotos uma vez, na próxima análise (no Black Clover, uns 2 minutos).',

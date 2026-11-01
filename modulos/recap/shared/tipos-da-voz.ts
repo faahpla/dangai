@@ -85,4 +85,6 @@ export interface AjustesDaVoz {
   hasFishKey: boolean
   fishKeyHint: string
   vozPadrao: Required<VozPadrao>
+  /** (01/11) A ultima voz e o modelo de cada provedor (ConfigDoRecap.vozesGuardadas). */
+  vozesGuardadas: Record<ProvedorDeVoz, { voiceId: string; modelId: string }>
 }

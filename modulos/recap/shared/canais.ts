@@ -29,7 +29,6 @@ import type {
   ResultadoDaDescoberta,
 } from './descoberta'
 import type { EstadoDoMotorRuntime, PedidoDeInstalacao } from './motor-runtime'
-import type { ProgressoDaMigracao, ResumoDaMigracao, StudioAchado } from './migracao'
 import type {
   EventosGerados,
   PedidoDeReligar,
@@ -255,13 +254,6 @@ export const CANAIS = {
   removerMotorRuntime: 'recap:motor-runtime:remover',
   /** main -> renderer, EstadoDoMotorRuntime inteiro (no maximo ~4 por segundo) */
   motorRuntimeEstado: 'recap:motor-runtime:mudou',
-
-  // Trazer do AniRecap Studio (parte 5): tipos em migracao.ts, main em electron/migracao/.
-  acharStudio: 'recap:studio:achar',
-  trazerDoStudio: 'recap:studio:trazer',
-  cancelarTrazer: 'recap:studio:cancelar',
-  /** main -> renderer, ProgressoDaMigracao (no maximo ~10 por segundo) */
-  trazerProgresso: 'recap:studio:progresso',
 } as const
 
 /** O que aparece em `window.dangai.modulos.recap`. Os nomes sao os do Studio. */
@@ -274,6 +266,8 @@ export interface PonteDoRecap {
   salvarConfig(patch: {
     biblioteca?: string
     vozPadrao?: VozPadrao
+    /** (01/11) Por provedor: o que vier substitui so aquele provedor. */
+    vozesGuardadas?: Partial<Record<'elevenlabs' | 'fish', { voiceId: string; modelId: string }>>
     pastaDeMusicas?: string
     edicaoRapidaPadrao?: unknown
     revisarAoGerar?: boolean
@@ -475,11 +469,4 @@ export interface PonteDoRecap {
   escolherPastaDoMotorRuntime(padrao?: boolean): Promise<IpcResult<EstadoDoMotorRuntime>>
   removerMotorRuntime(): Promise<IpcResult<EstadoDoMotorRuntime>>
   onMotorRuntime(listener: (estado: EstadoDoMotorRuntime) => void): () => void
-
-  // Trazer do AniRecap Studio (parte 5): so le o Studio, nunca sobrescreve o Dangai.
-  /** Ha perfil do Studio neste PC? (a secao so mostra o botao com dado dele) */
-  acharStudio(): Promise<IpcResult<StudioAchado>>
-  trazerDoStudio(pedidoId: string): Promise<IpcResult<ResumoDaMigracao>>
-  cancelarTrazer(pedidoId: string): Promise<IpcResult<boolean>>
-  onTrazerProgresso(listener: (progresso: ProgressoDaMigracao) => void): () => void
 }
