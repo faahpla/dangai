@@ -1,6 +1,6 @@
 {
   "name": "dangai",
-  "version": "1.87.4",
+  "version": "1.87.5",
   "private": true,
   "description": "Maquina de fazer shorts de recap de anime",
   "main": "out/main/main.js",
