@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.88.2',
+    itens: [
+      'Edição rápida: o "Cartoon Bounce (OPPAI)" vira o som de peito balançando (quando a fala cita decote, seios, oppai...), e não abre mais o vídeo. A abertura fica com o cartoon pop.',
+      'O "among us" vira o som de suspeito (suspeita, traidor, impostor, mentira), e o sino passa a contar como impacto.',
+    ],
+  },
+  {
     versao: '1.88.1',
     itens: [
       'Edição rápida do recap: o vídeo sempre abre com um som (o cartoon pop, se a pasta de SFX tiver; senão um impacto), e a saída do gancho leva um riser com o pico no corte.',

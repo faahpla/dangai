@@ -140,7 +140,7 @@ export const PASTA_DE_MUSICAS_PADRAO = ''
  * whoosh nas viradas, impacto na ABERTURA (t = 0) e no climax, RISER na virada
  * gancho > contexto (01/11, pedido do Levi: "o video SEMPRE comeca com um som
  * ... depois que termina a frase do hook, na transicao, tem sempre um riser")
- * e TEMA: o som do assunto (espada, soco, magia...) na virada cuja fala cita
+ * e TEMA: o som do assunto (espada, soco, magia, suspeito...) na virada cuja fala cita
  * o assunto, no lugar do whoosh.
  */
 export const TIPOS_DE_SFX = ['whoosh', 'impacto', 'riser', 'tema'] as const
@@ -170,9 +170,9 @@ export const TEMAS_DE_SFX: readonly TemaDeSfx[] = [
   { id: 'coracao', rotulo: 'coracao', arquivo: /heart|coracao|batimento/i, fala: /\b(coracao|coracoes|batimentos?|heart\w*)\b/ },
   { id: 'vidro', rotulo: 'vidro', arquivo: /glass|vidro|shatter/i, fala: /\b(vidros?|estilhac\w*|shatter\w*|glass)\b/ },
   { id: 'camera', rotulo: 'camera', arquivo: /camera|shutter|foto|photo/i, fala: /\b(fotos?|fotograf\w*|cameras?|photos?|photograph\w*)\b/ },
-  { id: 'revelacao', rotulo: 'revelacao', arquivo: /reveal|revela|among.?us|impostor|traitor/i, fala: /\b(revel\w*|traid\w*|traic\w*|impostor\w*|segredos?|reveal\w*|traitor\w*|secrets?)\b/ },
+  { id: 'suspeito', rotulo: 'suspeito', arquivo: /among.?us|suspeit|suspic|impostor|reveal/i, fala: /\b(suspeit\w*|suspicious|desconfi\w*|impostor\w*|traid\w*|traic\w*|ment(iu|ira\w*|indo)|sus)\b/ },
+  { id: 'balanco', rotulo: 'peito balancando', arquivo: /bounce|oppai|jiggle|peito/i, fala: /\b(peituda\w*|seios?|oppai|busto|decote\w*|boobs?|breasts?|fan.?service)\b/ },
   { id: 'surpresa', rotulo: 'surpresa', arquivo: /wow|uau|surpris|shock|choque/i, fala: /\b(uau|incrive(l|is)|chocad\w*|surpre\w*|choque|wow|shock\w*|amazing)\b/ },
-  { id: 'sino', rotulo: 'sino', arquivo: /bell|sino/i, fala: /\b(sinos?|badal\w*|bells?)\b/ },
   { id: 'alerta', rotulo: 'alerta', arquivo: /alert|alarm|alarme|siren|sirene|warning/i, fala: /\b(alarmes?|alertas?|perigo|sirenes?|alarms?|danger|warning)\b/ },
 ]
 
@@ -186,7 +186,7 @@ export const TEMAS_DE_SFX: readonly TemaDeSfx[] = [
 const NOME_DE_RISER = /riser|rise|uplift|build.?up|swell|crescendo|tension|tensao|suspense/i
 const NOME_DE_RISER_CURTO = /sharp|short|curto|quick|fast|rapido|snap/i
 const NOME_DE_WHOOSH = /whoosh|woosh|swoosh|swish|swipe|sweep|transi|wind|vento/i
-const NOME_DE_IMPACTO = /impact|impacto|hit|boom|thud|slam|stomp|batida|drop/i
+const NOME_DE_IMPACTO = /impact|impacto|hit|boom|thud|slam|stomp|batida|drop|bell|sino/i
 const NOME_DE_ABERTURA = /cartoon|pop|boing|abertura|opening|intro/i
 
 export interface SfxPeloNome {
@@ -704,7 +704,7 @@ const PESO_DA_VIRADA: Record<NonNullable<SecaoParaSom['papel']> | 'nenhum', numb
 /**
  * OS SFX DO SHORT (01/11, o jeito do Levi): o cartoon pop na abertura, o
  * riser na saida do gancho, whoosh nas viradas de parte -- ou o som do
- * ASSUNTO (espada, soco, magia...) quando a fala da virada cita um tema que a
+ * ASSUNTO (espada, soco, magia, suspeito...) quando a fala da virada cita um tema que a
  * pasta tem --, e no climax o riser curto ("sharp") com o impacto. O resto em
  * silencio. Puro.
  *
