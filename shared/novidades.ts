@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.87.3',
+    itens: [
+      'Gerar recap: o elenco e as fotos do MyAnimeList vêm direto do site dele. O Jikan, que parou de funcionar, saiu, e a análise não fica mais esperando por ele.',
+      'Mais personagens reconhecidos: cada um ganha também a foto da AniList, procurada em todas as temporadas e filmes do anime, e não só no primeiro. No Black Clover, os personagens com uma foto só (abaixo do mínimo para reconhecer) caíram de 71 para 13. Os elencos já guardados ganham essas fotos sozinhos na próxima análise.',
+    ],
+  },
+  {
     versao: '1.87.2',
     itens: [
       'Gerar recap: quem você já reconheceu no AnCut passa a ser reconhecido também nos episódios cortados pelo motor do Dangai. A cada corte, o Dangai pega do AnCut as fotos de quem ele ainda não conhecia. Quem ele já reconhecia continua igual.',

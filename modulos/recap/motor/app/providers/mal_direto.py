@@ -6,17 +6,18 @@ o myanimelist.net responde normal. Sem as galerias, cada personagem ficava com
 1 retrato (o da AniList), abaixo de `min_references_per_character = 2`, e
 anime novo terminava em "sem-referencias".
 
-Este arquivo e a reserva do Jikan, e so dele:
+Desde 01/11 e a UNICA fonte do MAL: o Jikan saiu do motor (cada analise
+pagava o prazo de conexao dele so para descobrir que nao abria).
 
 - `MalDireto` le duas paginas do site, as mesmas que o Jikan le:
     /anime/<id>/<slug>/characters   -> elenco (id, nome, papel, retrato)
     /character/<id>/<slug>/pics     -> galeria de fotos do personagem
   e devolve os MESMOS tipos do JikanClient (`JikanCharacter`, lista de URLs),
   com o nome no formato do MAL ("Sobrenome, Nome"), que e o do Jikan.
-- `JikanOuMal` tem a interface do JikanClient que o anime_provider usa: tenta
-  o Jikan e, so quando ELE falha (o `failures` dele sobe), cai no MAL direto.
-  O `failures` daqui so conta quando os DOIS falharam, entao o banco parcial,
-  o `missing_gallery` e os avisos de fonte continuam certos.
+- `ElencoDoMal` tem a interface do JikanClient que o anime_provider usava
+  (`anime_characters`, `character_pictures`, `failures`, `close`): o
+  `failures` sobe quando o site nao atende, entao o banco parcial, o
+  `missing_gallery` e os avisos de fonte continuam certos.
 
 Educado com o MAL: User-Agent de navegador comum, um pedido por vez com 1 s de
 intervalo, prazo curto para abrir a conexao, cache em disco
@@ -36,7 +37,7 @@ from pathlib import Path
 
 import httpx
 
-from .jikan import JikanCharacter, JikanClient
+from .jikan import JikanCharacter
 
 MAL_BASE = "https://myanimelist.net"
 
@@ -605,39 +606,26 @@ def ler_titulos_do_anime(html: str) -> dict:
     return out if out.get("titulo") or out.get("ingles") else {}
 
 
-class JikanOuMal:
-    """O JikanClient com o MyAnimeList direto de reserva.
+class ElencoDoMal:
+    """O elenco e as galerias so pelo site do MyAnimeList (01/11: sem o Jikan).
 
-    Mesma interface que o anime_provider usa do JikanClient (`search_anime`,
-    `anime_characters`, `character_pictures`, `failures`, `close`). Com o
-    Jikan no ar, o resultado e o dele, byte a byte. A busca do anime (so usada
-    com a AniList fora) continua so no Jikan.
+    O api.jikan.moe nao abre mais da rede do Levi, e cada analise pagava o
+    prazo de conexao dele para descobrir. Mesma interface que o anime_provider
+    usava do JikanClient (`anime_characters`, `character_pictures`,
+    `failures`, `close`). A busca do anime e da BuscaDeAnime (busca_anime.py).
     """
 
-    def __init__(self, jikan: JikanClient, mal: MalDireto) -> None:
-        self.jikan = jikan
+    def __init__(self, mal: MalDireto) -> None:
         self.mal = mal
-        #: Pedidos em que o Jikan E o MAL direto falharam.
+        #: Pedidos que o site nao atendeu.
         self.failures = 0
-        #: Pedidos atendidos pelo MAL direto (para o log).
+        #: Pedidos atendidos (para o log).
         self.pelo_mal = 0
-        self._avisou = False
 
     def close(self) -> None:
-        self.jikan.close()
         self.mal.close()
 
-    def search_anime(self, name: str):
-        antes = self.jikan.failures
-        r = self.jikan.search_anime(name)
-        if self.jikan.failures > antes:
-            self.failures += 1
-        return r
-
-    def _reserva(self, chamar):
-        if not self._avisou:
-            self._avisou = True
-            print("[MAL direto] Jikan falhou — lendo o MyAnimeList direto.", flush=True)
+    def _ler(self, chamar):
         r = chamar()
         if r is None:
             self.failures += 1
@@ -646,15 +634,7 @@ class JikanOuMal:
         return r
 
     def anime_characters(self, mal_id: int) -> list[JikanCharacter]:
-        antes = self.jikan.failures
-        r = self.jikan.anime_characters(mal_id)
-        if self.jikan.failures == antes:
-            return r
-        return self._reserva(lambda: self.mal.anime_characters(mal_id))
+        return self._ler(lambda: self.mal.anime_characters(mal_id))
 
     def character_pictures(self, mal_id: int) -> list[str]:
-        antes = self.jikan.failures
-        r = self.jikan.character_pictures(mal_id)
-        if self.jikan.failures == antes:
-            return r
-        return self._reserva(lambda: self.mal.character_pictures(mal_id))
+        return self._ler(lambda: self.mal.character_pictures(mal_id))

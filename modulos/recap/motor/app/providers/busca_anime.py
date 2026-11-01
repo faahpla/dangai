@@ -245,16 +245,14 @@ class BuscaDeAnime:
     """As tres fontes, a escolha pelo titulo mais parecido e o cache.
 
     `anilist`, `mal` e `kitsu` sao os clientes do provider (anilist.py,
-    mal_direto.py, kitsu.py); `jikan` (opcional) e o JikanOuMal, so de reserva
-    do site do MAL. Nos testes entram falsos com a mesma interface.
+    mal_direto.py, kitsu.py). Nos testes entram falsos com a mesma interface.
     """
 
-    def __init__(self, pasta_cache: Path | None, anilist, mal, kitsu, jikan=None) -> None:
+    def __init__(self, pasta_cache: Path | None, anilist, mal, kitsu) -> None:
         self.pasta = Path(pasta_cache) if pasta_cache else None
         self.anilist = anilist
         self.mal = mal
         self.kitsu = kitsu
-        self.jikan = jikan
         #: O que falhou na ultima busca, por fonte (para a frase da tela).
         self.erros: dict[str, str] = {}
 
@@ -373,18 +371,6 @@ class BuscaDeAnime:
         self._guardar_pesquisa("kitsu", consulta, cands)
         return cands
 
-    def _jikan(self, consulta: str) -> list[Candidato]:
-        if self.jikan is None:
-            return []
-        try:
-            hit = self.jikan.search_anime(consulta)
-        except Exception:  # noqa: BLE001
-            return []
-        if hit is None:
-            return []
-        return [Candidato(fonte="jikan", titulo=hit.title, titulo_ingles=hit.title_english,
-                          mal_id=hit.mal_id, capa=hit.cover)]
-
     def _completar_titulos_do_mal(self, cands: list[Candidato], pedido: str) -> None:
         """Os titulos alternativos (ingles, sinonimos) dos primeiros resultados do
         MAL: a busca dele so devolve o romaji, e o pedido costuma ser o ingles."""
@@ -453,14 +439,6 @@ class BuscaDeAnime:
                 chave_da_fonte = {"AniList": "anilist", "MyAnimeList": "mal", "Kitsu": "kitsu"}[rotulo]
                 if chave_da_fonte in self.erros and not cands:
                     break  # a fonte caiu: nao adianta as outras consultas
-            if rotulo == "MyAnimeList" and "mal" in self.erros and self.jikan is not None:
-                # O site do MAL caiu nesta rede: o Jikan (que o le) de reserva.
-                for q in consultas:
-                    for c in self._pontuar(nome, self._jikan(q)):
-                        if melhor is None or c.nota > melhor.nota:
-                            melhor = c
-                    if melhor is not None and melhor.nota >= LIMIAR:
-                        return melhor
         if melhor is not None:
             dizer(f"Nenhum anime parecido o bastante (o melhor: {melhor.titulo}, {int(melhor.nota * 100)}%).")
         return None

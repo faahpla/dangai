@@ -414,7 +414,7 @@ class Pipeline:
         #
         # Custa nada trocar a ordem: com o anime já conhecido esta etapa sai
         # do cache em ~0s (ver o disjuntor e o banco parcial na v1.8.1).
-        fonte = "TMDB" if cfg.media_kind == "live" else "AniList + Jikan"
+        fonte = "TMDB" if cfg.media_kind == "live" else "AniList + MyAnimeList"
         cb("fetch_characters", -1.0, f"Consultando {fonte}...")
         # [recap] O1: a deteccao dos cortes (CPU) comeca JA, por tras, enquanto o
         # elenco (rede) e consultado; o _prepare_shots espera por ela. A segunda
@@ -708,8 +708,8 @@ class Pipeline:
                 )
             else:
                 cause = (
-                    "Causa mais comum: as fontes de imagens (Jikan/MyAnimeList) "
-                    "estão instáveis ou fora do ar agora. O que fazer:\n"
+                    "Causa mais comum: a fonte de imagens (o site do MyAnimeList) "
+                    "está instável ou fora do ar agora. O que fazer:\n"
                     "• Tente de novo mais tarde (os shots cortados ficam em cache, "
                     "a próxima rodada pula direto pro banco de personagens);\n"
                 )
@@ -3126,8 +3126,8 @@ class Pipeline:
             raise InsufficientRefsError(
                 "Nenhum personagem tem foto de referência — a IA não teria "
                 "nomes nem rostos pra comparar.\n\n"
-                "Causa mais comum: as fontes de imagens (Jikan/MyAnimeList) "
-                "estão instáveis ou fora do ar agora. Tente de novo mais "
+                "Causa mais comum: a fonte de imagens (o site do MyAnimeList) "
+                "está instável ou fora do ar agora. Tente de novo mais "
                 "tarde (os shots cortados ficam em cache) ou adicione fotos "
                 "manualmente pela pasta de refs.\n\n"
                 "Detalhes no app.log (Configurações → Abrir pasta de logs).",
