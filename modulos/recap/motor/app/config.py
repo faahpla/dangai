@@ -159,7 +159,12 @@ class Config:
     # oficiais de MAL + AniList + Kitsu (até 3 imagens), acima do mínimo de
     # `min_references_per_character`. E o "reforçar refs" do próprio episódio
     # cobre o resto com o tempo.
-    gallery_for_top_characters: int = 18
+    #
+    # [recap] 01/11: o elenco inteiro. Os 3 retratos eram, na pratica, o
+    # retrato do MAL e o mesmo desenho na AniList, e a galeria e o que traz
+    # angulo novo (Vanessa: 7 fotos no MAL, 1 no banco). Com o site do MAL
+    # direto (1 pedido/s, cache de 7 dias) o custo e ~1 min, uma vez por anime.
+    gallery_for_top_characters: int = 80
     # Danbooru has wide coverage but often returns fan art with multiple
     # characters in the same image → contaminates centroids. Off by default.
     use_danbooru: bool = False

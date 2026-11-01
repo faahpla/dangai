@@ -60,6 +60,9 @@ class AnimeBundle:
     #: [recap] 01/11: o retrato da AniList ja foi procurado no elenco INTEIRO
     #: dela. Banco de antes (so as 50 primeiras) completa uma vez ao abrir.
     retratos_anilist: bool = False
+    #: [recap] 01/11: a galeria do MAL ja foi pedida para o elenco inteiro.
+    #: Banco de antes (so os 18 primeiros) completa uma vez ao abrir.
+    galerias_de_todos: bool = False
 
 
 def _mais_velho_que(quando_iso: str | None, horas: float) -> bool:
@@ -220,6 +223,7 @@ class AnimeProvider:
                 missing_gallery=data.get("missing_gallery") or [],
                 fetched_at=data.get("fetched_at"),
                 retratos_anilist=bool(data.get("retratos_anilist", False)),
+                galerias_de_todos=bool(data.get("galerias_de_todos", False)),
                 # [recap] A1: banco sem id da AniList nem do MAL (Kitsu, local):
                 # a pasta e a do proprio cache_id.
                 cache_id_override=(
@@ -250,6 +254,7 @@ class AnimeProvider:
             "missing_gallery": bundle.missing_gallery or [],
             "fetched_at": bundle.fetched_at or _agora(),
             "retratos_anilist": bundle.retratos_anilist,
+            "galerias_de_todos": bundle.galerias_de_todos,
             "characters": [asdict(c) for c in bundle.characters],
         }
         p.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -338,6 +343,7 @@ class AnimeProvider:
         disjuntor corta na quinta falha e a rodada custa segundos.
         """
         bundle = self._completar_retratos_anilist(cache_id, bundle, status)
+        bundle = self._completar_galerias_de_todos(cache_id, bundle, status)
         faltando = list(bundle.missing_gallery or [])
         if not faltando:
             return bundle
@@ -421,6 +427,46 @@ class AnimeProvider:
                     vistos.add(ac.id)
                     elenco.append(ac)
         return elenco, completo
+
+    def _completar_galerias_de_todos(
+        self,
+        cache_id: str,
+        bundle: AnimeBundle,
+        status: Callable[[str], None],
+    ) -> AnimeBundle:
+        """[recap] 01/11: a galeria do MAL de quem ficou sem, uma vez.
+
+        O banco montado antes so pedia a galeria dos 18 primeiros
+        (gallery_for_top_characters); o resto ficava com os retratos. Quem ja
+        tem 4 fotos ou mais nao pede de novo. A galeria entra na FRENTE, a
+        ordem do `_completar_galerias`; quem o site nao atendeu vai para o
+        `missing_gallery`, e o `_completar_galerias` tenta de novo depois.
+        """
+        if bundle.galerias_de_todos:
+            return bundle
+        pedir = [c for c in bundle.characters if c.mal_id is not None and len(c.image_urls) < 4]
+        if pedir:
+            status(f"Buscando a galeria do MyAnimeList de mais {len(pedir)} personagens (uma vez)...")
+        faltam = list(bundle.missing_gallery or [])
+        ganharam = 0
+        for ch in pedir:
+            antes = self.mal_site.failures
+            pics = self.mal_site.character_pictures(ch.mal_id)
+            if self.mal_site.failures > antes:
+                if ch.mal_id not in faltam:
+                    faltam.append(ch.mal_id)
+                continue
+            novas = [u for u in pics if u not in ch.image_urls]
+            if novas:
+                ch.image_urls[:0] = novas
+                ganharam += 1
+        bundle.missing_gallery = faltam
+        bundle.partial = bool(faltam)
+        bundle.galerias_de_todos = True
+        self.save_cache(cache_id, bundle)
+        if pedir:
+            status(f"MyAnimeList: galeria nova para {ganharam} personagens.")
+        return bundle
 
     def _completar_retratos_anilist(
         self,
@@ -977,6 +1023,7 @@ class AnimeProvider:
             franchise_root_id=root_id,
             # O elenco inteiro da AniList ja foi procurado (2b).
             retratos_anilist=al_completo,
+            galerias_de_todos=gallery_limit >= len(sorted_chars),
         )
         # Banco montado com a fonte fora do ar é DEGRADADO. Antes ele era
         # simplesmente DESCARTADO, pra não congelar o estrago — mas isso

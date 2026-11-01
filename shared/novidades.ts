@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.87.4',
+    itens: [
+      'Gerar recap: todos os personagens ganham as fotos da galeria do MyAnimeList, e não só os 18 principais. No Black Clover, a Vanessa foi de 1 para 7 fotos e a Zora de 1 para 6. Os elencos já guardados buscam essas fotos uma vez, na próxima análise (no Black Clover, uns 2 minutos).',
+      'O filtro de mangá não joga mais fora a arte colorida com fundo branco (como a imagem oficial do personagem). As que ele tinha descartado por engano voltam sozinhas. Página de mangá continua de fora.',
+    ],
+  },
+  {
     versao: '1.87.3',
     itens: [
       'Gerar recap: o elenco e as fotos do MyAnimeList vêm direto do site dele. O Jikan, que parou de funcionar, saiu, e a análise não fica mais esperando por ele.',

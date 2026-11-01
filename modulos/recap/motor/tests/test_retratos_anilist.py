@@ -5,6 +5,10 @@
   429 espera e tenta de novo; outro erro deixa `completo` falso.
 - _completar_retratos_anilist: o banco guardado ganha o retrato de quem casa
   pelo nome (ordem trocada vale), uma vez so; incompleto tenta de novo.
+- _completar_galerias_de_todos: a galeria do MAL de quem tem menos de 4
+  fotos, na frente, uma vez; quem o site nao atendeu vai para o
+  missing_gallery.
+- is_monochrome: arte colorida em fundo branco passa; manga nao.
 
 Rodar: python -m unittest tests.test_retratos_anilist (da pasta motor/).
 """
@@ -12,12 +16,15 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+
+import numpy as np
 from dataclasses import dataclass
 from pathlib import Path
 
 from app.providers import anime_provider as ap
 from app.providers.anime_provider import AnimeBundle, AnimeProvider, CharacterRef
 from app.providers.mal_direto import ElencoDoMal
+from app.references.image_filters import is_monochrome
 
 
 @dataclass
@@ -144,6 +151,44 @@ class TesteRetratosAniList(unittest.TestCase):
         b = self.p._completar_retratos_anilist("al87528", b, lambda _m: None)
         self.assertTrue(b.retratos_anilist)
         self.assertEqual(b.characters[0].image_urls.count("al/magna.jpg"), 1)
+
+
+class TesteGaleriasDeTodos(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.p = AnimeProvider(Path(self.tmp.name))
+
+    def tearDown(self) -> None:
+        self.p.close()
+        self.tmp.cleanup()
+
+    def test_galeria_na_frente_uma_vez(self) -> None:
+        self.p.mal_site = ElencoDoMal(_MalFalso({1: ["mal/g1.jpg", "mal/magna.jpg", "mal/g2.jpg"], 2: None}))
+        b = _banco()
+        b.characters[2].image_urls = ["a", "b", "c", "d"]  # 4 fotos: nao pede
+        b = self.p._completar_galerias_de_todos("al87528", b, lambda _m: None)
+        self.assertEqual(b.characters[0].image_urls, ["mal/g1.jpg", "mal/g2.jpg", "mal/magna.jpg"])
+        self.assertEqual(b.missing_gallery, [2])
+        self.assertTrue(b.partial)
+        self.assertEqual(b.characters[2].image_urls, ["a", "b", "c", "d"])
+        guardado = self.p.load_cached("al87528")
+        self.assertTrue(guardado.galerias_de_todos)
+        self.p.mal_site = ElencoDoMal(_MalFalso({}))
+        self.p._completar_galerias_de_todos("al87528", guardado, lambda _m: None)
+        self.assertEqual(self.p.mal_site.failures + self.p.mal_site.pelo_mal, 0, "marcado nao pede de novo")
+
+
+class TesteMonocromatico(unittest.TestCase):
+    def test_colorida_em_fundo_branco_passa(self) -> None:
+        img = np.full((200, 100, 3), 255, np.uint8)
+        img[60:140, 35:65] = (120, 60, 40)  # o desenho: azul escuro, 12% da imagem
+        self.assertFalse(is_monochrome(img))
+
+    def test_manga_continua_fora(self) -> None:
+        img = np.full((200, 100, 3), 235, np.uint8)
+        img[40:160, 20:80] = 90
+        img[90:110, 30:70] = 160
+        self.assertTrue(is_monochrome(img))
 
 
 if __name__ == "__main__":

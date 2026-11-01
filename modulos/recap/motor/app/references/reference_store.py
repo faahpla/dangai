@@ -115,8 +115,17 @@ class ReferenceStore:
                 for url in ch.image_urls:
                     # Skip if we previously filtered this URL as monochrome.
                     name = _name_for(url)
-                    if (filtered_dir / name).exists():
-                        continue
+                    filtrada = filtered_dir / name
+                    if filtrada.exists():
+                        # [recap] 01/11: o filtro antigo jogava fora arte
+                        # colorida em fundo branco; a que hoje passa volta.
+                        img = cv2.imread(str(filtrada))
+                        if img is None or is_monochrome(img):
+                            continue
+                        try:
+                            shutil.move(str(filtrada), str(d / name))
+                        except OSError:
+                            continue
                     p = download_to(url, d, client=client)
                     if p is None:
                         continue
