@@ -188,6 +188,8 @@ const NOME_DE_RISER_CURTO = /sharp|short|curto|quick|fast|rapido|snap/i
 const NOME_DE_WHOOSH = /whoosh|woosh|swoosh|swish|swipe|sweep|transi|wind|vento/i
 const NOME_DE_IMPACTO = /impact|impacto|hit|boom|thud|slam|stomp|batida|drop|bell|sino/i
 const NOME_DE_ABERTURA = /cartoon|pop|boing|abertura|opening|intro/i
+/** O "derruba o clima": tape stop, record scratch. Entra na troca para uma musica calma. */
+const NOME_DE_PARADA = /tape.?stop|record.?scratch|vinyl|scratch|rewind|freio|parada/i
 
 export interface SfxPeloNome {
   tipo: TipoDeSfx
@@ -197,10 +199,13 @@ export interface SfxPeloNome {
   soNaAbertura?: boolean
   /** O riser curto ("sharp"): o que vai junto do impacto. */
   riserCurto?: boolean
+  /** Tape stop / record scratch: so na troca para um clima calmo. */
+  parada?: boolean
 }
 
 export function sfxPeloNome(fileName: string): SfxPeloNome | null {
   const nome = nomeDoArquivo(fileName)
+  if (NOME_DE_PARADA.test(nome)) return { tipo: 'impacto', parada: true }
   if (NOME_DE_RISER.test(nome)) return NOME_DE_RISER_CURTO.test(nome) ? { tipo: 'riser', riserCurto: true } : { tipo: 'riser' }
   const tema = TEMAS_DE_SFX.find((t) => t.arquivo.test(nome))
   if (tema) return { tipo: 'tema', tema: tema.id }
@@ -280,6 +285,8 @@ export interface ArquivoDeSfx extends MedidaDoSom {
   soNaAbertura?: boolean
   /** O riser curto ("sharp"): vai com o impacto do climax, nao na saida do gancho. */
   riserCurto?: boolean
+  /** Tape stop / record scratch: so na troca de musica para um clima calmo. */
+  parada?: boolean
   /**
    * Um GOLPE de um arquivo com varios (o pacote de espadas): so este pedaco
    * do arquivo toca. picoSec/inicioSomSec/fimSomSec ja sao os do golpe.
@@ -583,12 +590,25 @@ export const musicaPlanejadaSchema = z.object({
   durationSec: z.number().positive(),
   /** O integrado medido do arquivo (documenta o ganho). null = nao deu para medir. */
   lufsIntegrado: z.number().nullable().default(null),
+  /**
+   * (01/11) O TRECHO do video desta musica: de `at` ate `ate` (null = o fim
+   * do video). Uma musica so: at 0, ate null (o de antes).
+   */
+  at: z.number().nonnegative().default(0),
+  ate: z.number().positive().nullable().default(null),
+  /** O clima do trecho (shared/trilha-sonora.ts). null = sem clima (musica forcada, projeto antigo). */
+  clima: z.string().nullable().default(null),
+  /** O instante do VIDEO onde o drop dela cai (a saida do gancho, a troca). null = sem drop achado. */
+  dropSec: z.number().nonnegative().nullable().default(null),
 })
 export type MusicaPlanejada = z.infer<typeof musicaPlanejadaSchema>
 
 /** O plano de som da Edicao rapida: o que o main devolve e o que vira trilhas. */
 export const planoDeSomSchema = z.object({
+  /** A primeira musica (o "trocar" e o historico olham esta). */
   musica: musicaPlanejadaSchema.nullable(),
+  /** (01/11) TODAS, em ordem: uma por clima. Vazio = so `musica` (o de antes). */
+  musicas: z.array(musicaPlanejadaSchema).default([]),
   sfx: z.array(sfxPlanejadoSchema),
   /** Recados ASCII ("Sem musica na pasta", "Sem whoosh: usei o do app"). */
   avisos: z.array(z.string()).default([]),
@@ -626,25 +646,56 @@ export type PedidoDePlanoDeSom = z.infer<typeof pedidoDePlanoDeSomSchema>
  *   - as outras viradas de parte: whoosh (o tema troca depois, pela fala).
  * Corrida de papel repetido (dois 'climax' seguidos) marca so a primeira.
  */
+/** A virada gruda no corte de bloco mais perto, ate imaDoCorteSec. */
+export function grudarNoCorte(cortes: readonly number[], t: number, regras: RegrasDeSom = REGRAS_DE_SOM_PADRAO): number {
+  let melhor = t
+  let dist = regras.imaDoCorteSec
+  for (const c of cortes) {
+    const d = Math.abs(c - t)
+    if (d <= dist) {
+      dist = d
+      melhor = c
+    }
+  }
+  return melhor
+}
+
+/**
+ * O corte da SAIDA DO GANCHO (onde o riser tem o pico e a musica da o drop):
+ * a 1a virada que sai do gancho; sem papeis, a 1a virada. null = nenhuma.
+ */
+export function saidaDoGancho(
+  cenas: readonly { start: number }[],
+  secoes: readonly SecaoParaSom[],
+  regras: RegrasDeSom = REGRAS_DE_SOM_PADRAO,
+  duracaoSec: number = Number.POSITIVE_INFINITY,
+): number | null {
+  const cortes = cortesDasCenas(cenas)
+  return marcasDoSom(cortes, secoes, regras, duracaoSec).find((m) => m.tipo === 'riser' && m.riser === 'principal')?.t ?? null
+}
+
+function cortesDasCenas(cenas: readonly { start: number }[]): number[] {
+  return [...new Set(cenas.map((c) => c.start).filter((t) => Number.isFinite(t) && t > 0))].sort((a, b) => a - b)
+}
+
+/** Uma troca de musica (o `at` de cada trecho depois do primeiro). `calma` = o clima cai para algo calmo. */
+export interface TrocaDeMusica {
+  t: number
+  calma: boolean
+}
+
+/** Climax a menos disto de uma troca de musica nao leva riser + impacto proprios. */
+const TROCA_PERTO_SEC = 6
+
 function marcasDoSom(
   cortes: readonly number[],
   secoes: readonly SecaoParaSom[],
   regras: RegrasDeSom,
   duracaoSec: number,
+  trocas: readonly TrocaDeMusica[] = [],
 ): MarcaDoSom[] {
   const ordenadas = [...secoes].filter((s) => Number.isFinite(s.inicio)).sort((a, b) => a.inicio - b.inicio)
-  const grudar = (t: number): number => {
-    let melhor = t
-    let dist = regras.imaDoCorteSec
-    for (const c of cortes) {
-      const d = Math.abs(c - t)
-      if (d <= dist) {
-        dist = d
-        melhor = c
-      }
-    }
-    return melhor
-  }
+  const grudar = (t: number): number => grudarNoCorte(cortes, t, regras)
   const rotulo = (p: SecaoParaSom['papel'], k: number): string =>
     p ? p.charAt(0).toUpperCase() + p.slice(1) : `Parte ${k + 1}`
   const algumPapel = ordenadas.some((s) => s.papel !== null)
@@ -658,15 +709,24 @@ function marcasDoSom(
     const repete = anterior.papel === s.papel
     const motivo = `virada ${rotulo(anterior.papel, k - 1)} > ${rotulo(s.papel, k)}`
     const doGancho = algumPapel ? anterior.papel === 'gancho' && s.papel !== 'gancho' : k === 1
+    // A TROCA DE MUSICA (mudou o clima): o riser curto com o impacto -- ou o
+    // tape stop, quando o clima cai para algo calmo (planejarSfx decide).
+    const aTroca = trocas.find((x) => Math.abs(x.t - t) < 0.05)
+    // O climax logo depois (ou antes) de uma troca: a troca ja marcou, nada de outro riser + impacto.
+    const trocaPerto = trocas.some((x) => Math.abs(x.t - t) < TROCA_PERTO_SEC)
     if (doGancho && !saiuDoGancho) {
       saiuDoGancho = true
       marcas.push({ t, tipo: 'riser', motivo, peso: 0, riser: 'principal' })
-    } else if (s.papel === 'climax' && !repete) {
+    } else if (aTroca) {
+      marcas.push({ t, tipo: 'riser', motivo: `${motivo} (troca de musica)`, peso: 0, riser: 'curto', troca: aTroca })
+      marcas.push({ t, tipo: 'impacto', motivo: `troca de musica`, peso: 0, troca: aTroca })
+      return
+    } else if (s.papel === 'climax' && !repete && !trocaPerto) {
       marcas.push({ t, tipo: 'riser', motivo, peso: 0, riser: 'curto' })
     } else {
       marcas.push({ t, tipo: 'whoosh', motivo, peso: PESO_DA_VIRADA[s.papel ?? 'nenhum'] })
     }
-    if (s.papel === 'climax' && !repete) marcas.push({ t, tipo: 'impacto', motivo: `comeco do ${rotulo(s.papel, k)}`, peso: 0 })
+    if (s.papel === 'climax' && !repete && !trocaPerto) marcas.push({ t, tipo: 'impacto', motivo: `comeco do ${rotulo(s.papel, k)}`, peso: 0 })
   })
   return marcas.sort((a, b) => a.t - b.t)
 }
@@ -683,6 +743,10 @@ interface MarcaDoSom {
   riser?: 'principal' | 'curto'
   /** O tema escolhido pela fala (tipo 'tema'). */
   tema?: string
+  /** A marca e uma troca de musica. */
+  troca?: TrocaDeMusica
+  /** O tape stop da troca para um clima calmo. */
+  parada?: boolean
 }
 
 /**
@@ -739,14 +803,16 @@ export function planejarSfx(
   voz: VozParaNivelar | null = null,
   palavras: readonly PalavraParaSom[] = [],
   semente = 0,
+  trocas: readonly TrocaDeMusica[] = [],
 ): SfxPlanejado[] {
-  const cortes = [...new Set(cenas.map((c) => c.start).filter((t) => Number.isFinite(t) && t > 0))].sort((a, b) => a - b)
+  const cortes = cortesDasCenas(cenas)
   const ordem = (lista: readonly ArquivoDeSfx[]): ArquivoDeSfx[] => {
     const dele = lista.filter((a) => !a.reserva)
     return [...(dele.length > 0 ? dele : lista)].sort((a, b) => a.fileName.localeCompare(b.fileName, 'pt-BR'))
   }
   const doTipo = (tipo: TipoDeSfx): ArquivoDeSfx[] => arquivos.filter((a) => a.tipo === tipo && a.durationSec > 0)
-  const impactos = doTipo('impacto')
+  const paradas = ordem(doTipo('impacto').filter((a) => a.parada))
+  const impactos = doTipo('impacto').filter((a) => !a.parada)
   const risers = doTipo('riser')
   const pops = impactos.filter((a) => a.soNaAbertura)
   const longos = risers.filter((a) => !a.riserCurto)
@@ -765,7 +831,15 @@ export function planejarSfx(
   for (const [id, lista] of temas) temas.set(id, ordem(lista))
   const comArquivo = new Set(temas.keys())
 
-  let marcas = marcasDoSom(cortes, secoes, regras, duracaoSec)
+  let marcas = marcasDoSom(cortes, secoes, regras, duracaoSec, trocas)
+  // Troca para um clima calmo com tape stop na pasta: so ele (sem riser nem impacto).
+  if (paradas.length > 0) {
+    marcas = marcas.flatMap((m): MarcaDoSom[] => {
+      if (!m.troca?.calma) return [m]
+      if (m.tipo === 'riser') return []
+      return [{ ...m, parada: true, motivo: 'troca de musica (clima cai)' }]
+    })
+  }
   // O riser que a pasta nao tem vira whoosh (no climax o impacto fica).
   marcas = marcas.map((m) => {
     if (m.tipo !== 'riser' || pools[m.riser ?? 'principal'].length > 0) return m
@@ -792,7 +866,7 @@ export function planejarSfx(
   // duas perto demais (a escolha e por peso; a ordem do video volta depois).
   for (const tipo of ['whoosh', 'impacto'] as const) {
     if (pools[tipo].length !== 1) continue
-    const doTipoAqui = marcas.filter((m) => m.tipo === tipo && !m.abertura)
+    const doTipoAqui = marcas.filter((m) => m.tipo === tipo && !m.abertura && !m.troca)
     if (doTipoAqui.length <= regras.maximoComUmArquivo) continue
     const ficam: MarcaDoSom[] = []
     for (const m of [...doTipoAqui].sort((a, b) => a.peso - b.peso || a.t - b.t)) {
@@ -800,7 +874,7 @@ export function planejarSfx(
       if (ficam.some((f) => Math.abs(f.t - m.t) < regras.intervaloMinimoSec)) continue
       ficam.push(m)
     }
-    marcas = marcas.filter((m) => m.tipo !== tipo || m.abertura || ficam.includes(m))
+    marcas = marcas.filter((m) => m.tipo !== tipo || m.abertura || m.troca || ficam.includes(m))
   }
 
   const ultimo = new Map<string, number>()
@@ -808,14 +882,18 @@ export function planejarSfx(
   let daAbertura: ArquivoDeSfx | null = null
   const saida: SfxPlanejado[] = []
   for (const marca of marcas) {
-    const chave = marca.abertura
+    const chave = marca.parada
+      ? 'parada'
+      : marca.abertura
       ? 'abertura'
       : marca.tipo === 'tema'
         ? `tema:${marca.tema}`
         : marca.tipo === 'riser'
           ? `riser:${marca.riser}`
           : marca.tipo
-    let lista: ArquivoDeSfx[] = marca.abertura
+    let lista: ArquivoDeSfx[] = marca.parada
+      ? paradas
+      : marca.abertura
       ? pools.abertura
       : marca.tipo === 'tema'
         ? (temas.get(marca.tema ?? '') ?? [])
@@ -825,7 +903,7 @@ export function planejarSfx(
             ? pools.impacto
             : pools.whoosh
     if (lista.length === 0) continue
-    if (marca.t - (ultimo.get(chave) ?? Number.NEGATIVE_INFINITY) < regras.intervaloMinimoSec) continue
+    if (!marca.troca && marca.t - (ultimo.get(chave) ?? Number.NEGATIVE_INFINITY) < regras.intervaloMinimoSec) continue
     // O impacto do climax nao repete o som da abertura (quando ha outro).
     if (marca.tipo === 'impacto' && !marca.abertura && daAbertura && lista.length > 1) lista = lista.filter((a) => a !== daAbertura)
     const k = vez.get(chave) ?? 0
@@ -1022,16 +1100,20 @@ export function trilhasDoPlanoDeSom(
     })
   })
 
-  const m = plano.musica
-  if (m && opcoes.duracaoSec > 0) {
-    let at = 0
-    let volta = 0
+  // `musicas` ausente: um plano de antes (ou de um teste) -- vale so `musica`.
+  const musicas = plano.musicas?.length ? plano.musicas : plano.musica ? [plano.musica] : []
+  let volta = 0
+  musicas.forEach((m, k) => {
+    // Sem at/ate (plano de antes): o video inteiro.
+    const fimDoTrecho = Math.min(m.ate ?? opcoes.duracaoSec, opcoes.duracaoSec)
+    let at = Math.min(m.at ?? 0, opcoes.duracaoSec)
     let inicio = Math.min(m.inSec, Math.max(m.durationSec - 0.5, 0))
-    while (at < opcoes.duracaoSec - 0.05 && volta < 1000) {
+    let primeira = true
+    while (at < fimDoTrecho - 0.05 && volta < 1000) {
       const cabe = m.durationSec - inicio
       if (cabe <= 0.05) break
-      const toca = Math.min(cabe, opcoes.duracaoSec - at)
-      const ultima = at + toca >= opcoes.duracaoSec - 0.05
+      const toca = Math.min(cabe, fimDoTrecho - at)
+      const ultima = at + toca >= fimDoTrecho - 0.05
       saida.push({
         id: `${opcoes.prefixoId}-musica-${volta}`,
         path: m.arquivo,
@@ -1042,8 +1124,9 @@ export function trilhasDoPlanoDeSom(
         inicioSec: arredondar(inicio),
         usarSec: toca < cabe - 1e-3 ? arredondar(toca) : null,
         gainDb: m.ganhoDb,
-        fadeInSec: volta === 0 ? m.fadeInSec : 0,
-        fadeOutSec: ultima ? m.fadeOutSec : 0,
+        fadeInSec: primeira ? m.fadeInSec : 0,
+        // A ultima musica fecha com o fade dela; a que da lugar a outra sai no corte.
+        fadeOutSec: ultima ? (k === musicas.length - 1 ? m.fadeOutSec : Math.min(m.fadeOutSec, 0.6)) : 0,
         peaks: [],
         rms: [],
         papel: 'musica',
@@ -1051,10 +1134,11 @@ export function trilhasDoPlanoDeSom(
       })
       at += toca
       volta += 1
+      primeira = false
       // As voltas seguintes tocam o arquivo do comeco.
       inicio = 0
     }
-  }
+  })
   return saida
 }
 
@@ -1064,6 +1148,8 @@ export function trilhasDoPlanoDeSom(
 export interface MusicaDaPasta {
   path: string
   fileName: string
+  /** A subpasta onde ela esta ("acao", "sentimental"...): diz o clima. null = solta na pasta. */
+  subpasta?: string | null
   /** null = ainda nao medida (listar nao mede: pasta grande seria lenta). */
   durationSec: number | null
   lufsIntegrado: number | null
@@ -1626,6 +1712,8 @@ export interface ResumoDaEdicaoRapida {
   tema?: number
   /** O nome do arquivo da musica posta. null = sem musica. */
   musica: string | null
+  /** (01/11) Todas, em ordem, com o clima: "Haruka Mirai (acao)". Ausente = so `musica`. */
+  musicas?: string[]
   rostos: { comRosto: number; total: number; fonte: RostosDoLote['fonte'] } | null
   /** O estilo salvo foi aplicado na legenda. */
   legenda: boolean

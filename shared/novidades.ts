@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.89.0',
+    itens: [
+      'Edição rápida: a música entra no momento certo. O app acha pela onda onde cada música "entra" (o drop) e faz esse ponto cair no corte do gancho para o contexto, junto com o pico do riser. Durante o gancho toca o trecho calmo que vem antes do drop.',
+      'A música muda quando o clima do roteiro muda (ação, épica, sentimental, romance, suspense, comédia, calma): entra outra música daquele clima, já no drop dela, com o riser curto e o impacto. Se a pasta de SFX tiver um "tape stop" ou "record scratch", ele entra quando o clima cai para algo calmo.',
+      'O clima de cada música vem da subpasta (crie pastas como "acao", "sentimental", "romance", "epica" dentro da pasta de músicas) ou, para as soltas, de um palpite da IA pelo nome, feito uma vez por música.',
+    ],
+  },
+  {
     versao: '1.88.2',
     itens: [
       'Edição rápida: o "Cartoon Bounce (OPPAI)" vira o som de peito balançando (quando a fala cita decote, seios, oppai...), e não abre mais o vídeo. A abertura fica com o cartoon pop.',

@@ -468,6 +468,7 @@ export function resumoDaMontagem(e: {
     riser: sfx.filter((s) => s.tipo === 'riser').length,
     tema: sfx.filter((s) => s.tipo === 'tema').length,
     musica: e.plano?.musica ? nomeDoCaminho(e.plano.musica.arquivo) : null,
+    musicas: (e.plano?.musicas ?? []).map((m) => `${nomeDoCaminho(m.arquivo).replace(/\.[^.]+$/, '')}${m.clima ? ` (${m.clima})` : ''}`),
     rostos: e.rostoRodou
       ? e.lote
         ? { comRosto: e.lote.comRosto, total: e.lote.total, fonte: e.lote.fonte }

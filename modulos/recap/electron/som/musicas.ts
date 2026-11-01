@@ -78,16 +78,39 @@ function gravarHistorico(h: HistoricoDeMusicas): void {
 
 const chave = (p: string): string => p.replace(/\\/g, '/').toLowerCase()
 
-/** As faixas de audio da pasta (mp3, m4a, wav, ogg, flac, aac), sem medir, com `usadaEm` do historico. */
+/**
+ * Os arquivos de musica da pasta e das SUBPASTAS dela (um nivel: "acao/",
+ * "sentimental/"... dizem o clima, ver shared/trilha-sonora.ts).
+ */
+function arquivosDeMusica(pasta: string): { path: string; fileName: string; subpasta: string | null }[] {
+  const saida: { path: string; fileName: string; subpasta: string | null }[] = []
+  const ler = (dir: string, subpasta: string | null): void => {
+    let nomes: string[]
+    try {
+      nomes = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const n of nomes) {
+      const path = join(dir, n)
+      let st: ReturnType<typeof statSync>
+      try {
+        st = statSync(path)
+      } catch {
+        continue
+      }
+      if (st.isFile() && EXTENSOES.includes(extname(n).toLowerCase())) saida.push({ path, fileName: n, subpasta })
+      else if (st.isDirectory() && subpasta === null) ler(path, n)
+    }
+  }
+  ler(pasta, null)
+  return saida.sort((a, b) => (a.subpasta ?? '').localeCompare(b.subpasta ?? '', 'pt-BR') || a.fileName.localeCompare(b.fileName, 'pt-BR'))
+}
+
+/** As faixas de audio da pasta e das subpastas, sem medir, com `usadaEm` do historico. */
 export async function listarMusicas(): Promise<MusicaDaPasta[]> {
   const pasta = pastaAtual()
   if (!pasta || !existsSync(pasta)) return []
-  let nomes: string[]
-  try {
-    nomes = readdirSync(pasta)
-  } catch {
-    return []
-  }
   const historico = lerHistoricoDeMusicas()
   const ultimaVez = new Map<string, string>()
   for (const u of historico.usadas) {
@@ -95,20 +118,14 @@ export async function listarMusicas(): Promise<MusicaDaPasta[]> {
     const antes = ultimaVez.get(k)
     if (!antes || u.em > antes) ultimaVez.set(k, u.em)
   }
-  return nomes
-    .filter((n) => EXTENSOES.includes(extname(n).toLowerCase()))
-    .filter((n) => {
-      try {
-        return statSync(join(pasta, n)).isFile()
-      } catch {
-        return false
-      }
-    })
-    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
-    .map((n) => {
-      const path = join(pasta, n)
-      return { path, fileName: n, durationSec: null, lufsIntegrado: null, usadaEm: ultimaVez.get(chave(path)) ?? null }
-    })
+  return arquivosDeMusica(pasta).map(({ path, fileName, subpasta }) => ({
+    path,
+    fileName,
+    subpasta,
+    durationSec: null,
+    lufsIntegrado: null,
+    usadaEm: ultimaVez.get(chave(path)) ?? null,
+  }))
 }
 
 /**
@@ -175,8 +192,8 @@ export function estadoDaPastaDeMusicas(): 'ok' | 'vazia' | 'sumiu' | 'sem-pasta'
   }
   const pasta = pastaAtual()
   try {
-    const tem = readdirSync(pasta).some((n) => EXTENSOES.includes(extname(n).toLowerCase()))
-    return tem ? 'ok' : 'vazia'
+    if (!existsSync(pasta)) return 'sumiu'
+    return arquivosDeMusica(pasta).length > 0 ? 'ok' : 'vazia'
   } catch {
     return 'sumiu'
   }

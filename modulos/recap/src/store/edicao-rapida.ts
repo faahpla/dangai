@@ -286,6 +286,7 @@ export async function prepararEdicaoRapida(
     textos: null,
     avisos: [...new Set(avisos)],
     musicaMantida: mantida,
+    musicas: (som?.plano.musicas ?? []).map((m) => `${nomeSemExtensao(m.arquivo)}${m.clima ? ` (${m.clima})` : ''}`) ?? [],
   }
   return { aplicar, estilo: legenda, resumo, musica }
 }
@@ -777,7 +778,7 @@ export function linhasDoResumo(
     const tirar = (nome: string): string => nome.replace(/\.[^.]+$/, '')
     linhas.push({
       rotulo: 'Musica',
-      valor: r.musica ? tirar(r.musica) : r.musicaMantida ? `${tirar(r.musicaMantida)} (mantida)` : 'nenhuma',
+      valor: r.musicas && r.musicas.length > 1 ? r.musicas.join(' > ') : r.musica ? tirar(r.musica) : r.musicaMantida ? `${tirar(r.musicaMantida)} (mantida)` : 'nenhuma',
     })
   }
   if (r.config.rosto && r.rostos) {
@@ -796,6 +797,10 @@ export function linhasDoResumo(
 }
 
 /** A linha dos Textos na tela: quantos entraram, e os que ele tinha mexido. */
+function nomeSemExtensao(caminho: string): string {
+  return (caminho.split(/[\\/]/).pop() ?? caminho).replace(/\.[^.]+$/, '')
+}
+
 /** "1 riser, 3 whoosh, 2 impactos, 1 de tema" (so o que entrou). */
 function contagemDosSons(r: ResumoDaEdicaoRapida): string {
   const partes = [
