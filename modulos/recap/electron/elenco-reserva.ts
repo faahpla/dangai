@@ -73,6 +73,11 @@ export interface ResultadoDaReserva {
   reserva: ReservaDoElenco | null
   /** Uma linha para o log da analise, copiando ou nao. */
   linha: string
+  /**
+   * Personagens que o banco do Studio, que ja reconhecia alguem, ganhou dos
+   * caches (completarDosCaches). 0 ou ausente = nenhum.
+   */
+  completados?: number
 }
 
 /** O minimo de fotos por personagem do motor (config.min_references_per_character). */
@@ -292,6 +297,25 @@ interface Avaliacao {
  * ignora -- por isso o metadata vai junto na copia.
  */
 function avaliar(pasta: string): Avaliacao {
+  const c = contarFotos(pasta)
+  let comFotos = 0
+  for (const n of c.porPasta.values()) if (n >= MIN_FOTOS) comFotos += 1
+  return { valido: c.valido, personagens: c.nomes.length, comFotos, titulos: c.titulos }
+}
+
+interface Contagem {
+  valido: boolean
+  /** Os nomes do elenco do metadata (vazio quando ele nao vale). */
+  nomes: string[]
+  titulos: string[]
+  /** As pastas de personagem que existem. */
+  pastas: string[]
+  /** Pasta de personagem -> quantas fotos o motor contaria nela. */
+  porPasta: Map<string, number>
+}
+
+/** A conta do `avaliar`, pasta por pasta de personagem. */
+function contarFotos(pasta: string): Contagem {
   const meta = objeto(lerJson(join(pasta, 'metadata.json')))
   const elenco = Array.isArray(meta?.['characters']) ? (meta['characters'] as unknown[]) : []
   const versao = Number(meta?.['version'] ?? 1)
@@ -299,8 +323,7 @@ function avaliar(pasta: string): Avaliacao {
   const titulos = [meta?.['title'], meta?.['title_english']].filter((t): t is string => typeof t === 'string' && !!t)
   const raizDosPersonagens = join(pasta, 'characters')
   const dirs = subpastas(raizDosPersonagens).filter((n) => !n.startsWith('_'))
-  const usados = new Set<string>()
-  let comFotos = 0
+  const porPasta = new Map<string, number>()
   if (valido) {
     for (const cru of elenco) {
       const c = objeto(cru)
@@ -308,8 +331,7 @@ function avaliar(pasta: string): Avaliacao {
       if (!nome) continue
       const slug = slugDoPersonagem(nome)
       const dir = dirs.includes(slug) ? slug : casarPorTokens(nome, dirs)
-      if (!dir) continue
-      usados.add(dir)
+      if (!dir || porPasta.has(dir)) continue
       const arquivos = new Set(arquivosDeImagem(join(raizDosPersonagens, dir)))
       const urls = Array.isArray(c?.['image_urls']) ? (c['image_urls'] as unknown[]) : []
       let n = 0
@@ -317,18 +339,17 @@ function avaliar(pasta: string): Avaliacao {
         if (arquivos.has(nomeDoDownload(u))) n += 1
       }
       for (const a of arquivos) if (!NOME_DO_DOWNLOADER.test(a)) n += 1
-      if (n >= MIN_FOTOS) comFotos += 1
+      porPasta.set(dir, n)
     }
   }
   const nomes = valido
     ? elenco.map((c) => objeto(c)?.['name']).filter((n): n is string => typeof n === 'string')
     : []
   for (const dir of dirs) {
-    if (usados.has(dir) || casarPorTokens(dir, nomes)) continue
-    const postas = arquivosDeImagem(join(raizDosPersonagens, dir)).filter((a) => !NOME_DO_DOWNLOADER.test(a))
-    if (postas.length >= MIN_FOTOS) comFotos += 1
+    if (porPasta.has(dir) || casarPorTokens(dir, nomes)) continue
+    porPasta.set(dir, arquivosDeImagem(join(raizDosPersonagens, dir)).filter((a) => !NOME_DO_DOWNLOADER.test(a)).length)
   }
-  return { valido, personagens: elenco.length, comFotos, titulos }
+  return { valido, nomes, titulos, pastas: dirs, porPasta }
 }
 
 // --------------------------------------------------------- achar o id
@@ -476,6 +497,82 @@ async function ensinarABusca(dadosDoMotor: string, anime: string, temporada: num
   await writeFile(caminho, JSON.stringify(dados, null, 2), 'utf8')
 }
 
+/** Prefixo das fotos que vieram de um cache: o motor as conta como postas a mao, e o nome nunca colide. */
+const PREFIXO_DO_CACHE = 'ancut_'
+/** No maximo isto de fotos copiadas por personagem. */
+const TETO_POR_PERSONAGEM = 20
+
+interface Completado {
+  personagens: string[]
+  fotos: number
+  origem: string
+}
+
+/**
+ * COMPLETAR (31/10): o banco do Studio ja reconhece alguem, mas o AnCut
+ * reconhece quem ele nao (o Levi batizou a Magna no AnCut no ep 1 e o ep 2
+ * cortado aqui nao a achava). Cada personagem com fotos suficientes nos
+ * caches e menos que isso no Studio ganha as fotos de la. So acrescenta:
+ * nada do Studio e trocado nem apagado, e quem o Studio ja reconhece fica
+ * como esta (o mesmo personagem nao se parte em dois no meio da temporada).
+ *
+ * A pasta de destino e a do Studio para a mesma pessoa (o nome igual ou as
+ * mesmas palavras: "magna swing" = "Swing, Magna"); sem pasta, a do nome do
+ * elenco do Studio que casa; sem nada, a do nome de la (o motor pega as
+ * pastas fora do elenco, _local_only_characters). As fotos entram como
+ * `ancut_<nome>`: postas a mao para o motor (contam sem a URL no metadata) e
+ * sem colidir com as do Studio. A mesma foto do downloader que o Studio ja
+ * tem nao entra de novo.
+ */
+async function completarDosCaches(studio: string, caches: CacheDeElenco[], cacheId: string): Promise<Completado> {
+  const feito: Completado = { personagens: [], fotos: 0, origem: '' }
+  const raizDoStudio = join(studio, 'characters')
+  garantirGravavel(raizDoStudio)
+  const doStudio = contarFotos(studio)
+  const pastas = [...doStudio.pastas]
+  const acrescentadas = new Map<string, number>()
+  for (const cache of caches) {
+    for (const de of pastasDoId(cache.raiz, cacheId)) {
+      const daOrigem = contarFotos(de)
+      for (const [dir, n] of daOrigem.porPasta) {
+        if (n < MIN_FOTOS) continue
+        const nomeDoElenco = casarPorTokens(dir, doStudio.nomes)
+        const alvo =
+          (pastas.includes(dir) ? dir : null) ??
+          casarPorTokens(dir, pastas) ??
+          (nomeDoElenco ? slugDoPersonagem(nomeDoElenco) : null) ??
+          slugDoPersonagem(dir)
+        const ja = (doStudio.porPasta.get(alvo) ?? 0) + (acrescentadas.get(alvo) ?? 0)
+        if (ja >= MIN_FOTOS) continue
+        const destino = join(raizDoStudio, alvo)
+        await mkdir(destino, { recursive: true })
+        const existentes = new Set(arquivosDeImagem(destino).map((a) => a.toLowerCase()))
+        let copiadas = 0
+        for (const a of arquivosDeImagem(join(de, 'characters', dir))) {
+          if (copiadas >= TETO_POR_PERSONAGEM) break
+          const nome = a.toLowerCase().startsWith(PREFIXO_DO_CACHE) ? a : `${PREFIXO_DO_CACHE}${a}`
+          // O mesmo nome do downloader e a mesma foto (sha1 da URL); os outros nomes nao dizem nada.
+          if ((NOME_DO_DOWNLOADER.test(a) && existentes.has(a.toLowerCase())) || existentes.has(nome.toLowerCase())) continue
+          try {
+            await copyFile(join(de, 'characters', dir, a), join(destino, nome), constants.COPYFILE_EXCL)
+          } catch {
+            continue
+          }
+          existentes.add(nome.toLowerCase())
+          copiadas += 1
+        }
+        if (!copiadas) continue
+        if (!pastas.includes(alvo)) pastas.push(alvo)
+        acrescentadas.set(alvo, (acrescentadas.get(alvo) ?? 0) + copiadas)
+        if (!feito.personagens.includes(alvo)) feito.personagens.push(alvo)
+        feito.fotos += copiadas
+        if (!feito.origem) feito.origem = cache.origem
+      }
+    }
+  }
+  return feito
+}
+
 export interface PedidoDeReserva {
   anime: string
   temporada: number
@@ -511,11 +608,22 @@ export async function reservarElenco(dadosDoMotor: string, pedido: PedidoDeReser
     if (!achado) return nada(`nenhum cache conhece "${pedido.anime}" s${pedido.temporada}`)
     const { cacheId } = achado
 
-    // O banco do Studio para esse id ja reconhece alguem? Entao fica.
+    // O banco do Studio para esse id ja reconhece alguem? Entao fica, e so
+    // ganha quem o AnCut reconhece e ele ainda nao.
     const doStudio = pastasDoId(animeDb, cacheId)
-    const melhorDoStudio = Math.max(0, ...doStudio.map((p) => avaliar(p).comFotos))
+    const avaliados = doStudio.map((p) => ({ pasta: p, comFotos: avaliar(p).comFotos })).sort((a, b) => b.comFotos - a.comFotos)
+    const melhorDoStudio = avaliados[0]?.comFotos ?? 0
     if (melhorDoStudio > 0) {
-      return nada(`o banco do Studio para ${cacheId} ja tem ${melhorDoStudio} personagens com fotos; nada copiado`)
+      const c = await completarDosCaches(avaliados[0]!.pasta, caches, cacheId)
+      const base = `o banco do Studio para ${cacheId} ja tem ${melhorDoStudio} personagens com fotos`
+      if (!c.personagens.length) return { ...nada(`${base}; nada a completar`), completados: 0 }
+      return {
+        reserva: null,
+        completados: c.personagens.length,
+        linha:
+          `reserva do elenco: ${base}; completado com ${c.fotos} fotos de ${c.personagens.length} personagens do ` +
+          `${c.origem} (${c.personagens.join(', ')})`,
+      }
     }
 
     let escolhido: { cache: CacheDeElenco; pasta: string; av: Avaliacao } | null = null

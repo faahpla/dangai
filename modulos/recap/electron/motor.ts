@@ -815,6 +815,7 @@ async function prepararEIniciar(job: Job): Promise<void> {
  */
 async function tentarComAReserva(job: Job, pendente: FimDaAnalise): Promise<void> {
   let reserva: ReservaDoElenco | null = null
+  let completou = false
   try {
     const r = await reservarElenco(pastaDeDadosDoMotor(), {
       anime: job.anime,
@@ -824,6 +825,7 @@ async function tentarComAReserva(job: Job, pendente: FimDaAnalise): Promise<void
     })
     job.log?.write(`[studio] ${r.linha}\n`)
     reserva = r.reserva
+    completou = (r.completados ?? 0) > 0
   } catch (e) {
     job.log?.write(`[studio] reserva do elenco falhou: ${e instanceof Error ? e.message : String(e)}\n`)
   }
@@ -832,11 +834,12 @@ async function tentarComAReserva(job: Job, pendente: FimDaAnalise): Promise<void
     entregar(job, cancelou(job))
     return
   }
-  if (!reserva) {
+  // Copiou o elenco, ou completou quem faltava: o motor roda de novo.
+  if (!reserva && !completou) {
     entregar(job, pendente)
     return
   }
-  job.fotos = reserva
+  if (reserva) job.fotos = reserva
   job.repetiu = true
   iniciar(job, true)
 }

@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.87.2',
+    itens: [
+      'Gerar recap: quem você já reconheceu no AnCut passa a ser reconhecido também nos episódios cortados pelo motor do Dangai. A cada corte, o Dangai pega do AnCut as fotos de quem ele ainda não conhecia. Quem ele já reconhecia continua igual.',
+    ],
+  },
+  {
     versao: '1.87.1',
     itens: [
       'Gerar recap: quando o corte pelo AnCut para por falta de fotos do elenco, aparece o botão "Reconhecer na mão". O recap corta o episódio de novo na biblioteca dele, junta os rostos parecidos e você dá o nome de cada personagem. Antes o botão sumia e não tinha o que fazer.',
