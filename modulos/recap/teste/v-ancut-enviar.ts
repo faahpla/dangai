@@ -278,7 +278,25 @@ async function testes(): Promise<void> {
   console.log('\n1. recusas (nada escrito)')
   trocarConferenciaDoAncutAberto(async () => null)
   {
-    // As copias dos index.db do AnCut desta maquina (esquema antigo, sem output_root): recusa.
+    // Um AnCut de esquema antigo (sem output_root): recusa. Feito aqui, porque o
+    // AnCut desta maquina atualizou (31/10) e ja tem o esquema do motor.
+    const velho = join(BASE, 'ancut-esquema-antigo.db')
+    copyFileSync(BANCO, velho)
+    {
+      const db = new DatabaseSync(velho)
+      db.exec('ALTER TABLE episode DROP COLUMN output_root')
+      db.close()
+    }
+    const antesDoVelho = sha(velho)
+    process.env['RECAP_TESTE_ANCUT_BANCO'] = velho
+    {
+      const c = await conferirEnvio(ID)
+      const r = await enviarAoAncut(ID, true)
+      ok('AnCut de esquema antigo: esquema diferente, recusa', c.situacao === 'esquema-diferente' && !r.enviado && sha(velho) === antesDoVelho, c.mensagem)
+    }
+    // As copias dos index.db do AnCut desta maquina: so a conferencia (nada e
+    // enviado aqui, o resto do teste precisa do episodio no recap). Esquema
+    // antigo recusa; o atual fica pronto.
     const reais = [join(process.env['LOCALAPPDATA'] ?? '', 'CorteCenas', 'CorteCenas', 'cache', 'index.db'), 'G:\\App Corte Cenas\\cache\\index.db'].filter((p) =>
       existsSync(p),
     )
@@ -288,8 +306,11 @@ async function testes(): Promise<void> {
       const antes = sha(copia)
       process.env['RECAP_TESTE_ANCUT_BANCO'] = copia
       const c = await conferirEnvio(ID)
-      const r = await enviarAoAncut(ID, true)
-      ok(`copia do index.db do AnCut desta maquina (${i + 1}/${reais.length}): esquema diferente, recusa`, c.situacao === 'esquema-diferente' && !r.enviado && sha(copia) === antes, c.mensagem)
+      ok(
+        `copia do index.db do AnCut desta maquina (${i + 1}/${reais.length}): recusa se o esquema e outro, senao pronto`,
+        (c.situacao === 'esquema-diferente' || c.situacao === 'pronto' || c.situacao === 'ja-existe') && sha(copia) === antes,
+        c.mensagem,
+      )
     }
     process.env['RECAP_TESTE_ANCUT_BANCO'] = BANCO
   }
