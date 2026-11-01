@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.88.0',
+    itens: [
+      'Montagem com B-roll: corrigido o que fazia ela pegar cenas sem nada a ver. Um B-roll com "Temporada 2 — ..." em cima dos episódios agora busca mesmo na 2ª temporada, e uma observação no fim do B-roll não puxa mais metade do vídeo para o último episódio.',
+      'A montagem e as sugestões da Biblioteca só usam o anime do vídeo e os da mesma franquia (o Cyberpunk 2077 junto do Edgerunners, as aberturas junto do Bleach). Uma palavra comum como "cruel" não vira mais personagem de outro anime.',
+      'O D, do Cyberpunk, agora é reconhecido no roteiro.',
+    ],
+  },
+  {
     versao: '1.87.5',
     itens: [
       'Configurações > Voz do recap: escolha primeiro ElevenLabs ou Fish Audio, depois a voz e o modelo daquele serviço (Multilingual v2, Eleven v4, Flash v2.5, Eleven v3; S2.1 Pro, S2.1 Pro grátis, S2 Pro, S1). Cada um lembra a sua voz: trocar de um para o outro e voltar devolve a que estava.',
