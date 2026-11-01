@@ -121,6 +121,13 @@ export interface ScriptIndex {
   fichas: Map<string, Set<string>>
   /** apelidos do mais longo para o mais curto, ja normalizados */
   apelidos: { termo: string; character: string }[]
+  /**
+   * Nome de uma ou duas letras ("D", o protagonista da 2a temporada de
+   * Edgerunners): casa so em MAIUSCULA e sozinho no texto original. Pelo
+   * caminho normal ele nunca casava -- e o "e"/"a" do portugues que o piso de
+   * tres letras protege --, e "seriam V e D" saia como frase sem ninguem.
+   */
+  curtos?: { letras: string; character: string }[]
 }
 
 /**
@@ -165,7 +172,11 @@ export function buildScriptIndex(
     .filter((n) => n.termo.length > 0)
     .sort((a, b) => b.termo.length - a.termo.length)
 
-  return { porPalavra, fichas: candidatos, apelidos }
+  const curtos = characters
+    .filter((p) => /^[A-Z]{1,2}$/.test(p.trim()))
+    .map((p) => ({ letras: p.trim(), character: p }))
+
+  return { porPalavra, fichas: candidatos, apelidos, curtos }
 }
 
 /** Nome encurtado -> personagem. Cabe em UM, ou nao casa. */
@@ -195,6 +206,10 @@ export function readLine(frase: string, index: ScriptIndex): ScriptMatch[] {
   for (const palavra of texto.split(/[^a-z0-9]+/)) {
     const dono = index.porPalavra.get(palavra) ?? porPrefixo(palavra, index)
     if (dono) guardar(dono, 'name')
+  }
+
+  for (const curto of index.curtos ?? []) {
+    if (new RegExp(`(^|[^\\p{L}\\p{N}])${curto.letras}(?![\\p{L}\\p{N}])`, 'u').test(frase)) guardar(curto.character, 'name')
   }
 
   let restante = texto

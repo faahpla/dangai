@@ -1,6 +1,6 @@
 import { preferenciasDoBroll, type ItemDoBroll, type PreferenciaDoBroll } from './broll'
 import type { LibraryClip, Nickname, ScriptBlock, SceneDescription } from './channels'
-import { buildScriptIndex, readScript } from './script-reader'
+import { buildScriptIndex, readScript, type ScriptIndex } from './script-reader'
 import { selectClips, type SelectionCandidate } from './selection'
 
 /**
@@ -42,6 +42,86 @@ export interface ContextoDeSugestao {
 }
 
 /**
+ * A FRANQUIA de um anime: os animes da biblioteca com a mesma primeira palavra
+ * longa no nome. "Cyberpunk Edgerunners" traz "Cyberpunk 2077" (as cenas de V e
+ * Johnny dele vem de la); "Bleach Thousand-Year Blood War" traz "Bleach Assets"
+ * (as aberturas).
+ */
+export function familiaDaSerie(serie: string, animes: Iterable<string>): string[] {
+  const palavra = (nome: string): string | undefined =>
+    nome
+      .normalize('NFD')
+      .replace(/\p{Diacritic}/gu, '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .find((p) => p.length >= 5)
+  const dela = palavra(serie)
+  const saida = new Set([serie])
+  if (dela) for (const a of animes) if (palavra(a) === dela) saida.add(a)
+  return [...saida]
+}
+
+const doVideo = new WeakMap<ContextoDeSugestao, { series: string[]; index: ScriptIndex }>()
+
+/**
+ * As series DO VIDEO e o indice de nomes so delas.
+ *
+ * Antes valiam todas as series de algum personagem citado, e o indice tinha os
+ * nomes do acervo inteiro. No "Ninguem e Especial em Cyberpunk" a palavra
+ * "cruel" ("ele ja era extremamente cruel") virou a Isolte Cruel de Mushoku
+ * Tensei, e a montagem pos cenas de Mushoku num video de Cyberpunk. Agora vale
+ * o anime com mais personagens citados (serieDoRoteiro) -- ou o que ele escolheu
+ * na montagem -- e a franquia dele; o nome de fora dela nem e lido. Sem um
+ * anime claro (empate), fica como antes.
+ */
+export function videoDoRoteiro(
+  ctx: ContextoDeSugestao,
+  escolhida: string | null = null,
+): { series: string[]; index: ScriptIndex } {
+  const pronto = escolhida ? undefined : doVideo.get(ctx)
+  if (pronto) return pronto
+  const principal = escolhida ?? serieDoRoteiro(ctx)
+  const series = principal ? familiaDaSerie(principal, new Set(ctx.clips.map((c) => c.anime))) : seriesDoRoteiro(ctx)
+  if (principal && !escolhida) {
+    /*
+     * Video que compara dois animes de verdade continua com os dois: entra a
+     * serie de fora que tem DOIS ou mais personagens citados que a franquia
+     * nao tem. Um nome solto (a "Cruel" de Mushoku) nao basta.
+     */
+    const daFamilia = new Set(ctx.clips.filter((c) => series.includes(c.anime)).flatMap((c) => c.characters))
+    const citados = new Set(
+      readScript(
+        ctx.blocks.map((b) => b.text),
+        buildScriptIndex(ctx.characters, ctx.nicknames),
+      ).flatMap((l) => l.matches.map((m) => m.character)),
+    )
+    const deFora = new Map<string, Set<string>>()
+    for (const c of ctx.clips) {
+      if (series.includes(c.anime)) continue
+      for (const p of c.characters) {
+        if (!citados.has(p) || daFamilia.has(p)) continue
+        deFora.set(c.anime, (deFora.get(c.anime) ?? new Set()).add(p))
+      }
+    }
+    for (const [anime, quem] of deFora) if (quem.size >= 2) series.push(anime)
+  }
+  let index: ScriptIndex
+  if (principal) {
+    const dela = new Set(series)
+    const quem = new Set(ctx.clips.filter((c) => dela.has(c.anime)).flatMap((c) => c.characters))
+    index = buildScriptIndex(
+      ctx.characters.filter((p) => quem.has(p)),
+      ctx.nicknames.filter((n) => quem.has(n.character)),
+    )
+  } else {
+    index = buildScriptIndex(ctx.characters, ctx.nicknames)
+  }
+  const saida = { series, index }
+  if (!escolhida) doVideo.set(ctx, saida)
+  return saida
+}
+
+/**
  * O que o B-roll pede para cada trecho. Casado por FRASE: a virgula corta o
  * trecho, e "em vez de encontrar as memorias dele," sozinho nao diz de que
  * parte do B-roll ele e.
@@ -51,7 +131,7 @@ export function brollDosTrechos(ctx: ContextoDeSugestao): (PreferenciaDoBroll | 
   return preferenciasDoBroll(
     ctx.blocks.map((b) => b.text),
     ctx.broll,
-    buildScriptIndex(ctx.characters, ctx.nicknames),
+    videoDoRoteiro(ctx).index,
     ctx.blocks.map((b) => b.sentence),
   )
 }
@@ -138,7 +218,7 @@ export function serieDoRoteiro(ctx: ContextoDeSugestao): string | null {
  */
 export function personagensDoBloco(ctx: ContextoDeSugestao, bloco: number): string[] {
   if (!ctx.blocks[bloco] || ctx.characters.length === 0) return []
-  const index = buildScriptIndex(ctx.characters, ctx.nicknames)
+  const { index } = videoDoRoteiro(ctx)
   const linhas = readScript(
     ctx.blocks.map((b) => b.text),
     index,
@@ -166,7 +246,7 @@ export function sugerirParaBloco(
   const alvo = ctx.blocks[bloco]
   if (!alvo || ctx.clips.length === 0) return []
 
-  const index = buildScriptIndex(ctx.characters, ctx.nicknames)
+  const { index } = videoDoRoteiro(ctx)
   const linhas = readScript(
     ctx.blocks.map((b) => b.text),
     index,
@@ -197,7 +277,7 @@ export function sugerirParaBloco(
       descriptions: ctx.descriptions,
       // A serie sai do roteiro inteiro, nao deste trecho: trecho sem nome
       // nenhum liberaria o acervo todo e traria Bleach num video de Re:Zero.
-      series: seriesDoRoteiro(ctx),
+      series: videoDoRoteiro(ctx).series,
       broll: [brollDosTrechos(ctx)[bloco] ?? null],
       visao: [ctx.visao?.[bloco] ?? null],
     },

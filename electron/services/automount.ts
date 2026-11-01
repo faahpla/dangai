@@ -6,8 +6,9 @@ import type {
   ScriptBlocksResult,
 } from '@shared/channels'
 import { episodiosQueFaltam, lerBroll, preferenciasDoBroll, resolverTemporadas, rotuloDoItem } from '@shared/broll'
-import { buildScriptIndex, readScript, toPieces, toSentences } from '@shared/script-reader'
+import { readScript, toPieces, toSentences } from '@shared/script-reader'
 import { selectClips } from '@shared/selection'
+import { videoDoRoteiro } from '@shared/suggest'
 import { consultasDosTrechos } from '@shared/visao'
 import { applyScript, transcriptOnly } from './transcribe'
 import { readNicknames } from './nicknames'
@@ -66,17 +67,25 @@ export async function automount(
   }
 
   onProgress('Lendo o roteiro...')
-  /*
-   * Os apelidos de TODAS as series entram juntos.
-   *
-   * Cabe porque nome de personagem nao colide entre as series dele -- medido:
-   * 96 personagens em 7 series, zero palavra repetida. E o que dispensa um
-   * seletor de serie antes de montar.
-   */
   const apelidos = Object.values(readNicknames()).flat()
-  const index = buildScriptIndex(library.characters, apelidos)
-
   const frases = toSentences(transcript.words)
+  /*
+   * O anime do video (o escolhido, ou o que o roteiro mais cita) e a franquia
+   * dele, e so os nomes deles. Ja se achou que nome nao colidia entre as series
+   * dele; com 18 animes colide: a "Lucy" e de Cyberpunk e de Mushoku, e "cruel"
+   * virava a Isolte Cruel de Mushoku num video de Cyberpunk (shared/suggest.ts).
+   */
+  const { series, index } = videoDoRoteiro(
+    {
+      blocks: frases.map((f, i) => ({ ...f, sentence: i })),
+      clips: library.clips,
+      characters: library.characters,
+      nicknames: apelidos,
+      descriptions: {},
+    },
+    request.series,
+  )
+
   const lidas = readScript(
     frases.map((f) => f.text),
     index,
@@ -89,7 +98,6 @@ export async function automount(
   }))
 
   onProgress('Escolhendo as cenas...')
-  const series = request.series ? [request.series] : []
   // "Episodio 4" sem temporada vira o 4 da temporada de quem o B-roll cita.
   const itens = request.broll ? resolverTemporadas(lerBroll(request.broll), library.clips, series, index) : []
   const faltam = episodiosQueFaltam(itens, library.clips, series)
@@ -109,7 +117,7 @@ export async function automount(
   ).catch(() => linhas.map(() => ({})))
   const blocos = selectClips(linhas, library.clips, {
     mode: request.mode,
-    series: request.series ? [request.series] : undefined,
+    series,
     /*
      * O que ja foi lido das cenas. Vazio antes da primeira leitura, e ai a
      * escolha continua sendo a de antes -- ligar o leitor e escolha dele, nao
