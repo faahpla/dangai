@@ -5,8 +5,9 @@ import {
   musicaAbaixoDoAlvoDb,
   planejarSfx,
   REGRAS_DE_SOM_PADRAO,
+  sfxPeloNome,
+  TEMAS_DE_SFX,
   tipoDoSfxPeloNome,
-  TIPOS_DE_SFX,
   type ArquivoDeSfx,
   type MusicaPlanejada,
   type PedidoDePlanoDeSom,
@@ -19,6 +20,7 @@ import {
 } from '../../shared/edicao-rapida'
 import { integradoNoTrecho } from '@shared/loudness'
 import { listSfx, sfxDir } from '../sfx'
+import { golpesDoSom } from './golpes'
 import { medirSomDetalhado, pastaDeReservaDeSfx } from './medir'
 import { escolherMusica, estadoDaPastaDeMusicas } from './musicas'
 
@@ -27,11 +29,15 @@ import { escolherMusica, estadoDaPastaDeMusicas } from './musicas'
  * (quem GRAVA ou RENDERIZA o projeto chama registrarMusicaUsada).
  *
  * 1. SFX (pedido.sfx): os arquivos da pasta de SFX do app (Configuracoes > Sons
- *    de transicao), tipo pelo NOME (tipoDoSfxPeloNome: "pop"/"click" de
+ *    de transicao), tipo pelo NOME (sfxPeloNome: whoosh, impacto, cartoon pop
+ *    so na abertura, riser, riser curto, temas como espada; "click" de
  *    interface fica de fora), RESERVA nos sons que vem com o app so quando a
- *    pasta dele nao tem aquele tipo; cada um medido por loudness (./medir.ts)
- *    e posto pela regra pura planejarSfx (viradas de parte, gancho, climax),
- *    nivelado tambem pela narracao NAQUELE instante (pedido.vozPath).
+ *    pasta dele nao tem whoosh ou impacto; cada um medido por loudness
+ *    (./medir.ts), o arquivo de TEMA com varios golpes separado golpe a golpe
+ *    pela onda (./golpes.ts), e posto pela regra pura planejarSfx (abertura,
+ *    riser na saida do gancho, viradas, climax, tema pela fala em
+ *    pedido.palavras), nivelado tambem pela narracao NAQUELE instante
+ *    (pedido.vozPath).
  * 2. Musica (pedido.musica): a forcada ou a da vez SEM REPETIR; o ganho sai do
  *    integrado do TRECHO que toca (uma musica com introducao calma e refrao
  *    forte seria nivelada errado pelo arquivo inteiro); fades e ducking das
@@ -58,18 +64,20 @@ export async function planejarSom(pedido: PedidoDePlanoDeSom, regras: RegrasDeSo
         regras,
         pedido.duracaoSec,
         await vozParaNivelar(pedido.vozPath, regras),
+        pedido.palavras,
+        sementeDoVideo(pedido.vozPath, pedido.duracaoSec),
       )
       // Um arquivo so de um tipo: ele entra so nas marcas mais importantes.
-      for (const tipo of TIPOS_DE_SFX) {
+      for (const tipo of ['whoosh', 'impacto'] as const) {
         const usados = sfx.filter((s) => s.tipo === tipo)
-        const doTipo = arquivos.filter((x) => x.tipo === tipo)
+        const doTipo = arquivos.filter((x) => x.tipo === tipo && !x.soNaAbertura)
         const dele = doTipo.filter((x) => !x.reserva)
         if (usados.length > 0 && (dele.length > 0 ? dele : doTipo).length === 1) {
           avisos.push(tipo === 'whoosh' ? 'So 1 whoosh na pasta: so nas 2 viradas principais' : `So 1 ${ROTULO[tipo]} na pasta de SFX`)
         }
       }
-      // Partes do roteiro sao o que pede whoosh: sem elas, so o impacto do comeco.
-      if (pedido.secoes.length <= 1 && sfx.length > 0) avisos.push('Sem partes do roteiro: so o impacto do comeco')
+      // Partes do roteiro sao o que pede whoosh e riser: sem elas, so a abertura.
+      if (pedido.secoes.length <= 1 && sfx.length > 0) avisos.push('Sem partes do roteiro: so o som da abertura')
     } catch (err) {
       console.warn('[som] SFX da Edicao rapida falharam:', err)
       avisos.push('Sem SFX: nao deu para ler a pasta de sons')
@@ -88,10 +96,27 @@ export async function planejarSom(pedido: PedidoDePlanoDeSom, regras: RegrasDeSo
   return { musica, sfx, avisos }
 }
 
-const ROTULO: Record<TipoDeSfx, string> = { whoosh: 'whoosh', impacto: 'impacto' }
+const ROTULO: Record<TipoDeSfx, string> = { whoosh: 'whoosh', impacto: 'impacto', riser: 'riser', tema: 'som de tema' }
 const EXTENSOES = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac']
 
-/** Os SFX com tipo e medida: os da pasta dele; os do app so no tipo que faltar. */
+/** Muda de video para video (a abertura com varios pops nao e sempre a mesma), igual ao rodar de novo. */
+function sementeDoVideo(vozPath: string | null, duracaoSec: number): number {
+  let h = Math.round(duracaoSec * 1000)
+  for (const c of vozPath ?? '') h = (h * 31 + c.charCodeAt(0)) | 0
+  return Math.abs(h)
+}
+
+interface Candidato {
+  path: string
+  fileName: string
+  reserva: boolean
+  nome: NonNullable<ReturnType<typeof sfxPeloNome>>
+}
+
+/**
+ * Os SFX com tipo e medida: os da pasta dele; os do app so no whoosh ou
+ * impacto que faltar. Riser e tema so da pasta dele (o app nao tem).
+ */
 async function sfxDisponiveis(): Promise<{ arquivos: ArquivoDeSfx[]; avisos: string[] }> {
   const avisos: string[] = []
   let pastaDele: string | null = null
@@ -114,18 +139,23 @@ async function sfxDisponiveis(): Promise<{ arquivos: ArquivoDeSfx[]; avisos: str
     }
   }
 
-  const candidatos: { path: string; fileName: string; tipo: TipoDeSfx; reserva: boolean }[] = []
-  for (const tipo of TIPOS_DE_SFX) {
-    const dele = pastaDele
-      ? nomesDele.filter((n) => tipoDoSfxPeloNome(n) === tipo).map((n) => ({ path: join(pastaDele!, n), fileName: n, tipo, reserva: false }))
-      : []
-    if (dele.length > 0) {
-      candidatos.push(...dele)
-      continue
+  const deles: Candidato[] = []
+  if (pastaDele) {
+    for (const n of nomesDele) {
+      const nome = sfxPeloNome(n)
+      if (nome) deles.push({ path: join(pastaDele, n), fileName: n, reserva: false, nome })
     }
-    const doApp = reserva
-      ? nomesReserva.filter((n) => tipoDoSfxPeloNome(n) === tipo).map((n) => ({ path: join(reserva, n), fileName: n, tipo, reserva: true }))
-      : []
+  }
+  const candidatos: Candidato[] = [...deles]
+  for (const tipo of ['whoosh', 'impacto'] as const) {
+    if (deles.some((c) => c.nome.tipo === tipo)) continue
+    const doApp: Candidato[] = []
+    if (reserva) {
+      for (const n of nomesReserva) {
+        const nome = sfxPeloNome(n)
+        if (nome?.tipo === tipo) doApp.push({ path: join(reserva, n), fileName: n, reserva: true, nome })
+      }
+    }
     if (doApp.length > 0) {
       candidatos.push(...doApp)
       avisos.push(`Sem ${ROTULO[tipo]} na pasta de SFX: usei o do app`)
@@ -133,13 +163,14 @@ async function sfxDisponiveis(): Promise<{ arquivos: ArquivoDeSfx[]; avisos: str
       avisos.push(`Sem ${ROTULO[tipo]} na pasta de SFX`)
     }
   }
+  if (!deles.some((c) => c.nome.tipo === 'riser')) avisos.push("Sem riser na pasta de SFX (nome com 'riser'): whoosh na saida do gancho")
 
   const arquivos: ArquivoDeSfx[] = []
   for (const c of candidatos) {
     if (!existsSync(c.path)) continue
     try {
       const m = await medirSomDetalhado(c.path)
-      arquivos.push({
+      const arq: ArquivoDeSfx = {
         path: m.path,
         durationSec: m.durationSec,
         lufsIntegrado: m.lufsIntegrado,
@@ -148,9 +179,38 @@ async function sfxDisponiveis(): Promise<{ arquivos: ArquivoDeSfx[]; avisos: str
         inicioSomSec: m.inicioSomSec,
         fimSomSec: m.fimSomSec,
         fileName: c.fileName,
-        tipo: c.tipo,
+        tipo: c.nome.tipo,
         reserva: c.reserva,
-      })
+        ...(c.nome.tema ? { tema: c.nome.tema } : {}),
+        ...(c.nome.soNaAbertura ? { soNaAbertura: true } : {}),
+        ...(c.nome.riserCurto ? { riserCurto: true } : {}),
+      }
+      // NO MOMENTO CERTO PELA ONDA (todos os sons): o ataque e o pico pela
+      // onda fina de 10 ms (golpes.ts), mais precisos que as janelas de 100 ms
+      // do loudness. O pacote de golpes (as 9 espadadas num mp3) vira um
+      // ArquivoDeSfx por golpe, com o pico DELE e o nivel dele contra o mais
+      // forte. O riser nunca se divide: e uma subida so.
+      const golpes = await golpesDoSom(c.path).catch(() => [])
+      const forte = golpes.find((g) => g.relativoDb === 0) ?? golpes[0]
+      if (forte) {
+        arq.inicioSomSec = golpes[0]!.inicioSec
+        arq.picoSec = forte.picoSec
+      }
+      if (golpes.length >= 2 && c.nome.tipo !== 'riser') {
+        golpes.forEach((g, k) => {
+          arquivos.push({
+            ...arq,
+            fileName: `${c.fileName} #${k + 1}`,
+            picoSec: g.picoSec,
+            inicioSomSec: g.inicioSec,
+            fimSomSec: g.fimSec,
+            lufsMomentaneoMax: arq.lufsMomentaneoMax === null ? null : arq.lufsMomentaneoMax + g.relativoDb,
+            recorte: { de: Math.max(g.inicioSec - 0.02, 0), ate: g.ateSec },
+          })
+        })
+      } else {
+        arquivos.push(arq)
+      }
     } catch (err) {
       console.warn('[som] SFX ilegivel:', c.fileName, err)
       avisos.push(`SFX ilegivel: ${c.fileName}`)
@@ -206,7 +266,14 @@ export function sfxDaEdicaoRapida(): SfxDaEdicaoRapida {
     nomesReserva = []
   }
   const saida: SfxDaEdicaoRapida = { whoosh: 0, impacto: 0, deFabrica: true }
-  for (const tipo of TIPOS_DE_SFX) {
+  // Riser, abertura e temas so da pasta dele (o app nao tem).
+  if (pastaDele) {
+    const nomes = nomesDele.map((n) => sfxPeloNome(n))
+    saida.riser = nomes.filter((n) => n?.tipo === 'riser').length
+    saida.abertura = nomes.filter((n) => n?.soNaAbertura).length
+    saida.temas = TEMAS_DE_SFX.filter((t) => nomes.some((n) => n?.tema === t.id)).map((t) => t.rotulo)
+  }
+  for (const tipo of ['whoosh', 'impacto'] as const) {
     const dele = pastaDele ? nomesDele.filter((n) => tipoDoSfxPeloNome(n) === tipo) : []
     if (dele.length > 0) {
       saida[tipo] = dele.length

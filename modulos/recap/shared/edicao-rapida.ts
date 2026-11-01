@@ -135,24 +135,103 @@ export const PASTA_DE_MUSICAS_PADRAO = ''
 
 // ======================================================================= som
 
-/** Os dois tipos de SFX da Edicao rapida (os papeis 'whoosh' e 'impacto' da trilha). */
-export const TIPOS_DE_SFX = ['whoosh', 'impacto'] as const
+/**
+ * Os tipos de SFX da Edicao rapida (os papeis da trilha, uma faixa por tipo):
+ * whoosh nas viradas, impacto na ABERTURA (t = 0) e no climax, RISER na virada
+ * gancho > contexto (01/11, pedido do Levi: "o video SEMPRE comeca com um som
+ * ... depois que termina a frase do hook, na transicao, tem sempre um riser")
+ * e TEMA: o som do assunto (espada, soco, magia...) na virada cuja fala cita
+ * o assunto, no lugar do whoosh.
+ */
+export const TIPOS_DE_SFX = ['whoosh', 'impacto', 'riser', 'tema'] as const
 export const tipoDeSfxSchema = z.enum(TIPOS_DE_SFX)
 export type TipoDeSfx = z.infer<typeof tipoDeSfxSchema>
 
 /**
- * O tipo do som PELO NOME do arquivo (a pasta de SFX do app, Configuracoes >
- * Sons de transicao; hoje impact.mp3 e whoosh.mp3). Nome que nao diz o tipo
- * fica de fora: chutar poria um "pop" de interface onde ele quer algo tatil.
+ * Os TEMAS: o assunto pelo NOME do arquivo (a pasta de SFX) e pela FALA (o
+ * roteiro em volta da virada, sem acento e em minusculas, PT e EN). So entra
+ * o tema que tem arquivo na pasta: soltar "espada-1.mp3" la ja basta.
  */
-const NOME_DE_WHOOSH = /whoosh|woosh|swoosh|swish|swipe|sweep|transi|riser|wind|vento/i
-const NOME_DE_IMPACTO = /impact|impacto|hit|boom|thud|punch|slam|stomp|kick|soco|batida|drop/i
+export interface TemaDeSfx {
+  id: string
+  rotulo: string
+  arquivo: RegExp
+  fala: RegExp
+}
+
+export const TEMAS_DE_SFX: readonly TemaDeSfx[] = [
+  { id: 'espada', rotulo: 'espada', arquivo: /sword|espada|katana|blade|slash|lamina|sabre|saber/i, fala: /\b(espadas?|katanas?|laminas?|sabres?|esgrima|espadachim\w*|swords?\w*|blades?)\b/ },
+  { id: 'soco', rotulo: 'soco', arquivo: /punch|soco|murro|fist|kick|chute/i, fala: /\b(socos?|socou|socar|murros?|chutes?|chutou|porradas?|pancadas?|punch\w*|kick\w*)\b/ },
+  { id: 'explosao', rotulo: 'explosao', arquivo: /explos|blast|bomb/i, fala: /\b(explo\w*|bombas?|detona\w*|blast\w*)\b/ },
+  { id: 'magia', rotulo: 'magia', arquivo: /magic|magia|spell|feitic|sparkle|shimmer|wand|varinha|pixie/i, fala: /\b(magias?|magic\w*|feitic\w*|spells?|grimorio\w*|grimoire\w*|encantament\w*|mana)\b/ },
+  { id: 'fogo', rotulo: 'fogo', arquivo: /fire|fogo|flame|chama|burn/i, fala: /\b(fogo|chamas?|incendi\w*|queim\w*|fire|flames?|burn\w*)\b/ },
+  { id: 'raio', rotulo: 'raio', arquivo: /thunder|lightning|raio|trovao|electric|eletric|zap/i, fala: /\b(raios?|relampag\w*|trov[aoe]\w*|eletric\w*|lightning|thunder\w*|electric\w*)\b/ },
+  { id: 'tiro', rotulo: 'tiro', arquivo: /gun|tiro|pistol|rifle|bullet/i, fala: /\b(tiros?|pistolas?|revolver|rifles?|atirou|atira\w*|disparou|balas?|guns?|gunshots?)\b/ },
+  { id: 'coracao', rotulo: 'coracao', arquivo: /heart|coracao|batimento/i, fala: /\b(coracao|coracoes|batimentos?|heart\w*)\b/ },
+  { id: 'vidro', rotulo: 'vidro', arquivo: /glass|vidro|shatter/i, fala: /\b(vidros?|estilhac\w*|shatter\w*|glass)\b/ },
+  { id: 'camera', rotulo: 'camera', arquivo: /camera|shutter|foto|photo/i, fala: /\b(fotos?|fotograf\w*|cameras?|photos?|photograph\w*)\b/ },
+  { id: 'revelacao', rotulo: 'revelacao', arquivo: /reveal|revela|among.?us|impostor|traitor/i, fala: /\b(revel\w*|traid\w*|traic\w*|impostor\w*|segredos?|reveal\w*|traitor\w*|secrets?)\b/ },
+  { id: 'surpresa', rotulo: 'surpresa', arquivo: /wow|uau|surpris|shock|choque/i, fala: /\b(uau|incrive(l|is)|chocad\w*|surpre\w*|choque|wow|shock\w*|amazing)\b/ },
+  { id: 'sino', rotulo: 'sino', arquivo: /bell|sino/i, fala: /\b(sinos?|badal\w*|bells?)\b/ },
+  { id: 'alerta', rotulo: 'alerta', arquivo: /alert|alarm|alarme|siren|sirene|warning/i, fala: /\b(alarmes?|alertas?|perigo|sirenes?|alarms?|danger|warning)\b/ },
+]
+
+/**
+ * O tipo do som PELO NOME do arquivo (a pasta de SFX do app, Configuracoes >
+ * Sons de transicao). Nome que nao diz o tipo fica de fora: chutar poria um
+ * "click" de interface onde ele quer algo tatil. A ordem importa: "riser" vem
+ * antes do whoosh e o tema antes de tudo o mais ("sword-whoosh" e espada).
+ * `abertura`: o "cartoon pop" so serve para abrir o video, nunca no climax.
+ */
+const NOME_DE_RISER = /riser|rise|uplift|build.?up|swell|crescendo|tension|tensao|suspense/i
+const NOME_DE_RISER_CURTO = /sharp|short|curto|quick|fast|rapido|snap/i
+const NOME_DE_WHOOSH = /whoosh|woosh|swoosh|swish|swipe|sweep|transi|wind|vento/i
+const NOME_DE_IMPACTO = /impact|impacto|hit|boom|thud|slam|stomp|batida|drop/i
+const NOME_DE_ABERTURA = /cartoon|pop|boing|abertura|opening|intro/i
+
+export interface SfxPeloNome {
+  tipo: TipoDeSfx
+  /** O id do tema (TEMAS_DE_SFX), so no tipo 'tema'. */
+  tema?: string
+  /** So para a abertura (o cartoon pop): nunca no climax. */
+  soNaAbertura?: boolean
+  /** O riser curto ("sharp"): o que vai junto do impacto. */
+  riserCurto?: boolean
+}
+
+export function sfxPeloNome(fileName: string): SfxPeloNome | null {
+  const nome = nomeDoArquivo(fileName)
+  if (NOME_DE_RISER.test(nome)) return NOME_DE_RISER_CURTO.test(nome) ? { tipo: 'riser', riserCurto: true } : { tipo: 'riser' }
+  const tema = TEMAS_DE_SFX.find((t) => t.arquivo.test(nome))
+  if (tema) return { tipo: 'tema', tema: tema.id }
+  if (NOME_DE_WHOOSH.test(nome)) return { tipo: 'whoosh' }
+  if (NOME_DE_IMPACTO.test(nome)) return { tipo: 'impacto' }
+  if (NOME_DE_ABERTURA.test(nome)) return { tipo: 'impacto', soNaAbertura: true }
+  return null
+}
 
 export function tipoDoSfxPeloNome(fileName: string): TipoDeSfx | null {
-  const nome = nomeDoArquivo(fileName)
-  if (NOME_DE_WHOOSH.test(nome)) return 'whoosh'
-  if (NOME_DE_IMPACTO.test(nome)) return 'impacto'
-  return null
+  return sfxPeloNome(fileName)?.tipo ?? null
+}
+
+/** A fala sem acento e em minusculas: o que os `fala` dos temas leem. */
+export function falaParaTema(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+}
+
+/** O tema da fala (o primeiro que aparece nela) entre os `ids` que tem arquivo. null = nenhum. */
+export function temaDaFala(texto: string, ids: ReadonlySet<string>): string | null {
+  const fala = falaParaTema(texto)
+  let melhor: { id: string; pos: number } | null = null
+  for (const t of TEMAS_DE_SFX) {
+    if (!ids.has(t.id)) continue
+    const m = t.fala.exec(fala)
+    if (m && (!melhor || m.index < melhor.pos)) melhor = { id: t.id, pos: m.index }
+  }
+  return melhor?.id ?? null
 }
 
 /** O nome do arquivo de um caminho (barra normal ou invertida), sem depender de node:path. */
@@ -195,6 +274,17 @@ export interface MedidaDoSom {
 export interface ArquivoDeSfx extends MedidaDoSom {
   fileName: string
   tipo: TipoDeSfx
+  /** O tema (TEMAS_DE_SFX), so no tipo 'tema'. */
+  tema?: string | null
+  /** O cartoon pop: so abre o video, nunca no climax. */
+  soNaAbertura?: boolean
+  /** O riser curto ("sharp"): vai com o impacto do climax, nao na saida do gancho. */
+  riserCurto?: boolean
+  /**
+   * Um GOLPE de um arquivo com varios (o pacote de espadas): so este pedaco
+   * do arquivo toca. picoSec/inicioSomSec/fimSomSec ja sao os do golpe.
+   */
+  recorte?: { de: number; ate: number }
   /**
    * Veio da pasta de RESERVA (os sons que vem com o app), porque a pasta dele
    * nao tem nenhum deste tipo. Os da pasta dele sempre ganham.
@@ -221,6 +311,13 @@ export const secaoParaSomSchema = z.object({
   fim: z.number().nonnegative(),
 })
 export type SecaoParaSom = z.infer<typeof secaoParaSomSchema>
+
+/** Uma palavra da narracao no tempo do video (o tema le a fala da virada). */
+export const palavraParaSomSchema = z.object({
+  t: z.number().nonnegative(),
+  texto: z.string().max(200),
+})
+export type PalavraParaSom = z.infer<typeof palavraParaSomSchema>
 
 /**
  * As regras de sound design DO LEVI, das edicoes anteriores:
@@ -265,6 +362,10 @@ export interface RegrasDeSom {
   caudaSec: number
   /** O pico do whoosh cai este tanto ANTES do corte: o som "puxa" para a virada. */
   whooshAntesDoCorteSec: number
+  /** O riser sobe no maximo isto antes do corte (o comeco de um riser longo fica de fora). */
+  riserMaxSec: number
+  /** Quantos segundos de fala DEPOIS da virada o tema le (o que a parte nova conta). */
+  falaDoTemaSec: number
   /** A virada gruda no corte de bloco mais perto, ate esta distancia. */
   imaDoCorteSec: number
   /** Ganho de quem nao deu para medir (arquivo silencioso ou curto demais). */
@@ -289,13 +390,16 @@ export const REGRAS_DE_SOM_PADRAO: RegrasDeSom = {
    * transiente -- mais que isso e "pancada", nao marca. No long form calmo o
    * Levi usou whoosh em -36 (22 LU abaixo); no short a voz e mais cheia.
    */
-  abaixoDaVozLu: { whoosh: 14, impacto: 13 },
+  // Riser e tema: o mesmo "bem baixo" do whoosh (01/11).
+  abaixoDaVozLu: { whoosh: 14, impacto: 13, riser: 14, tema: 14 },
   pisoDaVozLocalLu: 20,
   vozEmVoltaSec: 0.2,
   maximoComUmArquivo: 2,
   intervaloMinimoSec: 2.5,
   caudaSec: 0.25,
   whooshAntesDoCorteSec: 0.04,
+  riserMaxSec: 3,
+  falaDoTemaSec: 2.5,
   imaDoCorteSec: 0.35,
   ganhoSemMedidaDb: -18,
   /*
@@ -461,6 +565,8 @@ export const sfxPlanejadoSchema = z.object({
   marcaSec: z.number().nonnegative(),
   /** Por que esta ali, ASCII curto ("virada Gancho > Contexto", "comeco do Climax"). */
   motivo: z.string(),
+  /** Entrada suave: o riser longo que comeca no meio da subida. Ausente = 0. */
+  fadeInSec: z.number().min(0).max(5).optional(),
 })
 export type SfxPlanejado = z.infer<typeof sfxPlanejadoSchema>
 
@@ -507,13 +613,18 @@ export const pedidoDePlanoDeSomSchema = z.object({
    * instante, nao so pelo integrado. null = so pelo integrado.
    */
   vozPath: z.string().min(1).max(1024).nullable().default(null),
+  /** A fala no tempo do video: o TEMA da virada (espada, soco...) sai dela. Vazia = sem tema. */
+  palavras: z.array(palavraParaSomSchema).max(50000).default([]),
 })
 export type PedidoDePlanoDeSom = z.infer<typeof pedidoDePlanoDeSomSchema>
 
 /**
- * Onde cada som marca alguma coisa, ANTES de escolher arquivo: as viradas de
- * parte (whoosh) e o comeco do gancho e do climax (impacto). Corrida de papel
- * repetido (dois 'climax' seguidos) marca so a primeira.
+ * Onde cada som marca alguma coisa, ANTES de escolher arquivo:
+ *   - a ABERTURA (t = 0, sempre: "o video SEMPRE comeca com um som");
+ *   - a virada que SAI DO GANCHO (sem papeis: a 1a virada): o riser;
+ *   - a virada que entra no CLIMAX: o riser curto (o "sharp") com o impacto;
+ *   - as outras viradas de parte: whoosh (o tema troca depois, pela fala).
+ * Corrida de papel repetido (dois 'climax' seguidos) marca so a primeira.
  */
 function marcasDoSom(
   cortes: readonly number[],
@@ -537,16 +648,25 @@ function marcasDoSom(
   const rotulo = (p: SecaoParaSom['papel'], k: number): string =>
     p ? p.charAt(0).toUpperCase() + p.slice(1) : `Parte ${k + 1}`
   const algumPapel = ordenadas.some((s) => s.papel !== null)
-  const marcas: MarcaDoSom[] = []
+  const marcas: MarcaDoSom[] = duracaoSec > 0.3 ? [{ t: 0, tipo: 'impacto', motivo: 'abertura', peso: 0, abertura: true }] : []
+  let saiuDoGancho = false
   ordenadas.forEach((s, k) => {
-    const t = k === 0 ? 0 : grudar(s.inicio)
-    if (t >= duracaoSec - 0.3) return
-    const anterior = k > 0 ? ordenadas[k - 1]! : null
-    if (anterior) marcas.push({ t, tipo: 'whoosh', motivo: `virada ${rotulo(anterior.papel, k - 1)} > ${rotulo(s.papel, k)}`, peso: PESO_DA_VIRADA[s.papel ?? 'nenhum'] })
-    // Sem papel nenhum (projeto do Dangai): a 1a parte faz as vezes de gancho.
-    const abre = algumPapel ? s.papel === 'gancho' || s.papel === 'climax' : k === 0
-    const repete = anterior !== null && anterior.papel === s.papel
-    if (abre && !repete) marcas.push({ t, tipo: 'impacto', motivo: `comeco do ${rotulo(s.papel, k)}`, peso: 0 })
+    if (k === 0) return
+    const t = grudar(s.inicio)
+    if (t >= duracaoSec - 0.3 || t < 0.5) return
+    const anterior = ordenadas[k - 1]!
+    const repete = anterior.papel === s.papel
+    const motivo = `virada ${rotulo(anterior.papel, k - 1)} > ${rotulo(s.papel, k)}`
+    const doGancho = algumPapel ? anterior.papel === 'gancho' && s.papel !== 'gancho' : k === 1
+    if (doGancho && !saiuDoGancho) {
+      saiuDoGancho = true
+      marcas.push({ t, tipo: 'riser', motivo, peso: 0, riser: 'principal' })
+    } else if (s.papel === 'climax' && !repete) {
+      marcas.push({ t, tipo: 'riser', motivo, peso: 0, riser: 'curto' })
+    } else {
+      marcas.push({ t, tipo: 'whoosh', motivo, peso: PESO_DA_VIRADA[s.papel ?? 'nenhum'] })
+    }
+    if (s.papel === 'climax' && !repete) marcas.push({ t, tipo: 'impacto', motivo: `comeco do ${rotulo(s.papel, k)}`, peso: 0 })
   })
   return marcas.sort((a, b) => a.t - b.t)
 }
@@ -557,6 +677,12 @@ interface MarcaDoSom {
   motivo: string
   /** Importancia da marca (0 = a maior): com UM arquivo so, ficam as mais importantes. */
   peso: number
+  /** A abertura do video (t = 0): o cartoon pop, se a pasta tiver. */
+  abertura?: boolean
+  /** Qual riser: o da saida do gancho ou o curto que vai com o impacto do climax. */
+  riser?: 'principal' | 'curto'
+  /** O tema escolhido pela fala (tipo 'tema'). */
+  tema?: string
 }
 
 /**
@@ -576,26 +702,33 @@ const PESO_DA_VIRADA: Record<NonNullable<SecaoParaSom['papel']> | 'nenhum', numb
 }
 
 /**
- * OS SFX DO SHORT: whoosh nas viradas de PARTE, impacto no comeco do gancho e
- * do climax, o resto em silencio. Puro.
+ * OS SFX DO SHORT (01/11, o jeito do Levi): o cartoon pop na abertura, o
+ * riser na saida do gancho, whoosh nas viradas de parte -- ou o som do
+ * ASSUNTO (espada, soco, magia...) quando a fala da virada cita um tema que a
+ * pasta tem --, e no climax o riser curto ("sharp") com o impacto. O resto em
+ * silencio. Puro.
  *
  * - `cenas`: os blocos (so o `start` importa): a virada gruda no corte;
  * - `secoes`: as partes (secoesParaSom);
  * - `arquivos`: os SFX medidos e com tipo; os da pasta dele ganham dos de
- *   reserva, tipo a tipo. Tipo sem arquivo nenhum = sem esse som (o main avisa);
- * - rodizio por tipo: com 2+ arquivos o mesmo nunca toca duas vezes seguidas;
- *   com UM arquivo so, ele toca no maximo `maximoComUmArquivo` vezes, nas
- *   marcas mais importantes (virada para o climax e para o desenvolvimento) --
- *   o mesmo whoosh cinco vezes seguidas era repeticao;
+ *   reserva, tipo a tipo. Tipo sem arquivo nenhum = sem esse som (o riser
+ *   que falta vira whoosh). Um arquivo com varios golpes (o pacote de
+ *   espadas) chega aqui ja separado, um ArquivoDeSfx por golpe (`recorte`);
+ * - abertura: os "cartoon pop" (soNaAbertura) primeiro, senao um impacto; a
+ *   `semente` escolhe entre varios;
+ * - rodizio por tipo (e por tema): com 2+ o mesmo nunca toca duas vezes
+ *   seguidas; com UM so, ele toca no maximo `maximoComUmArquivo` vezes, nas
+ *   marcas mais importantes -- o mesmo whoosh cinco vezes era repeticao;
  * - dois do mesmo tipo a menos de `intervaloMinimoSec`: o segundo cai;
  * - `voz` (a narracao): o SFX fica abaixoDaVozLu[tipo] abaixo de
- *   min(voz integrada, voz ali) (vozNoSfx) -- a virada no meio de uma frase
- *   baixa nao vira "pancada";
- * - o whoosh poe o PICO (picoSec) em marca - whooshAntesDoCorteSec; o impacto
- *   poe o INICIO audivel (inicioSomSec) na marca. Antes do zero, o trecho
- *   entra em 0 e pula o comeco do arquivo (inSec);
- * - out = ultimo instante audivel + caudaSec (sem passar do arquivo); o
- *   `durationSec` e o do arquivo inteiro (a sobra).
+ *   min(voz integrada, voz ali) (vozNoSfx);
+ * - NO MOMENTO CERTO PELA ONDA (a medida de cada arquivo ou golpe): o whoosh
+ *   e o tema poem o PICO em marca - whooshAntesDoCorteSec, o riser poe o
+ *   PICO na marca (sobe ate o corte) com no maximo riserMaxSec de subida, o
+ *   impacto poe o INICIO audivel na marca. Antes do zero, o trecho entra em 0
+ *   e pula o comeco do arquivo (inSec);
+ * - out = ultimo instante audivel + caudaSec (sem passar do arquivo nem do
+ *   recorte); o `durationSec` e o do arquivo inteiro (a sobra).
  */
 export function planejarSfx(
   cenas: readonly { start: number }[],
@@ -604,55 +737,123 @@ export function planejarSfx(
   regras: RegrasDeSom = REGRAS_DE_SOM_PADRAO,
   duracaoSec: number = Number.POSITIVE_INFINITY,
   voz: VozParaNivelar | null = null,
+  palavras: readonly PalavraParaSom[] = [],
+  semente = 0,
 ): SfxPlanejado[] {
   const cortes = [...new Set(cenas.map((c) => c.start).filter((t) => Number.isFinite(t) && t > 0))].sort((a, b) => a - b)
-  const usaveis = (tipo: TipoDeSfx): ArquivoDeSfx[] => {
-    const doTipo = arquivos
-      .filter((a) => a.tipo === tipo && a.durationSec > 0)
-      .sort((a, b) => a.fileName.localeCompare(b.fileName, 'pt-BR'))
-    const dele = doTipo.filter((a) => !a.reserva)
-    return dele.length > 0 ? dele : doTipo
+  const ordem = (lista: readonly ArquivoDeSfx[]): ArquivoDeSfx[] => {
+    const dele = lista.filter((a) => !a.reserva)
+    return [...(dele.length > 0 ? dele : lista)].sort((a, b) => a.fileName.localeCompare(b.fileName, 'pt-BR'))
   }
-  const porTipo: Record<TipoDeSfx, ArquivoDeSfx[]> = { whoosh: usaveis('whoosh'), impacto: usaveis('impacto') }
-  const ultimoNoTipo: Record<TipoDeSfx, number> = { whoosh: Number.NEGATIVE_INFINITY, impacto: Number.NEGATIVE_INFINITY }
-  const vezNoTipo: Record<TipoDeSfx, number> = { whoosh: 0, impacto: 0 }
+  const doTipo = (tipo: TipoDeSfx): ArquivoDeSfx[] => arquivos.filter((a) => a.tipo === tipo && a.durationSec > 0)
+  const impactos = doTipo('impacto')
+  const risers = doTipo('riser')
+  const pops = impactos.filter((a) => a.soNaAbertura)
+  const longos = risers.filter((a) => !a.riserCurto)
+  const pools = {
+    abertura: ordem(pops.length > 0 ? pops : impactos),
+    impacto: ordem(impactos.filter((a) => !a.soNaAbertura)),
+    whoosh: ordem(doTipo('whoosh')),
+    principal: ordem(longos.length > 0 ? longos : risers),
+    curto: ordem(risers.filter((a) => a.riserCurto)),
+  }
+  const temas = new Map<string, ArquivoDeSfx[]>()
+  for (const a of doTipo('tema')) {
+    if (!a.tema) continue
+    temas.set(a.tema, [...(temas.get(a.tema) ?? []), a])
+  }
+  for (const [id, lista] of temas) temas.set(id, ordem(lista))
+  const comArquivo = new Set(temas.keys())
 
+  let marcas = marcasDoSom(cortes, secoes, regras, duracaoSec)
+  // O riser que a pasta nao tem vira whoosh (no climax o impacto fica).
+  marcas = marcas.map((m) => {
+    if (m.tipo !== 'riser' || pools[m.riser ?? 'principal'].length > 0) return m
+    const { riser: _r, ...resto } = m
+    return { ...resto, tipo: 'whoosh' as const, peso: m.riser === 'curto' ? PESO_DA_VIRADA.climax : m.peso }
+  })
+  // O TEMA: a fala logo depois da virada (o que a parte nova conta) cita um
+  // assunto que tem som na pasta -- ele toca no lugar do whoosh.
+  const vezesDoTema = new Map<string, number>()
+  marcas = marcas.map((m) => {
+    if (m.tipo !== 'whoosh' || comArquivo.size === 0) return m
+    const fala = palavras
+      .filter((p) => p.t >= m.t - 0.2 && p.t <= m.t + regras.falaDoTemaSec)
+      .map((p) => p.texto)
+      .join(' ')
+    const tema = fala ? temaDaFala(fala, comArquivo) : null
+    if (!tema) return m
+    const n = vezesDoTema.get(tema) ?? 0
+    if (temas.get(tema)!.length === 1 && n >= regras.maximoComUmArquivo) return m
+    vezesDoTema.set(tema, n + 1)
+    return { ...m, tipo: 'tema' as const, tema, motivo: `${m.motivo} (${tema})` }
+  })
   // Com UM arquivo so do tipo: as marcas mais importantes, ate o maximo, sem
   // duas perto demais (a escolha e por peso; a ordem do video volta depois).
-  let marcas = marcasDoSom(cortes, secoes, regras, duracaoSec)
-  for (const tipo of TIPOS_DE_SFX) {
-    if (porTipo[tipo].length !== 1) continue
-    const doTipo = marcas.filter((m) => m.tipo === tipo)
-    if (doTipo.length <= regras.maximoComUmArquivo) continue
+  for (const tipo of ['whoosh', 'impacto'] as const) {
+    if (pools[tipo].length !== 1) continue
+    const doTipoAqui = marcas.filter((m) => m.tipo === tipo && !m.abertura)
+    if (doTipoAqui.length <= regras.maximoComUmArquivo) continue
     const ficam: MarcaDoSom[] = []
-    for (const m of [...doTipo].sort((a, b) => a.peso - b.peso || a.t - b.t)) {
+    for (const m of [...doTipoAqui].sort((a, b) => a.peso - b.peso || a.t - b.t)) {
       if (ficam.length >= regras.maximoComUmArquivo) break
       if (ficam.some((f) => Math.abs(f.t - m.t) < regras.intervaloMinimoSec)) continue
       ficam.push(m)
     }
-    marcas = marcas.filter((m) => m.tipo !== tipo || ficam.includes(m))
+    marcas = marcas.filter((m) => m.tipo !== tipo || m.abertura || ficam.includes(m))
   }
 
+  const ultimo = new Map<string, number>()
+  const vez = new Map<string, number>()
+  let daAbertura: ArquivoDeSfx | null = null
   const saida: SfxPlanejado[] = []
   for (const marca of marcas) {
-    const lista = porTipo[marca.tipo]
+    const chave = marca.abertura
+      ? 'abertura'
+      : marca.tipo === 'tema'
+        ? `tema:${marca.tema}`
+        : marca.tipo === 'riser'
+          ? `riser:${marca.riser}`
+          : marca.tipo
+    let lista: ArquivoDeSfx[] = marca.abertura
+      ? pools.abertura
+      : marca.tipo === 'tema'
+        ? (temas.get(marca.tema ?? '') ?? [])
+        : marca.tipo === 'riser'
+          ? pools[marca.riser ?? 'principal']
+          : marca.tipo === 'impacto'
+            ? pools.impacto
+            : pools.whoosh
     if (lista.length === 0) continue
-    if (marca.t - ultimoNoTipo[marca.tipo] < regras.intervaloMinimoSec) continue
-    const arq = lista[vezNoTipo[marca.tipo] % lista.length]!
-    vezNoTipo[marca.tipo] += 1
-    ultimoNoTipo[marca.tipo] = marca.t
+    if (marca.t - (ultimo.get(chave) ?? Number.NEGATIVE_INFINITY) < regras.intervaloMinimoSec) continue
+    // O impacto do climax nao repete o som da abertura (quando ha outro).
+    if (marca.tipo === 'impacto' && !marca.abertura && daAbertura && lista.length > 1) lista = lista.filter((a) => a !== daAbertura)
+    const k = vez.get(chave) ?? 0
+    const arq = marca.abertura ? lista[Math.abs(Math.trunc(semente)) % lista.length]! : lista[k % lista.length]!
+    vez.set(chave, k + 1)
+    ultimo.set(chave, marca.t)
+    if (marca.abertura) daAbertura = arq
 
-    const ancora = marca.tipo === 'whoosh' ? arq.picoSec : arq.inicioSomSec
-    const alvo = marca.tipo === 'whoosh' ? marca.t - regras.whooshAntesDoCorteSec : marca.t
-    let at = alvo - Math.max(ancora, 0)
-    let inSec = 0
+    const ancora = marca.tipo === 'impacto' ? arq.inicioSomSec : arq.picoSec
+    const alvo = marca.tipo === 'whoosh' || marca.tipo === 'tema' ? marca.t - regras.whooshAntesDoCorteSec : marca.t
+    const base = arq.recorte?.de ?? 0
+    let inSec = base
+    let at = alvo - Math.max(ancora - base, 0)
+    // O riser sobe no maximo riserMaxSec: o resto do comeco dele fica de fora.
+    let fadeInSec = 0
+    if (marca.tipo === 'riser' && ancora - base > regras.riserMaxSec) {
+      inSec = ancora - regras.riserMaxSec
+      at = alvo - regras.riserMaxSec
+      fadeInSec = 0.3
+    }
     if (at < 0) {
-      inSec = Math.min(-at, Math.max(arq.durationSec - 0.05, 0))
+      inSec = Math.min(inSec - at, Math.max(arq.durationSec - 0.05, 0))
       at = 0
     }
-    const fimAudivel = arq.fimSomSec > 0 ? arq.fimSomSec : arq.durationSec
-    let outSec = Math.min(arq.durationSec, fimAudivel + regras.caudaSec)
-    if (outSec <= inSec + 0.05) outSec = arq.durationSec
+    const teto = Math.min(arq.durationSec, arq.recorte?.ate ?? arq.durationSec)
+    const fimAudivel = arq.fimSomSec > 0 ? arq.fimSomSec : teto
+    let outSec = Math.min(teto, fimAudivel + regras.caudaSec)
+    if (outSec <= inSec + 0.05) outSec = teto
     // O integrado manda; a voz ali (a frase em volta) so pode ABAIXAR.
     saida.push({
       at: arredondar(at),
@@ -664,12 +865,12 @@ export function planejarSfx(
       durationSec: arq.durationSec,
       marcaSec: arredondar(marca.t),
       motivo: marca.motivo,
+      ...(fadeInSec > 0 ? { fadeInSec } : {}),
     })
   }
-  // Whoosh e impacto na MESMA marca (a virada que abre o climax): o whoosh
-  // puxa e o impacto bate, mas juntos somavam ~4 LU acima do alvo (medido:
-  // -24 LUFS momentaneo). Os sons da mesma marca dividem o alvo em potencia
-  // (-3 dB cada um quando sao dois), e o "bem baixo" continua valendo.
+  // Dois sons na MESMA marca (o riser curto e o impacto do climax): juntos
+  // somavam ~4 LU acima do alvo (medido: -24 LUFS momentaneo). Os sons da
+  // mesma marca dividem o alvo em potencia (-3 dB cada um quando sao dois).
   for (const s of saida) {
     const juntos = saida.filter((o) => Math.abs(o.marcaSec - s.marcaSec) < 0.05).length
     if (juntos > 1) s.ganhoDb = prenderGanho(s.ganhoDb - 10 * Math.log10(juntos))
@@ -703,7 +904,7 @@ export {
 type TrechoNaFaixa = Pick<TrechoDeAudioSalvo, 'faixa' | 'papel' | 'at' | 'durationSec' | 'inicioSec' | 'usarSec'>
 type TrechoQueEntra = Pick<TrechoDeAudioSalvo, 'papel' | 'at' | 'durationSec' | 'inicioSec' | 'usarSec'>
 
-const PAPEIS_DA_TRILHA: readonly PapelDaTrilha[] = ['musica', 'whoosh', 'impacto']
+const PAPEIS_DA_TRILHA: readonly PapelDaTrilha[] = ['musica', 'whoosh', 'impacto', 'riser', 'tema']
 
 /**
  * A faixa de cada papel (camadas separadas por tipo; as dele nunca se misturam
@@ -813,7 +1014,7 @@ export function trilhasDoPlanoDeSom(
       inicioSec: s.inSec,
       usarSec: ateOFim ? null : arredondar(usar),
       gainDb: s.ganhoDb,
-      fadeInSec: 0,
+      fadeInSec: s.fadeInSec ?? 0,
       fadeOutSec: ateOFim ? 0 : 0.03,
       peaks: [],
       rms: [],
@@ -1370,6 +1571,12 @@ export type FonteDoRosto = 'motor' | 'lbp'
 export interface SfxDaEdicaoRapida {
   whoosh: number
   impacto: number
+  /** Risers da pasta dele (a saida do gancho; o "sharp" vai com o impacto). Ausente = versao antiga. */
+  riser?: number
+  /** Cartoon pops (so a abertura). */
+  abertura?: number
+  /** Os temas que a pasta tem (espada, soco...). */
+  temas?: string[]
   /** Todos os que entrariam sao os de fabrica (iguais aos do app). */
   deFabrica: boolean
 }
@@ -1414,6 +1621,9 @@ export interface ResumoDaEdicaoRapida {
   config: ConfigDaEdicaoRapida
   whoosh: number
   impacto: number
+  /** Risers e sons de tema postos (01/11). Ausente = 0. */
+  riser?: number
+  tema?: number
   /** O nome do arquivo da musica posta. null = sem musica. */
   musica: string | null
   rostos: { comRosto: number; total: number; fonte: RostosDoLote['fonte'] } | null

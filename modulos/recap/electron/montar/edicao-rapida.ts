@@ -358,7 +358,14 @@ export async function rostosDaMontagem(
  */
 export async function somDaMontagem(
   config: Pick<ConfigDaEdicaoRapida, 'sfx' | 'musica'>,
-  e: { duracaoSec: number; cortes: readonly number[]; secoes: readonly SecaoDoStudio[]; vozPath?: string | null },
+  e: {
+    duracaoSec: number
+    cortes: readonly number[]
+    secoes: readonly SecaoDoStudio[]
+    vozPath?: string | null
+    /** A fala no tempo do video: o som do tema (espada, soco...) da virada. */
+    palavras?: readonly { t: number; texto: string }[]
+  },
 ): Promise<{ trilhas: TrechoDeAudioSalvo[]; plano: PlanoDeSom | null; avisos: string[] }> {
   if (!config.sfx && !config.musica) return { trilhas: [], plano: null, avisos: [] }
   try {
@@ -371,6 +378,7 @@ export async function somDaMontagem(
       evitarMusicas: [],
       musicaForcada: null,
       vozPath: e.vozPath ?? null,
+      palavras: (e.palavras ?? []).slice(0, 50000).map((p) => ({ t: Math.max(p.t, 0), texto: p.texto.slice(0, 200) })),
     })
     // Projeto novo: so os papeis que entram ganham faixa (sem whoosh, o
     // impacto fica logo abaixo da musica).
@@ -457,6 +465,8 @@ export function resumoDaMontagem(e: {
     config: e.config,
     whoosh: sfx.filter((s) => s.tipo === 'whoosh').length,
     impacto: sfx.filter((s) => s.tipo === 'impacto').length,
+    riser: sfx.filter((s) => s.tipo === 'riser').length,
+    tema: sfx.filter((s) => s.tipo === 'tema').length,
     musica: e.plano?.musica ? nomeDoCaminho(e.plano.musica.arquivo) : null,
     rostos: e.rostoRodou
       ? e.lote

@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.88.1',
+    itens: [
+      'Edição rápida do recap: o vídeo sempre abre com um som (o cartoon pop, se a pasta de SFX tiver; senão um impacto), e a saída do gancho leva um riser com o pico no corte.',
+      'No clímax entra o riser curto (com "sharp" no nome) junto do impacto.',
+      'Sons de tema: quando a fala logo depois de uma virada cita espada, soco, magia, foto, sino, revelação e outros, entra o som daquele assunto no lugar do whoosh. Basta o nome do arquivo dizer o assunto (ex.: "sword slash"). Um arquivo com vários golpes é separado sozinho, e cada virada usa um golpe diferente.',
+      'Cada som entra no momento certo pela onda: o pico do whoosh, do riser e do golpe cai no corte, e o ataque do impacto bate em cima dele.',
+    ],
+  },
+  {
     versao: '1.88.0',
     itens: [
       'Montagem com B-roll: corrigido o que fazia ela pegar cenas sem nada a ver. Um B-roll com "Temporada 2 — ..." em cima dos episódios agora busca mesmo na 2ª temporada, e uma observação no fim do B-roll não puxa mais metade do vídeo para o último episódio.',

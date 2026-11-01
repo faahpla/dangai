@@ -29,7 +29,7 @@ import { papelDaSecaoSchema } from './roteiro'
 export const ID_DO_MODULO = 'recap'
 export const VERSAO_DO_RECAP_NO_PROJETO = 1 as const
 
-export const PAPEIS_DA_TRILHA = ['musica', 'whoosh', 'impacto'] as const
+export const PAPEIS_DA_TRILHA = ['musica', 'whoosh', 'impacto', 'riser', 'tema'] as const
 export const papelDaTrilhaSchema = z.enum(PAPEIS_DA_TRILHA)
 export type PapelDaTrilha = z.infer<typeof papelDaTrilhaSchema>
 

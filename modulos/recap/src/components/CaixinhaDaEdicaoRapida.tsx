@@ -100,6 +100,12 @@ function avisoDosSfx(s: SfxDaEdicaoRapida): { curto: string; longo: string } | n
       longo: `A pasta de SFX so tem os sons de fabrica do app (${contagem}): sinteticos e genericos, e o whoosh entra so nas 2 viradas principais. Solte 3 ou mais whoosh e 2 ou mais impactos seus (tateis, organicos).`,
     }
   }
+  if (s.riser === 0) {
+    return {
+      curto: 'Sem riser',
+      longo: `A pasta de SFX nao tem riser (pelo nome do arquivo): a saida do gancho leva whoosh. Solte um riser (nome com "riser"; "sharp" no nome = o curto, que vai com o impacto do climax).`,
+    }
+  }
   if (s.whoosh < 2) {
     return {
       curto: s.whoosh === 0 ? 'Sem whoosh' : 'So 1 whoosh',

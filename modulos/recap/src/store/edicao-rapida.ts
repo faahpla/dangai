@@ -273,6 +273,8 @@ export async function prepararEdicaoRapida(
     config,
     whoosh: aplicadas.filter((t) => t.papel === 'whoosh').length,
     impacto: aplicadas.filter((t) => t.papel === 'impacto').length,
+    riser: aplicadas.filter((t) => t.papel === 'riser').length,
+    tema: aplicadas.filter((t) => t.papel === 'tema').length,
     musica: musica ? (aplicadas.find((t) => t.papel === 'musica')?.fileName ?? null) : null,
     rostos: rostos ? { comRosto: rostos.comRosto, total: rostos.total, fonte: rostos.fonte } : null,
     legenda: legenda !== null,
@@ -465,6 +467,8 @@ async function prepararSom(
     musicaForcada: forcada,
     // A narracao: cada SFX tambem fica abaixo da voz NAQUELE instante.
     vozPath: e.audio?.path ?? null,
+    // A fala: o som do tema (espada, soco...) sai do que a virada conta.
+    palavras: (e.transcript?.words ?? []).slice(0, 50000).map((w) => ({ t: Math.max(w.start, 0), texto: w.text.slice(0, 200) })),
   })
   if (!r.ok) {
     avisos.push(`Sem som: ${r.error}`)
@@ -492,9 +496,11 @@ async function prepararSom(
   })
   // So troca o papel que tem substituto: pasta vazia nao apaga o que ja estava.
   const papeis = new Set<PapelDaTrilha>()
-  if (config.sfx && novas.some((t) => t.papel === 'whoosh' || t.papel === 'impacto')) {
+  if (config.sfx && novas.some((t) => t.papel === 'whoosh' || t.papel === 'impacto' || t.papel === 'riser' || t.papel === 'tema')) {
     papeis.add('whoosh')
     papeis.add('impacto')
+    papeis.add('riser')
+    papeis.add('tema')
   }
   if (config.musica && novas.some((t) => t.papel === 'musica')) papeis.add('musica')
   return { novas, papeis, plano }
@@ -765,8 +771,7 @@ export function linhasDoResumo(
 ): { rotulo: string; valor: string; dica?: string }[] {
   const linhas: { rotulo: string; valor: string; dica?: string }[] = []
   if (r.config.sfx) {
-    const n = r.whoosh + r.impacto
-    linhas.push({ rotulo: 'Sons', valor: n === 0 ? 'nenhum' : `${r.whoosh} whoosh, ${r.impacto} ${r.impacto === 1 ? 'impacto' : 'impactos'}` })
+    linhas.push({ rotulo: 'Sons', valor: contagemDosSons(r) })
   }
   if (r.config.musica) {
     const tirar = (nome: string): string => nome.replace(/\.[^.]+$/, '')
@@ -791,6 +796,17 @@ export function linhasDoResumo(
 }
 
 /** A linha dos Textos na tela: quantos entraram, e os que ele tinha mexido. */
+/** "1 riser, 3 whoosh, 2 impactos, 1 de tema" (so o que entrou). */
+function contagemDosSons(r: ResumoDaEdicaoRapida): string {
+  const partes = [
+    r.riser ? `${r.riser} riser` : '',
+    r.whoosh ? `${r.whoosh} whoosh` : '',
+    r.impacto ? `${r.impacto} ${r.impacto === 1 ? 'impacto' : 'impactos'}` : '',
+    r.tema ? `${r.tema} de tema` : '',
+  ].filter(Boolean)
+  return partes.length === 0 ? 'nenhum' : partes.join(', ')
+}
+
 function linhaDosTextos(r: ResumoDaEdicaoRapida): { rotulo: string; valor: string; dica?: string } {
   const t = r.textos
   if (!t || (t.postos === 0 && t.mantidos === 0)) {

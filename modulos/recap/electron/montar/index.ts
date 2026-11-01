@@ -369,6 +369,7 @@ async function montarAqui(
           cortes: previa.pedacos.map((p, j) => (j === 0 ? 0 : p.inicio)),
           secoes: secoesDoTake(roteiro, take, eventos, nomes.porFrase),
           vozPath: narracaoPath,
+          palavras: take.palavras.map((p) => ({ t: p.start, texto: p.texto })),
         })
       : Promise.resolve(null)
 
