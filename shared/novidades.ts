@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.90.1',
+    itens: [
+      'Gerar recap: o roteiro não é mais gerado sozinho ao abrir o episódio. O passo do roteiro abre com "Meu roteiro" (colar o seu) e "Gerar roteiro" (a IA escreve), e nada gasta cota até você escolher. Quem prefere o jeito antigo liga "Gerar roteiro sozinho" em Configurações > Roteiro do recap.',
+    ],
+  },
+  {
     versao: '1.90.0',
     itens: [
       'Mangá na Biblioteca: ponha os capítulos em D:\\Mangás, uma pasta por anime e uma por capítulo, com as páginas do jeito que você baixa. O Dangai recorta os quadrinhos sozinho e mostra cada página seguida dos quadrinhos dela, em "Bleach > Mangá · Capítulo...". A sua pasta fica como está. Para usar outra pasta: Configurações > Mangás.',

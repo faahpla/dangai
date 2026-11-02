@@ -271,6 +271,7 @@ export interface PonteDoRecap {
     pastaDeMusicas?: string
     edicaoRapidaPadrao?: unknown
     revisarAoGerar?: boolean
+    gerarRoteiroSozinho?: boolean
     escritor?: Escritor
     modeloGeminiPro?: string
     cenas?: Partial<ConfigDasCenas>

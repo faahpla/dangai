@@ -47,6 +47,12 @@ export interface ConfigDoRecap {
    * (electron/gerar/estilo.ts): e grande demais para o settings.json.
    */
   revisarAoGerar: boolean
+  /**
+   * (02/11) Ao entrar no passo 2 sem roteiro, pedir um a IA sozinho. DESLIGADO
+   * por padrao: o Levi costuma colar o roteiro dele e nao quer gastar cota.
+   * Desligado, o passo abre com "Meu roteiro" e "Gerar roteiro".
+   */
+  gerarRoteiroSozinho: boolean
   escritor: Escritor
   /** O modelo do "Gemini Pro" ('' = o apelido do pro atual, MODELO_GEMINI_PRO_PADRAO). */
   modeloGeminiPro: string
@@ -167,6 +173,7 @@ export const CONFIG_PADRAO: ConfigDoRecap = {
   pastaDeMusicas: '',
   edicaoRapidaPadrao: PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO,
   revisarAoGerar: true,
+  gerarRoteiroSozinho: false,
   escritor: 'gemini',
   modeloGeminiPro: '',
   cenas: CENAS_PADRAO,
@@ -187,6 +194,7 @@ export function coerceConfig(raw: unknown): ConfigDoRecap {
     pastaDeMusicas,
     edicaoRapidaPadrao: preferenciasDaEdicaoRapidaSchema.catch(PREFERENCIAS_DA_EDICAO_RAPIDA_PADRAO).parse(r['edicaoRapidaPadrao'] ?? {}),
     revisarAoGerar: r['revisarAoGerar'] !== false,
+    gerarRoteiroSozinho: r['gerarRoteiroSozinho'] === true,
     escritor: (ESCRITORES_IDS as readonly unknown[]).includes(r['escritor']) ? (r['escritor'] as Escritor) : 'gemini',
     modeloGeminiPro: nomeDeModelo(r['modeloGeminiPro'], ''),
     cenas: cenasSalvas(r['cenas']),

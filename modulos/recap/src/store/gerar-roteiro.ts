@@ -521,18 +521,31 @@ export const useRoteiro = create<EstadoDoRoteiro>((set, get) => {
   }
 
   /**
-   * Sem roteiro ainda: gera sozinho, UMA vez por rascunho na sessao. Se falhar
-   * ou for cancelado, o botao "Gerar roteiro" assume -- reentrar no passo nao
-   * pode virar uma chamada nova a cada vez (a cota e curta).
+   * Sem roteiro ainda: gera sozinho, UMA vez por rascunho na sessao -- so com
+   * o "Gerar roteiro sozinho" ligado (02/11, desligado por padrao: o Levi cola
+   * o dele e nao quer gastar cota). Se falhar ou for cancelado, o botao "Gerar
+   * roteiro" assume -- reentrar no passo nao pode virar uma chamada nova a cada
+   * vez (a cota e curta).
    */
   const gerarSozinho = (): void => {
-    const s = get()
-    const r = s.rascunho
-    if (!r || r.atual !== null || s.geracao || jaGerados.has(r.id)) return
-    const indice = indiceDaTela()
-    if (!indice || cuesElegiveis(indice).length === 0) return
-    jaGerados.add(r.id)
-    void get().gerar()
+    const pode = (): boolean => {
+      const s = get()
+      const r = s.rascunho
+      if (!r || r.atual !== null || s.geracao || s.colando || jaGerados.has(r.id)) return false
+      const indice = indiceDaTela()
+      return !!indice && cuesElegiveis(indice).length > 0
+    }
+    const id = get().rascunho?.id
+    if (!id || !pode()) return
+    void ponte
+      .lerConfig()
+      .catch(() => null)
+      .then((c) => {
+        // A config chega depois: o rascunho ainda e o mesmo e ainda sem roteiro?
+        if (!c?.ok || !c.value.gerarRoteiroSozinho || get().rascunho?.id !== id || !pode()) return
+        jaGerados.add(id)
+        void get().gerar()
+      })
   }
 
   /** Reler o rascunho ao voltar ao passo: a legenda pode ter sido relida no passo 1. */

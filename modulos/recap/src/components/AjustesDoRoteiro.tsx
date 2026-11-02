@@ -79,7 +79,7 @@ export function AjustesDoRoteiro() {
     else relogio.current = setTimeout(() => void gravar(e), ESPERA_MS)
   }
 
-  const salvarConfig = async (patch: { revisarAoGerar?: boolean; escritor?: Escritor; modeloGeminiPro?: string }): Promise<void> => {
+  const salvarConfig = async (patch: { revisarAoGerar?: boolean; gerarRoteiroSozinho?: boolean; escritor?: Escritor; modeloGeminiPro?: string }): Promise<void> => {
     const r = await ponte.salvarConfig(patch)
     if (r.ok) setConfig(r.value)
     else setAviso(r.error)
@@ -300,6 +300,14 @@ export function AjustesDoRoteiro() {
       </div>
 
       <div className="flex flex-col gap-2 border-t border-line pt-3">
+        <Caixinha
+          ligada={config?.gerarRoteiroSozinho ?? false}
+          onChange={(v) => void salvarConfig({ gerarRoteiroSozinho: v })}
+          disabled={!config}
+          title="Ao abrir um episodio sem roteiro, a IA ja escreve um. Desligado, voce escolhe: Meu roteiro ou Gerar roteiro."
+        >
+          Gerar roteiro sozinho
+        </Caixinha>
         <Caixinha
           ligada={config?.revisarAoGerar ?? true}
           onChange={(v) => void salvarConfig({ revisarAoGerar: v })}

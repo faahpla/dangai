@@ -60,8 +60,9 @@ const AVISOS_DA_BARRA = new Set<ProblemaDoRoteiro['codigo']>(['sem-gancho', 'sem
  * O PASSO 2 DO ASSISTENTE: o roteiro do short, em partes, para ler, editar,
  * pedir outra versao e aprovar. O app PARA aqui: nada segue sem o "Aprovar".
  *
- * Ao entrar, abre o rascunho do episodio e, sem roteiro, pede a IA uma vez
- * (eventos e roteiro). Tudo o que muda vai sozinho para o disco
+ * Ao entrar, abre o rascunho do episodio. Sem roteiro, mostra "Meu roteiro" e
+ * "Gerar roteiro"; so com o "Gerar roteiro sozinho" ligado (02/11, desligado
+ * por padrao) pede a IA uma vez (eventos e roteiro). Tudo o que muda vai sozinho para o disco
  * (gerar-roteiro.ts); fechar e reabrir o app volta aqui.
  *
  * Duas vistas ("Partes | Texto"): uma frase por campo, com o momento de cada

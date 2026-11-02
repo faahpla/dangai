@@ -199,6 +199,12 @@ async function principal(): Promise<void> {
   )
   confere(aplicarPatch(depoisDoPatch, { escritor: 'gemini' }).naoPerguntarChave === true, 'outro patch nao apaga')
 
+  console.log('\n== config: gerarRoteiroSozinho (02/11)')
+  confere(CONFIG_PADRAO.gerarRoteiroSozinho === false && coerceConfig(undefined).gerarRoteiroSozinho === false, 'padrao: desligado (nao gasta cota sozinho)')
+  confere(coerceConfig({ gerarRoteiroSozinho: true }).gerarRoteiroSozinho === true, 'true volta do disco')
+  confere(coerceConfig({ gerarRoteiroSozinho: 'sim' }).gerarRoteiroSozinho === false, 'lixo vale false')
+  confere(aplicarPatch(depoisDoPatch, { gerarRoteiroSozinho: true }).naoPerguntarChave === true, 'o patch dele nao apaga os outros')
+
   console.log('\n== Quem ve a tela')
   confere(pedeBoasVindas({ provedor: null, naoPerguntarChave: false }), 'sem IA nenhuma: ve')
   confere(!pedeBoasVindas({ provedor: 'gemini', naoPerguntarChave: false }), 'com a do Gemini: nao ve')
