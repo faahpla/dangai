@@ -129,6 +129,9 @@ confere(climax.some((s) => s.tipo === 'riser' && nome(s).startsWith('sharp')) &&
 const deep = climax.find((s) => s.tipo === 'impacto')
 confere(deep !== undefined && Math.abs(deep.at + 0.46 - 28) < 0.002, 'o ataque do impacto (0,46 s no arquivo) cai no corte')
 confere(plano.filter((s) => s.tipo === 'whoosh').length === 1, 'o resto: whoosh (so a virada > fechamento)')
+confere(deep !== undefined && deep.inSec === 0 && deep.outSec === 4.95, 'o impacto toca INTEIRO (sem cortar comeco nem fim)')
+confere(plano.filter((s) => s.tipo !== 'tema').every((s) => s.outSec === s.durationSec), 'nenhum som (fora o golpe do pacote) e cortado no fim')
+confere(riser !== undefined && riser.inSec === 0 && !riser.fadeInSec, 'o riser toca inteiro desde o comeco')
 confere(!plano.some((s) => s.tipo === 'impacto' && nome(s).startsWith('cartoon') && s.marcaSec > 0), 'o cartoon pop nunca no climax')
 
 console.log('sem riser e sem papeis')

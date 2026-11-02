@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.89.1',
+    itens: [
+      'Edição rápida: os efeitos sonoros tocam inteiros, sem cortar o começo nem o fim (o sino e o impacto deixam a cauda soar). Cada um continua sincronizado no corte pelo ataque ou pelo pico. Só os golpes de um pacote com vários (o de espadas) são separados, e saem com fade.',
+    ],
+  },
+  {
     versao: '1.89.0',
     itens: [
       'Edição rápida: a música entra no momento certo. O app acha pela onda onde cada música "entra" (o drop) e faz esse ponto cair no corte do gancho para o contexto, junto com o pico do riser. Durante o gancho toca o trecho calmo que vem antes do drop.',

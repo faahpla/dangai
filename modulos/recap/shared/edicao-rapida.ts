@@ -369,8 +369,6 @@ export interface RegrasDeSom {
   caudaSec: number
   /** O pico do whoosh cai este tanto ANTES do corte: o som "puxa" para a virada. */
   whooshAntesDoCorteSec: number
-  /** O riser sobe no maximo isto antes do corte (o comeco de um riser longo fica de fora). */
-  riserMaxSec: number
   /** Quantos segundos de fala DEPOIS da virada o tema le (o que a parte nova conta). */
   falaDoTemaSec: number
   /** A virada gruda no corte de bloco mais perto, ate esta distancia. */
@@ -405,7 +403,6 @@ export const REGRAS_DE_SOM_PADRAO: RegrasDeSom = {
   intervaloMinimoSec: 2.5,
   caudaSec: 0.25,
   whooshAntesDoCorteSec: 0.04,
-  riserMaxSec: 3,
   falaDoTemaSec: 2.5,
   imaDoCorteSec: 0.35,
   ganhoSemMedidaDb: -18,
@@ -788,11 +785,12 @@ const PESO_DA_VIRADA: Record<NonNullable<SecaoParaSom['papel']> | 'nenhum', numb
  *   min(voz integrada, voz ali) (vozNoSfx);
  * - NO MOMENTO CERTO PELA ONDA (a medida de cada arquivo ou golpe): o whoosh
  *   e o tema poem o PICO em marca - whooshAntesDoCorteSec, o riser poe o
- *   PICO na marca (sobe ate o corte) com no maximo riserMaxSec de subida, o
+ *   PICO na marca (sobe ate o corte, inteiro), o
  *   impacto poe o INICIO audivel na marca. Antes do zero, o trecho entra em 0
  *   e pula o comeco do arquivo (inSec);
- * - out = ultimo instante audivel + caudaSec (sem passar do arquivo nem do
- *   recorte); o `durationSec` e o do arquivo inteiro (a sobra).
+ * - o som toca INTEIRO, ate o fim do arquivo (cortar a cauda soava
+ *   estranho); so o golpe de um pacote para no recorte dele (ultimo instante
+ *   audivel + caudaSec), com fade.
  */
 export function planejarSfx(
   cenas: readonly { start: number }[],
@@ -917,21 +915,26 @@ export function planejarSfx(
     const base = arq.recorte?.de ?? 0
     let inSec = base
     let at = alvo - Math.max(ancora - base, 0)
-    // O riser sobe no maximo riserMaxSec: o resto do comeco dele fica de fora.
+    // O COMECO tambem toca inteiro (02/11, "no fim e no comeco"): so pula o
+    // que cairia antes do 0:00 do video -- na abertura, e o silencio do
+    // inicio do arquivo. O riser que nao cabe inteiro entra com fade curto.
     let fadeInSec = 0
-    if (marca.tipo === 'riser' && ancora - base > regras.riserMaxSec) {
-      inSec = ancora - regras.riserMaxSec
-      at = alvo - regras.riserMaxSec
-      fadeInSec = 0.3
-    }
     if (at < 0) {
       inSec = Math.min(inSec - at, Math.max(arq.durationSec - 0.05, 0))
       at = 0
+      if (marca.tipo === 'riser' && inSec - base > 0.1) fadeInSec = 0.3
     }
-    const teto = Math.min(arq.durationSec, arq.recorte?.ate ?? arq.durationSec)
-    const fimAudivel = arq.fimSomSec > 0 ? arq.fimSomSec : teto
-    let outSec = Math.min(teto, fimAudivel + regras.caudaSec)
-    if (outSec <= inSec + 0.05) outSec = teto
+    // O som TOCA INTEIRO (02/11, o Levi: "quando tu corta assim fica
+    // estranho"): sincroniza pelo comeco ou pelo pico e deixa a cauda soar
+    // ate o fim do arquivo. So o golpe de um pacote (recorte) para antes do
+    // proximo golpe -- e sai com fade de verdade (trilhasDoPlanoDeSom).
+    let outSec = arq.durationSec
+    if (arq.recorte) {
+      const teto = Math.min(arq.durationSec, arq.recorte.ate)
+      const fimAudivel = arq.fimSomSec > 0 ? arq.fimSomSec : teto
+      outSec = Math.min(teto, fimAudivel + regras.caudaSec)
+      if (outSec <= inSec + 0.05) outSec = teto
+    }
     // O integrado manda; a voz ali (a frase em volta) so pode ABAIXAR.
     saida.push({
       at: arredondar(at),
@@ -955,6 +958,9 @@ export function planejarSfx(
   }
   return saida
 }
+
+/** O som cortado antes do fim (o golpe do pacote) sai com isto de fade: 30 ms soava corte seco. */
+const FADE_DO_SFX_CORTADO_SEC = 0.15
 
 /** Milissegundo: mais fino nao muda nada no som e polui o .anirecap. */
 function arredondar(s: number): number {
@@ -1069,7 +1075,7 @@ export function semTrilhasDaEdicaoRapida<T extends Pick<TrechoDeAudioSalvo, 'pap
  *
  * - SFX: um trecho por som, na faixa do tipo, arquivo inteiro em
  *   `durationSec`, [inSec, outSec] em inicioSec/usarSec (null = ate o fim),
- *   fade de saida de 30 ms so quando corta antes do fim (o mesmo do Dangai);
+ *   fade de saida de 150 ms so quando corta antes do fim (o golpe do pacote);
  * - musica: um trecho por volta do arquivo ate cobrir o video, fade de entrada
  *   no primeiro e de saida no ultimo, `ducking` em todos (o envelope e do
  *   video, entao as voltas emendam sem degrau).
@@ -1093,7 +1099,7 @@ export function trilhasDoPlanoDeSom(
       usarSec: ateOFim ? null : arredondar(usar),
       gainDb: s.ganhoDb,
       fadeInSec: s.fadeInSec ?? 0,
-      fadeOutSec: ateOFim ? 0 : 0.03,
+      fadeOutSec: ateOFim ? 0 : FADE_DO_SFX_CORTADO_SEC,
       peaks: [],
       rms: [],
       papel: s.tipo,
