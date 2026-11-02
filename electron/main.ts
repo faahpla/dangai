@@ -9,6 +9,7 @@ import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
 import { aoMudarAsConfiguracoes, configureSettings } from './services/settings'
 import { configureLibrary } from './services/library'
+import { configureManga } from './services/manga'
 import { configureNicknames } from './services/nicknames'
 import { configureFavorites } from './services/favorites'
 import { configureDescribe } from './services/describe'
@@ -197,6 +198,7 @@ app.whenReady().then(async () => {
   // O cache da biblioteca tambem: a pasta de cenas do usuario e so leitura, e
   // nada do Dangai pode ser gravado dentro dela.
   configureLibrary(userData)
+  configureManga(userData)
   // Apelidos tambem: e escolha do usuario sobre a biblioteca dele, nao parte
   // dela -- a pasta de cenas continua sendo so leitura.
   configureNicknames(userData)

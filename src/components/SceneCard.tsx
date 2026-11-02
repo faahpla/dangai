@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Film, ImagePlus, Library as LibraryIcon, LocateFixed, Pause, Play, RefreshCcw, Scissors } from 'lucide-react'
+import { Film, ImagePlus, Library as LibraryIcon, LocateFixed, Maximize2, Pause, Play, RefreshCcw, Scissors } from 'lucide-react'
 import { isVisual, type TiraDaCena } from '@shared/channels'
 import { VIDEO_FPS, type ImageAsset, type Scene } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
@@ -130,6 +130,7 @@ export function SceneCard() {
       />
 
       {image.kind === 'video' && <Inverter index={index} metade="cima" invertido={image.invertido === true} />}
+      {image.kind === 'image' && <Inteira index={index} metade="cima" inteira={image.inteira === true} />}
 
       <Field label={imageB ? 'Trocar a cena de cima' : 'Trocar por outra cena'}>
         {/*
@@ -173,6 +174,7 @@ export function SceneCard() {
           {imageB.kind === 'video' && (
             <Inverter index={index} metade="baixo" invertido={imageB.invertido === true} />
           )}
+          {imageB.kind === 'image' && <Inteira index={index} metade="baixo" inteira={imageB.inteira === true} />}
 
           <Field label="Trocar a cena de baixo">
             <Chip active={false} onClick={() => void abrirBiblioteca(index, 'baixo')}>
@@ -586,6 +588,25 @@ function Inverter({
     <Chip active={invertido} onClick={() => busy === null && void inverterClipe(index, metade)}>
       <RefreshCcw size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
       {invertido ? 'Tocando invertido' : 'Inverter clipe'}
+      {metade === 'baixo' ? ' (baixo)' : ''}
+    </Chip>
+  )
+}
+
+/**
+ * A imagem INTEIRA no quadro, sobre ela mesma desfocada -- ou cobrindo a tela.
+ *
+ * O quadrinho de manga deitado ja entra inteiro (cobrir 9:16 cortaria dois
+ * tercos dele); este botao e a troca na hora, para qualquer print. Camera
+ * livre e movimento continuam valendo nos dois jeitos.
+ */
+function Inteira({ index, metade, inteira }: { index: number; metade: 'cima' | 'baixo'; inteira: boolean }) {
+  const alternar = useProject((s) => s.alternarImagemInteira)
+  const busy = useProject((s) => s.busy)
+  return (
+    <Chip active={inteira} onClick={() => busy === null && void alternar(index, metade)}>
+      <Maximize2 size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+      {inteira ? 'Imagem inteira (fundo desfocado)' : 'Mostrar a imagem inteira'}
       {metade === 'baixo' ? ' (baixo)' : ''}
     </Chip>
   )

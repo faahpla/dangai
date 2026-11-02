@@ -6,7 +6,7 @@ import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { setInterimPlan, clamp01 } from './apoio'
 
 /** Do store do editor (ver ../project.ts): a analise, as imagens e os blocos da faixa de cenas. */
-export type FatiaDasCenas = Pick<ProjectState, 'analyze' | 'reorderImages' | 'removeImage' | 'alternarTrancaDasCenas' | 'insertImages' | 'removeScene' | 'setImageFocus' | 'commitImageFocus' | 'updateScene' | 'inverterClipe'>
+export type FatiaDasCenas = Pick<ProjectState, 'analyze' | 'reorderImages' | 'removeImage' | 'alternarTrancaDasCenas' | 'insertImages' | 'removeScene' | 'setImageFocus' | 'commitImageFocus' | 'updateScene' | 'inverterClipe' | 'alternarImagemInteira'>
 
 export const fatiaDasCenas = (set: SetProjeto, get: GetProjeto): FatiaDasCenas => ({
 
@@ -312,6 +312,7 @@ export const fatiaDasCenas = (set: SetProjeto, get: GetProjeto): FatiaDasCenas =
       path: image.invertido && image.caminhoInvertido ? image.caminhoInvertido : image.path,
       focusX: image.focusX,
       focusY: image.focusY,
+      inteira: image.inteira === true,
     })
 
     if (!result.ok) {
@@ -382,5 +383,31 @@ export const fatiaDasCenas = (set: SetProjeto, get: GetProjeto): FatiaDasCenas =
       busy: null,
       projectDirty: true,
     })
+  },
+
+  /*
+   * IMAGEM INTEIRA: o quadrinho de manga deitado (ou qualquer print) aparece
+   * inteiro, sobre ele mesmo desfocado, em vez de cobrir a tela cortando.
+   * Um clique liga, outro volta a cobrir. So o arquivo da cena troca: camera,
+   * movimento e curva do bloco ficam como estavam.
+   */
+  alternarImagemInteira: async (sceneIndex, metade) => {
+    const { plan, images } = get()
+    const alvo = imagemDaMetade(plan, sceneIndex, metade)
+    const asset = alvo === null ? undefined : images[alvo]
+    if (!asset || asset.kind !== 'image') return
+
+    const inteira = !asset.inteira
+    set({ busy: inteira ? 'Pondo a imagem inteira...' : 'Voltando a cobrir a tela...', error: null })
+    const r = await window.dangai.imagemInteira(asset, inteira)
+    if (!r.ok) {
+      set({ busy: null, error: r.error })
+      return
+    }
+    set((state) => ({
+      images: state.images.map((img, i) => (i === alvo ? r.value : img)),
+      busy: null,
+      projectDirty: true,
+    }))
   },
 })

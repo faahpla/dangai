@@ -78,6 +78,11 @@ export interface Settings {
   /** Raiz da biblioteca de cenas do AnCut. Vazio = a biblioteca fica desligada. */
   libraryDir: string
   /**
+   * Pasta dos mangas: <serie>/<capitulo>/<paginas>. Vazio = a "Mangás" ao lado
+   * da biblioteca, quando existe (ver pastaDosMangas).
+   */
+  mangaDir: string
+  /**
    * Curvas de movimento que ele guardou.
    *
    * Ficam aqui e nao no projeto porque um ritmo que ele gostou vale para os
@@ -140,6 +145,7 @@ const DEFAULTS: Settings = {
   whisperModel: 'small',
   sfxDir: '',
   libraryDir: '',
+  mangaDir: '',
   curvePresets: [],
   captionPresets: [],
   bins: [],
@@ -363,6 +369,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'ge
     whisperModel: settings.whisperModel,
     sfxDir: settings.sfxDir,
     libraryDir: settings.libraryDir,
+    mangaDir: settings.mangaDir,
     curvePresets: settings.curvePresets,
     captionStyle: settings.captionStyle,
     captionPresets: settings.captionPresets,
@@ -413,6 +420,7 @@ function coerce(raw: unknown): Settings {
     whisperModel: model === 'base' || model === 'small' || model === 'medium' ? model : 'small',
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
+    mangaDir: typeof value['mangaDir'] === 'string' ? value['mangaDir'] : '',
     curvePresets: curvasSalvas(value['curvePresets']),
     // Conferido do outro lado, pelo schema do contract: aqui so passa adiante
     // um objeto, e um campo estranho vira o padrao em vez de derrubar o app.

@@ -16,6 +16,7 @@ import { basename, join, resolve } from 'node:path'
 import sharp from 'sharp'
 import type { LibraryClip, LibraryIndex } from '@shared/channels'
 import { canonizar } from '@shared/nomes'
+import { lerMangas } from './manga'
 import { getSettings } from './settings'
 
 /**
@@ -336,7 +337,12 @@ export async function escanearRaizes(
       outra.scanned,
     )
   }
-  return indice
+  /*
+   * Os quadrinhos de manga entram por ultimo, na mesma grade (ver manga.ts).
+   * Quem nao tem a pasta nao ve diferenca nenhuma: a lista vem vazia.
+   */
+  const mangas = await lerMangas(publishThumb, onProgress).catch(() => [])
+  return juntar(indice, mangas, 0)
 }
 
 /** A pasta tem pelo menos um episodio cortado? (para no primeiro achado) */
@@ -887,6 +893,9 @@ function ordemNatural(a: LibraryClip, b: LibraryClip): number {
     ALFABETICA.compare(a.anime, b.anime) ||
     a.season - b.season ||
     a.episode - b.episode ||
+    // Dois capitulos sem numero ("Cap. Especial") tem o mesmo episodio 0: o
+    // nome da pasta separa um do outro antes de as paginas se misturarem.
+    NUMERICA.compare(a.manga?.capitulo ?? '', b.manga?.capitulo ?? '') ||
     NUMERICA.compare(a.shot, b.shot)
   )
 }

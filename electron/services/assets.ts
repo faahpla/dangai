@@ -1,13 +1,14 @@
 import { basename, join } from 'node:path'
-import { mkdirSync, existsSync, rmSync } from 'node:fs'
+import { mkdirSync, existsSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import sharp from 'sharp'
 import type { ImageAsset } from '@shared/contract'
 import { medidasAtuais } from './formato'
 import { classifyFile } from '@shared/channels'
 import { publish } from './media-server'
 import { clipeInvertido } from './inverter'
+import { ehDoManga } from './manga'
 import { detectFace, detectFocus, type FaceFocus, type RostoNoQuadro } from './faces'
 import {
   configureClips,
@@ -35,6 +36,8 @@ export interface ImportFocus {
   focusY: number
   /** Se aquele enquadramento tinha vindo do detector. Preserva a marca ao reabrir. */
   focusAuto?: boolean
+  /** A imagem inteira sobre ela mesma desfocada (ImageAsset.inteira). Ausente = coberta. */
+  inteira?: boolean
 }
 
 /**
@@ -156,6 +159,7 @@ export async function reframeImage(
   path: string,
   focusX: number,
   focusY: number,
+  inteira = false,
 ): Promise<string> {
   mkdirSync(cacheDir, { recursive: true })
 
@@ -166,7 +170,9 @@ export async function reframeImage(
     const fonte = await versaoSdr(path)
     return publish(await makeClipRenderReady(fonte, id, focusX, focusY, await probeClip(fonte)))
   }
-  return publish(await makeRenderReady(path, id, focusX, focusY))
+  // Inteira: o recorte sai da MONTAGEM, que e o arquivo da cena.
+  const fonte = inteira ? (await montarInteira(path)).caminho : path
+  return publish(await makeRenderReady(fonte, id, focusX, focusY))
 }
 
 async function importOne(
@@ -276,6 +282,23 @@ async function importImage(
   focus: ImportFocus | undefined,
   section: ImportSection | null,
 ): Promise<ImageAsset> {
+  /*
+   * INTEIRA ou cobrindo. Projeto reaberto diz o que era; importacao nova
+   * decide: o quadrinho de manga que perderia mais de um quarto ao cobrir o
+   * quadro entra inteiro. Print comum continua cobrindo, como sempre.
+   */
+  const inteira = focus
+    ? focus.inteira === true
+    : ehDoManga(path) && sobraAoCobrir(await orientedSize(path).catch(() => null)) < SOBRA_MINIMA
+  return inteira ? importarInteira(path, focus, section) : importarCoberta(path, focus, section)
+}
+
+/** O print cobrindo o quadro, recortado no rosto: o caminho de sempre. */
+async function importarCoberta(
+  path: string,
+  focus: ImportFocus | undefined,
+  section: ImportSection | null,
+): Promise<ImageAsset> {
   const fileName = basename(path)
 
   /*
@@ -334,6 +357,141 @@ async function importImage(
       `Não foi possível ler "${fileName}" (${detail}). Salve a imagem como PNG ou JPG e solte de novo.`,
     )
   }
+}
+
+/**
+ * Abaixo disto de imagem sobrando ao cobrir o quadro, o quadrinho de manga
+ * entra inteiro. Uma pagina (687x1080) perde 12% e cobre; um quadrinho deitado
+ * em 9:16 perderia 64%.
+ */
+const SOBRA_MINIMA = 0.75
+
+/** Quanto da imagem continua no quadro ao cobri-lo: 1 = tudo. */
+export function sobraAoCobrir(medidas: { width: number; height: number } | null): number {
+  if (!medidas) return 1
+  const { renderWidth, renderHeight } = medidasAtuais()
+  const a = medidas.width / medidas.height
+  const b = renderWidth / renderHeight
+  return Math.min(a / b, b / a)
+}
+
+/**
+ * A MONTAGEM da imagem inteira: ela no meio do quadro, sobre ela mesma
+ * ampliada, desfocada e escurecida.
+ *
+ * Uma vez e meia o quadro, para a camera livre ter de onde ampliar antes de o
+ * proprio quadrinho borrar. No cache pelo arquivo, pela data dele e pelo
+ * quadro: o mesmo quadrinho em dois blocos e uma montagem so.
+ */
+const FOLGA_DA_MONTAGEM = 1.5
+
+export async function montarInteira(path: string): Promise<{ caminho: string; width: number; height: number }> {
+  const { renderWidth, renderHeight } = medidasAtuais()
+  const width = Math.round(renderWidth * FOLGA_DA_MONTAGEM)
+  const height = Math.round(renderHeight * FOLGA_DA_MONTAGEM)
+  let data = 0
+  try {
+    data = Math.round(statSync(path).mtimeMs)
+  } catch {
+    // O sharp logo abaixo da o erro que importa.
+  }
+  const chave = createHash('sha1').update(`${path}|${data}|${width}x${height}`).digest('hex').slice(0, 20)
+  const caminho = join(cacheDir, `inteira-${chave}.jpg`)
+  if (existsSync(caminho)) return { caminho, width, height }
+
+  mkdirSync(cacheDir, { recursive: true })
+  /*
+   * O desfoque sai de uma copia PEQUENA ampliada de volta: o mesmo efeito de
+   * um blur forte no tamanho cheio, numa fracao do tempo.
+   */
+  const [fundo, frente] = await Promise.all([
+    sharp(path)
+      .rotate()
+      .resize(Math.round(width / 8), Math.round(height / 8), { fit: 'cover' })
+      .blur(8)
+      .modulate({ brightness: 0.55 })
+      .toBuffer()
+      .then((pequeno) => sharp(pequeno).resize(width, height).toBuffer()),
+    sharp(path).rotate().resize(width, height, { fit: 'inside' }).toBuffer({ resolveWithObject: true }),
+  ])
+  await sharp(fundo)
+    .composite([
+      {
+        input: frente.data,
+        left: Math.round((width - frente.info.width) / 2),
+        top: Math.round((height - frente.info.height) / 2),
+      },
+    ])
+    .jpeg({ quality: 92, mozjpeg: true })
+    .toFile(caminho)
+  return { caminho, width, height }
+}
+
+/**
+ * Importa a imagem INTEIRA: a cena passa a ser a montagem (ver montarInteira).
+ *
+ * Sem procurar rosto: a montagem ja tem o formato do quadro, entao nao ha
+ * recorte para mirar. `path` continua o original -- e por ele que a
+ * Biblioteca e o projeto salvo reconhecem a imagem.
+ */
+async function importarInteira(
+  path: string,
+  focus: ImportFocus | undefined,
+  section: ImportSection | null,
+): Promise<ImageAsset> {
+  const fileName = basename(path)
+  try {
+    const id = randomUUID()
+    const montagem = await montarInteira(path)
+    const focusX = clamp01(focus?.focusX ?? 0.5)
+    const focusY = clamp01(focus?.focusY ?? 0.5)
+    const [thumbnail, renderPath] = await Promise.all([
+      makeThumbnail(path),
+      makeRenderReady(montagem.caminho, id, focusX, focusY),
+    ])
+    return {
+      id,
+      path,
+      fileName,
+      // A camera livre e o giro partem da montagem, nao do quadrinho cru.
+      urlSource: publish(montagem.caminho),
+      url: publish(renderPath),
+      width: montagem.width,
+      height: montagem.height,
+      thumbnail,
+      focusX,
+      focusY,
+      focusAuto: false,
+      kind: 'image',
+      section: section?.index ?? null,
+      ...(section === null ? {} : { sectionName: section.name }),
+      inteira: true,
+    }
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `Não foi possível ler "${fileName}" (${detail}). Salve a imagem como PNG ou JPG e solte de novo.`,
+    )
+  }
+}
+
+/**
+ * Liga ou desliga a imagem inteira de um print ja importado.
+ *
+ * Os ajustes do bloco (camera, movimento, curva) ficam: moram na cena, e aqui
+ * so troca o arquivo que ela mostra. Voltando a cobrir, o rosto e procurado
+ * de novo, como numa importacao nova.
+ */
+export async function alternarInteira(asset: ImageAsset, inteira: boolean): Promise<ImageAsset> {
+  if (asset.kind !== 'image') throw new Error('Só imagem pode aparecer inteira.')
+  const secao = asset.section === null ? null : { index: asset.section, name: asset.sectionName ?? '' }
+  const nova = inteira
+    ? await importarInteira(asset.path, undefined, secao)
+    : await importarCoberta(asset.path, undefined, secao)
+  if (asset.sectionName !== undefined || nova.sectionName === undefined) return nova
+  // A parte vai junto; o nome so se ela tinha.
+  const { sectionName: _semNome, ...resto } = nova
+  return resto
 }
 
 /**

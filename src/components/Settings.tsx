@@ -357,6 +357,40 @@ export function Settings() {
                 A pasta onde o AnCut grava as cenas. O Dangai só lê: nunca
                 renomeia, move nem apaga nada aí dentro. Ctrl+B abre a busca.
               </p>
+
+              <label className="mb-1.5 mt-4 block text-[11px] font-medium text-ink-2">
+                Mangás
+              </label>
+              <button
+                type="button"
+                onClick={async () => {
+                  const r = await window.dangai.escolherPasta("Escolher a pasta dos mangás");
+                  if (r.ok && r.value) await save({ mangaDir: r.value });
+                }}
+                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
+              >
+                <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {settings?.mangaDir || "Automática: a pasta “Mangás” ao lado da biblioteca"}
+                </span>
+              </button>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                Uma pasta por anime e, dentro dela, uma por capítulo, com as
+                páginas do jeito que você baixa. O Dangai recorta os quadrinhos
+                sozinho e mostra na Biblioteca; a sua pasta fica como está.
+                {settings?.mangaDir && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={() => void save({ mangaDir: "" })}
+                      className="underline hover:text-ink"
+                    >
+                      Voltar para a automática
+                    </button>
+                  </>
+                )}
+              </p>
               <SecoesDosModulos depoisDe="biblioteca" />
               <SecoesDosModulos depoisDe="fim" />
               <ModulosNasConfiguracoes />

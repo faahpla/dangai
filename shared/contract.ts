@@ -99,6 +99,17 @@ export const imageAssetSchema = z.object({
   invertido: z.boolean().optional(),
   /** O arquivo invertido, quando `invertido`. E dele que o upscale e o reenquadrar partem. */
   caminhoInvertido: z.string().optional(),
+  /**
+   * A imagem INTEIRA no quadro, sobre ela mesma ampliada e desfocada -- em vez
+   * de cobrir a tela cortando. E o padrao do quadrinho de manga deitado (cobrir
+   * 9:16 jogaria fora dois tercos dele, e o que sobrasse sairia ampliado cinco
+   * vezes); qualquer print pode ligar.
+   *
+   * A montagem vira o ARQUIVO da cena (`urlSource`, e `width`/`height` sao os
+   * dela): camera livre, movimento e giro trabalham sobre ela como sobre
+   * qualquer imagem, sem regra nova no render. `path` continua o original.
+   */
+  inteira: z.boolean().optional(),
 })
 export type ImageAsset = z.infer<typeof imageAssetSchema>
 

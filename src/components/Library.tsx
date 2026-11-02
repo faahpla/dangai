@@ -1210,6 +1210,7 @@ function natural(nome: string): string {
  * botao e digita isso tem que achar o "Nanami, Ryuusui".
  */
 function textoDe(clip: LibraryClip): string {
+  if (clip.manga) return `${clip.anime} manga mangá ${clip.manga.capitulo} pagina ${clip.manga.pagina}`.toLowerCase()
   const nomes = clip.characters.flatMap((c) => [c, natural(c)]).join(' ')
   return `${clip.anime} ${clip.animeTitle} ${nomes} s${clip.season}e${clip.episode} ${clip.shot}`.toLowerCase()
 }
@@ -1258,8 +1259,12 @@ interface RailProps {
   onPersonagem: (nome: string | null, doAnime: string | null) => void
 }
 
-/** A etiqueta do episodio, na mesma forma que a pasta do AnCut usa. */
+/**
+ * A etiqueta do episodio, na mesma forma que a pasta do AnCut usa. Num
+ * quadrinho de manga, o capitulo: "Mangá · Capítulo 45".
+ */
 export function chaveEpisodio(clip: LibraryClip): string {
+  if (clip.manga) return `Mangá · ${clip.manga.capitulo}`
   return `S${pad(clip.season)}E${pad(clip.episode)}`
 }
 
@@ -1297,7 +1302,7 @@ function Rail({
 
     for (const clip of clips) {
       contagemAnime.set(clip.anime, (contagemAnime.get(clip.anime) ?? 0) + 1)
-      if (clip.characters.length === 0) sem += 1
+      if (clip.characters.length === 0 && !clip.manga) sem += 1
 
       const doAnime = dentro.get(clip.anime) ?? new Map<string, number>()
       for (const nome of clip.characters) {
@@ -1331,7 +1336,9 @@ function Rail({
       episodios: new Map(
         [...eps].map(([serie, mapa]) => [
           serie,
-          [...mapa.entries()].sort((a, b) => b[0].localeCompare(a[0], 'en')),
+          // Pelo numero: "Capítulo 45" antes do "Capítulo 9" (o S01E50 ja vinha
+          // com zeros, e nao muda).
+          [...mapa.entries()].sort((a, b) => b[0].localeCompare(a[0], 'en', { numeric: true })),
         ]),
       ),
       semRosto: sem,
@@ -1904,7 +1911,8 @@ function Grade({
                 onFavoritar={() => onFavoritar(clip.id)}
                 onClick={(event) => {
                   // Ctrl+clique: marcar para mesclar, sem escolher a cena.
-                  if (event && (event.ctrlKey || event.metaKey) && onMesclar) onMesclar(clip.id)
+                  // Manga nao mescla: a mescla e do AnCut, de clipes seguidos.
+                  if (event && (event.ctrlKey || event.metaKey) && onMesclar && !clip.manga) onMesclar(clip.id)
                   else onEscolher(clip.id)
                 }}
                 destacado={clip.id === destaque}
@@ -2171,7 +2179,8 @@ function Cartao({
     (event: React.MouseEvent<HTMLDivElement>) => {
       setDentro(true)
       apontar(event)
-      if (tira || pedindo.current) return
+      // Quadrinho nao tem tempo para percorrer: a miniatura ja e tudo.
+      if (clip.manga || tira || pedindo.current) return
       /*
        * Uma espera curta antes de pedir a tira, para nao montar uma para cada
        * cartao que o mouse atravessa a caminho de outro. Curta porque a tira e
@@ -2199,7 +2208,7 @@ function Cartao({
         })
       }, 120)
     },
-    [clip.path, apontar, tira],
+    [clip.path, clip.manga, apontar, tira],
   )
 
   const sair = useCallback(() => {
@@ -2238,7 +2247,7 @@ function Cartao({
   const cobertura = coberturaDaFonte(aspecto, quadroW / quadroH).largura
   const visivel = Math.min(1, 16 / 9 / aspecto)
   const janela = cobertura / visivel
-  const mostraJanela = dentro && janela < 0.98
+  const mostraJanela = dentro && janela < 0.98 && !clip.manga
 
   /*
    * <div role="button">, e nao <button>.
@@ -2269,8 +2278,12 @@ function Cartao({
        * imagem, pode tirar tudo". Quem precisa do episodio ou do personagem
        * passa o mouse -- e a previa em video ja toca no mesmo gesto.
        */
-      title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · já usada em outra frase' : ''}
-Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
+      title={
+        clip.manga
+          ? `${clip.anime} · mangá · ${clip.manga.capitulo} · página ${clip.manga.pagina}${clip.manga.quadro === null ? ' inteira' : ` · quadro ${clip.manga.quadro}`}${usada ? ' · já usado em outra frase' : ''}`
+          : `${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · já usada em outra frase' : ''}
+Ctrl+clique: marcar para mesclar com outras cenas seguidas`
+      }
       className={[
         'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
         destacado ? 'animate-pulse ring-2 ring-accent shadow-[0_0_18px_rgba(255,62,128,0.7)]' : '',
@@ -2287,7 +2300,9 @@ Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
           alt=""
           loading="lazy"
           draggable={false}
-          className="size-full object-cover"
+          // O quadrinho aparece INTEIRO: em pe ou deitado, cortar para caber no
+          // cartao esconderia justamente o que decide se ele serve.
+          className={clip.manga ? 'size-full bg-black/40 object-contain' : 'size-full object-cover'}
         />
         {dentro && tira && (
           <span
@@ -2325,7 +2340,11 @@ Ctrl+clique: marcar para mesclar com outras cenas seguidas`}
           </span>
         )}
         <span className="tnum absolute bottom-1 right-1 rounded-sm bg-black/70 px-1 py-0.5 text-[10px] text-white">
-          {clip.duration.toFixed(1)}s
+          {clip.manga
+            ? clip.manga.quadro === null
+              ? `pág. ${clip.manga.pagina}`
+              : `${clip.manga.pagina}.${clip.manga.quadro}`
+            : `${clip.duration.toFixed(1)}s`}
         </span>
         {/*
           A estrela mora DENTRO do cartao mas fora do clique dele: marcar
@@ -2664,8 +2683,18 @@ function Tocador({
       <div className="flex max-h-full w-full max-w-[1400px] flex-col gap-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 text-[12px] text-ink-2">
           <span className="min-w-0 flex-1 truncate">
-            <span className="text-ink">{clip.animeTitle || clip.anime}</span> · S{pad(clip.season)}E{pad(clip.episode)} · cena{' '}
-            {clip.shot} · <span className="tnum">{clip.duration.toFixed(1)}s</span>
+            <span className="text-ink">{clip.animeTitle || clip.anime}</span>
+            {clip.manga ? (
+              <>
+                {' '}· mangá · {clip.manga.capitulo} · página {clip.manga.pagina}
+                {clip.manga.quadro !== null && ` · quadro ${clip.manga.quadro}`}
+              </>
+            ) : (
+              <>
+                {' '}· S{pad(clip.season)}E{pad(clip.episode)} · cena {clip.shot} ·{' '}
+                <span className="tnum">{clip.duration.toFixed(1)}s</span>
+              </>
+            )}
             {clip.characters.length > 0 && <span className="text-ink-3"> · {clip.characters.map(natural).join(', ')}</span>}
           </span>
           <span className="tnum text-ink-3">
@@ -2685,7 +2714,9 @@ function Tocador({
           >
             <ChevronLeft size={20} />
           </button>
-          {url ? (
+          {url && clip.manga ? (
+            <img key={url} src={url} alt="" className="max-h-[78vh] w-full rounded-md bg-black object-contain" />
+          ) : url ? (
             <video
               key={url}
               src={url}

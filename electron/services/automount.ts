@@ -46,7 +46,13 @@ export async function automount(
   }
 
   onProgress('Lendo a biblioteca...')
-  const library = await escanearRaizes(raizes, publishThumb, onProgress)
+  const lida = await escanearRaizes(raizes, publishThumb, onProgress)
+  /*
+   * MANGA NUNCA ENTRA SOZINHO. "As vezes eu tenho que usar paineis de mangas":
+   * as vezes, e escolhido por ele na Biblioteca. Um quadrinho que a montagem
+   * pusesse por conta seria a "cena nada a ver" de que ele reclamou na 1.88.
+   */
+  const library = { ...lida, clips: lida.clips.filter((c) => !c.manga) }
 
   // Transcricao travada (a voz gerada ja trouxe os tempos): so casa o texto.
   const travada = request.transcript && request.transcript.words.length > 0 ? request.transcript : null

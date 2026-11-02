@@ -44,6 +44,7 @@ export const IPC = {
   videoProntoProgress: 'upscale:video-pronto-progress',
   cancelarUpscale: 'upscale:cancel',
   inverterClipe: 'assets:inverter',
+  imagemInteira: 'assets:inteira',
   openFontesDir: 'fontes:open',
   openSfxDir: 'sfx:open',
   pickFiles: 'dialog:pick-files',
@@ -271,6 +272,23 @@ export interface LibraryClip {
   duration: number
   /** Vazio na maioria: quase dois tercos das cenas nao tem rosto identificado. */
   characters: string[]
+  /**
+   * Quadrinho (ou pagina) de MANGA, e nao cena do AnCut. Ver
+   * electron/services/manga.ts.
+   *
+   * Entra na mesma grade porque escolher e o mesmo gesto, e na timeline e uma
+   * imagem como um print -- camera livre, movimento, giro, tudo igual. O que
+   * muda: nao tem duracao (`duration` 0), nem tira de quadros, nem mescla; e
+   * nunca entra sozinho na montagem automatica.
+   */
+  manga?: {
+    /** A pasta do capitulo, como ele chamou: "Capítulo 45", "Cap. Especial - ...". */
+    capitulo: string
+    /** Posicao da pagina no capitulo, a partir de 1. */
+    pagina: number
+    /** Posicao do quadro na pagina, a partir de 1; null = a pagina inteira. */
+    quadro: number | null
+  }
 }
 
 export interface LibraryIndex {
@@ -444,6 +462,8 @@ export interface ReframeArgs {
   /** 0 = esquerda/topo, 1 = direita/base. */
   focusX: number
   focusY: number
+  /** A imagem inteira sobre ela mesma desfocada (ImageAsset.inteira): o recorte sai dessa montagem. */
+  inteira?: boolean
 }
 
 export interface SaveProjectArgs {
@@ -519,6 +539,8 @@ export interface PublicSettings {
   sfxDir: string
   /** Raiz da biblioteca do AnCut. Vazio = o usuario ainda nao escolheu. */
   libraryDir: string
+  /** Pasta dos mangas. Vazio = a "Mangás" ao lado da biblioteca, se existir. */
+  mangaDir: string
   /** Chave da Anthropic: so se existe e os quatro ultimos caracteres. */
   hasApiKey: boolean
   apiKeyHint: string
@@ -556,6 +578,7 @@ export interface SettingsPatch {
   whisperModel?: 'base' | 'small' | 'medium'
   sfxDir?: string
   libraryDir?: string
+  mangaDir?: string
   curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
   captionStyle?: Record<string, unknown>
   captionPresets?: Record<string, unknown>[]
@@ -622,7 +645,7 @@ export interface DangaiBridge {
   /** `focus` so vem preenchido ao abrir projeto salvo, para o recorte sair certo de primeira. */
   importImages(
     paths: readonly string[],
-    focus?: readonly { focusX: number; focusY: number; focusAuto?: boolean }[],
+    focus?: readonly { focusX: number; focusY: number; focusAuto?: boolean; inteira?: boolean }[],
     /** A parte de cada arquivo, quando o usuario soltou pastas. null = sem parte. */
     sections?: readonly ({ index: number; name: string } | null)[],
   ): Promise<IpcResult<ImageAsset[]>>
@@ -806,6 +829,8 @@ export interface DangaiBridge {
   onVideoProntoProgress(listener: (p: { feitos: number; total: number; nome: string }) => void): () => void
   /** Liga ou desliga o tocar de tras para frente de um clipe. Devolve o asset novo. */
   inverterClipe(asset: ImageAsset, invertido: boolean): Promise<IpcResult<ImageAsset>>
+  /** Liga ou desliga a imagem inteira (sobre ela mesma desfocada) de um print ja importado. */
+  imagemInteira(asset: ImageAsset, inteira: boolean): Promise<IpcResult<ImageAsset>>
   /** Versao instalada, para a interface mostrar. */
   appVersion(): Promise<IpcResult<string>>
   /** Fecha e instala a atualizacao ja baixada. */

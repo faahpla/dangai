@@ -42,6 +42,7 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
         section: image.section,
         sectionName: image.sectionName,
         invertido: image.invertido === true,
+        ...(image.inteira ? { inteira: true } : {}),
       })),
       script: state.script,
       broll: state.broll,
@@ -251,6 +252,7 @@ async function applyProjectFile(
         focusX: image.focusX,
         focusY: image.focusY,
         focusAuto: image.focusAuto,
+        inteira: image.inteira === true,
       })),
       // As partes voltam junto. Projeto salvo antes disto existir nao tem o
       // campo, o schema devolve null, e o `undefined` abaixo desliga o caminho

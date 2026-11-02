@@ -545,6 +545,8 @@ export interface ProjectState {
   ) => void
   /** Liga ou desliga o tocar de tras para frente do clipe de uma metade do bloco. */
   inverterClipe: (sceneIndex: number, metade: 'cima' | 'baixo') => Promise<void>
+  /** Liga ou desliga a imagem inteira (sobre ela mesma desfocada) de uma metade do bloco. */
+  alternarImagemInteira: (sceneIndex: number, metade: 'cima' | 'baixo') => Promise<void>
   /** Escolhe um MP4 pronto e passa pelo upscale, fora de qualquer projeto. */
   melhorarVideoPronto: () => Promise<void>
   /**

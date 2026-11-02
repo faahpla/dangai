@@ -50,6 +50,7 @@ import { medirSom } from './services/medir-som'
 import type { MedidaDoSom } from '@shared/loudness'
 import { publish } from './services/media-server'
 import {
+  alternarInteira,
   importImages,
   importImagesPulando,
   reframeImage,
@@ -156,8 +157,8 @@ export function registerIpc(): void {
     },
   )
 
-  handle<[ReframeArgs], string>(IPC.reframeImage, ({ id, path, focusX, focusY }) =>
-    reframeImage(id, path, focusX, focusY),
+  handle<[ReframeArgs], string>(IPC.reframeImage, ({ id, path, focusX, focusY, inteira }) =>
+    reframeImage(id, path, focusX, focusY, inteira === true),
   )
 
   handle<[readonly string[]], DropExpansion>(IPC.expandDrop, (paths) =>
@@ -199,7 +200,9 @@ export function registerIpc(): void {
   handle<[], string[]>(IPC.seriesDaBiblioteca, async () => {
     const raizes = raizesDaBiblioteca()
     if (raizes.length === 0) return []
-    return (await escanearRaizes(raizes, publish, broadcastLibrary)).animes
+    // Os animes que o Montar sozinho oferece: serie que so tem manga nao monta nada.
+    const { clips } = await escanearRaizes(raizes, publish, broadcastLibrary)
+    return [...new Set(clips.filter((c) => !c.manga).map((c) => c.anime))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   })
 
   handle<[], string | null>(IPC.pickLibraryDir, async () => {
@@ -670,6 +673,13 @@ export function registerIpc(): void {
       throw new Error(`Esse clipe não está mais no disco: ${basename(asset.path)}`)
     }
     return inverterAsset(asset, invertido)
+  })
+
+  handle<[ImageAsset, boolean], ImageAsset>(IPC.imagemInteira, async (asset, inteira) => {
+    if (!existsSync(asset.path)) {
+      throw new Error(`Essa imagem não está mais no disco: ${basename(asset.path)}`)
+    }
+    return alternarInteira(asset, inteira)
   })
 
   handle<[string], null>(IPC.revealFile, async (path) => {

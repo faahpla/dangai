@@ -103,6 +103,11 @@ const savedImageSchema = referenceSchema.extend({
   sectionName: z.string().optional(),
   /** Clipe tocando de tras para frente. A copia invertida e refeita (ou achada no cache) ao abrir. */
   invertido: z.boolean().default(false),
+  /**
+   * Print inteiro sobre ele mesmo desfocado (ImageAsset.inteira). Ausente =
+   * coberto, como todo projeto salvo antes disto: reabrir nao muda o video.
+   */
+  inteira: z.boolean().optional(),
 })
 export type SavedImage = z.infer<typeof savedImageSchema>
 

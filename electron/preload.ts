@@ -186,6 +186,9 @@ const bridge: DangaiBridge = {
   inverterClipe: (asset, invertido) =>
     ipcRenderer.invoke(IPC.inverterClipe, asset, invertido) as Promise<IpcResult<ImageAsset>>,
 
+  imagemInteira: (asset, inteira) =>
+    ipcRenderer.invoke(IPC.imagemInteira, asset, inteira) as Promise<IpcResult<ImageAsset>>,
+
   appVersion: () => ipcRenderer.invoke(IPC.appVersion) as Promise<IpcResult<string>>,
 
   installUpdate: () => ipcRenderer.invoke(IPC.installUpdate) as Promise<IpcResult<null>>,
