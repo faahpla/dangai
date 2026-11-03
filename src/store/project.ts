@@ -137,8 +137,8 @@ export interface ProjectState {
   script: string | null
   /**
    * O B-ROLL: de que episodio sai cada parte do video (shared/broll.ts). Entra
-   * soltando o .txt dele junto do roteiro; a montagem automatica e as sugestoes
-   * da Biblioteca preferem as cenas desses episodios.
+   * soltando o .txt dele junto do roteiro; as sugestoes da Biblioteca preferem
+   * as cenas desses episodios.
    */
   broll: { nome: string; texto: string } | null
   /** Poe ou tira o B-roll do projeto. */
@@ -151,6 +151,8 @@ export interface ProjectState {
   /** Ligado quando o usuario mexe nas legendas: a analise para de sobrescrever. */
   captionsEdited: boolean
   captionsOpen: boolean
+  /** A legenda escolhida na linha do tempo, por posicao. Nao e documento. */
+  legendaEscolhida: number | null
 
   busy: string | null
   error: string | null
@@ -674,6 +676,13 @@ export interface ProjectState {
   editCaptionWord: (index: number, wordIndex: number, text: string) => void
   /** Reescreve o texto do bloco inteiro. Mesmo numero de palavras mantem os tempos. */
   editCaptionText: (index: number, text: string) => void
+  /** Escolhe uma legenda na linha do tempo (o C corta ela, o Delete apaga). */
+  escolherLegenda: (index: number | null) => void
+  /** Poe um bloco no lugar da legenda `index` -- o arraste na linha do tempo. */
+  trocarLegenda: (index: number, bloco: CaptionBlock) => void
+  /** Corta a legenda escolhida na agulha. Sem como, avisa e nao mexe. */
+  cortarLegendaNaAgulha: () => void
+  apagarLegenda: (index: number) => void
   resetCaptions: () => void
   /** Muda as regras e refaz as legendas (as editadas so ganham tempo novo). */
   setCaptionRules: (patch: Partial<RegrasDaLegenda>) => void
@@ -939,6 +948,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   scriptOpen: false,
   captionsEdited: false,
   captionsOpen: false,
+  legendaEscolhida: null,
   busy: null,
   error: null,
   playhead: 0,
@@ -1397,8 +1407,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   selectScene: (index) =>
-    // Escolher um BLOCO tira a escolha de clipe: o C volta a cortar o bloco.
-    set({ selectedScene: index, selecionados: index === null ? [] : [index], clipeSelecionado: null, outrosClipes: [] }),
+    // Escolher um BLOCO tira a escolha de clipe e de legenda: o C volta a cortar o bloco.
+    set({ selectedScene: index, selecionados: index === null ? [] : [index], clipeSelecionado: null, outrosClipes: [], legendaEscolhida: null }),
 
   /**
    * Shift+clique: o intervalo inteiro entre a ancora e o bloco clicado.
@@ -1494,6 +1504,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       scriptOpen: false,
       captionsEdited: false,
       captionsOpen: false,
+      legendaEscolhida: null,
       busy: null,
       error: null,
       playhead: 0,

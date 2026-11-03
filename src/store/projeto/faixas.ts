@@ -318,17 +318,17 @@ export const fatiaDasFaixas = (set: SetProjeto, get: GetProjeto): FatiaDasFaixas
       return { faixasMudas: { ...state.faixasMudas, [tipo]: proximos }, projectDirty: true }
     }),
 
-  selecionarClipe: (clipe) => set({ clipeSelecionado: clipe, outrosClipes: [] }),
+  selecionarClipe: (clipe) => set({ clipeSelecionado: clipe, outrosClipes: [], ...(clipe ? { legendaEscolhida: null } : {}) }),
 
   alternarClipeNaSelecao: (clipe) =>
     set((state) => {
       const todos = clipesEscolhidos(state)
       const ja = todos.some((c) => c.tipo === clipe.tipo && c.id === clipe.id)
       const lista = ja ? todos.filter((c) => !(c.tipo === clipe.tipo && c.id === clipe.id)) : [clipe, ...todos]
-      return { clipeSelecionado: lista[0] ?? null, outrosClipes: lista.slice(1) }
+      return { clipeSelecionado: lista[0] ?? null, outrosClipes: lista.slice(1), legendaEscolhida: null }
     }),
 
-  definirSelecaoDeClipes: (clipes) => set({ clipeSelecionado: clipes[0] ?? null, outrosClipes: clipes.slice(1) }),
+  definirSelecaoDeClipes: (clipes) => set({ clipeSelecionado: clipes[0] ?? null, outrosClipes: clipes.slice(1), ...(clipes.length > 0 ? { legendaEscolhida: null } : {}) }),
 
   removerClipesEscolhidos: () => {
     const todos = clipesEscolhidos(get())

@@ -23,7 +23,7 @@ export const ACOES = [
   { id: 'corteSeguinte', nome: 'Ir ao próximo corte', grupo: 'Reprodução', padrao: ['ArrowDown'] },
   { id: 'inicio', nome: 'Ir ao começo', grupo: 'Reprodução', padrao: ['Home'] },
   { id: 'fim', nome: 'Ir ao fim', grupo: 'Reprodução', padrao: ['End'] },
-  { id: 'cortar', nome: 'Cortar na agulha (bloco ou clipe escolhido)', grupo: 'Edição', padrao: ['C'] },
+  { id: 'cortar', nome: 'Cortar na agulha (bloco, clipe ou legenda escolhida)', grupo: 'Edição', padrao: ['C'] },
   { id: 'excluir', nome: 'Excluir o que estiver selecionado', grupo: 'Edição', padrao: ['X', 'Delete', 'Backspace'] },
   { id: 'ima', nome: 'Ligar / desligar o ímã', grupo: 'Edição', padrao: ['N'] },
   { id: 'ferramentaSelecao', nome: 'Ferramenta de seleção (laco nas faixas)', grupo: 'Edição', padrao: ['V'] },

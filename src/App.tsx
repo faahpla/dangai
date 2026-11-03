@@ -366,6 +366,11 @@ export function App() {
           store.setPlayhead(scenes[scenes.length - 1]?.end ?? store.audio?.durationSec ?? 0)
           break
         case 'cortar':
+          // Com uma legenda escolhida, corta ELA; nunca cai no bloco de baixo.
+          if (store.legendaEscolhida !== null) {
+            store.cortarLegendaNaAgulha()
+            break
+          }
           // Com um clipe de faixa escolhido sob a agulha, corta ELE -- como a
           // lamina do editor. Sem clipe escolhido, corta o bloco.
           if (store.cortarClipeNaAgulha()) break
@@ -377,6 +382,10 @@ export function App() {
            * escolhido, se houver; senao os blocos marcados na timeline (do
            * ultimo para o primeiro, para os indices nao andarem no meio).
            */
+          if (store.legendaEscolhida !== null) {
+            store.apagarLegenda(store.legendaEscolhida)
+            break
+          }
           // Todos os clipes escolhidos de uma vez (Ctrl+clique ou o laco).
           if (store.removerClipesEscolhidos()) break
           const alvos =

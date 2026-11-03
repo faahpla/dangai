@@ -11,7 +11,8 @@ import { dicaDoAtalho } from '@/store/atalhos'
 import { carregarOnda, useOndas } from '@/store/ondas'
 import { Waveform } from './Waveform'
 import { caminhosDoArraste } from './arrastar'
-import { CABECALHO, Cabecalho, ColunaDosCabecalhos, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, type Ima } from './Faixas'
+import { CABECALHO, Cabecalho, ColunaDosCabecalhos, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, alinharTrecho, type Ima } from './Faixas'
+import { duracaoMinima, limitesDaLegenda, reposicionarLegenda } from '@shared/legenda-na-timeline'
 import { EditorDaEmenda, IconeDaTransicao } from './EditorDeTransicao'
 import {
   aplicarNaEmenda,
@@ -1232,7 +1233,7 @@ export function Timeline() {
             }
           >
             <div className="h-full" onPointerDown={arrastarAgulha}>
-              <FaixaLegendas duration={duration} />
+              <FaixaLegendas duration={duration} timeAt={timeAt} ima={ima} />
             </div>
           </Linha>
         )}
@@ -1572,11 +1573,15 @@ function FaixaSfx({
  *
  * Quem mostra o texto o tempo todo e o cabecalho, que tem largura de sobra.
  */
-function FaixaLegendas({ duration }: { duration: number }) {
+function FaixaLegendas({ duration, timeAt, ima }: { duration: number; timeAt: (clientX: number) => number; ima: Ima }) {
   const captions = useProject((s) => s.captions)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const playhead = useProject((s) => s.playhead)
   const openCaptions = useProject((s) => s.openCaptions)
+  const escolhida = useProject((s) => s.legendaEscolhida)
+  const escolher = useProject((s) => s.escolherLegenda)
+  const trocar = useProject((s) => s.trocarLegenda)
+  const isRendering = useProject((s) => s.render !== null)
   const visivel = captionsEnabled && captions.length > 0 && duration > 0
 
   const faixaRef = useRef<HTMLDivElement | null>(null)
@@ -1601,6 +1606,70 @@ function FaixaLegendas({ duration }: { duration: number }) {
   }, [visivel])
 
   /*
+   * A LEGENDA SE EDITA COMO UM CLIPE: clique escolhe, arrastar o meio move,
+   * puxar uma ponta muda a duracao -- "as vezes eu coloco efeito na voz pra
+   * fazer piada e o Whisper nao identifica muito bem". Nunca passa por cima da
+   * vizinha nem sai do video, e grudam no ima como as pontas dos clipes (Alt
+   * solta). O arraste parte SEMPRE do bloco de quando o gesto comecou: refazer
+   * a conta em cima do bloco ja arrastado somaria um arredondamento por pixel.
+   */
+  const totalDeQuadros = Math.ceil(duration * VIDEO_FPS)
+  const pegar = useCallback(
+    (event: React.PointerEvent, i: number, parte: 'corpo' | 'inicio' | 'fim'): void => {
+      if (event.button !== 0 || isRendering) return
+      event.stopPropagation()
+      event.preventDefault()
+      escolher(i)
+      const todas = useProject.getState().captions
+      const bloco0 = todas[i]
+      if (!bloco0) return
+      const { piso, teto } = limitesDaLegenda(todas, i, totalDeQuadros)
+      const fim0 = bloco0.from + bloco0.durationInFrames
+      const minimo = duracaoMinima(bloco0)
+      const x0 = event.clientX
+      const pega = timeAt(event.clientX) - bloco0.from / VIDEO_FPS
+      let andou = false
+      const mover = (e: PointerEvent): void => {
+        // Um clique nao e um arraste: so anda depois de uns pixels.
+        if (!andou && Math.abs(e.clientX - x0) < 3) return
+        andou = true
+        if (parte === 'corpo') {
+          const dur = bloco0.durationInFrames / VIDEO_FPS
+          const quer = timeAt(e.clientX) - pega
+          const { at, linha } = e.altKey ? { at: quer, linha: null } : alinharTrecho(quer, dur, ima, null)
+          const pedido = Math.round(at * VIDEO_FPS)
+          const de = Math.min(Math.max(pedido, piso), teto - bloco0.durationInFrames)
+          if (de < piso) return
+          ima.mostrar(linha !== null && pedido === de ? linha : null)
+          trocar(i, reposicionarLegenda(bloco0, de, de + bloco0.durationInFrames))
+          return
+        }
+        const { t, grudou } = e.altKey ? { t: timeAt(e.clientX), grudou: false } : alinhar(timeAt(e.clientX), ima, null)
+        const q = Math.round(t * VIDEO_FPS)
+        if (parte === 'inicio') {
+          const de = Math.min(Math.max(q, piso), fim0 - minimo)
+          ima.mostrar(grudou && de === q ? t : null)
+          trocar(i, reposicionarLegenda(bloco0, de, fim0))
+        } else {
+          const ate = Math.max(Math.min(q, teto), bloco0.from + minimo)
+          ima.mostrar(grudou && ate === q ? t : null)
+          trocar(i, reposicionarLegenda(bloco0, bloco0.from, ate))
+        }
+      }
+      const fim = (): void => {
+        ima.mostrar(null)
+        window.removeEventListener('pointermove', mover)
+        window.removeEventListener('pointerup', fim)
+        window.removeEventListener('pointercancel', fim)
+      }
+      window.addEventListener('pointermove', mover)
+      window.addEventListener('pointerup', fim)
+      window.addEventListener('pointercancel', fim)
+    },
+    [escolher, trocar, timeAt, ima, totalDeQuadros, isRendering],
+  )
+
+  /*
    * AS PILULAS (v1.61, "melhora a aparencia daquilo"): cada legenda vira uma
    * pilula arredondada com respiro dos dois lados, o texto aparece cortado com
    * reticencias assim que houver ~3 letras de espaco (antes era tudo ou nada),
@@ -1618,17 +1687,28 @@ function FaixaLegendas({ duration }: { duration: number }) {
       // Texto so quando cabe ao menos a primeira palavra inteira: "P..." e
       // "a.." poluiam mais do que diziam.
       const cabe = larguraDaBarra >= (bloco.words[0]?.text.length ?? 0) * 6 + 16
+      const eEla = escolhida === i
+      // As alcas das pontas so quando a pilula tem corpo para elas e para o meio.
+      const alcas = larguraDaBarra >= 18
       return (
         <div
           key={`legenda-${bloco.from}-${i}`}
           className="absolute inset-y-[3px] px-px"
           style={{ left: `${(inicio / duration) * 100}%`, width: `${((fim - inicio) / duration) * 100}%` }}
           title={texto}
+          onPointerDown={(event) => pegar(event, i, 'corpo')}
           onDoubleClick={() => openCaptions(true)}
         >
-          <div className="relative flex h-full items-center overflow-hidden rounded-[4px] border border-white/[0.07] bg-[linear-gradient(180deg,rgba(255,255,255,0.10),rgba(255,255,255,0.04))] transition-colors hover:border-white/25">
+          <div
+            className={[
+              'relative flex h-full cursor-grab items-center overflow-hidden rounded-[4px] border transition-colors active:cursor-grabbing',
+              eEla
+                ? 'border-accent bg-[linear-gradient(180deg,rgba(255,62,128,0.28),rgba(255,62,128,0.12))]'
+                : 'border-white/[0.07] bg-[linear-gradient(180deg,rgba(255,255,255,0.10),rgba(255,255,255,0.04))] hover:border-white/25',
+            ].join(' ')}
+          >
             {cabe && (
-              <span className="truncate px-1.5 text-[10px] font-medium leading-none text-ink-2">{texto}</span>
+              <span className="pointer-events-none truncate px-1.5 text-[10px] font-medium leading-none text-ink-2">{texto}</span>
             )}
             {larguraDaBarra > 40 &&
               bloco.words.slice(1).map((w, k) => (
@@ -1639,10 +1719,27 @@ function FaixaLegendas({ duration }: { duration: number }) {
                 />
               ))}
           </div>
+          {/*
+            As alcas ficam por FORA da pilula, cobrindo a borda e o respiro:
+            dentro dela, os 2 px da beirada eram do meio, e pegar bem na ponta
+            movia a legenda em vez de encurtar.
+          */}
+          {alcas && (
+            <>
+              <span
+                className={['absolute inset-y-0 left-0 w-[6px] cursor-ew-resize rounded-l-[4px]', eEla ? 'bg-accent/60' : 'hover:bg-white/20'].join(' ')}
+                onPointerDown={(event) => pegar(event, i, 'inicio')}
+              />
+              <span
+                className={['absolute inset-y-0 right-0 w-[6px] cursor-ew-resize rounded-r-[4px]', eEla ? 'bg-accent/60' : 'hover:bg-white/20'].join(' ')}
+                onPointerDown={(event) => pegar(event, i, 'fim')}
+              />
+            </>
+          )}
         </div>
       )
     })
-  }, [captions, duration, largura, openCaptions])
+  }, [captions, duration, largura, openCaptions, escolhida, pegar])
 
   if (!visivel) return null
 
@@ -1663,7 +1760,7 @@ function FaixaLegendas({ duration }: { duration: number }) {
        */
       style={{ width: '100%' }}
       className="relative h-full overflow-hidden bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgba(255,255,255,0.018)_6px_7px)]"
-      title="Dois cliques numa legenda abrem o editor de legendas"
+      title="Clique numa legenda para escolher. Arraste para mover, puxe as pontas para mudar a duração, C corta na agulha, Delete apaga. Dois cliques abrem o editor de legendas."
     >
       {pilulas}
       {atual && (
@@ -1674,7 +1771,12 @@ function FaixaLegendas({ duration }: { duration: number }) {
             width: `${(atual.durationInFrames / VIDEO_FPS / duration) * 100}%`,
           }}
         >
-          <div className="flex h-full items-center overflow-hidden rounded-[4px] border border-accent bg-accent shadow-[0_0_10px_rgba(255,62,128,0.55)]">
+          <div
+            className={[
+              'flex h-full items-center overflow-hidden rounded-[4px] border bg-accent shadow-[0_0_10px_rgba(255,62,128,0.55)]',
+              escolhida !== null && captions[escolhida] === atual ? 'border-white' : 'border-accent',
+            ].join(' ')}
+          >
             {(atual.durationInFrames / VIDEO_FPS / duration) * largura >= (atual.words[0]?.text.length ?? 0) * 6 + 16 && (
               <span className="truncate px-1.5 text-[10px] font-semibold leading-none text-white">
                 {atual.words.map((w) => w.text).join(' ')}

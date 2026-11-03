@@ -1,12 +1,14 @@
-import { regrasDaLegendaSchema } from '@shared/contract'
+import { regrasDaLegendaSchema, VIDEO_FPS } from '@shared/contract'
 import { buildCaptions, cutCandidatesFrom } from '@shared/plan'
 import type { CaptionBlock } from '@shared/contract'
+import { cortarLegenda } from '@shared/legenda-na-timeline'
 import { retemporizar } from '@shared/legendas'
+import { avisar } from '../aviso'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { palavrasDasLegendas } from './apoio'
 
 /** Do store do editor (ver ../project.ts): o roteiro e as legendas. */
-export type FatiaDasLegendas = Pick<ProjectState, 'setScript' | 'openScript' | 'openCaptions' | 'mergeCaptions' | 'splitCaption' | 'editCaptionWord' | 'editCaptionText' | 'resetCaptions' | 'setCaptionRules' | 'ressincronizarLegendas'>
+export type FatiaDasLegendas = Pick<ProjectState, 'setScript' | 'openScript' | 'openCaptions' | 'mergeCaptions' | 'splitCaption' | 'editCaptionWord' | 'editCaptionText' | 'escolherLegenda' | 'trocarLegenda' | 'cortarLegendaNaAgulha' | 'apagarLegenda' | 'resetCaptions' | 'setCaptionRules' | 'ressincronizarLegendas'>
 
 export const fatiaDasLegendas = (set: SetProjeto, get: GetProjeto): FatiaDasLegendas => ({
 
@@ -132,6 +134,52 @@ export const fatiaDasLegendas = (set: SetProjeto, get: GetProjeto): FatiaDasLege
       captions: captions.map((item, i) => (i === index ? { ...item, words } : item)),
       captionsEdited: true,
     })
+  },
+
+  /*
+   * A LEGENDA NA LINHA DO TEMPO: escolher, arrastar, cortar e apagar como um
+   * clipe -- "deixa a legenda ser editada manualmente na timeline tambem". As
+   * contas moram em shared/legenda-na-timeline.ts.
+   */
+  escolherLegenda: (index) =>
+    // Escolher uma legenda solta o clipe escolhido: o C e o Delete passam a ser dela.
+    set(index === null ? { legendaEscolhida: null } : { legendaEscolhida: index, clipeSelecionado: null, outrosClipes: [] }),
+
+  trocarLegenda: (index, bloco) => {
+    const { captions } = get()
+    if (!captions[index]) return
+    set({ captions: captions.map((item, i) => (i === index ? bloco : item)), captionsEdited: true })
+  },
+
+  cortarLegendaNaAgulha: () => {
+    const { captions, legendaEscolhida, playhead } = get()
+    const bloco = legendaEscolhida === null ? undefined : captions[legendaEscolhida]
+    if (legendaEscolhida === null || !bloco) return
+    const quadro = Math.round(playhead * VIDEO_FPS)
+    const dentro = quadro > bloco.from && quadro < bloco.from + bloco.durationInFrames
+    const partes = cortarLegenda(bloco, quadro)
+    if (!partes) {
+      avisar(
+        !dentro
+          ? 'Leve a agulha para dentro da legenda escolhida para cortar ali.'
+          : bloco.words.length < 2
+            ? 'Essa legenda tem uma palavra só: não há o que cortar. Puxe as pontas para mudar a duração.'
+            : 'Perto demais da ponta: cada parte precisa ficar com uma palavra.',
+      )
+      return
+    }
+    set({
+      captions: [...captions.slice(0, legendaEscolhida), ...partes, ...captions.slice(legendaEscolhida + 1)],
+      captionsEdited: true,
+      // A parte da direita fica escolhida: o proximo C continua cortando para a frente.
+      legendaEscolhida: legendaEscolhida + 1,
+    })
+  },
+
+  apagarLegenda: (index) => {
+    const { captions } = get()
+    if (!captions[index]) return
+    set({ captions: captions.filter((_, i) => i !== index), captionsEdited: true, legendaEscolhida: null })
   },
 
   resetCaptions: () => {
