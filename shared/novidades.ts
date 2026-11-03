@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.92.0',
+    itens: [
+      'Legenda editável na linha do tempo: clique numa legenda para escolher, arraste para mover e puxe as pontas para mudar a duração. C corta na agulha, Delete apaga e Ctrl+Z desfaz. Bom para quando o efeito na voz confunde o Whisper.',
+      'Um "plim" quando o render termina (na fila, um só no fim). Para desligar: Configurações > Quando o render termina.',
+      'Setas e emojis em .mov na faixa de vídeo: o preview não trava mais ao pular a agulha dentro deles, o que acontecia muito ao animar. Os que já estavam no projeto são preparados de novo uma vez.',
+    ],
+  },
+  {
     versao: '1.91.1',
     itens: [
       'Legendar vídeo pronto não fica mais parado em "Distribuindo as cenas...": com o vídeo inteiro num bloco só, o app não pergunta nada à IA e vai direto do Whisper para as legendas.',
