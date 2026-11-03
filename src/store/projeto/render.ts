@@ -4,6 +4,7 @@ import { toRenderProps, totalFrames } from '@shared/plan'
 import { trilhaParaMixar } from '@shared/ducking'
 import { emitir } from '@/modulos/ganchos'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
+import { avisarQueFicouPronto } from '../som-de-pronto'
 
 /** Do store do editor (ver ../project.ts): o render e o rastreio de rosto. */
 export type FatiaDoRender = Pick<ProjectState, 'startRender' | 'cancelRender' | 'seguirRosto' | 'rastrear' | 'cancelAnalyze' | 'applyRenderProgress'>
@@ -303,6 +304,8 @@ export const fatiaDoRender = (set: SetProjeto, get: GetProjeto): FatiaDoRender =
     if (progress.stage === 'done') {
       set({ render: null, lastOutput: progress.outputPath ?? null, error: null })
       emitir('depoisDeRenderizar', { outputPath: progress.outputPath ?? null })
+      // Na fila, um som so no fim dela (ver runQueue): cinco videos, cinco sinos seria barulho.
+      if (!get().queueRunning) void avisarQueFicouPronto()
       return
     }
     if (progress.stage === 'failed') {

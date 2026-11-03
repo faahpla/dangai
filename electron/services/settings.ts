@@ -82,6 +82,8 @@ export interface Settings {
    * da biblioteca, quando existe (ver pastaDosMangas).
    */
   mangaDir: string
+  /** O barulhinho quando o render termina. Ligado por padrao. */
+  somAoRenderizar: boolean
   /**
    * Curvas de movimento que ele guardou.
    *
@@ -146,6 +148,7 @@ const DEFAULTS: Settings = {
   sfxDir: '',
   libraryDir: '',
   mangaDir: '',
+  somAoRenderizar: true,
   curvePresets: [],
   captionPresets: [],
   bins: [],
@@ -370,6 +373,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'ge
     sfxDir: settings.sfxDir,
     libraryDir: settings.libraryDir,
     mangaDir: settings.mangaDir,
+    somAoRenderizar: settings.somAoRenderizar,
     curvePresets: settings.curvePresets,
     captionStyle: settings.captionStyle,
     captionPresets: settings.captionPresets,
@@ -421,6 +425,7 @@ function coerce(raw: unknown): Settings {
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
     mangaDir: typeof value['mangaDir'] === 'string' ? value['mangaDir'] : '',
+    somAoRenderizar: value['somAoRenderizar'] !== false,
     curvePresets: curvasSalvas(value['curvePresets']),
     // Conferido do outro lado, pelo schema do contract: aqui so passa adiante
     // um objeto, e um campo estranho vira o padrao em vez de derrubar o app.

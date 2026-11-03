@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { FolderOpen, X } from "lucide-react";
 import type { PublicSettings } from "@shared/channels";
 import { useProject } from "@/store/project";
+import { tocarSomDePronto } from "@/store/som-de-pronto";
 import { Atalhos } from "./Atalhos";
 import { ChaveDoGemini, LINK_DA_CHAVE_DO_GEMINI } from "./ChaveDoGemini";
 import { ModulosNasConfiguracoes, SecoesDosModulos } from "@/modulos";
@@ -336,6 +337,36 @@ export function Settings() {
                 uma transição sim e outra não — som em todo corte vira ruído de
                 fundo.
               </p>
+
+              <label className="mt-4 mb-1.5 block text-[11px] font-medium text-ink-2">
+                Quando o render termina
+              </label>
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    [true, "Com som"],
+                    [false, "Sem som"],
+                  ] as const
+                ).map(([ligado, nome]) => (
+                  <button
+                    key={nome}
+                    type="button"
+                    onClick={() => {
+                      void save({ somAoRenderizar: ligado });
+                      // Ligar ja toca: ele ouve o que escolheu.
+                      if (ligado) tocarSomDePronto();
+                    }}
+                    className={[
+                      "lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]",
+                      (settings?.somAoRenderizar ?? true) === ligado
+                        ? "border-accent bg-accent-dim text-ink"
+                        : "border-line bg-elevated text-ink-2",
+                    ].join(" ")}
+                  >
+                    {nome}
+                  </button>
+                ))}
+              </div>
               <SecoesDosModulos depoisDe="sons" />
 
               <div className="my-5 h-px bg-line" />

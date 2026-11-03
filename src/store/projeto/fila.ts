@@ -1,5 +1,6 @@
 import { semExtensaoDeProjeto } from '@shared/project-file'
 import type { GetProjeto, ProjectState, QueueItem, SetProjeto } from '../project'
+import { avisarQueFicouPronto } from '../som-de-pronto'
 
 /** Do store do editor (ver ../project.ts): a fila de projetos. */
 export type FatiaDaFila = Pick<ProjectState, 'enqueue' | 'removeFromQueue' | 'clearQueue' | 'stopQueue' | 'runQueue'>
@@ -62,6 +63,7 @@ export const fatiaDaFila = (set: SetProjeto, get: GetProjeto): FatiaDaFila => ({
       }))
     }
 
+    let saiuAlgum = false
     while (get().queueRunning) {
       const proximo = get().queue.find((item) => item.status === 'pendente')
       if (!proximo) break
@@ -78,6 +80,7 @@ export const fatiaDaFila = (set: SetProjeto, get: GetProjeto): FatiaDaFila => ({
 
       const saida = await get().startRender()
       if (saida) {
+        saiuAlgum = true
         marcar(proximo.path, { status: 'pronto', output: saida })
       } else {
         marcar(proximo.path, {
@@ -89,5 +92,6 @@ export const fatiaDaFila = (set: SetProjeto, get: GetProjeto): FatiaDaFila => ({
     }
 
     set({ queueRunning: false })
+    if (saiuAlgum) void avisarQueFicouPronto()
   },
 })

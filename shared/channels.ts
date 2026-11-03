@@ -475,6 +475,8 @@ export interface PublicSettings {
   libraryDir: string
   /** Pasta dos mangas. Vazio = a "Mangás" ao lado da biblioteca, se existir. */
   mangaDir: string
+  /** O barulhinho quando o render termina. */
+  somAoRenderizar: boolean
   /** Chave da Anthropic: so se existe e os quatro ultimos caracteres. */
   hasApiKey: boolean
   apiKeyHint: string
@@ -513,6 +515,7 @@ export interface SettingsPatch {
   sfxDir?: string
   libraryDir?: string
   mangaDir?: string
+  somAoRenderizar?: boolean
   curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
   captionStyle?: Record<string, unknown>
   captionPresets?: Record<string, unknown>[]
