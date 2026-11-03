@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.91.1',
+    itens: [
+      'Legendar vídeo pronto não fica mais parado em "Distribuindo as cenas...": com o vídeo inteiro num bloco só, o app não pergunta nada à IA e vai direto do Whisper para as legendas.',
+    ],
+  },
+  {
     versao: '1.91.0',
     itens: [
       'Soltou a narração (e o roteiro) sem nenhuma cena? A Biblioteca abre direto, na primeira frase. Se fechar sem escolher, o botão "Escolher na biblioteca" fica no lugar para voltar.',
