@@ -466,6 +466,23 @@ async function main(): Promise<void> {
     conferir('analise: a nota de sempre', resultado.aiNote, 'Sem chave da API — cenas distribuídas pelas pausas da narração.')
     conferir('analise: duas cenas', resultado.plan.scenes.length, 2)
     conferir('nenhuma chamada de rede', pedidos.length, 0)
+
+    // UMA imagem (o "Legendar video pronto"): com chave e tudo, a IA nem e
+    // chamada -- so ha um plano, e o Gemini instavel prendia a legenda.
+    zerar(null)
+    saveSettings({ geminiApiKey: 'AIza-falsa-de-teste-0001', iaProvedor: 'gemini' })
+    preparar([])
+    const progresso: string[] = []
+    const sozinha = await analyze(
+      { audioPath: join(pasta, 'nao-existe.mp3'), subtitlePath: srt, images: [imagem('video.mp4')], durationSec: 4, script: null },
+      (m) => progresso.push(m),
+      (caminho) => caminho,
+    )
+    conferir('uma imagem: nenhuma chamada de rede, mesmo com chave', pedidos.length, 0)
+    conferir('uma imagem: nunca "Distribuindo as cenas..."', progresso.includes('Distribuindo as cenas...'), false)
+    conferir('uma imagem: sem nota de IA', sozinha.aiNote, null)
+    conferir('uma imagem: um bloco do zero ao fim', sozinha.plan.scenes.map((c) => [c.start, c.end]), [[0, 4]])
+    conferir('uma imagem: as legendas vieram', sozinha.transcript?.text.includes('Himmel'), true)
   }
 
   console.log('Gemini: o pedido no formato da doc')

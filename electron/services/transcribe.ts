@@ -139,6 +139,15 @@ async function analisar(
     }
   }
 
+  // --------------------------------------------- uma imagem so: nada a decidir
+  //
+  // Com UMA imagem o plano e um so: ela do zero ao fim. Perguntar a IA e so
+  // esperar -- no "Legendar video pronto" (o video inteiro e um bloco) o Gemini
+  // deu 503, depois 2 minutos sem resposta, e a legenda nao chegava (11/2026).
+  if (images.length <= 1) {
+    return withoutAI(images.length, durationSec, transcript, null, scriptNote, porPartes.note)
+  }
+
   // --------------------------------------------------------------- degrau 1: IA
   // Qualquer provedor serve (Gemini ou Anthropic): o llm.ts escolhe pela chave.
   if (iaDisponivel() && transcript && transcript.text.length > 0) {
