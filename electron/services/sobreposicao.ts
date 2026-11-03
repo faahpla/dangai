@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
+import { constants as osConstants, setPriority } from 'node:os'
 import { extname, join } from 'node:path'
 import sharp from 'sharp'
 import { ffmpegPath } from './ffmpeg-path'
@@ -70,7 +71,10 @@ export async function prepararSobreposicao(path: string): Promise<SobreposicaoPr
   }
 
   const s = statSync(path)
-  const chave = createHash('sha1').update(`${path}|${s.size}|${s.mtimeMs}`).digest('hex').slice(0, 20)
+  const identidade = `${path}|${s.size}|${s.mtimeMs}`
+  // A versao entra na chave: a conversao de antes (um quadro-chave a cada 5 s)
+  // e refeita uma vez, e a velha sai do disco (ver QUADRO_CHAVE).
+  const chave = createHash('sha1').update(`${identidade}|${VERSAO_DA_CONVERSAO}`).digest('hex').slice(0, 20)
   const alvo = join(dir(), `${chave}.webm`)
   if (!existsSync(alvo)) {
     /*
@@ -84,19 +88,48 @@ export async function prepararSobreposicao(path: string): Promise<SobreposicaoPr
     if (andando) {
       await andando
     } else {
-      const tarefa = converter(path, alvo)
+      // Uma conversao de cada vez: abrir um projeto com dez setas eram dez VP9 juntos.
+      const tarefa = filaDeConversao.then(() => converter(path, alvo))
+      filaDeConversao = tarefa.catch(() => {})
       convertendo.set(alvo, tarefa)
       try {
         await tarefa
       } finally {
         convertendo.delete(alvo)
       }
+      const velha = join(dir(), `${createHash('sha1').update(identidade).digest('hex').slice(0, 20)}.webm`)
+      rmSync(velha, { force: true })
     }
   }
   return { arquivo: alvo, tipo: 'video', durationSec: info.durationSec, aspecto }
 }
 
 const convertendo = new Map<string, Promise<void>>()
+let filaDeConversao: Promise<unknown> = Promise.resolve()
+
+/**
+ * UM QUADRO-CHAVE POR SEGUNDO (24 quadros). O padrao do libvpx e um a cada 128
+ * (5,3 s): cada pulo da agulha para o meio do clipe decodificava ate 5 s de
+ * VP9 com alfa -- em software, que o alfa nao tem decodificador de placa. Animar
+ * e pular a agulha o tempo todo dentro do clipe, e no PC do ajk "trava para dar
+ * preview". Medido no preview: 329 ms por pulo antes, 86 ms com um por segundo,
+ * arquivo 3% maior, mesmo tempo de conversao.
+ */
+const QUADRO_CHAVE = 24
+const VERSAO_DA_CONVERSAO = 'g24'
+
+/**
+ * O ffmpeg de fundo abaixo do normal: converter e medir nao podem disputar o
+ * processador com o preview que ele esta assistindo.
+ */
+function devagar(pid: number | undefined): void {
+  if (pid === undefined) return
+  try {
+    setPriority(pid, osConstants.priority.PRIORITY_BELOW_NORMAL)
+  } catch {
+    // Sem permissao para mudar: roda na prioridade de sempre.
+  }
+}
 
 /** Onde esta o que se VE no arquivo, em fracao da largura e da altura dele. */
 export interface CaixaDoConteudo {
@@ -175,6 +208,7 @@ async function medirCaixa(path: string): Promise<CaixaDoConteudo | null> {
 function rodarComSaida(args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     const child = spawn(ffmpegPath, args, { windowsHide: true })
+    devagar(child.pid)
     let stderr = ''
     child.stderr.on('data', (c: Buffer) => {
       stderr += c.toString()
@@ -194,6 +228,7 @@ async function converter(path: string, alvo: string): Promise<void> {
       // yuva420p guarda o canal alfa; sem alfa na fonte, ele sai opaco.
       '-c:v', 'libvpx-vp9', '-pix_fmt', 'yuva420p',
       '-b:v', '0', '-crf', '24', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '4',
+      '-g', String(QUADRO_CHAVE),
       // Alfa em VP9 exige isto desligado.
       '-auto-alt-ref', '0',
       '-an', parcial,
@@ -208,6 +243,7 @@ async function converter(path: string, alvo: string): Promise<void> {
 function rodar(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath, args, { windowsHide: true })
+    devagar(child.pid)
     let stderr = ''
     child.stderr.on('data', (c: Buffer) => (stderr += c.toString()))
     child.on('error', reject)
