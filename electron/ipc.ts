@@ -8,8 +8,6 @@ import {
   VIDEO_EXTENSIONS,
   IPC,
   type AnalyzeArgs,
-  type AutomountRequest,
-  type AutomountResult,
   type ScriptBlocksResult,
   type IpcResult,
   type MusicPick,
@@ -64,7 +62,7 @@ import type { Formato } from '@shared/contract'
 import { expandDrop } from './services/folders'
 import { escanearRaizes, raizesDaBiblioteca } from './services/library'
 import { readNicknames, saveNicknames, suggestNicknames } from './services/nicknames'
-import { automount, scriptBlocks } from './services/automount'
+import { scriptBlocks } from './services/trechos'
 import { readFavorites, toggleFavorite } from './services/favorites'
 import { describeClips, readDescriptions, stopDescribe } from './services/describe'
 import { compararCenas } from './services/visao'
@@ -185,7 +183,7 @@ export function registerIpc(): void {
   /*
    * Todo leitor da biblioteca percorre a MESMA lista (raizesDaBiblioteca): a
    * libraryDir e as raizes registradas por modulo. Ler so a libraryDir aqui e
-   * a lista toda la deixaria a grade e o Montar sozinho vendo cenas diferentes.
+   * a lista toda la deixaria a grade e as sugestoes vendo cenas diferentes.
    */
   handle<[], LibraryIndex>(IPC.scanLibrary, async () => {
     const raizes = raizesDaBiblioteca()
@@ -195,14 +193,6 @@ export function registerIpc(): void {
       )
     }
     return escanearRaizes(raizes, publish, broadcastLibrary)
-  })
-
-  handle<[], string[]>(IPC.seriesDaBiblioteca, async () => {
-    const raizes = raizesDaBiblioteca()
-    if (raizes.length === 0) return []
-    // Os animes que o Montar sozinho oferece: serie que so tem manga nao monta nada.
-    const { clips } = await escanearRaizes(raizes, publish, broadcastLibrary)
-    return [...new Set(clips.filter((c) => !c.manga).map((c) => c.anime))].sort((a, b) => a.localeCompare(b, 'pt-BR'))
   })
 
   handle<[], string | null>(IPC.pickLibraryDir, async () => {
@@ -371,14 +361,6 @@ export function registerIpc(): void {
   handle<[string, readonly string[]], NicknameSuggestion[]>(
     IPC.suggestNicknames,
     (series, characters) => suggestNicknames(series, characters),
-  )
-
-  /*
-   * Reusa o mesmo aviso de andamento da analise: quem esta olhando a tela ve
-   * uma frase mudando, e nao dois indicadores disputando o mesmo canto.
-   */
-  handle<[AutomountRequest], AutomountResult>(IPC.automount, (request) =>
-    automount(request, publish, broadcastAnalyze),
   )
 
   handle<

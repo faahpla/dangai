@@ -84,7 +84,6 @@ export const IPC = {
   checkUpdate: 'update:check',
   appVersion: 'app:version',
   scanLibrary: 'library:scan',
-  seriesDaBiblioteca: 'library:series',
   pickLibraryDir: 'library:pick-dir',
   libraryClipUrl: 'library:clip-url',
   libraryClipStrip: 'library:clip-strip',
@@ -102,7 +101,6 @@ export const IPC = {
   readNicknames: 'nicknames:read',
   saveNicknames: 'nicknames:save',
   suggestNicknames: 'nicknames:suggest',
-  automount: 'automount:run',
   scriptBlocks: 'automount:blocks',
   tagLibrary: 'tagger:run',
   readTags: 'tagger:read',
@@ -320,70 +318,6 @@ export interface Nickname {
 export interface NicknameSuggestion {
   term: string
   character: string
-}
-
-// ------------------------------------------------------- montagem automatica
-
-/** Recap ou teoria. Escolhido no gesto, quando ele solta a narracao. */
-export type AutomountMode = 'recap' | 'theory'
-
-export interface AutomountRequest {
-  audioPath: string
-  subtitlePath: string | null
-  /** Roteiro escrito, quando houver. Deixa o texto exato, sem erro de Whisper. */
-  script: string | null
-  mode: AutomountMode
-  /**
-   * De que serie sao as cenas. Vazio = deduz do proprio roteiro.
-   *
-   * Deduzir funciona -- nome de personagem nao colide entre as series dele --
-   * mas ele quis dizer. Palavras dele: "quando o roteiro for de Mushoku Tensei
-   * ele tem q buscar coisas diretamente de mushoku tensei". Escolher tambem
-   * blinda o bloco que nao cita ninguem, que e onde a deducao nao alcanca.
-   */
-  series: string | null
-  /** Transcricao travada: usa esta em vez de ouvir a narracao. Ver AnalyzeArgs. */
-  transcript?: Transcript | null
-  /** O texto do B-roll, quando ele soltou um: de que episodio sai cada parte (shared/broll.ts). */
-  broll?: string | null
-}
-
-/** Um clipe proposto para um bloco. */
-export interface AutomountCandidate {
-  /** Caminho do mp4. E o que o importador do projeto recebe -- a mesma porta do arraste. */
-  path: string
-  thumbUrl: string
-  /** "Tensura S04E15 #0195". So para ele saber de onde veio. */
-  label: string
-  durationSec: number
-  /** Por que este entrou: "Kisuke Urahara, so ele em cena, cobre o bloco". */
-  reason: string
-}
-
-export interface AutomountBlock {
-  start: number
-  end: number
-  text: string
-  /** Quem o leitor achou nesta frase. Vazio quando a frase nao cita ninguem. */
-  characters: string[]
-  /** O primeiro ja vai aplicado; o resto e a fita. Vazio quando nao havia material. */
-  candidates: AutomountCandidate[]
-}
-
-export interface AutomountResult {
-  blocks: AutomountBlock[]
-  /**
-   * A transcricao que decidiu os cortes. Vai junto de proposito.
-   *
-   * Sem ela o renderer transcreveria de novo para fazer as legendas -- e a
-   * segunda passada nao tem o vocabulario da biblioteca, entao escreveria
-   * "Ischigo" onde esta acertou "ichigo". A legenda contradiria o corte, e o
-   * usuario esperaria o Whisper duas vezes pelo mesmo audio.
-   */
-  transcript: Transcript | null
-  scriptNote: string | null
-  /** Aviso quando algum bloco ficou sem cena. null quando deu tudo certo. */
-  note: string | null
 }
 
 /**
@@ -668,13 +602,6 @@ export interface DangaiBridge {
    * vigia de pasta rodando o tempo todo em cima de milhares de arquivos.
    */
   scanLibrary(): Promise<IpcResult<LibraryIndex>>
-  /**
-   * So os nomes dos animes da biblioteca (a mesma varredura, mas sem mandar as
-   * cenas). O "Montar sozinho" precisa so disto, e as dezenas de milhares de
-   * cenas atravessando para a janela a congelavam no instante de soltar a
-   * narracao.
-   */
-  seriesDaBiblioteca(): Promise<IpcResult<string[]>>
   /** Dialogo para apontar a raiz da biblioteca. null = fechou sem escolher. */
   pickLibraryDir(): Promise<IpcResult<string | null>>
   /** Publica um clipe no servidor local, so quando ele vai mesmo ser tocado. */
@@ -738,13 +665,6 @@ export interface DangaiBridge {
    * famoso. Errar aqui nao custa nada porque o usuario confirma item a item.
    */
   suggestNicknames(series: string, characters: readonly string[]): Promise<IpcResult<NicknameSuggestion[]>>
-  /**
-   * Monta o video sozinho a partir da narracao.
-   *
-   * Devolve uma PROPOSTA -- um clipe aplicado por bloco e cinco na fita --, e
-   * nunca escreve nada: quem aplica e o renderer, pela porta do arraste.
-   */
-  automount(request: AutomountRequest): Promise<IpcResult<AutomountResult>>
   /**
    * Quebra a narracao em frases com tempo medido, sem escolher cena nenhuma.
    *

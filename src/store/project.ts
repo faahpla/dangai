@@ -4,8 +4,6 @@ import { buildScriptIndex } from '@shared/script-reader'
 import { classifyFile } from '@shared/channels'
 import { avisar } from './aviso'
 import type {
-  AutomountBlock,
-  AutomountMode,
   ScriptBlock,
   LibraryIndex,
   MusicPick,
@@ -396,19 +394,6 @@ export interface ProjectState {
   describeBusy: boolean
 
   /**
-   * A proposta da montagem automatica, bloco a bloco.
-   *
-   * Fica no estado depois de aplicada porque a FITA de candidatos e o que faz a
-   * proposta ser revisavel: sem ela, trocar uma cena de que ele nao gostou
-   * voltaria a ser uma busca na biblioteca inteira. null quando o projeto nao
-   * veio da montagem automatica.
-   */
-  automountBlocks: AutomountBlock[] | null
-  automountMode: AutomountMode | null
-  /** Serie escolhida para a proxima montagem. null = deduzir do roteiro. */
-  automountSeries: string | null
-
-  /**
    * Qual bloco da timeline esta esperando uma cena escolhida na Biblioteca.
    *
    * A fita de candidatos resolve o caso comum -- discordar da escolha e pegar
@@ -741,16 +726,6 @@ export interface ProjectState {
    * pasta faz no arraste, com um botao no lugar do gesto.
    */
   addFromLibrary: (paths: readonly string[], parte?: string) => Promise<void>
-  /**
-   * Monta o video sozinho a partir da narracao que ja esta carregada.
-   *
-   * Nao substitui o caminho manual: e um segundo gesto no mesmo estado vazio.
-   * Depois de montar, tudo continua editavel do jeito de sempre.
-   */
-  automount: (mode: AutomountMode, series: string | null) => Promise<void>
-  /** Troca a cena de um bloco por outro candidato da fita. */
-  swapCandidate: (blockIndex: number, candidateIndex: number) => Promise<void>
-  setAutomountSeries: (series: string | null) => void
   /** Abre a Biblioteca para escolher a cena de um bloco especifico. */
   openLibraryToReplace: (sceneIndex: number, metade?: MetadeDaCena) => Promise<void>
   /** Troca a cena de um bloco por um caminho vindo da Biblioteca. */
@@ -1032,9 +1007,6 @@ export const useProject = create<ProjectState>((set, get) => ({
   paletteOpen: false,
   libraryOpen: false,
   library: null,
-  automountBlocks: null,
-  automountMode: null,
-  automountSeries: null,
   replaceTarget: null,
   irParaClipe: null,
   scriptBlocks: null,
@@ -1212,14 +1184,14 @@ export const useProject = create<ProjectState>((set, get) => ({
       if (lido.ok && pareceBroll(lido.value, nome)) {
         set({ broll: { nome, texto: lido.value }, projectDirty: true })
         // Com a biblioteca ja lida, da para avisar na hora o episodio que falta
-        // cortar no AnCut; sem ela, o aviso vem na montagem.
+        // cortar no AnCut.
         const lib = get().library
         const itens = lib
           ? resolverTemporadas(lerBroll(lido.value), lib.clips, [], buildScriptIndex(lib.characters, Object.values(get().nicknames).flat()))
           : lerBroll(lido.value)
         const faltam = lib ? episodiosQueFaltam(itens, lib.clips, []) : []
         avisar(
-          `B-roll: ${resumoDoBroll(itens)}. A montagem e as sugestões vão preferir as cenas deles.` +
+          `B-roll: ${resumoDoBroll(itens)}. As sugestões da Biblioteca vão preferir as cenas deles.` +
             (faltam.length > 0 ? ` Não achei na Biblioteca: ${faltam.map(rotuloDoItem).join(', ')}.` : ''),
           12000,
         )
@@ -1266,6 +1238,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (subtitlePath) set({ subtitlePath })
 
     const audioPath = audioPaths[0]
+    let narracaoNova = false
     if (audioPath) {
       set({ busy: 'Analisando a narração...' })
       const anterior = get().audio?.path ?? null
@@ -1293,6 +1266,7 @@ export const useProject = create<ProjectState>((set, get) => ({
         if (anterior !== null && anterior !== result.value.path) {
           emitir('narracaoTrocada', { anterior, nova: result.value.path })
         }
+        narracaoNova = true
       } else {
         set({ error: result.error })
       }
@@ -1301,6 +1275,16 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ busy: null })
 
     const { audio, images } = get()
+    /*
+     * NARRACAO SEM CENA NENHUMA ABRE A BIBLIOTECA, na primeira frase. "Quando
+     * eu arrastar quero que va direto nessa opcao de escolher na biblioteca."
+     * So no gesto dele (soltar ou o dialogo), e so com a narracao que acabou
+     * de entrar: um modulo que traz arquivos nao abre tela nenhuma.
+     */
+    if (audio && images.length === 0 && origem && narracaoNova) {
+      await get().openLibrary(true)
+      return
+    }
     if (!audio || images.length === 0) return
 
     // Material novo invalida o plano; roteiro sozinho nao mexe nos cortes,
@@ -1519,9 +1503,6 @@ export const useProject = create<ProjectState>((set, get) => ({
       render: null,
       lastOutput: null,
       planEdited: false,
-      automountBlocks: null,
-      automountMode: null,
-      automountSeries: null,
       replaceTarget: null,
       scriptBlocks: null,
       scriptBlocksBusy: null,

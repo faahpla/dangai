@@ -1,8 +1,6 @@
-import type { AutomountBlock } from '@shared/channels'
 import type { ImageAsset } from '@shared/contract'
 import { juntarComOProximo, separarTrecho as separarPedacos, tirarDaFita } from '@shared/juntar'
 import { buildCaptions, imagemDaMetade } from '@shared/plan'
-import { roteiroNaoBate } from '@shared/preflight'
 import { remapearEscolhas } from '@shared/remapear-escolhas'
 import { herdarAjustes, reaproveitar } from '@shared/remontar'
 import {
@@ -14,160 +12,14 @@ import {
   slotsDoTrecho,
   spansDoTrecho,
 } from '@shared/trecho'
-import { perguntar } from '../pergunta'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { semPassoDeDesfazer } from '../quiet'
-import { aplicarMarcacoes, planoDosBlocos, substituirNaFita } from './apoio'
+import { aplicarMarcacoes, planoDosBlocos } from './apoio'
 
-/** Do store do editor (ver ../project.ts): montar sozinho, a selecao por roteiro e os blocos da Biblioteca. */
-export type FatiaDaEscolhaDeCenas = Pick<ProjectState, 'automount' | 'setAutomountSeries' | 'openLibraryToReplace' | 'replaceSceneWith' | 'loadScriptBlocks' | 'trocarRoteiro' | 'setActiveBlock' | 'voltarParaSelecao' | 'toggleBlockClip' | 'alternarEscolhido' | 'removerEscolhido' | 'limparEscolhidos' | 'juntarTrechos' | 'separarTrecho' | 'reorderBlockClips' | 'toggleBlockSplit' | 'duplicateBlockClip' | 'setBlockWeight' | 'removeBlockClip' | 'setBlockCut' | 'clearBlockCuts' | 'applyBlockClips' | 'swapCandidate'>
+/** Do store do editor (ver ../project.ts): a selecao por roteiro e os blocos da Biblioteca. */
+export type FatiaDaEscolhaDeCenas = Pick<ProjectState, 'openLibraryToReplace' | 'replaceSceneWith' | 'loadScriptBlocks' | 'trocarRoteiro' | 'setActiveBlock' | 'voltarParaSelecao' | 'toggleBlockClip' | 'alternarEscolhido' | 'removerEscolhido' | 'limparEscolhidos' | 'juntarTrechos' | 'separarTrecho' | 'reorderBlockClips' | 'toggleBlockSplit' | 'duplicateBlockClip' | 'setBlockWeight' | 'removeBlockClip' | 'setBlockCut' | 'clearBlockCuts' | 'applyBlockClips'>
 
 export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDaEscolhaDeCenas => ({
-
-  automount: async (mode, series) => {
-    const { audio, subtitlePath, script } = get()
-    if (!audio) {
-      set({ error: 'Carregue a narração antes de montar sozinho.' })
-      return
-    }
-
-    set({ busy: 'Montando...', error: null })
-
-    const proposta = await window.dangai.automount({
-      audioPath: audio.path,
-      subtitlePath,
-      script,
-      mode,
-      series,
-      transcript: get().transcriptTravado ? get().transcript : null,
-      broll: get().broll?.texto ?? null,
-    })
-    if (!proposta.ok) {
-      set({ busy: null, error: proposta.error })
-      return
-    }
-
-    const { blocks, note, scriptNote, transcript } = proposta.value
-    /*
-     * O ROTEIRO NAO BATEU: pergunta antes de montar. Montado assim, os cortes
-     * e as legendas seguem o que foi falado -- com um audio de outro assunto,
-     * 59 cenas aleatorias, e antes sem ninguem avisar.
-     */
-    const nota = roteiroNaoBate(script, transcript, scriptNote)
-    if (nota) {
-      set({ busy: null })
-      const seguir = await perguntar({
-        titulo: 'O roteiro não bate com a narração',
-        texto: `${nota}\n\nMontando assim, os cortes e as legendas seguem o que foi falado, e não o roteiro. Confira se a narração e o roteiro são do mesmo vídeo.`,
-        sim: 'Montar pela narração',
-        nao: 'Cancelar',
-      })
-      if (!seguir) {
-        set({ scriptNote: nota })
-        return
-      }
-      set({ busy: 'Montando...' })
-    }
-    const uteis = blocks.filter((b) => b.candidates.length > 0)
-    if (uteis.length === 0) {
-      set({
-        busy: null,
-        error:
-          series
-            ? `Não há cena de "${series}" para nenhum bloco desta narração.`
-            : 'A biblioteca não tem cena para nenhum bloco desta narração. Confira a pasta das cenas nas configurações.',
-      })
-      return
-    }
-
-    set({ busy: `Trazendo ${uteis.length} cenas...` })
-    /*
-     * CLIPE QUE NAO ABRE vira a PROXIMA SUGESTAO do mesmo bloco, e o resto
-     * segue. Antes um clipe preto da biblioteca (o 0440.mp4, 10/2026) jogava
-     * fora as 34 cenas escolhidas. Ate tres tentativas por bloco; sem nenhuma
-     * que abra, o bloco sai e o vizinho de antes estica ate o proximo.
-     */
-    const escolha = uteis.map(() => 0)
-    const imagens: (ImageAsset | null)[] = uteis.map(() => null)
-    const pulados: string[] = []
-    let faltam = uteis.map((_, i) => i)
-    for (let rodada = 0; rodada < 3 && faltam.length > 0; rodada++) {
-      const r = await window.dangai.importImagesPulando(faltam.map((i) => uteis[i]!.candidates[escolha[i]!]!.path))
-      if (!r.ok) {
-        set({ busy: null, error: r.error })
-        return
-      }
-      const deNovo: number[] = []
-      faltam.forEach((i, k) => {
-        const img = r.value.imagens[k]
-        if (img) {
-          imagens[i] = img
-          return
-        }
-        pulados.push(uteis[i]!.candidates[escolha[i]!]!.path.split(/[\\/]/).pop() ?? '?')
-        escolha[i]! += 1
-        if (uteis[i]!.candidates[escolha[i]!]) deNovo.push(i)
-      })
-      faltam = deNovo
-    }
-    // A fita de cada bloco passa a comecar pela cena que abriu (e a "trocar
-    // cena" continua dali); bloco sem nenhuma fica sem fita, como os sem cena.
-    let k = 0
-    const blocosFinais = blocks.map((b) => {
-      if (b.candidates.length === 0) return b
-      const i = k++
-      return imagens[i] ? { ...b, candidates: b.candidates.slice(escolha[i]) } : { ...b, candidates: [] }
-    })
-    const ficam = blocosFinais.filter((b) => b.candidates.length > 0)
-    if (ficam.length === 0) {
-      set({ busy: null, error: `Nenhuma das cenas escolhidas abriu (${pulados.slice(0, 3).join(', ')}). Confira a pasta das cenas.` })
-      return
-    }
-    const plano = planoDosBlocos(ficam, audio.durationSec)
-    // Bloco que saiu deixaria um buraco: quem vem antes estica ate o proximo.
-    plano.scenes.forEach((cena, i) => {
-      const proxima = plano.scenes[i + 1]
-      if (proxima) cena.end = proxima.start
-    })
-
-    set({
-      images: imagens.filter((img): img is ImageAsset => img !== null),
-      plan: plano,
-      planOrigin: 'auto',
-      /*
-       * Marcado como editado de proposito. O plano da montagem automatica sai
-       * das FRASES da narracao; qualquer reanalise o substituiria por uma
-       * distribuicao por cima, e a cena deixaria de casar com a frase que a
-       * escolheu.
-       */
-      planEdited: true,
-      automountBlocks: blocosFinais,
-      automountMode: mode,
-      /*
-       * A transcricao vem junto da proposta, e nao de uma segunda analise.
-       *
-       * Transcrever de novo custaria outra passada de Whisper pelo mesmo audio
-       * E daria um texto PIOR: so a passada da montagem leva os nomes da
-       * biblioteca como vocabulario. Medido: com vocabulario sai "ichigo", sem
-       * sai "Ischigo" -- e a legenda contradiria o corte que aquele mesmo nome
-       * decidiu.
-       */
-      transcript,
-      captions: buildCaptions(transcript, get().captionRules),
-      captionsEdited: false,
-      scriptNote,
-      sectionNote: note,
-      aiNote: null,
-      selectedScene: null,
-      selecionados: [],
-      busy: null,
-      error: pulados.length
-        ? `${pulados.length === 1 ? 'Uma cena não abriu' : `${pulados.length} cenas não abriram`} (${pulados.slice(0, 3).join(', ')}): usei a próxima sugestão no lugar.`
-        : null,
-    })
-  },
-
-  setAutomountSeries: (series) => set({ automountSeries: series }),
 
   openLibraryToReplace: async (sceneIndex, metade = 'cima') => {
     set({ replaceTarget: { scene: sceneIndex, metade } })
@@ -175,7 +27,7 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
   },
 
   replaceSceneWith: async (path) => {
-    const { replaceTarget, images, library } = get()
+    const { replaceTarget, images } = get()
     const alvo =
       replaceTarget === null
         ? null
@@ -188,16 +40,6 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       set({ busy: null, replaceTarget: null, error: importada.ok ? 'Não deu para abrir essa cena.' : importada.error })
       return
     }
-
-    /*
-     * A fita da montagem automatica passa a comecar pela escolha DELE.
-     *
-     * Sem isto a fita seguiria anunciando o candidato que o app tinha
-     * escolhido, e o card diria uma coisa enquanto a timeline mostra outra. O
-     * motivo vira "escolhida por voce" porque e a verdade -- nenhuma regra
-     * levou a esta cena.
-     */
-    const clip = library?.clips.find((c) => c.path === path)
 
     /*
      * A TROCA VALE PARA A SELECAO TAMBEM.
@@ -240,9 +82,6 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
     set((state) => ({
       images: state.images.map((img, i) => (i === alvo ? importada.value[0]! : img)),
       blockClips: selecao,
-      automountBlocks: state.automountBlocks
-        ? substituirNaFita(state.automountBlocks, alvo, path, clip)
-        : null,
       busy: null,
       replaceTarget: null,
       selectedScene: replaceTarget!.scene,
@@ -814,9 +653,6 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
         i === spans.length - 1
           ? Math.max(s.end, audio.durationSec)
           : spans[i + 1]!.start,
-      text: '',
-      characters: [],
-      candidates: [],
     }))
 
     /*
@@ -837,52 +673,12 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       planOrigin: 'auto',
       // O plano saiu das frases dele; reanalisar o trocaria por distribuicao.
       planEdited: true,
-      automountBlocks: null,
       libraryOpen: false,
       selectedScene: null,
       selecionados: [],
       busy: null,
       projectDirty: true,
     })
-  },
-
-  swapCandidate: async (blockIndex, candidateIndex) => {
-    const { automountBlocks, images } = get()
-    const bloco = automountBlocks?.[blockIndex]
-    const escolhido = bloco?.candidates[candidateIndex]
-    if (!automountBlocks || !bloco || !escolhido) return
-
-    /*
-     * O indice na TIMELINE nao e o indice no roteiro: bloco sem cena nao virou
-     * imagem. Contar quantos blocos uteis vieram antes e o que liga os dois.
-     */
-    const posicao = automountBlocks
-      .slice(0, blockIndex)
-      .filter((b) => b.candidates.length > 0).length
-    if (!images[posicao]) return
-
-    set({ busy: 'Trocando a cena...', error: null })
-    const importada = await window.dangai.importImages([escolhido.path])
-    if (!importada.ok || !importada.value[0]) {
-      set({ busy: null, error: importada.ok ? 'Não deu para abrir essa cena.' : importada.error })
-      return
-    }
-
-    // A fita passa a comecar pelo escolhido, para o proximo clique na seta
-    // continuar de onde ele parou em vez de voltar ao comeco.
-    const reordenada = [
-      escolhido,
-      ...bloco.candidates.filter((_c, i) => i !== candidateIndex),
-    ]
-
-    set((state) => ({
-      images: state.images.map((img, i) => (i === posicao ? importada.value[0]! : img)),
-      automountBlocks: state.automountBlocks!.map((b: AutomountBlock, i: number) =>
-        i === blockIndex ? { ...b, candidates: reordenada } : b,
-      ),
-      busy: null,
-      projectDirty: true,
-    }))
   },
 })
 

@@ -1,4 +1,3 @@
-import type { AutomountBlock, LibraryClip } from '@shared/channels'
 import { VIDEO_FPS, CLIP_INTENSITY, CLIP_MOTION_CURVE, KEN_BURNS_EFFECTS } from '@shared/contract'
 import type { Word, Scene, ScenePlan, Transcript } from '@shared/contract'
 import { planEqualSplit } from '@shared/plan'
@@ -34,7 +33,7 @@ export type SetState = (partial: Partial<ProjectState>) => void
  * exatamente o defeito que ele achou testando a v1.6.
  */
 export function planoDosBlocos(
-  blocos: readonly AutomountBlock[],
+  blocos: readonly { start: number; end: number }[],
   durationSec: number,
   /*
    * Quais imagens cada bloco usa, por posicao na lista importada.
@@ -87,38 +86,6 @@ export function planoDosBlocos(
     transitionIn: 'cut',
   }))
   return { scenes }
-}
-
-
-/**
- * Poe a cena escolhida na mao a frente da fita daquele bloco.
- *
- * O indice na TIMELINE nao e o indice no roteiro: bloco que ficou sem cena nao
- * virou imagem. Contar quantos blocos uteis vieram antes e o que liga os dois
- * -- a mesma conta que a fita e o swapCandidate ja fazem.
- */
-export function substituirNaFita(
-  blocos: readonly AutomountBlock[],
-  posicaoNaTimeline: number,
-  path: string,
-  clip: LibraryClip | undefined,
-): AutomountBlock[] {
-  let restante = posicaoNaTimeline
-  const alvo = blocos.findIndex((b) => b.candidates.length > 0 && restante-- === 0)
-  if (alvo < 0) return [...blocos]
-
-  const escolhida = {
-    path,
-    thumbUrl: clip?.thumbUrl ?? '',
-    label: clip ? `${clip.anime} S${clip.season}E${clip.episode} #${clip.shot}` : 'Cena escolhida',
-    durationSec: clip?.duration ?? 0,
-    reason: 'escolhida por você na biblioteca',
-  }
-  return blocos.map((b, i) =>
-    i === alvo
-      ? { ...b, candidates: [escolhida, ...b.candidates.filter((c) => c.path !== path)] }
-      : b,
-  )
 }
 
 

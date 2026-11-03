@@ -7,10 +7,8 @@ import { escanearRaizes, raizesDaBiblioteca } from './library'
  * whisper.cpp aceita um prompt inicial que enviesa a saida. A lista sai da
  * biblioteca: sao os nomes que o AnCut ja identificou nas cenas.
  *
- * Mora num arquivo proprio, e nao dentro do automount, porque agora DOIS
- * caminhos precisam dela -- a montagem automatica e a analise da importacao --
- * e o automount ja importa o transcribe: pedir o contrario fecharia um ciclo
- * entre os dois modulos.
+ * Mora num arquivo proprio porque dois caminhos precisam dela -- os trechos da
+ * Biblioteca e a analise da importacao -- e os dois ja importam o transcribe.
  */
 
 /**
@@ -22,15 +20,9 @@ import { escanearRaizes, raizesDaBiblioteca } from './library'
  */
 const VOCABULARIO_MAX = 40
 
-export function vocabulario(
-  library: { clips: readonly { anime: string; characters: string[] }[] },
-  series: string | null,
-): string[] {
+export function vocabulario(library: { clips: readonly { characters: string[] }[] }): string[] {
   const quantos = new Map<string, number>()
   for (const clip of library.clips) {
-    // Com a serie escolhida, so os nomes dela viram dica -- 40 vagas gastas com
-    // personagem de outro anime sao 40 vagas a menos para o que a narracao cita.
-    if (series && clip.anime !== series) continue
     for (const nome of clip.characters) quantos.set(nome, (quantos.get(nome) ?? 0) + 1)
   }
   return [...quantos]
@@ -57,7 +49,7 @@ export async function vocabularioDaBiblioteca(
   const raizes = raizesDaBiblioteca()
   if (raizes.length === 0) return []
   try {
-    return vocabulario(await escanearRaizes(raizes, publishThumb, () => {}), null)
+    return vocabulario(await escanearRaizes(raizes, publishThumb, () => {}))
   } catch {
     return []
   }

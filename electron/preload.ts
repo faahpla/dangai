@@ -2,8 +2,6 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import {
   IPC,
   type AnalyzeArgs,
-  type AutomountRequest,
-  type AutomountResult,
   type ScriptBlocksResult,
   type DangaiBridge,
   type IpcResult,
@@ -69,7 +67,6 @@ const bridge: DangaiBridge = {
   readScript: (path) => ipcRenderer.invoke(IPC.readScript, path) as Promise<IpcResult<string>>,
 
   scanLibrary: () => ipcRenderer.invoke(IPC.scanLibrary) as Promise<IpcResult<LibraryIndex>>,
-  seriesDaBiblioteca: () => ipcRenderer.invoke(IPC.seriesDaBiblioteca) as Promise<IpcResult<string[]>>,
 
   pickLibraryDir: () =>
     ipcRenderer.invoke(IPC.pickLibraryDir) as Promise<IpcResult<string | null>>,
@@ -128,9 +125,6 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.suggestNicknames, series, characters) as Promise<
       IpcResult<NicknameSuggestion[]>
     >,
-
-  automount: (request) =>
-    ipcRenderer.invoke(IPC.automount, request) as Promise<IpcResult<AutomountResult>>,
 
   scriptBlocks: (request) =>
     ipcRenderer.invoke(IPC.scriptBlocks, request) as Promise<IpcResult<ScriptBlocksResult>>,

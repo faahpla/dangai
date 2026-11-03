@@ -14,7 +14,7 @@ import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
 import { ImageStrip } from '@/components/ImageStrip'
-import { Automount } from '@/components/Automount'
+import { EscolherNaBiblioteca } from '@/components/EscolherNaBiblioteca'
 import { SceneCard } from '@/components/SceneCard'
 import { SceneEdit } from '@/components/SceneEdit'
 import { SobreposicaoEdit } from '@/components/SobreposicaoEdit'
@@ -483,7 +483,7 @@ export function App() {
             )}
             <div className="flex min-w-0 flex-1 flex-col gap-4">
               <ImageStrip />
-              <Automount />
+              <EscolherNaBiblioteca />
               {/*
                 A area do meio REVEZA, e nao acumula: legendas, bins ou os
                 controles do bloco.

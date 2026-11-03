@@ -10,7 +10,7 @@
  * - duas raizes: ids com prefixo, sem colisao;
  * - raiz dentro de outra nao duplica cena;
  * - o cache de uma raiz sobrevive a varredura da outra;
- * - todo leitor (Ctrl+B, Montar sozinho, etiquetar, ler cenas, vocabulario)
+ * - todo leitor (Ctrl+B, etiquetar, ler cenas, vocabulario)
  *   pega a lista do mesmo lugar.
  */
 import { execFileSync } from 'node:child_process'
@@ -229,7 +229,6 @@ const vocab = await vocabularioDaBiblioteca(pub)
 ok('o vocabulario do Whisper ve as duas', vocab.includes('Alfa') && vocab.includes('Beta'), vocab.join(', '))
 const leitores: Record<string, string> = {
   'Ctrl+B, etiquetar e ler cenas (ipc.ts)': 'electron/ipc.ts',
-  'Montar sozinho (automount.ts)': 'electron/services/automount.ts',
   'vocabulario (vocabulario.ts)': 'electron/services/vocabulario.ts',
 }
 for (const [nome, arquivo] of Object.entries(leitores)) {
@@ -240,7 +239,7 @@ for (const [nome, arquivo] of Object.entries(leitores)) {
   ok(`${nome}: le a lista e nunca a libraryDir direto`, lista > 0 && lista === varre && !direto)
 }
 const ipc = readFileSync(join(repo, 'electron/ipc.ts'), 'utf8')
-ok('ipc.ts: os quatro handlers (scan, series, tag, describe) passam pela lista', (ipc.match(/raizesDaBiblioteca\(\)/g)?.length ?? 0) === 4)
+ok('ipc.ts: os tres handlers (scan, tag, describe) passam pela lista', (ipc.match(/raizesDaBiblioteca\(\)/g)?.length ?? 0) === 3)
 
 rmSync(tmp, { recursive: true, force: true })
 console.log(falhas === 0 ? '\nTudo certo.' : `\n${falhas} falha(s).`)

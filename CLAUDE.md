@@ -101,7 +101,7 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
   sem passo — conversão ao abrir) e `esquecerDoProjeto` (tirar um campo desconhecido da raiz).
   Não há "marcar limpo" de propósito.
 - **Transcrição travada** (`transcriptTravado`, `nucleo.travarTranscript`): com os tempos
-  vindos da voz gerada, análise, Biblioteca e "montar sozinho" não rodam o Whisper — o
+  vindos da voz gerada, análise e Biblioteca não rodam o Whisper — o
   roteiro novo é casado por texto sobre esses tempos. Trocar a narração destrava.
 - O `settings.json` também guarda o que não conhece (campos de versão futura, a chave
   cifrada de um módulo que não está instalado).
