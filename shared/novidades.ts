@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.91.0',
+    itens: [
+      'Soltou a narração (e o roteiro) sem nenhuma cena? A Biblioteca abre direto, na primeira frase. Se fechar sem escolher, o botão "Escolher na biblioteca" fica no lugar para voltar.',
+      'Saíram o "Montar tudo", o "Montar recap" e o "Montar teoria". As cenas agora são sempre escolhidas por você na Biblioteca. O B-roll continua valendo para as sugestões.',
+    ],
+  },
+  {
     versao: '1.90.1',
     itens: [
       'Gerar recap: o roteiro não é mais gerado sozinho ao abrir o episódio. O passo do roteiro abre com "Meu roteiro" (colar o seu) e "Gerar roteiro" (a IA escreve), e nada gasta cota até você escolher. Quem prefere o jeito antigo liga "Gerar roteiro sozinho" em Configurações > Roteiro do recap.',
