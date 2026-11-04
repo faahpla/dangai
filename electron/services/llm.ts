@@ -451,7 +451,8 @@ async function viaGemini<S extends z.ZodType>(
     // dia, ou "limit: 0"): marca, e vai no sucessor que o proprio Google
     // sugere ou no proximo da lista. Modelo escolhido a mao nao troca: o erro
     // dele vira a nota.
-    const aposentou = erro.status === 404
+    // Um modelo que nao e de texto (o "transcribe" de 04/11) sai da lista do mesmo jeito do aposentado.
+    const aposentou = erro.status === 404 || naoEscreveTexto(erro)
     const lotou = erro.status === 503
     const esgotou = erro.status === 429 && (erro.cotaDoDia || erro.semCotaGratis)
     if ((aposentou || lotou || esgotou) && !modeloConfigurado) {
@@ -466,7 +467,7 @@ async function viaGemini<S extends z.ZodType>(
       }
       automatico = null
       if (trocasDeModelo < MAX_TROCAS_DE_MODELO) {
-        const sugerido = aposentou ? sucessorSugerido(erro.mensagem) : null
+        const sugerido = erro.status === 404 ? sucessorSugerido(erro.mensagem) : null
         const sugeridoServe = sugerido !== null && !indisponivel(sugerido) && !(soBons && ehModeloReserva(sugerido))
         const lista = sugeridoServe ? null : await escolherDaLista(chave, soBons)
         const outro = sugeridoServe ? sugerido : (lista?.modelo ?? null)
@@ -794,6 +795,9 @@ export function notaDoGemini(erro: ErroGemini, modelo: string): string {
     }
     return `O modelo ${modelo || 'escolhido'} não existe no Gemini. Escolha outro em configurações ou deixe no automático.`
   }
+  if (naoEscreveTexto(erro)) {
+    return `O ${modelo || 'modelo escolhido'} não escreve texto. Escolha outro em configurações ou deixe no automático.`
+  }
   if (erro.status >= 500) return 'O Gemini está instável agora. Tente de novo em alguns minutos.'
   if (/location is not supported/i.test(erro.mensagem)) {
     return 'O Gemini não atende a regiao desta conexão.'
@@ -936,9 +940,18 @@ export function ehModeloReserva(modelo: string): boolean {
   return /(?:^|[-_./])(?:lite|nano|mini|tiny|\d+b)(?=$|[-_./])/i.test(modelo)
 }
 
-/** O que aparece na lista mas nao escreve JSON de texto. */
+/**
+ * O que aparece na lista mas nao escreve JSON de texto. (04/11/2026) O
+ * "gemini-3.5-transcribe" so transcreve: sem cota nos outros, o automatico caiu
+ * nele e ficou preso ("Developer instruction is not enabled for this model").
+ */
 const NAO_E_TEXTO =
-  /(tts|image|imagen|embedding|aqa|live|audio|veo|lyria|robotics|computer-use|learnlm)/i
+  /(tts|image|imagen|embedding|aqa|live|audio|veo|lyria|robotics|computer-use|learnlm|transcri)/i
+
+/** O modelo nao aceita a instrucao de sistema: nao e um modelo de texto para nos (sai da lista, como o aposentado). */
+function naoEscreveTexto(erro: ErroGemini): boolean {
+  return erro.status === 400 && /developer instruction is not enabled|system instruction is not (enabled|supported)/i.test(erro.mensagem)
+}
 
 function versaoDe(id: string): number {
   const m = /gemini-(\d+(?:\.\d+)?)/.exec(id)

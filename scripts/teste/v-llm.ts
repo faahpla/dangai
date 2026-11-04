@@ -41,6 +41,7 @@ import {
   gerarJson,
   limparSchema,
   melhorFlash,
+  modelosDeTexto,
   sucessorSugerido,
   esquecerModelos,
   msAteRenovarACota,
@@ -623,6 +624,31 @@ async function main(): Promise<void> {
       const err = await erroDe(generateMetadata({ texto: ROTEIRO }))
       conferir('sem internet', (err as Error).message, 'Sem conexão com o Gemini. Confira a internet e tente de novo.')
     }
+  }
+
+  console.log('Gemini: um modelo que nao escreve texto (o transcribe de 04/11)')
+  {
+    // A lista nao oferece o transcribe ao automatico.
+    conferir('o transcribe nao e modelo de texto', modelosDeTexto(['gemini-3.5-transcribe', 'gemini-3.5-flash']), ['gemini-3.5-flash'])
+    // Um que escape da lista e responda 400 "Developer instruction": o automatico vai no proximo, nao para.
+    zerar(null)
+    esquecerModelos()
+    saveSettings({ geminiApiKey: 'AIza-falsa-de-teste-0011', iaProvedor: 'gemini' })
+    const semInstrucao = json(400, {
+      error: { code: 400, message: 'Developer instruction is not enabled for this model', status: 'INVALID_ARGUMENT' },
+    })
+    preparar([...listaDeModelos(), semInstrucao, ...listaDeModelos(), respostaDoGemini(TEXTOS)])
+    const textos = await generateMetadata({ texto: ROTEIRO })
+    conferir('sem instrucao de sistema: troca de modelo e da certo', textos.titles.length > 0, true)
+    conferir('foi no proximo da lista', pedidos[pedidos.length - 1]!.url.includes('gemini-2.5-flash:'), true)
+    // Escolhido a mao: a nota diz o que fazer.
+    saveSettings({ geminiModelo: 'gemini-3.5-flash' })
+    preparar([semInstrucao])
+    {
+      const err = await erroDe(generateMetadata({ texto: ROTEIRO }))
+      conferir('a mao: a nota manda escolher outro', (err as Error).message, 'O gemini-3.5-flash não escreve texto. Escolha outro em configurações ou deixe no automático.')
+    }
+    saveSettings({ geminiModelo: '' })
   }
 
   console.log('Gemini: o Google recusa o campo responseJsonSchema')
