@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.93.1',
+    itens: [
+      'IA do Gemini no automático: quando a cota grátis acaba e ele troca de modelo, não cai mais num modelo que só transcreve áudio (o "transcribe"). Antes ele ficava preso nele e tudo dava "Developer instruction is not enabled for this model" até fechar o app; agora pula para o próximo.',
+    ],
+  },
+  {
     versao: '1.93.0',
     itens: [
       'Thumbnail: o texto ganhou "Estilo", com três presets: Kizuni (o de sempre), Faah (branco e roxo com o degradê dele, contorno fino, sombra curta e a seta roxa) e AJK (branco e amarelo chapados, contorno fino e a seta de pincel). Escolher um aplica tudo; depois dá para mexer em cada coisa.',
