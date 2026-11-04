@@ -326,7 +326,7 @@ export function desenharThumb(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho
     const altura = painel.y1 - painel.y0
     ctx.save()
     ctx.beginPath()
-    if (painel.lugar === 'baixo' && painel.corte && painel.corte.tan !== 0) {
+    if (painel.lugar === 'baixo' && painel.corte && (painel.corte.tan !== 0 || painel.corte.meio)) {
       // A EMENDA INCLINADA: a de cima cobre a caixa dela inteira (ate a ponta mais funda da emenda) e a de
       // baixo, desenhada depois, so abaixo da reta -- a borda suavizada cai sobre a de cima, nunca sobre o
       // fundo (sem fresta). Reta: os dois retangulos de antes.

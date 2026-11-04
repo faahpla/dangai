@@ -90,6 +90,41 @@ export const FAIXA_DO_DIVISOR: Record<ModeloComPng, { de: number; ate: number }>
 }
 
 /**
+ * A LINHA DO MEIO da forma de cada PNG (04/11, o vazamento do Slash do Faah):
+ * nenhum dos PNGs e uma faixa reta -- o Slash ja vem torto e curvo (o miolo
+ * opaco fica 58 px abaixo do centro na beirada esquerda e 32 px acima na
+ * direita) e o rasgo ondula. Com a emenda reta, a imagem de baixo aparecia
+ * pela sombra semitransparente acima do slash (e a de cima abaixo dele, do
+ * outro lado). A emenda segue esta linha (CorteDaEmenda.meio): o y do meio da
+ * parte opaca (alpha > 200) menos o CENTRO_DO_DIVISOR, mediana de 41 colunas,
+ * de 40 em 40 px (x = 0, 40, ..., 1040 e 1079). O rasgo com brilho usa a forma do rasgo.
+ */
+export const MEIO_DO_DIVISOR: Record<ModeloComPng, readonly number[]> = {
+  'rasgo-brilho': [17.5, 28, 28.5, 29.5, 21.5, 8.5, 6, -6.5, -24, -24.5, -12.5, 14, 0, -11, -13.5, -25, -22, -11.5, -9.5, -12.5, -16.5, -18.5, -4.5, 2.5, 2.5, 6.5, 26, 37.5],
+  rasgo: [17.5, 28, 28.5, 29.5, 21.5, 8.5, 6, -6.5, -24, -24.5, -12.5, 14, 0, -11, -13.5, -25, -22, -11.5, -9.5, -12.5, -16.5, -18.5, -4.5, 2.5, 2.5, 6.5, 26, 37.5],
+  slash: [58, 41, 38, 28.5, 16, 6.5, 0, -15.5, -19, -20, -19.5, -26, -23, -21.5, -17.5, -11.5, -4.5, 0.5, 0, -3, 2.5, 4.5, 2, -2, -2, -16, -25, -32],
+}
+
+/** A linha do meio (MEIO_DO_DIVISOR) numa coluna do PNG (0..1079), interpolada; fora do PNG, a da beirada. */
+export function meioNaColuna(meio: readonly number[], coluna: number): number {
+  const ultima = meio.length - 1
+  const c = Math.max(0, Math.min(1079, coluna))
+  // Os pontos: 0, 40, ..., 40*(ultima-1) e o ultimo em 1079.
+  const i = Math.min(ultima - 1, Math.floor(c / 40))
+  const x0 = i * 40
+  const x1 = i + 1 === ultima ? 1079 : x0 + 40
+  const f = (c - x0) / (x1 - x0)
+  return meio[i]! + (meio[i + 1]! - meio[i]!) * f
+}
+
+/** A meia espessura (px) da faixa de um PNG em volta do centro: o mesmo do desenho (meiaEspessuraDoDivisor). */
+export function meiaFaixaDoDivisor(modelo: ModeloComPng): number {
+  const f = FAIXA_DO_DIVISOR[modelo]
+  const centro = CENTRO_DO_DIVISOR[modelo]
+  return Math.max(centro - f.de, f.ate + 1 - centro)
+}
+
+/**
  * Quanto o divisor INCLINADO estica na largura (so nela: a espessura fica) para
  * ir de borda a borda: uma faixa de meia espessura `meia` (px), girada `graus`
  * em volta do meio do quadro, cobre x = 0..LARGURA inteira (as quinas da faixa,

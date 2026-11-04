@@ -1,6 +1,17 @@
 import { z } from 'zod'
 import { COR_LINHA_1, COR_LINHA_2, corSchema } from './cor'
-import { divisorEfetivo, divisorPadrao, divisorSchema, INCLINACAO_MAXIMA, type DivisorDaThumb } from './divisores'
+import {
+  divisorEfetivo,
+  divisorPadrao,
+  divisorSchema,
+  esticadaDoDivisor,
+  INCLINACAO_MAXIMA,
+  meiaFaixaDoDivisor,
+  MEIO_DO_DIVISOR,
+  meioNaColuna,
+  type DivisorDaThumb,
+  type ModeloDeDivisor,
+} from './divisores'
 
 export * from './cor'
 export * from './divisores'
@@ -298,11 +309,29 @@ export interface LinhaNaThumb {
 export interface CorteDaEmenda {
   y: number
   tan: number
+  /**
+   * (04/11) Com um divisor de PNG ligado, a emenda segue a LINHA DO MEIO dele
+   * (MEIO_DO_DIVISOR, girada e esticada como o desenho), nao a reta: o Slash e
+   * torto e curvo, e com a reta a imagem de baixo vazava pela sombra acima dele.
+   */
+  meio?: { linha: readonly number[]; estica: number }
 }
 
-/** O y da emenda no x (a reta inclinada; reta = o y dela). */
+/** O y da emenda no x (a reta inclinada; reta = o y dela; com o divisor de PNG, a linha do meio dele). */
 export function emendaNoX(corte: CorteDaEmenda, x: number): number {
-  return corte.y + (x - LARGURA / 2) * corte.tan
+  const reta = corte.y + (x - LARGURA / 2) * corte.tan
+  if (!corte.meio) return reta
+  // O desenho: gira em volta do meio da emenda e estica so na largura. A coluna do PNG que cai neste x e o
+  // desvio dela (perpendicular a reta) levado para a vertical.
+  const cos = 1 / Math.sqrt(1 + corte.tan * corte.tan)
+  const coluna = LARGURA / 2 + (x - LARGURA / 2) / cos / corte.meio.estica
+  return reta + meioNaColuna(corte.meio.linha, coluna) * cos
+}
+
+/** O x de cada ponto da emenda no desenho (a reta: so as beiradas; a linha do meio: de 20 em 20 px). */
+function xsDaEmenda(corte: CorteDaEmenda): number[] {
+  if (!corte.meio) return [0, LARGURA]
+  return Array.from({ length: LARGURA / 20 + 1 }, (_, i) => i * 20)
 }
 
 export interface PainelDaThumb {
@@ -402,7 +431,7 @@ export function geometriaDaThumb(
     fonte?: FonteDaThumb
     tamanho?: number
     rotacao?: number
-    divisor?: { inclinacao?: number } | null
+    divisor?: { inclinacao?: number; ligado?: boolean; modelo?: ModeloDeDivisor } | null
   },
   medir: MedirTexto,
 ): GeometriaDaThumb {
@@ -540,9 +569,13 @@ export function geometriaDaThumb(
   // (a de cima desce ate o lado mais baixo, a de baixo sobe ate o mais alto). Reta: os paineis de antes.
   const inclinacao = Math.max(-INCLINACAO_MAXIMA, Math.min(INCLINACAO_MAXIMA, t.divisor?.inclinacao ?? 0))
   const corte: CorteDaEmenda = { y: emenda, tan: inclinacao === 0 ? 0 : Math.tan((inclinacao * Math.PI) / 180) }
-  const meia = (Math.abs(corte.tan) * LARGURA) / 2
-  const fundo = Math.ceil(emenda + meia)
-  const alto = Math.floor(emenda - meia)
+  const modelo = t.divisor?.ligado ? t.divisor.modelo : undefined
+  if (modelo && modelo !== 'linha') {
+    corte.meio = { linha: MEIO_DO_DIVISOR[modelo], estica: esticadaDoDivisor(inclinacao, meiaFaixaDoDivisor(modelo), LARGURA) }
+  }
+  const ys = xsDaEmenda(corte).map((x) => emendaNoX(corte, x))
+  const fundo = Math.ceil(Math.max(...ys))
+  const alto = Math.floor(Math.min(...ys))
   return {
     linhas,
     rotacao: graus,
@@ -584,21 +617,10 @@ export function regiaoDoPainel(painel: Pick<PainelDaThumb, 'y0' | 'y1' | 'lugar'
       { x: 0, y: painel.y1 },
     ]
   }
-  const esq = emendaNoX(c, 0)
-  const dir = emendaNoX(c, LARGURA)
+  const emenda = xsDaEmenda(c).map((x) => ({ x, y: emendaNoX(c, x) }))
   return painel.lugar === 'cima'
-    ? [
-        { x: 0, y: 0 },
-        { x: LARGURA, y: 0 },
-        { x: LARGURA, y: dir },
-        { x: 0, y: esq },
-      ]
-    : [
-        { x: 0, y: esq },
-        { x: LARGURA, y: dir },
-        { x: LARGURA, y: ALTURA },
-        { x: 0, y: ALTURA },
-      ]
+    ? [{ x: 0, y: 0 }, { x: LARGURA, y: 0 }, ...emenda.reverse()]
+    : [...emenda, { x: LARGURA, y: ALTURA }, { x: 0, y: ALTURA }]
 }
 
 /** Em que painel cai um ponto do quadro (2 imagens: de que lado da emenda inclinada). */
@@ -748,7 +770,7 @@ export function enquadrarSozinho(
       let deX = de
       let ateX = ate
       const c = painel.corte
-      if (c && c.tan !== 0 && lugar !== 'unica') {
+      if (c && (c.tan !== 0 || c.meio) && lugar !== 'unica') {
         const ya = emendaNoX(c, ox + uniao.x1 * s) - painel.y0
         const yb = emendaNoX(c, ox + uniao.x2 * s) - painel.y0
         if (lugar === 'cima') ateX = Math.min(ate, ya, yb)

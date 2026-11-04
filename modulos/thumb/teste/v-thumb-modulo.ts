@@ -1051,6 +1051,47 @@ async function testarInclinacao(T: typeof import('../shared/thumb'), D: typeof i
       return false
     }
     confere(linhaTemAlpha(f.de) && linhaTemAlpha(f.ate) && !linhaTemAlpha(f.de - 1) && !linhaTemAlpha(f.ate + 1), `${modelo}: a faixa ${f.de}-${f.ate} do PNG e a forma inteira em volta do centro (alpha 0 logo fora)`)
+    // (04/11) A EMENDA SEGUE A LINHA DO MEIO do divisor: em cada x, o ponto da emenda cai no miolo OPACO do
+    // PNG (alpha > 200), reto ou inclinado -- o Slash e torto e curvo, e a emenda reta deixava a imagem de
+    // baixo aparecer pela sombra acima dele.
+    const opaco = (x: number, y: number): boolean => {
+      const c = Math.round(Math.max(0, Math.min(1079, x)))
+      const r = Math.round(y)
+      return data[(r * info.width + c) * 4 + 3]! > 200
+    }
+    let fora = 0
+    let foraReta = 0
+    let pontos = 0
+    for (const graus of [0, -6, -15, 6, 15]) {
+      const t = { ...padrao, divisor: { ...padrao.divisor, ligado: true, modelo, inclinacao: graus } }
+      const geo = T.geometriaDaThumb(t, medir)
+      const corte = geo.paineis[1]!.corte!
+      const a = (-graus * Math.PI) / 180
+      const estica = corte.meio?.estica ?? 1
+      for (let x = 0; x <= T.LARGURA; x += 10) {
+        // O ponto da tela de volta ao PNG: desfaz o giro em volta do meio da emenda e a esticada na largura.
+        const noPng = (y: number): [number, number] => {
+          const dx = x - T.LARGURA / 2
+          const dy = y - geo.emenda!
+          const u = dx * Math.cos(a) - dy * Math.sin(a)
+          const v = dx * Math.sin(a) + dy * Math.cos(a)
+          return [T.LARGURA / 2 + u / estica, T.CENTRO_DO_DIVISOR[modelo] + v]
+        }
+        pontos++
+        if (!opaco(...noPng(T.emendaNoX(corte, x)))) fora++
+        if (!opaco(...noPng(T.emendaNoX({ y: corte.y, tan: corte.tan }, x)))) foraReta++
+      }
+      const baixo = geo.paineis[1]!
+      const cima = geo.paineis[0]!
+      const ys = Array.from({ length: 55 }, (_, i) => T.emendaNoX(corte, i * 20))
+      if (cima.y1 < Math.max(...ys) - 0.01 || baixo.y0 > Math.min(...ys) + 0.01) fora += 1000
+    }
+    confere(fora === 0, `${modelo}: a emenda segue a linha do meio, sempre no miolo opaco (${pontos} pontos, retos e inclinados; a reta de antes saia ${foraReta})`)
+  }
+  {
+    const t = { ...padrao, divisor: { ...padrao.divisor, ligado: true, modelo: 'linha' as const, inclinacao: -6 } }
+    const corte = T.geometriaDaThumb(t, medir).paineis[1]!.corte!
+    confere(!corte.meio && T.regiaoDoPainel(T.geometriaDaThumb(t, medir).paineis[1]!).length === 4, 'a Linha (e o divisor desligado) continua na emenda reta')
   }
   const PRONTOS: [string, import('../src/editor/desenho').DivisorPronto][] = [
     ...(['rasgo-brilho', 'rasgo', 'slash'] as const).map(
