@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.92.1',
+    itens: [
+      'Thumbnail: com o Slash (ou o Rasgo) entre as duas imagens, a imagem de baixo não aparece mais por cima dele. O Slash é torto e curvo, e a emenda das imagens agora segue o meio dele de ponta a ponta, reto ou inclinado.',
+    ],
+  },
+  {
     versao: '1.92.0',
     itens: [
       'Legenda editável na linha do tempo: clique numa legenda para escolher, arraste para mover e puxe as pontas para mudar a duração. C corta na agulha, Delete apaga e Ctrl+Z desfaz. Bom para quando o efeito na voz confunde o Whisper.',
