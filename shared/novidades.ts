@@ -20,6 +20,16 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.93.0',
+    itens: [
+      'Thumbnail: o texto ganhou "Estilo", com três presets: Kizuni (o de sempre), Faah (branco e roxo com o degradê dele, contorno fino, sombra curta e a seta roxa) e AJK (branco e amarelo chapados, contorno fino e a seta de pincel). Escolher um aplica tudo; depois dá para mexer em cada coisa.',
+      'Contorno do texto: escolha a grossura (de 0, sem contorno, até 30) e a cor.',
+      'Degradê próprio: cada linha pode ter as duas cores do degradê, a de cima e a de baixo.',
+      'Fonte do PC: "Buscar fonte do PC" lista as fontes instaladas no Windows pelo nome. A Poppins Black também entrou nas fontes do app.',
+      'Seta: além da vermelha, a roxa do Faah e a de pincel do AJK, sempre no formato do desenho original (só tamanho, giro e espelho).',
+    ],
+  },
+  {
     versao: '1.92.1',
     itens: [
       'Thumbnail: com o Slash (ou o Rasgo) entre as duas imagens, a imagem de baixo não aparece mais por cima dele. O Slash é torto e curvo, e a emenda das imagens agora segue o meio dele de ponta a ponta, reto ou inclinado.',
