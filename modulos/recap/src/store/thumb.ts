@@ -73,6 +73,8 @@ const daAba: FonteDoEditor = {
   },
   recorte: (p) => ponte.recorteDaThumb(p),
   upscale: () => ponte.upscaleDaThumb(),
+  fontesDoPc: () => ponte.fontesDoPcDaThumb(),
+  bytesDaFonteDoPc: (arquivo) => ponte.fonteDoPcDaThumb(arquivo),
   sugestoes: () => {
     const recap = recapDoProjeto(nucleo().ler().modulos)
     return ponte.sugestoesDaThumb({

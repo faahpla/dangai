@@ -31,6 +31,12 @@ export const presetDaThumbSchema = z.object({
   divisor: thumbDoProjetoSchema.shape.divisor,
   /** A "Rotacao" do texto (ausente num preset de antes: 0). */
   rotacao: thumbDoProjetoSchema.shape.rotacao,
+  /** (04/11) O estilo (Kizuni, Faah, AJK), o degrade de cada linha, o contorno, a seta e a fonte do PC (ausentes: o de sempre). */
+  estilo: thumbDoProjetoSchema.shape.estilo,
+  degrades: thumbDoProjetoSchema.shape.degrades,
+  contorno: thumbDoProjetoSchema.shape.contorno,
+  formaDaSeta: thumbDoProjetoSchema.shape.seta.shape.forma,
+  fontePc: thumbDoProjetoSchema.shape.fontePc,
 })
 export type PresetDaThumb = z.infer<typeof presetDaThumbSchema>
 
@@ -43,7 +49,22 @@ export const CONFIG_DA_THUMB_PADRAO: ConfigDaThumb = { versao: 1, preset: null }
 
 /** O preset de uma thumb (o que o editor solto lembra). */
 export function presetDe(t: ThumbDoProjeto): PresetDaThumb {
-  return { layout: t.layout, linhas: t.linhas, cores: t.cores, fonte: t.fonte, textoY: t.textoY, seta: t.seta.ligada, tamanho: t.tamanho, divisor: { ...t.divisor }, rotacao: t.rotacao }
+  return {
+    layout: t.layout,
+    linhas: t.linhas,
+    cores: t.cores,
+    fonte: t.fonte,
+    textoY: t.textoY,
+    seta: t.seta.ligada,
+    tamanho: t.tamanho,
+    divisor: { ...t.divisor },
+    rotacao: t.rotacao,
+    estilo: t.estilo,
+    degrades: t.degrades,
+    contorno: { ...t.contorno },
+    formaDaSeta: t.seta.forma,
+    fontePc: t.fontePc,
+  }
 }
 
 /** A thumb do comeco a partir do preset (sem preset: o padrao do editor, com o texto vazio). */
@@ -56,10 +77,14 @@ export function thumbDoPreset(preset: PresetDaThumb | null, base: ThumbDoProjeto
     cores: preset.cores,
     fonte: preset.fonte,
     textoY: preset.textoY,
-    seta: { ligada: preset.seta, base: null, ponta: null },
+    seta: { ligada: preset.seta, base: null, ponta: null, forma: preset.formaDaSeta },
     tamanho: preset.tamanho,
     divisor: { ...preset.divisor },
     rotacao: preset.rotacao,
+    estilo: preset.estilo,
+    degrades: preset.degrades,
+    contorno: { ...preset.contorno },
+    fontePc: preset.fontePc,
   }
 }
 

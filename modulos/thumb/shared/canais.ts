@@ -33,7 +33,15 @@ export const CANAIS_DA_THUMB = {
   salvarAoLado: 'thumb:salvar-ao-lado',
   salvarComo: 'thumb:salvar-como',
   salvarPreset: 'thumb:salvar-preset',
+  fontesDoPc: 'thumb:fontes-do-pc',
+  fonteDoPc: 'thumb:fonte-do-pc',
 } as const
+
+/** Uma fonte instalada no PC (electron/fontes-do-pc.ts): o nome de dentro do arquivo e o caminho. */
+export interface FonteDoPc {
+  nome: string
+  arquivo: string
+}
 
 export interface MotorDaThumb {
   /** O detector de rostos do motor de personagens roda agora. */
@@ -59,4 +67,8 @@ export interface PonteDaThumb {
   salvarAoLado(p: PedidoDeSalvar): Promise<IpcResult<ResultadoDoSalvar>>
   salvarComo(p: PedidoDeSalvarComo): Promise<IpcResult<ResultadoDoSalvar | null>>
   salvarPreset(preset: PresetDaThumb): Promise<IpcResult<ConfigDaThumb>>
+  /** As fontes .ttf/.otf instaladas no PC (por nome). */
+  fontesDoPc(): Promise<IpcResult<FonteDoPc[]>>
+  /** Os bytes de uma fonte da lista (outro caminho e recusado). */
+  fonteDoPc(arquivo: string): Promise<IpcResult<Uint8Array>>
 }

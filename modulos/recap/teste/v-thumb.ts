@@ -130,9 +130,9 @@ async function principal(): Promise<void> {
   confere(L >= 300 && seta.lado === 1, `comprida como nas refs (${Math.round(L)} px), curvando para a esquerda`)
   const contorno = T.contornoDaSeta(seta)
   confere(contorno.length === 35 && contorno.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y)), 'o contorno: a seta padrao (3 curvas de 10 pontos + 5 cantos = 35 pontos)')
-  const desligada = T.thumbEfetiva({ ...arrastada, seta: { ligada: false, base: null, ponta: null } }, medir)
+  const desligada = T.thumbEfetiva({ ...arrastada, seta: { ligada: false, base: null, ponta: null, forma: 'vermelha' as const } }, medir)
   confere(desligada.seta === null, 'desligada: sem seta')
-  const movida = T.thumbEfetiva({ ...arrastada, seta: { ligada: true, base: { x: 900, y: 900 }, ponta: { x: 600, y: 500 } } }, medir).seta
+  const movida = T.thumbEfetiva({ ...arrastada, seta: { ligada: true, base: { x: 900, y: 900 }, ponta: { x: 600, y: 500 }, forma: 'vermelha' as const } }, medir).seta
   confere(movida?.base.x === 900 && movida.ponta.y === 500 && movida.lado === -1, 'as pontas que ele arrastou valem (e a curva espelha)')
 
   console.log('\n== as sugestoes')
@@ -427,7 +427,7 @@ async function testarStore(T: typeof import('../shared/thumb')): Promise<void> {
 
   // Inverter: cada uma reenquadra na metade nova e a seta volta ao rosto.
   s().enquadrar(0, { zoom: 2, cx: 0.4, cy: 0.4 })
-  s().mudar({ seta: { ligada: true, base: { x: 100, y: 900 }, ponta: { x: 400, y: 500 } } })
+  s().mudar({ seta: { ligada: true, base: { x: 100, y: 900 }, ponta: { x: 400, y: 500 }, forma: 'vermelha' } })
   const [ca, cb] = s().thumb!.imagens
   s().inverter()
   const inv = s().thumb!
@@ -451,7 +451,7 @@ async function testarStore(T: typeof import('../shared/thumb')): Promise<void> {
   Object.assign(usePosRender.getInitialState(), usePosRender.getState())
   const html = renderToStaticMarkup(createElement('div', null, createElement(AjustesDaThumb), createElement(RodapeDaThumb, { fechar: () => {} })))
   const textoDaTela = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
-  for (const rotulo of ['1 imagem', '2 imagens', 'Imagem de cima', 'Imagem de baixo', 'Sugestoes', 'Quadro do video', 'Do computador', 'Linha 1', 'Linha 2', 'Fonte', 'Altura', 'Seta vermelha apontando o rosto', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Enquadrar sozinho'])
+  for (const rotulo of ['1 imagem', '2 imagens', 'Imagem de cima', 'Imagem de baixo', 'Sugestoes', 'Quadro do video', 'Do computador', 'Linha 1', 'Linha 2', 'Fonte', 'Altura', 'Seta apontando o rosto', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Enquadrar sozinho'])
     confere(textoDaTela.includes(rotulo), `a tela tem "${rotulo}"`)
   confere(html.includes('aria-label="Inverter cima e baixo"'), 'o botao de inverter')
   confere(ascii(textoDaTela.replace(/SACRIF.CIO|AT.|CHEGOU\?!/g, '')), 'os textos da tela em ASCII')

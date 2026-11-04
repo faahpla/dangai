@@ -149,6 +149,8 @@ async function principal(): Promise<void> {
   await testarRotacao(T, D)
   await testarInclinacao(T, D)
   await testarCobrirEBarras(T)
+  await testarEstilos(T, D)
+  await testarFontesDoPc()
   await testarMain()
   await testarLoja()
   await testarTela()
@@ -396,7 +398,7 @@ async function testarTela(): Promise<void> {
   Object.assign(useTela.getInitialState(), useTela.getState())
   const projeto = renderToStaticMarkup(createElement(JanelaDaThumb))
   const texto = (h: string): string => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
-  for (const rotulo of ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Linha 1', 'Seta vermelha apontando o rosto', 'Tamanho', 'Divisor entre as imagens', 'Inclinacao da emenda', '= texto'])
+  for (const rotulo of ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Linha 1', 'Seta apontando o rosto', 'Tamanho', 'Divisor entre as imagens', 'Inclinacao da emenda', '= texto'])
     confere(texto(solta).includes(rotulo), `solta: "${rotulo}"`)
   for (const rotulo of ['Normal.dangai', 'Trocar projeto...', 'Sugestoes', 'Quadro do projeto', 'Do computador', 'Quadro dentro da cena', 'Sem render ainda'])
     confere(texto(projeto).includes(rotulo), `projeto: "${rotulo}"`)
@@ -1179,6 +1181,143 @@ async function testarInclinacao(T: typeof import('../shared/thumb'), D: typeof i
     const colada = { origem: 'arquivo' as const, arquivo: 'x.png', t: 0, largura: 854, altura: 480, rostos: [{ x: 0.45, y: 0, w: 0.1, h: 0.2, conf: 0.9 }], enquadramento: null }
     const ef = T.thumbEfetiva({ ...padrao, divisor: { ...padrao.divisor, inclinacao: -8 }, imagens: [colada, null] }, medir)
     confere(ef.avisos.some((a) => a.texto.includes('faixa proibida de cima')), 'inclinada: a cabeca colada no topo ainda avisa a faixa proibida (os avisos de hoje)')
+  }
+}
+
+/**
+ * (04/11) OS ESTILOS DO TEXTO (Kizuni, Faah, AJK), o "Contorno", o degrade
+ * proprio, as 3 setas e o preset que lembra tudo isso.
+ */
+async function testarEstilos(T: typeof import('../shared/thumb'), D: typeof import('../shared/pedidos')): Promise<void> {
+  console.log('\n== estilos do texto, contorno e setas (04/11)')
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  const padrao = T.thumbPadrao('ELA TAVA PREPARADA?')
+
+  // Thumb de antes (sem os campos novos): abre no Kizuni de sempre.
+  const antiga = JSON.parse(JSON.stringify(padrao)) as Record<string, unknown>
+  for (const k of ['estilo', 'degrades', 'contorno', 'fontePc']) delete antiga[k]
+  delete (antiga['seta'] as Record<string, unknown>)['forma']
+  const lida = T.thumbDoProjeto(antiga)
+  confere(
+    lida?.estilo === 'kizuni' && lida.contorno.px === 12 && lida.contorno.cor === '#000000' && lida.seta.forma === 'vermelha' && lida.fontePc === null && lida.degrades[1] === null,
+    'thumb de antes: Kizuni, contorno 12 preto, seta vermelha, sem degrade proprio nem fonte do PC',
+  )
+
+  // O degrade de cada estilo.
+  const kiz = T.degradeDaLinha(padrao, 0)
+  confere(JSON.stringify(kiz) === JSON.stringify(T.degradeDaCor('#ffffff')), 'Kizuni: o degrade de luz de sempre')
+  const faah = T.aplicarEstilo(padrao, 'faah')
+  const f0 = T.degradeDaLinha(faah, 0)
+  const f1 = T.degradeDaLinha(faah, 1)
+  confere(f0[0]!.cor === '#ffffff' && f0[1]!.cor === '#cccccc', `Faah, linha 1: branco em cima, #cccccc embaixo (o overlay de 20% dele): ${f0.map((p) => p.cor).join(' -> ')}`)
+  confere(f1[0]!.cor === '#7530e3' && f1[1]!.cor === '#e1afcc', 'Faah, linha 2: o roxo dele #7530e3 -> #e1afcc')
+  confere(faah.contorno.px === 8 && faah.seta.forma === 'roxa' && faah.fonte === 'luckiest' && faah.linhas.join(' ') === padrao.linhas.join(' '), 'Faah: contorno 8, seta roxa, Luckiest Guy, o texto fica')
+  const ajk = T.aplicarEstilo(faah, 'ajk')
+  const a0 = T.degradeDaLinha(ajk, 0)
+  const a1 = T.degradeDaLinha(ajk, 1)
+  confere(a0.every((p) => p.cor === '#ffffff') && a1.every((p) => p.cor === '#fffd00'), 'AJK: branco e amarelo (255,253,0) chapados')
+  confere(ajk.contorno.px === 7 && ajk.seta.forma === 'ajk' && ajk.degrades[1] === null, 'AJK: contorno 7, a seta de pincel, sem o degrade do Faah')
+  const volta = T.aplicarEstilo(ajk, 'kizuni')
+  confere(volta.contorno.px === 12 && volta.cores[1] === T.COR_LINHA_2 && volta.seta.forma === 'vermelha', 'de volta ao Kizuni: amarelo, 12 px, seta vermelha')
+  const proprio = T.degradeDaLinha({ ...padrao, degrades: [['#112233', '#445566'], null] }, 0)
+  confere(proprio.length === 2 && proprio[0]!.cor === '#112233' && proprio[1]!.cor === '#445566', 'o degrade proprio da linha manda (as duas cores dele)')
+
+  // A esticada e o contorno na geometria.
+  const gK = T.geometriaDaThumb(padrao, medir)
+  const gF = T.geometriaDaThumb(faah, medir)
+  const gA = T.geometriaDaThumb(ajk, medir)
+  confere(gK.linhas[0]!.esticada === T.ESTICADA_Y && gF.linhas[0]!.esticada === 1 && gA.linhas[0]!.esticada === T.ESTICADA_Y, 'a Luckiest esticada 1,11 no Kizuni e no AJK, reta no Faah')
+  const com = (px: number) => T.geometriaDaThumb({ ...padrao, contorno: { px, cor: '#000000' } }, medir).linhas[0]!
+  const l12 = com(12)
+  const l24 = com(24)
+  confere(Math.abs(l12.contorno - (12 * l12.px) / T.CORPO_PX) < 1e-9 && Math.abs(l24.contorno / l24.px - (2 * l12.contorno) / l12.px) < 1e-9 && com(0).contorno === 0, 'o Contorno: proporcional ao corpo (24 = o dobro de 12; 0 = sem)')
+  const comPc = T.geometriaDaThumb({ ...padrao, fontePc: { nome: 'X', arquivo: 'C:/Windows/Fonts/x.ttf' } }, medir)
+  confere(comPc.linhas[0]!.esticada === 1, 'a fonte do PC nao estica')
+
+  // As 3 setas: so escala, giro e espelho; o contorno na mesma proporcao; a automatica acha lugar.
+  for (const forma of ['vermelha', 'roxa', 'ajk'] as const) {
+    const base = { x: 100, y: 800 }
+    const ponta = { x: 500, y: 400 }
+    const s = { base, ponta, lado: 1 as const, forma }
+    const L = Math.hypot(ponta.x - base.x, ponta.y - base.y)
+    const unidade = T.contornoDaSeta({ base: { x: 0, y: 0 }, ponta: { x: 1, y: 0 }, lado: 1, forma })
+    const tela = T.contornoDaSeta(s)
+    const a = Math.atan2(ponta.y - base.y, ponta.x - base.x)
+    const erro = Math.max(
+      ...unidade.map((p, i) => {
+        const q = { x: base.x + L * (p.x * Math.cos(a) - p.y * Math.sin(a)), y: base.y + L * (p.x * Math.sin(a) + p.y * Math.cos(a)) }
+        return Math.hypot(q.x - tela[i]!.x, q.y - tela[i]!.y)
+      }),
+    )
+    confere(erro < 1e-6 && Math.abs(T.contornoDaSetaPx(s) - T.desenhoDaSeta(s).contorno * L) < 1e-9, `${forma}: a forma so escalada e girada (erro ${erro.toExponential(1)}), o contorno proporcional`)
+    const t = { ...T.aplicarEstilo(padrao, forma === 'vermelha' ? 'kizuni' : forma === 'roxa' ? 'faah' : 'ajk') }
+    const rosto = { x: 0.42, y: 0.2, w: 0.16, h: 0.3, conf: 0.9 }
+    const img = { origem: 'arquivo' as const, arquivo: 'x.png', t: 0, largura: 1920, altura: 1080, rostos: [rosto], enquadramento: null }
+    const ef = T.thumbEfetiva({ ...t, imagens: [img, img] }, medir)
+    // A do AJK pode cortar a asa na beirada (a ref): ali so o corpo (a linha do meio e as pontas) conta.
+    const k = ef.seta
+      ? forma === 'ajk'
+        ? (() => {
+            const ps = [...T.desenhoDaSeta(ef.seta).meio.map((p) => ({ x: ef.seta!.base.x + p.x * (ef.seta!.ponta.x - ef.seta!.base.x) - p.y * (ef.seta!.ponta.y - ef.seta!.base.y), y: ef.seta!.base.y + p.x * (ef.seta!.ponta.y - ef.seta!.base.y) + p.y * (ef.seta!.ponta.x - ef.seta!.base.x) })), ef.seta.ponta]
+            return { x1: Math.min(...ps.map((p) => p.x)), x2: Math.max(...ps.map((p) => p.x)), y1: Math.min(...ps.map((p) => p.y)), y2: Math.max(...ps.map((p) => p.y)) }
+          })()
+        : T.caixaDaSeta(ef.seta)
+      : null
+    // A vermelha e a de sempre (com a 2a linha longa, a reserva de antes); as novas, com a ponta acima do texto.
+    const acima = !!ef.seta && (forma === 'vermelha' || ef.seta.ponta.y < ef.geo.bloco!.topo)
+    confere(
+      !!ef.seta && ef.seta.forma === forma && acima && !!k && k.x1 >= 0 && k.x2 <= T.LARGURA && k.y1 >= T.ZONA_PROIBIDA_TOPO * T.ALTURA && k.y2 <= T.ZONA_PROIBIDA_BASE * T.ALTURA,
+      `${forma}: a automatica acha lugar no quadro, fora das faixas, com a ponta acima do texto (corda ${ef.seta ? Math.round(Math.hypot(ef.seta.ponta.x - ef.seta.base.x, ef.seta.ponta.y - ef.seta.base.y)) : '-'} px)`,
+    )
+  }
+  confere(T.desenhoDaSeta({ forma: 'ajk' }).imagem?.arquivo === 'seta-ajk.png' && !T.desenhoDaSeta({ forma: 'roxa' }).imagem, 'a do AJK e o PNG (com os riscos e a sombra dele); a roxa e vetor')
+  {
+    const { existsSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    confere(existsSync(join(process.cwd(), 'modulos', 'thumb', 'assets', 'setas', 'seta-ajk.png')), 'o PNG da seta do AJK esta nos assets')
+  }
+
+  // O preset lembra o estilo, o contorno, o degrade, a seta e a fonte do PC; um preset de antes abre no Kizuni.
+  const mexida = { ...faah, contorno: { px: 15, cor: '#ffffff' }, fontePc: { nome: 'Poppins Black', arquivo: 'C:/x/Poppins-Black.ttf' } }
+  const lido = D.presetDaThumbSchema.parse(JSON.parse(JSON.stringify(D.presetDe(mexida))))
+  const deVolta = D.thumbDoPreset(lido, T.thumbPadrao(null))
+  confere(
+    deVolta.estilo === 'faah' && deVolta.contorno.px === 15 && deVolta.contorno.cor === '#ffffff' && deVolta.seta.forma === 'roxa' && deVolta.degrades[1]?.[1] === '#e1afcc' && deVolta.fontePc?.nome === 'Poppins Black',
+    'o preset volta com o estilo, o contorno, o degrade, a seta e a fonte do PC',
+  )
+  const presetVelho = JSON.parse(JSON.stringify(D.presetDe(padrao))) as Record<string, unknown>
+  for (const k of ['estilo', 'degrades', 'contorno', 'formaDaSeta', 'fontePc']) delete presetVelho[k]
+  const pv = D.presetDaThumbSchema.safeParse(presetVelho)
+  confere(pv.success && pv.data.estilo === 'kizuni' && pv.data.contorno.px === 12 && pv.data.formaDaSeta === 'vermelha', 'um preset de antes abre no Kizuni de sempre')
+}
+
+/** (04/11) As fontes do PC: o nome de dentro do arquivo, a lista e os bytes so de fonte da lista. */
+async function testarFontesDoPc(): Promise<void> {
+  console.log('\n== fontes do PC (04/11)')
+  const { join } = await import('node:path')
+  const { readFile } = await import('node:fs/promises')
+  const F = await import('../electron/fontes-do-pc')
+  const pasta = join(process.cwd(), 'modulos', 'thumb', 'assets', 'fonts')
+  const nome = F.nomeDaFonte(new Uint8Array(await readFile(join(pasta, 'LuckiestGuy-Regular.ttf'))))
+  confere(nome === 'Luckiest Guy' || nome === 'Luckiest Guy Regular', `o nome de dentro do arquivo: "${nome}"`)
+  confere(F.nomeDaFonte(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])) === null, 'arquivo que nao e fonte: sem nome')
+  F.esquecerFontesDoPc()
+  const lista = await F.fontesDoPc([pasta])
+  confere(lista.some((f) => f.nome === 'Poppins Black') && lista.some((f) => f.nome.startsWith('Anton')), `a lista da pasta, por nome (${lista.map((f) => f.nome).join(', ')})`)
+  const b = await F.bytesDaFonteDoPc(lista[0]!.arquivo, [pasta])
+  confere(b.length > 1000, 'os bytes de uma fonte da lista')
+  let recusou = false
+  try {
+    await F.bytesDaFonteDoPc(join(process.cwd(), 'package.json'), [pasta])
+  } catch {
+    recusou = true
+  }
+  confere(recusou, 'um caminho fora da lista e recusado (a tela nao le qualquer arquivo)')
+  F.esquecerFontesDoPc()
+  if (process.platform === 'win32') {
+    const doWindows = await F.fontesDoPc()
+    confere(doWindows.length > 20 && doWindows.some((f) => /arial/i.test(f.nome)), `as fontes do Windows (${doWindows.length}, com a Arial)`)
+    F.esquecerFontesDoPc()
   }
 }
 

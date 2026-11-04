@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, type OpenDialogOptions, type SaveDialogOptions }
 import { existsSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import type { ContextoDoModulo } from '../../../electron/modulos'
-import { CANAIS_DA_THUMB as C, type MotorDaThumb } from '../shared/canais'
+import { CANAIS_DA_THUMB as C, type FonteDoPc, type MotorDaThumb } from '../shared/canais'
 import {
   configDaThumbSchema,
   pedidoDeCopiaSchema,
@@ -25,6 +25,7 @@ import {
   type SugestoesDaThumb,
 } from '../shared/thumb'
 import { contexto } from './contexto'
+import { bytesDaFonteDoPc, fontesDoPc } from './fontes-do-pc'
 import { copiarParaOProjeto, criarEditorNoMain, espalhar, IMAGENS_DA_THUMB, quadroRapido, salvarPngEm, salvarThumb, temUpscale, videoDoProjeto } from './editor'
 import { motivoSemMotor, motorDeRostos } from './motor'
 
@@ -76,6 +77,11 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   })
   ctx.handle<[unknown], RecorteDaThumb>(C.recorte, async (p) => editor.recorteDaThumb(pedidoDeRecorteSchema.parse(p)))
   ctx.handle<[], boolean>(C.upscale, async () => temUpscale())
+  ctx.handle<[], FonteDoPc[]>(C.fontesDoPc, async () => fontesDoPc())
+  ctx.handle<[unknown], Uint8Array>(C.fonteDoPc, async (arquivo) => {
+    if (typeof arquivo !== 'string' || !arquivo || arquivo.length > 1024) throw new Error('Fonte invalida.')
+    return bytesDaFonteDoPc(arquivo)
+  })
   ctx.handle<[], MotorDaThumb>(C.motor, async () => {
     const motivo = motivoSemMotor()
     return { pronto: motivo === null, motivo }

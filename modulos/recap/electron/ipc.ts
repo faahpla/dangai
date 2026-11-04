@@ -124,6 +124,7 @@ import { rostosDosPedacos } from './montar/rostos-motor'
 import { pngsDosTextos, telasDoRascunho } from './montar/textos'
 import { abrirPosRender, escreverTitulosEThumbs } from './pos-render'
 import { pedidoDeTitulosSchema, pedidoDoPosRenderSchema, type TextosDoPosRender, type TitulosNovos } from '../shared/pos-render'
+import { bytesDaFonteDoPc, fontesDoPc } from '../../thumb/electron/fontes-do-pc'
 import { copiarParaOProjeto, quadroDaThumb, quadroRapido, recorteDaThumb, rostosDoQuadro, salvarThumb, sugestoesDaThumb, temUpscale } from './thumb'
 import {
   pedidoDeQuadroSchema,
@@ -499,6 +500,11 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[unknown], RecorteDaThumb>(C.recorteDaThumb, async (pedido) => recorteDaThumb(pedidoDeRecorteSchema.parse(pedido)))
   ctx.handle<[unknown], ResultadoDoSalvar>(C.salvarThumb, async (pedido) => salvarThumb(pedidoDeSalvarSchema.parse(pedido)))
   ctx.handle<[], boolean>(C.upscaleDaThumb, async () => temUpscale())
+  ctx.handle<[], { nome: string; arquivo: string }[]>(C.fontesDoPcDaThumb, async () => fontesDoPc())
+  ctx.handle<[unknown], Uint8Array>(C.fonteDoPcDaThumb, async (arquivo) => {
+    if (typeof arquivo !== 'string' || !arquivo || arquivo.length > 1024) throw new Error('Fonte invalida.')
+    return bytesDaFonteDoPc(arquivo)
+  })
   ctx.handle<[unknown], Uint8Array>(C.miniaturaDaThumb, async (pedido) => {
     const p = pedidoDeQuadroSchema.parse(pedido)
     return quadroRapido(p.arquivo, p.t)

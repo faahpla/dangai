@@ -6,16 +6,15 @@ import {
   CONTORNO_DA_LINHA,
   caminhoDaSeta,
   contornoDaSetaPx,
-  DEGRADE_DA_SETA,
-  degradeDaCor,
+  degradeDaLinha,
   degradeDaSeta,
+  desenhoDaSeta,
   emendaNoX,
   ESPESSURA_DA_LINHA,
   esticadaDoDivisor,
   LARGURA,
+  ESTILO,
   LOOK,
-  SOMBRA_DESFOQUE,
-  SOMBRA_Y,
   ZONA_PROIBIDA_BASE,
   ZONA_PROIBIDA_TOPO,
   regiaoDoPainel,
@@ -24,7 +23,8 @@ import {
   type SetaNoQuadro,
   type ThumbDoProjeto,
 } from '../../shared/thumb'
-import { familiaDaFonte } from './fontes'
+import { familiaDaThumb } from './fontes'
+import { imagemDaSeta } from './setas'
 
 /**
  * [thumb] O DESENHO DA THUMBNAIL num canvas (o mesmo codigo na previa e no
@@ -74,7 +74,8 @@ export type DivisorPronto =
   | { tipo: 'linha'; cor: string; contorno: boolean }
 
 export interface EntradaDoDesenho {
-  thumb: Pick<ThumbDoProjeto, 'layout' | 'cores' | 'fonte'>
+  thumb: Pick<ThumbDoProjeto, 'layout' | 'cores' | 'fonte'> &
+    Partial<Pick<ThumbDoProjeto, 'fontePc' | 'estilo' | 'degrades' | 'contorno'>>
   geo: GeometriaDaThumb
   paineis: readonly (PainelPronto | null)[]
   seta: SetaNoQuadro | null
@@ -90,8 +91,11 @@ export interface EntradaDoDesenho {
  * da tinta da linha (actualBoundingBox*), nao a caixa da linha da fonte -- cada
  * fonte tem ascendente e descendente diferentes, e a tinta e o que aparece.
  */
-export function medidorDoCanvas(ctx: CanvasRenderingContext2D, fonte: ThumbDoProjeto['fonte']): MedirTexto {
-  const familia = familiaDaFonte(fonte)
+export function medidorDoCanvas(
+  ctx: CanvasRenderingContext2D,
+  fonte: ThumbDoProjeto['fonte'] | (Pick<ThumbDoProjeto, 'fonte'> & { fontePc?: ThumbDoProjeto['fontePc'] }),
+): MedirTexto {
+  const familia = familiaDaThumb(typeof fonte === 'string' ? { fonte } : fonte)
   return (texto, px) => {
     ctx.save()
     ctx.font = `${px}px "${familia}"`
@@ -122,6 +126,32 @@ function tracarSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro): void {
 
 /** A seta padrao (a seta.png vetorizada): a sombra, o contorno preto por fora e o degrade da png. */
 function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala: number): void {
+  const desenho = desenhoDaSeta(seta)
+  const img = desenho.imagem ? imagemDaSeta(seta) : null
+  if (desenho.imagem && img) {
+    // A SETA QUE E O PNG (a do AJK): o arquivo inteiro (com a sombra dele) pela similaridade que leva a
+    // cauda e a ponta do PNG a base e a ponta da seta; `lado` -1 espelha.
+    const c = desenho.imagem.cauda
+    const pp = desenho.imagem.ponta
+    const dx = pp.x - c.x
+    const dy = pp.y - c.y
+    const L2 = dx * dx + dy * dy
+    const Dx = seta.ponta.x - seta.base.x
+    const Dy = seta.ponta.y - seta.base.y
+    const l = seta.lado
+    // (u, v) do PNG = A (p - c); a tela = base + u D + l v perp(D), perp(D) = (-Dy, Dx).
+    const a = (Dx * dx - l * Dy * -dy) / L2
+    const b = (Dy * dx + l * Dx * -dy) / L2
+    const cc = (Dx * dy - l * Dy * dx) / L2
+    const d = (Dy * dy + l * Dx * dx) / L2
+    ctx.save()
+    ctx.transform(a, b, cc, d, seta.base.x - a * c.x - cc * c.y, seta.base.y - b * c.x - d * c.y)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0)
+    ctx.restore()
+    return
+  }
   const contorno = contornoDaSetaPx(seta)
   ctx.save()
   ctx.lineJoin = 'round'
@@ -131,16 +161,19 @@ function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala:
   ctx.shadowOffsetY = 8 * escala
   ctx.shadowBlur = 14 * escala
   tracarSeta(ctx, seta)
-  ctx.lineWidth = contorno * 2
-  ctx.strokeStyle = '#000'
-  ctx.stroke()
+  if (contorno > 0.05) {
+    ctx.lineWidth = contorno * 2
+    ctx.strokeStyle = '#000'
+    ctx.stroke()
+  }
   ctx.shadowColor = 'transparent'
   ctx.fillStyle = '#000'
   ctx.fill()
   const d = degradeDaSeta(seta)
   const g = ctx.createLinearGradient(d.de.x, d.de.y, d.ate.x, d.ate.y)
-  g.addColorStop(0, DEGRADE_DA_SETA.cores[0])
-  g.addColorStop(1, DEGRADE_DA_SETA.cores[1])
+  const cores = desenhoDaSeta(seta).degrade.cores
+  g.addColorStop(0, cores[0])
+  g.addColorStop(1, cores[1])
   ctx.fillStyle = g
   tracarSeta(ctx, seta)
   ctx.fill()
@@ -204,10 +237,11 @@ function desenharDivisor(ctx: CanvasRenderingContext2D, d: DivisorPronto, emenda
 }
 
 function desenharTexto(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho): void {
-  const familia = familiaDaFonte(e.thumb.fonte)
+  const familia = familiaDaThumb(e.thumb)
+  const estilo = ESTILO[e.thumb.estilo ?? 'kizuni']
+  const corDoContorno = e.thumb.contorno?.cor ?? '#000000'
   const { pivo, rotacao } = e.geo
-  e.geo.linhas.forEach((l, i) => {
-    const cor = e.thumb.cores[Math.min(i, 1)]!
+  e.geo.linhas.forEach((l) => {
     const relativo = l.px / CORPO_PX
     const capLocal = l.cap / l.esticada
     ctx.save()
@@ -226,21 +260,25 @@ function desenharTexto(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho): void
     ctx.textBaseline = 'alphabetic'
     ctx.lineJoin = 'round'
     ctx.miterLimit = 2
-    ctx.lineWidth = l.contorno * 2
-    // 1) a sombra do PSD (preta, 100%, 13 px abaixo, desfoque 11,4): a forma inteira, com o contorno.
+    // Sem contorno (0 px): o canvas ignora lineWidth 0, entao a sombra sai do preenchimento.
+    const comContorno = l.contorno > 0.05
+    if (comContorno) ctx.lineWidth = l.contorno * 2
+    // 1) a sombra do estilo (preta, 100%; o Kizuni 13 px abaixo com desfoque 11,4, o Faah 6 e 2,2): a forma
+    // inteira, com o contorno.
     ctx.shadowColor = 'rgba(0,0,0,1)'
-    ctx.shadowOffsetY = SOMBRA_Y * relativo * e.escala
+    ctx.shadowOffsetY = estilo.sombraY * relativo * e.escala
     // O shadowBlur do canvas e ~2x o desvio do gaussiano.
-    ctx.shadowBlur = SOMBRA_DESFOQUE * 2 * relativo * e.escala
-    ctx.strokeStyle = '#000'
-    ctx.fillStyle = '#000'
-    ctx.strokeText(l.texto, 0, 0)
+    ctx.shadowBlur = estilo.sombraDesfoque * 2 * relativo * e.escala
+    ctx.strokeStyle = corDoContorno
+    ctx.fillStyle = corDoContorno
+    if (comContorno) ctx.strokeText(l.texto, 0, 0)
+    else ctx.fillText(l.texto, 0, 0)
     ctx.shadowColor = 'transparent'
     // 2) o contorno POR FORA: o traco largo, e o preenchimento por cima cobre a metade de dentro.
-    ctx.strokeText(l.texto, 0, 0)
+    if (comContorno) ctx.strokeText(l.texto, 0, 0)
     // 3) o degrade vertical, do topo da maiuscula a base.
     const g = ctx.createLinearGradient(0, -capLocal, 0, 0)
-    for (const p of degradeDaCor(cor)) g.addColorStop(p.em, p.cor)
+    for (const p of degradeDaLinha(e.thumb, l.linha)) g.addColorStop(p.em, p.cor)
     ctx.fillStyle = g
     ctx.fillText(l.texto, 0, 0)
     ctx.restore()

@@ -218,6 +218,8 @@ export const CANAIS = {
   escolherImagemDaThumb: 'recap:thumb:escolher-imagem',
   upscaleDaThumb: 'recap:thumb:upscale',
   miniaturaDaThumb: 'recap:thumb:miniatura',
+  fontesDoPcDaThumb: 'recap:thumb:fontes-do-pc',
+  fonteDoPcDaThumb: 'recap:thumb:fonte-do-pc',
 
   // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
   // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
@@ -435,6 +437,9 @@ export interface PonteDoRecap {
   upscaleDaThumb(): Promise<IpcResult<boolean>>
   /** Thumbnail: um JPEG pequeno do instante, para o arrastar do "Quadro dentro da cena". */
   miniaturaDaThumb(pedido: PedidoDeQuadro): Promise<IpcResult<Uint8Array>>
+  /** Thumbnail: as fontes instaladas no PC e os bytes de uma delas (o "Fonte do PC" do texto). */
+  fontesDoPcDaThumb(): Promise<IpcResult<{ nome: string; arquivo: string }[]>>
+  fonteDoPcDaThumb(arquivo: string): Promise<IpcResult<Uint8Array>>
 
   // O motor de personagens (parte 4), com os nomes do Studio.
   /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */

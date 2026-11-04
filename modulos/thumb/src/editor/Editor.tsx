@@ -4,6 +4,13 @@ import { ArrowUpDown, Check, ChevronLeft, ChevronRight, FolderOpen, ImagePlus, L
 import { Deslizante, Segmentos } from '@/modulos/kit'
 import {
   ALTURA,
+  aplicarEstilo,
+  COR_DO_CONTORNO,
+  CONTORNO_MAXIMO,
+  degradeDaLinha,
+  ESTILO,
+  ESTILOS_DO_TEXTO,
+  FORMAS_DA_SETA,
   COR_ORIGINAL_DO_DIVISOR,
   CORES_DA_THUMB,
   CORPO_LEGIVEL,
@@ -31,6 +38,7 @@ import {
 import { medidor, type LojaDoEditor, type SugestaoNaTela } from './loja'
 import { desenharThumb, type PainelPronto } from './desenho'
 import { divisorAgora, useDivisoresProntos } from './divisores'
+import { useSetasProntas } from './setas'
 import { Aviso, Botao, Caixinha, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, formatarTempo, Link, Secao } from './pecas'
 
 /**
@@ -38,8 +46,9 @@ import { Aviso, Botao, Caixinha, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, fo
  * loja.ts): a previa 1080x1920 e os ajustes -- layout (1 ou 2 imagens), as
  * imagens (de onde vem cada uma e quem usa que diz: as sugestoes das cenas,
  * um quadro do video, um arquivo do PC), o texto (2 linhas, cores, fonte,
- * tamanho, rotacao, altura), o divisor e a inclinacao da emenda (2 imagens) e a seta. O estilo e fixo (o preset das refs); ele so mexe no que o
- * pedido deixou. A aba "Thumbnail" do recap e o modulo Thumbnail montam ESTAS
+ * tamanho, rotacao, altura), o divisor e a inclinacao da emenda (2 imagens) e a seta. O estilo vem de um
+ * dos presets das refs (04/11: Kizuni, Faah ou AJK, com o contorno, o degrade proprio, a fonte do PC e a forma
+ * da seta por cima); ele so mexe no que o pedido deixou. A aba "Thumbnail" do recap e o modulo Thumbnail montam ESTAS
  * pecas, cada um com a sua loja (ProvedorDoEditor).
  *
  * Na previa: arrastar move a imagem, a rodinha amplia, as bolinhas da seta
@@ -91,7 +100,8 @@ function useEfetiva() {
   const useThumb = useLoja()
   const thumb = useThumb((s) => s.thumb)
   const fontes = useThumb((s) => s.fontesProntas)
-  return useMemo(() => (thumb ? thumbEfetiva(thumb, medidor(thumb.fonte)) : null), [thumb, fontes])
+  const doPc = useThumb((s) => s.fontesDoPcProntas)
+  return useMemo(() => (thumb ? thumbEfetiva(thumb, medidor(thumb)) : null), [thumb, fontes, doPc])
 }
 
 /** As imagens que ele soltou (so os arquivos de imagem), e o slot onde caiu. */
@@ -127,6 +137,8 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
   const ajustando = useAjustando()
   // O PNG do divisor (e cada cor dele) fica pronto depois: a previa redesenha.
   const divisoresProntos = useDivisoresProntos((s) => s.versao)
+  // E o PNG da seta do AJK.
+  const setasProntas = useSetasProntas((s) => s.versao)
   const canvas = useRef<HTMLCanvasElement | null>(null)
   const arrasto = useRef<Arrasto | null>(null)
   const [cursor, setCursor] = useState('default')
@@ -162,7 +174,7 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
       escala: w / LARGURA,
       guias: { zonas: guias, rostos: guias ? ef.rostos : [], pontasDaSeta: guias || emCima },
     })
-  }, [thumb, ef, previas, largura, alto, guias, emCima, divisoresProntos])
+  }, [thumb, ef, previas, largura, alto, guias, emCima, divisoresProntos, setasProntas])
 
   // A rodinha amplia em volta do ponteiro (listener nao passivo: o preventDefault segura a rolagem).
   useEffect(() => {
@@ -171,7 +183,7 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
     const rodinha = (ev: WheelEvent): void => {
       const s = useThumb.getState()
       const t = s.thumb
-      const efetiva = t ? thumbEfetiva(t, medidor(t.fonte)) : null
+      const efetiva = t ? thumbEfetiva(t, medidor(t)) : null
       if (!t || !efetiva) return
       const p = paraQuadro(el, ev)
       const slot = painelEm(t, efetiva.geo, p)
@@ -533,6 +545,27 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
       </Secao>
 
       <Secao titulo="Texto">
+        <div className="flex items-center gap-2" data-thumb="estilo-do-texto">
+          <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Estilo</span>
+          <Segmentos
+            opcoes={ESTILOS_DO_TEXTO.map((e) => ({
+              valor: e.id,
+              rotulo: e.nome,
+              title:
+                e.id === 'kizuni'
+                  ? 'Kizuni e Kiumaz: branco e amarelo com o degrade de luz, contorno grosso, sombra longa, seta vermelha'
+                  : e.id === 'faah'
+                    ? 'Faah: branco e roxo com o degrade dele, contorno fino, sombra curta, seta roxa'
+                    : 'AJK (Anipoison): branco e amarelo chapados, contorno fino, sombra curta, seta de pincel',
+            }))}
+            ativo={(v) => thumb.estilo === v}
+            // A thumb de AGORA (nao a do render): o que ele acabou de digitar fica.
+            onChange={(v) => {
+              const agora = useThumb.getState().thumb
+              if (agora) mudar(aplicarEstilo(agora, v))
+            }}
+          />
+        </div>
         {[0, 1].map((i) => (
           <LinhaDeTexto key={i} linha={i as 0 | 1} />
         ))}
@@ -569,10 +602,12 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
               ),
               title: f.nome,
             }))}
-            ativo={(v) => thumb.fonte === v}
-            onChange={(v) => mudar({ fonte: v })}
+            ativo={(v) => !thumb.fontePc && thumb.fonte === v}
+            onChange={(v) => mudar({ fonte: v, fontePc: null })}
           />
         </div>
+        <FonteDoPc />
+        <ContornoDoTexto />
         <TamanhoDoTexto />
         <RotacaoDoTexto />
         <div className="flex items-center gap-2" data-thumb="altura-do-texto">
@@ -599,7 +634,7 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
         titulo="Seta"
         acao={
           thumb.seta.ligada && (thumb.seta.base || thumb.seta.ponta) ? (
-            <Link onClick={() => mudar({ seta: { ligada: true, base: null, ponta: null } })} title="A seta volta a apontar o rosto sozinha">
+            <Link onClick={() => mudar({ seta: { ...thumb.seta, ligada: true, base: null, ponta: null } })} title="A seta volta a apontar o rosto sozinha">
               Apontar o rosto de novo
             </Link>
           ) : undefined
@@ -607,8 +642,21 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
       >
         <div className="flex flex-wrap items-center gap-3">
           <Caixinha ligada={thumb.seta.ligada} onChange={(v) => mudar({ seta: { ...thumb.seta, ligada: v } })}>
-            Seta vermelha apontando o rosto
+            Seta apontando o rosto
           </Caixinha>
+          {thumb.seta.ligada && (
+            <div className="w-[230px]" data-thumb="forma-da-seta">
+              <Segmentos
+                opcoes={FORMAS_DA_SETA.map((f) => ({
+                  valor: f.id,
+                  rotulo: f.nome,
+                  title: f.id === 'vermelha' ? 'A seta vermelha (Kizuni)' : f.id === 'roxa' ? 'A seta roxa do Faah' : 'A seta de pincel do AJK',
+                }))}
+                ativo={(v) => thumb.seta.forma === v}
+                onChange={(v) => mudar({ seta: { ...thumb.seta, forma: v } })}
+              />
+            </div>
+          )}
           {thumb.seta.ligada && <span className="text-[11px] text-ink-3">Arraste as bolinhas da previa para mudar as pontas.</span>}
         </div>
       </Secao>
@@ -876,7 +924,10 @@ function LinhaDeTexto({ linha }: { linha: 0 | 1 }) {
   const mudarCor = (c: string): void => {
     const cores = [...thumb.cores] as ThumbDoProjeto['cores']
     cores[linha] = c.toLowerCase()
-    useThumb.getState().mudar({ cores })
+    // Uma cor pronta (ou a mao) desfaz o degrade proprio desta linha.
+    const degrades = [...thumb.degrades] as ThumbDoProjeto['degrades']
+    degrades[linha] = null
+    useThumb.getState().mudar({ cores, degrades })
   }
   return (
     <div className="flex flex-col gap-1.5" data-thumb={`linha-${linha + 1}`}>
@@ -905,8 +956,214 @@ function LinhaDeTexto({ linha }: { linha: 0 | 1 }) {
         </p>
       )}
       <div className="pl-[76px]">
-        <SeletorDeCor cor={cor} onChange={mudarCor} onde={`na linha ${linha + 1}`} />
+        <SeletorDeCor cor={thumb.degrades[linha] ? null : cor} onChange={mudarCor} onde={`na linha ${linha + 1}`} />
       </div>
+      <DegradeDaLinha linha={linha} />
+    </div>
+  )
+}
+
+/**
+ * O DEGRADE PROPRIO de uma linha (04/11, o roxo do Faah): duas cores, em cima
+ * e embaixo. Ligar comeca do degrade que ela ja mostra; uma cor pronta desliga.
+ */
+function DegradeDaLinha({ linha }: { linha: 0 | 1 }) {
+  const useThumb = useLoja()
+  const thumb = useThumb((s) => s.thumb)
+  if (!thumb) return null
+  const proprio = thumb.degrades[linha]
+  const mudar = (d: [string, string] | null): void => {
+    const degrades = [...thumb.degrades] as ThumbDoProjeto['degrades']
+    degrades[linha] = d
+    useThumb.getState().mudar({ degrades, ...(d ? { cores: linha === 0 ? [d[0], thumb.cores[1]] : [thumb.cores[0], d[0]] } : {}) })
+  }
+  const agora = degradeDaLinha(thumb, linha)
+  const de = proprio ?? [agora[0]!.cor, agora[agora.length - 1]!.cor]
+  return (
+    <div className="flex flex-wrap items-center gap-2 pl-[76px]" data-thumb={`degrade-${linha + 1}`}>
+      <Caixinha
+        ligada={proprio !== null}
+        onChange={(v) => mudar(v ? [de[0], de[1]] : null)}
+        title="Escolher as duas cores do degrade desta linha (em cima e embaixo)"
+      >
+        Degrade proprio
+      </Caixinha>
+      {proprio && (
+        <>
+          <CorAMao rotulo="Em cima" cor={proprio[0]} onChange={(c) => mudar([c, proprio[1]])} onde={`em cima na linha ${linha + 1}`} />
+          <CorAMao rotulo="Embaixo" cor={proprio[1]} onChange={(c) => mudar([proprio[0], c])} onde={`embaixo na linha ${linha + 1}`} />
+          <span className="h-3 w-10 rounded-sm border border-black/60" style={{ background: `linear-gradient(${proprio[0]}, ${proprio[1]})` }} />
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Uma bolinha de cor com o seletor do sistema e o rotulo ao lado. */
+function CorAMao({
+  rotulo,
+  cor,
+  onChange,
+  onde,
+  arcoIris,
+}: {
+  rotulo: string
+  cor: string
+  onChange: (cor: string) => void
+  onde: string
+  /** A cor e uma das bolinhas prontas ao lado: mostra o arco-iris (o "escolher outra"), nao a mesma cor de novo. */
+  arcoIris?: boolean
+}) {
+  const anel = 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-surface)]'
+  return (
+    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink-3" title={`Cor ${onde}`}>
+      <span
+        className={['relative size-5 shrink-0 overflow-hidden rounded-full border border-black/60', arcoIris === false ? anel : ''].join(' ')}
+        style={{ background: arcoIris ? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' : cor }}
+      >
+        <input
+          type="color"
+          value={cor}
+          onChange={(e) => onChange(e.target.value.toLowerCase())}
+          aria-label={`Cor ${onde}`}
+          className="absolute inset-0 cursor-pointer opacity-0"
+        />
+      </span>
+      {rotulo}
+    </label>
+  )
+}
+
+/** O "Contorno" do texto: a grossura (0 = sem) e a cor. */
+function ContornoDoTexto() {
+  const useThumb = useLoja()
+  const thumb = useThumb((s) => s.thumb)
+  if (!thumb) return null
+  const padrao = Math.round(ESTILO[thumb.estilo].contorno)
+  const { px, cor } = thumb.contorno
+  const mudar = (c: Partial<ThumbDoProjeto['contorno']>): void => useThumb.getState().mudar({ contorno: { ...thumb.contorno, ...c } })
+  return (
+    <div className="flex flex-col gap-1.5" data-thumb="contorno-do-texto">
+      <div className="flex items-center gap-2">
+        <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Contorno</span>
+        <Deslizante
+          valor={px}
+          min={0}
+          max={CONTORNO_MAXIMO}
+          step={1}
+          texto={px === 0 ? 'sem' : `${px} px`}
+          padrao={padrao}
+          dica="A grossura do contorno das letras (cresce e encolhe com o tamanho do texto); 0 = sem contorno"
+          onChange={(v) => {
+            mudar({ px: Math.round(v) })
+            useGuias.getState().marcar()
+          }}
+        />
+        <Botao pequeno disabled={px === padrao && cor === COR_DO_CONTORNO} onClick={() => mudar({ px: padrao, cor: COR_DO_CONTORNO })} title={`Volta ao contorno do estilo (${padrao} px, preto)`}>
+          Padrao
+        </Botao>
+      </div>
+      <div className="flex items-center gap-1.5 pl-[76px]">
+        {['#000000', '#ffffff'].map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => mudar({ cor: c })}
+            title={c === '#000000' ? 'Preto' : 'Branco'}
+            aria-label={`Contorno ${c === '#000000' ? 'preto' : 'branco'}`}
+            aria-pressed={cor === c}
+            style={{ backgroundColor: c }}
+            className={[
+              'size-5 shrink-0 rounded-full border border-line-strong transition-transform hover:scale-110',
+              cor === c ? 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-surface)]' : '',
+            ].join(' ')}
+          />
+        ))}
+        <CorAMao rotulo="Outra" cor={cor} arcoIris={cor === '#000000' || cor === '#ffffff'} onChange={(c) => mudar({ cor: c })} onde="do contorno" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * A FONTE DO PC (04/11): buscar pelo nome entre as instaladas no Windows. A
+ * escolhida fica no lugar da do app; o "x" volta para ela.
+ */
+function FonteDoPc() {
+  const useThumb = useLoja()
+  const thumb = useThumb((s) => s.thumb)
+  const listar = useThumb((s) => s.listarFontesDoPc)
+  const [aberta, setAberta] = useState(false)
+  const [busca, setBusca] = useState('')
+  const [lista, setLista] = useState<{ nome: string; arquivo: string }[] | null>(null)
+  useEffect(() => {
+    if (!aberta || lista || !listar) return
+    let vivo = true
+    void listar().then((l) => {
+      if (vivo) setLista(l)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [aberta, lista, listar])
+  if (!thumb || !listar) return null
+  const termo = busca.trim().toLowerCase()
+  const achadas = (lista ?? []).filter((f) => !termo || f.nome.toLowerCase().includes(termo)).slice(0, 60)
+  return (
+    <div className="flex flex-col gap-1.5 pl-[76px]" data-thumb="fonte-do-pc">
+      <div className="flex flex-wrap items-center gap-2">
+        {thumb.fontePc ? (
+          <span className="flex items-center gap-1.5 rounded-sm border border-accent bg-elevated px-2 py-0.5 text-[11px] text-ink">
+            Do PC: {thumb.fontePc.nome}
+            <button
+              type="button"
+              onClick={() => useThumb.getState().mudar({ fontePc: null })}
+              title="Volta para a fonte do app"
+              aria-label="Tirar a fonte do PC"
+              className="text-ink-3 hover:text-ink"
+            >
+              x
+            </button>
+          </span>
+        ) : null}
+        <Link onClick={() => setAberta((v) => !v)} title="Usar uma fonte instalada no Windows">
+          {aberta ? 'Fechar a busca' : 'Buscar fonte do PC'}
+        </Link>
+      </div>
+      {aberta && (
+        <div className="flex flex-col gap-1.5">
+          <input
+            autoFocus
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Nome da fonte"
+            aria-label="Buscar fonte do PC"
+            className={`${CLASSE_DO_CAMPO} ${CAMPO_NORMAL} w-full max-w-[320px]`}
+          />
+          <div className="flex max-h-[180px] max-w-[320px] flex-col overflow-y-auto rounded-sm border border-line bg-elevated" role="listbox" aria-label="Fontes do PC">
+            {lista === null && <span className="px-2 py-1.5 text-[11px] text-ink-3">Lendo as fontes do PC...</span>}
+            {lista !== null && achadas.length === 0 && <span className="px-2 py-1.5 text-[11px] text-ink-3">Nenhuma fonte com esse nome.</span>}
+            {achadas.map((f) => (
+              <button
+                key={f.arquivo}
+                type="button"
+                role="option"
+                aria-selected={thumb.fontePc?.arquivo === f.arquivo}
+                onClick={() => {
+                  useThumb.getState().mudar({ fontePc: { nome: f.nome, arquivo: f.arquivo } })
+                  setAberta(false)
+                }}
+                className={[
+                  'px-2 py-1 text-left text-[12px] hover:bg-[var(--color-surface)]',
+                  thumb.fontePc?.arquivo === f.arquivo ? 'text-accent' : 'text-ink-2',
+                ].join(' ')}
+              >
+                {f.nome}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

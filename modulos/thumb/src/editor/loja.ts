@@ -22,7 +22,8 @@ import {
 import type { CenaNoInstante } from '../../shared/plano'
 import { desenharThumb, medidorDoCanvas } from './desenho'
 import { prepararDivisor } from './divisores'
-import { carregarFontesDaThumb } from './fontes'
+import { carregarFonteDoPc, carregarFontesDaThumb } from './fontes'
+import { carregarSeta } from './setas'
 
 /**
  * [thumb] A LOJA DO EDITOR DE THUMBNAIL, em comum: a aba do recap
@@ -101,6 +102,9 @@ export interface FonteDoEditor {
   salvar: SalvarDoEditor
   /** O tempo do "Salvo: (x s)" conta so o PNG (o salvar abre um dialogo, que nao entra na conta). */
   tempoSoDoPng?: boolean
+  /** (04/11) As fontes instaladas no PC e os bytes de uma delas; sem isto, o "Fonte do PC" nao aparece. */
+  fontesDoPc?(): Promise<IpcResult<{ nome: string; arquivo: string }[]>>
+  bytesDaFonteDoPc?(arquivo: string): Promise<IpcResult<Uint8Array>>
 }
 
 export interface EstadoDoEditor {
@@ -112,6 +116,10 @@ export interface EstadoDoEditor {
   erroDasSugestoes: string | null
   detector: 'motor' | 'antigo' | null
   fontesProntas: boolean
+  /** Sobe a cada fonte do PC que termina de carregar (a previa mede de novo). */
+  fontesDoPcProntas: number
+  /** As fontes instaladas no PC (null = quem abriu o editor nao da: o "Do PC" some). */
+  listarFontesDoPc: (() => Promise<{ nome: string; arquivo: string }[]>) | null
   temUpscale: boolean | null
   salvando: boolean
   erroAoSalvar: string | null
@@ -163,7 +171,7 @@ const chaveDa = (img: Pick<ImagemDaThumb, 'arquivo' | 't'>): string => `${img.ar
 
 /** O medidor do texto num canvas solto (a fonte ja carregada). */
 let canvasDeMedir: HTMLCanvasElement | null = null
-export function medidor(fonte: ThumbDoProjeto['fonte']): MedirTexto {
+export function medidor(fonte: ThumbDoProjeto['fonte'] | Pick<ThumbDoProjeto, 'fonte' | 'fontePc'>): MedirTexto {
   // Sem DOM (o teste): a conta aproximada da Luckiest Guy.
   if (typeof document === 'undefined') return (texto, px) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
   canvasDeMedir ??= document.createElement('canvas')
@@ -397,6 +405,24 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
       }
     }
 
+    /** A fonte do PC e o PNG da seta da thumb: carrega (uma vez) e a previa mede e redesenha quando chegam. */
+    const prepararEstilo = async (t: ThumbDoProjeto): Promise<void> => {
+      const esperas: Promise<unknown>[] = [carregarSeta(t.seta.forma)]
+      const pc = t.fontePc
+      const bytes = fonte.bytesDaFonteDoPc
+      if (pc && bytes) {
+        esperas.push(
+          carregarFonteDoPc(pc.arquivo, async (a) => {
+            const r = await bytes(a).catch(() => null)
+            return r?.ok ? r.value : null
+          }).then((ok) => {
+            if (ok) set((e) => ({ fontesDoPcProntas: e.fontesDoPcProntas + 1 }))
+          }),
+        )
+      }
+      await Promise.all(esperas)
+    }
+
     return {
       thumb: null,
       previas: [null, null],
@@ -406,6 +432,13 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
       erroDasSugestoes: null,
       detector: null,
       fontesProntas: false,
+      fontesDoPcProntas: 0,
+      listarFontesDoPc: fonte.fontesDoPc
+        ? async () => {
+            const r = await fonte.fontesDoPc!().catch(() => null)
+            return r?.ok ? r.value : []
+          }
+        : null,
       temUpscale: null,
       salvando: false,
       erroAoSalvar: null,
@@ -427,6 +460,7 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         get().limpar()
         const thumb = fonte.lerGuardada() ?? fonte.padrao()
         set({ thumb, doProjeto, slot: 0 })
+        prepararEstilo(thumb)
         void fonte
           .upscale()
           .then((r) => set({ temUpscale: r.ok ? r.value : false }))
@@ -440,6 +474,7 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         const thumb = get().thumb
         if (!thumb) return
         const novo = { ...thumb, ...parcial }
+        if (parcial.fontePc !== undefined || parcial.seta !== undefined) prepararEstilo(novo)
         // Uma imagem so: o slot de baixo fica guardado, mas o escolhido volta para o de cima.
         set({
           thumb: novo,
@@ -651,6 +686,7 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         const inicio = performance.now()
         try {
           await carregarFontesDaThumb()
+          await prepararEstilo(thumb)
           const png = await pngDaThumb(thumb, fonte.recorte)
           const doPng = performance.now() - inicio
           const r = await fonte.salvar(png.bytes, modo)
@@ -720,7 +756,7 @@ export async function pngDaThumb(
   thumb: ThumbDoProjeto,
   recortar: FonteDoEditor['recorte'],
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; ampliado: boolean }> {
-  const ef = thumbEfetiva(thumb, medidor(thumb.fonte))
+  const ef = thumbEfetiva(thumb, medidor(thumb))
   let ampliado = false
   const paineis = await Promise.all(
     ef.geo.paineis.map(async (painel, i) => {

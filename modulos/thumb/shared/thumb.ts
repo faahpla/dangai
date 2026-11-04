@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { COR_LINHA_1, COR_LINHA_2, corSchema } from './cor'
+import { COR_LINHA_1, COR_LINHA_2, corSchema, degradeDaCor, hexParaRgb, rgbParaHex, type ParadaDoDegrade } from './cor'
 import {
   divisorEfetivo,
   divisorPadrao,
@@ -38,6 +38,9 @@ export * from './divisores'
  *   (divisores.ts), por cima das imagens e por baixo da seta e do texto;
  * - opcional (31/10): a "Inclinacao" da emenda (e do divisor), -15 a 15 graus:
  *   a emenda vira uma reta inclinada pelo meio dela (CorteDaEmenda).
+ * - (04/11) o ESTILO do texto (ESTILO: Kizuni, Faah ou AJK), o "Contorno" (grossura
+ *   e cor), o degrade proprio de cada linha, uma fonte do PC e a forma da seta
+ *   (a vermelha, a roxa do Faah ou o pincel do AJK).
  *
  * A REGRA FIXA DA AREA SEGURA DO TIKTOK (o Levi insistiu): 0-13% e 87-100% da
  * altura sao proibidos para cabeca e rosto (so cenario); os personagens ficam
@@ -101,11 +104,90 @@ export const VAO_ENTRE_LINHAS = 0.1
 /** Cor mais viva, sem estourar (o "look" das refs). */
 export const LOOK = { saturacao: 1.22, contraste: 1.1 } as const
 
+/**
+ * O ESTILO DO TEXTO (04/11, o preset do Faah ao lado do de sempre): o jeito do
+ * degrade de cada cor, a sombra e a esticada. O contorno, as cores e a seta
+ * ficam na thumb (ele mexe); escolher o estilo aplica os de cada um
+ * (aplicarEstilo).
+ *
+ * - "kizuni" (Kizuni e Kiumaz, o de sempre): o PSD do Levi -- Luckiest Guy
+ *   esticada 1,11, contorno de 12 px, sombra 13 px abaixo com desfoque 11,4 e o
+ *   degrade de luz de cada cor (degradeDaCor);
+ * - "faah" (o PSD "ELA TAVA PREPARADA?" do Faah): sem esticar, contorno de 8 px
+ *   (7 nos 163 px dele), sombra curta e firme (6 px abaixo, desfoque 2,2 nos
+ *   163) e o degrade dele: a cor 20% mais clara em cima e 20% mais escura
+ *   embaixo (o branco vai a #cccccc); a 2a linha roxa com o degrade proprio
+ *   #7530e3 -> #e1afcc.
+ */
+export const ESTILOS_DO_TEXTO = [
+  { id: 'kizuni', nome: 'Kizuni' },
+  { id: 'faah', nome: 'Faah' },
+  { id: 'ajk', nome: 'AJK' },
+] as const
+export type EstiloDoTexto = (typeof ESTILOS_DO_TEXTO)[number]['id']
+
+export const ESTILO: Record<
+  EstiloDoTexto,
+  { contorno: number; sombraY: number; sombraDesfoque: number; esticar: boolean; degrade: 'luz' | 'vinte' | 'chapado'; seta: FormaDaSeta }
+> = {
+  kizuni: { contorno: 12, sombraY: SOMBRA_Y, sombraDesfoque: SOMBRA_DESFOQUE, esticar: true, degrade: 'luz', seta: 'vermelha' },
+  faah: {
+    contorno: (7 * CORPO_PX) / 163,
+    sombraY: (6 * CORPO_PX) / 163,
+    sombraDesfoque: (2.236 * CORPO_PX) / 163,
+    esticar: false,
+    degrade: 'vinte',
+    seta: 'roxa',
+  },
+  // O PSD do AJK ("TRAIU A AMIGA?!"): a Luckiest a 187 px esticada 1,11 (10,40 / 9,36), cor chapada, contorno de
+  // 7 px e a sombra 11 px abaixo com desfoque 3,85 (o do CSS: o dobro do desvio).
+  ajk: {
+    contorno: (7 * CORPO_PX) / 187,
+    sombraY: (11 * CORPO_PX) / 187,
+    sombraDesfoque: (1.925 * CORPO_PX) / 187,
+    esticar: true,
+    degrade: 'chapado',
+    seta: 'ajk',
+  },
+}
+
+/** O "Contorno" que ele mexe: px nos 182 do corpo do preset (cresce e encolhe com a letra). */
+export const CONTORNO_MAXIMO = 30
+export const COR_DO_CONTORNO = '#000000'
+
+/** O degrade do Faah (o "PREPARADA?" dele). */
+export const DEGRADE_ROXO_DO_FAAH: readonly [string, string] = ['#7530e3', '#e1afcc']
+
+/** A cor misturada com outra (0 = ela, 1 = a outra). */
+function misturar(a: string, b: string, f: number): string {
+  const x = hexParaRgb(a)
+  const y = hexParaRgb(b)
+  return rgbParaHex(x[0] + (y[0] - x[0]) * f, x[1] + (y[1] - x[1]) * f, x[2] + (y[2] - x[2]) * f)
+}
+
+/**
+ * O degrade de uma linha (0 = topo da maiuscula, 1 = a base): o degrade
+ * proprio dela (as duas cores que ele escolheu), senao o do estilo para a cor.
+ */
+export function degradeDaLinha(
+  t: Pick<ThumbDoProjeto, 'cores'> & { estilo?: EstiloDoTexto; degrades?: ThumbDoProjeto['degrades'] },
+  linha: 0 | 1,
+): ParadaDoDegrade[] {
+  const proprio = t.degrades?.[linha]
+  if (proprio) return [{ em: 0, cor: proprio[0] }, { em: 1, cor: proprio[1] }]
+  const cor = t.cores[linha]
+  const jeito = ESTILO[t.estilo ?? 'kizuni'].degrade
+  if (jeito === 'chapado') return [{ em: 0, cor }, { em: 1, cor }]
+  if (jeito === 'vinte') return [{ em: 0, cor: misturar(cor, '#ffffff', 0.2) }, { em: 1, cor: misturar(cor, '#000000', 0.2) }]
+  return degradeDaCor(cor)
+}
+
 export const FONTES_DA_THUMB = [
   { id: 'luckiest', nome: 'Luckiest Guy', familia: 'Thumb Luckiest Guy' },
   { id: 'bangers', nome: 'Bangers', familia: 'Thumb Bangers' },
   { id: 'anton', nome: 'Anton', familia: 'Thumb Anton' },
   { id: 'komika', nome: 'Komika Axis', familia: 'Thumb Komika Axis' },
+  { id: 'poppins', nome: 'Poppins', familia: 'Thumb Poppins Black' },
 ] as const
 export type FonteDaThumb = (typeof FONTES_DA_THUMB)[number]['id']
 export const FONTE_PADRAO: FonteDaThumb = 'luckiest'
@@ -202,6 +284,8 @@ export const thumbDoProjetoSchema = z.object({
     ligada: z.boolean(),
     base: pontoSchema.nullable(),
     ponta: pontoSchema.nullable(),
+    /** (04/11) A vermelha (a seta.png do Levi) ou a roxa (a do Faah). Ausente = a vermelha. */
+    forma: z.enum(['vermelha', 'roxa', 'ajk']).default('vermelha'),
   }),
   /** [a de cima (ou a unica), a de baixo]. */
   imagens: z.tuple([imagemDaThumbSchema.nullable(), imagemDaThumbSchema.nullable()]),
@@ -217,6 +301,17 @@ export const thumbDoProjetoSchema = z.object({
   divisor: divisorSchema.default(divisorPadrao),
   /** A "Rotacao" do bloco de texto (graus, ROTACAO_MAXIMA). Ausente (thumb de antes) = 0. */
   rotacao: z.number().min(-ROTACAO_MAXIMA).max(ROTACAO_MAXIMA).default(0),
+  /** (04/11) O estilo do texto (ESTILO). Ausente (thumb de antes) = o de sempre. */
+  estilo: z.enum(ESTILOS_DO_TEXTO.map((e) => e.id) as [EstiloDoTexto, ...EstiloDoTexto[]]).default('kizuni'),
+  /** O degrade proprio de cada linha: [em cima, embaixo]; null = o do estilo para a cor da linha. */
+  degrades: z.tuple([z.tuple([corSchema, corSchema]).nullable(), z.tuple([corSchema, corSchema]).nullable()]).default([null, null]),
+  /** O "Contorno": a grossura (px nos 182 do corpo) e a cor. Ausente = o do Kizuni (12 px, preto). */
+  contorno: z.object({ px: z.number().min(0).max(CONTORNO_MAXIMO), cor: corSchema }).default({ px: 12, cor: COR_DO_CONTORNO }),
+  /**
+   * Uma fonte do PC no lugar da `fonte` (o arquivo nas fontes do Windows; o
+   * main confere que e mesmo uma fonte instalada). null = a `fonte` do app.
+   */
+  fontePc: z.object({ nome: z.string().min(1).max(200), arquivo: z.string().min(1).max(1024) }).nullable().default(null),
 })
 export type ThumbDoProjeto = z.infer<typeof thumbDoProjetoSchema>
 
@@ -234,12 +329,36 @@ export function thumbPadrao(textoDeThumb: string | null): ThumbDoProjeto {
     cores: [COR_LINHA_1, COR_LINHA_2],
     fonte: FONTE_PADRAO,
     textoY: null,
-    seta: { ligada: true, base: null, ponta: null },
+    seta: { ligada: true, base: null, ponta: null, forma: 'vermelha' },
     imagens: [null, null],
     salvoEm: null,
     tamanho: 1,
     divisor: divisorPadrao(),
     rotacao: 0,
+    estilo: 'kizuni',
+    degrades: [null, null],
+    contorno: { px: ESTILO.kizuni.contorno, cor: COR_DO_CONTORNO },
+    fontePc: null,
+  }
+}
+
+/**
+ * Escolher um ESTILO aplica o que e dele: as cores e o degrade das duas
+ * linhas, o contorno, a seta e a fonte (a Luckiest Guy nos dois). O texto, as
+ * imagens, a altura, o tamanho e a rotacao ficam.
+ */
+export function aplicarEstilo(t: ThumbDoProjeto, estilo: EstiloDoTexto): ThumbDoProjeto {
+  const faah = estilo === 'faah'
+  return {
+    ...t,
+    estilo,
+    // O Kizuni e o AJK: branco e amarelo (255,253,0); o Faah: branco e o roxo dele.
+    cores: faah ? ['#ffffff', DEGRADE_ROXO_DO_FAAH[0]] : [COR_LINHA_1, COR_LINHA_2],
+    degrades: faah ? [null, [DEGRADE_ROXO_DO_FAAH[0], DEGRADE_ROXO_DO_FAAH[1]]] : [null, null],
+    contorno: { px: Math.round(ESTILO[estilo].contorno), cor: COR_DO_CONTORNO },
+    seta: { ...t.seta, forma: ESTILO[estilo].seta },
+    fonte: FONTE_PADRAO,
+    fontePc: null,
   }
 }
 
@@ -277,6 +396,7 @@ export const AJUSTE_DA_FONTE: Record<FonteDaThumb, { esticada: number }> = {
   bangers: { esticada: 1 },
   anton: { esticada: 1 },
   komika: { esticada: 1 },
+  poppins: { esticada: 1 },
 }
 
 export interface LinhaNaThumb {
@@ -429,6 +549,9 @@ const FAIXA_MINIMA = 160
 export function geometriaDaThumb(
   t: Pick<ThumbDoProjeto, 'layout' | 'linhas' | 'textoY'> & {
     fonte?: FonteDaThumb
+    fontePc?: ThumbDoProjeto['fontePc']
+    estilo?: EstiloDoTexto
+    contorno?: { px: number }
     tamanho?: number
     rotacao?: number
     divisor?: { inclinacao?: number; ligado?: boolean; modelo?: ModeloDeDivisor } | null
@@ -436,7 +559,9 @@ export function geometriaDaThumb(
   medir: MedirTexto,
 ): GeometriaDaThumb {
   const maxLargura = LARGURA * LARGURA_UTIL
-  const esticada = AJUSTE_DA_FONTE[t.fonte ?? FONTE_PADRAO]?.esticada ?? ESTICADA_Y
+  // A esticada da Luckiest Guy e do estilo Kizuni (o PSD do Levi); o Faah e a fonte do PC nao esticam.
+  const esticada = ESTILO[t.estilo ?? 'kizuni'].esticar && !t.fontePc ? (AJUSTE_DA_FONTE[t.fonte ?? FONTE_PADRAO]?.esticada ?? ESTICADA_Y) : 1
+  const contornoPorPx = Math.max(0, Math.min(CONTORNO_MAXIMO, t.contorno?.px ?? ESTILO.kizuni.contorno)) / CORPO_PX
   /** A tinta da linha: a largura, os lados e a altura (para cima e para baixo da base). */
   const tinta = (texto: string, px: number) => {
     const m = medir(texto, px)
@@ -458,7 +583,7 @@ export function geometriaDaThumb(
       // A tinta centrada na largura (a Komika inclinada e a sobra de cada letra nao puxam para um lado).
       x: LARGURA / 2 - (m.direita - m.esquerda) / 2,
       esticada,
-      contorno: px * CONTORNO_POR_PX,
+      contorno: px * contornoPorPx,
     }
   }
   // O "Tamanho do texto": as duas linhas juntas; o teto de cada uma continua a largura util.
@@ -471,7 +596,7 @@ export function geometriaDaThumb(
     if (!texto) continue
     let px = corpo
     const m = tinta(texto, px)
-    const total = m.largura + 2 * px * CONTORNO_POR_PX
+    const total = m.largura + 2 * px * contornoPorPx
     const noMaximo = total > maxLargura
     // Palavra comprida ("ENCONTRO"): so esta linha encolhe, sem quebrar.
     // O contorno e a sombra encolhem junto (sao proporcionais ao corpo): a linha inteira cabe em LARGURA_UTIL.
@@ -541,7 +666,7 @@ export function geometriaDaThumb(
   const seguraDe = (AREA_SEGURA_TOPO + FOLGA_DA_AREA) * ALTURA
   const seguraAte = (AREA_SEGURA_BASE - FOLGA_DA_AREA) * ALTURA
   const acima = bloco ? bloco.topo - FOLGA_DO_TEXTO : centro
-  const abaixo = bloco ? bloco.base + FOLGA_DO_TEXTO + SOMBRA_Y : centro
+  const abaixo = bloco ? bloco.base + FOLGA_DO_TEXTO + ESTILO[t.estilo ?? 'kizuni'].sombraY : centro
   const faixa = (de: number, ate: number, y0: number, y1: number): PainelDaThumb['faixa'] =>
     ate - de >= FAIXA_MINIMA ? { de, ate } : { de: Math.max(seguraDe, y0), ate: Math.min(seguraAte, y1) }
   if (t.layout === 'uma') {
@@ -910,7 +1035,16 @@ export interface SetaNoQuadro {
   ponta: Ponto
   /** +1 = a seta.png como e (a curva estufa para a esquerda de quem vai da cauda a ponta); -1 = espelhada. */
   lado: 1 | -1
+  /** (04/11) Qual seta (FORMAS_DA_SETA). Ausente = a vermelha. */
+  forma?: FormaDaSeta
 }
+
+export const FORMAS_DA_SETA = [
+  { id: 'vermelha', nome: 'Vermelha' },
+  { id: 'roxa', nome: 'Roxa' },
+  { id: 'ajk', nome: 'Pincel' },
+] as const
+export type FormaDaSeta = (typeof FORMAS_DA_SETA)[number]['id']
 
 /**
  * A SETA PADRAO (a `seta.png` do Levi, 360x360 -- a mesma das refs dele e do
@@ -969,6 +1103,386 @@ const CABECA_DA_SETA: readonly Ponto[] = [
   { x: 0.85, y: -0.04 },
 ]
 
+/** A linha do meio da vermelha (da cauda ao meio da cabeca), no referencial da corda. */
+const MEIO_DA_SETA: readonly Ponto[] = [
+  { x: 0, y: 0 },
+  { x: 0.073, y: -0.033 },
+  { x: 0.148, y: -0.06 },
+  { x: 0.225, y: -0.082 },
+  { x: 0.304, y: -0.099 },
+  { x: 0.383, y: -0.111 },
+  { x: 0.464, y: -0.116 },
+  { x: 0.545, y: -0.114 },
+  { x: 0.625, y: -0.104 },
+  { x: 0.703, y: -0.084 },
+  { x: 0.777, y: -0.056 },
+  { x: 0.85, y: -0.04 },
+]
+
+/**
+ * A SETA ROXA DO FAAH (04/11, "SETA (1).png", 270x302) VETORIZADA do mesmo jeito
+ * (scratchpad seta-roxa/vet.py): o contorno do roxo em retas (o RDP de 0,3 px
+ * no PNG ampliado 8x), no referencial da corda -- a cauda no alto a esquerda,
+ * a ponta da cabeca embaixo a direita. Ela curva para o OUTRO lado da vermelha,
+ * entao fica guardada ESPELHADA (y trocado de sinal): estufando para o mesmo
+ * lado da vermelha, com a cabeca virando 27,9 graus para fora, a procura da
+ * automatica (calibrada na vermelha) vale igual -- o lado -1 desenha o PNG
+ * como ele e. A silhueta com o contorno bate em 97% (IoU) com o PNG. O degrade
+ * e vertical no PNG (#7b4fdc em cima, #cca0d3 embaixo).
+ */
+const FORMA_DA_SETA_ROXA: readonly PassoDaSeta[] = [
+  { tipo: 'M', p: { x: 1, y: 0 } },
+  { tipo: 'L', p: { x: 0.99903, y: 0.00221 } },
+  { tipo: 'L', p: { x: 0.99506, y: 0.00375 } },
+  { tipo: 'L', p: { x: 0.98753, y: 0.00413 } },
+  { tipo: 'L', p: { x: 0.95798, y: 0.01182 } },
+  { tipo: 'L', p: { x: 0.94753, y: 0.01315 } },
+  { tipo: 'L', p: { x: 0.93212, y: 0.0177 } },
+  { tipo: 'L', p: { x: 0.84702, y: 0.03626 } },
+  { tipo: 'L', p: { x: 0.83988, y: 0.03905 } },
+  { tipo: 'L', p: { x: 0.78062, y: 0.05119 } },
+  { tipo: 'L', p: { x: 0.77294, y: 0.054 } },
+  { tipo: 'L', p: { x: 0.70815, y: 0.06885 } },
+  { tipo: 'L', p: { x: 0.70645, y: 0.06731 } },
+  { tipo: 'L', p: { x: 0.70734, y: 0.06349 } },
+  { tipo: 'L', p: { x: 0.76669, y: -0.0328 } },
+  { tipo: 'L', p: { x: 0.76761, y: -0.03608 } },
+  { tipo: 'L', p: { x: 0.76586, y: -0.03869 } },
+  { tipo: 'L', p: { x: 0.69279, y: -0.06523 } },
+  { tipo: 'L', p: { x: 0.66074, y: -0.07521 } },
+  { tipo: 'L', p: { x: 0.59897, y: -0.09153 } },
+  { tipo: 'L', p: { x: 0.5579, y: -0.09837 } },
+  { tipo: 'L', p: { x: 0.54913, y: -0.10117 } },
+  { tipo: 'L', p: { x: 0.4951, y: -0.10844 } },
+  { tipo: 'L', p: { x: 0.46096, y: -0.11158 } },
+  { tipo: 'L', p: { x: 0.39183, y: -0.11351 } },
+  { tipo: 'L', p: { x: 0.32621, y: -0.10968 } },
+  { tipo: 'L', p: { x: 0.26994, y: -0.10254 } },
+  { tipo: 'L', p: { x: 0.25342, y: -0.09847 } },
+  { tipo: 'L', p: { x: 0.23546, y: -0.09622 } },
+  { tipo: 'L', p: { x: 0.22807, y: -0.09316 } },
+  { tipo: 'L', p: { x: 0.20776, y: -0.08944 } },
+  { tipo: 'L', p: { x: 0.18302, y: -0.08254 } },
+  { tipo: 'L', p: { x: 0.12388, y: -0.06258 } },
+  { tipo: 'L', p: { x: 0.08012, y: -0.04258 } },
+  { tipo: 'L', p: { x: 0.07082, y: -0.03969 } },
+  { tipo: 'L', p: { x: 0.04542, y: -0.02466 } },
+  { tipo: 'L', p: { x: 0.03748, y: -0.02157 } },
+  { tipo: 'L', p: { x: 0.00087, y: 0.0013 } },
+  { tipo: 'L', p: { x: 0, y: 0 } },
+  { tipo: 'L', p: { x: 0.00894, y: -0.00989 } },
+  { tipo: 'L', p: { x: 0.09015, y: -0.06844 } },
+  { tipo: 'L', p: { x: 0.14581, y: -0.10386 } },
+  { tipo: 'L', p: { x: 0.15536, y: -0.10704 } },
+  { tipo: 'L', p: { x: 0.16291, y: -0.11254 } },
+  { tipo: 'L', p: { x: 0.19495, y: -0.12979 } },
+  { tipo: 'L', p: { x: 0.20237, y: -0.13232 } },
+  { tipo: 'L', p: { x: 0.22363, y: -0.1439 } },
+  { tipo: 'L', p: { x: 0.23239, y: -0.14677 } },
+  { tipo: 'L', p: { x: 0.23681, y: -0.14996 } },
+  { tipo: 'L', p: { x: 0.30554, y: -0.17768 } },
+  { tipo: 'L', p: { x: 0.36499, y: -0.19684 } },
+  { tipo: 'L', p: { x: 0.43057, y: -0.212 } },
+  { tipo: 'L', p: { x: 0.47524, y: -0.21936 } },
+  { tipo: 'L', p: { x: 0.51628, y: -0.22385 } },
+  { tipo: 'L', p: { x: 0.5809, y: -0.22601 } },
+  { tipo: 'L', p: { x: 0.64202, y: -0.2226 } },
+  { tipo: 'L', p: { x: 0.7121, y: -0.21263 } },
+  { tipo: 'L', p: { x: 0.72279, y: -0.20913 } },
+  { tipo: 'L', p: { x: 0.75986, y: -0.20128 } },
+  { tipo: 'L', p: { x: 0.81081, y: -0.18549 } },
+  { tipo: 'L', p: { x: 0.84303, y: -0.17228 } },
+  { tipo: 'L', p: { x: 0.84654, y: -0.17218 } },
+  { tipo: 'L', p: { x: 0.84989, y: -0.17532 } },
+  { tipo: 'L', p: { x: 0.85849, y: -0.19732 } },
+  { tipo: 'L', p: { x: 0.86273, y: -0.20428 } },
+  { tipo: 'L', p: { x: 0.88961, y: -0.26523 } },
+  { tipo: 'L', p: { x: 0.89261, y: -0.27536 } },
+  { tipo: 'L', p: { x: 0.89624, y: -0.27824 } },
+  { tipo: 'L', p: { x: 0.89996, y: -0.27384 } },
+  { tipo: 'L', p: { x: 0.9048, y: -0.25817 } },
+  { tipo: 'L', p: { x: 0.91678, y: -0.22884 } },
+  { tipo: 'L', p: { x: 0.9179, y: -0.22269 } },
+  { tipo: 'L', p: { x: 0.93833, y: -0.17032 } },
+  { tipo: 'L', p: { x: 0.93945, y: -0.16417 } },
+  { tipo: 'L', p: { x: 0.95146, y: -0.1343 } },
+  { tipo: 'L', p: { x: 0.96788, y: -0.08658 } },
+  { tipo: 'L', p: { x: 0.97174, y: -0.07949 } },
+  { tipo: 'L', p: { x: 0.98065, y: -0.05243 } },
+  { tipo: 'L', p: { x: 0.98547, y: -0.04242 } }
+]
+
+const MEIO_DA_SETA_ROXA: readonly Ponto[] = [
+  { x: 0, y: 0 },
+  { x: 0.07014, y: -0.04676 },
+  { x: 0.14513, y: -0.08669 },
+  { x: 0.22379, y: -0.11854 },
+  { x: 0.30494, y: -0.14302 },
+  { x: 0.38843, y: -0.15882 },
+  { x: 0.4731, y: -0.16634 },
+  { x: 0.55819, y: -0.1645 },
+  { x: 0.64262, y: -0.15301 },
+  { x: 0.72563, y: -0.13347 },
+  { x: 0.8062, y: -0.10544 },
+  { x: 0.86767, y: -0.07 },
+]
+
+/** O desenho de cada seta: os passos, o contorno preto, o degrade, a cabeca e a linha do meio. */
+interface DesenhoDaSeta {
+  passos: readonly PassoDaSeta[]
+  /** O contorno preto (fracao da corda). */
+  contorno: number
+  degrade: { de: Ponto; ate: Ponto; cores: readonly [string, string] }
+  /** Quanto a cabeca vira da corda (rad; positivo = "para a direita" de quem vai da cauda a ponta). */
+  angulo: number
+  cabeca: readonly Ponto[]
+  meio: readonly Ponto[]
+  /** O angulo da corda no PNG (rad, na tela): a mira "natural". */
+  cordaNoPng: number
+  /**
+   * A corda da automatica em vezes a da vermelha (SETA_MINIMA..SETA_MAXIMA): a
+   * do AJK e comprida e fina, e a 340 px ficava um risquinho (a ref: ~700).
+   */
+  tamanho: number
+  /**
+   * O LUGAR DA REF quando a procura nao acha nada na regra (a do AJK: quase em
+   * pe, a esquerda do texto, a cauda abaixo dele e a cabeca logo acima da 1a
+   * linha -- mirar o rosto em cima levaria a cauda para fora do quadro). Em px
+   * a partir do bloco de texto: a cauda `cauda.x` antes da beirada e
+   * `cauda.y` abaixo da base; a ponta `ponta.x` depois da beirada e `ponta.y`
+   * acima do topo. Sem isto, a reserva de sempre.
+   */
+  daRef?: { cauda: Ponto; ponta: Ponto }
+  /**
+   * A seta que e o PROPRIO PNG (a do AJK: o pincel com os riscos por dentro e a
+   * sombra, que um contorno vetorizado perderia): o desenho poe o arquivo com
+   * a mesma similaridade (a cauda e a ponta, em px do PNG, levadas a base e a
+   * ponta). Os passos sao so a silhueta (as contas). Sem isto, o vetor.
+   */
+  imagem?: { arquivo: string; cauda: Ponto; ponta: Ponto }
+}
+
+/** A silhueta da seta do AJK (Layer_5.png, 433x782; o vermelho e o traco preto, sem a sombra), em retas. */
+const FORMA_DA_SETA_AJK: readonly PassoDaSeta[] = [
+  { tipo: 'M', p: { x: 1, y: 0 } },
+  { tipo: 'L', p: { x: 0.96193, y: -0.02898 } },
+  { tipo: 'L', p: { x: 0.88476, y: -0.09815 } },
+  { tipo: 'L', p: { x: 0.76601, y: -0.21861 } },
+  { tipo: 'L', p: { x: 0.75782, y: -0.23057 } },
+  { tipo: 'L', p: { x: 0.70439, y: -0.28782 } },
+  { tipo: 'L', p: { x: 0.65797, y: -0.34572 } },
+  { tipo: 'L', p: { x: 0.6535, y: -0.34813 } },
+  { tipo: 'L', p: { x: 0.62254, y: -0.39192 } },
+  { tipo: 'L', p: { x: 0.6164, y: -0.39701 } },
+  { tipo: 'L', p: { x: 0.58518, y: -0.4436 } },
+  { tipo: 'L', p: { x: 0.59801, y: -0.41226 } },
+  { tipo: 'L', p: { x: 0.63246, y: -0.34617 } },
+  { tipo: 'L', p: { x: 0.65664, y: -0.31448 } },
+  { tipo: 'L', p: { x: 0.67517, y: -0.29782 } },
+  { tipo: 'L', p: { x: 0.67442, y: -0.29068 } },
+  { tipo: 'L', p: { x: 0.66728, y: -0.29143 } },
+  { tipo: 'L', p: { x: 0.67622, y: -0.28661 } },
+  { tipo: 'L', p: { x: 0.67687, y: -0.27959 } },
+  { tipo: 'L', p: { x: 0.6862, y: -0.27056 } },
+  { tipo: 'L', p: { x: 0.69054, y: -0.26956 } },
+  { tipo: 'L', p: { x: 0.69246, y: -0.26408 } },
+  { tipo: 'L', p: { x: 0.69487, y: -0.26855 } },
+  { tipo: 'L', p: { x: 0.70202, y: -0.2678 } },
+  { tipo: 'L', p: { x: 0.70254, y: -0.26219 } },
+  { tipo: 'L', p: { x: 0.69566, y: -0.26013 } },
+  { tipo: 'L', p: { x: 0.70626, y: -0.25264 } },
+  { tipo: 'L', p: { x: 0.71458, y: -0.23927 } },
+  { tipo: 'L', p: { x: 0.72058, y: -0.23558 } },
+  { tipo: 'L', p: { x: 0.7275, y: -0.22209 } },
+  { tipo: 'L', p: { x: 0.74975, y: -0.19587 } },
+  { tipo: 'L', p: { x: 0.7875, y: -0.13999 } },
+  { tipo: 'L', p: { x: 0.78881, y: -0.12597 } },
+  { tipo: 'L', p: { x: 0.78679, y: -0.1173 } },
+  { tipo: 'L', p: { x: 0.77916, y: -0.1081 } },
+  { tipo: 'L', p: { x: 0.77215, y: -0.10744 } },
+  { tipo: 'L', p: { x: 0.71269, y: -0.12311 } },
+  { tipo: 'L', p: { x: 0.70568, y: -0.12245 } },
+  { tipo: 'L', p: { x: 0.70402, y: -0.12513 } },
+  { tipo: 'L', p: { x: 0.68833, y: -0.12649 } },
+  { tipo: 'L', p: { x: 0.67799, y: -0.13118 } },
+  { tipo: 'L', p: { x: 0.66958, y: -0.1304 } },
+  { tipo: 'L', p: { x: 0.66638, y: -0.13434 } },
+  { tipo: 'L', p: { x: 0.55006, y: -0.15319 } },
+  { tipo: 'L', p: { x: 0.53157, y: -0.15429 } },
+  { tipo: 'L', p: { x: 0.52469, y: -0.15223 } },
+  { tipo: 'L', p: { x: 0.52302, y: -0.15491 } },
+  { tipo: 'L', p: { x: 0.51741, y: -0.15438 } },
+  { tipo: 'L', p: { x: 0.51653, y: -0.14864 } },
+  { tipo: 'L', p: { x: 0.49844, y: -0.14554 } },
+  { tipo: 'L', p: { x: 0.35397, y: -0.14761 } },
+  { tipo: 'L', p: { x: 0.30489, y: -0.14303 } },
+  { tipo: 'L', p: { x: 0.28207, y: -0.14514 } },
+  { tipo: 'L', p: { x: 0.25569, y: -0.13985 } },
+  { tipo: 'L', p: { x: 0.24714, y: -0.14047 } },
+  { tipo: 'L', p: { x: 0.20687, y: -0.13247 } },
+  { tipo: 'L', p: { x: 0.18088, y: -0.12297 } },
+  { tipo: 'L', p: { x: 0.17374, y: -0.12372 } },
+  { tipo: 'L', p: { x: 0.1712, y: -0.12065 } },
+  { tipo: 'L', p: { x: 0.15718, y: -0.11934 } },
+  { tipo: 'L', p: { x: 0.14355, y: -0.11382 } },
+  { tipo: 'L', p: { x: 0.11576, y: -0.1084 } },
+  { tipo: 'L', p: { x: 0.06379, y: -0.08941 } },
+  { tipo: 'L', p: { x: 0.05603, y: -0.08161 } },
+  { tipo: 'L', p: { x: 0.08495, y: -0.08997 } },
+  { tipo: 'L', p: { x: 0.08701, y: -0.08309 } },
+  { tipo: 'L', p: { x: 0.07798, y: -0.07376 } },
+  { tipo: 'L', p: { x: 0.04577, y: -0.05519 } },
+  { tipo: 'L', p: { x: 0.0221, y: -0.03601 } },
+  { tipo: 'L', p: { x: 0.00925, y: -0.02208 } },
+  { tipo: 'L', p: { x: 0.0089, y: -0.01073 } },
+  { tipo: 'L', p: { x: 0, y: 0 } },
+  { tipo: 'L', p: { x: 0.00166, y: 0.00267 } },
+  { tipo: 'L', p: { x: 0.02292, y: -0.01204 } },
+  { tipo: 'L', p: { x: 0.03577, y: -0.02597 } },
+  { tipo: 'L', p: { x: 0.05957, y: -0.04375 } },
+  { tipo: 'L', p: { x: 0.09484, y: -0.05977 } },
+  { tipo: 'L', p: { x: 0.12657, y: -0.06839 } },
+  { tipo: 'L', p: { x: 0.12911, y: -0.07146 } },
+  { tipo: 'L', p: { x: 0.2331, y: -0.0939 } },
+  { tipo: 'L', p: { x: 0.32998, y: -0.10153 } },
+  { tipo: 'L', p: { x: 0.35141, y: -0.09928 } },
+  { tipo: 'L', p: { x: 0.3639, y: -0.10186 } },
+  { tipo: 'L', p: { x: 0.37257, y: -0.09984 } },
+  { tipo: 'L', p: { x: 0.38226, y: -0.10216 } },
+  { tipo: 'L', p: { x: 0.38813, y: -0.09988 } },
+  { tipo: 'L', p: { x: 0.39781, y: -0.1022 } },
+  { tipo: 'L', p: { x: 0.40228, y: -0.09979 } },
+  { tipo: 'L', p: { x: 0.40916, y: -0.10185 } },
+  { tipo: 'L', p: { x: 0.41503, y: -0.09956 } },
+  { tipo: 'L', p: { x: 0.43466, y: -0.1014 } },
+  { tipo: 'L', p: { x: 0.44054, y: -0.09912 } },
+  { tipo: 'L', p: { x: 0.48593, y: -0.0977 } },
+  { tipo: 'L', p: { x: 0.56909, y: -0.08566 } },
+  { tipo: 'L', p: { x: 0.5775, y: -0.08644 } },
+  { tipo: 'L', p: { x: 0.58631, y: -0.08302 } },
+  { tipo: 'L', p: { x: 0.59472, y: -0.08381 } },
+  { tipo: 'L', p: { x: 0.59779, y: -0.08126 } },
+  { tipo: 'L', p: { x: 0.6048, y: -0.08192 } },
+  { tipo: 'L', p: { x: 0.60787, y: -0.07938 } },
+  { tipo: 'L', p: { x: 0.61488, y: -0.08003 } },
+  { tipo: 'L', p: { x: 0.65378, y: -0.07235 } },
+  { tipo: 'L', p: { x: 0.70023, y: -0.05971 } },
+  { tipo: 'L', p: { x: 0.71096, y: -0.05081 } },
+  { tipo: 'L', p: { x: 0.71187, y: -0.041 } },
+  { tipo: 'L', p: { x: 0.70425, y: -0.0318 } },
+  { tipo: 'L', p: { x: 0.68628, y: -0.02729 } },
+  { tipo: 'L', p: { x: 0.68514, y: -0.02436 } },
+  { tipo: 'L', p: { x: 0.67519, y: -0.02484 } },
+  { tipo: 'L', p: { x: 0.67265, y: -0.02177 } },
+  { tipo: 'L', p: { x: 0.62142, y: -0.00992 } },
+  { tipo: 'L', p: { x: 0.61888, y: -0.00685 } },
+  { tipo: 'L', p: { x: 0.59022, y: 0.00431 } },
+  { tipo: 'L', p: { x: 0.56935, y: 0.02323 } },
+  { tipo: 'L', p: { x: 0.5658, y: 0.03063 } },
+  { tipo: 'L', p: { x: 0.56864, y: 0.04593 } },
+  { tipo: 'L', p: { x: 0.58042, y: 0.06604 } },
+  { tipo: 'L', p: { x: 0.58489, y: 0.06845 } },
+  { tipo: 'L', p: { x: 0.58848, y: 0.07661 } },
+  { tipo: 'L', p: { x: 0.59794, y: 0.08704 } },
+  { tipo: 'L', p: { x: 0.633, y: 0.08377 } },
+  { tipo: 'L', p: { x: 0.63388, y: 0.07803 } },
+  { tipo: 'L', p: { x: 0.64229, y: 0.07724 } },
+  { tipo: 'L', p: { x: 0.64575, y: 0.08399 } },
+  { tipo: 'L', p: { x: 0.66831, y: 0.0833 } },
+  { tipo: 'L', p: { x: 0.68908, y: 0.07853 } },
+  { tipo: 'L', p: { x: 0.70184, y: 0.07875 } },
+  { tipo: 'L', p: { x: 0.70298, y: 0.07582 } },
+  { tipo: 'L', p: { x: 0.74364, y: 0.07202 } },
+  { tipo: 'L', p: { x: 0.74465, y: 0.06768 } },
+  { tipo: 'L', p: { x: 0.75166, y: 0.06703 } },
+  { tipo: 'L', p: { x: 0.75359, y: 0.07251 } },
+  { tipo: 'L', p: { x: 0.77449, y: 0.06914 } },
+  { tipo: 'L', p: { x: 0.7755, y: 0.0648 } },
+  { tipo: 'L', p: { x: 0.80762, y: 0.06039 } },
+  { tipo: 'L', p: { x: 0.81669, y: 0.06662 } },
+  { tipo: 'L', p: { x: 0.81923, y: 0.06355 } },
+  { tipo: 'L', p: { x: 0.82904, y: 0.06264 } },
+  { tipo: 'L', p: { x: 0.83084, y: 0.06671 } },
+  { tipo: 'L', p: { x: 0.84333, y: 0.06413 } },
+  { tipo: 'L', p: { x: 0.8506, y: 0.06628 } },
+  { tipo: 'L', p: { x: 0.87444, y: 0.06406 } },
+  { tipo: 'L', p: { x: 0.89586, y: 0.0663 } },
+  { tipo: 'L', p: { x: 0.94941, y: 0.06413 } },
+  { tipo: 'L', p: { x: 0.97106, y: 0.05362 } },
+  { tipo: 'L', p: { x: 0.98531, y: 0.03956 } },
+  { tipo: 'L', p: { x: 0.99622, y: 0.02015 } },
+  { tipo: 'L', p: { x: 1.00052, y: 0.00561 } },
+]
+
+const DESENHOS_DA_SETA: Record<FormaDaSeta, DesenhoDaSeta> = {
+  vermelha: {
+    passos: FORMA_DA_SETA,
+    contorno: CONTORNO_DA_SETA,
+    degrade: DEGRADE_DA_SETA,
+    angulo: ANGULO_DA_CABECA,
+    cabeca: CABECA_DA_SETA,
+    meio: MEIO_DA_SETA,
+    cordaNoPng: Math.atan2(-186.65, 264.35),
+    tamanho: 1,
+  },
+  roxa: {
+    passos: FORMA_DA_SETA_ROXA,
+    contorno: 0.02354,
+    degrade: { de: { x: 0.27386, y: 0.24775 }, ate: { x: 0.81556, y: -0.35116 }, cores: ['#7b4fdc', '#cca0d3'] },
+    angulo: (27.877 * Math.PI) / 180,
+    cabeca: [
+      { x: 1, y: 0 },
+      { x: 0.707, y: 0.068 },
+      { x: 0.767, y: -0.036 },
+      { x: 0.85, y: -0.175 },
+      { x: 0.896, y: -0.278 },
+      { x: 0.868, y: -0.07 },
+    ],
+    meio: MEIO_DA_SETA_ROXA,
+    // Espelhada: o lado +1 e o PNG dele espelhado (a cauda no alto a direita); o -1, o PNG como e.
+    cordaNoPng: Math.atan2(220.125, -243.375),
+    tamanho: 1,
+  },
+  ajk: {
+    passos: FORMA_DA_SETA_AJK,
+    contorno: 0,
+    degrade: { de: { x: 0, y: 0 }, ate: { x: 1, y: 0 }, cores: ['#ff0000', '#ff0000'] },
+    angulo: (25.036 * Math.PI) / 180,
+    cabeca: [
+      { x: 1, y: 0 },
+      { x: 0.58518, y: -0.4436 },
+      { x: 0.58813, y: 0.08795 },
+      { x: 0.60886, y: -0.14453 },
+      { x: 0.72444, y: -0.11855 },
+    ],
+    meio: [
+      { x: 0, y: 0 },
+      { x: 0.05203, y: -0.0487 },
+      { x: 0.1053, y: -0.08409 },
+      { x: 0.16048, y: -0.09914 },
+      { x: 0.21584, y: -0.11209 },
+      { x: 0.27167, y: -0.12013 },
+      { x: 0.32796, y: -0.12326 },
+      { x: 0.38444, y: -0.12429 },
+      { x: 0.44111, y: -0.12322 },
+      { x: 0.49792, y: -0.12074 },
+      { x: 0.56954, y: -0.11116 },
+      { x: 0.72444, y: -0.11855 },
+    ],
+    cordaNoPng: Math.atan2(-707, 66),
+    tamanho: 1.6,
+    // O exemplo do AJK ("TRAIU A AMIGA?!"): a cauda 70 px antes da beirada e 210 abaixo do texto, a ponta 5 px
+    // depois da beirada e 170 acima (a corda ~710).
+    daRef: { cauda: { x: 70, y: 210 }, ponta: { x: 5, y: 170 } },
+    imagem: { arquivo: 'seta-ajk.png', cauda: { x: 286, y: 740 }, ponta: { x: 352, y: 33 } },
+  },
+}
+
+/** O desenho da seta (a vermelha sem forma). */
+export function desenhoDaSeta(s: Pick<SetaNoQuadro, 'forma'>): DesenhoDaSeta {
+  return DESENHOS_DA_SETA[s.forma ?? 'vermelha']
+}
+
 /** O ponto do referencial da corda na tela (a similaridade da seta). */
 function naTela(s: SetaNoQuadro, p: Ponto): Ponto {
   const dx = s.ponta.x - s.base.x
@@ -978,14 +1492,15 @@ function naTela(s: SetaNoQuadro, p: Ponto): Ponto {
 
 /** Os passos da seta na tela (a FORMA_DA_SETA levada pela similaridade). */
 export function caminhoDaSeta(s: SetaNoQuadro): PassoDaSeta[] {
-  return FORMA_DA_SETA.map((passo) =>
+  return desenhoDaSeta(s).passos.map((passo) =>
     passo.tipo === 'C' ? { tipo: 'C', c1: naTela(s, passo.c1), c2: naTela(s, passo.c2), p: naTela(s, passo.p) } : { tipo: passo.tipo, p: naTela(s, passo.p) },
   )
 }
 
 /** O degrade na tela (o comeco e o fim). */
 export function degradeDaSeta(s: SetaNoQuadro): { de: Ponto; ate: Ponto } {
-  return { de: naTela(s, DEGRADE_DA_SETA.de), ate: naTela(s, DEGRADE_DA_SETA.ate) }
+  const d = desenhoDaSeta(s).degrade
+  return { de: naTela(s, d.de), ate: naTela(s, d.ate) }
 }
 
 /** Pontos por curva no poligono da seta. */
@@ -1023,7 +1538,7 @@ export function contornoDaSeta(s: SetaNoQuadro): Ponto[] {
 
 /** A largura do contorno preto da seta (proporcional ao tamanho, como na png). */
 export function contornoDaSetaPx(s: SetaNoQuadro): number {
-  return CONTORNO_DA_SETA * Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
+  return desenhoDaSeta(s).contorno * Math.hypot(s.ponta.x - s.base.x, s.ponta.y - s.base.y)
 }
 
 /**
@@ -1101,20 +1616,20 @@ export function rostoCobertoPelaSeta(s: SetaNoQuadro, r: { x1: number; y1: numbe
 
 /** A cabeca da seta na tela (os pontos que nunca ficam atras do texto). */
 export function cabecaDaSeta(s: SetaNoQuadro): Ponto[] {
-  return CABECA_DA_SETA.map((p) => naTela(s, p))
+  return desenhoDaSeta(s).cabeca.map((p) => naTela(s, p))
 }
 
 /** A seta com a cabeca mirando o ponto `alvo` (angulo `mira` da cabeca), a ponta a `raio` dele e a corda `L`. */
-function setaMirando(alvo: Ponto, raio: number, mira: number, L: number, lado: 1 | -1): SetaNoQuadro {
+function setaMirando(alvo: Ponto, raio: number, mira: number, L: number, lado: 1 | -1, forma: FormaDaSeta): SetaNoQuadro {
   const ponta = { x: alvo.x - raio * Math.cos(mira), y: alvo.y - raio * Math.sin(mira) }
-  const corda = mira - lado * ANGULO_DA_CABECA
-  return { base: { x: ponta.x - L * Math.cos(corda), y: ponta.y - L * Math.sin(corda) }, ponta, lado }
+  const corda = mira - lado * DESENHOS_DA_SETA[forma].angulo
+  return { base: { x: ponta.x - L * Math.cos(corda), y: ponta.y - L * Math.sin(corda) }, ponta, lado, forma }
 }
 
 /** O angulo da cabeca na png (lado +1) e espelhada (-1): a mira "natural". */
-function miraNatural(lado: 1 | -1): number {
-  const corda = Math.atan2(-186.65, 264.35)
-  const cabeca = corda + ANGULO_DA_CABECA
+function miraNatural(lado: 1 | -1, forma: FormaDaSeta): number {
+  const d = DESENHOS_DA_SETA[forma]
+  const cabeca = d.cordaNoPng + d.angulo
   return lado === 1 ? cabeca : Math.PI - cabeca
 }
 
@@ -1126,21 +1641,6 @@ function entreAngulos(a: number, b: number): number {
 
 type JeitoDaSeta = 'lado' | 'tras'
 
-/** A linha do meio do corpo (da cauda ao meio da cabeca), no referencial da corda. */
-const MEIO_DA_SETA: readonly Ponto[] = [
-  { x: 0, y: 0 },
-  { x: 0.073, y: -0.033 },
-  { x: 0.148, y: -0.06 },
-  { x: 0.225, y: -0.082 },
-  { x: 0.304, y: -0.099 },
-  { x: 0.383, y: -0.111 },
-  { x: 0.464, y: -0.116 },
-  { x: 0.545, y: -0.114 },
-  { x: 0.625, y: -0.104 },
-  { x: 0.703, y: -0.084 },
-  { x: 0.777, y: -0.056 },
-  { x: 0.85, y: -0.04 },
-]
 /** Por tras do texto: no maximo isto da linha do meio escondido (a ref "CANCELOU": a cauda e a cabeca aparecem). */
 const ESCONDIDO_MAXIMO = 0.6
 /** Por tras do texto: o que se esconde fica a no maximo isto da beirada do texto (atras da 1a letra, nao do meio). */
@@ -1166,11 +1666,12 @@ function setaBoa(s: SetaNoQuadro, geo: GeometriaDaThumb, rosto: Caixa2, jeito: J
   if (jeito === 'lado') {
     // Ao lado: o corpo inteiro fora do texto (o poligono e a linha do meio dele).
     if (contornoDaSeta(s).some((p) => pontoNoTexto(geo, p, contorno))) return false
-    if (MEIO_DA_SETA.some((p) => pontoNoTexto(geo, naTela(s, p), contorno))) return false
+    if (desenhoDaSeta(s).meio.some((p) => pontoNoTexto(geo, naTela(s, p), contorno))) return false
   } else {
     if (s.base.y < bloco.base || pontoNoTexto(geo, s.base, contorno)) return false
-    const escondidos = MEIO_DA_SETA.map((p) => naTela(s, p)).filter((p) => pontoNoTexto(geo, p))
-    if (escondidos.length > ESCONDIDO_MAXIMO * MEIO_DA_SETA.length) return false
+    const meio = desenhoDaSeta(s).meio
+    const escondidos = meio.map((p) => naTela(s, p)).filter((p) => pontoNoTexto(geo, p))
+    if (escondidos.length > ESCONDIDO_MAXIMO * meio.length) return false
     // So atras da letra da ponta: perto da beirada do texto do lado da cauda (no referencial do bloco).
     for (const p of escondidos) {
       const q = paraOBloco(geo, p)
@@ -1184,7 +1685,7 @@ function setaBoa(s: SetaNoQuadro, geo: GeometriaDaThumb, rosto: Caixa2, jeito: J
 
 /** A direcao da cabeca (rad, na tela). */
 function direcaoDaCabeca(s: SetaNoQuadro): number {
-  return Math.atan2(s.ponta.y - s.base.y, s.ponta.x - s.base.x) + s.lado * ANGULO_DA_CABECA
+  return Math.atan2(s.ponta.y - s.base.y, s.ponta.x - s.base.x) + s.lado * desenhoDaSeta(s).angulo
 }
 
 /**
@@ -1218,7 +1719,7 @@ function miraNoRosto(s: SetaNoQuadro, F: Ponto, rosto: Caixa2): { erro: number; 
   return { erro, folga: Math.hypot(fx, fy), acerta: t0 <= t1 }
 }
 
-export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null): SetaNoQuadro | null {
+export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null, forma: FormaDaSeta = 'vermelha'): SetaNoQuadro | null {
   const l1 = geo.linhas[0]
   if (!l1 || !geo.bloco) return null
   const bloco = geo.bloco
@@ -1230,6 +1731,10 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null): SetaNoQ
     y2: (painel.faixa.de + painel.faixa.ate) / 2 + 60,
   }
   const F = { x: (rosto.x1 + rosto.x2) / 2, y: (rosto.y1 + rosto.y2) / 2 }
+  const k = DESENHOS_DA_SETA[forma].tamanho
+  const minima = SETA_MINIMA * k
+  const maxima = SETA_MAXIMA * k
+  const passo = 20 * k
   const raio = 0.5 * Math.min(rosto.x2 - rosto.x1, rosto.y2 - rosto.y1) + FOLGA_DO_ROSTO
   const ladoDoRosto: 1 | -1 = F.x >= LARGURA * 0.4 ? 1 : -1
   const presa = (x: number): number => Math.max(60, Math.min(LARGURA - 60, x))
@@ -1243,7 +1748,7 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null): SetaNoQ
    * do rosto, a ponta na borda dele. Procura o giro em volta do rosto e o tamanho.
    */
   const aoLado = (lado: 1 | -1, regra: (s: SetaNoQuadro) => boolean, acima = false): SetaNoQuadro | null => {
-    const natural = miraNatural(lado)
+    const natural = miraNatural(lado, forma)
     const a = paraATela(
       geo,
       acima
@@ -1253,9 +1758,9 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null): SetaNoQ
     const lista: { s: SetaNoQuadro; nota: number }[] = []
     for (let g = -75; g <= 75; g += 2.5) {
       const mira = natural + (lado * g * Math.PI) / 180
-      for (let L = SETA_MINIMA; L <= SETA_MAXIMA; L += 20) {
-        const s = setaMirando(F, raio, mira, L, lado)
-        lista.push({ s, nota: Math.hypot(s.base.x - a.x, s.base.y - a.y) + 3 * Math.abs(g) + 0.15 * (L - SETA_MINIMA) })
+      for (let L = minima; L <= maxima; L += passo) {
+        const s = setaMirando(F, raio, mira, L, lado, forma)
+        lista.push({ s, nota: Math.hypot(s.base.x - a.x, s.base.y - a.y) + 3 * Math.abs(g) + (0.15 * (L - minima)) / k })
       }
     }
     return primeira(lista, regra)
@@ -1278,11 +1783,11 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null): SetaNoQ
         for (let g = -160; g <= -20; g += 2.5) {
           // A corda sobe (g negativo); espelhada, para o outro lado.
           const corda = lado === 1 ? (g * Math.PI) / 180 : Math.PI - (g * Math.PI) / 180
-          for (let L = SETA_MINIMA; L <= SETA_MAXIMA; L += 20) {
-            const s: SetaNoQuadro = { base, ponta: { x: base.x + L * Math.cos(corda), y: base.y + L * Math.sin(corda) }, lado }
+          for (let L = minima; L <= maxima; L += passo) {
+            const s: SetaNoQuadro = { base, ponta: { x: base.x + L * Math.cos(corda), y: base.y + L * Math.sin(corda) }, lado, forma }
             const m = miraNoRosto(s, F, rosto)
             if ((m.erro > 25 && !m.acerta) || m.folga < 8 || m.folga > 90) continue
-            lista.push({ s, nota: Math.hypot(dx, dy) + 2 * m.erro + 1.5 * Math.max(0, m.folga - FOLGA_DO_ROSTO) + 0.15 * (L - SETA_MINIMA) })
+            lista.push({ s, nota: Math.hypot(dx, dy) + 2 * m.erro + 1.5 * Math.max(0, m.folga - FOLGA_DO_ROSTO) + (0.15 * (L - minima)) / k })
           }
         }
       }
@@ -1309,7 +1814,23 @@ export function setaSozinha(geo: GeometriaDaThumb, alvo: Caixa2 | null): SetaNoQ
     const k = caixaDaSeta(c)
     return k.x1 >= MARGEM_DA_SETA && k.x2 <= LARGURA - MARGEM_DA_SETA && k.y1 >= ZONA_PROIBIDA_TOPO * ALTURA && k.y2 <= ZONA_PROIBIDA_BASE * ALTURA
   }
-  return aoLado(ladoDoRosto, noQuadro) ?? setaMirando(F, raio, miraNatural(ladoDoRosto), SETA_MINIMA, ladoDoRosto)
+  // A seta com o lugar da ref (a do AJK): ao lado do texto, do lado do rosto.
+  const ref = DESENHOS_DA_SETA[forma].daRef
+  if (ref) {
+    const lado = ladoDoRosto
+    const beirada = lado === 1 ? bloco.esquerda : bloco.direita
+    const base = { x: beirada - lado * ref.cauda.x, y: Math.min(bloco.base + ref.cauda.y, ZONA_PROIBIDA_BASE * ALTURA - 40) }
+    const ponta = { x: beirada + lado * ref.ponta.x, y: Math.max(bloco.topo - ref.ponta.y, ZONA_PROIBIDA_TOPO * ALTURA + 40) }
+    const s: SetaNoQuadro = { base, ponta, lado, forma }
+    // O CORPO saindo da beirada: a seta inteira desliza para dentro (a forma nao muda). A asa da cabeca pode
+    // passar da beirada -- na ref ela e cortada pelo quadro.
+    const corpo = [...desenhoDaSeta(s).meio.map((p) => naTela(s, p)), s.ponta]
+    const x1 = Math.min(...corpo.map((p) => p.x)) - 30
+    const x2 = Math.max(...corpo.map((p) => p.x)) + 30
+    const dx = x1 < MARGEM_DA_SETA ? MARGEM_DA_SETA - x1 : x2 > LARGURA - MARGEM_DA_SETA ? LARGURA - MARGEM_DA_SETA - x2 : 0
+    return { ...s, base: { x: base.x + dx, y: base.y }, ponta: { x: ponta.x + dx, y: ponta.y } }
+  }
+  return aoLado(ladoDoRosto, noQuadro) ?? setaMirando(F, raio, miraNatural(ladoDoRosto, forma), minima, ladoDoRosto, forma)
 }
 
 // ----------------------------------------------------------- as sugestoes
@@ -1615,12 +2136,12 @@ export function thumbEfetiva(t: ThumbDoProjeto, medir: MedirTexto): ThumbEfetiva
   let seta: SetaNoQuadro | null = null
   if (t.seta.ligada && geo.linhas.length > 0) {
     // A automatica so quando falta uma ponta (a procura custa; arrastando, as duas sao dele).
-    const auto = t.seta.base && t.seta.ponta ? null : setaSozinha(geo, alvo)
+    const auto = t.seta.base && t.seta.ponta ? null : setaSozinha(geo, alvo, t.seta.forma)
     const base = t.seta.base ?? auto?.base ?? null
     const ponta = t.seta.ponta ?? auto?.ponta ?? null
     if (base && ponta) {
       const lado: 1 | -1 = t.seta.base || t.seta.ponta ? (ponta.x >= base.x ? 1 : -1) : (auto?.lado ?? 1)
-      seta = { base, ponta, lado }
+      seta = { base, ponta, lado, forma: t.seta.forma }
     }
   }
   return { geo, enquadramentos, seta, avisos, rostos, divisor: geo.emenda === null ? null : divisorEfetivo(t) }

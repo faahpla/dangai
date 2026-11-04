@@ -78,6 +78,8 @@ const solta: FonteDoEditor = {
   },
   podeSalvar: () => true,
   tempoSoDoPng: true,
+  fontesDoPc: () => ponte.fontesDoPc(),
+  bytesDaFonteDoPc: (arquivo) => ponte.fonteDoPc(arquivo),
   salvar: async (png) => {
     const t = useSolta.getState().thumb
     const img = t?.imagens[0] ?? t?.imagens[1] ?? null
@@ -129,6 +131,8 @@ const doProjeto: FonteDoEditor = {
   },
   podeSalvar: () => haProjetoAberto(),
   tempoSoDoPng: true,
+  fontesDoPc: () => ponte.fontesDoPc(),
+  bytesDaFonteDoPc: (arquivo) => ponte.fonteDoPc(arquivo),
   salvar: async (png, modo) => {
     const video = useTela.getState().video
     if (video) return ponte.salvarAoLado({ video, png, modo })
