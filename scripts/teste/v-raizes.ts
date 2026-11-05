@@ -133,9 +133,12 @@ const semUd = (x: unknown, d: string): string => JSON.stringify(x).split(JSON.st
 ok('os mesmos ids', JSON.stringify(ids(novo)) === JSON.stringify(ids(velho)), ids(novo).join(', '))
 ok('ids sem prefixo', ids(novo).every((id) => id.startsWith('Serie X/')))
 ok('o mesmo indice inteiro', semUd(novo, ud) === semUd(velho, udAntes))
+// A versao do cache sobe de proposito quando muda o que e extraido (10: o
+// B-roll do AnCut). Fora o numero dela, tem que ser identico.
+const semVersao = <T extends object>(c: T): T => ({ ...c, version: 0 })
 ok(
-  'o mesmo cache, byte a byte',
-  semUd(lerCache(cacheNovo), ud) === semUd(lerCache(join(udAntes, 'library-cache.json')), udAntes),
+  'o mesmo cache, byte a byte (fora a versao)',
+  semUd(semVersao(lerCache(cacheNovo)), ud) === semUd(semVersao(lerCache(join(udAntes, 'library-cache.json'))), udAntes),
 )
 ok('o cache nao ganhou campo de prefixo', !readFileSync(cacheNovo, 'utf8').includes('prefixo'))
 

@@ -82,8 +82,11 @@ interface CacheFile {
  * 9: a miniatura confere se e mais nova que o keyframe (ver
  * reduzirMiniaturas). Rele tudo uma vez para pegar os episodios recortados
  * que a versao 8 ja tinha relido com a miniatura velha.
+ *
+ * 10: B-roll do AnCut (LibraryClip.broll) sai com temporada/episodio 0 e a
+ * marca. O cache antigo o tinha como S01E0N.
  */
-const CACHE_VERSION = 9
+const CACHE_VERSION = 10
 
 /** Profundidade maxima da varredura a partir da raiz. */
 const MAX_DEPTH = 3
@@ -433,6 +436,9 @@ export interface RawShot {
   anime?: unknown
   season?: unknown
   episode?: unknown
+  /** "BROLL" no B-roll do AnCut (trailer, teaser...). Ver LibraryClip.broll. */
+  kind?: unknown
+  titulo?: unknown
 }
 
 /**
@@ -500,6 +506,22 @@ async function lerEpisodio(
    */
   const daPasta = /S(\d+)E(\d+)/i.exec(basename(dir))
 
+  /*
+   * B-roll do AnCut (trailer, gameplay, teaser): pasta "B-roll 03 - Titulo",
+   * e desde o AnCut 1.38.3 `kind: "BROLL"` no json. Sem temporada nem
+   * episodio de verdade -- o json diz S01E03, e foi assim que trailer virou
+   * "episodio 3" no recap. Vai com 0/0 e a marca, como o manga.
+   */
+  const pastaBroll = /^B-roll (\d+)(?: - (.+))?$/i.exec(basename(dir))
+  const marcaBroll = (cru as RawShot[]).find((s) => texto(s.kind) === 'BROLL')
+  const broll =
+    marcaBroll || pastaBroll
+      ? {
+          titulo: texto(marcaBroll?.titulo) || pastaBroll?.[2] || basename(dir),
+          numero: pastaBroll ? Number(pastaBroll[1]) : 0,
+        }
+      : undefined
+
   const saida: StoredClip[] = []
 
   for (const nomeMp4 of [...naPasta].sort(naturalmente)) {
@@ -528,8 +550,9 @@ async function lerEpisodio(
       keyframe: thumb,
       anime: serie,
       animeTitle: titulo,
-      season: daPasta ? Number(daPasta[1]) : numero(inicio.season),
-      episode: daPasta ? Number(daPasta[2]) : numero(inicio.episode),
+      season: broll ? 0 : daPasta ? Number(daPasta[1]) : numero(inicio.season),
+      episode: broll ? 0 : daPasta ? Number(daPasta[2]) : numero(inicio.episode),
+      ...(broll ? { broll } : {}),
       shot,
       start: numero(inicio.start),
       duration: span > 0 ? span : numero(inicio.duration),
@@ -891,6 +914,9 @@ export function naturalmente(a: string, b: string): number {
 function ordemNatural(a: LibraryClip, b: LibraryClip): number {
   return (
     ALFABETICA.compare(a.anime, b.anime) ||
+    // B-roll depois dos episodios do anime, na ordem das pastas dele.
+    (a.broll ? 1 : 0) - (b.broll ? 1 : 0) ||
+    (a.broll?.numero ?? 0) - (b.broll?.numero ?? 0) ||
     a.season - b.season ||
     a.episode - b.episode ||
     // Dois capitulos sem numero ("Cap. Especial") tem o mesmo episodio 0: o

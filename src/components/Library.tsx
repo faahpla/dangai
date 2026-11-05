@@ -1212,6 +1212,7 @@ function natural(nome: string): string {
 function textoDe(clip: LibraryClip): string {
   if (clip.manga) return `${clip.anime} manga mangá ${clip.manga.capitulo} pagina ${clip.manga.pagina}`.toLowerCase()
   const nomes = clip.characters.flatMap((c) => [c, natural(c)]).join(' ')
+  if (clip.broll) return `${clip.anime} b-roll broll trailer ${clip.broll.titulo} ${nomes} ${clip.shot}`.toLowerCase()
   return `${clip.anime} ${clip.animeTitle} ${nomes} s${clip.season}e${clip.episode} ${clip.shot}`.toLowerCase()
 }
 
@@ -1265,6 +1266,7 @@ interface RailProps {
  */
 export function chaveEpisodio(clip: LibraryClip): string {
   if (clip.manga) return `Mangá · ${clip.manga.capitulo}`
+  if (clip.broll) return `B-roll · ${clip.broll.titulo}`
   return `S${pad(clip.season)}E${pad(clip.episode)}`
 }
 
@@ -2281,7 +2283,7 @@ function Cartao({
       title={
         clip.manga
           ? `${clip.anime} · mangá · ${clip.manga.capitulo} · página ${clip.manga.pagina}${clip.manga.quadro === null ? ' inteira' : ` · quadro ${clip.manga.quadro}`}${usada ? ' · já usado em outra frase' : ''}`
-          : `${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · já usada em outra frase' : ''}
+          : `${clip.animeTitle || clip.anime} · ${chaveEpisodio(clip)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · já usada em outra frase' : ''}
 Ctrl+clique: marcar para mesclar com outras cenas seguidas`
       }
       className={[
@@ -2492,7 +2494,7 @@ function Marcadas({
           // duas vezes no trecho -- duplicar uma cena e um gesto que existe.
           <div
             key={`${clip.id}-${i}`}
-            title={`${clip.animeTitle || clip.anime} · S${pad(clip.season)}E${pad(clip.episode)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s`}
+            title={`${clip.animeTitle || clip.anime} · ${chaveEpisodio(clip)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s`}
             className="group relative shrink-0 overflow-hidden rounded-sm border border-line"
           >
             <img src={clip.thumbUrl} alt="" className="h-[40px] w-[71px] object-cover" />
@@ -2691,7 +2693,7 @@ function Tocador({
               </>
             ) : (
               <>
-                {' '}· S{pad(clip.season)}E{pad(clip.episode)} · cena {clip.shot} ·{' '}
+                {' '}· {chaveEpisodio(clip)} · cena {clip.shot} ·{' '}
                 <span className="tnum">{clip.duration.toFixed(1)}s</span>
               </>
             )}

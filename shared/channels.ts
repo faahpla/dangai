@@ -279,6 +279,22 @@ export interface LibraryClip {
    * muda: nao tem duracao (`duration` 0), nem tira de quadros, nem mescla; e
    * nunca entra sozinho na montagem automatica.
    */
+  /**
+   * Video de B-ROLL do AnCut HUB -- trailer, gameplay, teaser, clipe baixado
+   * para edicao --, e nao cena de episodio. O AnCut grava em
+   * "<serie>/B-roll 03 - Titulo/" com `kind: "BROLL"` no shots.json.
+   *
+   * Como o manga: entra na grade e na busca, mas nunca sozinho na montagem
+   * automatica. Temporada e episodio vem 0, que nenhum roteiro cita -- antes
+   * o "B-roll 01" chegava como S01E01 e o recap podia usar cena de trailer
+   * como se fosse do episodio 1.
+   */
+  broll?: {
+    /** O nome do video ("Official Launch Trailer"). */
+    titulo: string
+    /** O numero da pasta ("B-roll 03" = 3). So ordena. */
+    numero: number
+  }
   manga?: {
     /** A pasta do capitulo, como ele chamou: "Capítulo 45", "Cap. Especial - ...". */
     capitulo: string
