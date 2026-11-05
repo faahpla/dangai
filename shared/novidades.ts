@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.94.0',
+    itens: [
+      'Thumbnail: "Cor das imagens". Puxe a cor da camada de ajuste do projeto ("Do projeto"), use o Anime vivo ou um preset de cor seu, e ajuste exposição, contraste, saturação, vibrance, temperatura e nitidez. A cor vale só nas imagens: texto, seta e divisor ficam como estão.',
+      'Thumbnail: cole uma imagem com Ctrl+V (ou no botão "Colar"). Vale print, "Copiar imagem" do navegador ou um arquivo copiado no Explorer.',
+      'Thumbnail: no botão "Pasta..." você escolhe onde as thumbs são salvas. A pasta fica lembrada, e o "Salvar PNG" grava direto nela. Em "Padrão" volta ao lugar de sempre.',
+    ],
+  },
+  {
     versao: '1.93.1',
     itens: [
       'IA do Gemini no automático: quando a cota grátis acaba e ele troca de modelo, não cai mais num modelo que só transcreve áudio (o "transcribe"). Antes ele ficava preso nele e tudo dava "Developer instruction is not enabled for this model" até fechar o app; agora pula para o próximo.',
