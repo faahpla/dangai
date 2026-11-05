@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.94.1',
+    itens: [
+      'Vídeos de B-roll do AnCut HUB (trailer, gameplay, teaser baixado por link) aparecem na Biblioteca com o nome do vídeo, depois dos episódios do anime. Dá pra buscar e escolher na mão, mas a montagem automática não usa mais cena de trailer como se fosse de um episódio.',
+    ],
+  },
+  {
     versao: '1.94.0',
     itens: [
       'Thumbnail: "Cor das imagens". Puxe a cor da camada de ajuste do projeto ("Do projeto"), use o Anime vivo ou um preset de cor seu, e ajuste exposição, contraste, saturação, vibrance, temperatura e nitidez. A cor vale só nas imagens: texto, seta e divisor ficam como estão.',
