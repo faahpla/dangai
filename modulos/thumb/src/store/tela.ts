@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { thumbDoProjeto, thumbPadrao, type ThumbDoProjeto } from '../../shared/thumb'
 import { cenaNoInstante, cenasDoPlano } from '../../shared/plano'
 import { configDaThumbSchema, presetDe, thumbDoPreset, type PresetDaThumb } from '../../shared/pedidos'
+import { corDaCamadaDeAjuste } from '../../shared/cor-do-projeto'
 import type { MotorDaThumb } from '../../shared/canais'
 import { criarLojaDoEditor, type FonteDoEditor, type LojaDoEditor } from '../editor/loja'
 import { nucleo } from '../nucleo'
@@ -80,10 +81,14 @@ const solta: FonteDoEditor = {
   tempoSoDoPng: true,
   fontesDoPc: () => ponte.fontesDoPc(),
   bytesDaFonteDoPc: (arquivo) => ponte.fonteDoPc(arquivo),
-  salvar: async (png) => {
+  colar: () => ponte.colar(null),
+  escolherPasta: (atual) => ponte.escolherPasta(atual),
+  salvar: async (png, modo, pastaEscolhida) => {
     const t = useSolta.getState().thumb
     const img = t?.imagens[0] ?? t?.imagens[1] ?? null
     const base = img ?? (ultimaImagem ? { arquivo: ultimaImagem } : null)
+    // A pasta das thumbs escolhida: grava direto la (`<imagem>-thumb.png`), sem dialogo.
+    if (pastaEscolhida) return ponte.salvarAoLado({ video: base?.arquivo ?? 'thumbnail.png', png, modo, pasta: pastaEscolhida })
     return ponte.salvarComo({
       png,
       pasta: base ? pastaDe(base.arquivo) : null,
@@ -133,12 +138,16 @@ const doProjeto: FonteDoEditor = {
   tempoSoDoPng: true,
   fontesDoPc: () => ponte.fontesDoPc(),
   bytesDaFonteDoPc: (arquivo) => ponte.fonteDoPc(arquivo),
-  salvar: async (png, modo) => {
+  colar: () => ponte.colar(pastaDoProjeto()),
+  escolherPasta: (atual) => ponte.escolherPasta(atual),
+  corDoProjeto: () => corDaCamadaDeAjuste(nucleo().ler().sobreposicoes),
+  salvar: async (png, modo, pastaEscolhida) => {
     const video = useTela.getState().video
-    if (video) return ponte.salvarAoLado({ video, png, modo })
+    if (video) return ponte.salvarAoLado({ video, png, modo, pasta: pastaEscolhida })
     const projeto = nucleo().ler().projectPath
     const audio = nucleo().ler().audio?.path ?? null
     const base = projeto ?? audio
+    if (pastaEscolhida) return ponte.salvarAoLado({ video: base ?? 'thumbnail.png', png, modo, pasta: pastaEscolhida })
     return ponte.salvarComo({
       png,
       pasta: base ? pastaDe(base) : null,

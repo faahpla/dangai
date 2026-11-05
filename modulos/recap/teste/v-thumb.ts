@@ -270,6 +270,18 @@ async function testarMain(T: typeof import('../shared/thumb')): Promise<void> {
       (e: Error) => e.message,
     )
     confere(torto.includes('PNG') && outro.includes('1080x1920'), 'nao PNG ou outro tamanho: recusa')
+    // (05/11) A pasta das thumbs escolhida: o mesmo nome, na pasta dele.
+    const minhas = join(pasta, 'minhas-thumbs')
+    mkdirSync(minhas, { recursive: true })
+    const s5 = await M.salvarThumb({ video: pronto, png, modo: 'perguntar', pasta: minhas })
+    confere('salvo' in s5 && s5.salvo === join(minhas, 'Recap-short-thumb.png') && existsSync(s5.salvo), 'a pasta escolhida: <video>-thumb.png dentro dela')
+    const s6 = await M.salvarThumb({ video: pronto, png, modo: 'novo', pasta: minhas })
+    confere('salvo' in s6 && s6.salvo === join(minhas, 'Recap-short-thumb-2.png'), '"Salvar outra" na pasta escolhida: -thumb-2.png')
+    const pastaSumiu = await M.salvarThumb({ video: pronto, png, modo: 'perguntar', pasta: join(pasta, 'nao-existe') }).then(
+      () => '',
+      (e: Error) => e.message,
+    )
+    confere(pastaSumiu.includes('pasta escolhida'), 'a pasta escolhida sumiu: recusa com o aviso')
 
     console.log('\n== o upload vai para a pasta do projeto')
     const projeto = join(pasta, 'projeto')

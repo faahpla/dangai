@@ -83,6 +83,8 @@ export interface EntradaDoDesenho {
   divisor?: DivisorPronto | null
   /** Pixels do canvas por pixel do quadro 1080 (1 no PNG final). */
   escala: number
+  /** (05/11) O `url(#id)` do filtro da cor das imagens (filtro-de-cor.ts); null/ausente = sem. */
+  filtroDeCor?: string | null
   guias?: GuiasDaPrevia | null
 }
 
@@ -377,7 +379,8 @@ export function desenharThumb(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho
     if (p) {
       ctx.imageSmoothingEnabled = true
       ctx.imageSmoothingQuality = 'high'
-      ctx.filter = `saturate(${LOOK.saturacao}) contrast(${LOOK.contraste})`
+      // A cor dele (o ajuste da camada de ajuste) primeiro, depois o look da thumb.
+      ctx.filter = `${e.filtroDeCor ? `${e.filtroDeCor} ` : ''}saturate(${LOOK.saturacao}) contrast(${LOOK.contraste})`
       ctx.drawImage(p.fonte, p.sx, p.sy, p.sw, p.sh, 0, painel.y0, LARGURA, altura)
       ctx.filter = 'none'
     } else {

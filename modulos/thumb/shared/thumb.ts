@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ajusteDeCorSchema } from '@shared/contract'
 import { COR_LINHA_1, COR_LINHA_2, corSchema, degradeDaCor, hexParaRgb, rgbParaHex, type ParadaDoDegrade } from './cor'
 import {
   divisorEfetivo,
@@ -312,6 +313,13 @@ export const thumbDoProjetoSchema = z.object({
    * main confere que e mesmo uma fonte instalada). null = a `fonte` do app.
    */
   fontePc: z.object({ nome: z.string().min(1).max(200), arquivo: z.string().min(1).max(1024) }).nullable().default(null),
+  /**
+   * (05/11) A COR das imagens: o mesmo ajuste da camada de ajuste do video
+   * (exposicao, contraste, saturacao, curvas...), puxado do projeto, de um
+   * preset de cor ou mexido aqui. Vale so nas imagens (o texto, a seta e o
+   * divisor ficam como sao), antes do look da thumb. null = sem.
+   */
+  cor: ajusteDeCorSchema.nullable().default(null),
 })
 export type ThumbDoProjeto = z.infer<typeof thumbDoProjetoSchema>
 
@@ -339,6 +347,7 @@ export function thumbPadrao(textoDeThumb: string | null): ThumbDoProjeto {
     degrades: [null, null],
     contorno: { px: ESTILO.kizuni.contorno, cor: COR_DO_CONTORNO },
     fontePc: null,
+    cor: null,
   }
 }
 
@@ -2048,6 +2057,8 @@ export const pedidoDeSalvarSchema = z.object({
   png: z.instanceof(Uint8Array),
   /** 'perguntar' = nao sobrescreve (devolve `existe`); 'substituir'; 'novo' = `-thumb-2.png`... */
   modo: z.enum(['perguntar', 'substituir', 'novo']),
+  /** (05/11) A pasta que ele escolheu para as thumbs; ausente/null = ao lado do video. O nome continua `<video>-thumb.png`. */
+  pasta: z.string().max(1024).nullable().optional(),
 })
 export type PedidoDeSalvar = z.infer<typeof pedidoDeSalvarSchema>
 

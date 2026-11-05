@@ -220,6 +220,8 @@ export const CANAIS = {
   miniaturaDaThumb: 'recap:thumb:miniatura',
   fontesDoPcDaThumb: 'recap:thumb:fontes-do-pc',
   fonteDoPcDaThumb: 'recap:thumb:fonte-do-pc',
+  colarNaThumb: 'recap:thumb:colar',
+  escolherPastaDaThumb: 'recap:thumb:escolher-pasta',
 
   // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
   // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
@@ -440,6 +442,9 @@ export interface PonteDoRecap {
   /** Thumbnail: as fontes instaladas no PC e os bytes de uma delas (o "Fonte do PC" do texto). */
   fontesDoPcDaThumb(): Promise<IpcResult<{ nome: string; arquivo: string }[]>>
   fonteDoPcDaThumb(arquivo: string): Promise<IpcResult<Uint8Array>>
+  /** Thumbnail (05/11): a imagem do Ctrl+V (copiada para <pasta>/thumb) e o dialogo da pasta das thumbs. */
+  colarNaThumb(pasta: string | null): Promise<IpcResult<string | null>>
+  escolherPastaDaThumb(atual: string | null): Promise<IpcResult<string | null>>
 
   // O motor de personagens (parte 4), com os nomes do Studio.
   /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */

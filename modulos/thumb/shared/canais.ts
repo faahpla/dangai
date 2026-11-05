@@ -35,6 +35,8 @@ export const CANAIS_DA_THUMB = {
   salvarPreset: 'thumb:salvar-preset',
   fontesDoPc: 'thumb:fontes-do-pc',
   fonteDoPc: 'thumb:fonte-do-pc',
+  colar: 'thumb:colar',
+  escolherPasta: 'thumb:escolher-pasta',
 } as const
 
 /** Uma fonte instalada no PC (electron/fontes-do-pc.ts): o nome de dentro do arquivo e o caminho. */
@@ -71,4 +73,8 @@ export interface PonteDaThumb {
   fontesDoPc(): Promise<IpcResult<FonteDoPc[]>>
   /** Os bytes de uma fonte da lista (outro caminho e recusado). */
   fonteDoPc(arquivo: string): Promise<IpcResult<Uint8Array>>
+  /** (05/11) A imagem da area de transferencia (o Ctrl+V): o caminho dela, copiada para <projeto>/thumb se houver projeto; null = nada para colar. */
+  colar(projeto: string | null): Promise<IpcResult<string | null>>
+  /** O dialogo da pasta das thumbs (null = desistiu). */
+  escolherPasta(atual: string | null): Promise<IpcResult<string | null>>
 }

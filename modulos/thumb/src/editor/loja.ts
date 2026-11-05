@@ -1,5 +1,6 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand'
 import type { IpcResult } from '@shared/channels'
+import type { AjusteDeCor } from '@shared/contract'
 import {
   ALTURA,
   imagensPadrao,
@@ -24,6 +25,7 @@ import { desenharThumb, medidorDoCanvas } from './desenho'
 import { prepararDivisor } from './divisores'
 import { carregarFonteDoPc, carregarFontesDaThumb } from './fontes'
 import { carregarSeta } from './setas'
+import { filtroDaCor } from './filtro-de-cor'
 
 /**
  * [thumb] A LOJA DO EDITOR DE THUMBNAIL, em comum: a aba do recap
@@ -70,7 +72,12 @@ export interface ResultadoDoPng {
 }
 
 /** O salvar de quem usa o editor: null = ele desistiu (o dialogo de salvar). */
-export type SalvarDoEditor = (png: Uint8Array<ArrayBuffer>, modo: 'perguntar' | 'substituir' | 'novo') => Promise<IpcResult<ResultadoDoSalvar | null>>
+/** `pasta` (05/11): a pasta das thumbs que ele escolheu (null = o lugar de sempre de cada jeito). */
+export type SalvarDoEditor = (
+  png: Uint8Array<ArrayBuffer>,
+  modo: 'perguntar' | 'substituir' | 'novo',
+  pasta: string | null,
+) => Promise<IpcResult<ResultadoDoSalvar | null>>
 
 /** De onde vem e para onde vai cada coisa (o recap, o modulo solto, o modulo num projeto). */
 export interface FonteDoEditor {
@@ -105,6 +112,12 @@ export interface FonteDoEditor {
   /** (04/11) As fontes instaladas no PC e os bytes de uma delas; sem isto, o "Fonte do PC" nao aparece. */
   fontesDoPc?(): Promise<IpcResult<{ nome: string; arquivo: string }[]>>
   bytesDaFonteDoPc?(arquivo: string): Promise<IpcResult<Uint8Array>>
+  /** (05/11) A imagem da area de transferencia (o Ctrl+V), ja no lugar certo; null = nada para colar. */
+  colar?(): Promise<IpcResult<string | null>>
+  /** O dialogo da pasta das thumbs (null = desistiu); sem isto, nao ha "Salvar em". */
+  escolherPasta?(atual: string | null): Promise<IpcResult<string | null>>
+  /** A cor da camada de ajuste do projeto aberto (a da Edicao rapida, senao a maior); null = nao ha. */
+  corDoProjeto?(): AjusteDeCor | null
 }
 
 export interface EstadoDoEditor {
@@ -160,6 +173,16 @@ export interface EstadoDoEditor {
   procurarRostosDeNovo(): Promise<void>
   salvar(modo: 'perguntar' | 'substituir' | 'novo'): Promise<void>
   esquecerPergunta(): void
+  /** (05/11) A pasta das thumbs escolhida (lembrada neste PC); null = o lugar de sempre. */
+  pastaDeSalvar: string | null
+  escolherPastaDeSalvar(): Promise<void>
+  esquecerPastaDeSalvar(): void
+  /** O Ctrl+V: a imagem da area de transferencia no slot. */
+  colar(slot?: 0 | 1): Promise<void>
+  /** O aviso do colar ("nada para colar"), que some sozinho. */
+  avisoDoColar: string | null
+  /** A cor da camada de ajuste do projeto aberto (null = nao ha projeto/camada; a funcao null = este editor nao tem projeto). */
+  lerCorDoProjeto: (() => AjusteDeCor | null) | null
   /** Grava o que estiver pendente agora (a tela fechando). */
   gravarPendente(): void
   limpar(): void
@@ -168,6 +191,25 @@ export interface EstadoDoEditor {
 export type LojaDoEditor = UseBoundStore<StoreApi<EstadoDoEditor>>
 
 const chaveDa = (img: Pick<ImagemDaThumb, 'arquivo' | 't'>): string => `${img.arquivo}|${img.t.toFixed(3)}`
+
+/** (05/11) A pasta das thumbs, lembrada neste PC (o localStorage do app; sem ele, nada lembrado). */
+const CHAVE_DA_PASTA = 'dangai.thumb.pastaDeSalvar'
+function lerPastaDeSalvar(): string | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage.getItem(CHAVE_DA_PASTA) || null
+  } catch {
+    return null
+  }
+}
+function guardarPastaDeSalvar(pasta: string | null): void {
+  try {
+    if (typeof localStorage === 'undefined') return
+    if (pasta) localStorage.setItem(CHAVE_DA_PASTA, pasta)
+    else localStorage.removeItem(CHAVE_DA_PASTA)
+  } catch {
+    // sem localStorage: vale so nesta sessao
+  }
+}
 
 /** O medidor do texto num canvas solto (a fonte ja carregada). */
 let canvasDeMedir: HTMLCanvasElement | null = null
@@ -433,6 +475,9 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
       detector: null,
       fontesProntas: false,
       fontesDoPcProntas: 0,
+      pastaDeSalvar: lerPastaDeSalvar(),
+      avisoDoColar: null,
+      lerCorDoProjeto: fonte.corDoProjeto ? () => fonte.corDoProjeto!() : null,
       listarFontesDoPc: fonte.fontesDoPc
         ? async () => {
             const r = await fonte.fontesDoPc!().catch(() => null)
@@ -689,7 +734,7 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
           await prepararEstilo(thumb)
           const png = await pngDaThumb(thumb, fonte.recorte)
           const doPng = performance.now() - inicio
-          const r = await fonte.salvar(png.bytes, modo)
+          const r = await fonte.salvar(png.bytes, modo, get().pastaDeSalvar)
           if (!r.ok) throw new Error(r.error)
           if (r.value === null) {
             set({ salvando: false })
@@ -717,6 +762,31 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
       },
 
       esquecerPergunta: () => set({ perguntar: null }),
+
+      escolherPastaDeSalvar: async () => {
+        if (!fonte.escolherPasta) return
+        const r = await fonte.escolherPasta(get().pastaDeSalvar).catch(() => null)
+        if (!r?.ok || !r.value) return
+        guardarPastaDeSalvar(r.value)
+        set({ pastaDeSalvar: r.value, perguntar: null })
+      },
+
+      esquecerPastaDeSalvar: () => {
+        guardarPastaDeSalvar(null)
+        set({ pastaDeSalvar: null, perguntar: null })
+      },
+
+      colar: async (slot) => {
+        if (!fonte.colar || !get().thumb) return
+        const r = await fonte.colar().catch((e: unknown) => ({ ok: false as const, error: String(e) }))
+        if (!r.ok || !r.value) {
+          set({ avisoDoColar: r.ok ? 'Nada para colar: copie uma imagem (ou um arquivo de imagem) antes do Ctrl+V.' : r.error })
+          setTimeout(() => set({ avisoDoColar: null }), 4000)
+          return
+        }
+        set({ avisoDoColar: null })
+        await get().usarCaminho(r.value, slot)
+      },
 
       gravarPendente: () => {
         if (gravarDepois) gravarAgora()
@@ -757,6 +827,7 @@ export async function pngDaThumb(
   recortar: FonteDoEditor['recorte'],
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; ampliado: boolean }> {
   const ef = thumbEfetiva(thumb, medidor(thumb))
+  const corDoPng = filtroDaCor(thumb.cor)
   let ampliado = false
   const paineis = await Promise.all(
     ef.geo.paineis.map(async (painel, i) => {
@@ -805,6 +876,7 @@ export async function pngDaThumb(
     divisor,
     escala: 1,
     guias: null,
+    filtroDeCor: corDoPng,
   })
   for (const p of paineis) (p?.fonte as ImageBitmap | undefined)?.close()
   const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'))

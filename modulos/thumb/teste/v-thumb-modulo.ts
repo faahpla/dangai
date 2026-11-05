@@ -151,6 +151,7 @@ async function principal(): Promise<void> {
   await testarCobrirEBarras(T)
   await testarEstilos(T, D)
   await testarFontesDoPc()
+  await testarCor(T)
   await testarMain()
   await testarLoja()
   await testarTela()
@@ -1289,6 +1290,38 @@ async function testarEstilos(T: typeof import('../shared/thumb'), D: typeof impo
   for (const k of ['estilo', 'degrades', 'contorno', 'formaDaSeta', 'fontePc']) delete presetVelho[k]
   const pv = D.presetDaThumbSchema.safeParse(presetVelho)
   confere(pv.success && pv.data.estilo === 'kizuni' && pv.data.contorno.px === 12 && pv.data.formaDaSeta === 'vermelha', 'um preset de antes abre no Kizuni de sempre')
+}
+
+/** (05/11) A cor das imagens: a da camada de ajuste do projeto, e a thumb de antes sem cor. */
+async function testarCor(T: typeof import('../shared/thumb')): Promise<void> {
+  console.log('\n== cor das imagens (05/11)')
+  const { corDaCamadaDeAjuste } = await import('../shared/cor-do-projeto')
+  const { ajusteDeCorSchema } = await import('@shared/contract')
+  const viva = ajusteDeCorSchema.parse({ vibrance: 0.28, contraste: 0.1 })
+  const minha = ajusteDeCorSchema.parse({ exposicao: 0.4 })
+  const longa = ajusteDeCorSchema.parse({ saturacao: 0.5 })
+  const camada = (cor: unknown, usarSec: number, papel?: string) => ({
+    tipo: 'ajuste' as const,
+    cor: cor as never,
+    usarSec,
+    durationSec: 3600,
+    inicioSec: 0,
+    modulos: papel ? { recap: { papel } } : undefined,
+  })
+  confere(corDaCamadaDeAjuste([]) === null, 'sem camada de ajuste: nada')
+  confere(
+    corDaCamadaDeAjuste([{ tipo: 'video', cor: undefined, usarSec: 10, durationSec: 10, inicioSec: 0, modulos: undefined }, camada(undefined, 50)]) === null,
+    'so clipe e camada sem cor: nada',
+  )
+  confere(corDaCamadaDeAjuste([camada(minha, 5), camada(longa, 80)]) === longa, 'sem a da Edicao rapida: a que fica mais tempo no video')
+  confere(corDaCamadaDeAjuste([camada(longa, 80), camada(viva, 20, 'cor')]) === viva, 'a da Edicao rapida (papel cor) ganha')
+  const padrao = T.thumbPadrao('X')
+  confere(padrao.cor === null, 'thumb nova: sem cor')
+  const antiga = JSON.parse(JSON.stringify(padrao)) as Record<string, unknown>
+  delete antiga['cor']
+  confere(T.thumbDoProjeto(antiga)?.cor === null, 'thumb de antes (sem o campo): sem cor')
+  const comCor = T.thumbDoProjeto({ ...padrao, cor: { exposicao: 0.4 } })
+  confere(comCor?.cor?.exposicao === 0.4 && comCor.cor.contraste === 0 && comCor.cor.intensidade === 1, 'a cor guardada volta inteira (o resto no padrao)')
 }
 
 /** (04/11) As fontes do PC: o nome de dentro do arquivo, a lista e os bytes so de fonte da lista. */

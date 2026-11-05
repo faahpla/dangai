@@ -2,6 +2,7 @@ import { recapDoProjeto } from '../../shared/projeto-do-recap'
 import { thumbDoProjeto, thumbPadrao, type CenaDoVideo } from '../../shared/thumb'
 import { cenaNoInstante as cenaDoPlanoNoInstante, cenasDoPlano, type CenaNoInstante } from '../../../thumb/shared/plano'
 import { criarLojaDoEditor, medidor, type FonteDoEditor } from '../../../thumb/src/editor/loja'
+import { corDaCamadaDeAjuste } from '../../../thumb/shared/cor-do-projeto'
 import { nucleo } from '../nucleo'
 import { ponte } from '../ponte'
 import { usePosRender } from './pos-render'
@@ -93,7 +94,15 @@ const daAba: FonteDoEditor = {
     return r?.ok && r.value ? r.value : null
   },
   podeSalvar: () => Boolean(usePosRender.getState().outputPath),
-  salvar: (png, modo) => ponte.salvarThumb({ video: usePosRender.getState().outputPath ?? '', png, modo }),
+  // A colada vai para <pasta do projeto>/thumb, como a escolhida no dialogo.
+  colar: () => {
+    const pr = usePosRender.getState()
+    const base = pr.projetoPath ?? pr.outputPath
+    return ponte.colarNaThumb(base ? base.replace(/[\\/][^\\/]*$/, '') : null)
+  },
+  escolherPasta: (atual) => ponte.escolherPastaDaThumb(atual),
+  corDoProjeto: () => corDaCamadaDeAjuste(nucleo().ler().sobreposicoes),
+  salvar: (png, modo, pasta) => ponte.salvarThumb({ video: usePosRender.getState().outputPath ?? '', png, modo, pasta }),
 }
 
 export const useThumb = criarLojaDoEditor(daAba)

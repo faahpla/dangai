@@ -729,15 +729,17 @@ function gravarJunto(destino: string, bytes: Buffer): void {
  */
 export async function salvarThumb(p: PedidoDeSalvar): Promise<ResultadoDoSalvar> {
   const bytes = await pngConferido(p.png)
-  const pasta = dirname(p.video)
-  if (!existsSync(pasta)) throw new Error('A pasta do video nao existe mais.')
-  let destino = nomeDaThumb(p.video)
+  // A pasta que ele escolheu (05/11), ou a do video.
+  const pasta = p.pasta || dirname(p.video)
+  if (!existsSync(pasta)) throw new Error(p.pasta ? 'A pasta escolhida para as thumbs nao existe mais.' : 'A pasta do video nao existe mais.')
+  const nome = (n?: number): string => join(pasta, basename(nomeDaThumb(p.video, n)))
+  let destino = nome()
   if (existsSync(destino)) {
     if (p.modo === 'perguntar') return { existe: destino }
     if (p.modo === 'novo') {
       let n = 2
-      while (existsSync(nomeDaThumb(p.video, n)) && n < 1000) n += 1
-      destino = nomeDaThumb(p.video, n)
+      while (existsSync(nome(n)) && n < 1000) n += 1
+      destino = nome(n)
     }
   }
   gravarJunto(destino, bytes)

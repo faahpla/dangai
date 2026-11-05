@@ -1,6 +1,6 @@
 import { dialog } from 'electron'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, extname } from 'node:path'
+import { basename, extname, join } from 'node:path'
 import type { ContextoDoModulo } from '../../../electron/modulos'
 import { CANAIS as C, type ProvedorDaIa } from '../shared/canais'
 import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDaVolta, ResultadoDoEnvio } from '../shared/ancut'
@@ -91,7 +91,7 @@ import { pedidoInterrompido } from './voz/pedidos'
 import { ajustarVoz, cancelarVoz, gerarVoz, importarAudio, regravarFrases } from './voz/gerar'
 import { aprovarVoz, audioDoTake, desaprovarVoz, escolherTakeDoRascunho } from './voz/takes'
 import { bibliotecaFish, bibliotecaFishFalsa, idDaVozFish, testarEleven, testarFish, testeDeVozFalso, vozDoFishPorId } from './voz-chaves'
-import { configDoRecap } from './contexto'
+import { configDoRecap, contexto } from './contexto'
 import { getSettings } from './settings'
 import { z } from 'zod'
 import {
@@ -125,6 +125,7 @@ import { pngsDosTextos, telasDoRascunho } from './montar/textos'
 import { abrirPosRender, escreverTitulosEThumbs } from './pos-render'
 import { pedidoDeTitulosSchema, pedidoDoPosRenderSchema, type TextosDoPosRender, type TitulosNovos } from '../shared/pos-render'
 import { bytesDaFonteDoPc, fontesDoPc } from '../../thumb/electron/fontes-do-pc'
+import { colarImagem, escolherPasta } from '../../thumb/electron/area'
 import { copiarParaOProjeto, quadroDaThumb, quadroRapido, recorteDaThumb, rostosDoQuadro, salvarThumb, sugestoesDaThumb, temUpscale } from './thumb'
 import {
   pedidoDeQuadroSchema,
@@ -501,6 +502,10 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[unknown], ResultadoDoSalvar>(C.salvarThumb, async (pedido) => salvarThumb(pedidoDeSalvarSchema.parse(pedido)))
   ctx.handle<[], boolean>(C.upscaleDaThumb, async () => temUpscale())
   ctx.handle<[], { nome: string; arquivo: string }[]>(C.fontesDoPcDaThumb, async () => fontesDoPc())
+  ctx.handle<[unknown], string | null>(C.colarNaThumb, async (pasta) =>
+    colarImagem(join(contexto().pasta('local'), 'thumb'), z.string().max(1024).nullable().parse(pasta ?? null)),
+  )
+  ctx.handle<[unknown], string | null>(C.escolherPastaDaThumb, async (atual) => escolherPasta(z.string().max(1024).nullable().parse(atual ?? null)))
   ctx.handle<[unknown], Uint8Array>(C.fonteDoPcDaThumb, async (arquivo) => {
     if (typeof arquivo !== 'string' || !arquivo || arquivo.length > 1024) throw new Error('Fonte invalida.')
     return bytesDaFonteDoPc(arquivo)

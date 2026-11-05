@@ -1,6 +1,21 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { create } from 'zustand'
-import { ArrowUpDown, Check, ChevronLeft, ChevronRight, FolderOpen, ImagePlus, Loader2, LocateFixed, Save, ScanFace, TriangleAlert } from 'lucide-react'
+import {
+  ArrowUpDown,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardPaste,
+  FolderCog,
+  FolderOpen,
+  ImagePlus,
+  Loader2,
+  LocateFixed,
+  Save,
+  ScanFace,
+  TriangleAlert,
+} from 'lucide-react'
+import { ajusteDeCorSchema, type AjusteDeCor } from '@shared/contract'
 import { Deslizante, Segmentos } from '@/modulos/kit'
 import {
   ALTURA,
@@ -39,6 +54,7 @@ import { medidor, type LojaDoEditor, type SugestaoNaTela } from './loja'
 import { desenharThumb, type PainelPronto } from './desenho'
 import { divisorAgora, useDivisoresProntos } from './divisores'
 import { useSetasProntas } from './setas'
+import { filtroDaCor } from './filtro-de-cor'
 import { Aviso, Botao, Caixinha, CAMPO_NORMAL, CLASSE_DO_CAMPO, COR_DE_AVISO, formatarTempo, Link, Secao } from './pecas'
 
 /**
@@ -172,6 +188,7 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
       seta: ef.seta,
       divisor: divisorAgora(ef.divisor),
       escala: w / LARGURA,
+      filtroDeCor: filtroDaCor(thumb.cor),
       guias: { zonas: guias, rostos: guias ? ef.rostos : [], pontasDaSeta: guias || emCima },
     })
   }, [thumb, ef, previas, largura, alto, guias, emCima, divisoresProntos, setasProntas])
@@ -430,6 +447,8 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
   const primeiro = jeitos[0]?.valor ?? ''
   // Cada imagem (cima e baixo) lembra de onde ele estava escolhendo.
   const [fontes, setFontes] = useState<[string, string]>([primeiro, primeiro])
+  // O Ctrl+V cola a imagem copiada no slot escolhido (fora dos campos de texto).
+  useColarComCtrlV()
   if (!thumb || !ef) return null
   const mudar = useThumb.getState().mudar
   const img = thumb.imagens[slot]
@@ -543,6 +562,8 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
         {jeito?.conteudo({ nomeDoSlot })}
         </div>
       </Secao>
+
+      <CorDasImagens />
 
       <Secao titulo="Texto">
         <div className="flex items-center gap-2" data-thumb="estilo-do-texto">
@@ -900,14 +921,157 @@ function CartaoDaSugestao({ s, escolhida }: { s: SugestaoNaTela; escolhida: bool
 /** "Do computador": o botao do dialogo e uma linha dizendo para onde a imagem vai. */
 export function DoComputador({ explicacao }: { explicacao: string }) {
   const useThumb = useLoja()
+  const aviso = useThumb((s) => s.avisoDoColar)
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Botao onClick={() => void useThumb.getState().usarArquivo()} title="PNG, JPG, WEBP ou BMP">
-        <ImagePlus size={13} strokeWidth={1.5} />
-        Escolher imagem...
-      </Botao>
-      <span className="text-[11px] text-ink-3">{explicacao}</span>
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <Botao onClick={() => void useThumb.getState().usarArquivo()} title="PNG, JPG, WEBP ou BMP">
+          <ImagePlus size={13} strokeWidth={1.5} />
+          Escolher imagem...
+        </Botao>
+        <Botao onClick={() => void useThumb.getState().colar()} title="A imagem copiada (print, Copiar imagem, ou um arquivo copiado no Explorer). Atalho: Ctrl+V">
+          <ClipboardPaste size={13} strokeWidth={1.5} />
+          Colar (Ctrl+V)
+        </Botao>
+        <span className="text-[11px] text-ink-3">{explicacao}</span>
+      </div>
+      {aviso && <span className={`text-[11px] ${COR_DE_AVISO}`}>{aviso}</span>}
     </div>
+  )
+}
+
+/**
+ * O CTRL+V do editor (05/11): com a tela da thumb aberta e fora de um campo de
+ * texto, cola a imagem da area de transferencia no slot escolhido.
+ */
+export function useColarComCtrlV(): void {
+  const useThumb = useLoja()
+  useEffect(() => {
+    const tecla = (ev: KeyboardEvent): void => {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.shiftKey || ev.altKey || ev.key.toLowerCase() !== 'v') return
+      const alvo = ev.target as HTMLElement | null
+      if (alvo && (alvo.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName))) return
+      if (!useThumb.getState().thumb) return
+      // Antes do atalho do editor (colar clipe na timeline): a tela da thumb e por cima de tudo.
+      ev.preventDefault()
+      ev.stopPropagation()
+      void useThumb.getState().colar()
+    }
+    window.addEventListener('keydown', tecla, true)
+    return () => window.removeEventListener('keydown', tecla, true)
+  }, [useThumb])
+}
+
+/** O Anime vivo da Edicao rapida (o mesmo ajuste de modulos/recap/shared/edicao-rapida.ts). */
+const ANIME_VIVO: AjusteDeCor = ajusteDeCorSchema.parse({ vibrance: 0.28, contraste: 0.1, realces: -0.05, nitidez: 0.1 })
+
+/** Os controles rapidos da cor: [campo, rotulo, min, max]. As curvas e o resto vem do preset/projeto e ficam. */
+const CONTROLES_DE_COR: readonly [keyof AjusteDeCor, string, number, number][] = [
+  ['exposicao', 'Exposicao', -1.5, 1.5],
+  ['contraste', 'Contraste', -1, 1],
+  ['realces', 'Realces', -1, 1],
+  ['sombras', 'Sombras', -1, 1],
+  ['saturacao', 'Saturacao', -1, 1],
+  ['vibrance', 'Vibrance', -1, 1],
+  ['temperatura', 'Temperatura', -1, 1],
+  ['nitidez', 'Nitidez', 0, 1],
+  ['intensidade', 'Intensidade', 0, 1],
+]
+
+/**
+ * A COR DAS IMAGENS (05/11): puxar a da camada de ajuste do projeto, um preset
+ * de cor salvo (os mesmos do inspetor do editor) ou o Anime vivo, e mexer nos
+ * controles rapidos. Vale so nas imagens, como a camada de ajuste no video.
+ */
+function CorDasImagens() {
+  const useThumb = useLoja()
+  const thumb = useThumb((s) => s.thumb)
+  const lerDoProjeto = useThumb((s) => s.lerCorDoProjeto)
+  const [presets, setPresets] = useState<{ nome: string; cor: AjusteDeCor }[]>([])
+  const [aberta, setAberta] = useState(false)
+  useEffect(() => {
+    let vivo = true
+    void window.dangai
+      .getSettings()
+      .then((r) => {
+        if (!vivo || !r.ok) return
+        const lista: { nome: string; cor: AjusteDeCor }[] = []
+        for (const p of (r.value.presetsDeCor ?? []) as unknown[]) {
+          const o = p && typeof p === 'object' ? (p as Record<string, unknown>) : {}
+          const cor = ajusteDeCorSchema.safeParse(o['cor'])
+          if (typeof o['nome'] === 'string' && o['nome'].trim() && cor.success) lista.push({ nome: o['nome'].trim().slice(0, 40), cor: cor.data })
+        }
+        setPresets(lista)
+      })
+      .catch(() => {})
+    return () => {
+      vivo = false
+    }
+  }, [])
+  if (!thumb) return null
+  const doProjeto = lerDoProjeto?.() ?? null
+  const mesma = (a: AjusteDeCor | null): boolean => !!a && !!thumb.cor && JSON.stringify(a) === JSON.stringify(thumb.cor)
+  const por = (cor: AjusteDeCor | null): void => useThumb.getState().mudar({ cor: cor ? ajusteDeCorSchema.parse(cor) : null })
+  const opcoes: { nome: string; cor: AjusteDeCor | null; title: string }[] = [
+    { nome: 'Nenhuma', cor: null, title: 'As imagens como sao (so o look da thumb)' },
+    ...(doProjeto ? [{ nome: 'Do projeto', cor: doProjeto, title: 'A cor da camada de ajuste do projeto (a da Edicao rapida, se houver)' }] : []),
+    { nome: 'Anime vivo', cor: ANIME_VIVO, title: 'O look da Edicao rapida' },
+    ...presets.map((p) => ({ nome: p.nome, cor: p.cor, title: `O preset de cor "${p.nome}"` })),
+  ]
+  const ativa = opcoes.find((o) => (o.cor === null ? thumb.cor === null : mesma(o.cor)))
+  const base = thumb.cor ?? ajusteDeCorSchema.parse({})
+  return (
+    <Secao
+      titulo="Cor das imagens"
+      acao={
+        <Link onClick={() => setAberta((v) => !v)} title="Exposicao, contraste, saturacao... por cima do que escolheu">
+          {aberta ? 'Esconder ajustes' : 'Ajustar'}
+        </Link>
+      }
+    >
+      <div className="flex flex-wrap items-center gap-1.5" data-thumb="cor-das-imagens">
+        {opcoes.map((o) => (
+          <button
+            key={o.nome}
+            type="button"
+            onClick={() => por(o.cor)}
+            title={o.title}
+            aria-pressed={ativa === o}
+            className={[
+              'rounded-sm border px-2 py-1 text-[11px] font-medium transition-colors',
+              ativa === o ? 'border-accent bg-elevated text-ink' : 'border-line bg-elevated text-ink-2 hover:text-ink',
+            ].join(' ')}
+          >
+            {o.nome}
+          </button>
+        ))}
+        {thumb.cor && !ativa && <span className="text-[11px] text-ink-3">(ajustada)</span>}
+        {!lerDoProjeto ? null : !doProjeto && <span className="text-[11px] text-ink-3">O projeto nao tem camada de ajuste com cor.</span>}
+      </div>
+      {aberta && (
+        <div className="flex flex-col gap-1.5" data-thumb="controles-de-cor">
+          {CONTROLES_DE_COR.map(([campo, rotulo, min, max]) => {
+            const valor = base[campo] as number
+            const padrao = campo === 'intensidade' ? 1 : 0
+            return (
+              <div key={campo} className="flex items-center gap-2">
+                <span className="w-[68px] shrink-0 text-[11px] text-ink-3">{rotulo}</span>
+                <Deslizante
+                  valor={valor}
+                  min={min}
+                  max={max}
+                  step={0.01}
+                  texto={campo === 'intensidade' ? `${Math.round(valor * 100)}%` : `${valor > 0 ? '+' : ''}${Math.round(valor * 100)}`}
+                  padrao={padrao}
+                  dica={`${rotulo} das imagens`}
+                  onChange={(v) => por({ ...base, [campo]: Math.round(v * 100) / 100 })}
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Secao>
   )
 }
 
@@ -1436,6 +1600,7 @@ export function RodapeDaThumb({ fechar, destino, tituloDoSalvar, podeSalvar, alv
   const perguntar = useThumb((s) => s.perguntar)
   const temUpscale = useThumb((s) => s.temUpscale)
   const temImagem = useThumb((s) => Boolean(s.thumb?.imagens[0]))
+  const pasta = useThumb((s) => s.pastaDeSalvar)
   const nome = (c: string): string => c.split(/[\\/]/).pop() ?? c
 
   if (perguntar) {
@@ -1472,10 +1637,21 @@ export function RodapeDaThumb({ fechar, destino, tituloDoSalvar, podeSalvar, alv
           </span>
         ) : temUpscale === false ? (
           'Sem o modelo de upscale: o PNG sai com o redimensionamento comum.'
+        ) : pasta ? (
+          <span className="flex min-w-0 items-center gap-1.5" data-thumb="pasta-das-thumbs" title={pasta}>
+            <span className="truncate">Salva em {pasta}</span>
+            <Link onClick={() => useThumb.getState().esquecerPastaDeSalvar()} title="Volta ao lugar de sempre">
+              Padrao
+            </Link>
+          </span>
         ) : (
           destino
         )}
       </span>
+      <Botao onClick={() => void useThumb.getState().escolherPastaDeSalvar()} title="Escolher a pasta onde as thumbs sao salvas (fica lembrada)">
+        <FolderCog size={13} strokeWidth={1.5} />
+        Pasta...
+      </Botao>
       <Botao
         principal
         foco="thumb-salvar"
@@ -1488,10 +1664,10 @@ export function RodapeDaThumb({ fechar, destino, tituloDoSalvar, podeSalvar, alv
       </Botao>
       <Botao
         onClick={() => {
-          const alvo = salvo?.caminho ?? alvoDaPasta
+          const alvo = salvo?.caminho ?? pasta ?? alvoDaPasta
           if (alvo) void window.dangai.revealFile(alvo)
         }}
-        disabled={!salvo && !alvoDaPasta}
+        disabled={!salvo && !pasta && !alvoDaPasta}
         title="Mostra no Explorer"
       >
         <FolderOpen size={13} strokeWidth={1.5} />
