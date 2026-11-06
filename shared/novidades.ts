@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.96.0',
+    itens: [
+      'Barra de etapas no topo: Áudio → Roteiro → Cenas → Edição. A etapa feita ganha um ✓ e dá para ir a qualquer uma. Na barra do editor, os botões "Roteiro" e "Seleção" viraram as etapas "Roteiro" e "Cenas".',
+      'Etapa do Roteiro: depois do áudio, solte o .txt (ou cole, ou siga sem roteiro) e a sincronia das legendas começa sozinha. Bateu com a voz, ela segue sozinha para as cenas; não bateu, ela para e avisa.',
+      'As músicas no preview tocam exatamente o que a onda mostra. Antes, em MP3 de taxa variável, o preview pulava para o lugar errado (até 3 s antes); o vídeo final sempre esteve certo.',
+    ],
+  },
+  {
     versao: '1.95.0',
     itens: [
       'Etapa de Áudio: solte a gravação crua e ela abre numa linha do tempo antes de tudo. Espaço toca, C corta, arrastar seleciona, Delete apaga fechando o buraco, Ctrl+Z desfaz, e cada trecho tem o próprio volume. "Cortar silêncios" encolhe todas as pausas longas de uma vez.',
