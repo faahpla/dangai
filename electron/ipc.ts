@@ -43,7 +43,7 @@ import {
   type OpenedProject,
   type ProjectFile,
 } from '@shared/project-file'
-import { analyzeAudio, ondaDetalhada } from './services/audio'
+import { analyzeAudio, ondaDetalhada, urlDeEscuta } from './services/audio'
 import { medirSom } from './services/medir-som'
 import type { MedidaDoSom } from '@shared/loudness'
 import { publish } from './services/media-server'
@@ -548,7 +548,7 @@ export function registerIpc(): void {
       filters: [{ name: 'Áudio', extensions: [...AUDIO_EXTENSIONS] }],
     })
     const picked = result.canceled ? undefined : result.filePaths[0]
-    return picked ? { path: picked, fileName: basename(picked), url: publish(picked) } : null
+    return picked ? { path: picked, fileName: basename(picked), url: await urlDeEscuta(picked) } : null
   })
 
   // Republica uma faixa vinda de projeto salvo: o .dangai guarda o caminho, mas
@@ -557,7 +557,7 @@ export function registerIpc(): void {
     if (!existsSync(path)) {
       throw new Error(`A música "${basename(path)}" não está mais nesse lugar.`)
     }
-    return { path, fileName: basename(path), url: publish(path) }
+    return { path, fileName: basename(path), url: await urlDeEscuta(path) }
   })
 
   // Devolve null quando o usuario cancelou -- cancelar nao e falha, entao nao
