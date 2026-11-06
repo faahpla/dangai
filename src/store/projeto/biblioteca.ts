@@ -79,7 +79,8 @@ export const fatiaDaBiblioteca = (set: SetProjeto, get: GetProjeto): FatiaDaBibl
 
   openLibrary: async (open) => {
     // Fechar cancela a substituicao: sair da tela e desistir da pergunta.
-    set(open ? { libraryOpen: true } : { libraryOpen: false, replaceTarget: null })
+    // Uma etapa de cada vez: a Biblioteca fecha a de audio e a de legendas.
+    set(open ? { libraryOpen: true, etapaDoAudio: false, etapaDoRoteiro: false } : { libraryOpen: false, replaceTarget: null })
     if (!open) return
     // Os apelidos vem junto: sao poucos bytes e a tela precisa deles para dizer
     // quantos cada serie tem.

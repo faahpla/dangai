@@ -41,7 +41,7 @@ export const fatiaDaEtapaDoAudio = (set: SetProjeto, get: GetProjeto): FatiaDaEt
       }
     }
     if (!get().edicaoDeAudio) return
-    set({ etapaDoAudio: true, libraryOpen: false })
+    set({ etapaDoAudio: true, etapaDoRoteiro: false, libraryOpen: false })
   },
 
   fecharEtapaDoAudio: () => set({ etapaDoAudio: false }),
@@ -79,13 +79,14 @@ export const fatiaDaEtapaDoAudio = (set: SetProjeto, get: GetProjeto): FatiaDaEt
     }
     set({ busy: null, edicaoDeAudio: { ...edicao, saida: r.value }, etapaDoAudio: false })
     await get().ingest([r.value])
-    if (get().images.length === 0) await get().openLibrary(true)
+    // A proxima etapa: o roteiro e a sincronia das legendas (depois, as cenas).
+    await get().irParaEtapa('roteiro')
   },
 
-  /** Usar a gravacao como esta: fecha a etapa e segue para a Biblioteca. */
+  /** Usar a gravacao como esta: fecha a etapa e segue para o roteiro. */
   pularEtapaDoAudio: async () => {
     set({ etapaDoAudio: false })
-    if (get().images.length === 0 && get().audio) await get().openLibrary(true)
+    if (get().audio) await get().irParaEtapa('roteiro')
   },
 
   salvarCadeiaComoPadrao: async () => {

@@ -35,6 +35,7 @@ import { useBrollDosTrechos, useItensDoBroll } from '@/hooks/useBroll'
 import { useVisaoDosTrechos } from '@/hooks/useVisao'
 import { tempoDeLeitura } from '@shared/visao'
 import { useProject } from '@/store/project'
+import { BarraDeEtapas } from './BarraDeEtapas'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
 
@@ -706,6 +707,10 @@ export function Library() {
             {library.clips.length.toLocaleString('pt-BR')} cenas · {library.episodes} episódios
           </span>
         )}
+        {/* As etapas do video, com narracao: daqui volta para o audio e as legendas. */}
+        <div className="ml-4">
+          <BarraDeEtapas />
+        </div>
 
         <div className="ml-auto flex items-center gap-2">
           {/*

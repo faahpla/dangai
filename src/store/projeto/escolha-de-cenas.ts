@@ -108,7 +108,7 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
      */
     if (lendoRoteiro) return
 
-    set({ scriptBlocksBusy: 'Ouvindo a narração...' })
+    set({ scriptBlocksBusy: 'Ouvindo a narração...', erroDaSincronia: null })
     const pedido = window.dangai.scriptBlocks({
       audioPath: audio.path,
       subtitlePath,
@@ -158,7 +158,7 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
      * roteiro com a narracao..." depois de a leitura ja ter dado certo.
      */
     if (!r.ok) {
-      set({ scriptBlocksBusy: null, busy: null, libraryError: r.error })
+      set({ scriptBlocksBusy: null, busy: null, libraryError: r.error, erroDaSincronia: r.error })
       return
     }
     // A leitura chegou sozinha: nao e uma edicao, e nao vira passo de Ctrl+Z

@@ -30,6 +30,7 @@ import {
 import { useProject } from '@/store/project'
 import { desfazer, refazer } from '@/store/undo'
 import { avisar } from '@/store/aviso'
+import { BarraDeEtapas } from './BarraDeEtapas'
 import { Botaozinho, Deslizante, Grupo, Linha } from './painel'
 
 /**
@@ -253,11 +254,13 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
         <span className="min-w-0 truncate text-[12px] text-ink-3" title={edicao.bruto}>
           {edicao.bruto.split(/[\\/]/).pop()}
         </span>
-        <span className="tnum text-[12px] text-ink-3">
+        <span className="tnum shrink-0 text-[12px] text-ink-3">
           {relogio(edicao.duracaoBruta)} → <span className="text-ink-2">{relogio(duracao)}</span>
           {edicao.duracaoBruta - duracao > 0.5 && ` (−${Math.round(edicao.duracaoBruta - duracao)} s)`}
           {comEfeitos && som?.lufs != null && ` · ${som.lufs.toFixed(1)} LUFS`}
         </span>
+        <span className="flex-1" />
+        <BarraDeEtapas />
         <span className="flex-1" />
         <button
           type="button"
@@ -273,7 +276,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
           type="button"
           onClick={() => void concluir()}
           disabled={busy !== null}
-          title="Grava a narração final ao lado da gravação e segue para a Biblioteca"
+          title="Grava a narração final ao lado da gravação e segue para as legendas"
           className="flex items-center gap-2 rounded-sm border border-accent bg-accent-dim px-4 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-accent/30 disabled:opacity-40"
         >
           {busy ? <Loader2 size={14} className="animate-spin" /> : null}

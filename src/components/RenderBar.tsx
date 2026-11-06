@@ -8,7 +8,6 @@ import {
   VolumeX,
   Captions,
   CaptionsOff,
-  FileText,
   Pencil,
   Music,
   X,
@@ -17,9 +16,7 @@ import {
   Hash,
   House,
   Sparkle,
-  Library as LibraryIcon,
   Wand2,
-  AudioWaveform,
 } from 'lucide-react'
 import { aplicarMeuJeito, resumoDoPerfil, useMeuJeito } from '@/store/meu-jeito'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
@@ -32,6 +29,7 @@ import {
   salvarPreset,
 } from '@/store/estilo-legenda'
 import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
+import { BarraDeEtapas } from './BarraDeEtapas'
 import { BotaoDeTransicao } from './BotaoDeTransicao'
 import { useLayout } from '@/store/layout'
 import { useProject } from '@/store/project'
@@ -193,16 +191,6 @@ export function RenderBar() {
   const formatoLongo = useProject((s) => s.formato) === 'long'
   const captionCount = useProject((s) => s.captions.length)
   const toggleCaptions = useProject((s) => s.toggleCaptions)
-  const script = useProject((s) => s.script)
-  const openScript = useProject((s) => s.openScript)
-  const voltarParaSelecao = useProject((s) => s.voltarParaSelecao)
-  const abrirEtapaDoAudio = useProject((s) => s.abrirEtapaDoAudio)
-  const temEdicaoDeAudio = useProject((s) => s.edicaoDeAudio !== null)
-  const caminhoDaNarracao = useProject((s) => s.audio?.path ?? null)
-  // So existe selecao para voltar quando o video saiu da Biblioteca por roteiro.
-  const temSelecao = useProject(
-    (s) => s.scriptBlocks !== null && Object.values(s.blockClips).some((c) => c.length > 0),
-  )
   const captionsOpen = useProject((s) => s.captionsOpen)
   const binsOpen = useProject((s) => s.binsOpen)
   const openBins = useProject((s) => s.openBins)
@@ -238,60 +226,11 @@ export function RenderBar() {
       </button>
 
       {/*
-        A ETAPA DE AUDIO, de volta: a edicao que o projeto ja tem, ou uma nova
-        em cima da narracao de agora (um projeto de antes da etapa existir).
+        AS ETAPAS (Audio, Legendas, Cenas, Edicao): a volta para o audio e para
+        a selecao da Biblioteca -- que eram os botoes "Audio" e "Selecao" -- e a
+        sincronia das legendas, todas no mesmo lugar.
       */}
-      {!isRendering && caminhoDaNarracao && (
-        <button
-          type="button"
-          onClick={() => void (temEdicaoDeAudio ? abrirEtapaDoAudio() : abrirEtapaDoAudio(caminhoDaNarracao))}
-          title="Cortar a gravação e mexer nos efeitos da voz (isolar, nivelar, EQ, compressor, Fresh Air)"
-          className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
-        >
-          <AudioWaveform size={12} strokeWidth={1.5} />
-          <span className="group-data-[compacto]/barra:hidden">Áudio</span>
-        </button>
-      )}
-
-      {!isRendering && (
-        <button
-          type="button"
-          onClick={() => openScript(true)}
-          title={
-            script
-              ? 'Roteiro carregado — o texto das legendas vem dele'
-              : 'Cole o roteiro para as legendas sairem sem erro de escrita'
-          }
-          className={[
-            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-            script
-              ? 'border-accent bg-accent-dim text-ink'
-              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-          ].join(' ')}
-        >
-          <FileText size={12} strokeWidth={1.5} />
-          <span className="group-data-[compacto]/barra:hidden">Roteiro</span>
-        </button>
-      )}
-
-      {/*
-        VOLTAR A SELECAO, ao lado do roteiro: os dois sao de onde o video veio.
-
-        Existia so pelo Ctrl+B e pela paleta -- e ninguem procura uma volta que
-        nao ve. "Tem como adicionar uma funcao de voltar pra selecao na
-        biblioteca? Assim consigo ajustar coisas que dao errado."
-      */}
-      {!isRendering && temSelecao && (
-        <button
-          type="button"
-          onClick={() => void voltarParaSelecao()}
-          title="Voltar a seleção na biblioteca, no trecho deste bloco (Ctrl+B). Ao remontar, os blocos cuja cena não mudou mantém os ajustes."
-          className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
-        >
-          <LibraryIcon size={12} strokeWidth={1.5} />
-          <span className="group-data-[compacto]/barra:hidden">Seleção</span>
-        </button>
-      )}
+      {!isRendering && <BarraDeEtapas />}
 
       {captionCount > 0 && !isRendering && (
         <button

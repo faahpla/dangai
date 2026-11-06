@@ -72,6 +72,7 @@ import { fatiaDoRender } from './projeto/render'
 import { fatiaDoArquivo } from './projeto/arquivo'
 import { fatiaDaFila } from './projeto/fila'
 import { fatiaDaEtapaDoAudio } from './projeto/etapa-do-audio'
+import { fatiaDasEtapas, type Etapa } from './projeto/etapas'
 import type { EdicaoDeAudio } from '@shared/edicao-de-audio'
 import { setInterimPlan } from './projeto/apoio'
 import type { StoreApi } from 'zustand'
@@ -151,12 +152,18 @@ export interface ProjectState {
   edicaoDeAudio: EdicaoDeAudio | null
   /** A etapa de audio aberta (tela cheia, antes da Biblioteca). */
   etapaDoAudio: boolean
+  /** A etapa do roteiro aberta: soltar o roteiro e sincronizar as legendas com a narracao. */
+  etapaDoRoteiro: boolean
+  /** Vai para uma etapa da barra de cima (Audio, Roteiro, Cenas, Edicao). */
+  irParaEtapa: (etapa: Etapa) => Promise<void>
+  /** O erro da ultima leitura dos trechos (a sincronia do roteiro), so dela. */
+  erroDaSincronia: string | null
   /** Abre a etapa de audio. Com `bruto`, comeca a edicao dessa gravacao. */
   abrirEtapaDoAudio: (bruto?: string) => Promise<void>
   fecharEtapaDoAudio: () => void
   /** Muda a edicao (cortes ou efeitos) -- um passo de Ctrl+Z. */
   mudarEdicaoDeAudio: (mudar: (atual: EdicaoDeAudio) => EdicaoDeAudio) => void
-  /** Pronto: grava o audio final, usa como narracao e segue para a Biblioteca. */
+  /** Pronto: grava o audio final, usa como narracao e segue para o roteiro. */
   concluirEtapaDoAudio: () => Promise<void>
   /** Usa a gravacao como esta e segue. */
   pularEtapaDoAudio: () => Promise<void>
@@ -965,6 +972,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   broll: null,
   edicaoDeAudio: null,
   etapaDoAudio: false,
+  etapaDoRoteiro: false,
+  erroDaSincronia: null,
   definirBroll: (broll) => set({ broll, projectDirty: true }),
   scriptNote: null,
   sectionNote: null,
@@ -1525,6 +1534,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       broll: null,
       edicaoDeAudio: null,
       etapaDoAudio: false,
+      etapaDoRoteiro: false,
+      erroDaSincronia: null,
       scriptNote: null,
       sectionNote: null,
       scriptOpen: false,
@@ -1596,6 +1607,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   ...fatiaDaFila(set, get),
 
   ...fatiaDaEtapaDoAudio(set, get),
+
+  ...fatiaDasEtapas(set, get),
 }))
 
 /**
