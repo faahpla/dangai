@@ -228,9 +228,9 @@ const bridge: DangaiBridge = {
   renderizarEdicao: (edicao, efeitos) =>
     ipcRenderer.invoke(IPC.renderizarEdicao, edicao, efeitos) as Promise<IpcResult<AudioEditado>>,
   ondaDaEdicao: (edicao, efeitos) =>
-    ipcRenderer.invoke(IPC.ondaDaEdicao, edicao, efeitos) as Promise<IpcResult<OndaDaGravacao>>,
+    ipcRenderer.invoke(IPC.ondaDaEdicao, edicao, efeitos) as Promise<IpcResult<Record<string, OndaDaGravacao>>>,
   silenciosDaGravacao: (edicao, opcoes) =>
-    ipcRenderer.invoke(IPC.silenciosDaGravacao, edicao, opcoes) as Promise<IpcResult<{ de: number; ate: number }[]>>,
+    ipcRenderer.invoke(IPC.silenciosDaGravacao, edicao, opcoes) as Promise<IpcResult<{ de: number; ate: number; fonte: string }[]>>,
   concluirEdicao: (edicao) => ipcRenderer.invoke(IPC.concluirEdicao, edicao) as Promise<IpcResult<string>>,
   listarPlugins: () => ipcRenderer.invoke(IPC.listarPlugins) as Promise<IpcResult<PluginInstalado[]>>,
   descreverPlugin: (caminho, estado) =>

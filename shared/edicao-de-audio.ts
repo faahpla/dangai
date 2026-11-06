@@ -14,13 +14,35 @@ import { z } from 'zod'
  */
 
 /** Um pedaco da gravacao que fica, em segundos do arquivo BRUTO. */
+/** A gravacao principal; as correcoes tem o id delas. */
+export const FONTE_PRINCIPAL = 'principal'
+
+/** Um pedaco que fica, em segundos da gravacao DE ONDE ELE VEM (a principal ou uma correcao). */
 export const trechoDaGravacaoSchema = z.object({
   de: z.number().nonnegative(),
   ate: z.number().nonnegative(),
   /** Volume so deste pedaco (o "organizar o audio na track"). */
   ganhoDb: z.number().min(-40).max(24).default(0),
+  /** De qual gravacao: FONTE_PRINCIPAL ou o id de uma correcao. */
+  fonte: z.string().default(FONTE_PRINCIPAL),
 })
 export type TrechoDaGravacao = z.infer<typeof trechoDaGravacaoSchema>
+
+/** De qual gravacao o trecho vem. Sem fonte (projeto de antes das correcoes): a principal. */
+export const fonteDo = (x: { fonte?: string }): string => x.fonte ?? FONTE_PRINCIPAL
+
+/**
+ * UMA CORRECAO: um pedaco regravado depois, em outro arquivo. "Existem situacoes
+ * em que eu preciso regravar uma parte especifica, porque so identifiquei o
+ * problema na hora da edicao." Entra na mesma linha, no lugar do pedaco ruim.
+ */
+export const correcaoSchema = z.object({
+  id: z.string(),
+  caminho: z.string(),
+  nome: z.string(),
+  duracao: z.number().nonnegative(),
+})
+export type Correcao = z.infer<typeof correcaoSchema>
 
 export const bandaDeEqSchema = z.object({
   freqHz: z.number().min(20).max(20000),
@@ -78,6 +100,8 @@ export const edicaoDeAudioSchema = z.object({
   /** A gravacao crua, como ele soltou. Nunca e alterada. */
   bruto: z.string(),
   duracaoBruta: z.number().nonnegative(),
+  /** As regravacoes importadas. Projeto de antes delas abre sem nenhuma. */
+  correcoes: z.array(correcaoSchema).default([]),
   trechos: z.array(trechoDaGravacaoSchema),
   cadeia: cadeiaDeAudioSchema,
   /** Onde o "Pronto" gravou a narracao final (ao lado da gravacao). */
@@ -112,7 +136,25 @@ export const CADEIA_PADRAO: CadeiaDeAudio = {
 export const MENOR_TRECHO_SEC = 0.02
 
 export function novaEdicao(bruto: string, duracaoBruta: number, cadeia: CadeiaDeAudio = CADEIA_PADRAO): EdicaoDeAudio {
-  return { bruto, duracaoBruta, trechos: [{ de: 0, ate: duracaoBruta, ganhoDb: 0 }], cadeia, saida: null }
+  return {
+    bruto,
+    duracaoBruta,
+    correcoes: [],
+    trechos: [{ de: 0, ate: duracaoBruta, ganhoDb: 0, fonte: FONTE_PRINCIPAL }],
+    cadeia,
+    saida: null,
+  }
+}
+
+/** O arquivo de uma fonte: a gravacao principal ou a correcao com esse id. */
+export function caminhoDaFonte(edicao: Pick<EdicaoDeAudio, 'bruto' | 'correcoes'>, fonte: string): string | null {
+  if (fonte === FONTE_PRINCIPAL) return edicao.bruto
+  return edicao.correcoes.find((c) => c.id === fonte)?.caminho ?? null
+}
+
+/** Quanto dura cada fonte (para os silencios nas pontas). */
+export function duracoesDasFontes(edicao: Pick<EdicaoDeAudio, 'duracaoBruta' | 'correcoes'>): Record<string, number> {
+  return Object.fromEntries([[FONTE_PRINCIPAL, edicao.duracaoBruta], ...edicao.correcoes.map((c) => [c.id, c.duracao])])
 }
 
 export function duracaoEditada(trechos: readonly TrechoDaGravacao[]): number {
@@ -147,10 +189,14 @@ export function noBruto(
 }
 
 /** O segundo da gravacao `b` aparece em que instante editado (null = cortado). */
-export function noEditado(trechos: readonly TrechoDaGravacao[], b: number): number | null {
+export function noEditado(
+  trechos: readonly TrechoDaGravacao[],
+  b: number,
+  fonte: string = FONTE_PRINCIPAL,
+): number | null {
   let inicio = 0
   for (const x of trechos) {
-    if (b >= x.de && b <= x.ate) return inicio + (b - x.de)
+    if (fonteDo(x) === fonte && b >= x.de && b <= x.ate) return inicio + (b - x.de)
     inicio += x.ate - x.de
   }
   return null
@@ -193,6 +239,38 @@ export function apagarIntervalo(trechos: readonly TrechoDaGravacao[], a: number,
     if (fim < ib) resultado.push({ ...x, de: x.de + Math.max(0, fim - ia) })
   }
   return resultado.filter((x) => x.ate - x.de >= MENOR_TRECHO_SEC)
+}
+
+/**
+ * Poe `novos` no instante editado `t`: corta ali e encaixa entre as duas
+ * metades. O que vinha depois anda para a frente.
+ */
+export function inserirEm(
+  trechos: readonly TrechoDaGravacao[],
+  t: number,
+  novos: readonly TrechoDaGravacao[],
+): TrechoDaGravacao[] {
+  const cortados = cortarEm(trechos, t)
+  const inicios = iniciosEditados(cortados)
+  // O primeiro trecho que comeca no instante (ou depois): os novos entram antes dele.
+  let i = inicios.findIndex((ini) => ini >= t - MENOR_TRECHO_SEC / 2)
+  if (i < 0) i = cortados.length
+  return [...cortados.slice(0, i), ...novos, ...cortados.slice(i)]
+}
+
+/** O pedaco ruim [a, b) sai e a correcao entra no lugar -- um gesto so. */
+export function substituirIntervalo(
+  trechos: readonly TrechoDaGravacao[],
+  a: number,
+  b: number,
+  novos: readonly TrechoDaGravacao[],
+): TrechoDaGravacao[] {
+  return inserirEm(apagarIntervalo(trechos, a, b), Math.min(a, b), novos)
+}
+
+/** A correcao inteira, como trecho. */
+export function trechoDaCorrecao(c: Correcao): TrechoDaGravacao {
+  return { de: 0, ate: c.duracao, ganhoDb: 0, fonte: c.id }
 }
 
 export function apagarTrecho(trechos: readonly TrechoDaGravacao[], indice: number): TrechoDaGravacao[] {
@@ -252,23 +330,30 @@ export function silenciosDoSinal(
  */
 export function cortarSilencios(
   trechos: readonly TrechoDaGravacao[],
-  silencios: readonly { de: number; ate: number }[],
+  silencios: readonly { de: number; ate: number; fonte?: string }[],
   sobraSec: number = SILENCIOS_PADRAO.sobraSec,
-  duracaoBruta?: number,
+  /** A duracao da gravacao, ou de cada fonte (com correcoes). */
+  duracao?: number | Record<string, number>,
 ): { trechos: TrechoDaGravacao[]; cortados: number; segundos: number } {
   let resultado = [...trechos]
   let cortados = 0
   const antes = duracaoEditada(trechos)
   for (const s of silencios) {
+    const fonte = s.fonte ?? FONTE_PRINCIPAL
+    const fim = typeof duracao === 'number' ? duracao : duracao?.[fonte]
     const naPonta0 = s.de <= 0.001
-    const naPontaFim = duracaoBruta !== undefined && s.ate >= duracaoBruta - 0.001
+    const naPontaFim = fim !== undefined && s.ate >= fim - 0.001
     const de = naPonta0 ? s.de : s.de + sobraSec
     const ate = naPontaFim ? s.ate : s.ate - sobraSec
     if (ate - de < MENOR_TRECHO_SEC) continue
     const novo: TrechoDaGravacao[] = []
     let mexeu = false
     for (const x of resultado) {
-      // So o pedaco do silencio que cai dentro deste trecho sai.
+      // So o pedaco do silencio que cai dentro deste trecho -- e da mesma gravacao -- sai.
+      if (fonteDo(x) !== fonte) {
+        novo.push(x)
+        continue
+      }
       const a = Math.max(de, x.de)
       const b = Math.min(ate, x.ate)
       if (b - a < MENOR_TRECHO_SEC) {

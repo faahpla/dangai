@@ -10,6 +10,7 @@ import {
   apagarTrecho,
   cadeiaDeAudioSchema,
   CADEIA_PADRAO,
+  caminhoDaFonte,
   cortarEm,
   cortarSilencios,
   duracaoEditada,
@@ -18,10 +19,13 @@ import {
   ganhoDoTrecho,
   limiteDaIa,
   iniciosEditados,
+  inserirEm,
   noBruto,
   noEditado,
   novaEdicao,
   silenciosDoSinal,
+  substituirIntervalo,
+  trechoDaCorrecao,
   type TrechoDaGravacao,
 } from '../../shared/edicao-de-audio.ts'
 
@@ -79,6 +83,31 @@ console.log('silencios')
   const baixinha = sinal.map((x) => x - 25)
   conferir('gravacao baixinha: o limiar acompanha a fala', silenciosDoSinal(baixinha, 0.01).length, 1)
   conferir('ja cortado fica cortado', pares(cortarSilencios(apagarIntervalo([{ de: 0, ate: 4, ganhoDb: 0 }], 1, 1.8), s, 0.12, 4).trechos), [[0, 1], [1.8, 4]])
+}
+
+console.log('correcoes: a regravacao no lugar do pedaco ruim')
+{
+  const c = { id: 'correcao-1', caminho: 'C:/correcao.wav', nome: 'correcao.wav', duracao: 3 }
+  const base = novaEdicao('C:/gravacao.wav', 10).trechos
+  const fonte = (t: readonly { fonte?: string }[]): string[] => t.map((x) => x.fonte ?? '?')
+  const naAgulha = inserirEm(base, 4, [trechoDaCorrecao(c)])
+  conferir('na agulha: corta ali e encaixa a correcao no meio', pares(naAgulha), [[0, 4], [0, 3], [4, 10]])
+  conferir('de onde cada pedaco vem', fonte(naAgulha), ['principal', 'correcao-1', 'principal'])
+  conferir('o video cresce o tamanho da correcao', duracaoEditada(naAgulha), 13)
+  const trocado = substituirIntervalo(base, 4, 6, [trechoDaCorrecao(c)])
+  conferir('no lugar da selecao: sai de 4 a 6, entra a correcao', pares(trocado), [[0, 4], [0, 3], [6, 10]])
+  conferir('a selecao virou a correcao', fonte(trocado), ['principal', 'correcao-1', 'principal'])
+  conferir('no comeco', fonte(inserirEm(base, 0, [trechoDaCorrecao(c)])), ['correcao-1', 'principal'])
+  conferir('no fim', fonte(inserirEm(base, 10, [trechoDaCorrecao(c)])), ['principal', 'correcao-1'])
+  // A correcao e um trecho como os outros: cortar dentro dela vale.
+  conferir('cortar dentro da correcao', pares(cortarEm(trocado, 5.5)), [[0, 4], [0, 1.5], [1.5, 3], [6, 10]])
+  conferir('o 1 da correcao esta no 5 editado', noEditado(trocado, 1, 'correcao-1'), 5)
+  // Silencio de uma gravacao nao corta a outra no mesmo segundo.
+  const silencio = cortarSilencios(trocado, [{ de: 1, ate: 2, fonte: 'correcao-1' }], 0.1, { principal: 10, 'correcao-1': 3 })
+  conferir('o silencio da correcao so corta a correcao', pares(silencio.trechos), [[0, 4], [0, 1.1], [1.9, 3], [6, 10]])
+  conferir('caminho de cada fonte', [caminhoDaFonte({ bruto: 'C:/g.wav', correcoes: [c] }, 'principal'), caminhoDaFonte({ bruto: 'C:/g.wav', correcoes: [c] }, 'correcao-1')], ['C:/g.wav', 'C:/correcao.wav'])
+  const antigo = edicaoDeAudioSchema.parse({ bruto: 'x.wav', duracaoBruta: 3, trechos: [{ de: 0, ate: 3, ganhoDb: 0 }], cadeia: CADEIA_PADRAO })
+  conferir('projeto de antes das correcoes: tudo da principal, nenhuma correcao', [antigo.trechos[0]!.fonte, antigo.correcoes.length], ['principal', 0])
 }
 
 console.log('os efeitos viram filtros do ffmpeg, na ordem dele')

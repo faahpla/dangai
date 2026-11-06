@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRight,
   AudioWaveform,
+  FileAudio,
   Loader2,
   Minus,
   Pause,
@@ -13,17 +14,24 @@ import {
   Trash2,
   Wand2,
 } from 'lucide-react'
-import type { AudioEditado, OndaDaGravacao, PluginInstalado } from '@shared/channels'
+import { classifyFile, type AudioEditado, type OndaDaGravacao, type PluginInstalado } from '@shared/channels'
 import {
   apagarIntervalo,
   apagarTrecho,
   cortarEm,
   cortarSilencios,
   duracaoEditada,
+  duracoesDasFontes,
+  FONTE_PRINCIPAL,
+  fonteDo,
   ganhoDoTrecho,
   iniciosEditados,
+  inserirEm,
   SILENCIOS_PADRAO,
+  substituirIntervalo,
+  trechoDaCorrecao,
   type CadeiaDeAudio,
+  type Correcao,
   type EdicaoDeAudio,
   type OpcoesDosSilencios,
 } from '@shared/edicao-de-audio'
@@ -70,7 +78,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   const busy = useProject((s) => s.busy)
 
   const [comEfeitos, setComEfeitos] = useState(true)
-  const [onda, setOnda] = useState<OndaDaGravacao | null>(null)
+  const [ondas, setOndas] = useState<Record<string, OndaDaGravacao> | null>(null)
   const [som, setSom] = useState<AudioEditado | null>(null)
   const [andamento, setAndamento] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -91,13 +99,13 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
    * A ONDA so muda com os efeitos (ou com a escuta), nao com os cortes: ela e
    * da gravacao inteira, e a tela corta pelos trechos.
    */
-  const receitaDaOnda = JSON.stringify([edicao.bruto, comEfeitos ? edicao.cadeia : null])
+  const receitaDaOnda = JSON.stringify([edicao.bruto, edicao.correcoes.map((c) => c.caminho), comEfeitos ? edicao.cadeia : null])
   useEffect(() => {
     let vivo = true
     const t = setTimeout(() => {
       void window.dangai.ondaDaEdicao(edicao, comEfeitos).then((r) => {
         if (!vivo) return
-        if (r.ok) setOnda(r.value)
+        if (r.ok) setOndas(r.value)
         else setErro(r.error)
       })
     }, 350)
@@ -109,7 +117,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   }, [receitaDaOnda])
 
   // O SOM muda com tudo: os cortes e os efeitos. Pedido depois que ele para de mexer.
-  const receitaDoSom = JSON.stringify([edicao.bruto, edicao.trechos, comEfeitos ? edicao.cadeia : null])
+  const receitaDoSom = JSON.stringify([edicao.bruto, edicao.correcoes.map((c) => c.caminho), edicao.trechos, comEfeitos ? edicao.cadeia : null])
   useEffect(() => {
     let vivo = true
     const t = setTimeout(() => {
@@ -246,8 +254,62 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
 
   const [silencios, setSilencios] = useState(false)
 
+  /*
+   * A CORRECAO ENTRA: com um pedaco selecionado, no lugar dele; sem, na agulha.
+   * Depois e cortar o que sobrou dela, do mesmo jeito do resto.
+   */
+  const importarCorrecoes = useCallback(
+    async (caminhos: readonly string[]): Promise<void> => {
+      const audios = caminhos.filter((c) => classifyFile(c) === 'audio')
+      if (audios.length === 0) return
+      setErro(null)
+      const novas: Correcao[] = []
+      for (const [i, caminho] of audios.entries()) {
+        const r = await window.dangai.analyzeAudio(caminho)
+        if (!r.ok) {
+          setErro(r.error)
+          return
+        }
+        novas.push({ id: `correcao-${Date.now()}-${i}`, caminho, nome: r.value.fileName, duracao: r.value.durationSec })
+      }
+      const blocos = novas.map(trechoDaCorrecao)
+      const sel = selecao && Math.abs(selecao.b - selecao.a) > 0.01 ? selecao : null
+      mudar((e) => ({
+        ...e,
+        correcoes: [...e.correcoes, ...novas],
+        trechos: sel ? substituirIntervalo(e.trechos, sel.a, sel.b, blocos) : inserirEm(e.trechos, agulha, blocos),
+      }))
+      if (sel) irPara(Math.min(sel.a, sel.b))
+      setSelecao(null)
+      setEscolhido(null)
+      avisar(
+        sel
+          ? 'A correção entrou no lugar da seleção (em azul). Corte o que sobrar dela com C e Delete.'
+          : 'A correção entrou na agulha (em azul). Apague o pedaço ruim e corte o que sobrar dela.',
+        8000,
+      )
+    },
+    [selecao, agulha, mudar, irPara],
+  )
+
+  const escolherCorrecao = async (): Promise<void> => {
+    const r = await window.dangai.pickFiles()
+    if (r.ok && r.value.length > 0) await importarCorrecoes(r.value)
+  }
+
   return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-bg">
+    <div
+      className="fixed inset-0 z-40 flex flex-col bg-bg"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        // Audio solto aqui e CORRECAO, nao uma gravacao nova: a etapa trata e nao deixa subir.
+        const caminhos = Array.from(e.dataTransfer.files).map((f) => window.dangai.pathForFile(f))
+        if (!caminhos.some((c) => classifyFile(c) === 'audio')) return
+        e.preventDefault()
+        e.stopPropagation()
+        void importarCorrecoes(caminhos)
+      }}
+    >
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-6 py-3">
         <AudioWaveform size={16} strokeWidth={1.5} className="text-accent" />
         <h1 className="text-[15px] font-semibold text-ink">Áudio</h1>
@@ -312,6 +374,12 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
             <Botaozinho active={silencios} onClick={() => setSilencios((v) => !v)} title="Encolher todas as pausas longas de uma vez">
               <Wand2 size={12} strokeWidth={1.5} /> Cortar silêncios
             </Botaozinho>
+            <Botaozinho
+              onClick={() => void escolherCorrecao()}
+              title="Um pedaço regravado: entra no lugar da seleção, ou na agulha. Também dá para soltar o arquivo aqui"
+            >
+              <FileAudio size={12} strokeWidth={1.5} /> Importar correção
+            </Botaozinho>
             <span className="mx-1 h-5 w-px bg-line" />
             <div className="flex rounded-sm border border-line bg-elevated p-0.5">
               {([true, false] as const).map((v) => (
@@ -364,8 +432,9 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
 
           <LinhaDoTempo
             edicao={edicao}
-            onda={onda}
+            ondas={ondas}
             agulha={agulha}
+            tocando={tocando}
             zoom={zoom}
             selecao={selecao}
             escolhido={escolhido}
@@ -384,9 +453,11 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
                 {andamento}
               </>
             ) : (
-              'Clique para levar a agulha · arraste para selecionar · C corta · Delete apaga o trecho escolhido ou a seleção · Ctrl+Z desfaz'
+              'Régua: arraste a agulha · clique leva a agulha · arraste para selecionar · C corta · Delete apaga · Ctrl ou Alt + roda: zoom · botão do meio: navegar · Ctrl+Z desfaz'
             )}
           </p>
+
+          <Correcoes edicao={edicao} agulha={agulha} selecao={selecao} aoUsar={() => setSelecao(null)} />
         </main>
 
         <aside className="flex w-[380px] shrink-0 flex-col gap-2.5 overflow-y-auto border-l border-line p-4">
@@ -399,10 +470,14 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
 
 // ------------------------------------------------------------- linha do tempo
 
+/** A altura da regua: arrastar aqui leva a agulha, como na regua do editor. */
+const REGUA = 22
+
 function LinhaDoTempo({
   edicao,
-  onda,
+  ondas,
   agulha,
+  tocando,
   zoom,
   selecao,
   escolhido,
@@ -412,8 +487,9 @@ function LinhaDoTempo({
   onZoom,
 }: {
   edicao: EdicaoDeAudio
-  onda: OndaDaGravacao | null
+  ondas: Record<string, OndaDaGravacao> | null
   agulha: number
+  tocando: boolean
   zoom: number
   selecao: { a: number; b: number } | null
   escolhido: number | null
@@ -441,32 +517,84 @@ function LinhaDoTempo({
   }, [])
 
   /*
-   * A onda EDITADA: os picos da gravacao inteira, recortados pelos trechos e
-   * no volume de cada um. Cortar so refaz este recorte -- nada de motor.
+   * O ZOOM PARA ONDE O MOUSE ESTA. Ctrl ou Alt + roda, como na linha do tempo
+   * do editor ("quero que o Alt tambem funcione"): o instante debaixo do mouse
+   * fica debaixo dele. Pelos botoes, o meio da vista fica no meio.
    */
-  const picos = useMemo(() => {
-    if (!onda) return null
-    const total = Math.ceil(duracaoEditada(edicao.trechos) * POR_SEGUNDO)
-    const p = new Float32Array(total)
-    let o = 0
-    for (const t of edicao.trechos) {
-      const g = 10 ** (t.ganhoDb / 20)
-      const a = Math.round(t.de * POR_SEGUNDO)
-      const b = Math.round(t.ate * POR_SEGUNDO)
-      for (let i = a; i < b && o < total; i++) p[o++] = Math.min(1, (onda.peaks[i] ?? 0) * g)
-    }
-    return p
-  }, [onda, edicao.trechos])
+  const ancora = useRef<{ t: number; x: number } | null>(null)
+  const pxAntes = useRef(pxPorSeg)
+  useLayoutEffect(() => {
+    const el = rolagem.current
+    const antes = pxAntes.current
+    pxAntes.current = pxPorSeg
+    if (!el || pxPorSeg <= 0 || antes === pxPorSeg) return
+    const a = ancora.current ?? { t: (el.scrollLeft + el.clientWidth / 2) / Math.max(antes, 1e-6), x: el.clientWidth / 2 }
+    ancora.current = null
+    el.scrollLeft = Math.max(0, a.t * pxPorSeg - a.x)
+  }, [pxPorSeg])
 
-  const inicios = useMemo(() => iniciosEditados(edicao.trechos), [edicao.trechos])
-
-  // A agulha fica na vista enquanto toca.
+  // A roda: Ctrl/Alt da zoom; sozinha, anda para os lados quando ha zoom.
+  // Ouvida direto no elemento: a do React nao deixa cancelar o zoom da pagina.
+  const estado = useRef({ zoom, pxPorSeg, onZoom })
+  estado.current = { zoom, pxPorSeg, onZoom }
   useEffect(() => {
     const el = rolagem.current
-    if (!el || zoom === 1) return
+    if (!el) return
+    const aoRolar = (e: WheelEvent): void => {
+      const { zoom: z, pxPorSeg: px, onZoom: mudarZoom } = estado.current
+      const delta = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
+      if (e.ctrlKey || e.altKey) {
+        e.preventDefault()
+        const r = el.getBoundingClientRect()
+        const x = e.clientX - r.left
+        ancora.current = { t: (el.scrollLeft + x) / Math.max(px, 1e-6), x }
+        mudarZoom(Math.min(60, Math.max(1, z * Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.002))))
+        return
+      }
+      if (z > 1 && Math.abs(delta) > Math.abs(e.deltaX)) {
+        e.preventDefault()
+        el.scrollLeft += delta
+      }
+    }
+    el.addEventListener('wheel', aoRolar, { passive: false })
+    return () => el.removeEventListener('wheel', aoRolar)
+  }, [])
+
+  /*
+   * A onda EDITADA: os picos de cada gravacao inteira, recortados pelos trechos
+   * e no volume de cada um. Cortar so refaz este recorte -- nada de motor. A
+   * outra lista diz, pico a pico, se ele e de uma correcao (outra cor).
+   */
+  const { picos, daCorrecao } = useMemo(() => {
+    if (!ondas) return { picos: null, daCorrecao: null }
+    const n = Math.ceil(duracaoEditada(edicao.trechos) * POR_SEGUNDO)
+    const p = new Float32Array(n)
+    const c = new Uint8Array(n)
+    let o = 0
+    for (const t of edicao.trechos) {
+      const onda = ondas[fonteDo(t)]
+      const g = 10 ** (t.ganhoDb / 20)
+      const correcao = fonteDo(t) !== FONTE_PRINCIPAL ? 1 : 0
+      const a = Math.round(t.de * POR_SEGUNDO)
+      const b = Math.round(t.ate * POR_SEGUNDO)
+      for (let i = a; i < b && o < n; i++) {
+        c[o] = correcao
+        p[o++] = Math.min(1, (onda?.peaks[i] ?? 0) * g)
+      }
+    }
+    return { picos: p, daCorrecao: c }
+  }, [ondas, edicao.trechos])
+
+  const inicios = useMemo(() => iniciosEditados(edicao.trechos), [edicao.trechos])
+  const nomes = useMemo(() => new Map(edicao.correcoes.map((c) => [c.id, c.nome])), [edicao.correcoes])
+
+  // A agulha fica na vista enquanto TOCA (arrastando, quem manda e ele).
+  useEffect(() => {
+    const el = rolagem.current
+    if (!el || zoom === 1 || !tocando) return
     const x = agulha * pxPorSeg
     if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 20) el.scrollLeft = Math.max(0, x - el.clientWidth * 0.2)
-  }, [agulha, pxPorSeg, zoom])
+  }, [agulha, pxPorSeg, zoom, tocando])
 
   // O desenho: so a parte visivel, de novo a cada mudanca.
   useEffect(() => {
@@ -481,55 +609,87 @@ function LinhaDoTempo({
     g.clearRect(0, 0, largura, altura)
     const tDe = (x: number): number => (rolado + x) / pxPorSeg
     const xDe = (t: number): number => t * pxPorSeg - rolado
-    const meio = altura / 2 + 8
+    const meio = REGUA + (altura - REGUA) / 2
 
-    // O trecho escolhido, por baixo de tudo.
+    // A regua, com fundo proprio: e onde se pega a agulha.
+    g.fillStyle = 'rgba(255, 255, 255, 0.035)'
+    g.fillRect(0, 0, largura, REGUA)
+
+    // As correcoes, por baixo de tudo: um fundo da cor delas e o nome.
+    for (const [k, t] of edicao.trechos.entries()) {
+      if (fonteDo(t) === FONTE_PRINCIPAL) continue
+      const a = xDe(inicios[k]!)
+      const b = xDe(inicios[k]! + t.ate - t.de)
+      if (b < 0 || a > largura) continue
+      g.fillStyle = 'rgba(120, 170, 255, 0.10)'
+      g.fillRect(a, REGUA, b - a, altura - REGUA)
+      if (b - a > 70) {
+        g.fillStyle = 'rgba(150, 190, 255, 0.85)'
+        g.font = '10px Inter, system-ui, sans-serif'
+        g.fillText(`Correção · ${nomes.get(fonteDo(t)) ?? ''}`.slice(0, Math.floor((b - a) / 6)), Math.max(a, 0) + 4, REGUA + 12)
+      }
+    }
+    // O trecho escolhido.
     if (escolhido !== null && edicao.trechos[escolhido]) {
       const a = xDe(inicios[escolhido]!)
       const b = xDe(inicios[escolhido]! + edicao.trechos[escolhido]!.ate - edicao.trechos[escolhido]!.de)
       g.fillStyle = 'rgba(255, 62, 128, 0.10)'
-      g.fillRect(a, 18, b - a, altura - 18)
+      g.fillRect(a, REGUA, b - a, altura - REGUA)
     }
     if (selecao) {
       const a = xDe(Math.min(selecao.a, selecao.b))
       const b = xDe(Math.max(selecao.a, selecao.b))
       g.fillStyle = 'rgba(255, 255, 255, 0.10)'
-      g.fillRect(a, 18, b - a, altura - 18)
+      g.fillRect(a, REGUA, b - a, altura - REGUA)
     }
 
-    // A regua: uma marca por 1, 5, 10 ou 30 s, conforme cabe.
+    // As marcas da regua: uma por 0,5 a 60 s, conforme cabe.
     const passo = [0.5, 1, 2, 5, 10, 15, 30, 60].find((s) => s * pxPorSeg >= 60) ?? 60
     g.fillStyle = 'rgba(255,255,255,0.35)'
     g.font = '10px Inter, system-ui, sans-serif'
     for (let t = Math.floor(tDe(0) / passo) * passo; t <= tDe(largura); t += passo) {
       const x = Math.round(xDe(t)) + 0.5
-      g.fillRect(x, 0, 1, 6)
+      g.fillRect(x, REGUA - 6, 1, 6)
       g.fillText(relogio(t).replace(/\.\d$/, ''), x + 3, 12)
     }
 
-    // A onda.
-    if (picos) {
-      g.fillStyle = 'rgba(255, 255, 255, 0.55)'
-      const alto = (altura - 24) / 2
-      for (let x = 0; x < largura; x++) {
-        const i0 = Math.floor(tDe(x) * POR_SEGUNDO)
-        const i1 = Math.max(i0 + 1, Math.floor(tDe(x + 1) * POR_SEGUNDO))
-        let m = 0
-        for (let i = i0; i < i1 && i < picos.length; i++) if (picos[i]! > m) m = picos[i]!
-        if (m <= 0) continue
-        const h = Math.max(1, m * alto)
-        g.fillRect(x, meio - h, 1, h * 2)
+    // A onda: a da gravacao principal em branco, a das correcoes em azul.
+    if (picos && daCorrecao) {
+      const alto = (altura - REGUA - 8) / 2
+      for (const [cor, qual] of [['rgba(255, 255, 255, 0.55)', 0], ['rgba(140, 185, 255, 0.85)', 1]] as const) {
+        g.fillStyle = cor
+        for (let x = 0; x < largura; x++) {
+          const i0 = Math.floor(tDe(x) * POR_SEGUNDO)
+          const i1 = Math.max(i0 + 1, Math.floor(tDe(x + 1) * POR_SEGUNDO))
+          let m = 0
+          let doQual = false
+          for (let i = i0; i < i1 && i < picos.length; i++) {
+            if (daCorrecao[i] !== qual) continue
+            doQual = true
+            if (picos[i]! > m) m = picos[i]!
+          }
+          if (!doQual || m <= 0) continue
+          const h = Math.max(1, m * alto)
+          g.fillRect(x, meio - h, 1, h * 2)
+        }
       }
     }
 
     // Os cortes: onde um trecho encosta no outro.
     g.fillStyle = 'rgba(255, 62, 128, 0.9)'
-    for (const t of inicios.slice(1)) g.fillRect(Math.round(xDe(t)) - 0.5, 18, 2, altura - 18)
+    for (const t of inicios.slice(1)) g.fillRect(Math.round(xDe(t)) - 0.5, REGUA, 2, altura - REGUA)
 
-    // A agulha.
+    // A agulha, com a cabeca na regua.
+    const xa = Math.round(xDe(agulha))
     g.fillStyle = '#fff'
-    g.fillRect(Math.round(xDe(agulha)), 0, 1.5, altura)
-  }, [picos, largura, rolado, pxPorSeg, agulha, selecao, escolhido, inicios, edicao.trechos])
+    g.fillRect(xa, 0, 1.5, altura)
+    g.beginPath()
+    g.moveTo(xa - 5, 0)
+    g.lineTo(xa + 6.5, 0)
+    g.lineTo(xa + 0.75, 8)
+    g.closePath()
+    g.fill()
+  }, [picos, daCorrecao, largura, rolado, pxPorSeg, agulha, selecao, escolhido, inicios, edicao.trechos, nomes])
 
   const tempoNo = (clientX: number): number => {
     const r = rolagem.current!.getBoundingClientRect()
@@ -537,8 +697,8 @@ function LinhaDoTempo({
   }
 
   return (
-    <div className="relative h-[220px] shrink-0 overflow-hidden rounded-md border border-line bg-surface">
-      {!onda && (
+    <div className="relative h-[240px] shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+      {!ondas && (
         <div className="absolute inset-0 z-10 grid place-items-center text-[12px] text-ink-3">Lendo a gravação...</div>
       )}
       <canvas ref={tela} className="pointer-events-none absolute inset-0 h-full w-full" />
@@ -546,13 +706,47 @@ function LinhaDoTempo({
         ref={rolagem}
         className="absolute inset-0 cursor-text overflow-x-auto overflow-y-hidden"
         onScroll={(e) => setRolado(e.currentTarget.scrollLeft)}
-        onWheel={(e) => {
-          if (!e.ctrlKey) return
-          e.preventDefault()
-          onZoom(Math.min(60, Math.max(1, zoom * Math.exp(-e.deltaY * 0.002))))
+        // O botao do meio arrasta a vista; sem isto o Windows liga o "rolar automatico".
+        onMouseDown={(e) => {
+          if (e.button === 1) e.preventDefault()
         }}
         onPointerDown={(e) => {
+          const el = rolagem.current!
+          /*
+           * BOTAO DO MEIO: arrastar navega, como na linha do tempo do editor --
+           * "quando eu pressionar o scroll do mouse quero poder arrastar e
+           * navegar nele quando tiver com zoom".
+           */
+          if (e.button === 1) {
+            e.preventDefault()
+            const x0 = e.clientX
+            const s0 = el.scrollLeft
+            el.style.cursor = 'grabbing'
+            const mover = (ev: PointerEvent): void => {
+              el.scrollLeft = s0 - (ev.clientX - x0)
+            }
+            const soltar = (): void => {
+              el.style.cursor = ''
+              window.removeEventListener('pointermove', mover)
+              window.removeEventListener('pointerup', soltar)
+            }
+            window.addEventListener('pointermove', mover)
+            window.addEventListener('pointerup', soltar)
+            return
+          }
           if (e.button !== 0) return
+          // NA REGUA: pega a agulha e arrasta -- "uma agulha de timeline pra navegar".
+          if (e.clientY - el.getBoundingClientRect().top < REGUA) {
+            onAgulha(tempoNo(e.clientX))
+            const mover = (ev: PointerEvent): void => onAgulha(tempoNo(ev.clientX))
+            const soltar = (): void => {
+              window.removeEventListener('pointermove', mover)
+              window.removeEventListener('pointerup', soltar)
+            }
+            window.addEventListener('pointermove', mover)
+            window.addEventListener('pointerup', soltar)
+            return
+          }
           const t0 = tempoNo(e.clientX)
           const x0 = e.clientX
           let arrastou = false
@@ -586,6 +780,77 @@ function LinhaDoTempo({
   )
 }
 
+// ------------------------------------------------------------- correcoes
+
+/**
+ * AS CORRECOES importadas: cada uma pode entrar de novo (na agulha ou no lugar
+ * da selecao) e sair -- tirar a correcao tira os pedacos dela da linha.
+ */
+function Correcoes({
+  edicao,
+  agulha,
+  selecao,
+  aoUsar,
+}: {
+  edicao: EdicaoDeAudio
+  agulha: number
+  selecao: { a: number; b: number } | null
+  aoUsar: () => void
+}) {
+  const mudar = useProject((s) => s.mudarEdicaoDeAudio)
+  if (edicao.correcoes.length === 0) return null
+  const temSelecao = selecao !== null && Math.abs(selecao.b - selecao.a) > 0.01
+  return (
+    <section className="flex flex-col gap-1.5 rounded-md border border-line bg-surface p-3">
+      <h3 className="text-[10px] font-medium uppercase tracking-wide text-ink-3">Correções</h3>
+      {edicao.correcoes.map((c) => {
+        const pedacos = edicao.trechos.filter((t) => fonteDo(t) === c.id).length
+        return (
+          <div key={c.id} className="flex items-center gap-2 text-[12px]">
+            <FileAudio size={13} strokeWidth={1.5} className="shrink-0 text-[rgb(140,185,255)]" />
+            <span className="min-w-0 flex-1 truncate text-ink-2" title={c.caminho}>
+              {c.nome}
+            </span>
+            <span className="tnum shrink-0 text-[11px] text-ink-3">
+              {relogio(c.duracao)} · {pedacos === 0 ? 'fora da linha' : `${pedacos} ${pedacos === 1 ? 'pedaço' : 'pedaços'}`}
+            </span>
+            <Botaozinho
+              onClick={() => {
+                mudar((e) => ({ ...e, trechos: inserirEm(e.trechos, agulha, [trechoDaCorrecao(c)]) }))
+                aoUsar()
+              }}
+              title="Põe a correção inteira na agulha"
+            >
+              Na agulha
+            </Botaozinho>
+            <Botaozinho
+              disabled={!temSelecao}
+              onClick={() => {
+                if (!selecao) return
+                mudar((e) => ({ ...e, trechos: substituirIntervalo(e.trechos, selecao.a, selecao.b, [trechoDaCorrecao(c)]) }))
+                aoUsar()
+              }}
+              title="Tira o pedaço selecionado e põe a correção no lugar"
+            >
+              No lugar da seleção
+            </Botaozinho>
+            <button
+              type="button"
+              onClick={() =>
+                mudar((e) => ({ ...e, correcoes: e.correcoes.filter((x) => x.id !== c.id), trechos: e.trechos.filter((t) => fonteDo(t) !== c.id) }))
+              }
+              title="Tirar a correção (e os pedaços dela da linha)"
+              className="grid size-6 place-items-center rounded-sm text-ink-3 hover:text-danger"
+            >
+              <Trash2 size={12} strokeWidth={1.5} />
+            </button>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
 // ------------------------------------------------------------- silencios
 
 function CortarSilencios({ edicao, aoCortar }: { edicao: EdicaoDeAudio; aoCortar: (n: number, segundos: number) => void }) {
@@ -603,7 +868,7 @@ function CortarSilencios({ edicao, aoCortar }: { edicao: EdicaoDeAudio; aoCortar
       setErro(r.error)
       return
     }
-    const feito = cortarSilencios(edicao.trechos, r.value, op.sobraSec, edicao.duracaoBruta)
+    const feito = cortarSilencios(edicao.trechos, r.value, op.sobraSec, duracoesDasFontes(edicao))
     if (feito.cortados > 0) mudar((e) => ({ ...e, trechos: feito.trechos }))
     aoCortar(feito.cortados, feito.segundos)
   }

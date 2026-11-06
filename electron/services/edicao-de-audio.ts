@@ -18,6 +18,8 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import {
   filtrosDaCadeia,
+  FONTE_PRINCIPAL,
+  fonteDo,
   limiteDaIa,
   silenciosDoSinal,
   type EdicaoDeAudio,
@@ -252,14 +254,16 @@ async function limpa(baseWav: string, quantidade: number, onProgress: (m: string
 // ------------------------------------------------------------- os cortes
 
 /**
- * Os trechos que ficam, emendados. Cada um com o volume dele; nas emendas, 4 ms
- * descendo e 4 subindo -- um corte seco no meio de uma onda estala.
+ * Os trechos que ficam, emendados -- cada um da gravacao dele (a principal ou
+ * uma correcao), com o volume dele. Nas emendas, 4 ms descendo e 4 subindo: um
+ * corte seco no meio de uma onda estala.
  */
-export function montarCortes(x: Float32Array, trechos: readonly TrechoDaGravacao[]): Float32Array {
+export function montarCortes(fontes: Readonly<Record<string, Float32Array>>, trechos: readonly TrechoDaGravacao[]): Float32Array {
   const pedacos = trechos.map((t) => {
+    const x = fontes[fonteDo(t)] ?? new Float32Array(0)
     const a = Math.max(0, Math.min(x.length, Math.round(t.de * TAXA)))
     const b = Math.max(a, Math.min(x.length, Math.round(t.ate * TAXA)))
-    return { a, b, ganho: 10 ** (t.ganhoDb / 20) }
+    return { x, a, b, ganho: 10 ** (t.ganhoDb / 20) }
   })
   const total = pedacos.reduce((s, p) => s + (p.b - p.a), 0)
   const saida = new Float32Array(total)
@@ -273,7 +277,7 @@ export function montarCortes(x: Float32Array, trechos: readonly TrechoDaGravacao
       let g = p.ganho
       if (i < subir) g *= i / subir
       if (i >= n - descer) g *= (n - 1 - i) / descer
-      saida[o + i] = x[p.a + i]! * g
+      saida[o + i] = p.x[p.a + i]! * g
     }
     o += n
   }
@@ -320,10 +324,22 @@ export interface OndaDaGravacao {
   durationSec: number
 }
 
-/** A fonte dos cortes: a gravacao limpa pela IA, ou a crua. */
-async function fonte(edicao: EdicaoDeAudio, comIa: boolean, onProgress: (m: string) => void): Promise<string> {
+/**
+ * As gravacoes desta edicao: a principal e as correcoes, pelo id. Uma que saiu
+ * do disco para tudo com o nome dela -- tocar sem ela seria um buraco mudo.
+ */
+function fontesDa(edicao: EdicaoDeAudio): [string, string][] {
+  const todas: [string, string][] = [[FONTE_PRINCIPAL, edicao.bruto], ...edicao.correcoes.map((c): [string, string] => [c.id, c.caminho])]
+  for (const [, caminho] of todas) {
+    if (!existsSync(caminho)) throw new Error(`A gravação não está mais no disco: ${basename(caminho)}`)
+  }
+  return todas
+}
+
+/** O arquivo de onde os cortes saem: a gravacao limpa pela IA, ou a crua. */
+async function fonte(caminho: string, edicao: EdicaoDeAudio, comIa: boolean, onProgress: (m: string) => void): Promise<string> {
   onProgress('Lendo a gravação...')
-  const b = await base(edicao.bruto)
+  const b = await base(caminho)
   const { isolarVoz } = edicao.cadeia
   return comIa && isolarVoz.ligado && isolarVoz.quantidade > 0 ? limpa(b, isolarVoz.quantidade, onProgress) : b
 }
@@ -334,10 +350,11 @@ const processando = new Map<string, Promise<string>>()
  * A GRAVACAO INTEIRA com os efeitos do meio (nivelar, EQ, compressor) e os
  * plugins -- ANTES dos cortes. Cortar depois faz o corte ser instantaneo: so
  * mexer num efeito refaz isto. Comprimir antes ou depois de tirar uma pausa
- * muda so os milissegundos em volta da emenda.
+ * muda so os milissegundos em volta da emenda. Cada correcao passa pela mesma
+ * cadeia, separada: a voz regravada sai com o mesmo som da principal.
  */
-async function processado(edicao: EdicaoDeAudio, onProgress: (m: string) => void): Promise<string> {
-  const f = await fonte(edicao, true, onProgress)
+async function processado(caminho: string, edicao: EdicaoDeAudio, onProgress: (m: string) => void): Promise<string> {
+  const f = await fonte(caminho, edicao, true, onProgress)
   const filtros = filtrosDaCadeia(edicao.cadeia)
   const plugins = edicao.cadeia.plugins.filter((p) => p.ligado)
   if (!filtros && plugins.length === 0) return f
@@ -373,28 +390,42 @@ async function processado(edicao: EdicaoDeAudio, onProgress: (m: string) => void
   return p
 }
 
-/** O que se ouve: com os efeitos, a gravacao processada; sem, a crua. */
-function fonteDaEscuta(edicao: EdicaoDeAudio, efeitos: boolean, onProgress: (m: string) => void): Promise<string> {
-  return efeitos ? processado(edicao, onProgress) : fonte(edicao, false, onProgress)
+/** O que se ouve de cada gravacao: com os efeitos, a processada; sem, a crua. */
+async function fontesDaEscuta(
+  edicao: EdicaoDeAudio,
+  efeitos: boolean,
+  onProgress: (m: string) => void,
+): Promise<[string, string][]> {
+  const saida: [string, string][] = []
+  // Uma de cada vez: duas IAs ou dois Fresh Air juntos so disputariam o processador.
+  for (const [id, caminho] of fontesDa(edicao)) {
+    saida.push([id, efeitos ? await processado(caminho, edicao, onProgress) : await fonte(caminho, edicao, false, onProgress)])
+  }
+  return saida
 }
 
 /**
- * A onda da gravacao INTEIRA (com ou sem os efeitos), 100 picos por segundo.
- * A tela corta ela pelos trechos: cortar nao pede onda nova.
+ * A onda de cada gravacao INTEIRA (com ou sem os efeitos), 100 picos por
+ * segundo, pelo id. A tela corta pelos trechos: cortar nao pede onda nova.
  */
 export async function ondaDaEdicao(
   edicao: EdicaoDeAudio,
   efeitos: boolean,
   onProgress: (m: string) => void,
-): Promise<OndaDaGravacao> {
-  if (!existsSync(edicao.bruto)) throw new Error(`A gravação não está mais no disco: ${basename(edicao.bruto)}`)
-  const f = await fonteDaEscuta(edicao, efeitos, onProgress)
-  const ficha = `${f}.onda.json`
-  if (existsSync(ficha)) return JSON.parse(readFileSync(ficha, 'utf8')) as OndaDaGravacao
-  const x = await lerMonoComCache(f)
-  const onda = { ...ondaDe(x), durationSec: x.length / TAXA }
-  writeFileSync(ficha, JSON.stringify(onda))
-  return onda
+): Promise<Record<string, OndaDaGravacao>> {
+  const ondas: Record<string, OndaDaGravacao> = {}
+  for (const [id, f] of await fontesDaEscuta(edicao, efeitos, onProgress)) {
+    const ficha = `${f}.onda.json`
+    if (existsSync(ficha)) {
+      ondas[id] = JSON.parse(readFileSync(ficha, 'utf8')) as OndaDaGravacao
+      continue
+    }
+    const x = await lerMonoComCache(f)
+    const onda = { ...ondaDe(x), durationSec: x.length / TAXA }
+    writeFileSync(ficha, JSON.stringify(onda))
+    ondas[id] = onda
+  }
+  return ondas
 }
 
 function lufsDe(x: Float32Array): number | null {
@@ -406,19 +437,18 @@ function lufsDe(x: Float32Array): number | null {
 const rendendo = new Map<string, Promise<AudioEditado>>()
 
 /**
- * O audio da edicao para ouvir e para o "Pronto": a fonte da escuta cortada
- * pelos trechos e, com os efeitos, normalizada. Mesma receita, mesmo arquivo:
- * desfazer um corte acha o audio de antes pronto.
+ * O audio da edicao para ouvir e para o "Pronto": os trechos de cada gravacao
+ * emendados e, com os efeitos, normalizados JUNTOS (a correcao sai no volume do
+ * resto). Mesma receita, mesmo arquivo: desfazer um corte acha o audio pronto.
  */
 export async function renderizarEdicao(
   edicao: EdicaoDeAudio,
   efeitos: boolean,
   onProgress: (m: string) => void,
 ): Promise<AudioEditado> {
-  if (!existsSync(edicao.bruto)) throw new Error(`A gravação não está mais no disco: ${basename(edicao.bruto)}`)
-  const f = await fonteDaEscuta(edicao, efeitos, onProgress)
+  const escutas = await fontesDaEscuta(edicao, efeitos, onProgress)
   const normalizar = efeitos && edicao.cadeia.normalizar.ligado ? edicao.cadeia.normalizar.alvoLufs : null
-  const chave = hash({ v: VERSAO, f: basename(f), t: edicao.trechos, n: normalizar })
+  const chave = hash({ v: VERSAO, f: escutas.map(([id, f]) => [id, basename(f)]), t: edicao.trechos, n: normalizar })
   const arquivo = join(dir('render'), `${chave}.wav`)
   const ficha = join(dir('render'), `${chave}.json`)
   if (existsSync(arquivo) && existsSync(ficha)) {
@@ -428,7 +458,10 @@ export async function renderizarEdicao(
   let p = rendendo.get(chave)
   if (!p) {
     p = (async () => {
-      const x = montarCortes(await lerMonoComCache(f), edicao.trechos)
+      const usadas = new Set(edicao.trechos.map(fonteDo))
+      const lidas: Record<string, Float32Array> = {}
+      for (const [id, f] of escutas) if (usadas.has(id)) lidas[id] = await lerMonoComCache(f)
+      const x = montarCortes(lidas, edicao.trechos)
       if (normalizar !== null) {
         const medido = lufsDe(x)
         if (medido !== null) {
@@ -457,23 +490,28 @@ export async function renderizarEdicao(
 }
 
 /**
- * Os silencios da gravacao, em segundos DELA. Lidos do audio limpo quando a IA
- * esta ligada: sem o ruido de fundo, a pausa e funda e o limiar acha todas.
+ * Os silencios de cada gravacao, em segundos DELA, com o id. Lidos do audio
+ * limpo quando a IA esta ligada: sem o ruido de fundo, a pausa e funda e o
+ * limiar acha todas.
  */
 export async function silenciosDaGravacao(
   edicao: EdicaoDeAudio,
   opcoes: OpcoesDosSilencios,
   onProgress: (m: string) => void,
-): Promise<{ de: number; ate: number }[]> {
-  const x = await lerMonoComCache(await fonte(edicao, true, onProgress))
-  const passo = Math.round(TAXA * 0.01)
-  const db: number[] = []
-  for (let i = 0; i + passo <= x.length; i += passo) {
-    let soma = 0
-    for (let k = i; k < i + passo; k++) soma += x[k]! * x[k]!
-    db.push(10 * Math.log10(soma / passo + 1e-12))
+): Promise<{ de: number; ate: number; fonte: string }[]> {
+  const todos: { de: number; ate: number; fonte: string }[] = []
+  for (const [id, caminho] of fontesDa(edicao)) {
+    const x = await lerMonoComCache(await fonte(caminho, edicao, true, onProgress))
+    const passo = Math.round(TAXA * 0.01)
+    const db: number[] = []
+    for (let i = 0; i + passo <= x.length; i += passo) {
+      let soma = 0
+      for (let k = i; k < i + passo; k++) soma += x[k]! * x[k]!
+      db.push(10 * Math.log10(soma / passo + 1e-12))
+    }
+    for (const s of silenciosDoSinal(db, 0.01, opcoes)) todos.push({ ...s, fonte: id })
   }
-  return silenciosDoSinal(db, 0.01, opcoes)
+  return todos
 }
 
 /**

@@ -847,10 +847,10 @@ export interface DangaiBridge {
   onPrepararProgresso(listener: (p: PreparoDoDangai) => void): () => void
   /** O audio da edicao: so os cortes (`efeitos` false) ou com a cadeia inteira. */
   renderizarEdicao(edicao: EdicaoDeAudio, efeitos: boolean): Promise<IpcResult<AudioEditado>>
-  /** A onda da gravacao inteira, com ou sem os efeitos. */
-  ondaDaEdicao(edicao: EdicaoDeAudio, efeitos: boolean): Promise<IpcResult<OndaDaGravacao>>
-  /** Os silencios da gravacao, em segundos dela. */
-  silenciosDaGravacao(edicao: EdicaoDeAudio, opcoes: OpcoesDosSilencios): Promise<IpcResult<{ de: number; ate: number }[]>>
+  /** A onda de cada gravacao inteira (a principal e as correcoes, pelo id), com ou sem os efeitos. */
+  ondaDaEdicao(edicao: EdicaoDeAudio, efeitos: boolean): Promise<IpcResult<Record<string, OndaDaGravacao>>>
+  /** Os silencios de cada gravacao, em segundos dela, com o id dela. */
+  silenciosDaGravacao(edicao: EdicaoDeAudio, opcoes: OpcoesDosSilencios): Promise<IpcResult<{ de: number; ate: number; fonte: string }[]>>
   /** Grava a narracao final ao lado da gravacao e devolve o caminho. */
   concluirEdicao(edicao: EdicaoDeAudio): Promise<IpcResult<string>>
   listarPlugins(): Promise<IpcResult<PluginInstalado[]>>

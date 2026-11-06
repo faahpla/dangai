@@ -792,10 +792,10 @@ export function registerIpc(): void {
   handle<[EdicaoDeAudio, boolean], AudioEditado>(IPC.renderizarEdicao, (edicao, efeitos) =>
     renderizarEdicao(edicao, efeitos, progressoDaEdicao),
   )
-  handle<[EdicaoDeAudio, boolean], OndaDaGravacao>(IPC.ondaDaEdicao, (edicao, efeitos) =>
+  handle<[EdicaoDeAudio, boolean], Record<string, OndaDaGravacao>>(IPC.ondaDaEdicao, (edicao, efeitos) =>
     ondaDaEdicao(edicao, efeitos, progressoDaEdicao),
   )
-  handle<[EdicaoDeAudio, OpcoesDosSilencios], { de: number; ate: number }[]>(IPC.silenciosDaGravacao, (edicao, opcoes) =>
+  handle<[EdicaoDeAudio, OpcoesDosSilencios], { de: number; ate: number; fonte: string }[]>(IPC.silenciosDaGravacao, (edicao, opcoes) =>
     silenciosDaGravacao(edicao, opcoes, progressoDaEdicao),
   )
   handle<[EdicaoDeAudio], string>(IPC.concluirEdicao, (edicao) => concluirEdicao(edicao, progressoDaEdicao))
