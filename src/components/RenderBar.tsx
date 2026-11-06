@@ -19,6 +19,7 @@ import {
   Sparkle,
   Library as LibraryIcon,
   Wand2,
+  AudioWaveform,
 } from 'lucide-react'
 import { aplicarMeuJeito, resumoDoPerfil, useMeuJeito } from '@/store/meu-jeito'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
@@ -195,6 +196,9 @@ export function RenderBar() {
   const script = useProject((s) => s.script)
   const openScript = useProject((s) => s.openScript)
   const voltarParaSelecao = useProject((s) => s.voltarParaSelecao)
+  const abrirEtapaDoAudio = useProject((s) => s.abrirEtapaDoAudio)
+  const temEdicaoDeAudio = useProject((s) => s.edicaoDeAudio !== null)
+  const caminhoDaNarracao = useProject((s) => s.audio?.path ?? null)
   // So existe selecao para voltar quando o video saiu da Biblioteca por roteiro.
   const temSelecao = useProject(
     (s) => s.scriptBlocks !== null && Object.values(s.blockClips).some((c) => c.length > 0),
@@ -232,6 +236,22 @@ export function RenderBar() {
       >
         {playing ? <Pause size={14} strokeWidth={1.5} /> : <Play size={14} strokeWidth={1.5} />}
       </button>
+
+      {/*
+        A ETAPA DE AUDIO, de volta: a edicao que o projeto ja tem, ou uma nova
+        em cima da narracao de agora (um projeto de antes da etapa existir).
+      */}
+      {!isRendering && caminhoDaNarracao && (
+        <button
+          type="button"
+          onClick={() => void (temEdicaoDeAudio ? abrirEtapaDoAudio() : abrirEtapaDoAudio(caminhoDaNarracao))}
+          title="Cortar a gravação e mexer nos efeitos da voz (isolar, nivelar, EQ, compressor, Fresh Air)"
+          className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
+        >
+          <AudioWaveform size={12} strokeWidth={1.5} />
+          <span className="group-data-[compacto]/barra:hidden">Áudio</span>
+        </button>
+      )}
 
       {!isRendering && (
         <button

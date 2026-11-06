@@ -98,6 +98,10 @@ import { checkForUpdateNow, installUpdate } from './services/updater'
 import { handle } from './handle'
 import { montarRelatorio } from './services/registro'
 import { componentesDoDangai, prepararDangai } from './services/preparar'
+import { concluirEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
+import { descreverPlugin, janelaDoPlugin, listarPlugins, prepararPlugins } from './services/vst'
+import type { AudioEditado, DescricaoDoPlugin, OndaDaGravacao, PluginInstalado } from '@shared/channels'
+import type { EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
 import { aprenderDoProjeto, perfilDoMeuJeito } from './services/meu-jeito'
 import type { ComponenteDoDangai, PerfilDoMeuJeito } from '@shared/channels'
 import { motivoParaNaoAtualizar } from './modulos'
@@ -779,6 +783,34 @@ export function registerIpc(): void {
       for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send(IPC.prepararProgresso, p)
     }),
   )
+
+  // ---------------------------------------------------------- etapa de audio
+
+  const progressoDaEdicao = (mensagem: string): void => {
+    for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send(IPC.progressoDaEdicao, mensagem)
+  }
+  handle<[EdicaoDeAudio, boolean], AudioEditado>(IPC.renderizarEdicao, (edicao, efeitos) =>
+    renderizarEdicao(edicao, efeitos, progressoDaEdicao),
+  )
+  handle<[EdicaoDeAudio, boolean], OndaDaGravacao>(IPC.ondaDaEdicao, (edicao, efeitos) =>
+    ondaDaEdicao(edicao, efeitos, progressoDaEdicao),
+  )
+  handle<[EdicaoDeAudio, OpcoesDosSilencios], { de: number; ate: number }[]>(IPC.silenciosDaGravacao, (edicao, opcoes) =>
+    silenciosDaGravacao(edicao, opcoes, progressoDaEdicao),
+  )
+  handle<[EdicaoDeAudio], string>(IPC.concluirEdicao, (edicao) => concluirEdicao(edicao, progressoDaEdicao))
+  handle<[], PluginInstalado[]>(IPC.listarPlugins, async () => {
+    await prepararPlugins(progressoDaEdicao)
+    return listarPlugins()
+  })
+  handle<[string, string | null], DescricaoDoPlugin>(IPC.descreverPlugin, async (caminho, estado) => {
+    await prepararPlugins(progressoDaEdicao)
+    return descreverPlugin(caminho, estado)
+  })
+  handle<[string, string | null], DescricaoDoPlugin>(IPC.janelaDoPlugin, async (caminho, estado) => {
+    await prepararPlugins(progressoDaEdicao)
+    return janelaDoPlugin(caminho, estado)
+  })
 
   handle<[Record<string, string>], null>(IPC.copiarRelatorio, async (tela) => {
     clipboard.writeText(textoDoRelatorio(tela))

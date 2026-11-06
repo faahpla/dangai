@@ -187,6 +187,7 @@ export function Deslizante({
   padrao,
   dica,
   digitar,
+  textoLargo = false,
 }: {
   valor: number
   min: number
@@ -194,6 +195,8 @@ export function Deslizante({
   step: number
   onChange: (v: number) => void
   texto: string
+  /** Valor com unidade comprida ("-20,0 dB", "9,0 kHz"): mais espaco para nao quebrar. */
+  textoLargo?: boolean
   /** Duplo clique volta a este valor. */
   padrao?: number
   /** O que o slider faz, no tooltip (junto do "duplo clique volta ao padrao"). */
@@ -221,7 +224,7 @@ export function Deslizante({
       {digitar ? (
         <ValorDigitavel texto={texto} numero={digitar.numero} aplicar={digitar.aplicar} className="w-12 text-[11px] text-ink-3" />
       ) : (
-        <span className="tnum w-9 shrink-0 text-right text-[11px] text-ink-3">{texto}</span>
+        <span className={['tnum shrink-0 text-right text-[11px] text-ink-3', textoLargo ? 'w-[58px]' : 'w-9'].join(' ')}>{texto}</span>
       )}
     </>
   )

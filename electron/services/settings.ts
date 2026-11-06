@@ -107,6 +107,8 @@ export interface Settings {
    * `null` ate ele mexer em alguma coisa pela primeira vez.
    */
   captionStyle: Record<string, unknown> | null
+  /** A cadeia de efeitos da etapa de audio que ele salvou como padrao (shared/edicao-de-audio.ts). */
+  cadeiaDeAudio: Record<string, unknown> | null
   /**
    * Estilos de legenda que ele guardou com nome. Conferidos do outro lado, pelo
    * schema do contract -- aqui so atravessam como objetos.
@@ -154,6 +156,7 @@ const DEFAULTS: Settings = {
   bins: [],
   curvasDeEntrada: [],
   captionStyle: null,
+  cadeiaDeAudio: null,
   atalhos: null,
   recentes: [],
   presetsDeCor: [],
@@ -376,6 +379,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'ge
     somAoRenderizar: settings.somAoRenderizar,
     curvePresets: settings.curvePresets,
     captionStyle: settings.captionStyle,
+    cadeiaDeAudio: settings.cadeiaDeAudio,
     captionPresets: settings.captionPresets,
     bins: settings.bins,
     curvasDeEntrada: settings.curvasDeEntrada,
@@ -429,6 +433,11 @@ function coerce(raw: unknown): Settings {
     curvePresets: curvasSalvas(value['curvePresets']),
     // Conferido do outro lado, pelo schema do contract: aqui so passa adiante
     // um objeto, e um campo estranho vira o padrao em vez de derrubar o app.
+    // Conferida do outro lado, pelo schema: aqui so passa um objeto adiante.
+    cadeiaDeAudio:
+      typeof value['cadeiaDeAudio'] === 'object' && value['cadeiaDeAudio'] !== null
+        ? (value['cadeiaDeAudio'] as Record<string, unknown>)
+        : null,
     captionStyle:
       typeof value['captionStyle'] === 'object' && value['captionStyle'] !== null
         ? (value['captionStyle'] as Record<string, unknown>)

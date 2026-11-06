@@ -17,6 +17,8 @@ import { configureTagger } from './services/tagger'
 import { configureAlinhador } from './services/alinhador'
 import { configureInverter } from './services/inverter'
 import { configureSobreposicao } from './services/sobreposicao'
+import { configureEdicaoDeAudio } from './services/edicao-de-audio'
+import { configureVst } from './services/vst'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureFontes, ensureFontesDir } from './services/fontes'
 import { configureUpscale, configureUpscaleCache } from './services/upscale'
@@ -207,6 +209,8 @@ app.whenReady().then(async () => {
   configureAlinhador(userData)
   configureInverter(userData)
   configureSobreposicao(userData)
+  configureEdicaoDeAudio(userData)
+  configureVst(userData)
   configureDescribe(userData)
 
   // Os SFX moram no userData para o usuario poder trocar os arquivos: a pasta

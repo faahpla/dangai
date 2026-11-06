@@ -50,6 +50,8 @@ export const CAMPOS = [
   'metadata',
   'script',
   'broll',
+  // A receita da narracao (cortes e efeitos): cortar errado tem Ctrl+Z.
+  'edicaoDeAudio',
   'subtitlePath',
   /*
    * AS ESCOLHAS DA BIBLIOTECA tambem sao o documento. Fora daqui, marcar cenas

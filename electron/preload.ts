@@ -33,7 +33,7 @@ import type {
 } from '@shared/contract'
 import type { OpenedProject, ProjectFile } from '@shared/project-file'
 import type { MedidaDoSom } from '@shared/loudness'
-import type { ComponenteDoDangai, PerfilDoMeuJeito, PreparoDoDangai } from '@shared/channels'
+import type { AudioEditado, OndaDaGravacao, ComponenteDoDangai, DescricaoDoPlugin, PerfilDoMeuJeito, PluginInstalado, PreparoDoDangai } from '@shared/channels'
 
 /**
  * Unica superficie entre renderer e sistema. Tipada por DangaiBridge, entao um
@@ -223,6 +223,25 @@ const bridge: DangaiBridge = {
     ipcRenderer.on(IPC.prepararProgresso, handler)
     return () => {
       ipcRenderer.off(IPC.prepararProgresso, handler)
+    }
+  },
+  renderizarEdicao: (edicao, efeitos) =>
+    ipcRenderer.invoke(IPC.renderizarEdicao, edicao, efeitos) as Promise<IpcResult<AudioEditado>>,
+  ondaDaEdicao: (edicao, efeitos) =>
+    ipcRenderer.invoke(IPC.ondaDaEdicao, edicao, efeitos) as Promise<IpcResult<OndaDaGravacao>>,
+  silenciosDaGravacao: (edicao, opcoes) =>
+    ipcRenderer.invoke(IPC.silenciosDaGravacao, edicao, opcoes) as Promise<IpcResult<{ de: number; ate: number }[]>>,
+  concluirEdicao: (edicao) => ipcRenderer.invoke(IPC.concluirEdicao, edicao) as Promise<IpcResult<string>>,
+  listarPlugins: () => ipcRenderer.invoke(IPC.listarPlugins) as Promise<IpcResult<PluginInstalado[]>>,
+  descreverPlugin: (caminho, estado) =>
+    ipcRenderer.invoke(IPC.descreverPlugin, caminho, estado) as Promise<IpcResult<DescricaoDoPlugin>>,
+  janelaDoPlugin: (caminho, estado) =>
+    ipcRenderer.invoke(IPC.janelaDoPlugin, caminho, estado) as Promise<IpcResult<DescricaoDoPlugin>>,
+  onProgressoDaEdicao: (listener) => {
+    const handler = (_event: unknown, mensagem: string): void => listener(mensagem)
+    ipcRenderer.on(IPC.progressoDaEdicao, handler)
+    return () => {
+      ipcRenderer.off(IPC.progressoDaEdicao, handler)
     }
   },
 

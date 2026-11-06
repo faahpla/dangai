@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { edicaoDeAudioSchema } from './edicao-de-audio'
 import {
   captionBlockSchema,
   CAPTION_ANIMATION_DEFAULT,
@@ -215,6 +216,8 @@ export const projectFileSchema = z.object({
   script: z.string().nullable(),
   /** O B-roll (de que episodio sai cada parte; ver shared/broll.ts). Projeto antigo abre sem. */
   broll: z.object({ nome: z.string(), texto: z.string() }).nullable().default(null),
+  /** A etapa de audio: a gravacao crua e o que foi feito nela. Projeto antigo abre sem. */
+  edicaoDeAudio: edicaoDeAudioSchema.nullable().default(null),
   subtitle: referenceSchema.nullable(),
   plan: scenePlanSchema.nullable(),
   planOrigin: z.enum(PLAN_ORIGINS).nullable(),

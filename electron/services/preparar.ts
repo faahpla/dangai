@@ -2,6 +2,7 @@ import { prepararAlinhador, alinhadorPronto, TAMANHO_DO_ALINHADOR_MB } from './a
 import { navegadorDoRenderPronto, prepararNavegadorDoRender, TAMANHO_DO_NAVEGADOR_MB } from './render'
 import { getSettings } from './settings'
 import { isWhisperReady, prepararWhisper, tamanhoDoWhisperMb } from './whisper'
+import { iaDeLimpezaPronta, prepararIaDeLimpeza, TAMANHO_DA_IA_DE_LIMPEZA_MB } from './edicao-de-audio'
 import type { ComponenteDoDangai, PreparoDoDangai } from '@shared/channels'
 
 /**
@@ -40,6 +41,18 @@ export function componentesDoDangai(): ComponenteDoDangai[] {
       mb: TAMANHO_DO_NAVEGADOR_MB,
       pronto: navegadorDoRenderPronto(),
     },
+    // So no Windows: o programa da IA de limpeza e de Windows.
+    ...(process.platform === 'win32'
+      ? [
+          {
+            id: 'limpeza' as const,
+            nome: 'Limpeza de voz (IA)',
+            para: 'tirar o ruído e o ambiente da gravação, na etapa de áudio',
+            mb: TAMANHO_DA_IA_DE_LIMPEZA_MB,
+            pronto: iaDeLimpezaPronta(),
+          },
+        ]
+      : []),
   ]
 }
 
@@ -52,6 +65,7 @@ export async function prepararDangai(onProgress: (p: PreparoDoDangai) => void): 
     try {
       if (c.id === 'whisper') await prepararWhisper(getSettings().whisperModel, avisar)
       else if (c.id === 'sincronizador') await prepararAlinhador(avisar)
+      else if (c.id === 'limpeza') await prepararIaDeLimpeza(avisar)
       else await prepararNavegadorDoRender(avisar)
     } catch (err) {
       console.warn(`[preparar] ${c.id} nao baixou:`, err)

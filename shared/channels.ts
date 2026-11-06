@@ -57,6 +57,16 @@ export const IPC = {
   componentesDoDangai: 'preparar:estado',
   prepararDangai: 'preparar:baixar',
   prepararProgresso: 'preparar:progresso',
+  // A etapa de audio (shared/edicao-de-audio.ts).
+  renderizarEdicao: 'audio-edicao:renderizar',
+  ondaDaEdicao: 'audio-edicao:onda',
+  silenciosDaGravacao: 'audio-edicao:silencios',
+  concluirEdicao: 'audio-edicao:concluir',
+  listarPlugins: 'audio-edicao:plugins',
+  descreverPlugin: 'audio-edicao:descrever-plugin',
+  janelaDoPlugin: 'audio-edicao:janela-do-plugin',
+  /** main -> renderer: o que a etapa de audio esta fazendo agora. */
+  progressoDaEdicao: 'audio-edicao:progresso',
   perfilDoMeuJeito: 'meu-jeito:perfil',
   importImagesPulando: 'images:import-pulando',
   startRender: 'render:start',
@@ -378,7 +388,7 @@ export interface ScriptBlock {
 
 /** Um dos downloads da primeira vez (electron/services/preparar.ts). */
 export interface ComponenteDoDangai {
-  id: 'whisper' | 'sincronizador' | 'navegador'
+  id: 'whisper' | 'sincronizador' | 'navegador' | 'limpeza'
   nome: string
   /** Para que serve, em uma linha. */
   para: string
@@ -398,6 +408,37 @@ export interface PreparoDoDangai {
 
 export type { PerfilDoMeuJeito } from './meu-jeito'
 import type { PerfilDoMeuJeito } from './meu-jeito'
+import type { EdicaoDeAudio, OpcoesDosSilencios } from './edicao-de-audio'
+
+/** O audio que a etapa de audio gerou (electron/services/edicao-de-audio.ts). */
+export interface AudioEditado {
+  arquivo: string
+  url: string
+  durationSec: number
+  lufs: number | null
+}
+
+/** A onda da gravacao INTEIRA, 100 picos por segundo: a tela corta pelos trechos. */
+export interface OndaDaGravacao {
+  peaks: number[]
+  rms: number[]
+  durationSec: number
+}
+
+/** Um plugin VST3 de efeito instalado na maquina. */
+export interface PluginInstalado {
+  nome: string
+  fabricante: string
+  caminho: string
+}
+
+/** O que o plugin diz de si: o estado inteiro e os botoes, com o texto dele. */
+export interface DescricaoDoPlugin {
+  nome: string
+  estado: string
+  parametros: Record<string, number>
+  textos: Record<string, string>
+}
 
 export interface ScriptBlocksResult {
   blocks: ScriptBlock[]
@@ -504,6 +545,8 @@ export interface PublicSettings {
   curvePresets: { nome: string; pontos: [number, number, number, number] }[]
   /** O estilo de legenda que ele deixou por ultimo. Ponto de partida do proximo video. */
   captionStyle: Record<string, unknown> | null
+  /** A cadeia da etapa de audio salva como padrao (ver shared/edicao-de-audio.ts). */
+  cadeiaDeAudio: Record<string, unknown> | null
   /** Estilos de legenda guardados com nome. Conferidos pelo captionPresetSchema. */
   captionPresets: Record<string, unknown>[]
   /** As Power Bins. Conferidas pelo binSchema. */
@@ -534,6 +577,7 @@ export interface SettingsPatch {
   somAoRenderizar?: boolean
   curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
   captionStyle?: Record<string, unknown>
+  cadeiaDeAudio?: Record<string, unknown>
   captionPresets?: Record<string, unknown>[]
   bins?: Record<string, unknown>[]
   curvasDeEntrada?: Record<string, unknown>[]
@@ -801,6 +845,19 @@ export interface DangaiBridge {
   /** Baixa tudo o que falta, um de cada vez; devolve como ficou. */
   prepararDangai(): Promise<IpcResult<ComponenteDoDangai[]>>
   onPrepararProgresso(listener: (p: PreparoDoDangai) => void): () => void
+  /** O audio da edicao: so os cortes (`efeitos` false) ou com a cadeia inteira. */
+  renderizarEdicao(edicao: EdicaoDeAudio, efeitos: boolean): Promise<IpcResult<AudioEditado>>
+  /** A onda da gravacao inteira, com ou sem os efeitos. */
+  ondaDaEdicao(edicao: EdicaoDeAudio, efeitos: boolean): Promise<IpcResult<OndaDaGravacao>>
+  /** Os silencios da gravacao, em segundos dela. */
+  silenciosDaGravacao(edicao: EdicaoDeAudio, opcoes: OpcoesDosSilencios): Promise<IpcResult<{ de: number; ate: number }[]>>
+  /** Grava a narracao final ao lado da gravacao e devolve o caminho. */
+  concluirEdicao(edicao: EdicaoDeAudio): Promise<IpcResult<string>>
+  listarPlugins(): Promise<IpcResult<PluginInstalado[]>>
+  descreverPlugin(caminho: string, estado: string | null): Promise<IpcResult<DescricaoDoPlugin>>
+  /** Abre a janela do plugin; resolve quando ele a fecha, com o estado novo. */
+  janelaDoPlugin(caminho: string, estado: string | null): Promise<IpcResult<DescricaoDoPlugin>>
+  onProgressoDaEdicao(listener: (mensagem: string) => void): () => void
   /** O jeito dele de editar som e cor, aprendido dos projetos (shared/meu-jeito.ts). */
   perfilDoMeuJeito(): Promise<IpcResult<PerfilDoMeuJeito>>
   /**

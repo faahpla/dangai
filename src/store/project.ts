@@ -71,6 +71,8 @@ import { fatiaDaBiblioteca } from './projeto/biblioteca'
 import { fatiaDoRender } from './projeto/render'
 import { fatiaDoArquivo } from './projeto/arquivo'
 import { fatiaDaFila } from './projeto/fila'
+import { fatiaDaEtapaDoAudio } from './projeto/etapa-do-audio'
+import type { EdicaoDeAudio } from '@shared/edicao-de-audio'
 import { setInterimPlan } from './projeto/apoio'
 import type { StoreApi } from 'zustand'
 
@@ -141,6 +143,25 @@ export interface ProjectState {
    * as cenas desses episodios.
    */
   broll: { nome: string; texto: string } | null
+  /**
+   * A edicao da gravacao crua (cortes e efeitos), quando a narracao passou pela
+   * etapa de audio. O que o video toca e `audio` -- o arquivo que o "Pronto"
+   * gerou; isto e a receita dele, para voltar e mexer.
+   */
+  edicaoDeAudio: EdicaoDeAudio | null
+  /** A etapa de audio aberta (tela cheia, antes da Biblioteca). */
+  etapaDoAudio: boolean
+  /** Abre a etapa de audio. Com `bruto`, comeca a edicao dessa gravacao. */
+  abrirEtapaDoAudio: (bruto?: string) => Promise<void>
+  fecharEtapaDoAudio: () => void
+  /** Muda a edicao (cortes ou efeitos) -- um passo de Ctrl+Z. */
+  mudarEdicaoDeAudio: (mudar: (atual: EdicaoDeAudio) => EdicaoDeAudio) => void
+  /** Pronto: grava o audio final, usa como narracao e segue para a Biblioteca. */
+  concluirEtapaDoAudio: () => Promise<void>
+  /** Usa a gravacao como esta e segue. */
+  pularEtapaDoAudio: () => Promise<void>
+  /** Os efeitos de agora viram o comeco de toda gravacao nova. */
+  salvarCadeiaComoPadrao: () => Promise<void>
   /** Poe ou tira o B-roll do projeto. */
   definirBroll: (broll: { nome: string; texto: string } | null) => void
   /** Como o roteiro se saiu no casamento com o audio. */
@@ -942,6 +963,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   aiNote: null,
   script: null,
   broll: null,
+  edicaoDeAudio: null,
+  etapaDoAudio: false,
   definirBroll: (broll) => set({ broll, projectDirty: true }),
   scriptNote: null,
   sectionNote: null,
@@ -1286,13 +1309,14 @@ export const useProject = create<ProjectState>((set, get) => ({
 
     const { audio, images } = get()
     /*
-     * NARRACAO SEM CENA NENHUMA ABRE A BIBLIOTECA, na primeira frase. "Quando
-     * eu arrastar quero que va direto nessa opcao de escolher na biblioteca."
-     * So no gesto dele (soltar ou o dialogo), e so com a narracao que acabou
-     * de entrar: um modulo que traz arquivos nao abre tela nenhuma.
+     * NARRACAO SEM CENA NENHUMA ABRE A ETAPA DE AUDIO -- "quando eu importar pro
+     * Dangai quero uma timeline para a edicao do audio" --, e o "Pronto" dela
+     * leva a Biblioteca. So no gesto dele (soltar ou o dialogo), e so com a
+     * narracao que acabou de entrar: um modulo que traz arquivos nao abre tela
+     * nenhuma, e o proprio "Pronto" (que entra por aqui sem gesto) tambem nao.
      */
     if (audio && images.length === 0 && origem && narracaoNova) {
-      await get().openLibrary(true)
+      await get().abrirEtapaDoAudio(audio.path)
       return
     }
     if (!audio || images.length === 0) return
@@ -1499,6 +1523,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       aiNote: null,
       script: null,
       broll: null,
+      edicaoDeAudio: null,
+      etapaDoAudio: false,
       scriptNote: null,
       sectionNote: null,
       scriptOpen: false,
@@ -1568,6 +1594,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   ...fatiaDoArquivo(set, get),
 
   ...fatiaDaFila(set, get),
+
+  ...fatiaDaEtapaDoAudio(set, get),
 }))
 
 /**

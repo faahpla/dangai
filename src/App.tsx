@@ -26,6 +26,7 @@ import { Script } from '@/components/Script'
 import { CaptionEditor } from '@/components/CaptionEditor'
 import { CommandPalette } from '@/components/CommandPalette'
 import { Library } from '@/components/Library'
+import { EtapaDoAudio } from '@/components/EtapaDoAudio'
 import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
 import { semExtensaoDeProjeto } from '@shared/project-file'
@@ -217,6 +218,8 @@ export function App() {
         store.settingsOpen ||
         store.scriptOpen ||
         store.libraryOpen ||
+        // A etapa de audio trata o proprio teclado (espaco, C, Delete, Ctrl+Z).
+        store.etapaDoAudio ||
         useTelaCheia.getState().de !== null
       ) {
         /*
@@ -548,6 +551,7 @@ export function App() {
       <Settings />
       <Script />
       <Library />
+      <EtapaDoAudio />
       <CommandPalette />
       <ConsoleFx />
     </div>

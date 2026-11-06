@@ -1,0 +1,175 @@
+import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { app } from 'electron'
+import { join } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import type { PluginDaCadeia } from '@shared/edicao-de-audio'
+
+/**
+ * PLUGINS VST3 na etapa de audio -- o Fresh Air, da Slate Digital, que ele ja
+ * usa no DaVinci e no Premiere.
+ *
+ * Quem abre o plugin e o vst-host (ferramentas/vst/host.py), um programa a
+ * parte: Python com o Pedalboard, do Spotify (GPL-3). O Dangai so conversa com
+ * ele por arquivos JSON -- chama, espera e le a resposta. Medido aqui: o Fresh
+ * Air abre em 1,3 s e passa 15 s de narracao em 0,1 s.
+ *
+ * O programa (23 MB) e baixado no primeiro uso, como o
+ * Whisper; em desenvolvimento serve o build local (ferramentas/vst/dist) ou o
+ * Python de DANGAI_VST_PYTHON rodando o host.py direto.
+ */
+
+const VST_HOST = {
+  versao: '1',
+  url: 'https://github.com/faahpla/dangai/releases/download/ferramentas-vst-1/vst-host-1.zip',
+  sha256: '21d07a81cd1bbb2065220cef06a1d2a66727ed6f980232f3f5bfea54c32a6720',
+  mb: 23,
+}
+
+export const TAMANHO_DOS_PLUGINS_MB = VST_HOST.mb
+
+let pasta: string | null = null
+
+export function configureVst(userData: string): void {
+  pasta = join(userData, 'audio-editado', 'ferramentas')
+}
+
+function dir(): string {
+  if (!pasta) throw new Error('Plugins não configurados')
+  mkdirSync(pasta, { recursive: true })
+  return pasta
+}
+
+const instalado = (): string => join(dir(), `vst-host-${VST_HOST.versao}`, 'vst-host', 'vst-host.exe')
+/** O build local de quem desenvolve (ferramentas/vst/build.ps1). */
+const doBuildLocal = (): string => join(app.getAppPath(), 'ferramentas', 'vst', 'dist', 'vst-host', 'vst-host.exe')
+
+/** Como chamar o vst-host: o programa, e o que vai antes dos argumentos. */
+function comoChamar(): { exe: string; antes: string[] } | null {
+  const py = process.env['DANGAI_VST_PYTHON']
+  if (py) return { exe: py, antes: [join(app.getAppPath(), 'ferramentas', 'vst', 'host.py')] }
+  if (existsSync(instalado())) return { exe: instalado(), antes: [] }
+  if (!app.isPackaged && existsSync(doBuildLocal())) return { exe: doBuildLocal(), antes: [] }
+  return null
+}
+
+export function pluginsProntos(): boolean {
+  return process.platform === 'win32' && comoChamar() !== null
+}
+
+let baixando: Promise<void> | null = null
+
+/** Baixa e abre o vst-host na pasta do Dangai. Confere o sha256 antes de usar. */
+export function prepararPlugins(onProgress: (m: string) => void): Promise<void> {
+  if (pluginsProntos()) return Promise.resolve()
+  if (process.platform !== 'win32') return Promise.reject(new Error('Os plugins VST3 ainda só funcionam no Windows.'))
+  if (!VST_HOST.sha256) return Promise.reject(new Error('Os plugins ainda não foram publicados para esta versão.'))
+  baixando ??= (async () => {
+    const zip = join(dir(), `vst-host-${VST_HOST.versao}.zip`)
+    const parcial = `${zip}.part`
+    onProgress(`Baixando o leitor de plugins (só na primeira vez)... 0/${VST_HOST.mb} MB`)
+    const resposta = await fetch(VST_HOST.url, { redirect: 'follow' })
+    if (!resposta.ok || !resposta.body) throw new Error(`Não deu para baixar o leitor de plugins (${resposta.status}).`)
+    let baixado = 0
+    let ultimo = 0
+    const fonte = Readable.fromWeb(resposta.body as Parameters<typeof Readable.fromWeb>[0])
+    fonte.on('data', (c: Buffer) => {
+      baixado += c.length
+      const mb = Math.floor(baixado / 1_000_000)
+      if (mb > ultimo) {
+        ultimo = mb
+        onProgress(`Baixando o leitor de plugins (só na primeira vez)... ${mb}/${VST_HOST.mb} MB`)
+      }
+    })
+    await pipeline(fonte, createWriteStream(parcial))
+    const soma = createHash('sha256')
+    await pipeline(createReadStream(parcial), soma)
+    if (soma.digest('hex') !== VST_HOST.sha256) {
+      rmSync(parcial, { force: true })
+      throw new Error('O leitor de plugins veio diferente do esperado. Tente de novo.')
+    }
+    renameSync(parcial, zip)
+    const destino = join(dir(), `vst-host-${VST_HOST.versao}`)
+    rmSync(destino, { recursive: true, force: true })
+    // Expand-Archive: o par do Compress-Archive que gerou o .zip (build.ps1).
+    await new Promise<void>((resolve, reject) => {
+      const ps = spawn(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', `Expand-Archive -LiteralPath '${zip}' -DestinationPath '${destino}' -Force`],
+        { windowsHide: true },
+      )
+      ps.on('error', reject)
+      ps.on('close', (code) => (code === 0 ? resolve() : reject(new Error('Não deu para abrir o leitor de plugins baixado.'))))
+    })
+    rmSync(zip, { force: true })
+    if (!existsSync(instalado())) throw new Error('O leitor de plugins baixado está incompleto.')
+  })().finally(() => {
+    baixando = null
+  })
+  return baixando
+}
+
+/** Uma ida e volta com o vst-host: pedido num arquivo, resposta em outro. */
+async function chamar<T>(comando: string, pedido: unknown, opcoes: { janela?: boolean } = {}): Promise<T> {
+  const como = comoChamar()
+  if (!como) throw new Error('O leitor de plugins ainda não está instalado.')
+  const temp = join(dir(), `_${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+  mkdirSync(temp, { recursive: true })
+  const ida = join(temp, 'pedido.json')
+  const volta = join(temp, 'resposta.json')
+  writeFileSync(ida, JSON.stringify(pedido))
+  try {
+    await new Promise<void>((resolve, reject) => {
+      // A janela do plugin precisa aparecer: escondida, a do Fresh Air abria
+      // invisivel e o Dangai ficava esperando alguem fecha-la.
+      const child = spawn(como.exe, [...como.antes, comando, ida, volta], { windowsHide: !opcoes.janela })
+      child.on('error', (e) => reject(new Error(`O leitor de plugins não abriu: ${e.message}`)))
+      child.on('close', () => resolve())
+    })
+    if (!existsSync(volta)) throw new Error('O leitor de plugins fechou sem responder.')
+    const resposta = JSON.parse(readFileSync(volta, 'utf8')) as T & { erro?: string }
+    if (resposta && typeof resposta === 'object' && 'erro' in resposta && resposta.erro) {
+      throw new Error(`O plugin deu erro: ${resposta.erro}`)
+    }
+    return resposta
+  } finally {
+    rmSync(temp, { recursive: true, force: true })
+  }
+}
+
+export interface PluginInstalado {
+  nome: string
+  fabricante: string
+  caminho: string
+}
+
+export interface DescricaoDoPlugin {
+  nome: string
+  estado: string
+  parametros: Record<string, number>
+  textos: Record<string, string>
+}
+
+export function listarPlugins(): Promise<PluginInstalado[]> {
+  return chamar<PluginInstalado[]>('listar', {})
+}
+
+export function descreverPlugin(caminho: string, estado: string | null): Promise<DescricaoDoPlugin> {
+  return chamar<DescricaoDoPlugin>('descrever', { caminho, estado })
+}
+
+/** Abre a janela do proprio plugin; volta quando ele FECHA, com o estado novo. */
+export function janelaDoPlugin(caminho: string, estado: string | null): Promise<DescricaoDoPlugin> {
+  return chamar<DescricaoDoPlugin>('janela', { caminho, estado }, { janela: true })
+}
+
+/** Passa o .wav pelos plugins ligados, na ordem. */
+export async function aplicarPlugins(entrada: string, saida: string, plugins: readonly PluginDaCadeia[]): Promise<void> {
+  await chamar('processar', {
+    entrada,
+    saida,
+    plugins: plugins.map((p) => ({ caminho: p.caminho, estado: p.estado, parametros: p.parametros })),
+  })
+}

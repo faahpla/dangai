@@ -9,6 +9,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { configureAlinhador } from '../../electron/services/alinhador.ts'
+import { configureEdicaoDeAudio } from '../../electron/services/edicao-de-audio.ts'
 import { componentesDoDangai, prepararDangai } from '../../electron/services/preparar.ts'
 import { configureSettings } from '../../electron/services/settings.ts'
 import { binaryPath, configureWhisper, modelPath } from '../../electron/services/whisper.ts'
@@ -26,9 +27,12 @@ async function principal(): Promise<void> {
   configureSettings(ud)
   configureWhisper(join(ud, 'whisper'))
   configureAlinhador(ud)
+  configureEdicaoDeAudio(ud)
 
   const vazio = componentesDoDangai()
-  ok('os tres: transcricao, sincronizador, navegador', vazio.map((c) => c.id).join(',') === 'whisper,sincronizador,navegador')
+  // A limpeza de voz (IA) da etapa de audio so existe no Windows.
+  const esperados = ['whisper', 'sincronizador', 'navegador', ...(process.platform === 'win32' ? ['limpeza'] : [])].join(',')
+  ok('transcricao, sincronizador, navegador e a limpeza de voz', vazio.map((c) => c.id).join(',') === esperados, vazio.map((c) => c.id).join(','))
   ok('perfil novo: nenhum pronto', vazio.every((c) => !c.pronto))
   ok('o tamanho do Whisper e o do modelo escolhido (small, 466 MB)', vazio[0]?.mb === 466, String(vazio[0]?.mb))
   ok('o total passa de 1 GB (o que o ajk baixava no meio do video)', vazio.reduce((t, c) => t + c.mb, 0) > 1000)
@@ -41,6 +45,8 @@ async function principal(): Promise<void> {
   writeFileSync(join(ud, 'alinhamento', 'model_fp16.onnx'), 'x')
   writeFileSync(join(ud, 'alinhamento', 'vocab.json'), '{}')
   mkdirSync(join(ud, '.remotion', 'chrome-headless-shell'), { recursive: true })
+  mkdirSync(join(ud, 'audio-editado', 'ferramentas'), { recursive: true })
+  writeFileSync(join(ud, 'audio-editado', 'ferramentas', 'deep-filter-0.5.6.exe'), 'x')
 
   ok('com os arquivos no lugar: todos prontos', componentesDoDangai().every((c) => c.pronto), JSON.stringify(componentesDoDangai().map((c) => c.pronto)))
   const avisos: string[] = []
