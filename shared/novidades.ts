@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.97.0',
+    itens: [
+      'Correções no Áudio: regravou um pedaço? Selecione o trecho ruim e clique em "Importar correção" (ou solte o arquivo na tela): a correção entra no lugar dele, em azul, e passa pelos mesmos efeitos. Sem seleção, ela entra na agulha. O que sobrar dela, corte com C e Delete.',
+      'Navegar no Áudio como na linha do tempo do editor: arraste a agulha pela régua de cima, Ctrl ou Alt + roda para dar zoom onde o mouse está, e o botão do meio (a rodinha pressionada) arrasta a vista.',
+    ],
+  },
+  {
     versao: '1.96.0',
     itens: [
       'Barra de etapas no topo: Áudio → Roteiro → Cenas → Edição. A etapa feita ganha um ✓ e dá para ir a qualquer uma. Na barra do editor, os botões "Roteiro" e "Seleção" viraram as etapas "Roteiro" e "Cenas".',
