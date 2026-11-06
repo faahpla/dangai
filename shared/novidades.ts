@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.95.0',
+    itens: [
+      'Etapa de Áudio: solte a gravação crua e ela abre numa linha do tempo antes de tudo. Espaço toca, C corta, arrastar seleciona, Delete apaga fechando o buraco, Ctrl+Z desfaz, e cada trecho tem o próprio volume. "Cortar silêncios" encolhe todas as pausas longas de uma vez.',
+      'Os efeitos da voz, na ordem: Isolar a voz (IA, como o Voice Isolation do DaVinci), Nivelar a voz (como o Dialogue Leveler), EQ, Compressor, plugins VST3 — o Fresh Air entra com a janela dele — e Normalizar. "Com efeitos / Sem efeitos" compara, e "Salvar como meu padrão" faz toda gravação nova já começar assim.',
+      '"Pronto" grava a narração final ao lado da gravação ("nome (editado).wav") e abre a Biblioteca. Para voltar e mexer depois: o botão "Áudio" na barra de baixo. A IA de limpeza (27 MB) e o leitor de plugins (23 MB) são baixados na primeira vez.',
+    ],
+  },
+  {
     versao: '1.94.1',
     itens: [
       'Vídeos de B-roll do AnCut HUB (trailer, gameplay, teaser baixado por link) aparecem na Biblioteca com o nome do vídeo, depois dos episódios do anime. Dá pra buscar e escolher na mão, mas a montagem automática não usa mais cena de trailer como se fosse de um episódio.',
