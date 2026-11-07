@@ -11,7 +11,9 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   autosaveSchemaQuePreserva as autosaveSchema,
+  ehProjetoDoStudio,
   projectFileSchemaQuePreserva as projectFileSchema,
+  PROJECT_EXTENSION,
   PROJECT_FILE_VERSION,
   versaoParaGravar,
   type FileReference,
@@ -33,9 +35,84 @@ import {
  */
 
 let autosavePath: string | null = null
+let pastaPadrao: string | null = null
 
-export function configureProjects(userDataDir: string): void {
+export function configureProjects(userDataDir: string, documentosDir?: string): void {
   autosavePath = join(userDataDir, 'autosave.dangai')
+  pastaPadrao = join(documentosDir ?? userDataDir, 'Dangai', 'Projetos')
+}
+
+// --------------------------------------------------------- pasta dos projetos
+
+/**
+ * A PASTA DOS PROJETOS: "crie uma pasta de projetos do Dangai e passe a salvar
+ * todos os projetos la direto". A que ele escolheu nas Configuracoes, ou
+ * Documentos\Dangai\Projetos. Criada na hora se faltar.
+ */
+export function pastaDosProjetos(escolhida: string): string {
+  const pasta = escolhida.trim() || pastaPadrao
+  if (!pasta) throw new Error('Projetos não configurados')
+  mkdirSync(pasta, { recursive: true })
+  return pasta
+}
+
+/** O nome que ele digitou, do jeito que o Windows aceita como arquivo. */
+export function nomeDeArquivo(nome: string): string {
+  let limpo = nome
+    // eslint-disable-next-line no-control-regex
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/, '')
+  if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(limpo)) limpo = `${limpo} (projeto)`
+  return limpo.slice(0, 120).trim() || 'Projeto'
+}
+
+/**
+ * Cria <pasta>/<nome>.dangai. Ja existe um com esse nome? Vira "<nome> (2)" --
+ * nunca grava por cima de outro projeto.
+ */
+export function criarProjetoNaPasta(pasta: string, nome: string, file: ProjectFile): string {
+  const limpo = nomeDeArquivo(nome)
+  let alvo = join(pasta, `${limpo}.${PROJECT_EXTENSION}`)
+  for (let k = 2; existsSync(alvo); k++) alvo = join(pasta, `${limpo} (${k}).${PROJECT_EXTENSION}`)
+  saveProjectFile(alvo, file)
+  return alvo
+}
+
+/**
+ * O AUTO SAVE NO PROPRIO ARQUIVO do projeto, sem dialogo e sem barulho.
+ *
+ * A mesma trava da copia de seguranca (ver perdeuTrabalho): se o que vai
+ * entrar perdeu muito do que o arquivo tem -- o caso de 12/09/2026 --, o
+ * arquivo NAO e tocado. Devolve false, e quem chamou guarda o estado na copia
+ * de seguranca; so o Ctrl+S dele grava uma perda grande por cima.
+ */
+export function gravarProjetoSozinho(path: string, file: ProjectFile): boolean {
+  if (ehProjetoDoStudio(path)) return false
+  try {
+    if (existsSync(path)) {
+      const atual = contagensDo(JSON.parse(readFileSync(path, 'utf8')))
+      if (atual && perdeuTrabalho(atual, file)) return false
+    }
+  } catch {
+    // Arquivo ilegivel: o estado de agora e o que vale.
+  }
+  saveProjectFile(path, file)
+  return true
+}
+
+/** So o que o perdeuTrabalho olha, sem validar o arquivo inteiro a cada gravacao. */
+function contagensDo(json: unknown): Pick<ProjectFile, 'captions' | 'plan' | 'images'> | null {
+  if (!json || typeof json !== 'object') return null
+  const j = json as Record<string, unknown>
+  const lista = (x: unknown): unknown[] => (Array.isArray(x) ? x : [])
+  const plan = j['plan'] && typeof j['plan'] === 'object' ? (j['plan'] as Record<string, unknown>) : null
+  return {
+    captions: lista(j['captions']),
+    plan: plan ? { scenes: lista(plan['scenes']) } : null,
+    images: lista(j['images']),
+  } as unknown as Pick<ProjectFile, 'captions' | 'plan' | 'images'>
 }
 
 /**
@@ -78,7 +155,7 @@ function lerAnterior(): { projectPath: string | null; file: ProjectFile } | null
  * de um terco, ou tudo). Apagar um bloco, mesclar duas legendas ou tirar uma
  * imagem sao edicoes normais, e nao podem encher o disco de copias.
  */
-function perdeuTrabalho(velho: ProjectFile, novo: ProjectFile): boolean {
+function perdeuTrabalho(velho: Pick<ProjectFile, 'captions' | 'plan' | 'images'>, novo: ProjectFile): boolean {
   const caiuMuito = (antes: number, depois: number): boolean =>
     antes > 0 && (depois === 0 || depois < antes * (2 / 3))
 

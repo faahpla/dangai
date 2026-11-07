@@ -23,6 +23,8 @@ import { configureAudio } from './services/audio'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureFontes, ensureFontesDir } from './services/fontes'
 import { configureUpscale, configureUpscaleCache } from './services/upscale'
+import { configurarFaxina, limparAoSair } from './services/faxina'
+import { cacheDir as cacheDoRender } from './services/assets'
 import { startUpdater } from './services/updater'
 import { configureWhisper, encerrarWhisper } from './services/whisper'
 import { configureFaces } from './services/faces'
@@ -194,7 +196,8 @@ app.whenReady().then(async () => {
   configureMeuJeito(userData)
   // O autosave mora no userData e nao ao lado do projeto: ele precisa existir
   // mesmo antes de haver um projeto com pasta propria.
-  configureProjects(userData)
+  // A pasta padrao dos projetos fica nos Documentos dele (Documentos/Dangai/Projetos).
+  configureProjects(userData, app.getPath('documents'))
   // Binario e modelo do Whisper ficam no userData: sobrevivem a atualizacao do
   // app e nao sujam a pasta do projeto.
   configureWhisper(join(userData, 'whisper'))
@@ -240,6 +243,9 @@ app.whenReady().then(async () => {
       : join(app.getAppPath(), 'assets', 'upscale'),
   )
   configureUpscaleCache(userData)
+  // Os recortes 9:16 e as cenas melhoradas levam o id sorteado na importacao:
+  // so valem nesta sessao, e saem quando a janela fecha (ver services/faxina).
+  configurarFaxina([cacheDoRender, join(userData, 'upscale')])
 
   // O cascade de rosto de anime: 247 KB soltos junto do app, como os SFX.
   configureFaces(
@@ -303,6 +309,10 @@ app.whenReady().then(async () => {
 // Um modulo pode segurar a saida (um download, um motor fechando), com teto.
 app.on('before-quit', (evento) => segurarSaida(evento, () => app.quit()))
 app.on('before-quit', encerrarWhisper)
+// Depois de tudo fechado: os arquivos de trabalho desta sessao (ver services/faxina).
+app.on('will-quit', () => {
+  limparAoSair()
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

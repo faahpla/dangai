@@ -5,6 +5,28 @@ import { trilhaParaMixar } from '@shared/ducking'
 import { emitir } from '@/modulos/ganchos'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { avisarQueFicouPronto } from '../som-de-pronto'
+import { salvarJa } from '../autosave'
+
+/**
+ * DEPOIS DO RENDER: "depois de pronto e renderizado vc exclui esse cache
+ * mantendo so o projeto salvo". O projeto e gravado no arquivo agora (sem
+ * esperar a pausa do auto save) e o trabalho da etapa de audio sai do cache.
+ * Os recortes e as cenas melhoradas desta sessao saem quando o Dangai fecha:
+ * renderizar de novo por um errinho nao refaz o upscale (ver electron/services/faxina).
+ */
+async function faxinaDepoisDoRender(get: GetProjeto): Promise<void> {
+  try {
+    // O "Video pronto" do modulo entra no projeto logo depois do render: da a vez a ele.
+    await new Promise((r) => setTimeout(r, 300))
+    await salvarJa()
+    const s = get()
+    const emUso = [s.audio?.path, s.music?.path, ...s.trilhas.map((t) => t.path)].filter((p): p is string => !!p)
+    const r = await window.dangai.limparDepoisDoRender(s.edicaoDeAudio, emUso)
+    if (r.ok && r.value > 0) console.log(`[faxina] depois do render: ${Math.round(r.value / 1e6)} MB`)
+  } catch (err) {
+    console.warn('[faxina] depois do render:', err)
+  }
+}
 
 /** Do store do editor (ver ../project.ts): o render e o rastreio de rosto. */
 export type FatiaDoRender = Pick<ProjectState, 'startRender' | 'cancelRender' | 'seguirRosto' | 'rastrear' | 'cancelAnalyze' | 'applyRenderProgress'>
@@ -306,6 +328,7 @@ export const fatiaDoRender = (set: SetProjeto, get: GetProjeto): FatiaDoRender =
       emitir('depoisDeRenderizar', { outputPath: progress.outputPath ?? null })
       // Na fila, um som so no fim dela (ver runQueue): cinco videos, cinco sinos seria barulho.
       if (!get().queueRunning) void avisarQueFicouPronto()
+      void faxinaDepoisDoRender(get)
       return
     }
     if (progress.stage === 'failed') {

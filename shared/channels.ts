@@ -84,6 +84,11 @@ export const IPC = {
   autosaveProject: 'project:autosave',
   readAutosave: 'project:autosave-read',
   clearAutosave: 'project:autosave-clear',
+  pastaDosProjetos: 'project:folder',
+  abrirPastaDosProjetos: 'project:folder-open',
+  criarProjeto: 'project:create',
+  gravarProjeto: 'project:write',
+  limparDepoisDoRender: 'project:clean-after-render',
   /** main -> renderer, evento de progresso */
   renderProgress: 'render:progress',
   /** main -> renderer, texto de andamento da analise */
@@ -532,6 +537,8 @@ export interface PublicSettings {
   libraryDir: string
   /** Pasta dos mangas. Vazio = a "Mangás" ao lado da biblioteca, se existir. */
   mangaDir: string
+  /** Onde os projetos sao gravados. Vazio = Documentos\Dangai\Projetos. */
+  pastaDeProjetos: string
   /** O barulhinho quando o render termina. */
   somAoRenderizar: boolean
   /** Chave da Anthropic: so se existe e os quatro ultimos caracteres. */
@@ -574,6 +581,7 @@ export interface SettingsPatch {
   sfxDir?: string
   libraryDir?: string
   mangaDir?: string
+  pastaDeProjetos?: string
   somAoRenderizar?: boolean
   curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
   captionStyle?: Record<string, unknown>
@@ -925,6 +933,19 @@ export interface DangaiBridge {
   /** O que sobrou da ultima sessao, se ainda abrir. */
   readAutosave(): Promise<IpcResult<OpenedProject | null>>
   clearAutosave(): Promise<IpcResult<null>>
+  /** A pasta onde os projetos nascem (a das Configuracoes, ou Documentos\Dangai\Projetos). */
+  pastaDosProjetos(): Promise<IpcResult<string>>
+  /** Abre a pasta dos projetos no Explorer. */
+  abrirPastaDosProjetos(): Promise<IpcResult<null>>
+  /** Cria <pasta dos projetos>/<nome>.dangai, sem dialogo. Com o nome tomado, "<nome> (2)". */
+  criarProjeto(nome: string, file: ProjectFile): Promise<IpcResult<string>>
+  /**
+   * O auto save: grava no proprio .dangai, sem dialogo. false = nao gravou (o
+   * projeto perderia muito de uma vez; o estado fica na copia de seguranca ate o Ctrl+S).
+   */
+  gravarProjeto(path: string, file: ProjectFile): Promise<IpcResult<boolean>>
+  /** Depois do render: o trabalho da etapa de audio sai do cache. Devolve os bytes liberados. */
+  limparDepoisDoRender(edicao: EdicaoDeAudio | null, emUso: string[]): Promise<IpcResult<number>>
   getSettings(): Promise<IpcResult<PublicSettings>>
   saveSettings(patch: SettingsPatch): Promise<IpcResult<PublicSettings>>
   /** Assina o progresso do render. Devolve a funcao para cancelar a assinatura. */

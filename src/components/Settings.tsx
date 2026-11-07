@@ -30,6 +30,8 @@ export function Settings() {
   // o Google usando a chave.
   const [modelos, setModelos] = useState<string[]>([]);
   const [aba, setAba] = useState<"geral" | "atalhos">("geral");
+  /** A pasta dos projetos de verdade (a escolhida, ou a padrao nos Documentos). */
+  const [pastaDosProjetos, setPastaDosProjetos] = useState("");
 
   /*
    * ABRIR NUMA SECAO: "abrir as Configuracoes ja na do motor", por exemplo.
@@ -55,6 +57,13 @@ export function Settings() {
     });
     void refreshSfx();
   }, [open, refreshSfx]);
+
+  useEffect(() => {
+    if (!open) return;
+    void window.dangai.pastaDosProjetos().then((r) => {
+      if (r.ok) setPastaDosProjetos(r.value);
+    });
+  }, [open, settings?.pastaDeProjetos]);
 
   useEffect(() => {
     if (!open) return;
@@ -368,6 +377,51 @@ export function Settings() {
                 ))}
               </div>
               <SecoesDosModulos depoisDe="sons" />
+
+              <div className="my-5 h-px bg-line" />
+
+              <label data-secao="projetos" className="mb-1.5 block text-[11px] font-medium text-ink-2">
+                Pasta dos projetos
+              </label>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const r = await window.dangai.escolherPasta("Escolher a pasta dos projetos");
+                    if (r.ok && r.value) await save({ pastaDeProjetos: r.value });
+                  }}
+                  title="Trocar a pasta"
+                  className="lift flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
+                >
+                  <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{pastaDosProjetos || "..."}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void window.dangai.abrirPastaDosProjetos()}
+                  className="lift shrink-0 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
+                >
+                  Abrir
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                Soltou a narração, o Dangai pergunta o nome e cria o projeto
+                aqui. Daí em diante ele se salva sozinho enquanto você edita.
+                Depois do render, os arquivos de trabalho são apagados e fica
+                só o projeto.
+                {settings?.pastaDeProjetos && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={() => void save({ pastaDeProjetos: "" })}
+                      className="underline hover:text-ink"
+                    >
+                      Voltar para a padrão (Documentos)
+                    </button>
+                  </>
+                )}
+              </p>
 
               <div className="my-5 h-px bg-line" />
 

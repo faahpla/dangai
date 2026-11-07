@@ -2,13 +2,18 @@ import { emitir } from '@/modulos/ganchos'
 import type { MusicPick } from '@shared/channels'
 import { temDadosDeModulo } from '@shared/contract'
 import { repararMetadesDeBaixo } from '@shared/indices'
-import { chavesDesconhecidas, versaoParaGravar, type ProjectFile } from '@shared/project-file'
+import { chavesDesconhecidas, semExtensaoDeProjeto, versaoParaGravar, type ProjectFile } from '@shared/project-file'
+import { avisar } from '../aviso'
+import { perguntarTexto } from '../pergunta'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { semSujar } from '../quiet'
 import type { SetState } from './apoio'
 
 /** Do store do editor (ver ../project.ts): salvar, abrir e o autosave. */
-export type FatiaDoArquivo = Pick<ProjectState, 'toProjectFile' | 'saveProject' | 'openProject' | 'checkAutosave' | 'restoreAutosave' | 'discardAutosave' | 'markSaved'>
+export type FatiaDoArquivo = Pick<
+  ProjectState,
+  'toProjectFile' | 'saveProject' | 'nomearProjeto' | 'openProject' | 'checkAutosave' | 'restoreAutosave' | 'discardAutosave' | 'markSaved'
+>
 
 export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo => ({
 
@@ -133,6 +138,42 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
 
     get().markSaved(result.value)
     emitir('depoisDeSalvar', { path: result.value })
+  },
+
+  nomearProjeto: async () => {
+    const inicio = get()
+    if (inicio.projectPath || !inicio.audio) return
+    const pasta = await window.dangai.pastaDosProjetos()
+    const nome = await perguntarTexto({
+      titulo: 'Nome do projeto',
+      texto:
+        `Fica em ${pasta.ok ? pasta.value : 'Documentos > Dangai > Projetos'} e se salva sozinho enquanto você edita.` +
+        ' A pasta muda nas Configurações.',
+      campo: inicio.audio.fileName.replace(/\.[^.]+$/, ''),
+      sim: 'Criar projeto',
+      nao: 'Agora não',
+    })
+    if (nome === null) return
+    // Enquanto ele digitava, outro projeto pode ter sido aberto por cima.
+    if (get().projectPath) return
+    const file = get().toProjectFile()
+    if (!file) return
+    const r = await window.dangai.criarProjeto(nome, file)
+    if (!r.ok) {
+      set({ error: `Não deu para criar o projeto: ${r.error}` })
+      return
+    }
+    get().markSaved(r.value)
+    emitir('depoisDeSalvar', { path: r.value })
+    const ficou = semExtensaoDeProjeto(r.value.split(/[\\/]/).pop() ?? r.value)
+    if (ficou !== nome) {
+      avisar(
+        /\(\d+\)$/.test(ficou) && !/\(\d+\)$/.test(nome)
+          ? `Já havia um projeto com esse nome: este ficou como “${ficou}”.`
+          : `Alguns sinais não podem ir em nome de arquivo: o projeto ficou como “${ficou}”.`,
+        8000,
+      )
+    }
   },
 
   openProject: async (path) => {

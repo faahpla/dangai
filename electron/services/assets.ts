@@ -1,7 +1,7 @@
 import { basename, join } from 'node:path'
 import { mkdirSync, existsSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import sharp from 'sharp'
 import type { ImageAsset } from '@shared/contract'
 import { medidasAtuais } from './formato'
@@ -18,11 +18,12 @@ import {
   probeClip,
   versaoSdr,
 } from './clips'
+import { idNovo } from './faxina'
 
 /** Largura da miniatura usada no strip e nas tiras da timeline. */
 const THUMBNAIL_WIDTH = 220
 
-const cacheDir = join(tmpdir(), 'dangai-render-cache')
+export const cacheDir = join(tmpdir(), 'dangai-render-cache')
 configureClips(cacheDir)
 
 /** Clipe e print dividem a esteira; so o jeito de preparar o arquivo difere. */
@@ -222,7 +223,7 @@ async function importClip(
   const focusY = clamp01(focus?.focusY ?? 0.5)
 
   try {
-    const id = randomUUID()
+    const id = idNovo()
     // Clipe HDR vira video comum ANTES de tudo: daqui para baixo todo mundo usa
     // a mesma copia, e o render sai com a cor que o preview mostra.
     const fonte = await versaoSdr(path)
@@ -314,7 +315,7 @@ async function importarCoberta(
   const focusY = clamp01(focus?.focusY ?? detectado?.focusY ?? 0.5)
 
   try {
-    const id = randomUUID()
+    const id = idNovo()
     const { width, height } = await orientedSize(path)
     const [thumbnail, renderPath] = await Promise.all([
       makeThumbnail(path),
@@ -441,7 +442,7 @@ async function importarInteira(
 ): Promise<ImageAsset> {
   const fileName = basename(path)
   try {
-    const id = randomUUID()
+    const id = idNovo()
     const montagem = await montarInteira(path)
     const focusX = clamp01(focus?.focusX ?? 0.5)
     const focusY = clamp01(focus?.focusY ?? 0.5)

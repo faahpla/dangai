@@ -926,6 +926,11 @@ export interface ProjectState {
 
   /** Grava o projeto. `comoNovo` forca o dialogo de "salvar como". */
   saveProject: (comoNovo?: boolean) => Promise<void>
+  /**
+   * Projeto sem arquivo: pergunta o nome e cria <pasta dos projetos>/<nome>.dangai
+   * na hora. "Agora nao" deixa como estava (a copia de seguranca cobre).
+   */
+  nomearProjeto: () => Promise<void>
   /** Abre um .dangai. Sem caminho, pergunta qual. */
   openProject: (path?: string) => Promise<void>
   /** Monta o conteudo do arquivo a partir do estado atual. */
@@ -1309,6 +1314,16 @@ export const useProject = create<ProjectState>((set, get) => ({
           emitir('narracaoTrocada', { anterior, nova: result.value.path })
         }
         narracaoNova = true
+        /*
+         * O NOME DO PROJETO, JA NA ENTRADA: "quando eu arrastar o audio pra
+         * editar ja me pergunte qual e o nome do projeto e salva". So no gesto
+         * dele e so em projeto que ainda nao tem arquivo; dai em diante o auto
+         * save grava no proprio .dangai.
+         */
+        if (origem && !get().projectPath) {
+          set({ busy: null })
+          await get().nomearProjeto()
+        }
       } else {
         set({ error: result.error })
       }

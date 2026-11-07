@@ -43,7 +43,7 @@ import {
   type OpenedProject,
   type ProjectFile,
 } from '@shared/project-file'
-import { analyzeAudio, ondaDetalhada, urlDeEscuta } from './services/audio'
+import { analyzeAudio, esquecerEscuta, ondaDetalhada, urlDeEscuta } from './services/audio'
 import { medirSom } from './services/medir-som'
 import type { MedidaDoSom } from '@shared/loudness'
 import { publish } from './services/media-server'
@@ -69,7 +69,10 @@ import { compararCenas } from './services/visao'
 import { readTags, tagClips } from './services/tagger'
 import {
   clearAutosave,
+  criarProjetoNaPasta,
+  gravarProjetoSozinho,
   openProjectFile,
+  pastaDosProjetos,
   readAutosave,
   saveProjectFile,
   writeAutosave,
@@ -98,7 +101,7 @@ import { checkForUpdateNow, installUpdate } from './services/updater'
 import { handle } from './handle'
 import { montarRelatorio } from './services/registro'
 import { componentesDoDangai, prepararDangai } from './services/preparar'
-import { concluirEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
+import { concluirEdicao, limparTrabalhoDaEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
 import { descreverPlugin, janelaDoPlugin, listarPlugins, prepararPlugins } from './services/vst'
 import type { AudioEditado, DescricaoDoPlugin, OndaDaGravacao, PluginInstalado } from '@shared/channels'
 import type { EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
@@ -696,10 +699,11 @@ export function registerIpc(): void {
       if (!alvo || doStudio) {
         const result = await dialog.showSaveDialog({
           title: 'Salvar projeto',
+          // Projeto novo nasce na pasta dos projetos (ver pastaDosProjetos).
           defaultPath:
             doStudio && alvo
               ? `${semExtensaoDeProjeto(alvo)}.${PROJECT_EXTENSION}`
-              : `${suggestedName}.${PROJECT_EXTENSION}`,
+              : join(pastaDosProjetos(getSettings().pastaDeProjetos), `${suggestedName}.${PROJECT_EXTENSION}`),
           filters: [{ name: 'Projeto do Dangai', extensions: [PROJECT_EXTENSION] }],
         })
         if (result.canceled || !result.filePath) return null
@@ -722,6 +726,7 @@ export function registerIpc(): void {
     if (!alvo) {
       const result = await dialog.showOpenDialog({
         title: 'Abrir projeto',
+        defaultPath: pastaDosProjetos(getSettings().pastaDeProjetos),
         properties: ['openFile'],
         filters: [{ name: 'Projeto do Dangai', extensions: [...PROJECT_EXTENSIONS_ABRIR] }],
       })
@@ -749,6 +754,49 @@ export function registerIpc(): void {
   handle<[], null>(IPC.clearAutosave, async () => {
     clearAutosave()
     return null
+  })
+
+  handle<[], string>(IPC.pastaDosProjetos, async () => pastaDosProjetos(getSettings().pastaDeProjetos))
+  handle<[], null>(IPC.abrirPastaDosProjetos, async () => {
+    const erro = await shell.openPath(pastaDosProjetos(getSettings().pastaDeProjetos))
+    if (erro) throw new Error(erro)
+    return null
+  })
+
+  // Soltou a narracao, deu o nome: o projeto ja nasce salvo na pasta dos projetos.
+  handle<[string, ProjectFile], string>(IPC.criarProjeto, async (nome, file) => {
+    const alvo = criarProjetoNaPasta(pastaDosProjetos(getSettings().pastaDeProjetos), nome, file)
+    clearAutosave()
+    return alvo
+  })
+
+  /*
+   * O AUTO SAVE: no proprio arquivo. Sem o "Do meu jeito" (ele aprende no
+   * Ctrl+S e ao abrir, nao a cada 1,2 s de edicao). Nao gravou (perda grande)?
+   * O estado vai para a copia de seguranca, como antes.
+   */
+  handle<[string, ProjectFile], boolean>(IPC.gravarProjeto, async (path, file) => {
+    if (gravarProjetoSozinho(path, file)) {
+      clearAutosave()
+      return true
+    }
+    writeAutosave(file, path)
+    return false
+  })
+
+  /*
+   * DEPOIS DO RENDER: "exclui esse cache mantendo so o projeto salvo". O trabalho
+   * da etapa de audio e as copias de escuta da gravacao crua (a narracao agora e
+   * a pronta). O que o preview esta tocando (`emUso`) nao e tocado.
+   */
+  handle<[EdicaoDeAudio | null, string[]], number>(IPC.limparDepoisDoRender, async (edicao, emUso) => {
+    if (!edicao) return 0
+    let liberado = limparTrabalhoDaEdicao(edicao)
+    const tocando = new Set(emUso.map((p) => p.toLowerCase()))
+    for (const caminho of [edicao.bruto, ...edicao.correcoes.map((c) => c.caminho)]) {
+      if (!tocando.has(caminho.toLowerCase())) liberado += esquecerEscuta(caminho)
+    }
+    return liberado
   })
 
   // A chave e o provedor (Gemini ou Anthropic) vem das configuracoes, pelo llm.ts.

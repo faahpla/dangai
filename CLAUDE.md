@@ -96,7 +96,9 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
   montada: erro de componente — inclusive na limpeza, ao desligar — some com ele, não com a janela.
 - **Ligar/desligar:** Configurações > Módulos (`Settings.modulosLigados`); desligado por padrão.
 - **Eventos:** `abrirProjeto`, `depoisDeSalvar`, `depoisDeRenderizar`, `narracaoTrocada`,
-  `configuracoesMudaram` (`src/modulos/ganchos.ts`). `aplicarNoDocumento`/`gravarNoProjeto` =
+  `configuracoesMudaram` (`src/modulos/ganchos.ts`). Desde a 1.98 o auto save grava no próprio
+  `.dangai` (`src/store/autosave.ts`), e **não** emite `depoisDeSalvar`: ele sai no Ctrl+S e quando
+  o projeto nasce (o nome pedido ao soltar a narração, `nomearProjeto`). `aplicarNoDocumento`/`gravarNoProjeto` =
   um passo de Ctrl+Z; a fachada também tem `desfazer`/`refazer`, `semSujar` (mudar sem sujar e
   sem passo — conversão ao abrir) e `esquecerDoProjeto` (tirar um campo desconhecido da raiz).
   Não há "marcar limpo" de propósito.

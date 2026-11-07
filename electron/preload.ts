@@ -277,6 +277,14 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.readAutosave) as Promise<IpcResult<OpenedProject | null>>,
 
   clearAutosave: () => ipcRenderer.invoke(IPC.clearAutosave) as Promise<IpcResult<null>>,
+  pastaDosProjetos: () => ipcRenderer.invoke(IPC.pastaDosProjetos) as Promise<IpcResult<string>>,
+  abrirPastaDosProjetos: () => ipcRenderer.invoke(IPC.abrirPastaDosProjetos) as Promise<IpcResult<null>>,
+  criarProjeto: (nome: string, file: ProjectFile) =>
+    ipcRenderer.invoke(IPC.criarProjeto, nome, file) as Promise<IpcResult<string>>,
+  gravarProjeto: (path: string, file: ProjectFile) =>
+    ipcRenderer.invoke(IPC.gravarProjeto, path, file) as Promise<IpcResult<boolean>>,
+  limparDepoisDoRender: (edicao, emUso) =>
+    ipcRenderer.invoke(IPC.limparDepoisDoRender, edicao, emUso) as Promise<IpcResult<number>>,
 
   getSettings: () => ipcRenderer.invoke(IPC.getSettings) as Promise<IpcResult<PublicSettings>>,
 

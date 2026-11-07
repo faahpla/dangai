@@ -82,6 +82,12 @@ export interface Settings {
    * da biblioteca, quando existe (ver pastaDosMangas).
    */
   mangaDir: string
+  /**
+   * Onde os projetos nascem: soltar a narracao pergunta o nome e grava
+   * <pasta>/<nome>.dangai na hora. Vazio = Documentos\Dangai\Projetos (ver
+   * pastaDosProjetos).
+   */
+  pastaDeProjetos: string
   /** O barulhinho quando o render termina. Ligado por padrao. */
   somAoRenderizar: boolean
   /**
@@ -150,6 +156,7 @@ const DEFAULTS: Settings = {
   sfxDir: '',
   libraryDir: '',
   mangaDir: '',
+  pastaDeProjetos: '',
   somAoRenderizar: true,
   curvePresets: [],
   captionPresets: [],
@@ -376,6 +383,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'ge
     sfxDir: settings.sfxDir,
     libraryDir: settings.libraryDir,
     mangaDir: settings.mangaDir,
+    pastaDeProjetos: settings.pastaDeProjetos,
     somAoRenderizar: settings.somAoRenderizar,
     curvePresets: settings.curvePresets,
     captionStyle: settings.captionStyle,
@@ -429,6 +437,7 @@ function coerce(raw: unknown): Settings {
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
     mangaDir: typeof value['mangaDir'] === 'string' ? value['mangaDir'] : '',
+    pastaDeProjetos: typeof value['pastaDeProjetos'] === 'string' ? value['pastaDeProjetos'] : '',
     somAoRenderizar: value['somAoRenderizar'] !== false,
     curvePresets: curvasSalvas(value['curvePresets']),
     // Conferido do outro lado, pelo schema do contract: aqui so passa adiante

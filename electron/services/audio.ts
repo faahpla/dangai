@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, utimesSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import type { AudioAnalysis } from '@shared/contract'
 import { ffmpegPath } from './ffmpeg-path'
 import { publish } from './media-server'
@@ -32,15 +32,35 @@ export function configureAudio(userData: string): void {
 const COMPRIMIDOS = new Set(['.mp3', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.wma', '.webm', '.mp4'])
 const convertendo = new Map<string, Promise<void>>()
 
+/** Onde fica (ou ficaria) a copia de escuta deste arquivo. null = toca o proprio. */
+function copiaDeEscuta(path: string): string | null {
+  if (!pastaDeEscuta || !COMPRIMIDOS.has(extname(path).toLowerCase())) return null
+  const st = statSync(path)
+  const chave = createHash('sha1').update(`${path}|${st.size}|${Math.round(st.mtimeMs)}`).digest('hex').slice(0, 20)
+  return join(pastaDeEscuta, `${chave}.wav`)
+}
+
+/** A copia de escuta de um audio que saiu do projeto (a gravacao crua depois do "Pronto"). */
+export function esquecerEscuta(path: string): number {
+  try {
+    const alvo = copiaDeEscuta(path)
+    if (!alvo || !existsSync(alvo)) return 0
+    const tamanho = statSync(alvo).size
+    rmSync(alvo, { force: true })
+    return tamanho
+  } catch {
+    return 0
+  }
+}
+
 /** A URL que o preview toca: a copia de escuta, ou o proprio arquivo. */
 export async function urlDeEscuta(path: string): Promise<string> {
-  if (!pastaDeEscuta || !COMPRIMIDOS.has(extname(path).toLowerCase())) return publish(path)
   let alvo: string
   try {
-    const st = statSync(path)
-    const chave = createHash('sha1').update(`${path}|${st.size}|${Math.round(st.mtimeMs)}`).digest('hex').slice(0, 20)
-    mkdirSync(pastaDeEscuta, { recursive: true })
-    alvo = join(pastaDeEscuta, `${chave}.wav`)
+    const copia = copiaDeEscuta(path)
+    if (!copia) return publish(path)
+    mkdirSync(dirname(copia), { recursive: true })
+    alvo = copia
   } catch {
     return publish(path)
   }

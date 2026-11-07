@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.98.0',
+    itens: [
+      'Pasta dos projetos: soltou a narração, o Dangai pergunta o nome do projeto e já salva em Documentos > Dangai > Projetos. Nome repetido vira "nome (2)", nunca por cima de outro. A pasta muda nas Configurações, com um botão para abri-la.',
+      'Salvar sozinho: com o projeto criado, cada mudança é gravada no próprio arquivo um segundo depois de você parar de mexer. O Ctrl+S continua funcionando. Se você disser "Agora não" ao nome, vale a cópia de segurança de antes ("Continuar de onde parou").',
+      'Limpeza depois do render: o projeto é salvo e os arquivos de trabalho da etapa de Áudio são apagados (a gravação e a narração pronta ficam). As cópias das cenas preparadas para o vídeo saem quando você fecha o Dangai; as que sobraram de versões antigas saem sozinhas na abertura. Voltar ao Áudio refaz o que precisar.',
+    ],
+  },
+  {
     versao: '1.97.0',
     itens: [
       'Correções no Áudio: regravou um pedaço? Selecione o trecho ruim e clique em "Importar correção" (ou solte o arquivo na tela): a correção entra no lugar dele, em azul, e passa pelos mesmos efeitos. Sem seleção, ela entra na agulha. O que sobrar dela, corte com C e Delete.',

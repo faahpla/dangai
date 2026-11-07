@@ -148,14 +148,30 @@ function gravarWavFloat(caminho: string, x: Float32Array): void {
 // ------------------------------------------------------------- a gravacao
 
 /** A gravacao em 48 kHz mono, 16 bits: o que a IA de limpeza le. */
+/*
+ * Uma conversao por gravacao: a onda e a escuta pedem a mesma base juntas ao abrir
+ * a etapa, e as duas escrevendo o mesmo .part davam ENOENT no rename da segunda.
+ */
+const convertendo = new Map<string, Promise<string>>()
+
 async function base(bruto: string): Promise<string> {
   const alvo = join(dir('base'), `${identidade(bruto)}.wav`)
-  if (!existsSync(alvo)) {
-    const parcial = `${alvo}.part.wav`
-    await rodarFfmpeg(['-i', bruto, '-vn', '-ac', '1', '-ar', String(TAXA), '-c:a', 'pcm_s16le', parcial])
-    renameSync(parcial, alvo)
+  if (existsSync(alvo)) return alvo
+  let p = convertendo.get(alvo)
+  if (!p) {
+    p = (async () => {
+      const parcial = `${alvo}.part.wav`
+      await rodarFfmpeg(['-i', bruto, '-vn', '-ac', '1', '-ar', String(TAXA), '-c:a', 'pcm_s16le', parcial])
+      renameSync(parcial, alvo)
+      return alvo
+    })()
+    convertendo.set(alvo, p)
+    void p.then(
+      () => convertendo.delete(alvo),
+      () => convertendo.delete(alvo),
+    )
   }
-  return alvo
+  return p
 }
 
 // ------------------------------------------------------------- a IA de limpeza
@@ -359,7 +375,8 @@ async function processado(caminho: string, edicao: EdicaoDeAudio, onProgress: (m
   const plugins = edicao.cadeia.plugins.filter((p) => p.ligado)
   if (!filtros && plugins.length === 0) return f
   const chave = hash({ v: VERSAO, f: basename(f), filtros, p: plugins.map((p) => [p.caminho, p.estado, p.parametros]) })
-  const alvo = join(dir('processado'), `${chave}.wav`)
+  // A identidade da gravacao na frente do nome: a faxina acha o que e de quem.
+  const alvo = join(dir('processado'), `${basename(f, '.wav').slice(0, 16)}-${chave}.wav`)
   if (existsSync(alvo)) return alvo
   let p = processando.get(chave)
   if (!p) {
@@ -449,8 +466,9 @@ export async function renderizarEdicao(
   const escutas = await fontesDaEscuta(edicao, efeitos, onProgress)
   const normalizar = efeitos && edicao.cadeia.normalizar.ligado ? edicao.cadeia.normalizar.alvoLufs : null
   const chave = hash({ v: VERSAO, f: escutas.map(([id, f]) => [id, basename(f)]), t: edicao.trechos, n: normalizar })
-  const arquivo = join(dir('render'), `${chave}.wav`)
-  const ficha = join(dir('render'), `${chave}.json`)
+  const dono = identidade(edicao.bruto)
+  const arquivo = join(dir('render'), `${dono}-${chave}.wav`)
+  const ficha = join(dir('render'), `${dono}-${chave}.json`)
   if (existsSync(arquivo) && existsSync(ficha)) {
     const fi = JSON.parse(readFileSync(ficha, 'utf8')) as { durationSec: number; lufs: number | null }
     return { ...fi, arquivo, url: publish(arquivo) }
@@ -527,6 +545,44 @@ export async function concluirEdicao(edicao: EdicaoDeAudio, onProgress: (m: stri
   for (let k = 2; existsSync(saida) && saida !== edicao.saida; k++) saida = join(pasta, `${nome} (editado ${k}).wav`)
   copyFileSync(pronto.arquivo, saida)
   return saida
+}
+
+/**
+ * DEPOIS DO RENDER: o trabalho desta edicao sai do cache -- a gravacao em 48 kHz,
+ * a limpa pela IA, a com efeitos e as emendas. Fica a narracao pronta (ao lado
+ * da gravacao) e a propria gravacao. Voltar na etapa refaz o que precisar.
+ * Devolve quantos bytes saíram.
+ */
+export function limparTrabalhoDaEdicao(edicao: EdicaoDeAudio): number {
+  if (!pasta || !existsSync(pasta)) return 0
+  const ids: string[] = []
+  for (const caminho of [edicao.bruto, ...edicao.correcoes.map((c) => c.caminho)]) {
+    try {
+      ids.push(identidade(caminho))
+    } catch {
+      // Saiu do disco: o que era dela fica para a limpeza por idade.
+    }
+  }
+  if (ids.length === 0) return 0
+  let liberado = 0
+  for (const sub of ['base', 'limpa', 'processado', 'render']) {
+    const d = join(pasta, sub)
+    if (!existsSync(d)) continue
+    for (const nome of readdirSync(d)) {
+      if (!ids.some((id) => nome.startsWith(id))) continue
+      try {
+        const p = join(d, nome)
+        const tamanho = statSync(p).size
+        rmSync(p, { force: true })
+        liberado += tamanho
+      } catch {
+        // Em uso (a etapa tocando): fica para a proxima.
+      }
+    }
+  }
+  // O que estava lido na memoria era desses arquivos.
+  lidas.clear()
+  return liberado
 }
 
 /** Renders com mais de 2 dias e gravacoes lidas ha mais de 14 saem do cache. */
