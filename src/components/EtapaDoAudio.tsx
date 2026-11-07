@@ -22,6 +22,7 @@ import {
   cortarSilencios,
   duracaoEditada,
   duracoesDasFontes,
+  fatorDaVelocidade,
   FONTE_PRINCIPAL,
   fonteDo,
   ganhoDoTrecho,
@@ -30,6 +31,9 @@ import {
   SILENCIOS_PADRAO,
   substituirIntervalo,
   trechoDaCorrecao,
+  VELOCIDADE_MAX,
+  VELOCIDADE_MIN,
+  VELOCIDADES_RAPIDAS,
   type CadeiaDeAudio,
   type Correcao,
   type EdicaoDeAudio,
@@ -39,7 +43,7 @@ import { useProject } from '@/store/project'
 import { desfazer, refazer } from '@/store/undo'
 import { avisar } from '@/store/aviso'
 import { BarraDeEtapas } from './BarraDeEtapas'
-import { Botaozinho, Deslizante, Grupo, Linha } from './painel'
+import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
 
 /**
  * A ETAPA DE AUDIO: a gravacao crua vira a narracao, sem sair do Dangai.
@@ -89,6 +93,8 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   const [zoom, setZoom] = useState(1)
 
   const duracao = duracaoEditada(edicao.trechos)
+  /** A velocidade da narracao final (1,15 = 115%). A tela continua no tempo da gravacao. */
+  const fator = fatorDaVelocidade(edicao.cadeia)
   const player = useRef<HTMLAudioElement | null>(null)
   if (!player.current) player.current = new Audio()
 
@@ -99,7 +105,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
    * A ONDA so muda com os efeitos (ou com a escuta), nao com os cortes: ela e
    * da gravacao inteira, e a tela corta pelos trechos.
    */
-  const receitaDaOnda = JSON.stringify([edicao.bruto, edicao.correcoes.map((c) => c.caminho), comEfeitos ? edicao.cadeia : null])
+  const receitaDaOnda = JSON.stringify([edicao.bruto, edicao.correcoes.map((c) => c.caminho), comEfeitos ? cadeiaSemVelocidade(edicao.cadeia) : null])
   useEffect(() => {
     let vivo = true
     const t = setTimeout(() => {
@@ -117,7 +123,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   }, [receitaDaOnda])
 
   // O SOM muda com tudo: os cortes e os efeitos. Pedido depois que ele para de mexer.
-  const receitaDoSom = JSON.stringify([edicao.bruto, edicao.correcoes.map((c) => c.caminho), edicao.trechos, comEfeitos ? edicao.cadeia : null])
+  const receitaDoSom = JSON.stringify([edicao.bruto, edicao.correcoes.map((c) => c.caminho), edicao.trechos, comEfeitos ? cadeiaSemVelocidade(edicao.cadeia) : null])
   useEffect(() => {
     let vivo = true
     const t = setTimeout(() => {
@@ -154,6 +160,19 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
     return () => p.removeEventListener('loadedmetadata', aoCarregar)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [som?.url])
+
+  /*
+   * A VELOCIDADE NO PREVIEW: o proprio navegador acelera sem mudar o tom
+   * (preservesPitch), sem renderizar nada -- trocar de 110 para 120 e na hora. A
+   * agulha e os cortes continuam no tempo da gravacao; a narracao final sai
+   * acelerada pelo Rubber Band no "Pronto".
+   */
+  useEffect(() => {
+    const p = player.current!
+    p.preservesPitch = true
+    p.defaultPlaybackRate = fator
+    p.playbackRate = fator
+  }, [fator, som?.url])
 
   // A agulha acompanha o som enquanto toca.
   useEffect(() => {
@@ -317,8 +336,9 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
           {edicao.bruto.split(/[\\/]/).pop()}
         </span>
         <span className="tnum shrink-0 text-[12px] text-ink-3">
-          {relogio(edicao.duracaoBruta)} → <span className="text-ink-2">{relogio(duracao)}</span>
-          {edicao.duracaoBruta - duracao > 0.5 && ` (−${Math.round(edicao.duracaoBruta - duracao)} s)`}
+          {relogio(edicao.duracaoBruta)} → <span className="text-ink-2">{relogio(duracao / fator)}</span>
+          {edicao.duracaoBruta - duracao / fator > 0.5 && ` (−${Math.round(edicao.duracaoBruta - duracao / fator)} s)`}
+          {fator !== 1 && <span className="text-accent">{` · ${Math.round(fator * 100)}%`}</span>}
           {comEfeitos && som?.lufs != null && ` · ${som.lufs.toFixed(1)} LUFS`}
         </span>
         <span className="flex-1" />
@@ -1068,6 +1088,8 @@ function Efeitos({ cadeia, mudar }: { cadeia: CadeiaDeAudio; mudar: (f: (c: Cade
 
       <Plugins cadeia={cadeia} mudar={mudar} />
 
+      <Velocidade valor={cadeia.velocidade} onChange={(v) => mudar((c) => ({ ...c, velocidade: v }))} />
+
       <Grupo titulo="Normalizar" acao={<Chave ligado={normalizar.ligado} onChange={(v) => mudar((c) => ({ ...c, normalizar: { ...c.normalizar, ligado: v } }))} />}>
         <Linha label="Volume" title="O volume medido do jeito do YouTube (LUFS). −14 é o do render do Dangai">
           <Deslizante textoLargo valor={normalizar.alvoLufs} min={-24} max={-9} step={0.5} padrao={-14} texto={`${normalizar.alvoLufs.toFixed(1).replace('.', ',')} LUFS`}
@@ -1084,6 +1106,64 @@ function Efeitos({ cadeia, mudar }: { cadeia: CadeiaDeAudio; mudar: (f: (c: Cade
         Salvar como meu padrão
       </button>
     </>
+  )
+}
+
+/** O que muda o SOM (a onda, a escuta): tudo menos a velocidade, que o preview faz tocando. */
+function cadeiaSemVelocidade({ velocidade: _fora, ...resto }: CadeiaDeAudio): Omit<CadeiaDeAudio, 'velocidade'> {
+  return resto
+}
+
+/**
+ * A VELOCIDADE sem mudar o tom: "eu costumo usar 110, 115 e 120". Os atalhos e
+ * um numero livre, como o Change Clip Speed do DaVinci com o Pitch Correction.
+ */
+function Velocidade({ valor, onChange }: { valor: number; onChange: (v: number) => void }) {
+  const [texto, setTexto] = useState(String(valor))
+  useEffect(() => setTexto(String(valor)), [valor])
+  const aplicar = (): void => {
+    const n = Number(texto.trim().replace(',', '.').replace('%', ''))
+    if (!Number.isFinite(n) || n <= 0) {
+      setTexto(String(valor))
+      return
+    }
+    const v = Math.min(VELOCIDADE_MAX, Math.max(VELOCIDADE_MIN, Math.round(n * 100) / 100))
+    setTexto(String(v))
+    if (v !== valor) onChange(v)
+  }
+  return (
+    <Grupo titulo="Velocidade">
+      <Segmentos
+        opcoes={VELOCIDADES_RAPIDAS.map((v) => ({
+          valor: v,
+          rotulo: `${v}%`,
+          title: v === 100 ? 'Normal' : `${v}%: mais rápido, com o mesmo tom`,
+        }))}
+        ativo={(v) => Math.abs(v - valor) < 0.005}
+        onChange={(v) => onChange(v)}
+      />
+      <Linha label="Outra" title={`De ${VELOCIDADE_MIN}% a ${VELOCIDADE_MAX}%`}>
+        <input
+          value={texto}
+          inputMode="decimal"
+          onChange={(e) => setTexto(e.target.value)}
+          onBlur={aplicar}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur()
+            if (e.key === 'Escape') {
+              setTexto(String(valor))
+              e.currentTarget.blur()
+            }
+          }}
+          className="tnum h-6 w-16 rounded-sm border border-line bg-elevated px-1.5 text-right text-[11px] text-ink outline-none focus:border-accent"
+        />
+        <span className="text-[11px] text-ink-3">%</span>
+      </Linha>
+      <p className="text-[11px] leading-relaxed text-ink-3">
+        Acelera sem mudar o tom da voz, como o Pitch Correction do DaVinci. O preview já toca nessa velocidade, e a
+        narração sai assim no “Pronto”.
+      </p>
+    </Grupo>
   )
 }
 

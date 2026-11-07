@@ -98,7 +98,33 @@ def processar(pedido: dict) -> dict:
     return {"ok": True}
 
 
-COMANDOS = {"listar": listar, "descrever": lambda p: descrever(carregar(p)), "janela": janela, "processar": processar}
+def acelerar(pedido: dict) -> dict:
+    """
+    Acelera (ou desacelera) sem mudar o tom: o "Pitch Correction" do Change Clip
+    Speed do DaVinci. Rubber Band R3 (high_quality) com os formantes preservados --
+    medido na voz dele a 110/115/120%: a F0 mediana fica em 186 Hz como no original
+    (o R2 do ffmpeg subia para 189).
+    """
+    from pedalboard import time_stretch
+    from pedalboard.io import AudioFile
+
+    fator = float(pedido["fator"])
+    with AudioFile(pedido["entrada"]) as f:
+        taxa = f.samplerate
+        audio = f.read(f.frames)
+    saida = time_stretch(audio, taxa, stretch_factor=fator, high_quality=True, preserve_formants=True)
+    with AudioFile(pedido["saida"], "w", taxa, saida.shape[0], bit_depth=32) as f:
+        f.write(saida)
+    return {"ok": True, "quadros": int(saida.shape[1])}
+
+
+COMANDOS = {
+    "listar": listar,
+    "descrever": lambda p: descrever(carregar(p)),
+    "janela": janela,
+    "processar": processar,
+    "acelerar": acelerar,
+}
 
 
 def main(argv: list[str]) -> int:

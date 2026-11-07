@@ -17,6 +17,7 @@ import { basename, dirname, extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import {
+  fatorDaVelocidade,
   filtrosDaCadeia,
   FONTE_PRINCIPAL,
   fonteDo,
@@ -29,7 +30,7 @@ import {
 import { EnergiaK } from '@shared/loudness'
 import { ffmpegPath } from './ffmpeg-path'
 import { publish } from './media-server'
-import { aplicarPlugins } from './vst'
+import { acelerarVoz, aplicarPlugins, prepararPlugins } from './vst'
 
 /**
  * A ETAPA DE AUDIO por dentro: da gravacao crua a narracao pronta.
@@ -462,10 +463,22 @@ export async function renderizarEdicao(
   edicao: EdicaoDeAudio,
   efeitos: boolean,
   onProgress: (m: string) => void,
+  /**
+   * A velocidade entra so na narracao final (o "Pronto"): na tela, a agulha e os
+   * cortes vivem no tempo da gravacao, e o preview acelera tocando (playbackRate).
+   */
+  comVelocidade = false,
 ): Promise<AudioEditado> {
   const escutas = await fontesDaEscuta(edicao, efeitos, onProgress)
   const normalizar = efeitos && edicao.cadeia.normalizar.ligado ? edicao.cadeia.normalizar.alvoLufs : null
-  const chave = hash({ v: VERSAO, f: escutas.map(([id, f]) => [id, basename(f)]), t: edicao.trechos, n: normalizar })
+  const fator = comVelocidade && efeitos ? fatorDaVelocidade(edicao.cadeia) : 1
+  const chave = hash({
+    v: VERSAO,
+    f: escutas.map(([id, f]) => [id, basename(f)]),
+    t: edicao.trechos,
+    n: normalizar,
+    ...(fator !== 1 ? { vel: fator } : {}),
+  })
   const dono = identidade(edicao.bruto)
   const arquivo = join(dir('render'), `${dono}-${chave}.wav`)
   const ficha = join(dir('render'), `${dono}-${chave}.json`)
@@ -479,7 +492,26 @@ export async function renderizarEdicao(
       const usadas = new Set(edicao.trechos.map(fonteDo))
       const lidas: Record<string, Float32Array> = {}
       for (const [id, f] of escutas) if (usadas.has(id)) lidas[id] = await lerMonoComCache(f)
-      const x = montarCortes(lidas, edicao.trechos)
+      let x = montarCortes(lidas, edicao.trechos)
+      /*
+       * A VELOCIDADE, sem mudar o tom: Rubber Band R3 pelo vst-host (ver
+       * ferramentas/vst/host.py). Antes de normalizar e do teto, que medem e
+       * seguram o audio ja acelerado.
+       */
+      if (fator !== 1) {
+        await prepararPlugins(onProgress)
+        onProgress(`Acelerando para ${Math.round(fator * 100)}% sem mudar o tom...`)
+        const lento = `${arquivo}.lento.wav`
+        const rapido = `${arquivo}.rapido.wav`
+        gravarWavFloat(lento, x)
+        try {
+          await acelerarVoz(lento, rapido, fator)
+          x = await lerMono(rapido)
+        } finally {
+          rmSync(lento, { force: true })
+          rmSync(rapido, { force: true })
+        }
+      }
       if (normalizar !== null) {
         const medido = lufsDe(x)
         if (medido !== null) {
@@ -538,7 +570,7 @@ export async function silenciosDaGravacao(
  * arquivo com esse nome que nao seja o desta edicao nunca e sobrescrito.
  */
 export async function concluirEdicao(edicao: EdicaoDeAudio, onProgress: (m: string) => void): Promise<string> {
-  const pronto = await renderizarEdicao(edicao, true, onProgress)
+  const pronto = await renderizarEdicao(edicao, true, onProgress, true)
   const pasta = dirname(edicao.bruto)
   const nome = basename(edicao.bruto, extname(edicao.bruto))
   let saida = edicao.saida && dirname(edicao.saida) === pasta ? edicao.saida : join(pasta, `${nome} (editado).wav`)

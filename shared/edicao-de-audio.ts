@@ -65,6 +65,12 @@ export const pluginDaCadeiaSchema = z.object({
 })
 export type PluginDaCadeia = z.infer<typeof pluginDaCadeiaSchema>
 
+/** A velocidade cabe entre metade e o dobro. */
+export const VELOCIDADE_MIN = 50
+export const VELOCIDADE_MAX = 200
+/** Os atalhos da tela: o normal e as que ele usa. */
+export const VELOCIDADES_RAPIDAS = [100, 110, 115, 120] as const
+
 export const cadeiaDeAudioSchema = z.object({
   /** O "AI Voice Isolation": tira ruido e ambiente (DeepFilterNet). */
   isolarVoz: z.object({ ligado: z.boolean(), quantidade: z.number().min(0).max(100) }),
@@ -91,6 +97,14 @@ export const cadeiaDeAudioSchema = z.object({
     ganhoDb: z.number().min(0).max(24),
   }),
   plugins: z.array(pluginDaCadeiaSchema).max(8),
+  /**
+   * A VELOCIDADE, em %: o "Change Clip Speed" do DaVinci com o Pitch Correction
+   * ligado -- "acelerar o audio sem mudar o pitch". 100 = normal; ele usa 110,
+   * 115 e 120. Entra depois dos cortes e antes de normalizar, so na narracao
+   * final (o "Pronto"); na tela, o preview toca acelerado pelo proprio navegador.
+   * Com default: cadeia salva antes disto (o "meu padrao") abre em 100.
+   */
+  velocidade: z.number().min(VELOCIDADE_MIN).max(VELOCIDADE_MAX).default(100),
   /** O "normalize audio levels": o volume final medido em LUFS. */
   normalizar: z.object({ ligado: z.boolean(), alvoLufs: z.number().min(-30).max(-6) }),
 })
@@ -129,7 +143,14 @@ export const CADEIA_PADRAO: CadeiaDeAudio = {
   compressor: { ligado: true, limiarDb: -20, razao: 3, ataqueMs: 10, soltarMs: 150, ganhoDb: 3 },
   plugins: [],
   // O mesmo alvo do render (LUFS_DA_NARRACAO): la o loudnorm vira quase nada.
+  velocidade: 100,
   normalizar: { ligado: true, alvoLufs: -14 },
+}
+
+/** O fator da velocidade (1,15 = 115%), ou 1 quando nao mexe. */
+export function fatorDaVelocidade(cadeia: Pick<CadeiaDeAudio, 'velocidade'>): number {
+  const v = cadeia.velocidade ?? 100
+  return Math.abs(v - 100) < 0.005 ? 1 : v / 100
 }
 
 /** Menor pedaco que um corte deixa: menos que isto e um clique, nao um som. */

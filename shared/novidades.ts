@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.99.0',
+    itens: [
+      'Velocidade no Áudio, sem mudar o tom: no painel dos efeitos, escolha 110%, 115% ou 120% (ou digite outro número, de 50% a 200%). É como o Change Clip Speed do DaVinci com o Pitch Correction ligado: a fala fica mais rápida e a sua voz continua com o mesmo tom, sem a vozinha fina.',
+      'O preview já toca na velocidade escolhida, e o "Pronto" grava a narração acelerada. O "Salvar como meu padrão" guarda a velocidade também. Na primeira vez, o Dangai baixa de novo o leitor de plugins (23 MB), que agora faz a aceleração.',
+    ],
+  },
+  {
     versao: '1.98.0',
     itens: [
       'Pasta dos projetos: soltou a narração, o Dangai pergunta o nome do projeto e já salva em Documentos > Dangai > Projetos. Nome repetido vira "nome (2)", nunca por cima de outro. A pasta muda nas Configurações, com um botão para abri-la.',

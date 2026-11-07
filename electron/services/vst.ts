@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { app } from 'electron'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -21,10 +21,14 @@ import type { PluginDaCadeia } from '@shared/edicao-de-audio'
  * Python de DANGAI_VST_PYTHON rodando o host.py direto.
  */
 
+/*
+ * v2 (1.99): o comando `acelerar` -- a velocidade da etapa de audio, sem mudar o
+ * tom (Rubber Band R3). Quem tinha a v1 baixa a v2 uma vez; a v1 sai do disco.
+ */
 const VST_HOST = {
-  versao: '1',
-  url: 'https://github.com/faahpla/dangai/releases/download/ferramentas-vst-1/vst-host-1.zip',
-  sha256: '21d07a81cd1bbb2065220cef06a1d2a66727ed6f980232f3f5bfea54c32a6720',
+  versao: '2',
+  url: 'https://github.com/faahpla/dangai/releases/download/ferramentas-vst-2/vst-host-2.zip',
+  sha256: 'f0a5731fe45e44455fad0c87c06d877618081d7e0f1251fe8255c37167d56ca6',
   mb: 23,
 }
 
@@ -105,6 +109,12 @@ export function prepararPlugins(onProgress: (m: string) => void): Promise<void> 
     })
     rmSync(zip, { force: true })
     if (!existsSync(instalado())) throw new Error('O leitor de plugins baixado está incompleto.')
+    // As versoes anteriores nao servem mais (a nova faz tudo o que elas faziam).
+    for (const nome of readdirSync(dir())) {
+      if (/^vst-host-\d+$/.test(nome) && nome !== `vst-host-${VST_HOST.versao}`) {
+        rmSync(join(dir(), nome), { recursive: true, force: true })
+      }
+    }
   })().finally(() => {
     baixando = null
   })
@@ -163,6 +173,14 @@ export function descreverPlugin(caminho: string, estado: string | null): Promise
 /** Abre a janela do proprio plugin; volta quando ele FECHA, com o estado novo. */
 export function janelaDoPlugin(caminho: string, estado: string | null): Promise<DescricaoDoPlugin> {
   return chamar<DescricaoDoPlugin>('janela', { caminho, estado }, { janela: true })
+}
+
+/**
+ * Acelera sem mudar o tom (o "Pitch Correction" do DaVinci): `fator` 1,15 = 115%,
+ * o audio fica 15% mais rapido e mais curto, com a mesma voz.
+ */
+export async function acelerarVoz(entrada: string, saida: string, fator: number): Promise<void> {
+  await chamar('acelerar', { entrada, saida, fator })
 }
 
 /** Passa o .wav pelos plugins ligados, na ordem. */

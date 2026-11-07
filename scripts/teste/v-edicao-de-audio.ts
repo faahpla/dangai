@@ -15,6 +15,7 @@ import {
   cortarSilencios,
   duracaoEditada,
   edicaoDeAudioSchema,
+  fatorDaVelocidade,
   filtrosDaCadeia,
   ganhoDoTrecho,
   limiteDaIa,
@@ -136,6 +137,17 @@ console.log('o que vai para o arquivo do projeto')
   conferir('a cadeia padrao e valida', cadeiaDeAudioSchema.safeParse(CADEIA_PADRAO).success, true)
   const e = edicaoDeAudioSchema.parse({ bruto: 'x.wav', duracaoBruta: 3, trechos: [{ de: 0, ate: 3 }], cadeia: CADEIA_PADRAO })
   conferir('ganho do trecho e saida tem padrao', [e.trechos[0]!.ganhoDb, e.saida], [0, null])
+}
+
+console.log('velocidade sem mudar o tom')
+{
+  const { velocidade: _fora, ...antiga } = CADEIA_PADRAO
+  const lida = cadeiaDeAudioSchema.parse(antiga)
+  conferir('cadeia salva antes da velocidade abre em 100%', lida.velocidade, 100)
+  conferir('100% nao mexe', fatorDaVelocidade(lida), 1)
+  conferir('115% = 1,15', fatorDaVelocidade({ velocidade: 115 }), 1.15)
+  conferir('acima de 200% nao vale', cadeiaDeAudioSchema.safeParse({ ...CADEIA_PADRAO, velocidade: 250 }).success, false)
+  conferir('abaixo de 50% nao vale', cadeiaDeAudioSchema.safeParse({ ...CADEIA_PADRAO, velocidade: 40 }).success, false)
 }
 
 console.log(falhas === 0 ? '\nTUDO PASSOU' : `\n${falhas} FALHA(S)`)
