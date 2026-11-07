@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '1.100.0',
+    itens: [
+      'Velocidade do Áudio sem voz robótica: na 1.99, a narração acelerada saía com um som sintético depois do "Pronto". Agora ela é acelerada do mesmo jeito que o preview toca, e o que você ouve na etapa de Áudio é o que vai para a timeline. O tom continua o mesmo.',
+      'Já acelerou uma narração na 1.99? Volte na etapa de Áudio e clique em "Pronto" de novo para gravar a versão sem o efeito.',
+    ],
+  },
+  {
     versao: '1.99.0',
     itens: [
       'Velocidade no Áudio, sem mudar o tom: no painel dos efeitos, escolha 110%, 115% ou 120% (ou digite outro número, de 50% a 200%). É como o Change Clip Speed do DaVinci com o Pitch Correction ligado: a fala fica mais rápida e a sua voz continua com o mesmo tom, sem a vozinha fina.',

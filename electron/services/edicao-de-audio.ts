@@ -30,7 +30,7 @@ import {
 import { EnergiaK } from '@shared/loudness'
 import { ffmpegPath } from './ffmpeg-path'
 import { publish } from './media-server'
-import { acelerarVoz, aplicarPlugins, prepararPlugins } from './vst'
+import { aplicarPlugins } from './vst'
 
 /**
  * A ETAPA DE AUDIO por dentro: da gravacao crua a narracao pronta.
@@ -87,12 +87,12 @@ function rodarFfmpeg(args: string[]): Promise<void> {
   })
 }
 
-/** A gravacao inteira em float, mono, 48 kHz -- direto do stdout do ffmpeg. */
-function lerMono(caminho: string): Promise<Float32Array> {
+/** A gravacao inteira em float, mono, 48 kHz -- direto do stdout do ffmpeg. `filtro`: um -af no caminho. */
+function lerMono(caminho: string, filtro?: string): Promise<Float32Array> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       ffmpegPath,
-      ['-nostdin', '-hide_banner', '-loglevel', 'error', '-i', caminho, '-vn', '-ac', '1', '-ar', String(TAXA), '-f', 'f32le', '-'],
+      ['-nostdin', '-hide_banner', '-loglevel', 'error', '-i', caminho, '-vn', ...(filtro ? ['-af', filtro] : []), '-ac', '1', '-ar', String(TAXA), '-f', 'f32le', '-'],
       { windowsHide: true },
     )
     const pedacos: Buffer[] = []
@@ -477,7 +477,8 @@ export async function renderizarEdicao(
     f: escutas.map(([id, f]) => [id, basename(f)]),
     t: edicao.trechos,
     n: normalizar,
-    ...(fator !== 1 ? { vel: fator } : {}),
+    // `atempo`: o arquivo acelerado pelo R3 (1.99) nao volta do cache.
+    ...(fator !== 1 ? { vel: fator, metodo: 'atempo' } : {}),
   })
   const dono = identidade(edicao.bruto)
   const arquivo = join(dir('render'), `${dono}-${chave}.wav`)
@@ -494,22 +495,25 @@ export async function renderizarEdicao(
       for (const [id, f] of escutas) if (usadas.has(id)) lidas[id] = await lerMonoComCache(f)
       let x = montarCortes(lidas, edicao.trechos)
       /*
-       * A VELOCIDADE, sem mudar o tom: Rubber Band R3 pelo vst-host (ver
-       * ferramentas/vst/host.py). Antes de normalizar e do teto, que medem e
-       * seguram o audio ja acelerado.
+       * A VELOCIDADE, sem mudar o tom: o atempo do ffmpeg -- o mesmo jeito do
+       * preview (o navegador acelera emendando pedacos da propria onda, sem
+       * refazer o timbre). Antes de normalizar e do teto, que medem e seguram o
+       * audio ja acelerado.
+       *
+       * Na 1.99 era o Rubber Band R3 (pelo vst-host), e no Pronto a voz saiu
+       * "robotizada, sintetica": ele refaz a onda pelo espectro e espalha os
+       * pulsos da voz. Medido na narracao dele a 115% (crista nos quadros com
+       * voz; 100% = 2,74): R3 2,57, atempo 2,81. O modulo do Levi ja tinha
+       * ouvido o mesmo (o rubberband robotico; o atempo, o som do App Resumo).
        */
       if (fator !== 1) {
-        await prepararPlugins(onProgress)
         onProgress(`Acelerando para ${Math.round(fator * 100)}% sem mudar o tom...`)
         const lento = `${arquivo}.lento.wav`
-        const rapido = `${arquivo}.rapido.wav`
         gravarWavFloat(lento, x)
         try {
-          await acelerarVoz(lento, rapido, fator)
-          x = await lerMono(rapido)
+          x = await lerMono(lento, `atempo=${fator}`)
         } finally {
           rmSync(lento, { force: true })
-          rmSync(rapido, { force: true })
         }
       }
       if (normalizar !== null) {

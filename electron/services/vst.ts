@@ -24,6 +24,9 @@ import type { PluginDaCadeia } from '@shared/edicao-de-audio'
 /*
  * v2 (1.99): o comando `acelerar` -- a velocidade da etapa de audio, sem mudar o
  * tom (Rubber Band R3). Quem tinha a v1 baixa a v2 uma vez; a v1 sai do disco.
+ * Desde a 1.100 a velocidade e o atempo do ffmpeg (o R3 deixou a voz robotica,
+ * ver edicao-de-audio.ts): o Dangai nao chama mais o `acelerar`, mas a v2 fica --
+ * voltar para a v1 faria quem ja tem a v2 baixar de novo.
  */
 const VST_HOST = {
   versao: '2',
@@ -173,14 +176,6 @@ export function descreverPlugin(caminho: string, estado: string | null): Promise
 /** Abre a janela do proprio plugin; volta quando ele FECHA, com o estado novo. */
 export function janelaDoPlugin(caminho: string, estado: string | null): Promise<DescricaoDoPlugin> {
   return chamar<DescricaoDoPlugin>('janela', { caminho, estado }, { janela: true })
-}
-
-/**
- * Acelera sem mudar o tom (o "Pitch Correction" do DaVinci): `fator` 1,15 = 115%,
- * o audio fica 15% mais rapido e mais curto, com a mesma voz.
- */
-export async function acelerarVoz(entrada: string, saida: string, fator: number): Promise<void> {
-  await chamar('acelerar', { entrada, saida, fator })
 }
 
 /** Passa o .wav pelos plugins ligados, na ordem. */

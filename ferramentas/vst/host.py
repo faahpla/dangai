@@ -104,6 +104,10 @@ def acelerar(pedido: dict) -> dict:
     Speed do DaVinci. Rubber Band R3 (high_quality) com os formantes preservados --
     medido na voz dele a 110/115/120%: a F0 mediana fica em 186 Hz como no original
     (o R2 do ffmpeg subia para 189).
+
+    Desde a 1.100 o Dangai NAO chama mais este comando: o tom ficava certo, mas a
+    voz saia robotica no Pronto, e a velocidade passou para o atempo do ffmpeg. Fica
+    aqui porque o vst-host-2 publicado foi feito com ele (o codigo e o do binario).
     """
     from pedalboard import time_stretch
     from pedalboard.io import AudioFile

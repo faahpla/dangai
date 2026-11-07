@@ -165,7 +165,8 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
    * A VELOCIDADE NO PREVIEW: o proprio navegador acelera sem mudar o tom
    * (preservesPitch), sem renderizar nada -- trocar de 110 para 120 e na hora. A
    * agulha e os cortes continuam no tempo da gravacao; a narracao final sai
-   * acelerada pelo Rubber Band no "Pronto".
+   * acelerada no "Pronto" pelo atempo do ffmpeg, da mesma familia do jeito do
+   * navegador (emenda pedacos da propria onda): o que toca aqui e o que sai.
    */
   useEffect(() => {
     const p = player.current!
