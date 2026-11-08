@@ -596,6 +596,7 @@ export async function muxWithNormalizedAudio(
       // Estereo na entrega: narracao de TTS costuma vir mono, e alguns
       // encoders de plataforma tratam mono de forma inconsistente.
       '-ac', '2',
+      ...SEM_ASSINATURA,
       '-movflags', '+faststart',
       // Trava de seguranca: o audio ja sai no tamanho certo do filtro, e o video
       // vem com a duracao exata do Remotion. -t garante que nenhuma entrada
@@ -609,6 +610,31 @@ export async function muxWithNormalizedAudio(
     teto -= pico - PICO_MAXIMO_DBTP + 0.3
   }
 }
+
+/**
+ * O MP4 SAI SEM ASSINATURA DE PROGRAMA. O Remotion grava `comment=Made with
+ * Remotion 4.x` no video mudo, e o mux copiava (o ffmpeg leva os metadados da
+ * primeira entrada); o ffmpeg ainda poe o `encoder=Lavf...` no arquivo e o
+ * "Lavc..." no AAC, e o x264 escreve as proprias opcoes dentro do video (um SEI).
+ * O ajk viu o "Remotion" e o Faah nao quer nada assim no que vai para as
+ * plataformas.
+ *
+ *   -map_metadata -1        nada dos metadados das entradas (o comment do Remotion);
+ *   -fflags +bitexact       o arquivo sem o encoder=Lavf;
+ *   -flags:a +bitexact      o AAC sem o Lavc;
+ *   filter_units 6          tira os SEI do H.264 -- o do x264 e o unico que o
+ *                           Remotion grava (SDR, GOP fechado). A imagem decodificada
+ *                           sai identica bit a bit (md5 conferido num video dele).
+ *
+ * Ficam so os nomes genericos das faixas (VideoHandler/SoundHandler) e as marcas
+ * do formato MP4. Conferido em scripts/teste/v-som-mix.ts.
+ */
+export const SEM_ASSINATURA: readonly string[] = [
+  '-map_metadata', '-1',
+  '-fflags', '+bitexact',
+  '-flags:a', '+bitexact',
+  '-bsf:v', 'filter_units=remove_types=6',
+]
 
 /**
  * O GRAFO do mix final (o -filter_complex_script), puro: a entrada 0 e o video,

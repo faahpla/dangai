@@ -205,7 +205,8 @@ async function main(): Promise<void> {
     const parse = await ff(['-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=stereo:d=1', '-filter_complex_script', p('longo.txt'), '-map', '[o]', '-f', 'null', '-'])
     ok(`${longo.length} pontos passam no parser do ffmpeg`, parse.code === 0, parse.err.slice(0, 200))
 
-    await ff(['-f', 'lavfi', '-i', 'color=c=black:s=64x64:r=30:d=4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', p('video.mp4')])
+    // Como o video mudo do Remotion: x264 (com o SEI das opcoes) e o comment dele.
+    await ff(['-f', 'lavfi', '-i', 'color=c=black:s=64x64:r=30:d=4', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-metadata', 'comment=Made with Remotion 4.0.523', p('video.mp4')])
     await ff(['-f', 'lavfi', '-i', 'sine=f=300:d=4', '-ac', '1', p('voz.wav')])
     await ff(['-f', 'lavfi', '-i', 'sine=f=500:d=6', '-ac', '2', p('musica.wav')])
     const t = { path: p('musica.wav'), at: 0, inicioSec: 0, duracaoSec: 4, gainDb: -10, fadeInSec: 0, fadeOutSec: 0 }
@@ -216,6 +217,17 @@ async function main(): Promise<void> {
     ok('o mix.txt leva o envelope', grafo.includes('asetnsamples=n=256') && grafo.includes("eval=frame"))
     await muxWithNormalizedAudio(p('video.mp4'), p('voz.wav'), p('saida2.mp4'), [], null, [t], 4)
     ok('mux sem envelope: grafo sem filtro novo', !readFileSync(p('mix.txt'), 'utf8').includes('asetnsamples'))
+
+    secao('o MP4 sai sem assinatura de programa (Remotion, ffmpeg, x264)')
+    const entrada = readFileSync(p('video.mp4')).toString('latin1')
+    ok('a entrada do teste tem as assinaturas', entrada.includes('Made with Remotion') && entrada.includes('x264 - core'))
+    for (const arquivo of ['saida.mp4', 'saida2.mp4']) {
+      const bytes = readFileSync(p(arquivo)).toString('latin1')
+      const achadas = ['Remotion', 'Lavf', 'Lavc', 'x264'].filter((m) => bytes.includes(m))
+      ok(`${arquivo}: nenhuma assinatura nos bytes`, achadas.length === 0, achadas.join(', '))
+    }
+    const quadros = async (arquivo: string): Promise<string> => (await ff(['-i', p(arquivo), '-map', '0:v', '-f', 'md5', '-'])).out.toString().trim()
+    ok('a imagem sai identica (md5 dos quadros)', (await quadros('video.mp4')) === (await quadros('saida2.mp4')))
 
     // ------------------------- 7. o preview no equilibrio do render (-14)
     secao('loudness: a conta em JS = o ebur128 do ffmpeg; o render segue em -14')
