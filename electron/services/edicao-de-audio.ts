@@ -17,8 +17,10 @@ import { basename, dirname, extname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import {
+  duracaoEditada,
   fatorDaVelocidade,
   filtrosDaCadeia,
+  fimDo,
   FONTE_PRINCIPAL,
   fonteDo,
   limiteDaIa,
@@ -30,7 +32,7 @@ import {
 import { EnergiaK } from '@shared/loudness'
 import { ffmpegPath } from './ffmpeg-path'
 import { publish } from './media-server'
-import { aplicarPlugins } from './vst'
+import { aplicarPlugins, prepararPlugins } from './vst'
 
 /**
  * A ETAPA DE AUDIO por dentro: da gravacao crua a narracao pronta.
@@ -271,32 +273,37 @@ async function limpa(baseWav: string, quantidade: number, onProgress: (m: string
 // ------------------------------------------------------------- os cortes
 
 /**
- * Os trechos que ficam, emendados -- cada um da gravacao dele (a principal ou
- * uma correcao), com o volume dele. Nas emendas, 4 ms descendo e 4 subindo: um
- * corte seco no meio de uma onda estala.
+ * A MISTURA DAS FAIXAS: cada trecho, da gravacao dele (a principal ou uma
+ * correcao) e com o volume dele, no lugar dele da linha do tempo. Faixas
+ * diferentes no mesmo instante somam; vao e silencio. Em cada ponta de trecho,
+ * 4 ms subindo ou descendo -- um corte seco no meio de uma onda estala --, menos
+ * onde o vizinho da mesma faixa continua a mesma gravacao sem pulo (so cortou
+ * ali, nao tirou nada): ali a onda segue inteira.
  */
-export function montarCortes(fontes: Readonly<Record<string, Float32Array>>, trechos: readonly TrechoDaGravacao[]): Float32Array {
-  const pedacos = trechos.map((t) => {
+export function montarMix(fontes: Readonly<Record<string, Float32Array>>, trechos: readonly TrechoDaGravacao[]): Float32Array {
+  const saida = new Float32Array(Math.round(duracaoEditada(trechos) * TAXA))
+  const emenda = Math.round(EMENDA_SEC * TAXA)
+  const continua = (antes: TrechoDaGravacao, depois: TrechoDaGravacao): boolean =>
+    antes.faixa === depois.faixa &&
+    fonteDo(antes) === fonteDo(depois) &&
+    Math.abs(fimDo(antes) - depois.em) < 0.001 &&
+    Math.abs(antes.ate - depois.de) < 0.001 &&
+    antes.ganhoDb === depois.ganhoDb
+  for (const t of trechos) {
     const x = fontes[fonteDo(t)] ?? new Float32Array(0)
     const a = Math.max(0, Math.min(x.length, Math.round(t.de * TAXA)))
     const b = Math.max(a, Math.min(x.length, Math.round(t.ate * TAXA)))
-    return { x, a, b, ganho: 10 ** (t.ganhoDb / 20) }
-  })
-  const total = pedacos.reduce((s, p) => s + (p.b - p.a), 0)
-  const saida = new Float32Array(total)
-  const emenda = Math.round(EMENDA_SEC * TAXA)
-  let o = 0
-  for (const [k, p] of pedacos.entries()) {
-    const n = p.b - p.a
-    const subir = k > 0 ? Math.min(emenda, Math.floor(n / 2)) : 0
-    const descer = k < pedacos.length - 1 ? Math.min(emenda, Math.floor(n / 2)) : 0
-    for (let i = 0; i < n; i++) {
-      let g = p.ganho
+    const n = b - a
+    const o = Math.round(t.em * TAXA)
+    const ganho = 10 ** (t.ganhoDb / 20)
+    const subir = trechos.some((y) => y !== t && continua(y, t)) ? 0 : Math.min(emenda, Math.floor(n / 2))
+    const descer = trechos.some((y) => y !== t && continua(t, y)) ? 0 : Math.min(emenda, Math.floor(n / 2))
+    for (let i = 0; i < n && o + i < saida.length; i++) {
+      let g = ganho
       if (i < subir) g *= i / subir
       if (i >= n - descer) g *= (n - 1 - i) / descer
-      saida[o + i] = p.x[p.a + i]! * g
+      saida[o + i]! += x[a + i]! * g
     }
-    o += n
   }
   return saida
 }
@@ -392,6 +399,9 @@ async function processado(caminho: string, edicao: EdicaoDeAudio, onProgress: (m
           atual = proximo
         }
         if (plugins.length > 0) {
+          // O leitor de plugins pode ser de uma versao anterior (ou nao estar baixado): sem
+          // isto, quem atualizou o Dangai com o Fresh Air na cadeia via "nao esta instalado".
+          await prepararPlugins(onProgress)
           onProgress(plugins.length === 1 ? `Passando pelo ${plugins[0]!.nome}...` : 'Passando pelos plugins...')
           const proximo = join(temp, 'plugins.wav')
           await aplicarPlugins(atual, proximo, plugins)
@@ -475,7 +485,9 @@ export async function renderizarEdicao(
   const chave = hash({
     v: VERSAO,
     f: escutas.map(([id, f]) => [id, basename(f)]),
-    t: edicao.trechos,
+    // So o que muda o som: a faixa e o id nao entram (trocar de faixa no mesmo lugar acha o mesmo arquivo).
+    m: 'faixas',
+    t: edicao.trechos.map((x) => [x.de, x.ate, x.ganhoDb, fonteDo(x), x.em]),
     n: normalizar,
     // `atempo`: o arquivo acelerado pelo R3 (1.99) nao volta do cache.
     ...(fator !== 1 ? { vel: fator, metodo: 'atempo' } : {}),
@@ -493,7 +505,7 @@ export async function renderizarEdicao(
       const usadas = new Set(edicao.trechos.map(fonteDo))
       const lidas: Record<string, Float32Array> = {}
       for (const [id, f] of escutas) if (usadas.has(id)) lidas[id] = await lerMonoComCache(f)
-      let x = montarCortes(lidas, edicao.trechos)
+      let x = montarMix(lidas, edicao.trechos)
       /*
        * A VELOCIDADE, sem mudar o tom: o atempo do ffmpeg -- o mesmo jeito do
        * preview (o navegador acelera emendando pedacos da propria onda, sem

@@ -102,7 +102,7 @@ import { handle } from './handle'
 import { montarRelatorio } from './services/registro'
 import { componentesDoDangai, prepararDangai } from './services/preparar'
 import { concluirEdicao, limparTrabalhoDaEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
-import { descreverPlugin, janelaDoPlugin, listarPlugins, prepararPlugins } from './services/vst'
+import { descreverPlugin, fecharJanelasDosPlugins, janelaDoPlugin, listarPlugins, prepararPlugins } from './services/vst'
 import type { AudioEditado, DescricaoDoPlugin, OndaDaGravacao, PluginInstalado } from '@shared/channels'
 import type { EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
 import { aprenderDoProjeto, perfilDoMeuJeito } from './services/meu-jeito'
@@ -855,9 +855,13 @@ export function registerIpc(): void {
     await prepararPlugins(progressoDaEdicao)
     return descreverPlugin(caminho, estado)
   })
-  handle<[string, string | null], DescricaoDoPlugin>(IPC.janelaDoPlugin, async (caminho, estado) => {
+  handle<[string, string | null, string], DescricaoDoPlugin>(IPC.janelaDoPlugin, async (caminho, estado, titulo) => {
     await prepararPlugins(progressoDaEdicao)
-    return janelaDoPlugin(caminho, estado)
+    return janelaDoPlugin(caminho, estado, titulo)
+  })
+  handle<[], null>(IPC.fecharJanelasDosPlugins, async () => {
+    fecharJanelasDosPlugins()
+    return null
   })
 
   handle<[Record<string, string>], null>(IPC.copiarRelatorio, async (tela) => {

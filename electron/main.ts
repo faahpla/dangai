@@ -18,7 +18,7 @@ import { configureAlinhador } from './services/alinhador'
 import { configureInverter } from './services/inverter'
 import { configureSobreposicao } from './services/sobreposicao'
 import { configureEdicaoDeAudio } from './services/edicao-de-audio'
-import { configureVst } from './services/vst'
+import { configureVst, fecharJanelasDosPlugins } from './services/vst'
 import { configureAudio } from './services/audio'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureFontes, ensureFontesDir } from './services/fontes'
@@ -309,6 +309,8 @@ app.whenReady().then(async () => {
 // Um modulo pode segurar a saida (um download, um motor fechando), com teto.
 app.on('before-quit', (evento) => segurarSaida(evento, () => app.quit()))
 app.on('before-quit', encerrarWhisper)
+// A janela de um plugin (o Fresh Air) e outro programa: fecha junto com o Dangai.
+app.on('before-quit', fecharJanelasDosPlugins)
 // Depois de tudo fechado: os arquivos de trabalho desta sessao (ver services/faxina).
 app.on('will-quit', () => {
   limparAoSair()

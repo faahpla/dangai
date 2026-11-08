@@ -20,6 +20,17 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.0.0',
+    itens: [
+      'Faixas de áudio, como no DaVinci: a etapa de Áudio agora tem A1, A2 e mais. Arraste um trecho para mudar de lugar ou de faixa, puxe a borda para aparar, e o que está em faixas diferentes no mesmo instante toca junto. Os efeitos valem para tudo. O ímã (N) gruda o trecho na ponta dos outros e na agulha.',
+      'Apagar: Delete tira o trecho e fecha o vão (o que vem depois anda para trás, em todas as faixas); Backspace tira e deixa o vão. Ctrl+clique escolhe mais de um trecho, e eles andam juntos. Seus projetos de antes abrem com tudo na A1, do jeito que estavam.',
+      'Velocidade na linha do tempo: escolher 115% encolhe tudo na hora, e a régua e o relógio mostram o tempo final do vídeo. A velocidade agora fica em cima das faixas.',
+      'Fresh Air: a janela do plugin abre no meio da tela, por cima do Dangai, e fecha pelo X dela ou pelo botão "Fechar" do Dangai. Ela também fecha sozinha ao sair da etapa ou fechar o Dangai. Na primeira vez, o Dangai baixa de novo o leitor de plugins (23 MB).',
+      'A etapa de Áudio ficou mais leve: a agulha anda sem travar a tela, o espaço não toca e pausa ao mesmo tempo quando um botão está selecionado, e a onda mostra as palavras e as pausas.',
+      'O vídeo renderizado sai sem assinatura de programa: os metadados não dizem mais "Made with Remotion", nem o nome das ferramentas usadas para montar o arquivo. A imagem e o som continuam exatamente iguais. Os vídeos renderizados antes desta versão ainda têm essa marca: renderize de novo os que for publicar.',
+    ],
+  },
+  {
     versao: '1.100.0',
     itens: [
       'Velocidade do Áudio sem voz robótica: na 1.99, a narração acelerada saía com um som sintético depois do "Pronto". Agora ela é acelerada do mesmo jeito que o preview toca, e o que você ouve na etapa de Áudio é o que vai para a timeline. O tom continua o mesmo.',

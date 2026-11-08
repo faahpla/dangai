@@ -65,6 +65,7 @@ export const IPC = {
   listarPlugins: 'audio-edicao:plugins',
   descreverPlugin: 'audio-edicao:descrever-plugin',
   janelaDoPlugin: 'audio-edicao:janela-do-plugin',
+  fecharJanelasDosPlugins: 'audio-edicao:fechar-janelas-dos-plugins',
   /** main -> renderer: o que a etapa de audio esta fazendo agora. */
   progressoDaEdicao: 'audio-edicao:progresso',
   perfilDoMeuJeito: 'meu-jeito:perfil',
@@ -863,8 +864,10 @@ export interface DangaiBridge {
   concluirEdicao(edicao: EdicaoDeAudio): Promise<IpcResult<string>>
   listarPlugins(): Promise<IpcResult<PluginInstalado[]>>
   descreverPlugin(caminho: string, estado: string | null): Promise<IpcResult<DescricaoDoPlugin>>
-  /** Abre a janela do plugin; resolve quando ele a fecha, com o estado novo. */
-  janelaDoPlugin(caminho: string, estado: string | null): Promise<IpcResult<DescricaoDoPlugin>>
+  /** Abre a janela do plugin (com o nome dele no titulo); resolve quando ela fecha, com o estado novo. */
+  janelaDoPlugin(caminho: string, estado: string | null, titulo: string): Promise<IpcResult<DescricaoDoPlugin>>
+  /** Fecha as janelas de plugin abertas: cada janelaDoPlugin pendente resolve com o estado dela. */
+  fecharJanelasDosPlugins(): Promise<IpcResult<null>>
   onProgressoDaEdicao(listener: (mensagem: string) => void): () => void
   /** O jeito dele de editar som e cor, aprendido dos projetos (shared/meu-jeito.ts). */
   perfilDoMeuJeito(): Promise<IpcResult<PerfilDoMeuJeito>>

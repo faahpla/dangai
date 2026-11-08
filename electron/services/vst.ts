@@ -25,13 +25,16 @@ import type { PluginDaCadeia } from '@shared/edicao-de-audio'
  * v2 (1.99): o comando `acelerar` -- a velocidade da etapa de audio, sem mudar o
  * tom (Rubber Band R3). Quem tinha a v1 baixa a v2 uma vez; a v1 sai do disco.
  * Desde a 1.100 a velocidade e o atempo do ffmpeg (o R3 deixou a voz robotica,
- * ver edicao-de-audio.ts): o Dangai nao chama mais o `acelerar`, mas a v2 fica --
- * voltar para a v1 faria quem ja tem a v2 baixar de novo.
+ * ver edicao-de-audio.ts): o Dangai nao chama mais o `acelerar`.
+ *
+ * v3 (2.0): a janela do plugin abre NA TELA (a do Pedalboard abria com a barra
+ * de titulo acima do monitor, sem o X a vista), por cima do Dangai, com o nome
+ * do plugin, e fecha quando o Dangai pede (o `sinal` do comando `janela`).
  */
 const VST_HOST = {
-  versao: '2',
-  url: 'https://github.com/faahpla/dangai/releases/download/ferramentas-vst-2/vst-host-2.zip',
-  sha256: 'f0a5731fe45e44455fad0c87c06d877618081d7e0f1251fe8255c37167d56ca6',
+  versao: '3',
+  url: 'https://github.com/faahpla/dangai/releases/download/ferramentas-vst-3/vst-host-3.zip',
+  sha256: 'fbe4e6b1591600c00ae1e1cb8f460f72c6b5adf327a1d2174ea6734aef21c634',
   mb: 23,
 }
 
@@ -173,9 +176,35 @@ export function descreverPlugin(caminho: string, estado: string | null): Promise
   return chamar<DescricaoDoPlugin>('descrever', { caminho, estado })
 }
 
-/** Abre a janela do proprio plugin; volta quando ele FECHA, com o estado novo. */
-export function janelaDoPlugin(caminho: string, estado: string | null): Promise<DescricaoDoPlugin> {
-  return chamar<DescricaoDoPlugin>('janela', { caminho, estado }, { janela: true })
+/** O arquivo-sinal de cada janela aberta: criado, o vst-host fecha a janela (ver host.py). */
+const janelasAbertas = new Set<string>()
+
+/**
+ * Abre a janela do proprio plugin; volta quando ela FECHA, com o estado novo.
+ * Fecha pelo X ou por fecharJanelasDosPlugins (o botao "Fechar", sair da etapa,
+ * fechar o Dangai) -- antes da v3 do vst-host ela abria com o X fora da tela e
+ * so morria com o Dangai.
+ */
+export async function janelaDoPlugin(caminho: string, estado: string | null, titulo: string): Promise<DescricaoDoPlugin> {
+  const sinal = join(dir(), `_fechar-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+  janelasAbertas.add(sinal)
+  try {
+    return await chamar<DescricaoDoPlugin>('janela', { caminho, estado, titulo, sinal }, { janela: true })
+  } finally {
+    janelasAbertas.delete(sinal)
+    rmSync(sinal, { force: true })
+  }
+}
+
+/** Fecha as janelas de plugin abertas. Cada uma devolve o estado dela a quem abriu. */
+export function fecharJanelasDosPlugins(): void {
+  for (const sinal of janelasAbertas) {
+    try {
+      writeFileSync(sinal, '')
+    } catch {
+      // A pasta sumiu: a janela fecha com o processo.
+    }
+  }
 }
 
 /** Passa o .wav pelos plugins ligados, na ordem. */
