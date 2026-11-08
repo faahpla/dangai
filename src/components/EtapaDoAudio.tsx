@@ -211,21 +211,42 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   }, [receitaDoSom])
 
   /*
-   * Som novo: continua do mesmo ponto, tocando se estava tocando. O ponto e o
-   * da agulha AGORA (nao o de quando o pedido saiu): ele pode ter andado.
+   * A TROCA DO SOM. Cada corte ou arrasto refaz a mistura, e o player troca de
+   * arquivo -- e ate o arquivo novo carregar, o player diz que esta no ZERO.
+   * "Dou play onde ta a agulha e do nada vai pro comeco do audio": quem lia o
+   * player nessa hora (a agulha andando, o "pausou" da troca) levava a agulha
+   * junto para o zero, e o arquivo novo comecava dali. Medido: tocando do 20 s,
+   * cortar no 21 jogava a agulha para o 0.
+   *
+   * Durante a troca, a agulha e a verdade e o player nao fala: `troca` guarda se
+   * era para estar tocando (o play apertado no meio da troca tambem conta), e o
+   * arquivo novo comeca de onde a agulha esta.
    */
+  const troca = useRef<{ tocar: boolean } | null>(null)
   useEffect(() => {
     const p = player.current!
     if (!som) return
-    const continuar = !p.paused
+    troca.current = { tocar: troca.current?.tocar ?? !p.paused }
     p.src = som.url
     const aoCarregar = (): void => {
+      const tocar = troca.current?.tocar ?? false
       p.currentTime = Math.min(agulha.get(), Math.max(0, p.duration - 0.05))
       p.playbackRate = fatorDaVelocidade(useProject.getState().edicaoDeAudio?.cadeia ?? { velocidade: 100 })
-      if (continuar) void p.play()
+      troca.current = null
+      if (tocar) void p.play()
+      else setTocando(false)
+    }
+    // Arquivo que nao abriu: a troca acaba (a agulha volta a ouvir o player), parado.
+    const aoFalhar = (): void => {
+      troca.current = null
+      setTocando(false)
     }
     p.addEventListener('loadedmetadata', aoCarregar, { once: true })
-    return () => p.removeEventListener('loadedmetadata', aoCarregar)
+    p.addEventListener('error', aoFalhar, { once: true })
+    return () => {
+      p.removeEventListener('loadedmetadata', aoCarregar)
+      p.removeEventListener('error', aoFalhar)
+    }
   }, [som?.url, agulha])
 
   /*
@@ -246,8 +267,9 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   useEffect(() => {
     const p = player.current!
     let quadro = 0
+    // Trocando de arquivo, o player esta no zero de mentira: a agulha nao ouve (ver `troca`).
     const andar = (): void => {
-      agulha.set(p.currentTime)
+      if (!troca.current) agulha.set(p.currentTime)
       quadro = requestAnimationFrame(andar)
     }
     const aoTocar = (): void => {
@@ -256,8 +278,9 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
       quadro = requestAnimationFrame(andar)
     }
     const aoParar = (): void => {
-      setTocando(false)
       cancelAnimationFrame(quadro)
+      if (troca.current) return
+      setTocando(false)
       agulha.set(p.currentTime)
     }
     p.addEventListener('play', aoTocar)
@@ -285,7 +308,8 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
       const x = Math.max(0, t)
       agulha.set(x)
       const p = player.current!
-      if (p.src) p.currentTime = Math.min(x, Number.isFinite(p.duration) ? p.duration : x)
+      // Trocando de arquivo: o novo ja comeca da agulha (ver `troca`).
+      if (p.src && !troca.current) p.currentTime = Math.min(x, Number.isFinite(p.duration) ? p.duration : x)
     },
     [agulha],
   )
@@ -293,9 +317,16 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   const alternarPlay = useCallback((): void => {
     const p = player.current!
     if (!p.src) return
+    // No meio da troca: so anota; o arquivo novo toca (ou nao) da agulha quando carregar.
+    if (troca.current) {
+      troca.current.tocar = !troca.current.tocar
+      setTocando(troca.current.tocar)
+      return
+    }
     if (p.paused) {
-      // No fim: recomeca do comeco, como qualquer player.
-      if (Number.isFinite(p.duration) && p.currentTime >= p.duration - 0.05) irPara(0)
+      // Tocou ate o fim: recomeca do comeco, como qualquer player. So nesse caso --
+      // agulha perto do fim depois de um corte nao e "fim".
+      if (p.ended) irPara(0)
       void p.play()
     } else p.pause()
   }, [irPara])

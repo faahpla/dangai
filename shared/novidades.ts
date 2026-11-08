@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.0.1',
+    itens: [
+      'Áudio: a agulha não pula mais para o começo. Depois de cortar ou mexer num trecho, o som é refeito, e dar play (ou estar tocando) nesse momento levava a agulha para o zero. Agora ela continua de onde estava.',
+    ],
+  },
+  {
     versao: '2.0.0',
     itens: [
       'Faixas de áudio, como no DaVinci: a etapa de Áudio agora tem A1, A2 e mais. Arraste um trecho para mudar de lugar ou de faixa, puxe a borda para aparar, e o que está em faixas diferentes no mesmo instante toca junto. Os efeitos valem para tudo. O ímã (N) gruda o trecho na ponta dos outros e na agulha.',
