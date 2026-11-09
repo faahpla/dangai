@@ -27,6 +27,14 @@ Não é um editor de vídeo. É um caminho só, do material bruto ao arquivo fin
 com ajuste manual onde importa.
 
 <p align="center">
+  <a href="https://github.com/faahpla/dangai/releases/download/showreel/Dangai-Showreel.mp4">
+    <img src="docs/readme/showreel.webp" width="720" alt="Showreel do Dangai: uma linha rosa atravessa o caminho inteiro, do áudio e do roteiro até o MP4 9:16 pronto">
+  </a>
+  <br>
+  <sub>Showreel de 30 segundos. <a href="https://github.com/faahpla/dangai/releases/download/showreel/Dangai-Showreel.mp4"><b>Ver em 1080p com som</b></a> (MP4, 35 MB).</sub>
+</p>
+
+<p align="center">
   <img src="docs/readme/01-editor.webp" width="900" alt="O editor do Dangai">
 </p>
 
@@ -106,6 +114,21 @@ Para um MP4 que já existe, direto da tela inicial, fora de qualquer projeto.
 </td>
 </tr>
 </table>
+
+**Etapa de Áudio.** Solte a gravação crua e ela abre numa linha do tempo com faixas (A1, A2...),
+antes de tudo: cortar, apagar fechando o vão, cortar silêncios e encaixar uma correção regravada.
+Os efeitos vêm na ordem: isolar a voz, nivelar, EQ, compressor, plugins VST3 e normalizar. A velocidade
+muda sem mudar o tom.
+
+**Thumbnail.** Um módulo próprio (Configurações > Módulos) para a capa 1080x1920: uma ou duas imagens,
+rosto enquadrado fora da área proibida do TikTok, estilos prontos de texto, contorno, degradê, fontes do
+seu PC, seta, divisor e a cor da camada de ajuste do projeto. Aceita imagem colada com Ctrl+V.
+
+**Mangá na Biblioteca.** Uma pasta por obra e uma por capítulo: os quadrinhos são recortados sozinhos e
+ficam disponíveis como as cenas, sem entrar na montagem automática.
+
+**Salva sozinho.** O projeto nasce com nome em Documentos > Dangai > Projetos e cada mudança é gravada no
+próprio arquivo.
 
 Com uma chave de IA configurada (Gemini, grátis, ou Anthropic), a distribuição das cenas passa a ser decidida
 pelo conteúdo da narração. Sem chave, tudo continua funcionando, só com os
@@ -206,7 +229,7 @@ electron/     processo main: whisper, ffmpeg, render, arquivos
 shared/       o que main e renderer precisam concordar (planos, legendas, alinhamento)
 src/          interface React
 src/remotion/ a composição do vídeo, a mesma no preview e no render
-modulos/      módulos opcionais (modulos/recap/ é o Gerar recap)
+modulos/      módulos opcionais (modulos/recap/ é o Gerar recap, modulos/thumb/ é a Thumbnail)
 ```
 
 `shared/` existe porque o preview e o render precisam chegar exatamente ao mesmo
