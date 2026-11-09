@@ -164,8 +164,10 @@ descrição e hashtags para copiar.
 
 ## Instalar
 
-Baixe o instalador mais recente em
-[**Releases**](https://github.com/faahpla/dangai/releases/latest).
+**[⬇ Baixar o Dangai para Windows](https://github.com/faahpla/dangai/releases/latest/download/Dangai-Instalador.exe)**
+
+O link sempre entrega a versão mais nova. As anteriores ficam em
+[Releases](https://github.com/faahpla/dangai/releases).
 
 > [!NOTE]
 > O instalador não é assinado. Na primeira execução o SmartScreen avisa:

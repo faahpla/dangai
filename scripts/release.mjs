@@ -37,7 +37,7 @@
  * fica lá parecendo o novo. Por isso ele é conferido linha a linha.
  */
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { copyFileSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { conferirPacote, nomeDoExe, REPO } from './conferir-pacote.mjs'
@@ -279,6 +279,29 @@ run('gh', [
   'release/latest.yml',
   '--clobber',
 ])
+
+/*
+ * O MESMO instalador com nome fixo, pro link do README.
+ *
+ * `releases/latest/download/<nome>` so funciona com nome que nao muda, e o
+ * do .exe leva a versao. Com esta copia o "Baixar" do README sempre entrega
+ * a versao mais nova, sem ninguem precisar lembrar de trocar o link (pedido
+ * do Levi, 11/2026). Quem atualiza e o latest.yml, que continua apontando
+ * pro nome com versao: o updater nao ve esta copia.
+ *
+ * Falhar aqui NAO derruba a publicacao: os tres arquivos que o updater usa
+ * ja subiram. So avisa.
+ */
+const FIXO = 'Dangai-Instalador.exe'
+try {
+  copyFileSync(`release/${EXE}`, `release/${FIXO}`)
+  log(`subindo a copia com nome fixo (${FIXO}) pro link do README`)
+  run('gh', ['release', 'upload', TAG, `release/${FIXO}`, '--clobber'])
+} catch (e) {
+  log(`AVISO: a copia ${FIXO} nao subiu (${e instanceof Error ? e.message : e}). O link do README cai na versao anterior.`)
+} finally {
+  rmSync(`release/${FIXO}`, { force: true })
+}
 
 // -------------------------------------------------------------- confere no ar
 
