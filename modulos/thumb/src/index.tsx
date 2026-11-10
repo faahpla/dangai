@@ -1,5 +1,6 @@
 import { Images } from 'lucide-react'
 import type { ModuloDoRenderer } from '@/modulos/api'
+import { BotaoThumbDoProjeto } from './components/BotaoThumbDoProjeto'
 import { BotaoThumbnail } from './components/BotaoThumbnail'
 import { TelaDaThumb } from './components/TelaDaThumb'
 import { guardarNucleo } from './nucleo'
@@ -12,6 +13,7 @@ import { useTela } from './store/tela'
  * (Configuracoes > Modulos):
  *
  * - "Thumbnail" na tela inicial, ao lado do "Gerar recap", e na paleta;
+ * - "Thumbnail" na barra do editor, que abre ja no projeto aberto;
  * - a tela cheia (TelaDaThumb) com o mesmo editor (modulos/thumb/src/editor),
  *   solta ou de um projeto;
  * - funciona com o recap desligado; o motor de rostos e a tela que instala o
@@ -29,6 +31,9 @@ export const thumb: ModuloDoRenderer = {
   BotoesDaTelaInicial: ({ arrastando, definirAlvo }) => <BotaoThumbnail arrastando={arrastando} aoAcender={definirAlvo} />,
 
   Telas: () => <TelaDaThumb />,
+
+  // "Thumbnail" na barra do editor: abre ja no projeto aberto (aceso depois do render).
+  BotoesDaBarraDeRender: () => <BotaoThumbDoProjeto />,
 
   comandos: () => [
     {
