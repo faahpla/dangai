@@ -20,6 +20,19 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.1.0',
+    itens: [
+      'Fresh Air ao vivo: com a janela do plugin aberta, o que você mexe (os presets, o Mid Air, o High Air) já vale no play, um ou dois segundos depois. Antes, só valia depois de fechar a janela. Na primeira vez, o Dangai baixa de novo o leitor de plugins (23 MB).',
+      'O plugin fica: adicionou o Fresh Air uma vez, ele fica no seu padrão, com o preset que você deixou. As próximas gravações já começam com ele.',
+      'Solte um áudio na faixa que quiser: ele entra na faixa e no instante onde você soltou, sem cortar nada. Se o lugar estiver ocupado, vai para a próxima faixa livre.',
+      'Tecla B, como no DaVinci: corta na agulha e junta no último corte, tirando o pedaço entre os dois. Também tem o botão "Juntar".',
+      'Efeitos de piada e de censura: escolha um trecho e, em "Efeito", ponha Bip, Silêncio, Voz fina, Voz grossa, Robô, Eco, Rádio ou Ao contrário. O trecho fica rosa e não muda de tamanho.',
+      'Exportar áudio: o botão em cima grava o áudio editado (cortes, efeitos e velocidade) onde você escolher, em WAV ou MP3, sem sair da etapa.',
+      'A linha do tempo do Áudio ficou lisa: o zoom não trava nem pisca mais, e com bastante zoom a régua mostra os décimos de segundo.',
+      'Thumbnail direto do editor: o botão "Thumbnail" na barra do editor abre a tela da thumbnail já com o projeto aberto. Depois do render, ele fica aceso.',
+    ],
+  },
+  {
     versao: '2.0.1',
     itens: [
       'Áudio: a agulha não pula mais para o começo. Depois de cortar ou mexer num trecho, o som é refeito, e dar play (ou estar tocando) nesse momento levava a agulha para o zero. Agora ela continua de onde estava.',

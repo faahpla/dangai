@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readdirSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import {
   AUDIO_EXTENSIONS,
   IMAGE_EXTENSIONS,
@@ -101,7 +101,7 @@ import { checkForUpdateNow, installUpdate } from './services/updater'
 import { handle } from './handle'
 import { montarRelatorio } from './services/registro'
 import { componentesDoDangai, prepararDangai } from './services/preparar'
-import { concluirEdicao, limparTrabalhoDaEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
+import { concluirEdicao, exportarEdicao, limparTrabalhoDaEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
 import { descreverPlugin, fecharJanelasDosPlugins, janelaDoPlugin, listarPlugins, prepararPlugins } from './services/vst'
 import type { AudioEditado, DescricaoDoPlugin, OndaDaGravacao, PluginInstalado } from '@shared/channels'
 import type { EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
@@ -847,6 +847,19 @@ export function registerIpc(): void {
     silenciosDaGravacao(edicao, opcoes, progressoDaEdicao),
   )
   handle<[EdicaoDeAudio], string>(IPC.concluirEdicao, (edicao) => concluirEdicao(edicao, progressoDaEdicao))
+  handle<[EdicaoDeAudio], string | null>(IPC.exportarEdicao, async (edicao) => {
+    const nome = basename(edicao.bruto, extname(edicao.bruto))
+    const r = await dialog.showSaveDialog({
+      title: 'Exportar o áudio editado',
+      defaultPath: join(dirname(edicao.bruto), `${nome} (editado).wav`),
+      filters: [
+        { name: 'WAV (sem perda)', extensions: ['wav'] },
+        { name: 'MP3 (320 kbps)', extensions: ['mp3'] },
+      ],
+    })
+    if (r.canceled || !r.filePath) return null
+    return exportarEdicao(edicao, r.filePath, progressoDaEdicao)
+  })
   handle<[], PluginInstalado[]>(IPC.listarPlugins, async () => {
     await prepararPlugins(progressoDaEdicao)
     return listarPlugins()
@@ -857,7 +870,9 @@ export function registerIpc(): void {
   })
   handle<[string, string | null, string], DescricaoDoPlugin>(IPC.janelaDoPlugin, async (caminho, estado, titulo) => {
     await prepararPlugins(progressoDaEdicao)
-    return janelaDoPlugin(caminho, estado, titulo)
+    return janelaDoPlugin(caminho, estado, titulo, (parametros) => {
+      for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send(IPC.pluginAoVivo, { caminho, parametros })
+    })
   })
   handle<[], null>(IPC.fecharJanelasDosPlugins, async () => {
     fecharJanelasDosPlugins()

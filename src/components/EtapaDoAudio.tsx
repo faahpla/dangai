@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import {
+  ArrowLeftToLine,
   ArrowRight,
   AudioWaveform,
+  Download,
   FileAudio,
   Loader2,
   Magnet,
@@ -21,19 +23,24 @@ import {
   aparar,
   apagarIntervalo,
   apagarTrechos,
+  CADEIA_PADRAO,
+  cadeiaDeAudioSchema,
+  colocarEm,
   cortarEm,
   cortarSilencios,
   duracaoEditada,
   duracoesDasFontes,
+  EFEITOS_DO_TRECHO,
+  efeitoDosTrechos,
   faixasUsadas,
   fatorDaVelocidade,
   fimDo,
   FONTE_PRINCIPAL,
   fonteDo,
   ganhoDosTrechos,
-  inserirEm,
   MAX_FAIXAS,
   moverPerto,
+  puxarAteAgulha,
   SILENCIOS_PADRAO,
   sobAgulha,
   substituirIntervalo,
@@ -44,6 +51,8 @@ import {
   type CadeiaDeAudio,
   type Correcao,
   type EdicaoDeAudio,
+  type EfeitoDoTrecho,
+  type PluginDaCadeia,
   type OpcoesDosSilencios,
   type TrechoDaGravacao,
 } from '@shared/edicao-de-audio'
@@ -143,6 +152,9 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   const agulha = useMemo(criarAgulha, [])
   /** A janela de plugin aberta (o Fresh Air): o "Pronto" fecha e espera o estado dela voltar. */
   const janelaDoPlugin = useRef<Promise<void> | null>(null)
+  /** Onde um arquivo solto caiu nas faixas (ver Faixas). */
+  const localizar = useRef<Localizar | null>(null)
+  const [exportando, setExportando] = useState(false)
 
   const trechos = edicao.trechos
   const duracao = duracaoEditada(trechos)
@@ -335,6 +347,12 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
     (f: (t: TrechoDaGravacao[]) => TrechoDaGravacao[]): void => mudar((e) => ({ ...e, trechos: f(e.trechos) })),
     [mudar],
   )
+  // Estaveis: a linha do tempo e o painel de efeitos nao re-renderizam por causa delas.
+  const trocarTrechos = useCallback((novos: TrechoDaGravacao[]): void => mudarTrechos(() => novos), [mudarTrechos])
+  const mudarCadeia = useCallback(
+    (f: (c: CadeiaDeAudio) => CadeiaDeAudio): void => mudar((e) => ({ ...e, cadeia: f(e.cadeia) })),
+    [mudar],
+  )
 
   /** C: corta os escolhidos debaixo da agulha; sem nenhum escolhido ali, tudo o que esta debaixo dela. */
   const cortar = useCallback((): void => {
@@ -344,6 +362,21 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
     const dosEscolhidos = debaixo.filter((x) => escolhidos.has(x.id))
     mudarTrechos((tr) => cortarEm(tr, t, new Set((dosEscolhidos.length > 0 ? dosEscolhidos : debaixo).map((x) => x.id))))
   }, [agulha, trechos, escolhidos, mudarTrechos])
+
+  /*
+   * B, como no DaVinci: corta na agulha e junta no ultimo corte -- o pedaco
+   * entre o comeco do trecho e a agulha sai, e o resto chega para tras. O
+   * trecho: o escolhido debaixo da agulha; sem, o debaixo dela que comeca mais
+   * perto (o "ultimo corte"). A agulha vai para a emenda, onde o som continua.
+   */
+  const puxar = useCallback((): void => {
+    const t = agulha.get()
+    const debaixo = sobAgulha(trechos, t)
+    const alvo = debaixo.find((x) => escolhidos.has(x.id)) ?? [...debaixo].sort((a, b) => b.em - a.em)[0]
+    if (!alvo || t - alvo.em < 0.02) return
+    mudarTrechos((tr) => puxarAteAgulha(tr, alvo.id, t))
+    irPara(alvo.em)
+  }, [agulha, trechos, escolhidos, mudarTrechos, irPara])
 
   /** Delete (fechar) ou Backspace (deixar o vao): a selecao de tempo, ou os trechos escolhidos. */
   const apagar = useCallback(
@@ -365,8 +398,8 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   )
 
   // O teclado da etapa. Os atalhos do editor ficam quietos por baixo (App.tsx).
-  const teclas = useRef({ alternarPlay, cortar, apagar, irPara, duracao, trechos })
-  teclas.current = { alternarPlay, cortar, apagar, irPara, duracao, trechos }
+  const teclas = useRef({ alternarPlay, cortar, puxar, apagar, irPara, duracao, trechos })
+  teclas.current = { alternarPlay, cortar, puxar, apagar, irPara, duracao, trechos }
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent): void => {
       const alvo = e.target as HTMLElement | null
@@ -397,6 +430,9 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
       } else if (e.key.toLowerCase() === 'c') {
         e.preventDefault()
         k.cortar()
+      } else if (e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        k.puxar()
       } else if (e.key === 'Delete' || e.key.toLowerCase() === 'x') {
         e.preventDefault()
         k.apagar(true)
@@ -439,11 +475,16 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   const faixaAlvo = trechos.find((x) => escolhidos.has(x.id))?.faixa ?? 0
 
   /*
-   * A CORRECAO ENTRA: com um pedaco selecionado, no lugar dele; sem, na agulha.
-   * Depois e cortar o que sobrou dela, do mesmo jeito do resto.
+   * UM AUDIO NOVO ENTRA (uma correcao, um efeito sonoro, outra fala): solto nas
+   * faixas, vai para a faixa e o instante onde caiu; pelo botao (ou solto fora
+   * das faixas), na agulha, na faixa do trecho escolhido. Em nenhum dos dois
+   * NADA E CORTADO e nada anda -- "ele sempre vai na primeira e corta o
+   * processo". Se o lugar esta ocupado, vai para a proxima faixa livre ali. So
+   * com um pedaco de tempo selecionado ele entra NO LUGAR do pedaco (a correcao
+   * de uma frase ruim, como antes).
    */
   const importarCorrecoes = useCallback(
-    async (caminhos: readonly string[]): Promise<void> => {
+    async (caminhos: readonly string[], onde?: { t: number; faixa: number } | null): Promise<void> => {
       const audios = caminhos.filter((c) => classifyFile(c) === 'audio')
       if (audios.length === 0) return
       setErro(null)
@@ -457,24 +498,26 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
         novas.push({ id: `correcao-${Date.now()}-${i}`, caminho, nome: r.value.fileName, duracao: r.value.durationSec })
       }
       const blocos = novas.map(trechoDaCorrecao)
-      const sel = selecao && Math.abs(selecao.b - selecao.a) > 0.01 ? selecao : null
-      const t = agulha.get()
-      mudar((e) => ({
-        ...e,
-        correcoes: [...e.correcoes, ...novas],
-        trechos: sel ? substituirIntervalo(e.trechos, sel.a, sel.b, faixaAlvo, blocos) : inserirEm(e.trechos, t, faixaAlvo, blocos),
-      }))
+      const sel = !onde && selecao && Math.abs(selecao.b - selecao.a) > 0.01 ? selecao : null
+      const alvo = onde ?? { t: agulha.get(), faixa: faixaAlvo }
+      const antes = new Set(edicao.trechos.map((x) => x.id))
+      const novos = sel ? substituirIntervalo(edicao.trechos, sel.a, sel.b, faixaAlvo, blocos) : colocarEm(edicao.trechos, alvo.t, alvo.faixa, blocos)
+      mudar((e) => ({ ...e, correcoes: [...e.correcoes, ...novas], trechos: novos }))
       if (sel) irPara(Math.min(sel.a, sel.b))
       setSelecao(null)
-      setEscolhidos(NENHUM)
+      // O que entrou fica escolhido: e so arrastar para o lugar exato.
+      setEscolhidos(new Set(novos.filter((x) => !antes.has(x.id)).map((x) => x.id)))
+      const chegou = novos.find((x) => !antes.has(x.id))
       avisar(
         sel
-          ? 'A correção entrou no lugar da seleção (em azul). Corte o que sobrar dela com C e Delete.'
-          : 'A correção entrou na agulha (em azul). Apague o pedaço ruim e corte o que sobrar dela.',
-        8000,
+          ? 'O áudio entrou no lugar da seleção (em azul). Corte o que sobrar dele com C e Delete.'
+          : chegou
+            ? `O áudio entrou na A${chegou.faixa + 1}, em ${relogio(chegou.em / fatorDaVelocidade(edicao.cadeia))} (em azul). Arraste para ajustar o lugar.`
+            : 'O áudio entrou na linha do tempo (em azul).',
+        6000,
       )
     },
-    [selecao, agulha, faixaAlvo, mudar, irPara],
+    [selecao, agulha, faixaAlvo, edicao, mudar, irPara],
   )
 
   const escolherCorrecao = async (): Promise<void> => {
@@ -490,6 +533,29 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
     await pendente
   }
 
+  /*
+   * EXPORTAR: "quero uma opcao de exportar o audio editado ali". A mesma
+   * narracao do "Pronto" (cortes, efeitos, velocidade), em WAV ou MP3, para
+   * onde ele escolher -- sem sair da etapa e sem trocar a narracao do video.
+   */
+  const exportar = async (): Promise<void> => {
+    await fecharPlugin()
+    const atual = useProject.getState().edicaoDeAudio
+    if (!atual) return
+    setExportando(true)
+    setErro(null)
+    const r = await window.dangai.exportarEdicao(atual)
+    setExportando(false)
+    setAndamento(null)
+    if (!r.ok) {
+      setErro(r.error)
+      return
+    }
+    if (!r.value) return
+    avisar(`Áudio exportado: ${r.value.split(/[\\/]/).pop()}`, 6000)
+    void window.dangai.revealFile(r.value)
+  }
+
   const primeiroEscolhido = trechos.find((x) => escolhidos.has(x.id))
   const temSelecao = selecao !== null && Math.abs(selecao.b - selecao.a) > 0.01
 
@@ -503,7 +569,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
         if (!caminhos.some((c) => classifyFile(c) === 'audio')) return
         e.preventDefault()
         e.stopPropagation()
-        void importarCorrecoes(caminhos)
+        void importarCorrecoes(caminhos, localizar.current?.(e.clientX, e.clientY) ?? null)
       }}
     >
       <header className="flex shrink-0 items-center gap-3 border-b border-line px-6 py-3">
@@ -520,6 +586,16 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
         <span className="flex-1" />
         <BarraDeEtapas />
         <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => void exportar()}
+          disabled={busy !== null || exportando}
+          title="Grava o áudio editado (cortes, efeitos e velocidade) onde você escolher, em WAV ou MP3. A narração do vídeo não muda"
+          className="flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 py-1.5 text-[12px] text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-40"
+        >
+          {exportando ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} strokeWidth={1.5} />}
+          {exportando ? 'Exportando...' : 'Exportar áudio'}
+        </button>
         <button
           type="button"
           onClick={() => void fecharPlugin().then(() => pular())}
@@ -557,6 +633,9 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
             <Tempo agulha={agulha} fator={fator} duracao={duracao} />
             <Botaozinho onClick={cortar} title="Corta na agulha: o trecho escolhido, ou tudo o que está debaixo dela (C)">
               <Scissors size={12} strokeWidth={1.5} /> Cortar
+            </Botaozinho>
+            <Botaozinho onClick={puxar} title="Corta na agulha e junta no último corte: o pedaço entre os dois sai e o resto chega para trás, como o B do DaVinci (B)">
+              <ArrowLeftToLine size={12} strokeWidth={1.5} /> Juntar
             </Botaozinho>
             <Botaozinho
               onClick={() => apagar(true)}
@@ -620,6 +699,31 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
                 />
               </div>
             )}
+            {primeiroEscolhido && (
+              <label
+                className="flex items-center gap-2"
+                title="Piada ou censura: corte a palavra (C antes e depois), escolha o trecho e o efeito. O trecho não muda de tamanho"
+              >
+                <span className="shrink-0 text-[11px] text-ink-3">Efeito</span>
+                <select
+                  value={primeiroEscolhido.efeito ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value as EfeitoDoTrecho | ''
+                    mudarTrechos((tr) => efeitoDosTrechos(tr, escolhidos, v === '' ? null : v))
+                    // Devolve o teclado para a etapa: o espaco volta a ser o play.
+                    e.currentTarget.blur()
+                  }}
+                  className="h-6 rounded-sm border border-line bg-elevated px-1.5 text-[11px] text-ink outline-none focus:border-accent"
+                >
+                  <option value="">Nenhum</option>
+                  {EFEITOS_DO_TRECHO.map((x) => (
+                    <option key={x.id} value={x.id} title={x.dica}>
+                      {x.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
           {silencios && (
@@ -642,11 +746,12 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
             ima={ima}
             selecao={selecao}
             escolhidos={escolhidos}
+            localizar={localizar}
             onAgulha={irPara}
             onSelecao={setSelecao}
             onEscolher={setEscolhidos}
             onZoom={setZoom}
-            onTrechos={(novos) => mudarTrechos(() => novos)}
+            onTrechos={trocarTrechos}
           />
 
           <p className="flex min-h-5 items-center gap-2 text-[12px] text-ink-3">
@@ -658,7 +763,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
                 {andamento}
               </>
             ) : (
-              'Arraste o trecho para mudar de lugar ou de faixa · puxe a borda para aparar · arraste no vazio para selecionar · C corta · Delete apaga e fecha o vão · Backspace apaga e deixa o vão · Ctrl ou Alt + roda: zoom · Ctrl+Z desfaz'
+              'Arraste o trecho para mudar de lugar ou de faixa · puxe a borda para aparar · arraste no vazio para selecionar · solte um áudio na faixa que quiser · C corta · B corta e junta no último corte · Delete apaga e fecha o vão · Backspace apaga e deixa o vão · Ctrl ou Alt + roda: zoom · Ctrl+Z desfaz'
             )}
           </p>
 
@@ -666,7 +771,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
         </main>
 
         <aside className="flex w-[380px] shrink-0 flex-col gap-2.5 overflow-y-auto border-l border-line p-4">
-          <Efeitos cadeia={edicao.cadeia} janela={janelaDoPlugin} mudar={(f) => mudar((e) => ({ ...e, cadeia: f(e.cadeia) }))} />
+          <Efeitos cadeia={edicao.cadeia} janela={janelaDoPlugin} mudar={mudarCadeia} />
         </aside>
       </div>
     </div>
@@ -693,10 +798,17 @@ const ALTURA = 72
 const BORDA = 6
 /** Distancia em pixels em que o ima gruda. */
 const IMA_PX = 8
+/** O zoom vai de 1 (o audio inteiro na tela) a 80. */
+const ZOOM_MAX = 80
 
 type Arrasto =
   | { tipo: 'mover'; ids: ReadonlySet<string> }
   | { tipo: 'aparar'; id: string; lado: 'inicio' | 'fim' }
+
+/** Onde um ponto da tela cai nas faixas: o instante (a 100%) e a faixa. Fora das faixas: null. */
+type Localizar = (clientX: number, clientY: number) => { t: number; faixa: number } | null
+
+const NOMES_DOS_EFEITOS = new Map(EFEITOS_DO_TRECHO.map((e) => [e.id, e.nome]))
 
 function Faixas({
   edicao,
@@ -708,6 +820,7 @@ function Faixas({
   ima,
   selecao,
   escolhidos,
+  localizar,
   onAgulha,
   onSelecao,
   onEscolher,
@@ -723,6 +836,8 @@ function Faixas({
   ima: boolean
   selecao: { a: number; b: number } | null
   escolhidos: ReadonlySet<string>
+  /** Para quem solta um arquivo: onde ele caiu (ver Tela). */
+  localizar: React.MutableRefObject<Localizar | null>
   onAgulha: (t: number) => void
   onSelecao: (s: { a: number; b: number } | null) => void
   onEscolher: (s: ReadonlySet<string>) => void
@@ -731,8 +846,8 @@ function Faixas({
 }) {
   const rolagem = useRef<HTMLDivElement | null>(null)
   const tela = useRef<HTMLCanvasElement | null>(null)
+  const cabeca = useRef<HTMLDivElement | null>(null)
   const [largura, setLargura] = useState(0)
-  const [rolado, setRolado] = useState(0)
   /** O desenho durante um arrasto (mover/aparar): so vira edicao ao soltar -- um passo de Ctrl+Z. */
   const [previa, setPrevia] = useState<TrechoDaGravacao[] | null>(null)
   /** Onde o ima grudou (a linha amarela). */
@@ -780,110 +895,92 @@ function Faixas({
   }, [])
 
   /*
-   * O ZOOM PARA ONDE O MOUSE ESTA. Ctrl ou Alt + roda, como na linha do tempo
-   * do editor: o instante debaixo do mouse fica debaixo dele. Pelos botoes, o
-   * meio da vista fica no meio.
+   * O DESENHO, FORA DO REACT. "Muito travada, cheio de bugs visuais quando da
+   * zoom e tira zoom": o desenho lia a rolagem de um estado do React que chegava
+   * um quadro atrasado -- a cada passo de zoom as faixas apareciam no lugar
+   * errado e depois pulavam para o certo -- e cada passo da roda redesenhava a
+   * tela inteira da etapa. Agora o desenho le a rolagem do proprio elemento, na
+   * hora, e roda no maximo uma vez por quadro (agendar). A agulha anda por fora
+   * (posicionarCabeca), sem redesenhar nada.
    */
-  const ancora = useRef<{ t: number; x: number } | null>(null)
-  const pxAntes = useRef(pxs)
-  useLayoutEffect(() => {
+  const dados = useRef({ desenho, ondas, escalaDaOnda, largura, pxs, fator, nFaixas, alturaTotal, selecao, escolhidos, nomes, guia })
+  dados.current = { desenho, ondas, escalaDaOnda, largura, pxs, fator, nFaixas, alturaTotal, selecao, escolhidos, nomes, guia }
+
+  const posicionarCabeca = useCallback((): void => {
     const el = rolagem.current
-    const antes = pxAntes.current
-    pxAntes.current = pxs
-    if (!el || pxs <= 0 || antes === pxs) return
-    const a = ancora.current ?? { t: (el.scrollLeft + el.clientWidth / 2) / Math.max(antes, 1e-6), x: el.clientWidth / 2 }
-    ancora.current = null
-    el.scrollLeft = Math.max(0, a.t * pxs - a.x)
-  }, [pxs])
+    const c = cabeca.current
+    if (!el || !c) return
+    c.style.transform = `translateX(${Math.round(agulha.get() * dados.current.pxs - el.scrollLeft)}px)`
+  }, [agulha])
 
-  // A roda: Ctrl/Alt da zoom; sozinha, anda para os lados quando ha zoom.
-  // Ouvida direto no elemento: a do React nao deixa cancelar o zoom da pagina.
-  const estado = useRef({ zoom, pxs, onZoom })
-  estado.current = { zoom, pxs, onZoom }
-  useEffect(() => {
-    const el = rolagem.current
-    if (!el) return
-    const aoRolar = (e: WheelEvent): void => {
-      const { zoom: z, pxs: px, onZoom: mudarZoom } = estado.current
-      const delta = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
-      if (e.ctrlKey || e.altKey) {
-        e.preventDefault()
-        const r = el.getBoundingClientRect()
-        const x = e.clientX - r.left
-        ancora.current = { t: (el.scrollLeft + x) / Math.max(px, 1e-6), x }
-        mudarZoom(Math.min(80, Math.max(1, z * Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.002))))
-        return
-      }
-      if (z > 1 && Math.abs(delta) > Math.abs(e.deltaX)) {
-        e.preventDefault()
-        el.scrollLeft += delta
-      }
-    }
-    el.addEventListener('wheel', aoRolar, { passive: false })
-    return () => el.removeEventListener('wheel', aoRolar)
-  }, [])
-
-  // A agulha fica na vista enquanto TOCA (arrastando, quem manda e ele).
-  useEffect(() => {
-    if (!tocando) return
-    return agulha.ouvir(() => {
-      const el = rolagem.current
-      if (!el || estado.current.zoom === 1) return
-      const x = agulha.get() * estado.current.pxs
-      if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 20) el.scrollLeft = Math.max(0, x - el.clientWidth * 0.2)
-    })
-  }, [agulha, tocando])
-
-  // O desenho: so a parte visivel, de novo a cada mudanca (a agulha e outro elemento).
-  useEffect(() => {
+  const desenhar = useCallback((): void => {
     const c = tela.current
-    if (!c || largura === 0) return
+    const el = rolagem.current
+    const d = dados.current
+    if (!c || !el || d.largura === 0) return
+    const { desenho: fila0, pxs: px, largura: w, alturaTotal: h0, nFaixas: nf } = d
+    const rolado = el.scrollLeft
     const dpr = window.devicePixelRatio || 1
-    c.width = Math.round(largura * dpr)
-    c.height = Math.round(alturaTotal * dpr)
+    // So muda o tamanho do canvas quando ele muda: mudar apaga e realoca tudo.
+    const cw = Math.round(w * dpr)
+    const ch = Math.round(h0 * dpr)
+    if (c.width !== cw || c.height !== ch) {
+      c.width = cw
+      c.height = ch
+    }
     const g = c.getContext('2d')!
     g.setTransform(dpr, 0, 0, dpr, 0, 0)
-    g.clearRect(0, 0, largura, alturaTotal)
-    const xDe = (t: number): number => t * pxs - rolado
-    const tDe = (x: number): number => (rolado + x) / pxs
+    g.clearRect(0, 0, w, h0)
+    const xDe = (t: number): number => t * px - rolado
+    const tDe = (x: number): number => (rolado + x) / px
 
     // A regua e as faixas.
     g.fillStyle = 'rgba(255, 255, 255, 0.035)'
-    g.fillRect(0, 0, largura, REGUA)
-    for (let f = 0; f < nFaixas; f++) {
+    g.fillRect(0, 0, w, REGUA)
+    for (let f = 0; f < nf; f++) {
       const y = REGUA + f * ALTURA
       g.fillStyle = f % 2 === 0 ? 'rgba(255, 255, 255, 0.022)' : 'rgba(255, 255, 255, 0.01)'
-      g.fillRect(0, y, largura, ALTURA)
+      g.fillRect(0, y, w, ALTURA)
       g.fillStyle = 'rgba(255, 255, 255, 0.06)'
-      g.fillRect(0, y + ALTURA - 1, largura, 1)
+      g.fillRect(0, y + ALTURA - 1, w, 1)
     }
     // Depois do fim: mais escuro (o que esta ali nao toca).
-    const xFim = xDe(duracaoEditada(desenho))
-    if (xFim < largura) {
+    const xFim = xDe(duracaoEditada(fila0))
+    if (xFim < w) {
       g.fillStyle = 'rgba(0, 0, 0, 0.22)'
-      g.fillRect(Math.max(0, xFim), REGUA, largura - Math.max(0, xFim), alturaTotal - REGUA)
+      g.fillRect(Math.max(0, xFim), REGUA, w - Math.max(0, xFim), h0 - REGUA)
     }
-    if (selecao) {
-      const a = xDe(Math.min(selecao.a, selecao.b))
-      const b = xDe(Math.max(selecao.a, selecao.b))
+    if (d.selecao) {
+      const a = xDe(Math.min(d.selecao.a, d.selecao.b))
+      const b = xDe(Math.max(d.selecao.a, d.selecao.b))
       g.fillStyle = 'rgba(255, 255, 255, 0.10)'
-      g.fillRect(a, REGUA, b - a, alturaTotal - REGUA)
+      g.fillRect(a, REGUA, b - a, h0 - REGUA)
     }
 
     // Os trechos: os escolhidos por ultimo (a borda branca por cima).
-    const fila = [...desenho].sort((p, q) => Number(escolhidos.has(p.id)) - Number(escolhidos.has(q.id)))
+    const fila = [...fila0].sort((p, q) => Number(d.escolhidos.has(p.id)) - Number(d.escolhidos.has(q.id)))
     g.font = '10px Inter, system-ui, sans-serif'
     for (const x of fila) {
       const x0 = xDe(x.em)
       const x1 = xDe(fimDo(x))
-      if (x1 < 0 || x0 > largura) continue
+      if (x1 < 0 || x0 > w) continue
       const y0 = REGUA + x.faixa * ALTURA + 3
       const h = ALTURA - 7
       const correcao = fonteDo(x) !== FONTE_PRINCIPAL
-      const escolhido = escolhidos.has(x.id)
+      const escolhido = d.escolhidos.has(x.id)
+      const efeito = x.efeito ?? null
+      // So a parte visivel do retangulo: com zoom alto, um trecho de 1 minuto tem 100 mil pixels.
+      const r0 = Math.max(x0, -4)
+      const r1 = Math.min(x1, w + 4)
       g.beginPath()
-      g.roundRect(x0, y0, Math.max(1, x1 - x0), h, 3)
-      g.fillStyle = correcao ? 'rgba(80, 130, 240, 0.28)' : escolhido ? 'rgba(46, 160, 104, 0.42)' : 'rgba(46, 160, 104, 0.28)'
+      g.roundRect(r0, y0, Math.max(1, r1 - r0), h, 3)
+      g.fillStyle = efeito
+        ? 'rgba(200, 70, 160, 0.30)'
+        : correcao
+          ? 'rgba(80, 130, 240, 0.28)'
+          : escolhido
+            ? 'rgba(46, 160, 104, 0.42)'
+            : 'rgba(46, 160, 104, 0.28)'
       g.fill()
 
       /*
@@ -891,18 +988,18 @@ function Faixas({
        * clarinho e o corpo da fala (o RMS) forte por cima: com a voz ja nivelada
        * e comprimida, so o pico virava um bloco liso, sem pausa a vista.
        */
-      const onda = ondas?.[fonteDo(x)]
-      if (onda) {
-        const ganho = 10 ** (x.ganhoDb / 20) * escalaDaOnda
+      const onda = d.ondas?.[fonteDo(x)]
+      if (onda && efeito !== 'mudo') {
+        const ganho = 10 ** (x.ganhoDb / 20) * d.escalaDaOnda
         const meio = y0 + (h - 12) / 2
         const alto = (h - 16) / 2
         const p0 = Math.max(0, Math.floor(x0))
-        const p1 = Math.min(largura, Math.ceil(x1))
+        const p1 = Math.min(w, Math.ceil(x1))
         const pico = correcao ? 'rgba(175, 205, 255, 0.38)' : 'rgba(205, 245, 222, 0.34)'
         const corpo = correcao ? 'rgba(190, 215, 255, 0.95)' : 'rgba(215, 250, 230, 0.92)'
-        for (let px = p0; px < p1; px++) {
-          const s0 = x.de + (tDe(px) - x.em)
-          const s1 = x.de + (tDe(px + 1) - x.em)
+        for (let p = p0; p < p1; p++) {
+          const s0 = x.de + (tDe(p) - x.em)
+          const s1 = x.de + (tDe(p + 1) - x.em)
           const i0 = Math.max(0, Math.floor(s0 * POR_SEGUNDO))
           const i1 = Math.min(onda.peaks.length, Math.max(i0 + 1, Math.floor(s1 * POR_SEGUNDO)))
           let m = 0
@@ -915,44 +1012,138 @@ function Faixas({
           if (m <= 0) continue
           const a = Math.max(0.5, m * alto)
           g.fillStyle = pico
-          g.fillRect(px, meio - a, 1, a * 2)
+          g.fillRect(p, meio - a, 1, a * 2)
           const b = Math.max(0.5, Math.min(m, r * ganho * 1.7) * alto)
           g.fillStyle = corpo
-          g.fillRect(px, meio - b, 1, b * 2)
+          g.fillRect(p, meio - b, 1, b * 2)
         }
       }
 
+      g.beginPath()
+      g.roundRect(r0, y0, Math.max(1, r1 - r0), h, 3)
       g.lineWidth = escolhido ? 1.5 : 1
-      g.strokeStyle = escolhido ? '#ffffff' : correcao ? 'rgba(120, 165, 255, 0.7)' : 'rgba(70, 190, 125, 0.6)'
+      g.strokeStyle = escolhido ? '#ffffff' : efeito ? 'rgba(230, 110, 190, 0.75)' : correcao ? 'rgba(120, 165, 255, 0.7)' : 'rgba(70, 190, 125, 0.6)'
       g.stroke()
 
       if (x1 - x0 > 36) {
         g.save()
         g.beginPath()
-        g.rect(x0, y0, x1 - x0, h)
+        g.rect(r0, y0, r1 - r0, h)
         g.clip()
-        g.fillStyle = 'rgba(255, 255, 255, 0.78)'
-        const rotulo = `${nomes.get(fonteDo(x)) ?? ''}${x.ganhoDb !== 0 ? ` · ${x.ganhoDb > 0 ? '+' : ''}${x.ganhoDb} dB` : ''}`
-        g.fillText(rotulo, Math.max(x0, 0) + 5, y0 + h - 4)
+        g.fillStyle = 'rgba(255, 255, 255, 0.8)'
+        const partes = [d.nomes.get(fonteDo(x)) ?? '']
+        if (efeito) partes.unshift(NOMES_DOS_EFEITOS.get(efeito) ?? '')
+        if (x.ganhoDb !== 0) partes.push(`${x.ganhoDb > 0 ? '+' : ''}${x.ganhoDb} dB`)
+        g.fillText(partes.join(' · '), Math.max(x0, 0) + 5, y0 + h - 4)
         g.restore()
       }
     }
 
     // As marcas da regua, no tempo FINAL: uma por 0,5 a 60 s, conforme cabe.
-    const pxFinal = pxs * fator
-    const passo = [0.5, 1, 2, 5, 10, 15, 30, 60].find((s) => s * pxFinal >= 60) ?? 60
+    const pxFinal = px * d.fator
+    const passo = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60].find((s) => s * pxFinal >= 64) ?? 60
+    const casas = passo < 1 ? 1 : 0
     g.fillStyle = 'rgba(255,255,255,0.35)'
-    for (let t = Math.floor(tDe(0) / fator / passo) * passo; t <= tDe(largura) / fator; t += passo) {
-      const x = Math.round(xDe(t * fator)) + 0.5
+    for (let t = Math.floor(tDe(0) / d.fator / passo) * passo; t <= tDe(w) / d.fator; t += passo) {
+      const x = Math.round(xDe(t * d.fator)) + 0.5
       g.fillRect(x, REGUA - 6, 1, 6)
-      g.fillText(relogio(t).replace(/\.\d$/, ''), x + 3, 12)
+      const m = Math.floor(t / 60)
+      const s = t - m * 60
+      g.fillText(`${m}:${s.toFixed(casas).padStart(casas ? 4 : 2, '0')}`, x + 3, 12)
     }
 
-    if (guia !== null) {
+    if (d.guia !== null) {
       g.fillStyle = 'rgba(255, 205, 60, 0.95)'
-      g.fillRect(Math.round(xDe(guia)), REGUA, 1, alturaTotal - REGUA)
+      g.fillRect(Math.round(xDe(d.guia)), REGUA, 1, h0 - REGUA)
     }
-  }, [desenho, ondas, escalaDaOnda, largura, rolado, pxs, fator, nFaixas, alturaTotal, selecao, escolhidos, nomes, guia])
+    posicionarCabeca()
+  }, [posicionarCabeca])
+
+  const quadro = useRef(0)
+  const agendar = useCallback((): void => {
+    if (quadro.current) return
+    quadro.current = requestAnimationFrame(() => {
+      quadro.current = 0
+      desenhar()
+    })
+  }, [desenhar])
+  useEffect(() => () => cancelAnimationFrame(quadro.current), [])
+
+  /*
+   * O ZOOM PARA ONDE O MOUSE ESTA. Ctrl ou Alt + roda, como na linha do tempo
+   * do editor: o instante debaixo do mouse fica debaixo dele. Pelos botoes, o
+   * meio da vista fica no meio. A rolagem nova e o desenho saem no MESMO quadro.
+   */
+  const ancora = useRef<{ t: number; x: number } | null>(null)
+  const pxAntes = useRef(pxs)
+  useLayoutEffect(() => {
+    const el = rolagem.current
+    const antes = pxAntes.current
+    pxAntes.current = pxs
+    if (!el || pxs <= 0 || antes === pxs) return
+    const a = ancora.current ?? { t: (el.scrollLeft + el.clientWidth / 2) / Math.max(antes, 1e-6), x: el.clientWidth / 2 }
+    ancora.current = null
+    el.scrollLeft = Math.max(0, a.t * pxs - a.x)
+  }, [pxs])
+  // Qualquer mudanca que se ve (trechos, arrasto, selecao, zoom): redesenha antes de pintar.
+  useLayoutEffect(() => {
+    desenhar()
+  })
+
+  // A roda: Ctrl/Alt da zoom; sozinha, anda para os lados quando ha zoom. Um zoom por quadro.
+  // Ouvida direto no elemento: a do React nao deixa cancelar o zoom da pagina.
+  const estado = useRef({ zoom, pxs, onZoom })
+  estado.current = { zoom, pxs, onZoom }
+  useEffect(() => {
+    const el = rolagem.current
+    if (!el) return
+    let pendente = 1
+    let quadroDoZoom = 0
+    const aoRolar = (e: WheelEvent): void => {
+      const delta = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY
+      if (e.ctrlKey || e.altKey) {
+        e.preventDefault()
+        const r = el.getBoundingClientRect()
+        const x = e.clientX - r.left
+        ancora.current = { t: (el.scrollLeft + x) / Math.max(estado.current.pxs, 1e-6), x }
+        pendente *= Math.exp(-Math.max(-300, Math.min(300, delta)) * 0.002)
+        if (!quadroDoZoom) {
+          quadroDoZoom = requestAnimationFrame(() => {
+            quadroDoZoom = 0
+            const { zoom: z, onZoom: mudarZoom } = estado.current
+            const novo = Math.min(ZOOM_MAX, Math.max(1, z * pendente))
+            pendente = 1
+            if (novo !== z) mudarZoom(novo)
+            else ancora.current = null
+          })
+        }
+        return
+      }
+      if (estado.current.zoom > 1 && Math.abs(delta) > Math.abs(e.deltaX)) {
+        e.preventDefault()
+        el.scrollLeft += delta
+      }
+    }
+    el.addEventListener('wheel', aoRolar, { passive: false })
+    return () => {
+      el.removeEventListener('wheel', aoRolar)
+      cancelAnimationFrame(quadroDoZoom)
+    }
+  }, [])
+
+  // A agulha: anda sem redesenhar; tocando, a vista acompanha (arrastando, quem manda e ele).
+  useEffect(
+    () =>
+      agulha.ouvir(() => {
+        const el = rolagem.current
+        if (el && tocando && estado.current.zoom > 1) {
+          const x = agulha.get() * estado.current.pxs
+          if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - 20) el.scrollLeft = Math.max(0, x - el.clientWidth * 0.2)
+        }
+        posicionarCabeca()
+      }),
+    [agulha, tocando, posicionarCabeca],
+  )
 
   const tempoNo = (clientX: number): number => {
     const el = rolagem.current!
@@ -960,6 +1151,15 @@ function Faixas({
     return Math.max(0, Math.min(extensao, (clientX - r.left + el.scrollLeft) / Math.max(pxs, 1e-6)))
   }
   const faixaNo = (clientY: number): number => Math.floor((clientY - rolagem.current!.getBoundingClientRect().top - REGUA) / ALTURA)
+
+  // Para soltar um arquivo: onde ele caiu (fora das faixas, null).
+  localizar.current = (clientX, clientY) => {
+    const el = rolagem.current
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    if (clientX < r.left || clientX > r.right || clientY < r.top + REGUA || clientY > r.bottom) return null
+    return { t: tempoNo(clientX), faixa: Math.max(0, Math.min(MAX_FAIXAS - 1, faixaNo(clientY))) }
+  }
 
   /** O que esta debaixo do mouse: um trecho (e se na borda dele), ou nada. */
   const acharEm = (clientX: number, clientY: number): { trecho: TrechoDaGravacao; borda: 'inicio' | 'fim' | null } | null => {
@@ -1158,11 +1358,15 @@ function Faixas({
       <div className="relative min-w-0 flex-1" style={{ height: alturaTotal }}>
         {!ondas && <div className="absolute inset-0 z-10 grid place-items-center text-[12px] text-ink-3">Lendo a gravação...</div>}
         <canvas ref={tela} className="pointer-events-none absolute inset-0 h-full w-full" />
-        <Cabeca agulha={agulha} pxs={pxs} rolado={rolado} />
+        {/* A agulha: a linha branca com a cabeca na regua. Posta por fora do React (posicionarCabeca). */}
+        <div ref={cabeca} className="pointer-events-none absolute inset-y-0 left-0 z-[1] will-change-transform">
+          <div className="absolute inset-y-0 w-[1.5px] bg-white" />
+          <div className="absolute -left-[5px] top-0 size-0 border-x-[6px] border-t-[8px] border-x-transparent border-t-white" />
+        </div>
         <div
           ref={rolagem}
           className="absolute inset-0 overflow-x-auto overflow-y-hidden"
-          onScroll={(e) => setRolado(e.currentTarget.scrollLeft)}
+          onScroll={agendar}
           // O botao do meio arrasta a vista; sem isto o Windows liga o "rolar automatico".
           onMouseDown={(e) => {
             if (e.button === 1) e.preventDefault()
@@ -1173,18 +1377,6 @@ function Faixas({
           <div style={{ width: total, height: 1 }} />
         </div>
       </div>
-    </div>
-  )
-}
-
-/** A agulha: a linha branca com a cabeca na regua. Anda sozinha, sem redesenhar as faixas. */
-function Cabeca({ agulha, pxs, rolado }: { agulha: Agulha; pxs: number; rolado: number }) {
-  const t = useSyncExternalStore(agulha.ouvir, agulha.get)
-  const x = Math.round(t * pxs - rolado)
-  return (
-    <div className="pointer-events-none absolute inset-y-0 left-0 z-[1]" style={{ transform: `translateX(${x}px)` }}>
-      <div className="absolute inset-y-0 w-[1.5px] bg-white" />
-      <div className="absolute -left-[5px] top-0 size-0 border-x-[6px] border-t-[8px] border-x-transparent border-t-white" />
     </div>
   )
 }
@@ -1228,10 +1420,10 @@ function Correcoes({
             <Botaozinho
               onClick={() => {
                 const t = agulha.get()
-                mudar((e) => ({ ...e, trechos: inserirEm(e.trechos, t, faixa, [trechoDaCorrecao(c)]) }))
+                mudar((e) => ({ ...e, trechos: colocarEm(e.trechos, t, faixa, [trechoDaCorrecao(c)]) }))
                 aoUsar()
               }}
-              title={`Põe a correção inteira na agulha, na A${faixa + 1}`}
+              title={`Põe o áudio inteiro na agulha, na A${faixa + 1} (ou na próxima faixa livre ali), sem cortar nada`}
             >
               Na agulha
             </Botaozinho>
@@ -1368,7 +1560,8 @@ function Marcar({ rotulo, ligado, onChange }: { rotulo: string; ligado: boolean;
 const hz = (f: number): string => (f >= 1000 ? `${(f / 1000).toFixed(f >= 10000 ? 0 : 1).replace('.', ',')} kHz` : `${Math.round(f)} Hz`)
 const db = (v: number): string => `${v > 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')} dB`
 
-function Efeitos({
+/** Memo: a etapa re-renderiza a cada zoom e escolha; o painel so quando a cadeia muda. */
+const Efeitos = memo(function Efeitos({
   cadeia,
   janela,
   mudar,
@@ -1510,7 +1703,7 @@ function Efeitos({
       </button>
     </>
   )
-}
+})
 
 /** O que muda o SOM (a onda, a escuta): tudo menos a velocidade, que o preview faz tocando. */
 function cadeiaSemVelocidade({ velocidade: _fora, ...resto }: CadeiaDeAudio): Omit<CadeiaDeAudio, 'velocidade'> {
@@ -1574,6 +1767,20 @@ function Velocidade({ valor, onChange }: { valor: number; onChange: (v: number) 
   )
 }
 
+/*
+ * OS PLUGINS FICAM: "ja deixa o vst3 adicionado, nao quero ter que ficar
+ * adicionando o plugin o tempo inteiro". Cada mudanca na lista (adicionar,
+ * tirar, ligar, os ajustes que voltam da janela) vai tambem para o "meu
+ * padrao" -- o resto da cadeia salva fica como estava. Toda gravacao nova ja
+ * comeca com o Fresh Air, no preset dele.
+ */
+async function lembrarPluginsNoPadrao(plugins: readonly PluginDaCadeia[]): Promise<void> {
+  const r = await window.dangai.getSettings()
+  const salva = r.ok ? cadeiaDeAudioSchema.safeParse(r.value.cadeiaDeAudio) : null
+  const base = salva?.success ? salva.data : CADEIA_PADRAO
+  await window.dangai.saveSettings({ cadeiaDeAudio: { ...base, plugins: [...plugins] } })
+}
+
 function Plugins({
   cadeia,
   janela,
@@ -1586,6 +1793,33 @@ function Plugins({
   const [lista, setLista] = useState<PluginInstalado[] | null>(null)
   const [abrindo, setAbrindo] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+  /** O plugin com a janela aberta agora: os botoes dele chegam ao vivo. */
+  const aberto = useRef<{ id: string; caminho: string } | null>(null)
+
+  /** Muda a lista dos plugins aqui E no padrao dele. */
+  const trocarPlugins = (f: (p: PluginDaCadeia[]) => PluginDaCadeia[]): void => {
+    const novos = f(cadeia.plugins)
+    mudar((c) => ({ ...c, plugins: f(c.plugins) }))
+    void lembrarPluginsNoPadrao(novos).catch(() => undefined)
+  }
+
+  /*
+   * AO VIVO: "to ativando o fresh air e colocando os presets mas nao vejo
+   * diferenca no audio quando dou play" -- o que ele mexia na janela so valia
+   * depois de fechar. Agora cada mudanca nos botoes chega aqui (o vst-host
+   * avisa) e o som e refeito com ela: com a janela aberta mesmo, o play ja toca
+   * o Fresh Air novo um ou dois segundos depois.
+   */
+  useEffect(
+    () =>
+      window.dangai.onPluginAoVivo(({ caminho, parametros }) => {
+        const a = aberto.current
+        if (!a || a.caminho !== caminho) return
+        // Sem o estado: o som e feito pelos botoes. O estado inteiro volta quando a janela fecha.
+        mudar((c) => ({ ...c, plugins: c.plugins.map((x) => (x.id === a.id ? { ...x, estado: null, parametros } : x)) }))
+      }),
+    [mudar],
+  )
 
   const procurar = async (): Promise<void> => {
     setErro(null)
@@ -1605,26 +1839,23 @@ function Plugins({
       setErro(r.error)
       return
     }
-    mudar((c) => ({
-      ...c,
-      plugins: [
-        ...c.plugins,
-        { id: `plugin-${Date.now()}`, ligado: true, caminho: p.caminho, nome: r.value.nome, estado: r.value.estado, parametros: r.value.parametros },
-      ],
-    }))
+    const novo: PluginDaCadeia = { id: `plugin-${Date.now()}`, ligado: true, caminho: p.caminho, nome: r.value.nome, estado: r.value.estado, parametros: r.value.parametros }
+    trocarPlugins((lista) => [...lista, novo])
+    avisar(`${r.value.nome} adicionado. Ele fica no seu padrão: as próximas gravações já começam com ele.`, 6000)
   }
 
   /*
    * A JANELA DO PROPRIO PLUGIN, a mesma do DaVinci: abre no meio da tela, por
    * cima do Dangai. Fecha pelo X dela ou pelo "Fechar" daqui (e sozinha ao sair
-   * da etapa); o estado novo volta e o som e refeito. "Quando eu ativo o plugin
-   * fresh air, eu nao consigo fecha-lo" -- o X abria fora da tela (ver host.py).
+   * da etapa); o estado inteiro volta e fica no padrao. "Quando eu ativo o
+   * plugin fresh air, eu nao consigo fecha-lo" -- o X abria fora da tela.
    */
   const abrir = async (id: string): Promise<void> => {
     const p = cadeia.plugins.find((x) => x.id === id)
     if (!p) return
     setErro(null)
     setAbrindo(id)
+    aberto.current = { id, caminho: p.caminho }
     const pedido = window.dangai.janelaDoPlugin(p.caminho, p.estado, p.nome)
     janela.current = pedido.then(
       () => undefined,
@@ -1632,43 +1863,46 @@ function Plugins({
     )
     const r = await pedido
     janela.current = null
+    aberto.current = null
     setAbrindo(null)
     if (!r.ok) {
       setErro(r.error)
       return
     }
-    mudar((c) => ({ ...c, plugins: c.plugins.map((x) => (x.id === id ? { ...x, estado: r.value.estado, parametros: r.value.parametros } : x)) }))
+    trocarPlugins((lista) => lista.map((x) => (x.id === id ? { ...x, estado: r.value.estado, parametros: r.value.parametros } : x)))
   }
 
   return (
     <Grupo titulo="Plugins (VST3)">
       {cadeia.plugins.length === 0 && !lista && (
-        <p className="text-[11px] leading-relaxed text-ink-3">O Fresh Air e os outros plugins instalados no seu PC entram aqui.</p>
+        <p className="text-[11px] leading-relaxed text-ink-3">O Fresh Air e os outros plugins instalados no seu PC entram aqui. O que você adicionar fica para as próximas gravações.</p>
       )}
       {cadeia.plugins.map((p) => (
-        <div key={p.id} className="flex items-center gap-2 rounded-sm border border-line/60 px-2 py-1.5">
-          <Chave
-            ligado={p.ligado}
-            onChange={(v) => mudar((c) => ({ ...c, plugins: c.plugins.map((x) => (x.id === p.id ? { ...x, ligado: v } : x)) }))}
-          />
-          <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{p.nome}</span>
-          {abrindo === p.id ? (
-            <Botaozinho active onClick={() => void window.dangai.fecharJanelasDosPlugins()} title="Fecha a janela do plugin e usa os ajustes dela">
-              <X size={11} strokeWidth={1.75} /> Fechar
-            </Botaozinho>
-          ) : (
-            <Botaozinho onClick={() => void abrir(p.id)} disabled={abrindo !== null} title="Abre a janela do plugin. Feche-a (pelo X dela ou aqui) para o Dangai usar os ajustes">
-              Abrir
-            </Botaozinho>
+        <div key={p.id} className="flex flex-col gap-1 rounded-sm border border-line/60 px-2 py-1.5">
+          <div className="flex items-center gap-2">
+            <Chave ligado={p.ligado} onChange={(v) => trocarPlugins((lista) => lista.map((x) => (x.id === p.id ? { ...x, ligado: v } : x)))} />
+            <span className="min-w-0 flex-1 truncate text-[12px] text-ink">{p.nome}</span>
+            {abrindo === p.id ? (
+              <Botaozinho active onClick={() => void window.dangai.fecharJanelasDosPlugins()} title="Fecha a janela do plugin">
+                <X size={11} strokeWidth={1.75} /> Fechar
+              </Botaozinho>
+            ) : (
+              <Botaozinho onClick={() => void abrir(p.id)} disabled={abrindo !== null} title="Abre a janela do plugin. O que você mexer nela já vale no play">
+                Abrir
+              </Botaozinho>
+            )}
+            <button
+              type="button"
+              onClick={() => trocarPlugins((lista) => lista.filter((x) => x.id !== p.id))}
+              title="Tirar da cadeia (e do seu padrão)"
+              className="grid size-6 place-items-center rounded-sm text-ink-3 hover:text-danger"
+            >
+              <Trash2 size={12} strokeWidth={1.5} />
+            </button>
+          </div>
+          {abrindo === p.id && (
+            <p className="text-[11px] leading-relaxed text-accent">Ao vivo: mexa na janela e dê play. O som novo chega em 1 ou 2 segundos.</p>
           )}
-          <button
-            type="button"
-            onClick={() => mudar((c) => ({ ...c, plugins: c.plugins.filter((x) => x.id !== p.id) }))}
-            title="Tirar da cadeia"
-            className="grid size-6 place-items-center rounded-sm text-ink-3 hover:text-danger"
-          >
-            <Trash2 size={12} strokeWidth={1.5} />
-          </button>
         </div>
       ))}
       {lista && (

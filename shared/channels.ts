@@ -62,6 +62,8 @@ export const IPC = {
   ondaDaEdicao: 'audio-edicao:onda',
   silenciosDaGravacao: 'audio-edicao:silencios',
   concluirEdicao: 'audio-edicao:concluir',
+  exportarEdicao: 'audio-edicao:exportar',
+  pluginAoVivo: 'audio-edicao:plugin-ao-vivo',
   listarPlugins: 'audio-edicao:plugins',
   descreverPlugin: 'audio-edicao:descrever-plugin',
   janelaDoPlugin: 'audio-edicao:janela-do-plugin',
@@ -862,6 +864,10 @@ export interface DangaiBridge {
   silenciosDaGravacao(edicao: EdicaoDeAudio, opcoes: OpcoesDosSilencios): Promise<IpcResult<{ de: number; ate: number; fonte: string }[]>>
   /** Grava a narracao final ao lado da gravacao e devolve o caminho. */
   concluirEdicao(edicao: EdicaoDeAudio): Promise<IpcResult<string>>
+  /** Pergunta onde (WAV ou MP3) e grava a narracao editada la. null = cancelou. */
+  exportarEdicao(edicao: EdicaoDeAudio): Promise<IpcResult<string | null>>
+  /** Os botoes do plugin mudaram com a janela dele aberta (o Fresh Air ao vivo). */
+  onPluginAoVivo(listener: (mudanca: { caminho: string; parametros: Record<string, number> }) => void): () => void
   listarPlugins(): Promise<IpcResult<PluginInstalado[]>>
   descreverPlugin(caminho: string, estado: string | null): Promise<IpcResult<DescricaoDoPlugin>>
   /** Abre a janela do plugin (com o nome dele no titulo); resolve quando ela fecha, com o estado novo. */

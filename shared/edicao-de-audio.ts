@@ -43,8 +43,29 @@ export const trechoDaGravacaoSchema = z.object({
   faixa: z.number().int().min(0).max(MAX_FAIXAS - 1).default(0),
   /** Quem e quem na tela (a selecao). Sem: ganha um ao abrir. */
   id: z.string().optional(),
+  /** Um efeito so deste trecho -- piada ou censura (ver EFEITOS_DO_TRECHO). Sem: o som dele. */
+  efeito: z.enum(['bip', 'mudo', 'fina', 'grossa', 'robo', 'eco', 'radio', 'reverso']).nullable().optional(),
 })
 type TrechoLido = z.infer<typeof trechoDaGravacaoSchema>
+export type EfeitoDoTrecho = NonNullable<TrechoLido['efeito']>
+
+/*
+ * OS EFEITOS DE UM TRECHO: "as vezes gosto de colocar uns efeitos no audio para
+ * fazer piada ou censurar... quero continuar tendo essa liberdade so que aqui
+ * no Dangai". Corta a palavra (C antes e depois), escolhe o trecho e o efeito.
+ * Todos mantem o tamanho do trecho: o resto da linha nao anda. Como cada um
+ * soa esta em electron/services/edicao-de-audio.ts (efeitoNoPedaco).
+ */
+export const EFEITOS_DO_TRECHO: readonly { id: EfeitoDoTrecho; nome: string; dica: string }[] = [
+  { id: 'bip', nome: 'Bip', dica: 'Censura: um bipe no lugar da fala, no volume dela' },
+  { id: 'mudo', nome: 'Silêncio', dica: 'Censura: o trecho fica mudo' },
+  { id: 'fina', nome: 'Voz fina', dica: 'A voz de esquilo: mais aguda, no mesmo tempo' },
+  { id: 'grossa', nome: 'Voz grossa', dica: 'A voz de monstro: mais grave, no mesmo tempo' },
+  { id: 'robo', nome: 'Robô', dica: 'A voz de robô' },
+  { id: 'eco', nome: 'Eco', dica: 'A voz ecoando, como num salão' },
+  { id: 'radio', nome: 'Rádio', dica: 'A voz de rádio ou de telefone' },
+  { id: 'reverso', nome: 'Ao contrário', dica: 'O trecho tocado de trás para a frente' },
+]
 export type TrechoDaGravacao = Omit<TrechoLido, 'em' | 'id'> & { em: number; id: string }
 /** Um pedaco que ainda vai entrar na linha (a correcao inteira): sem lugar e sem id. */
 export type PedacoNovo = Pick<TrechoDaGravacao, 'de' | 'ate' | 'ganhoDb' | 'fonte'>
@@ -482,6 +503,57 @@ export function aparar(
 
 export function ganhoDosTrechos(trechos: readonly TrechoDaGravacao[], ids: ReadonlySet<string>, ganhoDb: number): TrechoDaGravacao[] {
   return trechos.map((x) => (ids.has(x.id) ? { ...x, ganhoDb } : x))
+}
+
+export function efeitoDosTrechos(trechos: readonly TrechoDaGravacao[], ids: ReadonlySet<string>, efeito: EfeitoDoTrecho | null): TrechoDaGravacao[] {
+  return trechos.map((x) => (ids.has(x.id) ? { ...x, efeito } : x))
+}
+
+/** A faixa `faixa` esta livre de `a` a `b`? */
+function livre(trechos: readonly TrechoDaGravacao[], faixa: number, a: number, b: number): boolean {
+  return !trechos.some((x) => x.faixa === faixa && x.em < b - EPS && fimDo(x) > a + EPS)
+}
+
+/**
+ * POE SEM CORTAR NADA: `novos`, um depois do outro, a partir de `t`, na faixa
+ * pedida -- como soltar um audio numa faixa do DaVinci. "Quando eu tento
+ * importar um audio novo do drag e drop, eu nao consigo colocar na track que eu
+ * quero, ele sempre vai na primeira e corta o processo." Nada anda e nada e
+ * cortado: se a faixa pedida esta ocupada ali, vai para a proxima faixa livre
+ * naquele instante; sem nenhuma, para o fim da faixa pedida.
+ */
+export function colocarEm(trechos: readonly TrechoDaGravacao[], t: number, faixa: number, novos: readonly PedacoNovo[]): TrechoDaGravacao[] {
+  const largura = novos.reduce((s, n) => s + duracaoDo(n), 0)
+  const inicio = Math.max(0, t)
+  const ordem = [faixa, ...Array.from({ length: MAX_FAIXAS }, (_, i) => i).filter((f) => f !== faixa)]
+  let onde: { em: number; faixa: number } | null = null
+  for (const f of ordem) {
+    if (livre(trechos, f, inicio, inicio + largura)) {
+      onde = { em: inicio, faixa: f }
+      break
+    }
+  }
+  onde ??= { em: trechos.filter((x) => x.faixa === faixa).reduce((m, x) => Math.max(m, fimDo(x)), 0), faixa }
+  const r = [...trechos]
+  let em = onde.em
+  for (const n of novos) {
+    r.push({ ...n, em, faixa: onde.faixa, id: novoId() })
+    em += duracaoDo(n)
+  }
+  return r
+}
+
+/**
+ * A TECLA B: "la no DaVinci eu aperto a tecla b para cortar aonde ta a agulha e
+ * juntar direto no ultimo corte" (o Ripple Trim Start to Playhead). Tira do
+ * trecho `id` o pedaco do comeco dele ate a agulha `t`, e o que vem depois
+ * chega para tras ate o corte -- em todas as faixas, como o Delete.
+ */
+export function puxarAteAgulha(trechos: readonly TrechoDaGravacao[], id: string, t: number): TrechoDaGravacao[] {
+  const x = trechos.find((y) => y.id === id)
+  if (!x || t < x.em + MENOR_TRECHO_SEC || t > fimDo(x) - MENOR_TRECHO_SEC) return [...trechos]
+  const aparado = trechos.map((y) => (y.id === id ? { ...y, em: t, de: y.de + (t - y.em) } : y))
+  return fecharBuraco(aparado, x.em, t)
 }
 
 export interface OpcoesDosSilencios {

@@ -26,6 +26,7 @@ import {
   limiteDaIa,
   silenciosDoSinal,
   type EdicaoDeAudio,
+  type EfeitoDoTrecho,
   type OpcoesDosSilencios,
   type TrechoDaGravacao,
 } from '@shared/edicao-de-audio'
@@ -280,7 +281,12 @@ async function limpa(baseWav: string, quantidade: number, onProgress: (m: string
  * onde o vizinho da mesma faixa continua a mesma gravacao sem pulo (so cortou
  * ali, nao tirou nada): ali a onda segue inteira.
  */
-export function montarMix(fontes: Readonly<Record<string, Float32Array>>, trechos: readonly TrechoDaGravacao[]): Float32Array {
+export function montarMix(
+  fontes: Readonly<Record<string, Float32Array>>,
+  trechos: readonly TrechoDaGravacao[],
+  /** O som de um trecho COM o efeito dele (pelo id), no lugar do pedaco da gravacao. */
+  comEfeito: ReadonlyMap<string, Float32Array> = new Map(),
+): Float32Array {
   const saida = new Float32Array(Math.round(duracaoEditada(trechos) * TAXA))
   const emenda = Math.round(EMENDA_SEC * TAXA)
   const continua = (antes: TrechoDaGravacao, depois: TrechoDaGravacao): boolean =>
@@ -288,11 +294,14 @@ export function montarMix(fontes: Readonly<Record<string, Float32Array>>, trecho
     fonteDo(antes) === fonteDo(depois) &&
     Math.abs(fimDo(antes) - depois.em) < 0.001 &&
     Math.abs(antes.ate - depois.de) < 0.001 &&
-    antes.ganhoDb === depois.ganhoDb
+    antes.ganhoDb === depois.ganhoDb &&
+    !antes.efeito &&
+    !depois.efeito
   for (const t of trechos) {
-    const x = fontes[fonteDo(t)] ?? new Float32Array(0)
-    const a = Math.max(0, Math.min(x.length, Math.round(t.de * TAXA)))
-    const b = Math.max(a, Math.min(x.length, Math.round(t.ate * TAXA)))
+    const trocado = comEfeito.get(t.id)
+    const x = trocado ?? fontes[fonteDo(t)] ?? new Float32Array(0)
+    const a = trocado ? 0 : Math.max(0, Math.min(x.length, Math.round(t.de * TAXA)))
+    const b = trocado ? x.length : Math.max(a, Math.min(x.length, Math.round(t.ate * TAXA)))
     const n = b - a
     const o = Math.round(t.em * TAXA)
     const ganho = 10 ** (t.ganhoDb / 20)
@@ -306,6 +315,84 @@ export function montarMix(fontes: Readonly<Record<string, Float32Array>>, trecho
     }
   }
   return saida
+}
+
+/** O pedaco [de, ate) de uma gravacao lida, como copia. */
+function pedacoDe(x: Float32Array, de: number, ate: number): Float32Array {
+  const a = Math.max(0, Math.min(x.length, Math.round(de * TAXA)))
+  const b = Math.max(a, Math.min(x.length, Math.round(ate * TAXA)))
+  return x.slice(a, b)
+}
+
+/** Meio-tom: o quanto a voz sobe ou desce em "fina" e "grossa" (7 = uma quinta, a voz de esquilo). */
+const SEMITONS = 7
+
+/** Os filtros do ffmpeg de cada efeito. Todos devolvem o mesmo tamanho (sem eco passando do fim). */
+function filtroDoEfeito(efeito: EfeitoDoTrecho): string | null {
+  const subir = (2 ** (SEMITONS / 12)).toFixed(6)
+  const descer = (2 ** (-SEMITONS / 12)).toFixed(6)
+  switch (efeito) {
+    // Muda o tom pela taxa e devolve o tempo pelo atempo: mais aguda (ou grave), no mesmo tempo.
+    case 'fina':
+      return `asetrate=${TAXA}*${subir},aresample=${TAXA},atempo=${(1 / Number(subir)).toFixed(6)}`
+    case 'grossa':
+      return `asetrate=${TAXA}*${descer},aresample=${TAXA},atempo=${(1 / Number(descer)).toFixed(6)}`
+    // Fase zerada em cada janela: a voz vira robo (o "robotize" classico).
+    case 'robo':
+      return "afftfilt=real='hypot(re,im)':imag='0':win_size=512:overlap=0.75"
+    case 'eco':
+      return 'aecho=0.8:0.8:180|360:0.45|0.25'
+    case 'radio':
+      return 'highpass=f=400,lowpass=f=3200,acompressor=threshold=0.1:ratio=4:makeup=2.5'
+    case 'reverso':
+      return 'areverse'
+    default:
+      return null
+  }
+}
+
+const comEfeitoLidos = new Map<string, Promise<Float32Array>>()
+
+/**
+ * O som do trecho COM o efeito, do tamanho exato do trecho. "bip" e "mudo" sao
+ * feitos aqui (o bipe no volume da fala que ele cobre); o resto passa pelo
+ * ffmpeg. Guardado na memoria pela receita: mexer em outro trecho nao refaz.
+ */
+export async function efeitoNoPedaco(pedaco: Float32Array, efeito: EfeitoDoTrecho, chave: string): Promise<Float32Array> {
+  const n = pedaco.length
+  if (efeito === 'mudo') return new Float32Array(n)
+  if (efeito === 'bip') {
+    let soma = 0
+    for (let i = 0; i < n; i++) soma += pedaco[i]! * pedaco[i]!
+    const rms = Math.sqrt(soma / Math.max(1, n))
+    // Um seno com o mesmo volume medio da fala (seno: pico = RMS x 1,41), nem sumido nem estourado.
+    const amplitude = Math.min(0.5, Math.max(0.05, rms * 1.41))
+    const bip = new Float32Array(n)
+    for (let i = 0; i < n; i++) bip[i] = amplitude * Math.sin((2 * Math.PI * 1000 * i) / TAXA)
+    return bip
+  }
+  const filtro = filtroDoEfeito(efeito)
+  if (!filtro) return pedaco
+  let p = comEfeitoLidos.get(chave)
+  if (!p) {
+    p = (async () => {
+      const temp = join(dir('render'), `_efeito-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.wav`)
+      gravarWavFloat(temp, pedaco)
+      try {
+        const y = await lerMono(temp, filtro)
+        // Do tamanho exato: o atempo erra por alguns ms, e o resto da linha nao pode andar.
+        const certo = new Float32Array(n)
+        certo.set(y.subarray(0, n))
+        return certo
+      } finally {
+        rmSync(temp, { force: true })
+      }
+    })()
+    p.catch(() => comEfeitoLidos.delete(chave))
+    comEfeitoLidos.set(chave, p)
+    while (comEfeitoLidos.size > 40) comEfeitoLidos.delete(comEfeitoLidos.keys().next().value!)
+  }
+  return p
 }
 
 /** 100 picos por segundo (e o RMS) para a onda da linha do tempo. */
@@ -382,35 +469,52 @@ async function processado(caminho: string, edicao: EdicaoDeAudio, onProgress: (m
   const filtros = filtrosDaCadeia(edicao.cadeia)
   const plugins = edicao.cadeia.plugins.filter((p) => p.ligado)
   if (!filtros && plugins.length === 0) return f
-  const chave = hash({ v: VERSAO, f: basename(f), filtros, p: plugins.map((p) => [p.caminho, p.estado, p.parametros]) })
   // A identidade da gravacao na frente do nome: a faxina acha o que e de quem.
-  const alvo = join(dir('processado'), `${basename(f, '.wav').slice(0, 16)}-${chave}.wav`)
+  const identidadeDaFonte = basename(f, '.wav').slice(0, 16)
+  const meio = filtros ? await comFiltros(f, filtros, identidadeDaFonte, onProgress) : f
+  if (plugins.length === 0) return meio
+  /*
+   * OS PLUGINS em cima do arquivo com os filtros, guardado a parte: mexer no
+   * Fresh Air (inclusive com a janela dele aberta, ao vivo) so refaz esta
+   * passada, nao o nivelador, o EQ e o compressor.
+   */
+  const chave = hash({ v: VERSAO, f: basename(meio), p: plugins.map((p) => [p.caminho, p.estado, p.parametros]) })
+  const alvo = join(dir('processado'), `${identidadeDaFonte}-${chave}.wav`)
   if (existsSync(alvo)) return alvo
   let p = processando.get(chave)
   if (!p) {
     p = (async () => {
       const temp = dir('processado', `_${chave}`)
       try {
-        let atual = f
-        if (filtros) {
-          onProgress('Aplicando os efeitos...')
-          const proximo = join(temp, 'meio.wav')
-          await rodarFfmpeg(['-i', atual, '-af', filtros, '-ar', String(TAXA), '-ac', '1', '-c:a', 'pcm_f32le', proximo])
-          atual = proximo
-        }
-        if (plugins.length > 0) {
-          // O leitor de plugins pode ser de uma versao anterior (ou nao estar baixado): sem
-          // isto, quem atualizou o Dangai com o Fresh Air na cadeia via "nao esta instalado".
-          await prepararPlugins(onProgress)
-          onProgress(plugins.length === 1 ? `Passando pelo ${plugins[0]!.nome}...` : 'Passando pelos plugins...')
-          const proximo = join(temp, 'plugins.wav')
-          await aplicarPlugins(atual, proximo, plugins)
-          atual = proximo
-        }
-        renameSync(atual, alvo)
+        // O leitor de plugins pode ser de uma versao anterior (ou nao estar baixado): sem
+        // isto, quem atualizou o Dangai com o Fresh Air na cadeia via "nao esta instalado".
+        await prepararPlugins(onProgress)
+        onProgress(plugins.length === 1 ? `Passando pelo ${plugins[0]!.nome}...` : 'Passando pelos plugins...')
+        const proximo = join(temp, 'plugins.wav')
+        await aplicarPlugins(meio, proximo, plugins)
+        renameSync(proximo, alvo)
       } finally {
         rmSync(temp, { recursive: true, force: true })
       }
+      return alvo
+    })().finally(() => processando.delete(chave))
+    processando.set(chave, p)
+  }
+  return p
+}
+
+/** A gravacao com o nivelador, o EQ e o compressor (o ffmpeg), uma vez por receita. */
+async function comFiltros(f: string, filtros: string, identidadeDaFonte: string, onProgress: (m: string) => void): Promise<string> {
+  const chave = hash({ v: VERSAO, f: basename(f), filtros })
+  const alvo = join(dir('processado'), `${identidadeDaFonte}-${chave}.wav`)
+  if (existsSync(alvo)) return alvo
+  let p = processando.get(chave)
+  if (!p) {
+    p = (async () => {
+      onProgress('Aplicando os efeitos...')
+      const parcial = `${alvo}.part.wav`
+      await rodarFfmpeg(['-i', f, '-af', filtros, '-ar', String(TAXA), '-ac', '1', '-c:a', 'pcm_f32le', parcial])
+      renameSync(parcial, alvo)
       return alvo
     })().finally(() => processando.delete(chave))
     processando.set(chave, p)
@@ -487,7 +591,7 @@ export async function renderizarEdicao(
     f: escutas.map(([id, f]) => [id, basename(f)]),
     // So o que muda o som: a faixa e o id nao entram (trocar de faixa no mesmo lugar acha o mesmo arquivo).
     m: 'faixas',
-    t: edicao.trechos.map((x) => [x.de, x.ate, x.ganhoDb, fonteDo(x), x.em]),
+    t: edicao.trechos.map((x) => [x.de, x.ate, x.ganhoDb, fonteDo(x), x.em, x.efeito ?? null]),
     n: normalizar,
     // `atempo`: o arquivo acelerado pelo R3 (1.99) nao volta do cache.
     ...(fator !== 1 ? { vel: fator, metodo: 'atempo' } : {}),
@@ -505,7 +609,15 @@ export async function renderizarEdicao(
       const usadas = new Set(edicao.trechos.map(fonteDo))
       const lidas: Record<string, Float32Array> = {}
       for (const [id, f] of escutas) if (usadas.has(id)) lidas[id] = await lerMonoComCache(f)
-      let x = montarMix(lidas, edicao.trechos)
+      // Os trechos com efeito (bip, voz fina...): o som deles ja com o efeito.
+      const comEfeito = new Map<string, Float32Array>()
+      for (const t of edicao.trechos) {
+        const fonteLida = lidas[fonteDo(t)]
+        if (!t.efeito || !fonteLida) continue
+        const arquivo = escutas.find(([id]) => id === fonteDo(t))?.[1] ?? ''
+        comEfeito.set(t.id, await efeitoNoPedaco(pedacoDe(fonteLida, t.de, t.ate), t.efeito, `${arquivo}|${t.de}|${t.ate}|${t.efeito}`))
+      }
+      let x = montarMix(lidas, edicao.trechos, comEfeito)
       /*
        * A VELOCIDADE, sem mudar o tom: o atempo do ffmpeg -- o mesmo jeito do
        * preview (o navegador acelera emendando pedacos da propria onda, sem
@@ -593,6 +705,24 @@ export async function concluirEdicao(edicao: EdicaoDeAudio, onProgress: (m: stri
   for (let k = 2; existsSync(saida) && saida !== edicao.saida; k++) saida = join(pasta, `${nome} (editado ${k}).wav`)
   copyFileSync(pronto.arquivo, saida)
   return saida
+}
+
+/**
+ * EXPORTAR: "quero uma opcao de exportar o audio editado ali". A mesma narracao
+ * do "Pronto" (cortes, efeitos, velocidade, -14 LUFS), para onde ele escolher:
+ * WAV como sai, ou MP3 (320 kbps) pela extensao que ele deu. Nao mexe no projeto.
+ */
+export async function exportarEdicao(edicao: EdicaoDeAudio, destino: string, onProgress: (m: string) => void): Promise<string> {
+  const pronto = await renderizarEdicao(edicao, true, onProgress, true)
+  if (extname(destino).toLowerCase() === '.mp3') {
+    onProgress('Gravando o MP3...')
+    const parcial = `${destino}.part.mp3`
+    await rodarFfmpeg(['-i', pronto.arquivo, '-c:a', 'libmp3lame', '-b:a', '320k', parcial])
+    renameSync(parcial, destino)
+  } else {
+    copyFileSync(pronto.arquivo, destino)
+  }
+  return destino
 }
 
 /**

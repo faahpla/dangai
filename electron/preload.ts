@@ -232,6 +232,12 @@ const bridge: DangaiBridge = {
   silenciosDaGravacao: (edicao, opcoes) =>
     ipcRenderer.invoke(IPC.silenciosDaGravacao, edicao, opcoes) as Promise<IpcResult<{ de: number; ate: number; fonte: string }[]>>,
   concluirEdicao: (edicao) => ipcRenderer.invoke(IPC.concluirEdicao, edicao) as Promise<IpcResult<string>>,
+  exportarEdicao: (edicao) => ipcRenderer.invoke(IPC.exportarEdicao, edicao) as Promise<IpcResult<string | null>>,
+  onPluginAoVivo: (listener) => {
+    const handler = (_event: unknown, mudanca: { caminho: string; parametros: Record<string, number> }): void => listener(mudanca)
+    ipcRenderer.on(IPC.pluginAoVivo, handler)
+    return () => ipcRenderer.removeListener(IPC.pluginAoVivo, handler)
+  },
   listarPlugins: () => ipcRenderer.invoke(IPC.listarPlugins) as Promise<IpcResult<PluginInstalado[]>>,
   descreverPlugin: (caminho, estado) =>
     ipcRenderer.invoke(IPC.descreverPlugin, caminho, estado) as Promise<IpcResult<DescricaoDoPlugin>>,

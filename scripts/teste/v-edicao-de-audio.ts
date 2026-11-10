@@ -10,6 +10,9 @@ import {
   apagarIntervalo,
   apagarTrechos,
   cadeiaDeAudioSchema,
+  colocarEm,
+  efeitoDosTrechos,
+  puxarAteAgulha,
   CADEIA_PADRAO,
   caminhoDaFonte,
   cortarEm,
@@ -33,7 +36,10 @@ import {
   trechoDaCorrecao,
   type TrechoDaGravacao,
 } from '../../shared/edicao-de-audio.ts'
-import { montarMix } from '../../electron/services/edicao-de-audio.ts'
+import { configureEdicaoDeAudio, efeitoNoPedaco, montarMix } from '../../electron/services/edicao-de-audio.ts'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 let falhas = 0
 function conferir(nome: string, obtido: unknown, esperado: unknown): void {
@@ -213,6 +219,34 @@ console.log('projeto de antes das faixas abre como era')
   conferir('o de agora volta igual', lugares(novo.trechos).concat([[novo.trechos[0]!.id === 'meu' ? 1 : 0]]), [[1.5, 1, 0, 2], [1]])
 }
 
+console.log('soltar um audio numa faixa, sem cortar nada')
+{
+  const c = { de: 0, ate: 2, ganhoDb: 0, fonte: 'c1' }
+  const base = [tr(0, 0, 0, 10), tr(3, 1, 0, 1, 'outra')]
+  conferir('na A2, no 6: entra ali e nada mais muda', lugares(colocarEm(base, 6, 1, [c])), [[0, 0, 0, 10], [3, 1, 0, 1], [6, 1, 0, 2]])
+  conferir('na A1 ocupada: vai para a primeira faixa livre naquele instante', lugares(colocarEm(base, 2, 0, [c])), [[0, 0, 0, 10], [2, 2, 0, 2], [3, 1, 0, 1]])
+  conferir('nada cortado, nada andou', colocarEm(base, 2, 0, [c]).length, 3)
+}
+
+console.log('a tecla B: corta na agulha e junta no ultimo corte')
+{
+  // A1: [0-4] e [4-10] (cortado no 4); a agulha no 6 dentro do segundo.
+  const a = tr(0, 0, 0, 4)
+  const b = tr(4, 0, 4, 10)
+  const d = tr(9, 1, 0, 2, 'outra')
+  conferir('sai do 4 ao 6; o resto chega no 4, nas duas faixas', lugares(puxarAteAgulha([a, b, d], b.id, 6)), [[0, 0, 0, 4], [4, 0, 6, 10], [7, 1, 0, 2]])
+  conferir('agulha fora do trecho: nada', lugares(puxarAteAgulha([a, b], b.id, 2)), [[0, 0, 0, 4], [4, 0, 4, 10]])
+}
+
+console.log('efeito de um trecho (piada ou censura)')
+{
+  const t = [tr(0, 0, 0, 1), tr(1, 0, 1, 2)]
+  conferir('bip so no escolhido', efeitoDosTrechos(t, new Set([t[1]!.id]), 'bip').map((x) => x.efeito ?? null), [null, 'bip'])
+  const lido = edicaoDeAudioSchema.parse({ bruto: 'x.wav', duracaoBruta: 2, trechos: [{ de: 0, ate: 1, em: 0, faixa: 0, id: 'a', efeito: 'robo' }], cadeia: CADEIA_PADRAO })
+  conferir('o efeito vai e volta do arquivo', lido.trechos[0]!.efeito, 'robo')
+  conferir('efeito que nao existe nao vale', edicaoDeAudioSchema.safeParse({ ...lido, trechos: [{ de: 0, ate: 1, efeito: 'xyz' }] }).success, false)
+}
+
 console.log('os efeitos viram filtros do ffmpeg, na ordem dele')
 {
   const f = filtrosDaCadeia(CADEIA_PADRAO)!.split(',').map((x) => x.split('=')[0])
@@ -269,5 +303,28 @@ console.log('a mistura das faixas (o audio que sai)')
   conferir('emenda com pedaco tirado: desce e sobe', round(pulo[em(0.4)]!), 0)
 }
 
-console.log(falhas === 0 ? '\nTUDO PASSOU' : `\n${falhas} FALHA(S)`)
-process.exit(falhas === 0 ? 0 : 1)
+async function efeitosDosTrechos(): Promise<void> {
+  console.log('os efeitos de trecho soam e mantem o tamanho')
+  const pasta = mkdtempSync(join(tmpdir(), 'dangai-efeitos-'))
+  configureEdicaoDeAudio(pasta)
+  // Meio segundo de "voz": 220 Hz com volume subindo (para o "ao contrario" ter lado).
+  const n = 24_000
+  const voz = new Float32Array(n)
+  for (let i = 0; i < n; i++) voz[i] = 0.3 * (i / n) * Math.sin((2 * Math.PI * 220 * i) / 48_000)
+  const rms = (x: Float32Array): number => Math.sqrt(x.reduce((s, v) => s + v * v, 0) / x.length)
+  for (const efeito of ['bip', 'mudo', 'fina', 'grossa', 'robo', 'eco', 'radio', 'reverso'] as const) {
+    const y = await efeitoNoPedaco(voz, efeito, 'teste|' + efeito)
+    const som = efeito === 'mudo' ? rms(y) === 0 : rms(y) > 0.01
+    conferir(`${efeito}: mesmo tamanho e ${efeito === 'mudo' ? 'mudo' : 'com som'}`, [y.length, som], [n, true])
+  }
+  const bip = await efeitoNoPedaco(voz, 'bip', 'x')
+  conferir('o bip vem no volume da fala', Math.abs(20 * Math.log10(rms(bip) / rms(voz))) < 1, true)
+  const reverso = await efeitoNoPedaco(voz, 'reverso', 'r')
+  conferir('ao contrario: o forte vem primeiro', rms(reverso.subarray(0, n / 2)) > rms(reverso.subarray(n / 2)), true)
+  rmSync(pasta, { recursive: true, force: true })
+}
+
+void efeitosDosTrechos().then(() => {
+  console.log(falhas === 0 ? '\nTUDO PASSOU' : `\n${falhas} FALHA(S)`)
+  process.exit(falhas === 0 ? 0 : 1)
+})

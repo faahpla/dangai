@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { app } from 'electron'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -30,11 +30,14 @@ import type { PluginDaCadeia } from '@shared/edicao-de-audio'
  * v3 (2.0): a janela do plugin abre NA TELA (a do Pedalboard abria com a barra
  * de titulo acima do monitor, sem o X a vista), por cima do Dangai, com o nome
  * do plugin, e fecha quando o Dangai pede (o `sinal` do comando `janela`).
+ *
+ * v4 (2.1): os botoes AO VIVO -- com a janela aberta, o que ele mexe vai para o
+ * arquivo `vivo` e o Dangai refaz o som (antes, so ao fechar a janela).
  */
 const VST_HOST = {
-  versao: '3',
-  url: 'https://github.com/faahpla/dangai/releases/download/ferramentas-vst-3/vst-host-3.zip',
-  sha256: 'fbe4e6b1591600c00ae1e1cb8f460f72c6b5adf327a1d2174ea6734aef21c634',
+  versao: '4',
+  url: 'https://github.com/faahpla/dangai/releases/download/ferramentas-vst-4/vst-host-4.zip',
+  sha256: 'df183b5c4a7a7daa413c6e88ed772cd7d400ec5b8f9044d016c908efd4757215',
   mb: 23,
 }
 
@@ -185,14 +188,36 @@ const janelasAbertas = new Set<string>()
  * fechar o Dangai) -- antes da v3 do vst-host ela abria com o X fora da tela e
  * so morria com o Dangai.
  */
-export async function janelaDoPlugin(caminho: string, estado: string | null, titulo: string): Promise<DescricaoDoPlugin> {
-  const sinal = join(dir(), `_fechar-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+export async function janelaDoPlugin(
+  caminho: string,
+  estado: string | null,
+  titulo: string,
+  /** Os botoes mudaram com a janela aberta (v4): o Dangai refaz o som com eles, ao vivo. */
+  aoVivo?: (parametros: Record<string, number>) => void,
+): Promise<DescricaoDoPlugin> {
+  const base = join(dir(), `_janela-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`)
+  const sinal = `${base}.fechar`
+  const vivo = `${base}.vivo.json`
   janelasAbertas.add(sinal)
+  let visto = 0
+  const vigia = setInterval(() => {
+    if (!aoVivo) return
+    try {
+      const quando = statSync(vivo).mtimeMs
+      if (quando === visto) return
+      visto = quando
+      aoVivo(JSON.parse(readFileSync(vivo, 'utf8')) as Record<string, number>)
+    } catch {
+      // Ainda nao mexeu (o arquivo nem existe), ou pegou no meio da escrita: a proxima volta le.
+    }
+  }, 250)
   try {
-    return await chamar<DescricaoDoPlugin>('janela', { caminho, estado, titulo, sinal }, { janela: true })
+    return await chamar<DescricaoDoPlugin>('janela', { caminho, estado, titulo, sinal, vivo }, { janela: true })
   } finally {
+    clearInterval(vigia)
     janelasAbertas.delete(sinal)
     rmSync(sinal, { force: true })
+    rmSync(vivo, { force: true })
   }
 }
 

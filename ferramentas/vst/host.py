@@ -13,8 +13,9 @@ Entrada e saida por ARQUIVO JSON, e nao pelo console: o executavel e de janela
 
     listar     -> [{nome, fabricante, caminho}]
     descrever  {caminho, estado?}                   -> {nome, estado, parametros, textos}
-    janela     {caminho, estado?, sinal?, titulo?}  -> igual, depois que a janela do plugin FECHA
-                                                       (pelo X, ou quando o arquivo `sinal` aparece)
+    janela     {caminho, estado?, sinal?, titulo?, vivo?} -> igual, depois que a janela do plugin FECHA
+                                                       (pelo X, ou quando o arquivo `sinal` aparece);
+                                                       aberta, os botoes vao para o arquivo `vivo`
     processar  {entrada, saida, plugins: [{caminho, estado?, parametros?}]} -> {ok: true}
 
 Erro vira {erro: "..."} na resposta, e o codigo de saida e 1.
@@ -175,10 +176,41 @@ def janela(pedido: dict) -> dict:
     plugin = carregar(pedido)
     fechar = threading.Event()
     sinal = pedido.get("sinal")
+    vivo = pedido.get("vivo")
     na_tela = JanelaNaTela(pedido.get("titulo") or plugin.name)
+    ultimos = {"parametros": None, "quando": 0.0}
+
+    def ao_vivo() -> None:
+        """
+        OS BOTOES AO VIVO (v4): "to ativando o fresh air e colocando os presets mas
+        nao vejo diferenca no audio quando dou play" -- o que ele mexia so chegava
+        ao Dangai quando a janela fechava. Agora, a cada 0,3 s, os valores dos
+        botoes vao para o arquivo `vivo` quando mudam, e o Dangai refaz o som com
+        eles. So LE os parametros (um numero atomico em cada plugin); o estado
+        inteiro volta ao fechar, como antes.
+        """
+        agora = time.monotonic()
+        if not vivo or agora - ultimos["quando"] < 0.3:
+            return
+        ultimos["quando"] = agora
+        atuais = {nome: float(p.raw_value) for nome, p in plugin.parameters.items() if nome not in ESCONDIDOS}
+        if atuais == ultimos["parametros"]:
+            return
+        primeira = ultimos["parametros"] is None
+        ultimos["parametros"] = atuais
+        if primeira:
+            return  # o valor de quando abriu: o Dangai ja tem
+        parcial = vivo + ".part"
+        with open(parcial, "w", encoding="utf-8") as f:
+            json.dump(atuais, f)
+        os.replace(parcial, vivo)
 
     def vigiar() -> None:
         while not fechar.is_set():
+            try:
+                ao_vivo()
+            except Exception:
+                pass  # ao vivo e conforto: o estado inteiro volta ao fechar
             try:
                 na_tela.conferir()
             except Exception:
