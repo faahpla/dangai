@@ -201,7 +201,8 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   const receitaDoSom = JSON.stringify([
     edicao.bruto,
     edicao.correcoes.map((c) => c.caminho),
-    trechos.map((x) => [x.de, x.ate, x.ganhoDb, fonteDo(x), x.em]),
+    // O efeito do trecho tambem (bip, voz fina...): sem ele aqui, escolher um efeito nao refazia o som do play.
+    trechos.map((x) => [x.de, x.ate, x.ganhoDb, fonteDo(x), x.em, x.efeito ?? null]),
     comEfeitos ? cadeiaSemVelocidade(edicao.cadeia) : null,
   ])
   useEffect(() => {
