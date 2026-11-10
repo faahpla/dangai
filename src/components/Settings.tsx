@@ -376,6 +376,40 @@ export function Settings() {
                   </button>
                 ))}
               </div>
+              <label className="mb-1.5 mt-4 block text-[11px] font-medium text-ink-2">
+                Som da transição Pan
+              </label>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const r = await window.dangai.pickFiles();
+                    const som = r.ok ? r.value.find((c) => /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(c)) : undefined;
+                    if (som) await save({ somDoPan: som });
+                  }}
+                  title="Trocar o som"
+                  className="lift flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
+                >
+                  <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {settings?.somDoPan ? settings.somDoPan.split(/[\\/]/).pop() : "Nenhum (escolher...)"}
+                  </span>
+                </button>
+                {settings?.somDoPan && (
+                  <button
+                    type="button"
+                    onClick={() => void save({ somDoPan: "" })}
+                    className="lift shrink-0 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
+                  >
+                    Nenhum
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                Pôs a transição Pan numa emenda, este som entra sozinho na faixa
+                de SFX, com o ponto mais forte dele bem no corte. Dá para mover
+                ou apagar como os outros. Tirar o Pan tira o som.
+              </p>
               <SecoesDosModulos depoisDe="sons" />
 
               <div className="my-5 h-px bg-line" />

@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.2.0',
+    itens: [
+      'Efeitos do trecho funcionando: escolher Bip, Voz fina, Robô e os outros agora já muda o som do play. Antes, o play continuava tocando o som de antes até você cortar alguma coisa.',
+      'Som automático no Pan: pôs a transição Pan numa emenda, o Flash Swoosh entra sozinho na faixa de SFX, com o ponto mais forte dele bem no corte. Trocar o Pan de lado não duplica, e tirar o Pan tira o som. O arquivo fica em Configurações > Som da transição Pan, onde dá para trocar ou desligar.',
+    ],
+  },
+  {
     versao: '2.1.0',
     itens: [
       'Fresh Air ao vivo: com a janela do plugin aberta, o que você mexe (os presets, o Mid Air, o High Air) já vale no play, um ou dois segundos depois. Antes, só valia depois de fechar a janela. Na primeira vez, o Dangai baixa de novo o leitor de plugins (23 MB).',

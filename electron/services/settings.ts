@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { safeStorage } from 'electron'
 
@@ -88,6 +89,13 @@ export interface Settings {
    * pastaDosProjetos).
    */
   pastaDeProjetos: string
+  /**
+   * O SOM DO PAN: "toda vez que for adicionada a transicao Pan eu quero que voce
+   * automaticamente coloque esse efeito sonoro". O arquivo; '' = nenhum (ele
+   * desligou); null = nunca escolheu -- vale o "Flash Swoosh" da pasta de sons
+   * dele, se existir (somDoPanPadrao).
+   */
+  somDoPan: string | null
   /** O barulhinho quando o render termina. Ligado por padrao. */
   somAoRenderizar: boolean
   /**
@@ -157,6 +165,7 @@ const DEFAULTS: Settings = {
   libraryDir: '',
   mangaDir: '',
   pastaDeProjetos: '',
+  somDoPan: null,
   somAoRenderizar: true,
   curvePresets: [],
   captionPresets: [],
@@ -189,6 +198,15 @@ let ilegiveis: Record<string, string> = {}
  */
 let extrasDoArquivo: Record<string, unknown> = {}
 let avisouTextoPuro = false
+
+/**
+ * O som do Pan de quem nunca escolheu: o "Flash Swoosh" da pasta Musica\Sfx's,
+ * o que ele usa no DaVinci. Sem o arquivo, nenhum som.
+ */
+function somDoPanPadrao(): string {
+  const candidato = join(homedir(), 'Music', "Sfx's", 'Flash Swoosh.mp3')
+  return existsSync(candidato) ? candidato : ''
+}
 
 export function configureSettings(userDataDir: string, cofreDoTeste?: Cofre): void {
   filePath = join(userDataDir, 'settings.json')
@@ -366,7 +384,8 @@ export function decifrar(base64: string): string | null {
 }
 
 /** A interface nunca recebe a chave inteira -- so o suficiente para reconhecer. */
-export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'geminiApiKey' | 'modulos' | 'modulosLigados'> & {
+export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'geminiApiKey' | 'modulos' | 'modulosLigados' | 'somDoPan'> & {
+  somDoPan: string
   hasApiKey: boolean
   apiKeyHint: string
   hasGeminiKey: boolean
@@ -384,6 +403,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'ge
     libraryDir: settings.libraryDir,
     mangaDir: settings.mangaDir,
     pastaDeProjetos: settings.pastaDeProjetos,
+    somDoPan: settings.somDoPan ?? somDoPanPadrao(),
     somAoRenderizar: settings.somAoRenderizar,
     curvePresets: settings.curvePresets,
     captionStyle: settings.captionStyle,
@@ -438,6 +458,7 @@ function coerce(raw: unknown): Settings {
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
     mangaDir: typeof value['mangaDir'] === 'string' ? value['mangaDir'] : '',
     pastaDeProjetos: typeof value['pastaDeProjetos'] === 'string' ? value['pastaDeProjetos'] : '',
+    somDoPan: typeof value['somDoPan'] === 'string' ? value['somDoPan'] : null,
     somAoRenderizar: value['somAoRenderizar'] !== false,
     curvePresets: curvasSalvas(value['curvePresets']),
     // Conferido do outro lado, pelo schema do contract: aqui so passa adiante

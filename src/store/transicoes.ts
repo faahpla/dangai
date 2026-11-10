@@ -9,6 +9,7 @@ import {
 } from '@shared/contract'
 import { z } from 'zod'
 import { useProject } from './project'
+import { reduzirPicos } from './projeto/apoio'
 import { exportarPreset, importarPreset, nomeLivre } from './arquivo-de-preset'
 
 /**
@@ -73,6 +74,12 @@ export function aplicarNaEmenda(e: number, tipo: Transition, ajuste?: AjusteDaTr
     useProject.setState({ error: 'A faixa de cenas está trancada. Destranque no cadeado da faixa Cenas.' })
     return
   }
+  // O som do Pan: entra quando a emenda VIRA Pan, sai quando deixa de ser (trocar de lado nao duplica).
+  const antes = lerEmenda(scenes, e, s.audio?.durationSec ?? 0)
+  if (antes) {
+    if (PANS.has(tipo) && !PANS.has(antes.tipo)) void porSomDoPan(antes.em)
+    else if (!PANS.has(tipo) && PANS.has(antes.tipo)) tirarSomDoPan(antes.em)
+  }
   if (e === n) {
     const ultima = scenes[n - 1]!
     s.updateScene(n - 1, {
@@ -82,6 +89,59 @@ export function aplicarNaEmenda(e: number, tipo: Transition, ajuste?: AjusteDaTr
     return
   }
   s.updateScene(e, { transitionIn: tipo, transicao: ajuste ?? scenes[e]!.transicao })
+}
+
+/*
+ * O SOM DO PAN: "toda vez que for adicionada a transicao Pan eu quero que voce
+ * automaticamente coloque esse efeito sonoro" (o Flash Swoosh dele; o arquivo
+ * fica nas Configuracoes, somDoPan). O som entra como um SFX posto a mao --
+ * da para mover, aparar, mudar o volume ou apagar como qualquer outro -- com o
+ * PONTO MAIS FORTE dele bem no corte: a transicao e centrada no corte (ver
+ * toRenderProps), entao o swoosh bate no meio do movimento. Tirar o Pan (ou
+ * trocar por outra transicao) tira o som que ele pos.
+ */
+const PANS: ReadonlySet<Transition> = new Set<Transition>(['pan-left', 'pan-right', 'pan-up', 'pan-down'])
+/** O id dos sons que o Pan pos: e assim que ele acha o dele para tirar, sem mexer nos outros. */
+const PREFIXO_DO_PAN = 'pan-'
+
+async function porSomDoPan(corte: number): Promise<void> {
+  const r = await window.dangai.getSettings()
+  const caminho = r.ok ? r.value.somDoPan : ''
+  if (!caminho) return
+  // Ja tem o mesmo som ali (desfazer e refazer, aplicar duas vezes): nao empilha.
+  if (useProject.getState().sfxManual.some((x) => x.path === caminho && Math.abs(x.at - corte) < 1.5)) return
+  const a = await window.dangai.analyzeAudio(caminho)
+  if (!a.ok) {
+    useProject.setState({ error: `O som do Pan não abriu: ${a.error}` })
+    return
+  }
+  const { peaks, durationSec } = a.value
+  let maior = 0
+  for (let i = 1; i < peaks.length; i++) if (peaks[i]! > peaks[maior]!) maior = i
+  const pico = peaks.length > 0 ? ((maior + 0.5) / peaks.length) * durationSec : 0
+  useProject.setState((st) => ({
+    sfxManual: [
+      ...st.sfxManual,
+      {
+        id: `${PREFIXO_DO_PAN}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        path: caminho,
+        fileName: a.value.fileName,
+        at: Math.max(0, corte - pico),
+        durationSec,
+        peaks: reduzirPicos(peaks),
+        url: a.value.url,
+        usarSec: null,
+        gainDb: 0,
+      },
+    ],
+    projectDirty: true,
+  }))
+}
+
+function tirarSomDoPan(corte: number): void {
+  const st = useProject.getState()
+  const fica = st.sfxManual.filter((x) => !(x.id.startsWith(PREFIXO_DO_PAN) && x.at <= corte + 0.05 && x.at + x.durationSec >= corte - 0.05))
+  if (fica.length !== st.sfxManual.length) useProject.setState({ sfxManual: fica, projectDirty: true })
 }
 
 /** Muda so uma parte do ajuste da emenda. */

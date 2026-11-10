@@ -542,6 +542,8 @@ export interface PublicSettings {
   mangaDir: string
   /** Onde os projetos sao gravados. Vazio = Documentos\Dangai\Projetos. */
   pastaDeProjetos: string
+  /** O som que entra sozinho quando ele poe a transicao Pan. '' = nenhum. */
+  somDoPan: string
   /** O barulhinho quando o render termina. */
   somAoRenderizar: boolean
   /** Chave da Anthropic: so se existe e os quatro ultimos caracteres. */
@@ -585,6 +587,7 @@ export interface SettingsPatch {
   libraryDir?: string
   mangaDir?: string
   pastaDeProjetos?: string
+  somDoPan?: string
   somAoRenderizar?: boolean
   curvePresets?: { nome: string; pontos: [number, number, number, number] }[]
   captionStyle?: Record<string, unknown>
