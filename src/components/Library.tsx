@@ -400,6 +400,14 @@ export function Library() {
     const trava = transcript ?? contexto?.blocks
     if (!open || !contexto || preSelecionadoPara.current === trava) return
     preSelecionadoPara.current = trava
+    // Resumo de manga: abre nos quadrinhos do capitulo, que e de onde ele troca uma cena.
+    const capitulos = useProject.getState().resumoDoManga?.capitulos ?? []
+    if (capitulos.length > 0) {
+      const partes = capitulos[0]!.split(/[\\/]/)
+      setAnime(partes.at(-2) ?? null)
+      if (capitulos.length === 1) setEpisodio(`Mangá · ${partes.at(-1) ?? ''}`)
+      return
+    }
     const serie = serieDoRoteiro(contexto)
     if (serie) setAnime(serie)
   }, [open, contexto, transcript])

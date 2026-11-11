@@ -52,6 +52,7 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
       })),
       script: state.script,
       broll: state.broll,
+      resumoDoManga: state.resumoDoManga,
       edicaoDeAudio: state.edicaoDeAudio,
       subtitle: state.subtitlePath
         ? {
@@ -150,7 +151,8 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
       texto:
         `Fica em ${pasta.ok ? pasta.value : 'Documentos > Dangai > Projetos'} e se salva sozinho enquanto você edita.` +
         ' A pasta muda nas Configurações.',
-      campo: inicio.audio.fileName.replace(/\.[^.]+$/, ''),
+      // O resumo de manga ja tem titulo: e o nome que ele provavelmente quer.
+      campo: inicio.resumoDoManga?.titulo.trim() || inicio.audio.fileName.replace(/\.[^.]+$/, ''),
       sim: 'Criar projeto',
       nao: 'Agora não',
     })
@@ -353,6 +355,7 @@ async function applyProjectFile(
       metadata: file.metadata,
       script: file.script,
       broll: file.broll,
+      resumoDoManga: file.resumoDoManga,
       edicaoDeAudio: file.edicaoDeAudio,
       subtitlePath: file.subtitle?.path ?? null,
       formato: file.formato,

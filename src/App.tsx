@@ -28,6 +28,8 @@ import { CommandPalette } from '@/components/CommandPalette'
 import { Library } from '@/components/Library'
 import { EtapaDoAudio } from '@/components/EtapaDoAudio'
 import { EtapaDoRoteiro } from '@/components/EtapaDoRoteiro'
+import { ResumoDeManga } from '@/components/ResumoDeManga'
+import { useResumoDeManga } from '@/store/resumo-de-manga'
 import { Queue } from '@/components/Queue'
 import { VIDEO_FPS } from '@shared/contract'
 import { semExtensaoDeProjeto } from '@shared/project-file'
@@ -222,6 +224,8 @@ export function App() {
         // A etapa de audio trata o proprio teclado (espaco, C, Delete, Ctrl+Z).
         store.etapaDoAudio ||
         store.etapaDoRoteiro ||
+        // O resumo de manga tem campos de texto: Enter, espaco e Delete sao dele.
+        useResumoDeManga.getState().aberta ||
         useTelaCheia.getState().de !== null
       ) {
         /*
@@ -555,6 +559,7 @@ export function App() {
       <Library />
       <EtapaDoAudio />
       <EtapaDoRoteiro />
+      <ResumoDeManga />
       <CommandPalette />
       <ConsoleFx />
     </div>

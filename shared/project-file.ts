@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { edicaoDeAudioSchema } from './edicao-de-audio'
+import { resumoNoProjetoSchema } from './resumo-de-manga'
 import {
   captionBlockSchema,
   CAPTION_ANIMATION_DEFAULT,
@@ -216,6 +217,8 @@ export const projectFileSchema = z.object({
   script: z.string().nullable(),
   /** O B-roll (de que episodio sai cada parte; ver shared/broll.ts). Projeto antigo abre sem. */
   broll: z.object({ nome: z.string(), texto: z.string() }).nullable().default(null),
+  /** O resumo de manga: os quadrinhos de cada frase (shared/resumo-de-manga.ts). Projeto antigo abre sem. */
+  resumoDoManga: resumoNoProjetoSchema.nullable().default(null),
   /** A etapa de audio: a gravacao crua e o que foi feito nela. Projeto antigo abre sem. */
   edicaoDeAudio: edicaoDeAudioSchema.nullable().default(null),
   subtitle: referenceSchema.nullable(),

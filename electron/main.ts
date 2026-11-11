@@ -4,6 +4,7 @@ import { readdirSync } from 'node:fs'
 import { registerIpc, textoDoRelatorio } from './ipc'
 import { iniciarRegistro, registrar } from './services/registro'
 import { aprenderDasPastas, configureMeuJeito } from './services/meu-jeito'
+import { configureResumoDeManga } from './services/resumo-de-manga'
 import { startMediaServer } from './services/media-server'
 import { configureProjects } from './services/project'
 import { configureRender } from './services/render'
@@ -194,6 +195,7 @@ app.whenReady().then(async () => {
 
   configureSettings(userData)
   configureMeuJeito(userData)
+  configureResumoDeManga(userData)
   // O autosave mora no userData e nao ao lado do projeto: ele precisa existir
   // mesmo antes de haver um projeto com pasta propria.
   // A pasta padrao dos projetos fica nos Documentos dele (Documentos/Dangai/Projetos).

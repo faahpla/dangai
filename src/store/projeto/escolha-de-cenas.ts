@@ -15,6 +15,7 @@ import {
 } from '@shared/trecho'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { semPassoDeDesfazer } from '../quiet'
+import { cenasDosTrechos } from '@shared/resumo-de-manga'
 import { aplicarMarcacoes, planoDosBlocos } from './apoio'
 
 /** Do store do editor (ver ../project.ts): a selecao por roteiro e os blocos da Biblioteca. */
@@ -163,10 +164,18 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       set({ scriptBlocksBusy: null, busy: null, libraryError: r.error, erroDaSincronia: r.error })
       return
     }
+    /*
+     * Resumo de manga sem nenhuma cena marcada: cada trecho ja chega com os
+     * quadrinhos da frase de onde veio (shared/resumo-de-manga.ts). Ele so revisa.
+     */
+    const resumo = get().resumoDoManga
+    const marcadas = Object.values(get().blockClips).some((l) => l.length > 0)
+    const doResumo = resumo && !marcadas ? cenasDosTrechos(resumo.frases, r.value.blocks) : null
     // A leitura chegou sozinha: nao e uma edicao, e nao vira passo de Ctrl+Z
     // (desfaze-la so faria a Biblioteca ler de novo). O autosave ve.
     semPassoDeDesfazer(() =>
       set({
+        ...(doResumo ? { blockClips: doResumo, blockWeights: {}, blockSplits: {}, blockCuts: {}, projectDirty: true } : {}),
         scriptBlocks: r.value.blocks,
         // A transcricao vem junto e fica: as legendas saem dela sem outra passada.
         transcript: r.value.transcript,

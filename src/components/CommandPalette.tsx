@@ -23,7 +23,9 @@ import {
   Gift,
   type LucideIcon,
   Sparkles,
+  BookOpen,
 } from 'lucide-react'
+import { useResumoDeManga } from '@/store/resumo-de-manga'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { copiarRelatorio } from '@/store/relatorio'
@@ -238,6 +240,13 @@ function useCommands(): Command[] {
         hint: dicaDoAtalho('selecao') ?? '',
         icon: LibraryIcon,
         run: () => void store().voltarParaSelecao(),
+      },
+      {
+        id: 'resumo-de-manga',
+        label: 'Resumo de mangá',
+        hint: 'a IA lê os capítulos e escreve o roteiro',
+        icon: BookOpen,
+        run: () => void useResumoDeManga.getState().abrir(),
       },
       {
         id: 'acertar-tempos',

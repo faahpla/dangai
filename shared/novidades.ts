@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.3.0',
+    itens: [
+      'Resumo de mangá: na tela inicial (ou no Ctrl+K), escolha os capítulos da sua pasta de mangás. A IA lê as páginas e escreve o roteiro no seu jeito, e cada frase já vem com os quadrinhos que mostram o que ela conta. A primeira leitura de um capítulo leva 1 ou 2 minutos; depois fica guardada.',
+      'Você corrige o roteiro ali mesmo: muda o texto, apaga ou cria frases (Enter abre a próxima) e troca os quadrinhos de cada frase no "+", que mostra o capítulo inteiro em ordem. "Copiar" leva o roteiro para gravar. Dá para fechar o Dangai no meio: o rascunho fica guardado.',
+      'Gravou? Solte a narração na mesma tela. O projeto nasce com o título como nome, e depois de Áudio e Roteiro as cenas de cada trecho já chegam marcadas com os quadrinhos. A Biblioteca abre no capítulo, para trocar o que quiser, e é só montar.',
+      'Os roteiros que você grava ficam como exemplo, e os próximos resumos saem mais parecidos com o que você aprovou.',
+    ],
+  },
+  {
     versao: '2.2.1',
     itens: [
       'Cenas atrasadas depois de refazer o áudio: se você deu "Pronto" no Áudio, voltou, acelerou (ou cortou) e deu "Pronto" de novo, as frases eram sincronizadas com os tempos da narração anterior, e as cenas iam ficando cada vez mais atrasadas em relação à voz. Agora cada narração nova é ouvida de novo.',

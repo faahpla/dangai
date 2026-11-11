@@ -50,6 +50,7 @@ export const CAMPOS = [
   'metadata',
   'script',
   'broll',
+  'resumoDoManga',
   // A receita da narracao (cortes e efeitos): cortar errado tem Ctrl+Z.
   'edicaoDeAudio',
   'subtitlePath',

@@ -108,6 +108,8 @@ import type { EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
 import { aprenderDoProjeto, perfilDoMeuJeito } from './services/meu-jeito'
 import type { ComponenteDoDangai, PerfilDoMeuJeito } from '@shared/channels'
 import { motivoParaNaoAtualizar } from './modulos'
+import { aprenderResumo, escreverResumoDoManga, seriesDosMangas } from './services/resumo-de-manga'
+import type { PedidoDoResumo, ResumoDoManga, SerieDoManga } from '@shared/resumo-de-manga'
 
 
 function broadcast(progress: RenderProgress): void {
@@ -740,6 +742,17 @@ export function registerIpc(): void {
   })
 
   handle<[], PerfilDoMeuJeito>(IPC.perfilDoMeuJeito, async () => perfilDoMeuJeito())
+  handle<[], SerieDoManga[]>(IPC.seriesDosMangas, async () => seriesDosMangas())
+  handle<[{ titulo: string; texto: string }], null>(IPC.aprenderResumo, async (exemplo) => {
+    aprenderResumo(exemplo)
+    return null
+  })
+  handle<[string[]], string[]>(IPC.miniaturasDoResumo, async (arquivos) => arquivos.map((a) => (existsSync(a) ? publish(a) : '')))
+  handle<[PedidoDoResumo], ResumoDoManga>(IPC.escreverResumoDoManga, (pedido) =>
+    escreverResumoDoManga(pedido, publish, (mensagem) => {
+      for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send(IPC.progressoDoResumo, mensagem)
+    }),
+  )
 
   handle<[ProjectFile, string | null], null>(
     IPC.autosaveProject,

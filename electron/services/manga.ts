@@ -147,6 +147,55 @@ export async function lerMangas(
   return saida
 }
 
+/** Os capitulos da pasta dos mangas, por serie (o resumo de manga escolhe daqui). */
+export function capitulosDaPasta(): { serie: string; capitulos: { dir: string; capitulo: string; numero: number | null; paginas: number }[] }[] {
+  const raiz = pastaDosMangas()
+  if (!raiz || !ehPasta(raiz)) return []
+  return subpastas(raiz)
+    .map((serie) => ({
+      serie,
+      capitulos: subpastas(join(raiz, serie))
+        .map((capitulo) => {
+          const dir = join(raiz, serie, capitulo)
+          return { dir, capitulo, numero: numeroDoCapitulo(capitulo), paginas: paginasDe(dir).length }
+        })
+        .filter((c) => c.paginas > 0),
+    }))
+    .filter((s) => s.capitulos.length > 0)
+}
+
+/** As paginas de um capitulo, em ordem, com o caminho inteiro. */
+export function paginasDoCapitulo(dir: string): string[] {
+  return paginasDe(dir).map((nome) => join(dir, nome))
+}
+
+/**
+ * Os recortes de UM capitulo: do cache da Biblioteca, ou recortando agora (e
+ * guardando, para a Biblioteca nao recortar de novo).
+ */
+export async function recortesDoCapitulo(
+  dir: string,
+  andamento: (feitas: number, total: number) => void = () => {},
+): Promise<{ path: string; thumb: string; pagina: number; quadro: number | null }[]> {
+  if (!pastaDosRecortes) throw new Error('A pasta dos recortes não foi configurada.')
+  const paginas = paginasDe(dir)
+  const assinatura = assinar(dir, paginas)
+  const cache = await lerCache()
+  let capitulo = cache.capitulos[dir]
+  const aproveitavel =
+    capitulo && capitulo.assinatura === assinatura && (capitulo.itens.length === 0 || existsSync(capitulo.itens[0]!.thumb))
+  if (!aproveitavel) {
+    const partes = resolve(dir).split(/[\\/]/)
+    const nomeDoCapitulo = partes.at(-1) ?? ''
+    const serie = partes.at(-2) ?? ''
+    const itens = await recortarCapitulo(serie, nomeDoCapitulo, dir, paginas, (feitas) => andamento(feitas, paginas.length))
+    capitulo = { assinatura, itens }
+    const atual = await lerCache()
+    gravarCache({ version: CACHE_VERSION, capitulos: { ...atual.capitulos, [dir]: capitulo } })
+  }
+  return capitulo!.itens.map((i) => ({ path: i.path, thumb: i.thumb, pagina: i.manga!.pagina, quadro: i.manga!.quadro }))
+}
+
 /**
  * Recorta as paginas de um capitulo: a pagina inteira e, depois dela, os
  * quadrinhos na ordem de leitura.

@@ -74,6 +74,7 @@ import { fatiaDaFila } from './projeto/fila'
 import { fatiaDaEtapaDoAudio } from './projeto/etapa-do-audio'
 import { fatiaDasEtapas, type Etapa } from './projeto/etapas'
 import type { EdicaoDeAudio } from '@shared/edicao-de-audio'
+import type { ResumoNoProjeto } from '@shared/resumo-de-manga'
 import { setInterimPlan } from './projeto/apoio'
 import type { StoreApi } from 'zustand'
 
@@ -144,6 +145,12 @@ export interface ProjectState {
    * as cenas desses episodios.
    */
   broll: { nome: string; texto: string } | null
+  /**
+   * O RESUMO DE MANGA (shared/resumo-de-manga.ts): cada frase do roteiro com os
+   * quadrinhos de onde ela saiu. Quando o roteiro e sincronizado e nenhuma cena
+   * foi marcada ainda, os trechos ja chegam com esses quadrinhos.
+   */
+  resumoDoManga: ResumoNoProjeto | null
   /**
    * A edicao da gravacao crua (cortes e efeitos), quando a narracao passou pela
    * etapa de audio. O que o video toca e `audio` -- o arquivo que o "Pronto"
@@ -981,6 +988,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   aiNote: null,
   script: null,
   broll: null,
+  resumoDoManga: null,
   edicaoDeAudio: null,
   etapaDoAudio: false,
   etapaDoRoteiro: false,
@@ -1561,6 +1569,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       aiNote: null,
       script: null,
       broll: null,
+      resumoDoManga: null,
       edicaoDeAudio: null,
       etapaDoAudio: false,
       etapaDoRoteiro: false,

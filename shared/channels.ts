@@ -71,6 +71,13 @@ export const IPC = {
   /** main -> renderer: o que a etapa de audio esta fazendo agora. */
   progressoDaEdicao: 'audio-edicao:progresso',
   perfilDoMeuJeito: 'meu-jeito:perfil',
+  // O resumo de manga (shared/resumo-de-manga.ts).
+  seriesDosMangas: 'resumo-de-manga:series',
+  escreverResumoDoManga: 'resumo-de-manga:escrever',
+  miniaturasDoResumo: 'resumo-de-manga:miniaturas',
+  aprenderResumo: 'resumo-de-manga:aprender',
+  /** main -> renderer: o que o resumo de manga esta fazendo agora. */
+  progressoDoResumo: 'resumo-de-manga:progresso',
   importImagesPulando: 'images:import-pulando',
   startRender: 'render:start',
   cancelRender: 'render:cancel',
@@ -417,6 +424,7 @@ export interface PreparoDoDangai {
 export type { PerfilDoMeuJeito } from './meu-jeito'
 import type { PerfilDoMeuJeito } from './meu-jeito'
 import type { EdicaoDeAudio, OpcoesDosSilencios } from './edicao-de-audio'
+import type { PedidoDoResumo, ResumoDoManga, SerieDoManga } from './resumo-de-manga'
 
 /** O audio que a etapa de audio gerou (electron/services/edicao-de-audio.ts). */
 export interface AudioEditado {
@@ -880,6 +888,15 @@ export interface DangaiBridge {
   onProgressoDaEdicao(listener: (mensagem: string) => void): () => void
   /** O jeito dele de editar som e cor, aprendido dos projetos (shared/meu-jeito.ts). */
   perfilDoMeuJeito(): Promise<IpcResult<PerfilDoMeuJeito>>
+  /** Os capitulos da pasta dos mangas, por serie. */
+  seriesDosMangas(): Promise<IpcResult<SerieDoManga[]>>
+  /** Recorta, le com a IA (guardado por capitulo) e escreve o roteiro do resumo. */
+  escreverResumoDoManga(pedido: PedidoDoResumo): Promise<IpcResult<ResumoDoManga>>
+  onProgressoDoResumo(listener: (mensagem: string) => void): () => void
+  /** Publica de novo as miniaturas de um rascunho reaberto (o endereco muda a cada sessao). */
+  miniaturasDoResumo(arquivos: string[]): Promise<IpcResult<string[]>>
+  /** O roteiro que ele gravou (ja corrigido) vira exemplo para os proximos resumos. */
+  aprenderResumo(exemplo: { titulo: string; texto: string }): Promise<IpcResult<null>>
   /**
    * Importa os clipes da montagem automatica: o que nao abre volta null, com o
    * motivo em `erros` (pelo indice), em vez de derrubar a leva inteira.

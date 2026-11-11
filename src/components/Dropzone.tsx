@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import {
+  BookOpen,
   Clapperboard,
   History,
   Library as LibraryIcon,
@@ -16,6 +17,7 @@ import { useRecentes } from "@/store/recentes";
 import { FORMATOS, medidasDo, type Formato } from "@shared/contract";
 import { CartaoRecente, rotulosDoRecente } from "./CartaoRecente";
 import { PrepararODangai } from "./PrepararODangai";
+import { useResumoDeManga } from "@/store/resumo-de-manga";
 
 interface DropzoneProps {
   isDragging: boolean;
@@ -104,6 +106,7 @@ export function Dropzone({ isDragging }: DropzoneProps) {
             <div className="pointer-events-auto flex shrink-0 items-center gap-2 justify-self-end">
               <LegendarVideoPronto />
               <MelhorarVideoPronto />
+              <ResumoDeMangaBotao />
               <AbrirBiblioteca />
             </div>
           </div>
@@ -208,6 +211,31 @@ function EscolhaDeFormato() {
         );
       })}
     </div>
+  );
+}
+
+/**
+ * O RESUMO DE MANGA: escolher os capitulos, a IA escreve o roteiro com os
+ * quadrinhos de cada frase, ele grava e solta a narracao (ver ResumoDeManga).
+ */
+function ResumoDeMangaBotao() {
+  const abrir = useResumoDeManga((s) => s.abrir);
+  const temRascunho = useResumoDeManga((s) => s.resumo !== null);
+  const busy = useProject((s) => s.busy);
+
+  if (busy !== null) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => void abrir()}
+      title={temRascunho ? "Continuar o resumo de mangá que ficou no meio" : "A IA lê os capítulos e escreve o roteiro, com os quadrinhos de cada frase"}
+      className="flex items-center gap-2 rounded-sm border border-line bg-bg px-3 py-1.5 text-[12px] text-ink-2 transition-colors duration-150 hover:border-line-strong hover:text-ink"
+    >
+      <BookOpen size={13} strokeWidth={1.5} className="text-accent" />
+      Resumo de mangá
+      {temRascunho && <span className="size-1.5 rounded-full bg-accent" />}
+    </button>
   );
 }
 
