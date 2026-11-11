@@ -20,6 +20,17 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.4.0',
+    itens: [
+      'Voltar ao Áudio não bagunça mais o vídeo: com as cenas já na timeline, tire o Fresh Air, mude um efeito, corte uma respiração ou mude a velocidade e dê "Pronto". Só o som troca. As transições, os ajustes de cada bloco, a seleção de cenas e as legendas ficam como você deixou, e tudo anda junto com a voz nova. Você volta direto para a timeline.',
+      'Tela inicial nova, separada por nicho: Anime, Mangá, Vídeo pronto e Módulos, cada um com o que é dele. Soltar a narração continua sendo o começo de tudo, e o formato (Short ou Long form) fica no alto.',
+      'Mangá no caminho de sempre: solte a narração, edite o áudio e, na etapa do Roteiro, solte o .txt do resumo (o botão "Salvar .txt" do Resumo de mangá). Os quadrinhos de cada frase vêm junto e a Biblioteca abre direto no capítulo. Os roteiros que o Resumo escreveu também aparecem ali para usar com um clique.',
+      'Roteiro de mangá escrito fora do Dangai: na etapa do Roteiro, marque os capítulos antes de soltar o texto, e a IA escolhe os quadrinhos de cada frase enquanto a legenda sincroniza.',
+      'Curvas na animação: na camada de ajuste (e nos clipes da faixa de vídeo), o "Ritmo" ganhou "Curva", com o gráfico para desenhar à mão e curvas prontas, inclusive as que passam do ponto e voltam. A curva vale para todas as passagens ou só para a passagem entre duas chaves onde a agulha está.',
+      'Som do Pan: ao pôr a transição Pan, o som agora entra numa faixa de áudio e toca no preview e no vídeo. Antes ele ia para um lugar que não tocava. Dois Pans perto um do outro ganham um som cada.',
+    ],
+  },
+  {
     versao: '2.3.0',
     itens: [
       'Resumo de mangá: na tela inicial (ou no Ctrl+K), escolha os capítulos da sua pasta de mangás. A IA lê as páginas e escreve o roteiro no seu jeito, e cada frase já vem com os quadrinhos que mostram o que ela conta. A primeira leitura de um capítulo leva 1 ou 2 minutos; depois fica guardada.',

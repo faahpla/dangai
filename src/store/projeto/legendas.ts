@@ -14,6 +14,8 @@ export const fatiaDasLegendas = (set: SetProjeto, get: GetProjeto): FatiaDasLege
 
   setScript: async (script) => {
     const clean = script?.trim() ? script : null
+    // Colado na etapa do Roteiro: um roteiro do Resumo de mangá traz os quadrinhos de cada frase.
+    if (clean) await get().reconhecerRoteiroDeManga(clean)
     // Roteiro novo refaz as legendas do zero: manter as antigas seria misturar
     // texto de duas fontes.
     set({ script: clean, captionsEdited: false, scriptNote: null })

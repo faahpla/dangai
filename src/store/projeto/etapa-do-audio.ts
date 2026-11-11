@@ -1,6 +1,5 @@
-import { cadeiaDeAudioSchema, CADEIA_PADRAO, novaEdicao, type CadeiaDeAudio, type EdicaoDeAudio } from '@shared/edicao-de-audio'
+import { cadeiaDeAudioSchema, CADEIA_PADRAO, novaEdicao, temposDa, FONTE_PRINCIPAL, type CadeiaDeAudio, type EdicaoDeAudio } from '@shared/edicao-de-audio'
 import { avisar } from '../aviso'
-import { perguntar } from '../pergunta'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 
 /** Do store do editor (ver ../project.ts): a etapa de audio, antes da Biblioteca. */
@@ -60,24 +59,38 @@ export const fatiaDaEtapaDoAudio = (set: SetProjeto, get: GetProjeto): FatiaDaEt
   concluirEtapaDoAudio: async () => {
     const edicao = get().edicaoDeAudio
     if (!edicao) return
-    // Ja com cenas, a narracao nova refaz as frases e a selecao: so com o ok dele.
-    if (get().images.length > 0) {
-      const seguir = await perguntar({
-        titulo: 'Trocar a narração do vídeo?',
-        texto:
-          'O vídeo já tem cenas. Com o áudio novo, as frases e as legendas são lidas de novo, e as cenas escolhidas na Biblioteca precisam ser conferidas.',
-        sim: 'Trocar a narração',
-        nao: 'Cancelar',
-      })
-      if (!seguir) return
-    }
     set({ busy: 'Gerando o áudio final...', error: null })
     const r = await window.dangai.concluirEdicao(edicao)
     if (!r.ok) {
       set({ busy: null, error: r.error })
       return
     }
-    set({ busy: null, edicaoDeAudio: { ...edicao, saida: r.value }, etapaDoAudio: false })
+    const tempos = temposDa(edicao)
+    /*
+     * O VIDEO JA ESTA MONTADO (ele voltou ao Audio para tirar o Fresh Air, cortar
+     * uma respiracao, mudar a velocidade): so o som troca. Cenas, transicoes,
+     * selecao e legendas ficam como ele deixou, nos tempos da narracao nova, e
+     * ele volta para a linha do tempo. Antes isto passava pelo caminho de soltar
+     * uma narracao nova -- que zera tudo.
+     */
+    const montado = get().plan !== null && get().images.length > 0
+    // Ja sincronizado (com ou sem cenas escolhidas): a sincronia e a selecao tambem ficam.
+    if (get().audio && (montado || get().scriptBlocks)) {
+      const atual = get().audio!.path
+      // Os tempos da narracao que esta no video: a do ultimo Pronto, ou a propria gravacao crua inteira.
+      const velhos =
+        atual === edicao.saida
+          ? edicao.tempos
+          : atual === edicao.bruto
+            ? { trechos: [{ de: 0, ate: edicao.duracaoBruta, em: 0, fonte: FONTE_PRINCIPAL }], velocidade: 100 }
+            : null
+      set({ busy: null, etapaDoAudio: false, edicaoDeAudio: { ...edicao, saida: r.value, tempos } })
+      await get().narracaoNovaNoMesmoVideo(r.value, velhos, tempos)
+      // Sem video montado ainda, ele estava escolhendo as cenas: volta para elas.
+      if (!montado) await get().irParaEtapa('cenas')
+      return
+    }
+    set({ busy: null, edicaoDeAudio: { ...edicao, saida: r.value, tempos }, etapaDoAudio: false })
     await get().ingest([r.value])
     // A proxima etapa: o roteiro e a sincronia das legendas (depois, as cenas).
     await get().irParaEtapa('roteiro')

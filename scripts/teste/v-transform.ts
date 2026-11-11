@@ -3,6 +3,7 @@
  * `npx tsx scripts/teste/v-transform.ts`.
  */
 import {
+  bezierNoTempo,
   compensarPivo,
   deslocarChaves,
   gravarChave,
@@ -75,6 +76,28 @@ ok('cortar o comeco poe uma chave no zero com o valor dali', d.length === 2 && d
 ok('e a outra anda junto', perto(d[1]!.t, 1.5) && d[1]!.x === 20)
 const volta = deslocarChaves(chaves, -1, 'linear')
 ok('esticar o comeco empurra as chaves', perto(volta[0]!.t, 1) && perto(volta[1]!.t, 3))
+
+// AS CURVAS DESENHADAS (o cubic-bezier do CSS).
+ok('bezier reta = linear', [0, 0.25, 0.5, 0.9, 1].every((p) => perto(bezierNoTempo([0, 0, 1, 1], p), p, 1e-4)))
+ok('bezier ease (0.25,0.1,0.25,1) no meio ~0,80', perto(bezierNoTempo([0.25, 0.1, 0.25, 1], 0.5), 0.8024, 2e-3), String(bezierNoTempo([0.25, 0.1, 0.25, 1], 0.5)))
+ok('bezier: pontas no lugar', perto(bezierNoTempo([0.34, 1.56, 0.64, 1], 0), 0, 1e-6) && perto(bezierNoTempo([0.34, 1.56, 0.64, 1], 1), 1, 1e-6))
+const passa = Math.max(...Array.from({ length: 50 }, (_, k) => bezierNoTempo([0.34, 1.56, 0.64, 1], k / 49)))
+ok('"passa e volta" passa do fim', passa > 1.05, String(passa))
+const recua = Math.min(...Array.from({ length: 50 }, (_, k) => bezierNoTempo([0.36, 0, 0.66, -0.56], k / 49)))
+ok('"recua e vai" vai abaixo do comeco', recua < -0.05, String(recua))
+
+// A curva do clipe vale para todas as passagens; a da chave ganha dela.
+const tres = [
+  { t: 0, x: 0, y: 0, escala: 1, rotacao: 0 },
+  { t: 1, x: 10, y: 0, escala: 1, rotacao: 0, curva: [0.34, 1.56, 0.64, 1] as [number, number, number, number] },
+  { t: 2, x: 20, y: 0, escala: 1, rotacao: 0 },
+]
+const naPrimeira = transformNoTempo(base, tres, 0.5, 'linear', [0, 0, 1, 1])
+ok('passagem sem curva propria segue a do clipe', perto(naPrimeira.x, 5, 1e-3), String(naPrimeira.x))
+const naSegunda = transformNoTempo(base, tres, 1.7, 'linear', [0, 0, 1, 1])
+ok('passagem com curva propria segue a dela (passa do 20)', naSegunda.x > 20, String(naSegunda.x))
+const corte = deslocarChaves(tres, 1.5, 'linear')
+ok('cortar o comeco no meio de uma passagem leva a curva dela para a chave do zero', corte[0]!.t === 0 && !!corte[0]!.curva)
 
 console.log(falhas === 0 ? '\nTUDO PASSOU' : `\n${falhas} FALHA(S)`)
 process.exit(falhas === 0 ? 0 : 1)

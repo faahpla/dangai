@@ -33,7 +33,7 @@ import type {
 } from '@shared/contract'
 import type { OpenedProject, ProjectFile } from '@shared/project-file'
 import type { MedidaDoSom } from '@shared/loudness'
-import type { ResumoDoManga, SerieDoManga } from '@shared/resumo-de-manga'
+import type { ResumoDoManga, ResumoNoProjeto, RoteiroDeMangaGuardado, SerieDoManga } from '@shared/resumo-de-manga'
 import type { AudioEditado, OndaDaGravacao, ComponenteDoDangai, DescricaoDoPlugin, PerfilDoMeuJeito, PluginInstalado, PreparoDoDangai } from '@shared/channels'
 
 /**
@@ -218,6 +218,9 @@ const bridge: DangaiBridge = {
   seriesDosMangas: () => ipcRenderer.invoke(IPC.seriesDosMangas) as Promise<IpcResult<SerieDoManga[]>>,
   escreverResumoDoManga: (pedido) => ipcRenderer.invoke(IPC.escreverResumoDoManga, pedido) as Promise<IpcResult<ResumoDoManga>>,
   aprenderResumo: (exemplo) => ipcRenderer.invoke(IPC.aprenderResumo, exemplo) as Promise<IpcResult<null>>,
+  roteirosDeManga: () => ipcRenderer.invoke(IPC.roteirosDeManga) as Promise<IpcResult<RoteiroDeMangaGuardado[]>>,
+  guardarRoteiroDeManga: (roteiro) => ipcRenderer.invoke(IPC.guardarRoteiroDeManga, roteiro) as Promise<IpcResult<null>>,
+  casarRoteiroComOsQuadrinhos: (pedido) => ipcRenderer.invoke(IPC.casarRoteiroComOsQuadrinhos, pedido) as Promise<IpcResult<ResumoNoProjeto>>,
   miniaturasDoResumo: (arquivos) => ipcRenderer.invoke(IPC.miniaturasDoResumo, arquivos) as Promise<IpcResult<string[]>>,
   onProgressoDoResumo: (listener) => {
     const handler = (_event: unknown, mensagem: string): void => listener(mensagem)

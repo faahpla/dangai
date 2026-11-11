@@ -1,5 +1,8 @@
 import { POSICAO_LIVRE, type MotionCurve } from './contract'
 
+/** A curva desenhada: o cubic-bezier [x1, y1, x2, y2] (o Y pode passar de 0..1). */
+export type CurvaLivre = [number, number, number, number]
+
 /**
  * O TRANSFORM ANIMADO de um clipe da faixa de video -- e da camada de ajuste.
  *
@@ -21,6 +24,8 @@ export interface Transform2D {
 
 export interface ChaveDeTransform extends Transform2D {
   t: number
+  /** A curva da passagem desta chave para a proxima. Sem: a do clipe. */
+  curva?: CurvaLivre | undefined
 }
 
 /** Os quatro ritmos, os mesmos cubicos do Remotion (Easing.cubic). */
@@ -38,6 +43,42 @@ export function curvaNoTempo(curva: MotionCurve, p: number): number {
   }
 }
 
+/**
+ * O cubic-bezier do CSS no progresso p (0..1): acha o parametro em que o X da
+ * curva vale p (Newton, com bisseccao de reserva) e devolve o Y dali. O Y pode
+ * passar de 0..1 -- e o "passa do ponto e volta".
+ */
+export function bezierNoTempo(c: CurvaLivre, p: number): number {
+  const t = Math.min(Math.max(p, 0), 1)
+  const [x1, y1, x2, y2] = c
+  const ax = 1 + 3 * x1 - 3 * x2
+  const bx = 3 * x2 - 6 * x1
+  const cx = 3 * x1
+  const ay = 1 + 3 * y1 - 3 * y2
+  const by = 3 * y2 - 6 * y1
+  const cy = 3 * y1
+  const xDe = (s: number): number => ((ax * s + bx) * s + cx) * s
+  let s = t
+  for (let i = 0; i < 8; i++) {
+    const erro = xDe(s) - t
+    if (Math.abs(erro) < 1e-6) return ((ay * s + by) * s + cy) * s
+    const d = (3 * ax * s + 2 * bx) * s + cx
+    if (Math.abs(d) < 1e-6) break
+    s -= erro / d
+  }
+  let lo = 0
+  let hi = 1
+  s = t
+  for (let i = 0; i < 40; i++) {
+    const x = xDe(s)
+    if (Math.abs(x - t) < 1e-6) break
+    if (x < t) lo = s
+    else hi = s
+    s = (lo + hi) / 2
+  }
+  return ((ay * s + by) * s + cy) * s
+}
+
 const so = (c: Transform2D): Transform2D => ({ x: c.x, y: c.y, escala: c.escala, rotacao: c.rotacao })
 
 export function ordenadas(chaves: readonly ChaveDeTransform[]): ChaveDeTransform[] {
@@ -50,6 +91,8 @@ export function transformNoTempo(
   chaves: readonly ChaveDeTransform[] | null | undefined,
   t: number,
   curva: MotionCurve,
+  /** A curva desenhada do clipe: ganha do ritmo pronto. A da chave ganha das duas. */
+  pontos?: CurvaLivre | null,
 ): Transform2D {
   if (!chaves || chaves.length === 0) return so(base)
   const cs = ordenadas(chaves)
@@ -61,7 +104,9 @@ export function transformNoTempo(
   while (i < cs.length - 2 && cs[i + 1]!.t <= t) i++
   const a = cs[i]!
   const b = cs[i + 1]!
-  const e = curvaNoTempo(curva, (t - a.t) / Math.max(b.t - a.t, 1e-6))
+  const p = (t - a.t) / Math.max(b.t - a.t, 1e-6)
+  const desenho = a.curva ?? pontos
+  const e = desenho ? bezierNoTempo(desenho, p) : curvaNoTempo(curva, p)
   const lerp = (u: number, v: number): number => u + (v - u) * e
   return {
     x: lerp(a.x, b.x),
@@ -132,9 +177,12 @@ export function deslocarChaves(
   chaves: readonly ChaveDeTransform[],
   delta: number,
   curva: MotionCurve,
+  pontos?: CurvaLivre | null,
 ): ChaveDeTransform[] {
   const movidas = ordenadas(chaves.map((c) => ({ ...c, t: c.t - delta })))
   if (movidas.length === 0 || movidas[0]!.t >= 0) return movidas
-  const noZero = transformNoTempo(movidas[0]!, movidas, 0, curva)
-  return [{ ...noZero, t: 0 }, ...movidas.filter((c) => c.t > 0)]
+  const noZero = transformNoTempo(movidas[0]!, movidas, 0, curva, pontos)
+  // A chave que fica no zero leva a curva da passagem em que ele caiu.
+  const antes = [...movidas].reverse().find((c) => c.t <= 0)
+  return [{ ...noZero, t: 0, ...(antes?.curva ? { curva: antes.curva } : {}) }, ...movidas.filter((c) => c.t > 0)]
 }

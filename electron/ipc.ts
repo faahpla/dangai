@@ -108,8 +108,8 @@ import type { EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
 import { aprenderDoProjeto, perfilDoMeuJeito } from './services/meu-jeito'
 import type { ComponenteDoDangai, PerfilDoMeuJeito } from '@shared/channels'
 import { motivoParaNaoAtualizar } from './modulos'
-import { aprenderResumo, escreverResumoDoManga, seriesDosMangas } from './services/resumo-de-manga'
-import type { PedidoDoResumo, ResumoDoManga, SerieDoManga } from '@shared/resumo-de-manga'
+import { aprenderResumo, casarRoteiroComOsQuadrinhos, escreverResumoDoManga, guardarRoteiroDeManga, roteirosDeManga, seriesDosMangas } from './services/resumo-de-manga'
+import type { PedidoDoResumo, ResumoDoManga, ResumoNoProjeto, RoteiroDeMangaGuardado, SerieDoManga } from '@shared/resumo-de-manga'
 
 
 function broadcast(progress: RenderProgress): void {
@@ -747,6 +747,16 @@ export function registerIpc(): void {
     aprenderResumo(exemplo)
     return null
   })
+  handle<[], RoteiroDeMangaGuardado[]>(IPC.roteirosDeManga, async () => roteirosDeManga())
+  handle<[RoteiroDeMangaGuardado], null>(IPC.guardarRoteiroDeManga, async (roteiro) => {
+    guardarRoteiroDeManga(roteiro)
+    return null
+  })
+  handle<[{ dirs: string[]; texto: string }], ResumoNoProjeto>(IPC.casarRoteiroComOsQuadrinhos, (pedido) =>
+    casarRoteiroComOsQuadrinhos(pedido.dirs, pedido.texto, publish, (mensagem) => {
+      for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send(IPC.progressoDoResumo, mensagem)
+    }),
+  )
   handle<[string[]], string[]>(IPC.miniaturasDoResumo, async (arquivos) => arquivos.map((a) => (existsSync(a) ? publish(a) : '')))
   handle<[PedidoDoResumo], ResumoDoManga>(IPC.escreverResumoDoManga, (pedido) =>
     escreverResumoDoManga(pedido, publish, (mensagem) => {

@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import {
+  casamentoDosQuadrosSchema,
+  frasesDoTexto,
   leituraDasPaginasSchema,
+  resumoNoProjetoSchema,
   roteiroDoMangaSchema,
   TAMANHOS_DO_RESUMO,
   type CapituloDoManga,
@@ -12,6 +15,8 @@ import {
   type PedidoDoResumo,
   type QuadroDoResumo,
   type ResumoDoManga,
+  type ResumoNoProjeto,
+  type RoteiroDeMangaGuardado,
   type SerieDoManga,
 } from '@shared/resumo-de-manga'
 import { gerarJson } from './llm'
@@ -419,4 +424,106 @@ export async function escreverResumoDoManga(
   andamento('Escrevendo o roteiro...')
   const { titulo, frases } = await escrever(pedido, capitulos, quadros)
   return { capitulos, quadros, titulo, frases }
+}
+
+// ------------------------------------------- o roteiro pronto no caminho de sempre
+
+/** Quantos roteiros escritos ficam guardados para ser reconhecidos. */
+const ROTEIROS_GUARDADOS = 30
+
+function arquivoDosRoteiros(): string {
+  return join(pasta!, 'roteiros.json')
+}
+
+/** Os roteiros que o Resumo de mangá escreveu, o mais recente primeiro. */
+export function roteirosDeManga(): RoteiroDeMangaGuardado[] {
+  if (!pasta) return []
+  try {
+    const cru = JSON.parse(readFileSync(arquivoDosRoteiros(), 'utf8')) as unknown
+    if (!Array.isArray(cru)) return []
+    return cru.flatMap((r) => {
+      const ok = resumoNoProjetoSchema.safeParse(r)
+      if (!ok.success || typeof r?.id !== 'string') return []
+      return [{ ...ok.data, id: r.id as string, em: typeof r?.em === 'number' ? (r.em as number) : 0 }]
+    })
+  } catch {
+    return []
+  }
+}
+
+/** Guarda (ou atualiza, pelo id) um roteiro escrito pelo Resumo de mangá. */
+export function guardarRoteiroDeManga(roteiro: RoteiroDeMangaGuardado): void {
+  if (!pasta || roteiro.frases.length === 0) return
+  const lista = [roteiro, ...roteirosDeManga().filter((r) => r.id !== roteiro.id)].slice(0, ROTEIROS_GUARDADOS)
+  try {
+    mkdirSync(pasta, { recursive: true })
+    const arquivo = arquivoDosRoteiros()
+    writeFileSync(`${arquivo}.tmp`, JSON.stringify(lista))
+    renameSync(`${arquivo}.tmp`, arquivo)
+  } catch (err) {
+    console.warn('[resumo-de-manga] roteiro nao guardado:', err)
+  }
+}
+
+const SISTEMA_DO_CASAMENTO = `Você monta Shorts de RESUMO DE MANGÁ. O roteiro já está escrito e narrado; falta escolher as imagens.
+Para cada frase do roteiro (numeradas), escolha os quadrinhos que MOSTRAM o que ela diz, pelos códigos da lista (ex.: "c1p12q3"). Só códigos da lista.
+- Quantos: um a cada 5 a 7 palavras da frase, no mínimo 1. O vídeo troca de imagem rápido.
+- O personagem certo, a ação certa, a fala certa: é isso que faz a imagem bater com a narração.
+- Na ordem do mangá dentro de cada frase. O roteiro costuma seguir a ordem das páginas, mas o gancho (a primeira frase) pode pegar um quadrinho de qualquer parte.
+- Prefira os marcados FORTE. Não repita um quadrinho em duas frases.
+- Frase que não fala de nada mostrado (uma opinião, uma pergunta para quem assiste): escolha um quadrinho que combine com o clima dela, perto do anterior.
+Responda todas as frases, pelo número.`
+
+/**
+ * CASAR UM ROTEIRO PRONTO com os quadrinhos dos capitulos: o roteiro foi escrito
+ * fora do Dangai (ou de cabeca), e ele diz de quais capitulos e. Le os capitulos
+ * (a leitura fica guardada e serve ao Resumo tambem) e pede a IA os quadrinhos
+ * de cada frase -- so texto, como o "escrever".
+ */
+export async function casarRoteiroComOsQuadrinhos(
+  dirs: readonly string[],
+  texto: string,
+  publicar: (caminho: string) => string,
+  andamento: (mensagem: string) => void,
+): Promise<ResumoNoProjeto> {
+  if (!pasta) throw new Error('O resumo de mangá não foi configurado.')
+  if (dirs.length === 0) throw new Error('Escolha pelo menos um capítulo.')
+  const frases = frasesDoTexto(texto)
+  if (frases.length === 0) throw new Error('O roteiro está vazio.')
+  const capitulos = dirs.map(capituloDe)
+  const quadros = await quadrosDosCapitulos(capitulos, publicar, andamento)
+  for (const [i, cap] of capitulos.entries()) {
+    anotar(quadros, i + 1, await lerCapitulo(cap, andamento))
+  }
+  andamento('Escolhendo os quadrinhos de cada frase...')
+  const series = [...new Set(capitulos.map((c) => c.serie))].join(', ')
+  const r = await gerarJson({
+    etapa: 'manga-casar',
+    schema: casamentoDosQuadrosSchema,
+    sistema: SISTEMA_DO_CASAMENTO,
+    prompt: [
+      `# Mangá: ${series}. ${capitulos.length === 1 ? 'Capítulo' : 'Capítulos'}: ${capitulos.map((c) => c.capitulo).join(', ')}.`,
+      `# O roteiro, uma frase por linha\n${frases.map((f, i) => `${i + 1}. ${f}`).join('\n')}`,
+      `# Os quadrinhos, na ordem do mangá (código: o que acontece | falas)\n${listaDosQuadros(quadros, capitulos)}`,
+    ].join('\n\n'),
+    maxTokens: 6000,
+    // A lista inteira dos quadrinhos e grande: no Gemini lento (11/2026) passou de 4 min.
+    tempoLimiteMs: 420_000,
+    permitirReserva: false,
+  })
+  if (!r.ok) throw new Error(r.nota)
+  const porRef = new Map(quadros.map((q) => [q.ref, q.caminho]))
+  const usados = new Set<string>()
+  const porFrase = new Map(r.valor.frases.map((f) => [f.n, f.quadros]))
+  return {
+    titulo: '',
+    capitulos: capitulos.map((c) => c.dir),
+    frases: frases.map((f, i) => ({
+      texto: f,
+      quadros: (porFrase.get(i + 1) ?? [])
+        .map((x) => x.trim().toLowerCase())
+        .filter((x) => porRef.has(x) && !usados.has(x) && (usados.add(x), true))
+        .map((x) => porRef.get(x)!),
+    })),
+  }
 }

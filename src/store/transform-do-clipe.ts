@@ -13,13 +13,13 @@ import { chaveEm, gravarChave, transformNoTempo, type Transform2D } from '@share
 /** Meio quadro: a agulha "esta numa chave" dentro disto. */
 export const TOLERANCIA_DA_CHAVE = 0.5 / VIDEO_FPS
 
-type Clipe = Pick<SobreposicaoSalva, 'at' | 'x' | 'y' | 'escala' | 'rotacao' | 'chaves' | 'curvaDasChaves'>
+type Clipe = Pick<SobreposicaoSalva, 'at' | 'x' | 'y' | 'escala' | 'rotacao' | 'chaves' | 'curvaDasChaves' | 'pontosDasChaves'>
 
 /** Segundos desde o inicio do clipe. */
 export const tempoNoClipe = (o: Pick<SobreposicaoSalva, 'at'>, playhead: number): number => Math.max(0, playhead - o.at)
 
 export function transformNaAgulha(o: Clipe, playhead: number): Transform2D {
-  return transformNoTempo(o, o.chaves, tempoNoClipe(o, playhead), o.curvaDasChaves ?? 'ease-in-out')
+  return transformNoTempo(o, o.chaves, tempoNoClipe(o, playhead), o.curvaDasChaves ?? 'ease-in-out', o.pontosDasChaves)
 }
 
 export const animado = (o: Pick<SobreposicaoSalva, 'chaves'>): boolean => (o.chaves?.length ?? 0) > 0

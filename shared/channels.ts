@@ -76,6 +76,9 @@ export const IPC = {
   escreverResumoDoManga: 'resumo-de-manga:escrever',
   miniaturasDoResumo: 'resumo-de-manga:miniaturas',
   aprenderResumo: 'resumo-de-manga:aprender',
+  roteirosDeManga: 'resumo-de-manga:roteiros',
+  guardarRoteiroDeManga: 'resumo-de-manga:guardar-roteiro',
+  casarRoteiroComOsQuadrinhos: 'resumo-de-manga:casar',
   /** main -> renderer: o que o resumo de manga esta fazendo agora. */
   progressoDoResumo: 'resumo-de-manga:progresso',
   importImagesPulando: 'images:import-pulando',
@@ -424,7 +427,7 @@ export interface PreparoDoDangai {
 export type { PerfilDoMeuJeito } from './meu-jeito'
 import type { PerfilDoMeuJeito } from './meu-jeito'
 import type { EdicaoDeAudio, OpcoesDosSilencios } from './edicao-de-audio'
-import type { PedidoDoResumo, ResumoDoManga, SerieDoManga } from './resumo-de-manga'
+import type { PedidoDoResumo, ResumoDoManga, ResumoNoProjeto, RoteiroDeMangaGuardado, SerieDoManga } from './resumo-de-manga'
 
 /** O audio que a etapa de audio gerou (electron/services/edicao-de-audio.ts). */
 export interface AudioEditado {
@@ -897,6 +900,11 @@ export interface DangaiBridge {
   miniaturasDoResumo(arquivos: string[]): Promise<IpcResult<string[]>>
   /** O roteiro que ele gravou (ja corrigido) vira exemplo para os proximos resumos. */
   aprenderResumo(exemplo: { titulo: string; texto: string }): Promise<IpcResult<null>>
+  /** Os roteiros que o Resumo de mangá escreveu (para reconhecer o .txt e para escolher na etapa do Roteiro). */
+  roteirosDeManga(): Promise<IpcResult<RoteiroDeMangaGuardado[]>>
+  guardarRoteiroDeManga(roteiro: RoteiroDeMangaGuardado): Promise<IpcResult<null>>
+  /** Um roteiro pronto (escrito fora) casado com os quadrinhos dos capitulos, pela IA. Andamento em onProgressoDoResumo. */
+  casarRoteiroComOsQuadrinhos(pedido: { dirs: string[]; texto: string }): Promise<IpcResult<ResumoNoProjeto>>
   /**
    * Importa os clipes da montagem automatica: o que nao abre volta null, com o
    * motivo em `erros` (pelo indice), em vez de derrubar a leva inteira.

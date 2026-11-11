@@ -73,7 +73,7 @@ import { fatiaDoArquivo } from './projeto/arquivo'
 import { fatiaDaFila } from './projeto/fila'
 import { fatiaDaEtapaDoAudio } from './projeto/etapa-do-audio'
 import { fatiaDasEtapas, type Etapa } from './projeto/etapas'
-import type { EdicaoDeAudio } from '@shared/edicao-de-audio'
+import type { EdicaoDeAudio, TemposDaSaida } from '@shared/edicao-de-audio'
 import type { ResumoNoProjeto } from '@shared/resumo-de-manga'
 import { setInterimPlan } from './projeto/apoio'
 import type { StoreApi } from 'zustand'
@@ -840,6 +840,21 @@ export interface ProjectState {
    * cenas. Ver @shared/reajustar-tempos.
    */
   acertarTemposComANarracao: () => Promise<void>
+  /**
+   * A narracao nova do MESMO video (o "Pronto" depois de voltar ao Audio): troca
+   * o som e leva o projeto inteiro para os tempos dela -- cenas, transicoes,
+   * selecao, legendas e faixas ficam como ele deixou. Com os tempos dos dois
+   * "Pronto" (`velhos`, `novos`), a conta e exata e instantanea; sem os velhos
+   * (projeto de antes disto), ouve a narracao nova e casa palavra com palavra.
+   */
+  narracaoNovaNoMesmoVideo: (caminho: string, velhos: TemposDaSaida | null, novos: TemposDaSaida) => Promise<void>
+  /**
+   * Os quadrinhos de um resumo de manga no projeto. Com o roteiro ja sincronizado e
+   * nenhuma cena marcada, cada trecho ja chega com os dele (cenasDosTrechos).
+   */
+  aplicarResumoDoManga: (resumo: ResumoNoProjeto | null) => void
+  /** O roteiro que entrou e um que o Resumo de mangá escreveu? Traz os quadrinhos dele. */
+  reconhecerRoteiroDeManga: (texto: string) => Promise<boolean>
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -1268,6 +1283,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       // Roteiro novo muda onde cada frase comeca e acaba: o que estava lido
       // deixa de valer.
       if (result.ok) {
+        // Um roteiro que o Resumo de mangá escreveu traz os quadrinhos de cada frase (antes da sincronia).
+        await get().reconhecerRoteiroDeManga(result.value)
         /*
          * So o roteiro mudou (a narracao continua): as escolhas vao junto,
          * remapeadas. Com uma narracao nova chegando na mesma leva, nao ha o

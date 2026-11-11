@@ -1,6 +1,7 @@
-import { ChevronLeft, ChevronRight, Diamond, Trash2 } from 'lucide-react'
-import { MOTION_CURVES, type SobreposicaoSalva } from '@shared/contract'
-import { chaveEm, ordenadas, type Transform2D } from '@shared/transform'
+import { useEffect, useState } from 'react'
+import { ChevronLeft, ChevronRight, Diamond, Spline, Trash2 } from 'lucide-react'
+import { MOTION_CURVES, type MotionCurve, type SobreposicaoSalva } from '@shared/contract'
+import { chaveEm, ordenadas, type CurvaLivre, type Transform2D } from '@shared/transform'
 import { useProject } from '@/store/project'
 import {
   TOLERANCIA_DA_CHAVE,
@@ -13,6 +14,7 @@ import {
   transformNaAgulha,
 } from '@/store/transform-do-clipe'
 import { Botaozinho, Deslizante, Linha, Segmentos } from './painel'
+import { GraficoDeCurva } from './GraficoDeCurva'
 
 const RITMO: Record<(typeof MOTION_CURVES)[number], string> = {
   'ease-in-out': 'Suave',
@@ -176,15 +178,160 @@ export function TransformDoClipe({
               ))}
             </div>
           </Linha>
-          <Linha label="Ritmo" title="Como cada passagem de uma chave para a próxima acelera e freia">
-            <Segmentos
-              opcoes={MOTION_CURVES.map((c) => ({ valor: c, rotulo: RITMO[c] }))}
-              ativo={(c) => (o.curvaDasChaves ?? 'ease-in-out') === c}
-              onChange={(curvaDasChaves) => paraCada(() => ({ curvaDasChaves }))}
-            />
-          </Linha>
+          <RitmoDasChaves o={o} t={t} paraCada={paraCada} />
         </>
       )}
     </>
   )
+}
+
+/** A curva de cada ritmo pronto, para o desenho comecar de onde o movimento estava. */
+const RITMO_EM_CURVA: Record<MotionCurve, CurvaLivre> = {
+  'ease-in-out': [0.42, 0, 0.58, 1],
+  linear: [0, 0, 1, 1],
+  'ease-out': [0, 0, 0.58, 1],
+  'ease-in': [0.42, 0, 1, 1],
+}
+
+/**
+ * Curvas prontas da animacao, nomeadas pelo que fazem. As tres ultimas passam
+ * da caixa: so existem aqui (na camera dos blocos abririam tarja preta).
+ */
+const CURVAS_DA_ANIMACAO: readonly { nome: string; pontos: CurvaLivre; dica: string }[] = [
+  { nome: 'Sai voando', pontos: [0, 0.85, 0.15, 1], dica: 'O movimento acontece quase todo no começo' },
+  { nome: 'Chega freando', pontos: [0.1, 0.7, 0.35, 1], dica: 'Entra rápido e encosta devagar' },
+  { nome: 'Segura e vai', pontos: [0.85, 0, 1, 0.35], dica: 'Fica parado e dispara no fim' },
+  { nome: 'Passa e volta', pontos: [0.34, 1.56, 0.64, 1], dica: 'Passa do ponto e volta (o "back" do After Effects)' },
+  { nome: 'Recua e vai', pontos: [0.36, 0, 0.66, -0.56], dica: 'Recua um pouco antes de ir' },
+  { nome: 'Recua e passa', pontos: [0.68, -0.6, 0.32, 1.6], dica: 'Recua antes, passa do ponto e volta' },
+]
+
+const mesma = (a: CurvaLivre | null | undefined, b: CurvaLivre): boolean => !!a && a.every((v, i) => Math.abs(v - b[i]!) < 0.005)
+
+/**
+ * O RITMO DA ANIMACAO: "sabe a animacao de uma adjustment layer? eu quero ter
+ * controle de animacao de curvas la tambem". Os quatro ritmos prontos, a curva
+ * desenhada (o grafico dos blocos, com o ultrapassar liberado) e ONDE ela vale:
+ * em todas as passagens do clipe, ou so na passagem em que a agulha esta --
+ * cada chave pode ter a curva dela ate a proxima, como no grafico do After Effects.
+ */
+function RitmoDasChaves({
+  o,
+  t,
+  paraCada,
+}: {
+  o: SobreposicaoSalva
+  t: number
+  paraCada: (f: (x: SobreposicaoSalva) => Partial<SobreposicaoSalva>) => void
+}) {
+  const salvas = useProject((s) => s.curvePresets)
+  const carregarCurvas = useProject((s) => s.loadCurvePresets)
+  useEffect(() => void carregarCurvas(), [carregarCurvas])
+  const playhead = useProject((s) => s.playhead)
+  const chaves = ordenadas(o.chaves ?? [])
+  const i = passagemEm(chaves, t)
+  const daPassagem = i >= 0 ? chaves[i]!.curva : undefined
+  const [soEsta, setSoEsta] = useState(daPassagem !== undefined)
+  // Outra passagem na agulha: o escopo segue o que ELA tem.
+  const chaveDaPassagem = i >= 0 ? chaves[i]!.t : null
+  useEffect(() => setSoEsta(daPassagem !== undefined), [chaveDaPassagem]) // eslint-disable-line react-hooks/exhaustive-deps
+  const naPassagem = soEsta && i >= 0
+  const ritmo = o.curvaDasChaves ?? 'ease-in-out'
+  const doClipe = o.pontosDasChaves ?? null
+  const curva: CurvaLivre | null = naPassagem ? (daPassagem ?? doClipe ?? RITMO_EM_CURVA[ritmo]) : doClipe
+
+  /** A curva da passagem da agulha em cada clipe escolhido (cada um na sua). */
+  const naPassagemDeCada = (c: CurvaLivre | undefined): void =>
+    paraCada((x) => {
+      const cs = ordenadas(x.chaves ?? [])
+      const k = passagemEm(cs, Math.max(0, playhead - x.at))
+      if (k < 0) return {}
+      return { chaves: cs.map((ch, j) => (j === k ? { ...ch, curva: c ? [...c] : undefined } : ch)) }
+    })
+  const mudarCurva = (c: CurvaLivre): void =>
+    naPassagem ? naPassagemDeCada(c) : paraCada(() => ({ pontosDasChaves: [...c] as [number, number, number, number] }))
+
+  return (
+    <>
+      {i >= 0 && chaves.length > 2 && (
+        <Linha label="Vale para" title="A curva de todas as passagens, ou só da passagem em que a agulha está">
+          <Segmentos
+            opcoes={[
+              { valor: false, rotulo: 'Todas as passagens' },
+              { valor: true, rotulo: `Só ${i + 1} → ${i + 2}`, title: `Só a passagem da chave ${i + 1} para a ${i + 2}` },
+            ]}
+            ativo={(v) => v === naPassagem}
+            onChange={(v) => {
+              setSoEsta(v)
+              // Voltar para "todas": a passagem deixa de ter curva propria.
+              if (!v && daPassagem !== undefined) naPassagemDeCada(undefined)
+              // "So esta": comeca na curva que ela ja seguia.
+              if (v && daPassagem === undefined) naPassagemDeCada(doClipe ?? RITMO_EM_CURVA[ritmo])
+            }}
+          />
+        </Linha>
+      )}
+      {!naPassagem && (
+        <Linha label="Ritmo" title="Como cada passagem de uma chave para a próxima acelera e freia">
+          <Segmentos
+            opcoes={[
+              ...MOTION_CURVES.map((c) => ({ valor: c as MotionCurve | 'curva', rotulo: RITMO[c] })),
+              {
+                valor: 'curva' as const,
+                rotulo: (
+                  <>
+                    <Spline size={11} strokeWidth={1.5} />
+                    Curva
+                  </>
+                ),
+                title: 'Desenhar a curva a mão',
+              },
+            ]}
+            ativo={(c) => (c === 'curva' ? doClipe !== null : doClipe === null && ritmo === c)}
+            onChange={(c) =>
+              paraCada(() =>
+                c === 'curva'
+                  ? { pontosDasChaves: doClipe === null ? [...RITMO_EM_CURVA[ritmo]] : undefined }
+                  : { curvaDasChaves: c, pontosDasChaves: undefined },
+              )
+            }
+          />
+        </Linha>
+      )}
+      {curva && (
+        <div className="flex gap-2.5">
+          <GraficoDeCurva livre pontos={curva} onChange={mudarCurva} />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className="flex flex-wrap gap-1">
+              {CURVAS_DA_ANIMACAO.map((p) => (
+                <Botaozinho key={p.nome} active={mesma(curva, p.pontos)} onClick={() => mudarCurva(p.pontos)} title={p.dica}>
+                  {p.nome}
+                </Botaozinho>
+              ))}
+              {/* As dele, guardadas no grafico dos blocos. */}
+              {salvas.map((p) => (
+                <Botaozinho key={p.nome} active={mesma(curva, p.pontos)} onClick={() => mudarCurva(p.pontos)}>
+                  {p.nome}
+                </Botaozinho>
+              ))}
+            </div>
+            <p className="text-[10px] leading-snug text-ink-3">
+              {naPassagem
+                ? `Só a passagem da chave ${i + 1} para a ${i + 2}. As outras seguem o ritmo do clipe.`
+                : 'Quanto do movimento já aconteceu ao longo de cada passagem. Acima da caixa, passa do ponto e volta.'}
+            </p>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+/** A passagem em que `t` cai: o indice da chave de onde ela parte (com uma proxima), ou -1. */
+function passagemEm(chaves: readonly { t: number }[], t: number): number {
+  if (chaves.length < 2) return -1
+  let k = -1
+  for (const [j, c] of chaves.entries()) if (c.t <= t + TOLERANCIA_DA_CHAVE) k = j
+  if (k < 0) return 0
+  return Math.min(k, chaves.length - 2)
 }

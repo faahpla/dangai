@@ -271,7 +271,7 @@ export const fatiaDasFaixas = (set: SetProjeto, get: GetProjeto): FatiaDasFaixas
           inicioSec: o.tipo !== 'video' ? 0 : o.inicioSec + delta,
           usarSec: fim - novoAt,
           // A animacao fica presa a linha do tempo, e nao ao comeco do clipe.
-          ...(o.chaves?.length ? { chaves: deslocarChaves(o.chaves, delta, o.curvaDasChaves ?? 'ease-in-out') } : {}),
+          ...(o.chaves?.length ? { chaves: deslocarChaves(o.chaves, delta, o.curvaDasChaves ?? 'ease-in-out', o.pontosDasChaves) } : {}),
         }
       }),
       projectDirty: true,

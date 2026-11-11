@@ -285,6 +285,7 @@ function Pilha({ itens, children }: { itens: RenderProps['sobreposicoes']; child
           transform={o}
           chaves={o.chaves}
           curvaDasChaves={o.curvaDasChaves}
+          pontosDasChaves={o.pontosDasChaves}
         >
           {pilha}
         </CamadaDeAjuste>
@@ -336,7 +337,7 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
   const cobre = { width: '100%', height: '100%', objectFit: 'contain' as const }
   const fade = rampaDoFade(frame, o.durationInFrames, o.fadeInFrames, o.fadeOutFrames)
   // Fixo, ou animado pelos quadros-chave (o tempo da chave e desde o inicio do clipe).
-  const v = transformNoTempo(o, o.chaves, frame / VIDEO_FPS, o.curvaDasChaves)
+  const v = transformNoTempo(o, o.chaves, frame / VIDEO_FPS, o.curvaDasChaves, o.pontosDasChaves)
   return (
     <AbsoluteFill
       style={{

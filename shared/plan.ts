@@ -491,6 +491,7 @@ export function toRenderProps(
         fadeOutFrames: Math.round((o.fadeOutSec ?? 0) * VIDEO_FPS),
         chaves: o.chaves && o.chaves.length > 0 ? o.chaves : null,
         curvaDasChaves: o.curvaDasChaves ?? MOTION_CURVE_DEFAULT,
+        pontosDasChaves: o.pontosDasChaves ?? null,
         pivo: o.pivo ?? null,
       }
     })

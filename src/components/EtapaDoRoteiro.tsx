@@ -3,6 +3,7 @@ import { ArrowRight, Captions, ClipboardPaste, FileText, Loader2, RotateCcw, Tri
 import { roteiroNaoBate } from '@shared/preflight'
 import { useProject } from '@/store/project'
 import { BarraDeEtapas } from './BarraDeEtapas'
+import { CasandoOManga, MangaAntesDoRoteiro, MangaReconhecido, useCasamentoDoManga } from './MangaNoRoteiro'
 
 /**
  * A ETAPA DO ROTEIRO, entre o audio e as cenas: o roteiro entra e e casado com
@@ -37,6 +38,9 @@ function Tela() {
   const openScript = useProject((s) => s.openScript)
 
   const [semRoteiro, setSemRoteiro] = useState(false)
+  // Roteiro de manga escrito fora: a IA casa as frases com os quadrinhos enquanto a sincronia corre.
+  const casamento = useCasamentoDoManga()
+  const casando = casamento.andamento !== null
   /** Esta visita pediu a sincronia: so entao ela segue sozinha quando acaba. */
   const pediu = useRef(false)
   /** Uma tentativa por narracao + roteiro: falhou, espera ele mandar de novo. */
@@ -53,12 +57,12 @@ function Tela() {
   const nota = blocos ? roteiroNaoBate(script, transcript, scriptNote) : null
   const frases = blocos ? new Set(blocos.map((b) => b.sentence)).size : 0
 
-  // Sincronizou agora e bateu: as cenas.
+  // Sincronizou agora e bateu: as cenas (com os quadrinhos do manga ja casados, se for o caso).
   useEffect(() => {
-    if (!pediu.current || !blocos || nota) return
+    if (!pediu.current || !blocos || nota || casando) return
     const t = setTimeout(() => void ir('cenas'), 1400)
     return () => clearTimeout(t)
-  }, [blocos, nota, ir])
+  }, [blocos, nota, casando, ir])
 
   const tentarDeNovo = (): void => {
     tentado.current = null
@@ -87,8 +91,8 @@ function Tela() {
         </button>
       </header>
 
-      <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-8">
-        <div className="flex w-full max-w-[620px] flex-col gap-5">
+      <main className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto p-8">
+        <div className="my-auto flex w-full max-w-[620px] flex-col gap-5">
           <p className="text-[13px] leading-relaxed text-ink-3">
             O texto das legendas vem do roteiro. O Whisper só ouve a narração para saber quando cada palavra é dita.
           </p>
@@ -129,6 +133,8 @@ function Tela() {
                 <Loader2 size={15} className="animate-spin text-accent" />
                 {busy ?? lendo ?? 'Começando...'}
               </p>
+              <MangaReconhecido />
+              <CasandoOManga casamento={casamento} />
               {script && <PreviaDoRoteiro script={script} />}
             </div>
           ) : nota ? (
@@ -158,8 +164,10 @@ function Tela() {
                 <span className="text-ink-3">· {frases} {frases === 1 ? 'frase' : 'frases'}</span>
               </p>
               {scriptNote && <p className="text-[12px] text-ink-3">{scriptNote}</p>}
+              <MangaReconhecido />
+              <CasandoOManga casamento={casamento} />
               <p className="text-[12px] text-ink-3">
-                {pediu.current ? 'Indo para as cenas...' : 'Para trocar o roteiro, solte outro .txt aqui.'}
+                {pediu.current ? (casando ? 'Esperando os quadrinhos do mangá para seguir...' : 'Indo para as cenas...') : 'Para trocar o roteiro, solte outro .txt aqui.'}
               </p>
               {!pediu.current && (
                 <div>
@@ -170,6 +178,7 @@ function Tela() {
               )}
             </div>
           ) : null}
+          {!script && !semRoteiro && !blocos && !erro && <MangaAntesDoRoteiro casamento={casamento} />}
         </div>
       </main>
     </div>

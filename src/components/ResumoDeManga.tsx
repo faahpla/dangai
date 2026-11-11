@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, Check, ClipboardCopy, Loader2, Mic, Plus, RotateCcw, Sparkles, Trash2, X } from 'lucide-react'
+import { BookOpen, Check, ClipboardCopy, FileDown, Loader2, Mic, Plus, RotateCcw, Sparkles, Trash2, X } from 'lucide-react'
 import { classifyFile } from '@shared/channels'
 import { TAMANHOS_DO_RESUMO, textoDoResumo, type QuadroDoResumo, type TamanhoDoResumo } from '@shared/resumo-de-manga'
 import { useResumoDeManga } from '@/store/resumo-de-manga'
@@ -185,6 +185,7 @@ function Roteiro() {
   const mudarTitulo = useResumoDeManga((s) => s.mudarTitulo)
   const escrever = useResumoDeManga((s) => s.escrever)
   const recomecar = useResumoDeManga((s) => s.recomecar)
+  const salvarTxt = useResumoDeManga((s) => s.salvarTxt)
   const [escolhendo, setEscolhendo] = useState<number | null>(null)
   const [focar, setFocar] = useState<number | null>(null)
 
@@ -218,6 +219,13 @@ function Roteiro() {
           </span>
           <BotaoPequeno onClick={() => void copiar()} icone={ClipboardCopy} dica="Copia o roteiro, uma frase por linha">
             Copiar
+          </BotaoPequeno>
+          <BotaoPequeno
+            onClick={() => void salvarTxt()}
+            icone={FileDown}
+            dica="Salva o roteiro em .txt. Gravou e editou o áudio? Solte este .txt na etapa do Roteiro: os quadrinhos de cada frase vêm junto."
+          >
+            Salvar .txt
           </BotaoPequeno>
           <BotaoPequeno
             onClick={async () => {

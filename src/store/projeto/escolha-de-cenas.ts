@@ -1,8 +1,11 @@
-import { VIDEO_FPS, type ImageAsset } from '@shared/contract'
+import { VIDEO_FPS, type ImageAsset, type Scene, type Transcript } from '@shared/contract'
 import { juntarComOProximo, separarTrecho as separarPedacos, tirarDaFita } from '@shared/juntar'
 import { buildCaptions, imagemDaMetade } from '@shared/plan'
 import { remapearEscolhas } from '@shared/remapear-escolhas'
-import { ancorasDasPalavras, fimDaFala, legendasNosTemposNovos, mapaDeTempo, temposDeOutraNarracao, trechoNosTemposNovos } from '@shared/reajustar-tempos'
+import { ancorasDasPalavras, fimDaFala, legendasNosTemposNovos, mapaDeTempo, temposDeOutraNarracao, transcricaoNosTemposNovos, trechoNosTemposNovos } from '@shared/reajustar-tempos'
+import { ancorasEntreTempos, mesmosTempos } from '@shared/edicao-de-audio'
+import { emitir } from '@/modulos/ganchos'
+import { esquecerOnda } from '../ondas'
 import { herdarAjustes, reaproveitar } from '@shared/remontar'
 import {
   cabeCortePorPalavra,
@@ -15,11 +18,12 @@ import {
 } from '@shared/trecho'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { semPassoDeDesfazer } from '../quiet'
-import { cenasDosTrechos } from '@shared/resumo-de-manga'
+import { cenasDosTrechos, roteiroQueBate } from '@shared/resumo-de-manga'
+import { avisar } from '../aviso'
 import { aplicarMarcacoes, planoDosBlocos } from './apoio'
 
 /** Do store do editor (ver ../project.ts): a selecao por roteiro e os blocos da Biblioteca. */
-export type FatiaDaEscolhaDeCenas = Pick<ProjectState, 'openLibraryToReplace' | 'replaceSceneWith' | 'loadScriptBlocks' | 'trocarRoteiro' | 'setActiveBlock' | 'voltarParaSelecao' | 'toggleBlockClip' | 'alternarEscolhido' | 'removerEscolhido' | 'limparEscolhidos' | 'juntarTrechos' | 'separarTrecho' | 'reorderBlockClips' | 'toggleBlockSplit' | 'duplicateBlockClip' | 'setBlockWeight' | 'removeBlockClip' | 'setBlockCut' | 'clearBlockCuts' | 'applyBlockClips' | 'acertarTemposComANarracao'>
+export type FatiaDaEscolhaDeCenas = Pick<ProjectState, 'openLibraryToReplace' | 'replaceSceneWith' | 'loadScriptBlocks' | 'trocarRoteiro' | 'setActiveBlock' | 'voltarParaSelecao' | 'toggleBlockClip' | 'alternarEscolhido' | 'removerEscolhido' | 'limparEscolhidos' | 'juntarTrechos' | 'separarTrecho' | 'reorderBlockClips' | 'toggleBlockSplit' | 'duplicateBlockClip' | 'setBlockWeight' | 'removeBlockClip' | 'setBlockCut' | 'clearBlockCuts' | 'applyBlockClips' | 'acertarTemposComANarracao' | 'narracaoNovaNoMesmoVideo' | 'aplicarResumoDoManga' | 'reconhecerRoteiroDeManga'>
 
 export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDaEscolhaDeCenas => ({
 
@@ -572,37 +576,96 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       set({ busy: null, error: `Não deu para acertar os tempos: ${r.ok ? 'a narração não foi ouvida' : r.error}` })
       return
     }
-    const { captions, captionsEdited, captionRules, plan, sfxManual, trilhas, sobreposicoes } = get()
     const mapa = mapaDeTempo(ancorasDasPalavras(transcript.words, nova.words), fimDaFala(transcript.words), fimDaFala(nova.words))
     set({
-      transcript: nova,
+      ...projetoNosTemposNovos(get(), mapa, audio.durationSec, nova),
       transcriptTravado: false,
-      scriptBlocks: (get().scriptBlocks ?? scriptBlocks).map((b) => trechoNosTemposNovos(b, mapa)),
-      // Os cortes dentro de um trecho sao POSICOES de palavra, nao segundos: ficam como estao.
-      captions: captionsEdited ? legendasNosTemposNovos(captions, mapa, VIDEO_FPS) : buildCaptions(nova, captionRules),
-      /*
-       * A LINHA DO TEMPO anda pelo mesmo mapa, sem remontar: remontar reabre os
-       * clipes, e um so que nao abra (medido: um .mp4 que mudou no disco) deixava
-       * tudo como estava. Cada cena fica com a imagem, a camera, a transicao e o
-       * trecho do clipe dela -- so o comeco e o fim vao para o tempo novo. Os sons
-       * e os clipes das outras faixas vao junto: ficam na mesma fala de antes.
-       */
-      plan: plan
-        ? {
-            ...plan,
-            scenes: plan.scenes.map((c, i, todas) => ({
-              ...c,
-              start: i === 0 ? 0 : mapa(c.start),
-              end: i === todas.length - 1 ? Math.max(mapa(c.start) + 0.1, audio.durationSec) : mapa(c.end),
-            })),
-          }
-        : plan,
-      sfxManual: sfxManual.map((x) => ({ ...x, at: mapa(x.at) })),
-      trilhas: trilhas.map((x) => ({ ...x, at: mapa(x.at) })),
-      sobreposicoes: sobreposicoes.map((x) => ({ ...x, at: mapa(x.at) })),
       busy: null,
       projectDirty: true,
     })
+  },
+
+  /*
+   * VOLTAR AO AUDIO SEM PERDER O VIDEO: "se eu ja editei o audio e ja selecionei
+   * as cenas, mas volto para editar o audio, seja para desativar o Fresh Air...
+   * volta pra timeline e todos os blocos estao com transicao suave, a selecao de
+   * cena fica como se eu nao tivesse selecionado nada, e o audio atrasado". O
+   * "Pronto" passava pelo caminho de soltar uma narracao NOVA, que zera a selecao
+   * e refaz a linha do tempo. Aqui so o som troca; o resto anda junto.
+   */
+  narracaoNovaNoMesmoVideo: async (caminho, velhos, novos) => {
+    const antes = get().audio
+    if (!antes) return
+    set({ busy: 'Trocando a narração...', error: null })
+    const a = await window.dangai.analyzeAudio(caminho)
+    if (!a.ok) {
+      set({ busy: null, error: a.error })
+      return
+    }
+    // Mesmo caminho, som novo: a onda fina e a do arquivo de antes.
+    esquecerOnda(caminho)
+    const s = get()
+    const duracao = a.value.durationSec
+    const comPalavras = !!s.transcript && s.transcript.words.length > 0 && !!s.scriptBlocks
+    if (!velhos && comPalavras) {
+      // Projeto de antes de os tempos serem guardados: ouve a narracao nova e casa palavra com palavra.
+      set({ audio: a.value, playhead: Math.min(s.playhead, duracao), busy: null, projectDirty: true })
+      await get().acertarTemposComANarracao()
+    } else {
+      /*
+       * A conta exata: cada pedaco da gravacao tem um lugar na narracao velha e um
+       * na nova (ver ancorasEntreTempos). Mudou so o som (Fresh Air, EQ, volume):
+       * os tempos sao os mesmos, e nada anda. Sem os tempos velhos e sem palavras
+       * (video sem roteiro), o melhor que da e a proporcao das duracoes.
+       */
+      const mapa: (t: number) => number = velhos
+        ? mesmosTempos(velhos, novos)
+          ? (t) => t
+          : mapaDeTempo(ancorasEntreTempos(velhos, novos), antes.durationSec, duracao)
+        : mapaDeTempo([], antes.durationSec, duracao)
+      const transcricao = s.transcript ? transcricaoNosTemposNovos(s.transcript, mapa) : null
+      set({
+        audio: a.value,
+        ...projetoNosTemposNovos(s, mapa, duracao, transcricao),
+        playhead: Math.min(mapa(s.playhead), duracao),
+        busy: null,
+        projectDirty: true,
+      })
+    }
+    if (antes.path !== a.value.path) emitir('narracaoTrocada', { anterior: antes.path, nova: a.value.path })
+  },
+
+  aplicarResumoDoManga: (resumo) => {
+    const { scriptBlocks, blockClips } = get()
+    const marcadas = Object.values(blockClips).some((l) => l.length > 0)
+    const doResumo = resumo && scriptBlocks && !marcadas ? cenasDosTrechos(resumo.frases, scriptBlocks) : null
+    set({
+      resumoDoManga: resumo,
+      ...(doResumo ? { blockClips: doResumo, blockWeights: {}, blockSplits: {}, blockCuts: {} } : {}),
+      projectDirty: true,
+    })
+  },
+
+  /*
+   * O .txt que entrou e um roteiro que o Resumo de mangá escreveu (mesmo depois
+   * de mexido)? Entao os quadrinhos de cada frase vem junto, e a Biblioteca abre
+   * no capitulo. Chamado ANTES de o roteiro entrar no estado: a sincronia, que
+   * comeca sozinha, ja acha o resumo no lugar.
+   */
+  reconhecerRoteiroDeManga: async (texto) => {
+    const r = await window.dangai.roteirosDeManga()
+    const achado = r.ok ? roteiroQueBate(texto, r.value) : null
+    if (!achado) {
+      // O resumo que estava no projeto era de OUTRO roteiro: os quadrinhos dele nao servem a este.
+      const atual = get().resumoDoManga
+      if (atual && !roteiroQueBate(texto, [atual])) get().aplicarResumoDoManga(null)
+      return false
+    }
+    const { id: _id, em: _em, ...resumo } = achado
+    get().aplicarResumoDoManga(resumo)
+    const nome = resumo.titulo ? `: "${resumo.titulo}"` : ''
+    avisar(`Roteiro do Resumo de mangá${nome}. Os quadrinhos de cada frase já vêm marcados nas cenas.`, 8000)
+    return true
   },
 
   applyBlockClips: async () => {
@@ -769,3 +832,65 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
  * de uma leitura que a tranca precisa continuar valendo.
  */
 let lendoRoteiro: Promise<unknown> | null = null
+
+/**
+ * O PROJETO NOS TEMPOS DE OUTRA NARRACAO, pelo mapa (velho -> novo): trechos,
+ * legendas, cenas, sons e clipes das faixas. Cada cena fica com a imagem, a
+ * camera, a transicao e o trecho do clipe dela -- so o comeco e o fim andam.
+ * Nao remonta: remontar reabre os clipes, e um so que nao abra (medido: um .mp4
+ * que mudou no disco) deixava tudo como estava. Os cortes dentro de um trecho
+ * sao POSICOES de palavra, nao segundos: ficam como estao.
+ */
+function projetoNosTemposNovos(
+  s: ProjectState,
+  mapa: (t: number) => number,
+  duracao: number,
+  transcricao: Transcript | null,
+): Partial<ProjectState> {
+  const { scriptBlocks, captions, captionsEdited, captionRules, plan, sfxManual, trilhas, sobreposicoes } = s
+  const cenas = plan ? cenasNosTemposNovos(plan.scenes, mapa, duracao) : null
+  return {
+    transcript: transcricao,
+    scriptBlocks: scriptBlocks ? scriptBlocks.map((b) => trechoNosTemposNovos(b, mapa)) : scriptBlocks,
+    captions: captionsEdited
+      ? legendasNosTemposNovos(captions, mapa, VIDEO_FPS)
+      : transcricao
+        ? buildCaptions(transcricao, captionRules)
+        : captions,
+    plan: plan && cenas ? { ...plan, scenes: cenas } : plan,
+    // Uma cena que sumiu (o pedaco dela foi cortado da narracao) muda os indices.
+    ...(plan && cenas && cenas.length !== plan.scenes.length ? { selectedScene: null } : {}),
+    sfxManual: sfxManual.map((x) => ({ ...x, at: mapa(x.at) })),
+    // O som de uma faixa toca inteiro: so muda de lugar, e fica na mesma fala.
+    trilhas: trilhas.map((x) => ({ ...x, at: mapa(x.at) })),
+    sobreposicoes: sobreposicoes.map((o) => {
+      const at = mapa(o.at)
+      // Video tem o tamanho dele. Imagem e camada de ajuste cobrem um TRECHO da fala: o fim anda junto.
+      if (o.tipo === 'video') return { ...o, at }
+      const toca = o.usarSec ?? o.durationSec - o.inicioSec
+      const usarSec = Math.min(Math.max(mapa(o.at + toca) - at, 0.05), o.durationSec - o.inicioSec)
+      return {
+        ...o,
+        at,
+        usarSec,
+        // As chaves da animacao ficam no mesmo ponto da fala.
+        ...(o.chaves?.length ? { chaves: o.chaves.map((c) => ({ ...c, t: Math.max(0, mapa(o.at + c.t) - at) })) } : {}),
+      }
+    }),
+  }
+}
+
+/**
+ * As cenas nos tempos novos. A primeira comeca no zero e a ultima vai ate o fim
+ * da narracao. Cena que encolheu a nada (a fala dela saiu da narracao) sai, e a
+ * anterior fica com o tempo -- um bloco de zero quadros nao existe no video.
+ */
+function cenasNosTemposNovos(scenes: readonly Scene[], mapa: (t: number) => number, duracao: number): Scene[] {
+  const levadas = scenes.map((c, i, todas) => {
+    const start = i === 0 ? 0 : mapa(c.start)
+    return { ...c, start, end: i === todas.length - 1 ? Math.max(start + 0.1, duracao) : mapa(c.end) }
+  })
+  const ficam = levadas.filter((c, i) => i === levadas.length - 1 || c.end - c.start >= 1 / VIDEO_FPS)
+  if (ficam.length === 0) return levadas
+  return ficam.map((c, i) => ({ ...c, start: i === 0 ? 0 : ficam[i - 1]!.end }))
+}

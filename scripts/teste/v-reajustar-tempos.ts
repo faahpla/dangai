@@ -12,7 +12,9 @@ import {
   temposDeOutraNarracao,
   trechoNosTemposNovos,
   type PalavraComTempo,
+  transcricaoNosTemposNovos,
 } from '../../shared/reajustar-tempos.ts'
+import { ancorasEntreTempos, mesmosTempos, type TemposDaSaida } from '../../shared/edicao-de-audio.ts'
 
 let falhas = 0
 function ok(nome: string, condicao: boolean, detalhe = ''): void {
@@ -75,6 +77,45 @@ console.log('os trechos, as juncoes e as legendas vao junto')
   const legendas = [{ from: q(velhas[0]!.start), durationInFrames: q(velhas[3]!.end) - q(velhas[0]!.start), words: velhas.slice(0, 4).map((p) => ({ text: p.text, from: q(p.start), durationInFrames: q(p.end) - q(p.start) })) }]
   const levadas = legendasNosTemposNovos(legendas, mapa, fps)
   ok('a legenda editada vai para o tempo novo (no quadro mais perto)', Math.abs(levadas[0]!.from - q(novas[0]!.start)) <= 1 && Math.abs(levadas[0]!.words[3]!.from - q(novas[3]!.start)) <= 1)
+}
+
+console.log('voltar ao Audio: os tempos de um Pronto para o outro, sem ouvir de novo')
+{
+  // A narracao do video: a gravacao inteira (30 s) menos uma respiracao (de 10 a 12 s).
+  const velhos: TemposDaSaida = {
+    trechos: [
+      { de: 0, ate: 10, em: 0, fonte: 'principal', id: 'a' },
+      { de: 12, ate: 30, em: 10, fonte: 'principal', id: 'b' },
+    ],
+    velocidade: 100,
+  }
+  ok('so o Fresh Air mudou: mesmos tempos', mesmosTempos(velhos, { ...velhos, trechos: velhos.trechos.map((x) => ({ ...x, id: `${x.id}x` })) }))
+  ok('acelerou: outros tempos', !mesmosTempos(velhos, { ...velhos, velocidade: 115 }))
+
+  // A 115%: tudo encolhe na mesma proporcao.
+  const rapido: TemposDaSaida = { ...velhos, velocidade: 115 }
+  const m1 = mapaDeTempo(ancorasEntreTempos(velhos, rapido), 28, 28 / 1.15)
+  ok('a 115%, cada instante vai para o mesmo ponto da fala', [0, 3, 9.99, 10.01, 20, 27.9].every((t) => perto(m1(t), t / 1.15)))
+
+  // Cortou mais uma respiracao (de 20 a 21 s da gravacao, que estava em 18-19 s do video).
+  const cortado: TemposDaSaida = {
+    trechos: [
+      { de: 0, ate: 10, em: 0, fonte: 'principal', id: 'a' },
+      { de: 12, ate: 20, em: 10, fonte: 'principal', id: 'b' },
+      { de: 21, ate: 30, em: 18, fonte: 'principal', id: 'c' },
+    ],
+    velocidade: 100,
+  }
+  const m2 = mapaDeTempo(ancorasEntreTempos(velhos, cortado), 28, 27)
+  ok('antes do corte, nada anda', perto(m2(5), 5) && perto(m2(17.5), 17.5))
+  ok('depois do corte, tudo anda 1 s para tras', perto(m2(19.5), 18.5) && perto(m2(25), 24) && perto(m2(28), 27))
+  ok('dentro do pedaco cortado, para no corte', perto(m2(18.5), 18))
+
+  // A transcricao vai junto, com as mesmas palavras.
+  const tr = { words: [{ text: 'a', start: 19.5, end: 19.8 }], segments: [{ start: 19, end: 20, text: 'a' }], cutCandidates: [19.9, 25] }
+  const tr2 = transcricaoNosTemposNovos(tr, m2)
+  ok('as palavras andam junto', perto(tr2.words[0]!.start, 18.5) && tr2.words.length === 1)
+  ok('os pontos de corte andam junto', perto(tr2.cutCandidates[1]!, 24))
 }
 
 console.log(falhas === 0 ? '\nTUDO PASSOU' : `\n${falhas} FALHA(S)`)

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import {
+  resumoParaOProjeto,
   textoDoResumo,
   type ResumoDoManga,
   type SerieDoManga,
@@ -20,6 +21,8 @@ import { useProject } from './project'
 const CHAVE = 'dangai.resumo-de-manga.rascunho'
 
 interface Rascunho {
+  /** Quem e este roteiro entre os guardados (ver guardarRoteiroDeManga). */
+  id: string | null
   escolhidos: string[]
   tamanho: TamanhoDoResumo
   pedido: string
@@ -47,15 +50,21 @@ interface EstadoDoResumo extends Rascunho {
   moverQuadro: (i: number, de: number, para: number) => void
   /** A narracao gravada: nasce o projeto, ja com o roteiro e os quadrinhos de cada frase. */
   usarNarracao: (caminho: string) => Promise<void>
+  /** O roteiro num .txt, para gravar e soltar na etapa do Roteiro depois (os quadrinhos vem junto). */
+  salvarTxt: () => Promise<void>
 }
 
+const novoIdDoRoteiro = (): string => `r${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+
 function lerRascunho(): Rascunho {
-  const vazio: Rascunho = { escolhidos: [], tamanho: 'curto', pedido: '', resumo: null }
+  const vazio: Rascunho = { id: null, escolhidos: [], tamanho: 'curto', pedido: '', resumo: null }
   try {
     const cru = localStorage.getItem(CHAVE)
     if (!cru) return vazio
     const r = JSON.parse(cru) as Partial<Rascunho>
     return {
+      // Rascunho de antes dos roteiros guardados: ganha um id agora.
+      id: typeof r.id === 'string' ? r.id : r.resumo ? novoIdDoRoteiro() : null,
       escolhidos: Array.isArray(r.escolhidos) ? r.escolhidos.filter((x): x is string => typeof x === 'string') : [],
       tamanho: r.tamanho === 'medio' || r.tamanho === 'longo' ? r.tamanho : 'curto',
       pedido: typeof r.pedido === 'string' ? r.pedido : '',
@@ -71,11 +80,17 @@ function guardar(r: Rascunho): void {
   if (gravarDepois) clearTimeout(gravarDepois)
   gravarDepois = setTimeout(() => {
     try {
-      const { escolhidos, tamanho, pedido, resumo } = r
-      localStorage.setItem(CHAVE, JSON.stringify({ escolhidos, tamanho, pedido, resumo }))
+      const { id, escolhidos, tamanho, pedido, resumo } = r
+      localStorage.setItem(CHAVE, JSON.stringify({ id, escolhidos, tamanho, pedido, resumo }))
     } catch {
       /* sem espaco: o rascunho so nao sobrevive a fechar o app */
     }
+    /*
+     * E entre os roteiros guardados: o .txt deste roteiro, solto mais tarde na
+     * etapa do Roteiro (o caminho de sempre: audio -> roteiro -> cenas), traz os
+     * quadrinhos de cada frase.
+     */
+    if (r.id && r.resumo) void window.dangai.guardarRoteiroDeManga({ ...resumoParaOProjeto(r.resumo), id: r.id, em: Date.now() })
   }, 400)
 }
 
@@ -144,7 +159,7 @@ export const useResumoDeManga = create<EstadoDoResumo>((set, get) => {
       try {
         const r = await window.dangai.escreverResumoDoManga({ dirs: escolhidos, tamanho, pedido })
         if (r.ok) {
-          set({ resumo: r.value })
+          set({ resumo: r.value, id: novoIdDoRoteiro() })
           guardar(get())
         } else set({ erro: r.error })
       } finally {
@@ -154,7 +169,7 @@ export const useResumoDeManga = create<EstadoDoResumo>((set, get) => {
     },
 
     recomecar: () => {
-      set({ resumo: null, erro: null })
+      set({ resumo: null, id: null, erro: null })
       guardar(get())
     },
 
@@ -199,20 +214,12 @@ export const useResumoDeManga = create<EstadoDoResumo>((set, get) => {
       const { resumo } = get()
       if (!resumo) return
       const frases = resumo.frases.filter((f) => f.texto.trim())
-      const porRef = new Map(resumo.quadros.map((q) => [q.ref, q.caminho]))
       const projeto = useProject.getState()
       // Um projeto aberto fica onde esta (o auto save ja gravou): o resumo e um video novo.
       if (projeto.audio) projeto.reset()
       useProject.setState({
         script: textoDoResumo(frases),
-        resumoDoManga: {
-          titulo: resumo.titulo,
-          capitulos: resumo.capitulos.map((c) => c.dir),
-          frases: frases.map((f) => ({
-            texto: f.texto.trim(),
-            quadros: f.quadros.map((r) => porRef.get(r)).filter((x): x is string => !!x),
-          })),
-        },
+        resumoDoManga: resumoParaOProjeto(resumo),
       })
       // O roteiro que ele vai gravar, ja corrigido, e o melhor exemplo do jeito dele.
       void window.dangai.aprenderResumo({ titulo: resumo.titulo, texto: textoDoResumo(frases) })
@@ -221,8 +228,23 @@ export const useResumoDeManga = create<EstadoDoResumo>((set, get) => {
       // Deu certo (a narracao entrou): o rascunho virou projeto.
       if (useProject.getState().audio?.path) {
         esquecerRascunho()
-        set({ resumo: null, escolhidos: [], pedido: '' })
+        set({ resumo: null, id: null, escolhidos: [], pedido: '' })
       }
+    },
+
+    salvarTxt: async () => {
+      const { resumo } = get()
+      if (!resumo) return
+      // Guardado agora (sem esperar o rascunho): e esse texto que vai voltar.
+      guardar(get())
+      const nome = (resumo.titulo.trim() || resumo.capitulos.map((c) => `${c.serie} ${c.capitulo}`).join(', ') || 'Resumo de mangá').replace(/[\\/:*?"<>|]+/g, ' ').trim()
+      await window.dangai.exportarTexto({
+        titulo: 'Salvar o roteiro',
+        nome,
+        extensao: 'txt',
+        descricao: 'Roteiro',
+        conteudo: textoDoResumo(resumo.frases),
+      })
     },
   }
 })

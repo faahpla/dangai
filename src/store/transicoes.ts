@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   ajusteDaTransicaoSchema,
+  duracaoDoTrecho,
   framesDaTransicao,
   TRANSITIONS,
   type AjusteDaTransicao,
@@ -9,7 +10,7 @@ import {
 } from '@shared/contract'
 import { z } from 'zod'
 import { useProject } from './project'
-import { reduzirPicos } from './projeto/apoio'
+import { ondaDoTrecho } from './projeto/apoio'
 import { exportarPreset, importarPreset, nomeLivre } from './arquivo-de-preset'
 
 /**
@@ -101,15 +102,42 @@ export function aplicarNaEmenda(e: number, tipo: Transition, ajuste?: AjusteDaTr
  * trocar por outra transicao) tira o som que ele pos.
  */
 const PANS: ReadonlySet<Transition> = new Set<Transition>(['pan-left', 'pan-right', 'pan-up', 'pan-down'])
-/** O id dos sons que o Pan pos: e assim que ele acha o dele para tirar, sem mexer nos outros. */
+/**
+ * O id dos sons que o Pan pos: `pan-g<ms>-...`, com o ponto mais forte do som (em
+ * ms desde o comeco dele). E assim que ele acha o SEU som de cada corte -- para
+ * nao pôr dois no mesmo corte e para tirar so o dele --, mesmo com outro Pan
+ * logo ao lado.
+ */
 const PREFIXO_DO_PAN = 'pan-'
 
+/** Onde o som de um Pan bate na linha do tempo (o ponto mais forte), ou null se o id nao diz. */
+function golpeDoPan(x: { id: string; at: number }): number | null {
+  const m = /^(?:sfx-)?pan-g(\d+)-/.exec(x.id)
+  return m ? x.at + Number(m[1]) / 1000 : null
+}
+
+const ehDoPan = (x: { id: string }): boolean => x.id.startsWith(PREFIXO_DO_PAN) || x.id.startsWith(`sfx-${PREFIXO_DO_PAN}`)
+
+/** Este som e o do Pan DESTE corte? Pelo golpe; id antigo (sem golpe), pelo som cobrir o corte. */
+function doCorte(x: { id: string; at: number; durationSec: number }, corte: number): boolean {
+  if (!ehDoPan(x)) return false
+  const golpe = golpeDoPan(x)
+  return golpe !== null ? Math.abs(golpe - corte) < 0.12 : x.at <= corte + 0.05 && x.at + x.durationSec >= corte - 0.05
+}
+
+/*
+ * O som entra numa FAIXA DE AUDIO (A1, A2...), como qualquer som que ele solta
+ * ali. Ate a 2.3 ele ia para a faixa de SFX antiga -- que saiu da tela e nao
+ * toca nem no preview nem no render: "as transicoes de pan nao estao colocando
+ * o audio junto". O som so aparecia ao reabrir o projeto (convertido para a
+ * faixa de audio, e 12 dB mais baixo).
+ */
 async function porSomDoPan(corte: number): Promise<void> {
   const r = await window.dangai.getSettings()
   const caminho = r.ok ? r.value.somDoPan : ''
   if (!caminho) return
-  // Ja tem o mesmo som ali (desfazer e refazer, aplicar duas vezes): nao empilha.
-  if (useProject.getState().sfxManual.some((x) => x.path === caminho && Math.abs(x.at - corte) < 1.5)) return
+  // Ja tem o som deste corte (desfazer e refazer, aplicar duas vezes): nao empilha.
+  if (useProject.getState().trilhas.some((x) => doCorte(x, corte))) return
   const a = await window.dangai.analyzeAudio(caminho)
   if (!a.ok) {
     useProject.setState({ error: `O som do Pan não abriu: ${a.error}` })
@@ -119,29 +147,49 @@ async function porSomDoPan(corte: number): Promise<void> {
   let maior = 0
   for (let i = 1; i < peaks.length; i++) if (peaks[i]! > peaks[maior]!) maior = i
   const pico = peaks.length > 0 ? ((maior + 0.5) / peaks.length) * durationSec : 0
-  useProject.setState((st) => ({
-    sfxManual: [
-      ...st.sfxManual,
-      {
-        id: `${PREFIXO_DO_PAN}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        path: caminho,
-        fileName: a.value.fileName,
-        at: Math.max(0, corte - pico),
-        durationSec,
-        peaks: reduzirPicos(peaks),
-        url: a.value.url,
-        usarSec: null,
-        gainDb: 0,
-      },
-    ],
-    projectDirty: true,
-  }))
+  const at = Math.max(0, corte - pico)
+  const golpe = Math.round((corte - at) * 1000)
+  useProject.setState((st) => {
+    if (st.trilhas.some((x) => doCorte(x, corte))) return {}
+    // A faixa dos outros Pans, se estiver livre nesse pedaco; senao, a primeira livre (e que nao esteja muda).
+    const livre = (f: number): boolean =>
+      !st.faixasMudas.audio.includes(f) &&
+      !st.trilhas.some((t) => t.faixa === f && at < t.at + duracaoDoTrecho(t) - 1e-3 && at + durationSec > t.at + 1e-3)
+    const dosPans = [...new Set(st.trilhas.filter(ehDoPan).map((t) => t.faixa))].sort((a, b) => a - b)
+    let faixa = dosPans.find(livre) ?? 0
+    while (!livre(faixa)) faixa++
+    return {
+      trilhas: [
+        ...st.trilhas,
+        {
+          id: `${PREFIXO_DO_PAN}g${golpe}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+          path: caminho,
+          fileName: a.value.fileName,
+          faixa,
+          at,
+          durationSec,
+          inicioSec: 0,
+          usarSec: null,
+          gainDb: 0,
+          fadeInSec: 0,
+          fadeOutSec: 0,
+          ...ondaDoTrecho(a.value),
+          url: a.value.url,
+        },
+      ],
+      projectDirty: true,
+    }
+  })
 }
 
 function tirarSomDoPan(corte: number): void {
   const st = useProject.getState()
-  const fica = st.sfxManual.filter((x) => !(x.id.startsWith(PREFIXO_DO_PAN) && x.at <= corte + 0.05 && x.at + x.durationSec >= corte - 0.05))
-  if (fica.length !== st.sfxManual.length) useProject.setState({ sfxManual: fica, projectDirty: true })
+  const trilhas = st.trilhas.filter((x) => !doCorte(x, corte))
+  // O de projeto de antes (na faixa de SFX antiga, ainda nao convertida).
+  const sfxManual = st.sfxManual.filter((x) => !doCorte(x, corte))
+  if (trilhas.length !== st.trilhas.length || sfxManual.length !== st.sfxManual.length) {
+    useProject.setState({ trilhas, sfxManual, projectDirty: true })
+  }
 }
 
 /** Muda so uma parte do ajuste da emenda. */

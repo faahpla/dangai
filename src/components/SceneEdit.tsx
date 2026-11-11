@@ -38,6 +38,7 @@ import { exportarPreset, importarPreset, nomeLivre } from '@/store/arquivo-de-pr
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos, type Segmento } from './painel'
 import { Framing } from './Framing'
 import { Camera } from './Camera'
+import { GraficoDeCurva } from './GraficoDeCurva'
 
 /**
  * Os controles FINOS do bloco, deitados na area do meio.
@@ -854,110 +855,6 @@ const CURVE_AS_BEZIER: Record<MotionCurve, CurvePoints> = {
   linear: [0, 0, 1, 1],
   'ease-out': [0, 0, 0.58, 1],
   'ease-in': [0.42, 0, 1, 1],
-}
-
-/**
- * O grafico da curva: dois pontos de controle arrastaveis.
- *
- * Horizontal e o tempo do bloco, vertical e quanto do movimento ja aconteceu.
- * Trecho plano e uma pausa, trecho ingreme e uma disparada -- e o mesmo desenho
- * de qualquer editor de video, que e onde ele ja sabe ler isto.
- *
- * A CAIXA E O LIMITE, e nao uma sugestao: arrastar para fora nao passa de 0..1.
- * Fora dessa faixa a curva ultrapassaria o fim do movimento e voltaria, e o pan
- * comeria a folga de borda que existe para nunca aparecer tarja preta.
- */
-function GraficoDeCurva({
-  pontos,
-  onChange,
-}: {
-  pontos: CurvePoints
-  onChange: (pontos: CurvePoints) => void
-}) {
-  const area = useRef<SVGSVGElement>(null)
-  const [arrastando, setArrastando] = useState<0 | 1 | null>(null)
-  const [x1, y1, x2, y2] = pontos
-
-  const mover = (event: React.PointerEvent, qual: 0 | 1): void => {
-    const caixa = area.current?.getBoundingClientRect()
-    if (!caixa) return
-    const x = presa(emUnidades((event.clientX - caixa.left) / caixa.width))
-    // O SVG cresce para baixo e o progresso para cima: o eixo vira aqui.
-    const y = presa(1 - emUnidades((event.clientY - caixa.top) / caixa.height))
-    onChange(qual === 0 ? [x, y, x2, y2] : [x1, y1, x, y])
-  }
-
-  const px = (v: number): number => v * 100
-  const py = (v: number): number => 100 - v * 100
-
-  return (
-    <div className="flex w-[132px] shrink-0 flex-col gap-0.5">
-      <svg
-        ref={area}
-        viewBox={`${-FOLGA} ${-FOLGA} ${100 + FOLGA * 2} ${100 + FOLGA * 2}`}
-        className="w-full touch-none rounded-sm bg-elevated"
-        onPointerMove={(event) => arrastando !== null && mover(event, arrastando)}
-        onPointerUp={() => setArrastando(null)}
-        onPointerLeave={() => setArrastando(null)}
-      >
-        {/* A caixa desenhada, e nao a borda do elemento: com a folga em volta, a
-            borda ficaria longe do limite real e mentiria sobre onde ele esta. */}
-        <rect x={0} y={0} width={100} height={100} fill="none" className="stroke-line-strong" strokeWidth={0.8} />
-
-        {/* Referencia: a diagonal e o movimento em ritmo constante. */}
-        <line x1={0} y1={100} x2={100} y2={0} className="stroke-line-strong" strokeWidth={0.8} strokeDasharray="3 3" />
-
-        <line x1={0} y1={100} x2={px(x1)} y2={py(y1)} className="stroke-ink-3" strokeWidth={0.8} />
-        <line x1={100} y1={0} x2={px(x2)} y2={py(y2)} className="stroke-ink-3" strokeWidth={0.8} />
-
-        <path
-          d={`M 0 100 C ${px(x1)} ${py(y1)}, ${px(x2)} ${py(y2)}, 100 0`}
-          fill="none"
-          className="stroke-accent"
-          strokeWidth={2}
-        />
-
-        {([0, 1] as const).map((qual) => (
-          <g key={qual} className="cursor-grab">
-            <circle cx={px(qual === 0 ? x1 : x2)} cy={py(qual === 0 ? y1 : y2)} r={4} className="fill-accent" />
-            {/* Alvo maior que a bolinha: 4 unidades dao uns 8 pixels na largura
-                do card, que e pouco para pegar com o mouse. */}
-            <circle
-              cx={px(qual === 0 ? x1 : x2)}
-              cy={py(qual === 0 ? y1 : y2)}
-              r={10}
-              fill="transparent"
-              onPointerDown={(event) => {
-                event.currentTarget.setPointerCapture(event.pointerId)
-                setArrastando(qual)
-              }}
-            />
-          </g>
-        ))}
-      </svg>
-      {/* Os quatro numeros: e o que ele repete em outro bloco quando acerta um ritmo. */}
-      <p className="tnum text-[10px] text-ink-3">{pontos.map((v) => v.toFixed(2)).join(', ')}</p>
-    </div>
-  )
-}
-
-/**
- * Folga em volta da caixa, em unidades do desenho.
- *
- * A alca de um preset comum cai exatamente em cima do limite -- o ease-in-out
- * poe uma no chao e outra no teto. Sem esta folga, metade da bolinha fica fora
- * do desenho e nao da para pegar.
- */
-const FOLGA = 8
-
-/** Fracao do ELEMENTO para unidade do desenho, descontando a folga das bordas. */
-function emUnidades(fracao: number): number {
-  return (fracao * (100 + FOLGA * 2) - FOLGA) / 100
-}
-
-/** Preso entre 0 e 1: a caixa do grafico e o limite do que a curva pode fazer. */
-function presa(v: number): number {
-  return Math.min(Math.max(v, 0), 1)
 }
 
 /**

@@ -234,3 +234,85 @@ export function textoDoResumo(frases: readonly { texto: string }[]): string {
     .filter(Boolean)
     .join('\n')
 }
+
+/** O resumo da tela do Resumo de mangá do jeito que entra no projeto: cada frase com os ARQUIVOS dos quadrinhos. */
+export function resumoParaOProjeto(resumo: Pick<ResumoDoManga, 'titulo' | 'capitulos' | 'quadros' | 'frases'>): ResumoNoProjeto {
+  const porRef = new Map(resumo.quadros.map((q) => [q.ref, q.caminho]))
+  return {
+    titulo: resumo.titulo,
+    capitulos: resumo.capitulos.map((c) => c.dir),
+    frases: resumo.frases
+      .filter((f) => f.texto.trim())
+      .map((f) => ({
+        texto: f.texto.trim(),
+        quadros: f.quadros.map((r) => porRef.get(r)).filter((x): x is string => !!x),
+      })),
+  }
+}
+
+// --------------------------------------- o roteiro pronto no caminho de sempre
+
+/*
+ * O ROTEIRO DE MANGA NO CAMINHO DE SEMPRE: "quero tambem um processo semelhante
+ * ao padrao do app... arrastar um audio e edita-lo, depois arrastar um roteiro
+ * ja pronto de manga, e depois ele ja ir direto na biblioteca para selecionar".
+ *
+ * Todo roteiro que o Resumo de mangá escreve fica guardado (com os quadrinhos
+ * de cada frase). Um .txt que entra na etapa do Roteiro e confere com um deles
+ * -- mesmo depois de ele mexer no texto -- traz os quadrinhos junto. Roteiro
+ * escrito fora do Dangai: ele diz de que capitulos e, e a IA casa cada frase
+ * com os quadrinhos (ver casamentoDosQuadrosSchema).
+ */
+
+/** Um roteiro que o Resumo de mangá escreveu, guardado para ser reconhecido depois. */
+export interface RoteiroDeMangaGuardado extends ResumoNoProjeto {
+  id: string
+  /** Quando foi escrito ou mexido por ultimo, em ms. */
+  em: number
+}
+
+/**
+ * Quanto do roteiro solto (`texto`) sai destas frases: a fracao das palavras
+ * dele que aparecem nelas, na mesma ordem (a maior sequencia em comum). 1 = o
+ * mesmo texto; ele trocar umas palavras ainda da perto disso.
+ */
+export function quantoBate(texto: string, frases: readonly { texto: string }[]): number {
+  const a = palavras(texto)
+  const b = frases.flatMap((f) => palavras(f.texto))
+  if (a.length === 0 || b.length === 0) return 0
+  let anterior = new Uint16Array(b.length + 1)
+  for (let i = a.length - 1; i >= 0; i--) {
+    const linha = new Uint16Array(b.length + 1)
+    for (let j = b.length - 1; j >= 0; j--) {
+      linha[j] = a[i] === b[j] ? anterior[j + 1]! + 1 : Math.max(anterior[j]!, linha[j + 1]!)
+    }
+    anterior = linha
+  }
+  return anterior[0]! / Math.max(a.length, b.length)
+}
+
+/** O roteiro guardado de onde este texto saiu (no minimo 60% igual), ou null. */
+export function roteiroQueBate<R extends { frases: readonly { texto: string }[] }>(texto: string, guardados: readonly R[]): R | null {
+  let melhor: R | null = null
+  let nota = 0.6
+  for (const g of guardados) {
+    const n = quantoBate(texto, g.frases)
+    if (n >= nota) [melhor, nota] = [g, n]
+  }
+  return melhor
+}
+
+/** As frases de um roteiro em texto: um ponto final (ou ? !) encerra a frase, como no resto do Dangai. */
+export function frasesDoTexto(texto: string): string[] {
+  return (texto.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]+["'”)]*|[^.!?…]+$/g) ?? []).map((f) => f.trim()).filter(Boolean)
+}
+
+/** O que a IA devolve ao casar um roteiro pronto com os quadrinhos: os de cada frase, pelo numero dela. */
+export const casamentoDosQuadrosSchema = z.object({
+  frases: z.array(
+    z.object({
+      n: z.number().int(),
+      quadros: z.array(z.string()),
+    }),
+  ),
+})

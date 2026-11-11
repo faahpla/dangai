@@ -1410,12 +1410,29 @@ export const ESCALA_MAXIMA = 50
  * ajuste). `t` em segundos desde o inicio do clipe. O giro aqui pode passar de
  * 180 graus: de 0 a 360 e uma volta inteira. Ver shared/transform.ts.
  */
+/**
+ * A CURVA DESENHADA DA ANIMACAO: o cubic-bezier [x1, y1, x2, y2], como a dos
+ * blocos (curvePointsSchema) -- so que o Y pode passar da caixa. "Quero ter
+ * controle de animacao de curvas la tambem": passar do ponto e voltar, recuar
+ * antes de ir. Na camera dos blocos isso abriria tarja preta; num quadro-chave
+ * e so o movimento.
+ */
+export const curvaLivreSchema = z.tuple([
+  z.number().min(0).max(1),
+  z.number().min(-1).max(2),
+  z.number().min(0).max(1),
+  z.number().min(-1).max(2),
+])
+export type CurvaLivre = z.infer<typeof curvaLivreSchema>
+
 export const chaveDeTransformSchema = z.object({
   t: z.number().min(0),
   x: z.number().min(-POSICAO_LIVRE).max(POSICAO_LIVRE),
   y: z.number().min(-POSICAO_LIVRE).max(POSICAO_LIVRE),
   escala: z.number().min(ESCALA_MINIMA).max(ESCALA_MAXIMA),
   rotacao: z.number().min(-3600).max(3600),
+  /** A curva da passagem DESTA chave para a proxima. Sem: a do clipe. */
+  curva: curvaLivreSchema.optional(),
 })
 
 /** O ponto em volta do qual o clipe gira e escala, em fracao do quadro. */
@@ -1483,6 +1500,8 @@ export const sobreposicaoSchema = z.object({
   chaves: z.array(chaveDeTransformSchema).max(200).optional(),
   /** O ritmo entre uma chave e a proxima. */
   curvaDasChaves: motionCurveSchema.optional(),
+  /** A curva desenhada para todas as passagens (ganha do ritmo pronto). */
+  pontosDasChaves: curvaLivreSchema.optional(),
   /**
    * O PONTO DE GIRO. Sem ele, o centro do quadro -- o de sempre. O transform
    * pelo preview poe aqui o centro do que se ve no arquivo (a seta, e nao o
@@ -1722,6 +1741,7 @@ export const renderPropsSchema = z.object({
         fadeOutFrames: z.number().int().nonnegative().default(0),
         chaves: z.array(chaveDeTransformSchema).nullable().default(null),
         curvaDasChaves: motionCurveSchema.default(MOTION_CURVE_DEFAULT),
+        pontosDasChaves: curvaLivreSchema.nullable().default(null),
         pivo: pivoSchema.nullable().default(null),
       }),
     )

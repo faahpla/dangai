@@ -19,6 +19,16 @@ export const useOndas = create<{ ondas: Record<string, Onda> }>(() => ({ ondas: 
 
 const pedidos = new Set<string>()
 
+/** O arquivo mudou no disco (o "Pronto" grava a narracao nova no mesmo caminho): a onda e pedida de novo. */
+export function esquecerOnda(path: string): void {
+  pedidos.delete(path)
+  if (!useOndas.getState().ondas[path]) return
+  useOndas.setState((s) => {
+    const { [path]: _velha, ...resto } = s.ondas
+    return { ondas: resto }
+  })
+}
+
 /** Pede a onda fina de um arquivo, uma vez so. */
 export function carregarOnda(path: string): void {
   if (!path || pedidos.has(path) || useOndas.getState().ondas[path]) return

@@ -126,7 +126,8 @@ export function publish(absolutePath: string): string {
 }
 
 function handleRequest(req: IncomingMessage, res: ServerResponse): void {
-  const id = req.url?.startsWith('/m/') ? req.url.slice(3) : null
+  // O que vem depois do ? e so a versao do arquivo (ver urlDeEscuta): o id e o resto.
+  const id = req.url?.startsWith('/m/') ? (req.url.slice(3).split('?')[0] ?? null) : null
   const path = id ? published.get(id) : undefined
 
   if (!path) {

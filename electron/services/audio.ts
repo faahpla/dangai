@@ -53,16 +53,29 @@ export function esquecerEscuta(path: string): number {
   }
 }
 
+/**
+ * O proprio arquivo, com a VERSAO dele no endereco. O "Pronto" grava a narracao
+ * nova por cima da anterior, no mesmo caminho: com o mesmo endereco, o preview
+ * seguia tocando o que ja tinha carregado do audio velho.
+ */
+function publicarComVersao(path: string): string {
+  try {
+    return `${publish(path)}?v=${Math.round(statSync(path).mtimeMs).toString(36)}`
+  } catch {
+    return publish(path)
+  }
+}
+
 /** A URL que o preview toca: a copia de escuta, ou o proprio arquivo. */
 export async function urlDeEscuta(path: string): Promise<string> {
   let alvo: string
   try {
     const copia = copiaDeEscuta(path)
-    if (!copia) return publish(path)
+    if (!copia) return publicarComVersao(path)
     mkdirSync(dirname(copia), { recursive: true })
     alvo = copia
   } catch {
-    return publish(path)
+    return publicarComVersao(path)
   }
   if (existsSync(alvo)) {
     // Usada agora: a limpeza conta os dias a partir daqui.
@@ -99,7 +112,7 @@ export async function urlDeEscuta(path: string): Promise<string> {
     return publish(alvo)
   } catch {
     // Sem copia, o preview toca o original como sempre tocou.
-    return publish(path)
+    return publicarComVersao(path)
   }
 }
 

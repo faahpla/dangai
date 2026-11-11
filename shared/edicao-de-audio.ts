@@ -176,6 +176,26 @@ export const cadeiaDeAudioSchema = z.object({
 })
 export type CadeiaDeAudio = z.infer<typeof cadeiaDeAudioSchema>
 
+/**
+ * OS TEMPOS DA NARRACAO QUE ESTA NO VIDEO: onde cada pedaco da gravacao caiu
+ * no ultimo "Pronto", e a que velocidade. Guardados para o "Pronto" seguinte
+ * saber para onde cada instante foi (ver ancorasEntreTempos) -- sem isso, voltar
+ * ao Audio para tirar o Fresh Air jogava fora as cenas, as transicoes e a selecao.
+ */
+export const temposDaSaidaSchema = z.object({
+  trechos: z.array(
+    z.object({
+      de: z.number(),
+      ate: z.number(),
+      em: z.number(),
+      fonte: z.string().default(FONTE_PRINCIPAL),
+      id: z.string().optional(),
+    }),
+  ),
+  velocidade: z.number(),
+})
+export type TemposDaSaida = z.infer<typeof temposDaSaidaSchema>
+
 const edicaoLidaSchema = z.object({
   /** A gravacao crua, como ele soltou. Nunca e alterada. */
   bruto: z.string(),
@@ -186,6 +206,8 @@ const edicaoLidaSchema = z.object({
   cadeia: cadeiaDeAudioSchema,
   /** Onde o "Pronto" gravou a narracao final (ao lado da gravacao). */
   saida: z.string().nullable().default(null),
+  /** Os tempos da narracao que o "Pronto" gravou em `saida`. Projeto de antes disto: null. */
+  tempos: temposDaSaidaSchema.nullable().default(null),
 })
 export type EdicaoDeAudio = Omit<z.infer<typeof edicaoLidaSchema>, 'trechos'> & { trechos: TrechoDaGravacao[] }
 /** Lida do arquivo: todo trecho sai com lugar, faixa e id (ver posicionar). */
@@ -232,7 +254,58 @@ export function novaEdicao(bruto: string, duracaoBruta: number, cadeia: CadeiaDe
     trechos: [{ de: 0, ate: duracaoBruta, ganhoDb: 0, fonte: FONTE_PRINCIPAL, em: 0, faixa: 0, id: novoId() }],
     cadeia,
     saida: null,
+    tempos: null,
   }
+}
+
+/** Os tempos que esta edicao daria no "Pronto" (so o que mexe no tempo: cortes, lugar, velocidade). */
+export function temposDa(edicao: Pick<EdicaoDeAudio, 'trechos' | 'cadeia'>): TemposDaSaida {
+  return {
+    trechos: edicao.trechos.map((x) => ({ de: x.de, ate: x.ate, em: x.em, fonte: fonteDo(x), id: x.id })),
+    velocidade: edicao.cadeia.velocidade ?? 100,
+  }
+}
+
+/**
+ * Os dois dao a narracao com os MESMOS tempos? Mudou so o som (Fresh Air, EQ,
+ * volume de um trecho, efeito): cada palavra continua no mesmo instante, e nada
+ * no video precisa andar. A faixa nao conta (trocar de faixa no mesmo lugar nao
+ * muda o tempo).
+ */
+export function mesmosTempos(a: TemposDaSaida, b: TemposDaSaida): boolean {
+  if (fatorDaVelocidade(a) !== fatorDaVelocidade(b)) return false
+  const chave = (x: TemposDaSaida['trechos'][number]): string =>
+    [x.fonte, Math.round(x.de * 1000), Math.round(x.ate * 1000), Math.round(x.em * 1000)].join('|')
+  const ka = a.trechos.map(chave).sort()
+  const kb = b.trechos.map(chave).sort()
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i])
+}
+
+/**
+ * DE ONDE PARA ONDE cada instante da narracao velha foi na nova: os pares
+ * (tempo velho, tempo novo) das pontas de cada pedaco da gravacao que esta nas
+ * duas. Um instante da gravacao crua tem um lugar so em cada edicao; o tempo
+ * final e o lugar dele na linha (a 100%) dividido pela velocidade. O que nao
+ * casa (pedaco cortado, silencio) fica entre as ancoras, proporcional (ver
+ * mapaDeTempo). O mesmo trecho (pelo id) vem primeiro: um pedaco duplicado
+ * casa com o seu, e nao com a copia.
+ */
+export function ancorasEntreTempos(velhos: TemposDaSaida, novos: TemposDaSaida): [number, number][] {
+  const fv = fatorDaVelocidade(velhos)
+  const fn = fatorDaVelocidade(novos)
+  const mesmos: [number, number][] = []
+  const outros: [number, number][] = []
+  for (const v of velhos.trechos) {
+    for (const n of novos.trechos) {
+      if (v.fonte !== n.fonte) continue
+      const a = Math.max(v.de, n.de)
+      const b = Math.min(v.ate, n.ate)
+      if (b - a < MENOR_TRECHO_SEC) continue
+      const lista = v.id !== undefined && v.id === n.id ? mesmos : outros
+      for (const r of [a, b]) lista.push([(v.em + r - v.de) / fv, (n.em + r - n.de) / fn])
+    }
+  }
+  return [...mesmos, ...outros]
 }
 
 /** O arquivo de uma fonte: a gravacao principal ou a correcao com esse id. */

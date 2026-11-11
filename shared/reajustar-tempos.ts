@@ -89,16 +89,18 @@ export function ancorasDasPalavras(velhas: readonly PalavraComTempo[], novas: re
  * O MAPA DO TEMPO: de um instante da narracao velha para o mesmo ponto da fala
  * na nova. Reta entre as palavras casadas (dentro de uma palavra, ou numa
  * pausa, o tempo anda proporcional); antes da primeira e depois da ultima, na
- * mesma proporcao das pontas. Sempre crescente: o que vinha antes continua antes.
+ * mesma proporcao das pontas. Nunca volta: o que vinha antes continua antes. Pode
+ * ficar PARADO (um pedaco que foi cortado da narracao nova cai todo num instante
+ * so); esticar a reta por cima dele empurraria o resto para o lugar errado.
  */
 export function mapaDeTempo(ancoras: readonly [number, number][], fimVelho: number, fimNovo: number): (t: number) => number {
   const pontos: [number, number][] = [[0, 0]]
   for (const [v, n] of [...ancoras].sort((p, q) => p[0] - q[0])) {
     const ultimo = pontos[pontos.length - 1]!
-    if (v > ultimo[0] + 1e-6 && n > ultimo[1] + 1e-6) pontos.push([v, n])
+    if (v > ultimo[0] + 1e-6 && n >= ultimo[1] - 1e-9) pontos.push([v, n])
   }
   const ultimo = pontos[pontos.length - 1]!
-  if (fimVelho > ultimo[0] + 1e-6 && fimNovo > ultimo[1] + 1e-6) pontos.push([fimVelho, fimNovo])
+  if (fimVelho > ultimo[0] + 1e-6 && fimNovo >= ultimo[1] - 1e-9) pontos.push([fimVelho, fimNovo])
   const proporcao = fimVelho > 0 ? fimNovo / fimVelho : 1
   return (t: number): number => {
     if (t <= 0) return 0
@@ -122,6 +124,30 @@ export function trechoNosTemposNovos<T extends { start: number; end: number; par
     start: mapa(trecho.start),
     end: mapa(trecho.end),
     ...(trecho.partes ? { partes: trecho.partes.map((p) => ({ ...p, start: mapa(p.start), end: mapa(p.end) })) } : {}),
+  }
+}
+
+/**
+ * A TRANSCRICAO levada para os tempos novos, sem ouvir de novo: as mesmas
+ * palavras, na mesma ordem (os cortes dentro dos trechos sao posicoes de
+ * palavra e continuam valendo), so que nos instantes da narracao nova.
+ */
+export function transcricaoNosTemposNovos<
+  T extends {
+    words: { start: number; end: number }[]
+    segments: { start: number; end: number }[]
+    cutCandidates: number[]
+  },
+>(transcricao: T, mapa: (t: number) => number): T {
+  const par = <P extends { start: number; end: number }>(p: P): P => {
+    const start = mapa(p.start)
+    return { ...p, start, end: Math.max(start, mapa(p.end)) }
+  }
+  return {
+    ...transcricao,
+    words: transcricao.words.map(par),
+    segments: transcricao.segments.map(par),
+    cutCandidates: [...new Set(transcricao.cutCandidates.map((c) => Math.round(mapa(c) * 1000) / 1000))].sort((a, b) => a - b),
   }
 }
 
