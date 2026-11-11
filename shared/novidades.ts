@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.2.1',
+    itens: [
+      'Cenas atrasadas depois de refazer o áudio: se você deu "Pronto" no Áudio, voltou, acelerou (ou cortou) e deu "Pronto" de novo, as frases eram sincronizadas com os tempos da narração anterior, e as cenas iam ficando cada vez mais atrasadas em relação à voz. Agora cada narração nova é ouvida de novo.',
+      'Projeto que já ficou assim: ao abrir, o Dangai avisa e oferece "Acertar os tempos". Ele ouve a narração de agora e leva as frases, as cenas, as legendas e os sons para o tempo certo, sem trocar nenhuma cena escolhida. Também tem o comando "Acertar os tempos das cenas com a narração" no Ctrl+K.',
+    ],
+  },
+  {
     versao: '2.2.0',
     itens: [
       'Efeitos do trecho funcionando: escolher Bip, Voz fina, Robô e os outros agora já muda o som do play. Antes, o play continuava tocando o som de antes até você cortar alguma coisa.',

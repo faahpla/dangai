@@ -4,7 +4,8 @@ import { temDadosDeModulo } from '@shared/contract'
 import { repararMetadesDeBaixo } from '@shared/indices'
 import { chavesDesconhecidas, semExtensaoDeProjeto, versaoParaGravar, type ProjectFile } from '@shared/project-file'
 import { avisar } from '../aviso'
-import { perguntarTexto } from '../pergunta'
+import { perguntar, perguntarTexto } from '../pergunta'
+import { temposDeOutraNarracao } from '@shared/reajustar-tempos'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 import { semSujar } from '../quiet'
 import type { SetState } from './apoio'
@@ -206,6 +207,7 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
     // Abriu com ressalva (um clipe mesclado no lugar do pedaco): avisa, sem impedir.
     if (result.value.avisos?.length) set({ error: result.value.avisos.join(' ') })
     emitir('abrirProjeto', { path: get().projectPath })
+    void oferecerAcertoDosTempos(get)
   },
 
   checkAutosave: async () => {
@@ -246,6 +248,7 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
     // Abriu com ressalva (um clipe mesclado no lugar do pedaco): avisa, sem impedir.
     if (result.value.avisos?.length) set({ error: result.value.avisos.join(' ') })
     emitir('abrirProjeto', { path: get().projectPath })
+    void oferecerAcertoDosTempos(get)
   },
 
   discardAutosave: async () => {
@@ -432,4 +435,24 @@ async function applyProjectFile(
       hasAutosave: false,
     })
   })
+}
+
+/*
+ * O PROJETO ABRIU COM AS CENAS FORA DO TEMPO DA NARRACAO: as frases foram
+ * medidas numa versao anterior dela (o caso do ajk -- "Pronto" a 100%, depois a
+ * 115%, e "esta tudo atrasado"). A conta e a mesma de sempre: as palavras nao
+ * cabem no audio de agora. O Dangai oferece acertar; nada muda sem o ok dele.
+ */
+async function oferecerAcertoDosTempos(get: GetProjeto): Promise<void> {
+  const s = get()
+  if (!s.audio || !s.scriptBlocks || !s.transcript || s.transcriptTravado) return
+  if (!temposDeOutraNarracao(s.transcript.words, s.audio.durationSec)) return
+  const sim = await perguntar({
+    titulo: 'As cenas estão fora do tempo da narração',
+    texto:
+      'As frases deste projeto foram medidas numa versão anterior da narração (de antes de acelerar ou de cortar o áudio). Por isso as cenas ficam cada vez mais atrasadas em relação à voz. O Dangai pode ouvir a narração de agora e acertar os tempos. As cenas que você escolheu e os ajustes de cada uma continuam iguais.',
+    sim: 'Acertar os tempos',
+    nao: 'Agora não',
+  })
+  if (sim) await get().acertarTemposComANarracao()
 }

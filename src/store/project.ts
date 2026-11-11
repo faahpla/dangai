@@ -827,6 +827,12 @@ export interface ProjectState {
   clearBlockCuts: (blockIndex: number) => void
   /** Joga o roteiro montado no projeto: cada frase dividida entre as cenas dela. */
   applyBlockClips: () => Promise<void>
+  /**
+   * As frases foram medidas numa versao ANTERIOR da narracao (antes de acelerar
+   * ou cortar): ouve a de agora, leva os tempos para ela e remonta com as mesmas
+   * cenas. Ver @shared/reajustar-tempos.
+   */
+  acertarTemposComANarracao: () => Promise<void>
   analyze: () => Promise<void>
   reorderImages: (images: ImageAsset[]) => void
   removeImage: (id: string) => void
@@ -1303,6 +1309,14 @@ export const useProject = create<ProjectState>((set, get) => ({
           playhead: 0,
           // Os tempos travados eram da narracao anterior.
           transcriptTravado: false,
+          /*
+           * A transcricao tambem: as palavras foram medidas no audio ANTERIOR. Mantida,
+           * a sincronia do roteiro a reaproveitava (para nao ouvir de novo) e as frases
+           * saiam nos tempos velhos -- o caso do ajk: "Pronto" a 100%, depois a 115%,
+           * e as cenas atrasadas cada vez mais. Mesmo caminho de arquivo nao quer dizer
+           * mesmo audio: o "Pronto" grava a narracao nova por cima da anterior.
+           */
+          transcript: null,
           scriptBlocks: null,
           activeBlock: null,
           blockClips: {},

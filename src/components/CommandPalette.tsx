@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Captions as CaptionsIcon,
+  AudioWaveform,
   FolderOpen,
   Play,
   Pause,
@@ -237,6 +238,14 @@ function useCommands(): Command[] {
         hint: dicaDoAtalho('selecao') ?? '',
         icon: LibraryIcon,
         run: () => void store().voltarParaSelecao(),
+      },
+      {
+        id: 'acertar-tempos',
+        label: 'Acertar os tempos das cenas com a narração',
+        hint: 'depois de acelerar ou cortar o áudio',
+        icon: AudioWaveform,
+        disabled: !store().scriptBlocks || !store().transcript,
+        run: () => void store().acertarTemposComANarracao(),
       },
       {
         id: 'script',

@@ -1,7 +1,8 @@
-import type { ImageAsset } from '@shared/contract'
+import { VIDEO_FPS, type ImageAsset } from '@shared/contract'
 import { juntarComOProximo, separarTrecho as separarPedacos, tirarDaFita } from '@shared/juntar'
 import { buildCaptions, imagemDaMetade } from '@shared/plan'
 import { remapearEscolhas } from '@shared/remapear-escolhas'
+import { ancorasDasPalavras, fimDaFala, legendasNosTemposNovos, mapaDeTempo, temposDeOutraNarracao, trechoNosTemposNovos } from '@shared/reajustar-tempos'
 import { herdarAjustes, reaproveitar } from '@shared/remontar'
 import {
   cabeCortePorPalavra,
@@ -17,7 +18,7 @@ import { semPassoDeDesfazer } from '../quiet'
 import { aplicarMarcacoes, planoDosBlocos } from './apoio'
 
 /** Do store do editor (ver ../project.ts): a selecao por roteiro e os blocos da Biblioteca. */
-export type FatiaDaEscolhaDeCenas = Pick<ProjectState, 'openLibraryToReplace' | 'replaceSceneWith' | 'loadScriptBlocks' | 'trocarRoteiro' | 'setActiveBlock' | 'voltarParaSelecao' | 'toggleBlockClip' | 'alternarEscolhido' | 'removerEscolhido' | 'limparEscolhidos' | 'juntarTrechos' | 'separarTrecho' | 'reorderBlockClips' | 'toggleBlockSplit' | 'duplicateBlockClip' | 'setBlockWeight' | 'removeBlockClip' | 'setBlockCut' | 'clearBlockCuts' | 'applyBlockClips'>
+export type FatiaDaEscolhaDeCenas = Pick<ProjectState, 'openLibraryToReplace' | 'replaceSceneWith' | 'loadScriptBlocks' | 'trocarRoteiro' | 'setActiveBlock' | 'voltarParaSelecao' | 'toggleBlockClip' | 'alternarEscolhido' | 'removerEscolhido' | 'limparEscolhidos' | 'juntarTrechos' | 'separarTrecho' | 'reorderBlockClips' | 'toggleBlockSplit' | 'duplicateBlockClip' | 'setBlockWeight' | 'removeBlockClip' | 'setBlockCut' | 'clearBlockCuts' | 'applyBlockClips' | 'acertarTemposComANarracao'>
 
 export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDaEscolhaDeCenas => ({
 
@@ -113,6 +114,7 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       audioPath: audio.path,
       subtitlePath,
       script,
+      // Palavras que nao cabem no audio sao de OUTRA narracao (ver reajustar-tempos): ouve de novo.
       /*
        * A transcricao da importacao vai junto.
        *
@@ -120,7 +122,7 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
        * chegar ao mesmo texto -- e a Biblioteca ficava minutos "ouvindo a
        * narracao" que ela ja tinha ouvido.
        */
-      transcript,
+      transcript: temposDeOutraNarracao(transcript?.words, audio.durationSec) ? null : transcript,
     })
 
     lendoRoteiro = pedido
@@ -190,7 +192,12 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
      * -- e se der errado, nada se perde.
      */
     set({ scriptBlocksBusy: 'Lendo o roteiro novo...' })
-    const pedido = window.dangai.scriptBlocks({ audioPath: audio.path, subtitlePath, script: texto, transcript })
+    const pedido = window.dangai.scriptBlocks({
+      audioPath: audio.path,
+      subtitlePath,
+      script: texto,
+      transcript: temposDeOutraNarracao(transcript?.words, audio.durationSec) ? null : transcript,
+    })
     lendoRoteiro = pedido
     let r
     try {
@@ -523,6 +530,69 @@ export const fatiaDaEscolhaDeCenas = (set: SetProjeto, get: GetProjeto): FatiaDa
       if (!state.blockCuts[blockIndex]) return {}
       const { [blockIndex]: _fora, ...resto } = state.blockCuts
       return { blockCuts: resto, projectDirty: true }
+    })
+  },
+
+  /*
+   * ACERTAR OS TEMPOS COM A NARRACAO (ver @shared/reajustar-tempos): as frases
+   * foram medidas numa versao anterior da narracao (antes de acelerar ou de
+   * cortar), e as cenas ficam atrasadas em relacao ao audio. Ouve a narracao de
+   * agora, leva cada tempo do jeito velho para o novo -- trechos, juncoes e
+   * legendas editadas (os cortes dentro dos trechos sao por palavra e servem
+   * como estao) -- e a linha do tempo anda junto, com as MESMAS cenas e os
+   * mesmos ajustes. Um passo de Ctrl+Z.
+   */
+  acertarTemposComANarracao: async () => {
+    const { audio, subtitlePath, script, transcript, scriptBlocks } = get()
+    if (!audio || !scriptBlocks || !transcript || lendoRoteiro) return
+    set({ busy: 'Ouvindo a narração de agora para acertar os tempos...', error: null })
+    const pedido = window.dangai.scriptBlocks({ audioPath: audio.path, subtitlePath, script, transcript: null })
+    lendoRoteiro = pedido
+    let r
+    try {
+      r = await pedido
+    } finally {
+      lendoRoteiro = null
+    }
+    if (get().audio !== audio) {
+      set({ busy: null })
+      return
+    }
+    const nova = r.ok ? r.value.transcript : null
+    if (!r.ok || !nova || nova.words.length === 0) {
+      set({ busy: null, error: `Não deu para acertar os tempos: ${r.ok ? 'a narração não foi ouvida' : r.error}` })
+      return
+    }
+    const { captions, captionsEdited, captionRules, plan, sfxManual, trilhas, sobreposicoes } = get()
+    const mapa = mapaDeTempo(ancorasDasPalavras(transcript.words, nova.words), fimDaFala(transcript.words), fimDaFala(nova.words))
+    set({
+      transcript: nova,
+      transcriptTravado: false,
+      scriptBlocks: (get().scriptBlocks ?? scriptBlocks).map((b) => trechoNosTemposNovos(b, mapa)),
+      // Os cortes dentro de um trecho sao POSICOES de palavra, nao segundos: ficam como estao.
+      captions: captionsEdited ? legendasNosTemposNovos(captions, mapa, VIDEO_FPS) : buildCaptions(nova, captionRules),
+      /*
+       * A LINHA DO TEMPO anda pelo mesmo mapa, sem remontar: remontar reabre os
+       * clipes, e um so que nao abra (medido: um .mp4 que mudou no disco) deixava
+       * tudo como estava. Cada cena fica com a imagem, a camera, a transicao e o
+       * trecho do clipe dela -- so o comeco e o fim vao para o tempo novo. Os sons
+       * e os clipes das outras faixas vao junto: ficam na mesma fala de antes.
+       */
+      plan: plan
+        ? {
+            ...plan,
+            scenes: plan.scenes.map((c, i, todas) => ({
+              ...c,
+              start: i === 0 ? 0 : mapa(c.start),
+              end: i === todas.length - 1 ? Math.max(mapa(c.start) + 0.1, audio.durationSec) : mapa(c.end),
+            })),
+          }
+        : plan,
+      sfxManual: sfxManual.map((x) => ({ ...x, at: mapa(x.at) })),
+      trilhas: trilhas.map((x) => ({ ...x, at: mapa(x.at) })),
+      sobreposicoes: sobreposicoes.map((x) => ({ ...x, at: mapa(x.at) })),
+      busy: null,
+      projectDirty: true,
     })
   },
 
