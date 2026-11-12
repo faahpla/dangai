@@ -69,6 +69,7 @@ import type { PedidoDeTitulos, PedidoDoPosRender, TextosDoPosRender, TitulosNovo
 import type {
   PedidoDeQuadro,
   PedidoDeRecorte,
+  PedidoDeSalvarQuadro,
   PedidoDeSalvar,
   PedidoDeSugestoes,
   QuadroDaThumb,
@@ -222,6 +223,8 @@ export const CANAIS = {
   fonteDoPcDaThumb: 'recap:thumb:fonte-do-pc',
   colarNaThumb: 'recap:thumb:colar',
   escolherPastaDaThumb: 'recap:thumb:escolher-pasta',
+  copiarQuadroDaThumb: 'recap:thumb:copiar-quadro',
+  salvarQuadroDaThumb: 'recap:thumb:salvar-quadro',
 
   // O motor de personagens (parte 4). Tipos em episodio.ts, descoberta.ts e
   // motor-runtime.ts; o main e electron/motor.ts, episodio/corte-fundo.ts,
@@ -445,6 +448,10 @@ export interface PonteDoRecap {
   /** Thumbnail (05/11): a imagem do Ctrl+V (copiada para <pasta>/thumb) e o dialogo da pasta das thumbs. */
   colarNaThumb(pasta: string | null): Promise<IpcResult<string | null>>
   escolherPastaDaThumb(atual: string | null): Promise<IpcResult<string | null>>
+  /** Thumbnail (12/11): o quadro cheio de uma sugestao na area de transferencia. */
+  copiarQuadroDaThumb(pedido: PedidoDeQuadro): Promise<IpcResult<boolean>>
+  /** Thumbnail (12/11): "Salvar imagem como" de uma sugestao; null = desistiu. */
+  salvarQuadroDaThumb(pedido: PedidoDeSalvarQuadro): Promise<IpcResult<string | null>>
 
   // O motor de personagens (parte 4), com os nomes do Studio.
   /** Se o motor responde (e com qual GPU) e se o AnCut HUB esta instalado. */

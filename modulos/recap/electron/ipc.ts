@@ -125,11 +125,12 @@ import { pngsDosTextos, telasDoRascunho } from './montar/textos'
 import { abrirPosRender, escreverTitulosEThumbs } from './pos-render'
 import { pedidoDeTitulosSchema, pedidoDoPosRenderSchema, type TextosDoPosRender, type TitulosNovos } from '../shared/pos-render'
 import { bytesDaFonteDoPc, fontesDoPc } from '../../thumb/electron/fontes-do-pc'
-import { colarImagem, escolherPasta } from '../../thumb/electron/area'
-import { copiarParaOProjeto, quadroDaThumb, quadroRapido, recorteDaThumb, rostosDoQuadro, salvarThumb, sugestoesDaThumb, temUpscale } from './thumb'
+import { colarImagem, copiarQuadro, escolherPasta, salvarQuadroComo } from '../../thumb/electron/area'
+import { copiarParaOProjeto, quadroDaThumb, quadroEmCache, quadroRapido, recorteDaThumb, rostosDoQuadro, salvarThumb, sugestoesDaThumb, temUpscale } from './thumb'
 import {
   pedidoDeQuadroSchema,
   pedidoDeRecorteSchema,
+  pedidoDeSalvarQuadroSchema,
   pedidoDeSalvarSchema,
   pedidoDeSugestoesSchema,
   type QuadroDaThumb,
@@ -505,6 +506,14 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[unknown], string | null>(C.colarNaThumb, async (pasta) =>
     colarImagem(join(contexto().pasta('local'), 'thumb'), z.string().max(1024).nullable().parse(pasta ?? null)),
   )
+  ctx.handle<[unknown], boolean>(C.copiarQuadroDaThumb, async (pedido) => {
+    const p = pedidoDeQuadroSchema.parse(pedido)
+    return copiarQuadro(await quadroEmCache(p.arquivo, p.t))
+  })
+  ctx.handle<[unknown], string | null>(C.salvarQuadroDaThumb, async (pedido) => {
+    const p = pedidoDeSalvarQuadroSchema.parse(pedido)
+    return salvarQuadroComo(await quadroEmCache(p.arquivo, p.t), p.nome, p.pasta)
+  })
   ctx.handle<[unknown], string | null>(C.escolherPastaDaThumb, async (atual) => escolherPasta(z.string().max(1024).nullable().parse(atual ?? null)))
   ctx.handle<[unknown], Uint8Array>(C.fonteDoPcDaThumb, async (arquivo) => {
     if (typeof arquivo !== 'string' || !arquivo || arquivo.length > 1024) throw new Error('Fonte invalida.')

@@ -101,6 +101,8 @@ const daAba: FonteDoEditor = {
     return ponte.colarNaThumb(base ? base.replace(/[\\/][^\\/]*$/, '') : null)
   },
   escolherPasta: (atual) => ponte.escolherPastaDaThumb(atual),
+  copiarQuadro: (p) => ponte.copiarQuadroDaThumb(p),
+  salvarQuadro: (p) => ponte.salvarQuadroDaThumb(p),
   corDoProjeto: () => corDaCamadaDeAjuste(nucleo().ler().sobreposicoes),
   salvar: (png, modo, pasta) => ponte.salvarThumb({ video: usePosRender.getState().outputPath ?? '', png, modo, pasta }),
 }

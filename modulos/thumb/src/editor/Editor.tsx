@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { create } from 'zustand'
 import {
   ArrowUpDown,
@@ -877,23 +878,100 @@ export function GradeDeSugestoes({
   if (erro) return <Aviso>{erro}</Aviso>
   if (!sugestoes || sugestoes.length === 0) return <p className="text-[12px] text-ink-3">{vazio}</p>
   return (
-    <ul className="grid grid-cols-4 gap-2" data-thumb="sugestoes">
-      {sugestoes.map((s) => (
-        <li key={`${s.arquivo}|${s.t}`}>
-          <CartaoDaSugestao s={s} escolhida={atual?.arquivo === s.arquivo && Math.abs(atual.t - s.t) < 0.01} />
-        </li>
-      ))}
-    </ul>
+    <div className="flex flex-col gap-1.5">
+      <ul className="grid grid-cols-4 gap-2" data-thumb="sugestoes">
+        {sugestoes.map((s) => (
+          <li key={`${s.arquivo}|${s.t}`}>
+            <CartaoDaSugestao s={s} escolhida={atual?.arquivo === s.arquivo && Math.abs(atual.t - s.t) < 0.01} />
+          </li>
+        ))}
+      </ul>
+      <AvisoDaSugestao />
+    </div>
+  )
+}
+
+function AvisoDaSugestao() {
+  const aviso = useLoja()((s) => s.avisoDaSugestao)
+  return aviso ? (
+    <p className="text-[11px] text-ink-3" data-thumb="aviso-da-sugestao">
+      {aviso}
+    </p>
+  ) : null
+}
+
+/**
+ * (12/11) O BOTAO DIREITO numa sugestao, pedido do Levi: "Copiar imagem" (para o
+ * Ctrl+V em outro lugar) e "Salvar imagem como...", sempre do quadro CHEIO, nao
+ * da miniatura. Fecha ao clicar fora, no Esc ou ao rolar.
+ */
+function MenuDaSugestao({ s, x, y, fechar }: { s: SugestaoNaTela; x: number; y: number; fechar: () => void }) {
+  const useThumb = useLoja()
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') fechar()
+    }
+    window.addEventListener('keydown', tecla)
+    window.addEventListener('scroll', fechar, true)
+    window.addEventListener('blur', fechar)
+    return () => {
+      window.removeEventListener('keydown', tecla)
+      window.removeEventListener('scroll', fechar, true)
+      window.removeEventListener('blur', fechar)
+    }
+  }, [fechar])
+  const item = (texto: string, acao: () => void, dica?: string) => (
+    <button
+      type="button"
+      onClick={() => {
+        fechar()
+        acao()
+      }}
+      className="flex w-full items-center justify-between gap-6 rounded-[3px] px-2.5 py-1.5 text-left text-[12px] text-ink-1 hover:bg-white/10"
+    >
+      {texto}
+      {dica && <span className="text-[10px] text-ink-3">{dica}</span>}
+    </button>
+  )
+  return createPortal(
+    <>
+      <div
+        className="fixed inset-0 z-[90]"
+        onPointerDown={fechar}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          fechar()
+        }}
+      />
+      <div
+        className="glass fixed z-[91] min-w-[200px] rounded-md p-1 shadow-lg"
+        style={{ left: Math.min(x, window.innerWidth - 210), top: Math.min(y, window.innerHeight - 80) }}
+        data-thumb="menu-da-sugestao"
+      >
+        {item('Copiar imagem', () => void useThumb.getState().copiarSugestao(s), 'para o Ctrl+V')}
+        {item('Salvar imagem como...', () => void useThumb.getState().salvarSugestao(s))}
+      </div>
+    </>,
+    document.body,
   )
 }
 
 function CartaoDaSugestao({ s, escolhida }: { s: SugestaoNaTela; escolhida: boolean }) {
   const useThumb = useLoja()
+  const podeMenu = useThumb((st) => st.podeMenuNaSugestao)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const rosto = Math.max(0, ...(s.rostos ?? []).map((r) => r.w))
   return (
+    <>
+    {menu && <MenuDaSugestao s={s} x={menu.x} y={menu.y} fechar={() => setMenu(null)} />}
     <button
       type="button"
       onClick={() => void useThumb.getState().usarSugestao(s)}
+      onContextMenu={(e) => {
+        if (!podeMenu) return
+        e.preventDefault()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
       title={`${s.rotulo}${s.noVideo !== null ? ` - em ${formatarTempo(s.noVideo)} do video` : ''}${rosto > 0 ? ` - rosto de ${Math.round(rosto * 100)}% da largura` : ' - sem rosto achado'}`}
       className={[
         'group relative block aspect-video w-full overflow-hidden rounded-sm border bg-black/40 transition-colors',
@@ -915,6 +993,7 @@ function CartaoDaSugestao({ s, escolhida }: { s: SugestaoNaTela; escolhida: bool
         {s.noVideo !== null ? formatarTempo(s.noVideo) : s.rotulo}
       </span>
     </button>
+    </>
   )
 }
 

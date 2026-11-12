@@ -2015,6 +2015,13 @@ export const pedidoDeQuadroSchema = z.object({
 })
 export type PedidoDeQuadro = z.infer<typeof pedidoDeQuadroSchema>
 
+/** (12/11) "Salvar imagem como" de uma sugestao: o quadro cheio, com o nome e a pasta sugeridos. */
+export const pedidoDeSalvarQuadroSchema = pedidoDeQuadroSchema.extend({
+  nome: z.string().min(1).max(255),
+  pasta: z.string().max(1024).nullable(),
+})
+export type PedidoDeSalvarQuadro = z.infer<typeof pedidoDeSalvarQuadroSchema>
+
 /** O quadro tirado (em cache no perfil): os bytes para a previa e o tamanho de verdade. */
 export interface QuadroDaThumb {
   largura: number

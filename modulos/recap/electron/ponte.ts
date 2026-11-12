@@ -101,6 +101,8 @@ export const criarPonteDoRecap = (({ invocar, assinar }) => {
     fonteDoPcDaThumb: (arquivo) => invocar(C.fonteDoPcDaThumb, arquivo),
     colarNaThumb: (pasta) => invocar(C.colarNaThumb, pasta),
     escolherPastaDaThumb: (atual) => invocar(C.escolherPastaDaThumb, atual),
+    copiarQuadroDaThumb: (pedido) => invocar(C.copiarQuadroDaThumb, pedido),
+    salvarQuadroDaThumb: (pedido) => invocar(C.salvarQuadroDaThumb, pedido),
     miniaturaDaThumb: (pedido) => invocar(C.miniaturaDaThumb, pedido),
 
     statusDoMotor: () => invocar(C.statusDoMotor),

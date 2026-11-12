@@ -16,6 +16,7 @@ import {
 import {
   pedidoDeQuadroSchema,
   pedidoDeRecorteSchema,
+  pedidoDeSalvarQuadroSchema,
   pedidoDeSalvarSchema,
   type CenaDoVideo,
   type QuadroDaThumb,
@@ -26,7 +27,7 @@ import {
 } from '../shared/thumb'
 import { contexto } from './contexto'
 import { bytesDaFonteDoPc, fontesDoPc } from './fontes-do-pc'
-import { colarImagem, escolherPasta } from './area'
+import { colarImagem, copiarQuadro, escolherPasta, salvarQuadroComo } from './area'
 import { copiarParaOProjeto, criarEditorNoMain, espalhar, IMAGENS_DA_THUMB, quadroRapido, salvarPngEm, salvarThumb, temUpscale, videoDoProjeto } from './editor'
 import { motivoSemMotor, motorDeRostos } from './motor'
 
@@ -82,6 +83,14 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[unknown], string | null>(C.colar, async (projeto) => {
     const p = typeof projeto === 'string' && projeto.length <= 1024 ? projeto : null
     return colarImagem(join(contexto().pasta('local'), 'cache'), p)
+  })
+  ctx.handle<[unknown], boolean>(C.copiarQuadro, async (p) => {
+    const pedido = pedidoDeQuadroSchema.parse(p)
+    return copiarQuadro(await editor.quadroEmCache(pedido.arquivo, pedido.t))
+  })
+  ctx.handle<[unknown], string | null>(C.salvarQuadro, async (p) => {
+    const pedido = pedidoDeSalvarQuadroSchema.parse(p)
+    return salvarQuadroComo(await editor.quadroEmCache(pedido.arquivo, pedido.t), pedido.nome, pedido.pasta)
   })
   ctx.handle<[unknown], string | null>(C.escolherPasta, async (atual) => escolherPasta(typeof atual === 'string' && atual.length <= 1024 ? atual : null))
   ctx.handle<[unknown], Uint8Array>(C.fonteDoPc, async (arquivo) => {

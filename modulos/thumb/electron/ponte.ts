@@ -26,6 +26,8 @@ export const criarPonteDaThumb = (({ invocar }) => {
     fonteDoPc: (arquivo) => invocar(C.fonteDoPc, arquivo),
     colar: (projeto) => invocar(C.colar, projeto),
     escolherPasta: (atual) => invocar(C.escolherPasta, atual),
+    copiarQuadro: (p) => invocar(C.copiarQuadro, p),
+    salvarQuadro: (p) => invocar(C.salvarQuadro, p),
   }
   return ponte
 }) satisfies CriarPonte

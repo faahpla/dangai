@@ -12,6 +12,7 @@ import {
   type MedirTexto,
   type PedidoDeQuadro,
   type PedidoDeRecorte,
+  type PedidoDeSalvarQuadro,
   type QuadroDaThumb,
   type RecorteDaThumb,
   type ResultadoDoSalvar,
@@ -116,6 +117,10 @@ export interface FonteDoEditor {
   colar?(): Promise<IpcResult<string | null>>
   /** O dialogo da pasta das thumbs (null = desistiu); sem isto, nao ha "Salvar em". */
   escolherPasta?(atual: string | null): Promise<IpcResult<string | null>>
+  /** (12/11) Botao direito na sugestao: o quadro cheio na area de transferencia; sem isto, o menu nao aparece. */
+  copiarQuadro?(p: PedidoDeQuadro): Promise<IpcResult<boolean>>
+  /** (12/11) Botao direito na sugestao: "Salvar imagem como" (null = desistiu). */
+  salvarQuadro?(p: PedidoDeSalvarQuadro): Promise<IpcResult<string | null>>
   /** A cor da camada de ajuste do projeto aberto (a da Edicao rapida, senao a maior); null = nao ha. */
   corDoProjeto?(): AjusteDeCor | null
 }
@@ -154,6 +159,14 @@ export interface EstadoDoEditor {
   /** Poe uma imagem no slot escolhido (sugestao, quadro do video ou arquivo). */
   porImagem(img: ImagemDaThumb, slot?: 0 | 1): Promise<void>
   usarSugestao(s: SugestaoNaTela): Promise<void>
+  /** (12/11) Botao direito: o quadro cheio da sugestao vai para a area de transferencia. */
+  copiarSugestao(s: SugestaoNaTela): Promise<void>
+  /** (12/11) Botao direito: "Salvar imagem como" do quadro cheio. */
+  salvarSugestao(s: SugestaoNaTela): Promise<void>
+  /** O que o botao direito fez ("Imagem copiada", o erro); some sozinho. */
+  avisoDaSugestao: string | null
+  /** A fonte sabe copiar e salvar o quadro (o botao direito aparece). */
+  podeMenuNaSugestao: boolean
   /** O instante `t` do video, tirado LIMPO da cena de origem (sem a legenda queimada); `metade` no grid. */
   usarQuadroDoVideo(t: number, metade?: 'a' | 'b'): Promise<void>
   usarArquivo(): Promise<void>
@@ -273,6 +286,12 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
   ]
 
   const loja: LojaDoEditor = create<EstadoDoEditor>((set, get) => {
+    let avisoAte: ReturnType<typeof setTimeout> | null = null
+    function avisar(texto: string): void {
+      set({ avisoDaSugestao: texto })
+      if (avisoAte) clearTimeout(avisoAte)
+      avisoAte = setTimeout(() => set({ avisoDaSugestao: null }), 3500)
+    }
     function gravarAgora(): void {
       if (gravarDepois) clearTimeout(gravarDepois)
       gravarDepois = null
@@ -477,6 +496,8 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
       fontesDoPcProntas: 0,
       pastaDeSalvar: lerPastaDeSalvar(),
       avisoDoColar: null,
+      avisoDaSugestao: null,
+      podeMenuNaSugestao: Boolean(fonte.copiarQuadro && fonte.salvarQuadro),
       lerCorDoProjeto: fonte.corDoProjeto ? () => fonte.corDoProjeto!() : null,
       listarFontesDoPc: fonte.fontesDoPc
         ? async () => {
@@ -575,6 +596,22 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
       },
 
       usarSugestao: async (s) => get().porImagem(imagemDaSugestao(s)),
+
+      copiarSugestao: async (s) => {
+        if (!fonte.copiarQuadro) return
+        const r = await fonte.copiarQuadro({ arquivo: s.arquivo, t: s.t }).catch((e: unknown) => ({ ok: false as const, error: String(e) }))
+        avisar(r.ok ? 'Imagem copiada: é só dar Ctrl+V onde quiser.' : r.error)
+      },
+
+      salvarSugestao: async (s) => {
+        if (!fonte.salvarQuadro) return
+        const quando = s.noVideo !== null ? `${Math.floor(s.noVideo / 60)}m${String(Math.floor(s.noVideo % 60)).padStart(2, '0')}s` : `cena ${s.ordem + 1}`
+        const r = await fonte
+          .salvarQuadro({ arquivo: s.arquivo, t: s.t, nome: `quadro ${quando}.png`, pasta: get().pastaDeSalvar })
+          .catch((e: unknown) => ({ ok: false as const, error: String(e) }))
+        if (!r.ok) avisar(r.error)
+        else if (r.value) avisar(`Salva: ${r.value.replace(/^.*[\\/]/, '')}`)
+      },
 
       usarQuadroDoVideo: async (t, metade = 'a') => {
         const cena = fonte.cenaNoInstante?.(t) ?? null

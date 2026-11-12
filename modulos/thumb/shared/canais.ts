@@ -4,6 +4,7 @@ import type {
   PedidoDeQuadro,
   PedidoDeRecorte,
   PedidoDeSalvar,
+  PedidoDeSalvarQuadro,
   QuadroDaThumb,
   RecorteDaThumb,
   ResultadoDoSalvar,
@@ -37,6 +38,8 @@ export const CANAIS_DA_THUMB = {
   fonteDoPc: 'thumb:fonte-do-pc',
   colar: 'thumb:colar',
   escolherPasta: 'thumb:escolher-pasta',
+  copiarQuadro: 'thumb:copiar-quadro',
+  salvarQuadro: 'thumb:salvar-quadro',
 } as const
 
 /** Uma fonte instalada no PC (electron/fontes-do-pc.ts): o nome de dentro do arquivo e o caminho. */
@@ -77,4 +80,8 @@ export interface PonteDaThumb {
   colar(projeto: string | null): Promise<IpcResult<string | null>>
   /** O dialogo da pasta das thumbs (null = desistiu). */
   escolherPasta(atual: string | null): Promise<IpcResult<string | null>>
+  /** (12/11) O quadro cheio de uma sugestao na area de transferencia. */
+  copiarQuadro(p: PedidoDeQuadro): Promise<IpcResult<boolean>>
+  /** (12/11) "Salvar imagem como" de uma sugestao; null = desistiu. */
+  salvarQuadro(p: PedidoDeSalvarQuadro): Promise<IpcResult<string | null>>
 }
