@@ -76,6 +76,7 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
       captionAnimationFrames: state.captionAnimationFrames,
       captionAnimationCurve: state.captionAnimationCurve,
       captionMark: state.captionMark,
+      captionPontuacao: state.captionPontuacao,
       captionShadow: state.captionShadow,
       captionStroke: state.captionStroke,
       // A URL fica de fora: ela e desta sessao e nao vale nada amanha.
@@ -382,6 +383,7 @@ async function applyProjectFile(
       captionAnimationFrames: file.captionAnimationFrames,
       captionAnimationCurve: file.captionAnimationCurve,
       captionMark: file.captionMark,
+      captionPontuacao: file.captionPontuacao,
       captionShadow: file.captionShadow,
       captionStroke: file.captionStroke,
       // Sem URL ainda; `refreshSfxManual` a repoe logo depois de abrir.

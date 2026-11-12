@@ -7,6 +7,7 @@ import {
   type CurvaDaEntrada,
   type SobreposicaoSalva,
   CAPTION_MARK_DEFAULT,
+  CAPTION_PONTUACAO_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
   CAPTION_STROKE_DEFAULT,
   CAPTION_COLOR_DEFAULT,
@@ -24,6 +25,7 @@ import {
   type Formato,
   type CaptionAnimation,
   type CaptionMark,
+  type CaptionPontuacao,
   type CaptionShadow,
   type CaptionColor,
   type ImageAsset,
@@ -411,6 +413,7 @@ export function toRenderProps(
     animationFrames?: number
     animationCurve?: CurvaDaEntrada
     mark?: CaptionMark
+    pontuacao?: CaptionPontuacao
     shadow?: CaptionShadow
     stroke?: number
     scale?: number
@@ -502,6 +505,7 @@ export function toRenderProps(
   const captionAnimationFrames = legenda.animationFrames ?? CAPTION_ANIMATION_FRAMES_DEFAULT
   const captionAnimationCurve = legenda.animationCurve ?? CURVA_DA_ENTRADA_PADRAO
   const captionMark = legenda.mark ?? CAPTION_MARK_DEFAULT
+  const captionPontuacao = legenda.pontuacao ?? CAPTION_PONTUACAO_DEFAULT
   const captionShadow = legenda.shadow ?? CAPTION_SHADOW_DEFAULT
   const captionStroke = legenda.stroke ?? CAPTION_STROKE_DEFAULT
   const captionScale = legenda.scale ?? CAPTION_SCALE_DEFAULT
@@ -522,6 +526,7 @@ export function toRenderProps(
       captionAnimationCurve,
       sobreposicoes,
       captionMark,
+      captionPontuacao,
       captionShadow,
       captionStroke,
       captionScale,
@@ -782,6 +787,7 @@ export function toRenderProps(
     captionAnimationCurve,
     sobreposicoes,
     captionMark,
+    captionPontuacao,
     captionShadow,
     captionStroke,
     captionScale,

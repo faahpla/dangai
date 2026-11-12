@@ -10,8 +10,10 @@ import {
   type CaptionBlock,
   type CaptionColor,
   type CaptionMark,
+  type CaptionPontuacao,
   type CaptionShadow,
   sombraCss,
+  textoNaLegenda,
 } from '@shared/contract'
 import { carregarFonte, CAPTION_FONT_STACK } from './fonts'
 
@@ -33,6 +35,7 @@ export function Captions({
   animationFrames,
   animationCurve,
   mark,
+  pontuacao,
   shadow,
   stroke,
   scale,
@@ -47,6 +50,8 @@ export function Captions({
   animationFrames: number
   animationCurve: CurvaDaEntrada
   mark: CaptionMark
+  /** 'limpar': so ? ! % na tela; o roteiro e as quebras de linha nao mudam. */
+  pontuacao: CaptionPontuacao
   shadow: CaptionShadow
   stroke: number
   scale: number
@@ -75,6 +80,7 @@ export function Captions({
             animationFrames={animationFrames}
             animationCurve={animationCurve}
             mark={mark}
+            pontuacao={pontuacao}
             shadow={shadow}
             stroke={stroke}
             scale={scale}
@@ -94,6 +100,7 @@ function Block({
   animationFrames,
   animationCurve,
   mark,
+  pontuacao,
   shadow,
   stroke,
   scale,
@@ -106,6 +113,8 @@ function Block({
   animationFrames: number
   animationCurve: CurvaDaEntrada
   mark: CaptionMark
+  /** 'limpar': so ? ! % na tela; o roteiro e as quebras de linha nao mudam. */
+  pontuacao: CaptionPontuacao
   shadow: CaptionShadow
   stroke: number
   scale: number
@@ -119,7 +128,8 @@ function Block({
 
   // Palavra comprida demais encolhe o suficiente para caber inteira, em vez de
   // sair pelos dois lados da tela.
-  const chars = block.words.map((word) => word.text).join(' ').length
+  const textos = block.words.map((word) => textoNaLegenda(word.text, pontuacao))
+  const chars = textos.filter(Boolean).join(' ').length
   // O tamanho que ele escolheu so vale enquanto a linha couber: passando da
   // largura, quem manda continua sendo o ajuste automatico. Por isso os dois
   // disputam no mesmo Math.min, em vez de um multiplicar o outro.
@@ -202,7 +212,7 @@ function Block({
           transformOrigin: 'center center',
         }}
       >
-        {block.words.map((word, index) => (
+        {block.words.map((word, index) => textos[index] === '' ? null : (
           <span
             key={`${word.text}-${index}`}
             /*
@@ -215,7 +225,7 @@ function Block({
                 mark === 'tudo' || index === marcada ? corDaLegenda(color) : '#FFFFFF',
             }}
           >
-            {word.text}
+            {textos[index]}
           </span>
         ))}
       </div>

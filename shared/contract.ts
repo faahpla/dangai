@@ -495,6 +495,45 @@ export type CaptionMark = z.infer<typeof captionMarkSchema>
 export const CAPTION_MARK_DEFAULT: CaptionMark = 'palavra'
 
 /**
+ * A pontuacao que aparece na legenda queimada. 'limpar' tira virgula, ponto, reticencias,
+ * dois-pontos, aspas e travessao e deixa so ? ! e %. Mexe so no que aparece na tela: o
+ * roteiro continua com a pontuacao, que segue cortando cenas e fechando linhas.
+ */
+export const CAPTION_PONTUACOES = ['manter', 'limpar'] as const
+export const captionPontuacaoSchema = z.enum(CAPTION_PONTUACOES)
+export type CaptionPontuacao = z.infer<typeof captionPontuacaoSchema>
+export const CAPTION_PONTUACAO_DEFAULT: CaptionPontuacao = 'manter'
+
+/** O que fica no 'limpar': pergunta, exclamacao e porcentagem. */
+const PONTUACAO_QUE_FICA = new Set(['?', '!', '¿', '¡', '%'])
+const LETRA_OU_NUMERO = /[\p{L}\p{N}]/u
+const DIGITO = /\p{N}/u
+const PONTUACAO = /\p{P}/u
+/** Hifen e apostrofo (reto e curvo): ficam quando estao no meio da palavra. */
+const DENTRO_DA_PALAVRA = new Set(['-', '‐', "'", '’'])
+
+/**
+ * O texto de uma palavra como aparece na legenda. Em 'limpar' sai toda pontuacao
+ * menos ? ! %, mas o que e parte da palavra fica: o hifen e o apostrofo entre letras
+ * ("guarda-chuva", "d'agua") e o ponto ou a virgula entre numeros ("1,5", "2.000").
+ * Palavra que era so pontuacao (um travessao solto) vira ''.
+ */
+export function textoNaLegenda(texto: string, pontuacao: CaptionPontuacao): string {
+  if (pontuacao === 'manter') return texto
+  const cs = [...texto]
+  return cs
+    .filter((c, i) => {
+      if (!PONTUACAO.test(c) || PONTUACAO_QUE_FICA.has(c)) return true
+      const antes = cs[i - 1] ?? ''
+      const depois = cs[i + 1] ?? ''
+      if (DENTRO_DA_PALAVRA.has(c)) return LETRA_OU_NUMERO.test(antes) && LETRA_OU_NUMERO.test(depois)
+      if (c === ',' || c === '.') return DIGITO.test(antes) && DIGITO.test(depois)
+      return false
+    })
+    .join('')
+}
+
+/**
  * Quantos frames a entrada elastica leva para assentar.
  *
  * Vira `durationInFrames` da mola do Remotion, que estica ou comprime a curva
@@ -1264,6 +1303,7 @@ export const captionStyleSchema = z.object({
   animationFrames: captionAnimationFramesSchema.catch(CAPTION_ANIMATION_FRAMES_DEFAULT).optional(),
   animationCurve: curvaDaEntradaSchema.catch(CURVA_DA_ENTRADA_PADRAO).optional(),
   mark: captionMarkSchema.catch(CAPTION_MARK_DEFAULT).optional(),
+  pontuacao: captionPontuacaoSchema.catch(CAPTION_PONTUACAO_DEFAULT).optional(),
   shadow: captionShadowSchema.catch(CAPTION_SHADOW_DEFAULT).optional(),
   stroke: captionStrokeSchema.catch(CAPTION_STROKE_DEFAULT).optional(),
 })
@@ -1748,6 +1788,8 @@ export const renderPropsSchema = z.object({
     .default([]),
   /** Cor so na palavra dita, ou na legenda inteira. */
   captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
+  /** Pontuacao na legenda: como no roteiro, ou so ? ! %. */
+  captionPontuacao: captionPontuacaoSchema.default(CAPTION_PONTUACAO_DEFAULT),
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
   captionShadow: captionShadowSchema.default(CAPTION_SHADOW_DEFAULT),
   /** Espessura do contorno preto. Zero = sem contorno. */

@@ -10,7 +10,7 @@ import {
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 
 /** Do store do editor (ver ../project.ts): o estilo da legenda, a musica, os textos do card e o metadata. */
-export type FatiaDoEstilo = Pick<ProjectState, 'toggleSfx' | 'setCard' | 'generateMetadata' | 'pickMusic' | 'clearMusic' | 'setMusicGain' | 'refreshSfx' | 'setUpdate' | 'setAppVersion' | 'toggleCaptions' | 'setCaptionColor' | 'refreshFontes' | 'setCaptionFont' | 'openFontesDir' | 'setCaptionAnimation' | 'setCaptionAnimationFrames' | 'setCaptionAnimationCurve' | 'setCaptionMark' | 'setCaptionShadow' | 'setCaptionStroke'>
+export type FatiaDoEstilo = Pick<ProjectState, 'toggleSfx' | 'setCard' | 'generateMetadata' | 'pickMusic' | 'clearMusic' | 'setMusicGain' | 'refreshSfx' | 'setUpdate' | 'setAppVersion' | 'toggleCaptions' | 'setCaptionColor' | 'refreshFontes' | 'setCaptionFont' | 'openFontesDir' | 'setCaptionAnimation' | 'setCaptionAnimationFrames' | 'setCaptionAnimationCurve' | 'setCaptionMark' | 'setCaptionPontuacao' | 'setCaptionShadow' | 'setCaptionStroke'>
 
 export const fatiaDoEstilo = (set: SetProjeto, get: GetProjeto): FatiaDoEstilo => ({
 
@@ -143,6 +143,8 @@ export const fatiaDoEstilo = (set: SetProjeto, get: GetProjeto): FatiaDoEstilo =
   },
 
   setCaptionMark: (mark) => set({ captionMark: mark }),
+
+  setCaptionPontuacao: (pontuacao) => set({ captionPontuacao: pontuacao }),
 
   setCaptionShadow: (patch) =>
     set((state) => ({ captionShadow: { ...state.captionShadow, ...patch } })),

@@ -95,6 +95,7 @@ export function Preview() {
   const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
   const captionAnimationCurve = useProject((s) => s.captionAnimationCurve)
   const captionMark = useProject((s) => s.captionMark)
+  const captionPontuacao = useProject((s) => s.captionPontuacao)
   const captionShadow = useProject((s) => s.captionShadow)
   const captionStroke = useProject((s) => s.captionStroke)
   const captionY = useProject((s) => s.captionY)
@@ -159,6 +160,7 @@ export function Preview() {
               animationFrames: captionAnimationFrames,
               animationCurve: captionAnimationCurve,
               mark: captionMark,
+              pontuacao: captionPontuacao,
               shadow: captionShadow,
               stroke: captionStroke,
               scale: captionScale,
@@ -180,6 +182,7 @@ export function Preview() {
             captionAnimationFrames,
             captionAnimationCurve,
             captionMark,
+            captionPontuacao,
             captionShadow,
             captionStroke,
             captionScale,
@@ -207,6 +210,7 @@ export function Preview() {
       captionAnimationFrames,
       captionAnimationCurve,
       captionMark,
+      captionPontuacao,
       captionShadow,
       captionStroke,
       captionScale,

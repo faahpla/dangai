@@ -6,6 +6,7 @@ import {
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_MARK_DEFAULT,
+  CAPTION_PONTUACAO_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
   CAPTION_STROKE_DEFAULT,
   CAPTION_COLOR_DEFAULT,
@@ -14,6 +15,7 @@ import {
   CURVA_DA_ENTRADA_PADRAO,
   captionAnimationSchema,
   captionMarkSchema,
+  captionPontuacaoSchema,
   captionShadowSchema,
   captionStrokeSchema,
   captionColorSchema,
@@ -253,6 +255,8 @@ export const projectFileSchema = z.object({
   ),
   /** Cor na palavra dita ou na legenda toda. Default = o de sempre. */
   captionMark: captionMarkSchema.default(CAPTION_MARK_DEFAULT),
+  /** So ? ! % na legenda, ou a pontuacao do roteiro. Default para projeto antigo. */
+  captionPontuacao: captionPontuacaoSchema.default(CAPTION_PONTUACAO_DEFAULT),
   /** A sombra do texto. Default para projeto salvo antes dela existir. */
   captionShadow: captionShadowSchema.default(CAPTION_SHADOW_DEFAULT),
   /** Espessura do contorno. Default para projeto salvo antes dela existir. */

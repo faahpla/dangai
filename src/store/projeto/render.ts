@@ -166,6 +166,7 @@ export const fatiaDoRender = (set: SetProjeto, get: GetProjeto): FatiaDoRender =
           animationFrames: get().captionAnimationFrames,
           animationCurve: get().captionAnimationCurve,
           mark: get().captionMark,
+          pontuacao: get().captionPontuacao,
           shadow: get().captionShadow,
           stroke: get().captionStroke,
           scale: get().captionScale,

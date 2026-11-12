@@ -70,6 +70,7 @@ export function Video({
   captionAnimationCurve,
   sobreposicoes,
   captionMark,
+  captionPontuacao,
   captionShadow,
   captionStroke,
   captionScale,
@@ -178,6 +179,7 @@ export function Video({
           animationFrames={captionAnimationFrames}
           animationCurve={captionAnimationCurve}
           mark={captionMark}
+          pontuacao={captionPontuacao}
           shadow={captionShadow}
           stroke={captionStroke}
           scale={captionScale}

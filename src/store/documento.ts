@@ -29,6 +29,7 @@ export const CAMPOS = [
   'captionAnimation',
   'captionAnimationFrames',
   'captionMark',
+  'captionPontuacao',
   'captionShadow',
   'captionStroke',
   // O tamanho estava fora desta lista: mudar so o tamanho nao disparava o

@@ -49,6 +49,7 @@ function estiloDe(s: ReturnType<typeof useProject.getState>): CaptionStyle {
     animation: s.captionAnimation,
     animationFrames: s.captionAnimationFrames,
     mark: s.captionMark,
+    pontuacao: s.captionPontuacao,
     shadow: s.captionShadow,
     stroke: s.captionStroke,
     // As regras do LegendAI tambem sao gosto dele, nao do video.
@@ -67,6 +68,7 @@ function mudou(a: ReturnType<typeof useProject.getState>, b: typeof a): boolean 
     a.captionAnimation !== b.captionAnimation ||
     a.captionAnimationFrames !== b.captionAnimationFrames ||
     a.captionMark !== b.captionMark ||
+    a.captionPontuacao !== b.captionPontuacao ||
     a.captionShadow !== b.captionShadow ||
     a.captionStroke !== b.captionStroke ||
     a.captionRules !== b.captionRules ||
@@ -179,6 +181,7 @@ export function aplicarEstilo(e: CaptionStyle, comFonte: boolean): void {
   if (e.animationFrames !== undefined) store.setCaptionAnimationFrames(e.animationFrames)
   if (e.animationCurve !== undefined) store.setCaptionAnimationCurve(e.animationCurve)
   if (e.mark !== undefined) store.setCaptionMark(e.mark)
+  if (e.pontuacao !== undefined) store.setCaptionPontuacao(e.pontuacao)
   if (e.shadow !== undefined) store.setCaptionShadow(e.shadow)
   if (e.stroke !== undefined) store.setCaptionStroke(e.stroke)
   if (e.regras !== undefined) store.setCaptionRules(e.regras)

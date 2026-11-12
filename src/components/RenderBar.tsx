@@ -541,6 +541,8 @@ function EstiloControl() {
   const setCaptionAnimationCurve = useProject((s) => s.setCaptionAnimationCurve)
   const captionMark = useProject((s) => s.captionMark)
   const setCaptionMark = useProject((s) => s.setCaptionMark)
+  const captionPontuacao = useProject((s) => s.captionPontuacao)
+  const setCaptionPontuacao = useProject((s) => s.setCaptionPontuacao)
   const sombra = useProject((s) => s.captionShadow)
   const setCaptionShadow = useProject((s) => s.setCaptionShadow)
   const captionStroke = useProject((s) => s.captionStroke)
@@ -654,6 +656,16 @@ function EstiloControl() {
               </Opcao>
               <Opcao ativo={captionMark === 'tudo'} onClick={() => setCaptionMark('tudo')}>
                 No texto inteiro <span className="text-ink-3">(sem marcar palavra)</span>
+              </Opcao>
+            </div>
+
+            <span className="mt-3 block text-[10px] uppercase tracking-wide text-ink-3">Pontuação</span>
+            <div className="mt-1.5 flex flex-col gap-1">
+              <Opcao ativo={captionPontuacao === 'manter'} onClick={() => setCaptionPontuacao('manter')}>
+                Como no roteiro
+              </Opcao>
+              <Opcao ativo={captionPontuacao === 'limpar'} onClick={() => setCaptionPontuacao('limpar')}>
+                Só <b>? ! %</b> <span className="text-ink-3">(tira vírgula, ponto, reticências)</span>
               </Opcao>
             </div>
 

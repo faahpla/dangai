@@ -22,6 +22,7 @@ import {
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_MARK_DEFAULT,
+  CAPTION_PONTUACAO_DEFAULT,
   CAPTION_SHADOW_DEFAULT,
   CAPTION_STROKE_DEFAULT,
   CAPTION_COLOR_DEFAULT,
@@ -44,6 +45,7 @@ import type {
   CaptionAnimation,
   CaptionColor,
   CaptionMark,
+  CaptionPontuacao,
   CaptionShadow,
   CurvePoints,
   ImageAsset,
@@ -273,6 +275,8 @@ export interface ProjectState {
   captionAnimationCurve: CurvaDaEntrada
   /** Cor so na palavra dita ('palavra', o padrao) ou na legenda toda ('tudo'). */
   captionMark: CaptionMark
+  /** 'limpar': a legenda mostra so ? ! % (o roteiro nao muda). */
+  captionPontuacao: CaptionPontuacao
   /** A sombra projetada do texto. Opacidade zero = sem sombra. */
   captionShadow: CaptionShadow
   /** Espessura do contorno preto da legenda. Zero = sem contorno. */
@@ -613,6 +617,7 @@ export interface ProjectState {
   setCaptionAnimationFrames: (frames: number) => void
   setCaptionAnimationCurve: (curva: CurvaDaEntrada) => void
   setCaptionMark: (mark: CaptionMark) => void
+  setCaptionPontuacao: (pontuacao: CaptionPontuacao) => void
   /** Ajusta um dos tres numeros da sombra. */
   setCaptionShadow: (patch: Partial<CaptionShadow>) => void
   setCaptionStroke: (px: number) => void
@@ -1059,6 +1064,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
   captionAnimationCurve: CURVA_DA_ENTRADA_PADRAO,
   captionMark: CAPTION_MARK_DEFAULT,
+  captionPontuacao: CAPTION_PONTUACAO_DEFAULT,
   captionShadow: CAPTION_SHADOW_DEFAULT,
   captionStroke: CAPTION_STROKE_DEFAULT,
   captionRules: REGRAS_DA_LEGENDA_PADRAO,
