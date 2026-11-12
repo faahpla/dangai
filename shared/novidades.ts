@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.6.0',
+    itens: [
+      'Legenda sem vírgula: no Estilo da legenda, em Pontuação, escolha "Só ? ! %". Some a vírgula, o ponto, as reticências, as aspas e o travessão do que aparece no vídeo; pergunta, exclamação e porcentagem ficam. O roteiro não muda: os cortes de cena continuam os mesmos.',
+      'Legenda maior: o Tamanho agora vai até 300%. E a palavra comprida não encolhe mais à toa: ela só diminui se fosse sair pela borda da tela.',
+    ],
+  },
+  {
     versao: '2.5.0',
     itens: [
       'Editor mais limpo: a barra de botões foi para o alto da janela, separada em grupos, e o Renderizar ficou em destaque. O play fica ao lado do tempo, na linha do tempo.',
