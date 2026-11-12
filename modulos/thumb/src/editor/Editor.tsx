@@ -1649,6 +1649,21 @@ function SecaoDoDivisor() {
               </Caixinha>
             </div>
           )}
+          {d.modelo === 'rasgo-brilho' && (
+            <div className="flex items-center gap-2" data-thumb="brilho-do-divisor">
+              <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Brilho</span>
+              <Deslizante
+                valor={d.brilho}
+                min={0}
+                max={100}
+                step={1}
+                texto={d.brilho === 0 ? 'original' : `${Math.round(d.brilho)}%`}
+                padrao={0}
+                dica="O brilho em volta do rasgo: maior e mais claro, e o meio do rasgo menos escuro. 0 = o rasgo como veio."
+                onChange={(v) => mudar({ brilho: Math.round(v) })}
+              />
+            </div>
+          )}
         </>
       )}
       <InclinacaoDaEmenda />

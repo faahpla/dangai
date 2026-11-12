@@ -416,9 +416,9 @@ async function testarDivisoresETamanho(T: typeof import('../shared/thumb'), D: t
   const { tamanho: _t, divisor: _d, ...antiga } = padrao
   const lida = T.thumbDoProjeto(JSON.parse(JSON.stringify(antiga)))
   confere(lida !== null && lida.tamanho === 1 && lida.divisor.ligado === false && lida.divisor.modelo === 'rasgo-brilho' && lida.divisor.cor === null, 'thumb salva antes (sem divisor e sem tamanho): abre com 100% e divisor desligado')
-  const ligado = { ...padrao, divisor: { ligado: true, modelo: 'slash' as const, cor: '#2fb4ff', contorno: true, inclinacao: -6 }, tamanho: 1.3 }
+  const ligado = { ...padrao, divisor: { ligado: true, modelo: 'slash' as const, cor: '#2fb4ff', contorno: true, inclinacao: -6, brilho: 40 }, tamanho: 1.3 }
   const volta = T.thumbDoProjeto(JSON.parse(JSON.stringify(ligado)))
-  confere(volta !== null && JSON.stringify(volta.divisor) === JSON.stringify(ligado.divisor) && volta.tamanho === 1.3, 'o estado (ligado, modelo, cor, tamanho) e salvo e lido de volta')
+  confere(volta !== null && JSON.stringify(volta.divisor) === JSON.stringify(ligado.divisor) && volta.tamanho === 1.3, 'o estado (ligado, modelo, cor, brilho, tamanho) e salvo e lido de volta')
   confere(T.thumbDoProjeto({ ...ligado, divisor: { ...ligado.divisor, modelo: 'raio' } }) === null && T.thumbDoProjeto({ ...ligado, tamanho: 3 }) === null, 'modelo desconhecido ou tamanho fora da faixa: nao passa')
   const preset = D.presetDe(ligado)
   const doPreset = D.thumbDoPreset(D.presetDaThumbSchema.parse(JSON.parse(JSON.stringify(preset))), T.thumbPadrao(null))

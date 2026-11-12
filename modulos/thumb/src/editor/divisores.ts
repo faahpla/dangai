@@ -6,6 +6,7 @@ import {
   PNG_DA_FORMA_DO_RASGO,
   PNG_DO_DIVISOR,
   recolorirDivisor,
+  tomDoBrilho,
   type DivisorDaThumb,
   type ModeloComPng,
   type PixelsRgba,
@@ -69,13 +70,73 @@ async function lerPixels(nome: string): Promise<PixelsRgba> {
 }
 
 function chaveDo(d: DivisorDaThumb): string {
-  return `${d.modelo}|${d.modelo === 'linha' ? '' : (d.cor ?? '')}|${d.modelo === 'linha' ? String(d.contorno) : ''}`
+  const brilho = d.modelo === 'rasgo-brilho' ? Math.round(d.brilho) : 0
+  return `${d.modelo}|${d.modelo === 'linha' ? '' : (d.cor ?? '')}|${d.modelo === 'linha' ? String(d.contorno) : ''}|${brilho}`
+}
+
+/** O azul do brilho do Rasgo com brilho original (o do MEIO.png, um pouco mais claro). */
+const BRILHO_ORIGINAL = '#2f74e0'
+
+function misturar(hex: string, alvo: [number, number, number], quanto: number): string {
+  const n = parseInt(hex.slice(1), 16)
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v, i) => Math.round(v + (alvo[i]! - v) * quanto))
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`
+}
+
+/**
+ * (12/11) O BRILHO MAIOR do Rasgo com brilho (0-100): por baixo do PNG, a forma
+ * do rasgo borrada e clara (o halo que cresce com o valor); por cima, a mesma
+ * forma, nitida, na cor do brilho com um pouco de opacidade -- o meio do rasgo
+ * fica menos escuro. Pedido do Levi comparando com o thumb de referencia.
+ */
+function comBrilho(base: HTMLCanvasElement, forma: PixelsRgba, cor: string | null, brilho: number): HTMLCanvasElement {
+  const b = Math.min(100, Math.max(0, brilho)) / 100
+  const tom = cor ? tomDoBrilho(cor) : BRILHO_ORIGINAL
+  const pintar = (cssCor: string): HTMLCanvasElement => {
+    const c = document.createElement('canvas')
+    c.width = forma.largura
+    c.height = forma.altura
+    const x = c.getContext('2d')!
+    const d = new Uint8ClampedArray(forma.dados)
+    x.putImageData(new ImageData(d as Uint8ClampedArray<ArrayBuffer>, forma.largura, forma.altura), 0, 0)
+    x.globalCompositeOperation = 'source-in'
+    x.fillStyle = cssCor
+    x.fillRect(0, 0, c.width, c.height)
+    return c
+  }
+  const halo = pintar(misturar(tom, [255, 255, 255], 0.45))
+  const miolo = pintar(tom)
+  const out = document.createElement('canvas')
+  out.width = base.width
+  out.height = base.height
+  const ctx = out.getContext('2d')!
+  // O halo e a forma ESTICADA na vertical em volta do centro (o rasgo e fino: so
+  // borrar espalha pouca cor) e borrada; duas passadas, uma larga e uma perto.
+  const centro = CENTRO_DO_DIVISOR['rasgo-brilho']
+  const esticada = (k: number): void => {
+    const h = out.height * k
+    ctx.drawImage(halo, 0, centro - centro * k, out.width, h)
+  }
+  ctx.filter = `blur(${Math.round(40 + 160 * b)}px)`
+  ctx.globalAlpha = 0.45 + 0.55 * b
+  esticada(1 + 5 * b)
+  esticada(1 + 5 * b)
+  ctx.filter = `blur(${Math.round(12 + 48 * b)}px)`
+  ctx.globalAlpha = 0.4 + 0.6 * b
+  esticada(1 + 1.5 * b)
+  ctx.filter = 'none'
+  ctx.globalAlpha = 1
+  ctx.drawImage(base, 0, 0)
+  ctx.globalAlpha = 0.75 * b
+  ctx.drawImage(miolo, 0, 0)
+  ctx.globalAlpha = 1
+  return out
 }
 
 /** Os pixels do divisor (o original, ou recolorido) num canvas do tamanho do arquivo. */
-async function montar(modelo: ModeloComPng, cor: string | null): Promise<DivisorPronto> {
+async function montar(modelo: ModeloComPng, cor: string | null, brilho = 0): Promise<DivisorPronto> {
   const png = await lerPixels(PNG_DO_DIVISOR[modelo])
-  const forma = modelo === 'rasgo-brilho' && cor ? await lerPixels(PNG_DA_FORMA_DO_RASGO) : null
+  const forma = modelo === 'rasgo-brilho' && (cor || brilho > 0) ? await lerPixels(PNG_DA_FORMA_DO_RASGO) : null
   const dados = cor ? recolorirDivisor(modelo, cor, png, forma) : new Uint8ClampedArray(png.dados)
   const canvas = document.createElement('canvas')
   canvas.width = png.largura
@@ -83,7 +144,8 @@ async function montar(modelo: ModeloComPng, cor: string | null): Promise<Divisor
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('O canvas nao abriu.')
   ctx.putImageData(new ImageData(dados as Uint8ClampedArray<ArrayBuffer>, png.largura, png.altura), 0, 0)
-  return { tipo: 'imagem', fonte: canvas, largura: png.largura, altura: png.altura, centro: CENTRO_DO_DIVISOR[modelo], faixa: FAIXA_DO_DIVISOR[modelo] }
+  const fonte = forma && brilho > 0 ? comBrilho(canvas, forma, cor, brilho) : canvas
+  return { tipo: 'imagem', fonte, largura: png.largura, altura: png.altura, centro: CENTRO_DO_DIVISOR[modelo], faixa: FAIXA_DO_DIVISOR[modelo] }
 }
 
 /** O divisor pronto para o desenho (esperando o PNG ficar pronto). null = sem divisor. */
@@ -96,7 +158,7 @@ export async function prepararDivisor(d: DivisorDaThumb | null): Promise<Divisor
   if (pronto) return pronto
   let p = preparando.get(chave)
   if (!p) {
-    p = montar(d.modelo, d.cor)
+    p = montar(d.modelo, d.cor, d.modelo === 'rasgo-brilho' ? d.brilho : 0)
       .then((m) => {
         prontos.set(chave, m)
         ultimoDoModelo.set(d.modelo, m)

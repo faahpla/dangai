@@ -50,12 +50,18 @@ export const divisorSchema = z.object({
   contorno: z.boolean(),
   /** A inclinacao da emenda e do divisor (graus, INCLINACAO_MAXIMA). Ausente (thumb e preset de antes) = 0. */
   inclinacao: z.number().min(-INCLINACAO_MAXIMA).max(INCLINACAO_MAXIMA).default(0),
+  /**
+   * (12/11) So o Rasgo com brilho: 0 = o PNG como veio; ate 100 o brilho em volta cresce e clareia,
+   * e o meio do rasgo fica menos escuro (o thumb de referencia do Levi, "o glow e maior").
+   * Ausente (thumb e preset de antes) = 0.
+   */
+  brilho: z.number().min(0).max(100).default(0),
 })
 export type DivisorDaThumb = z.infer<typeof divisorSchema>
 
 /** O padrao: desligado, o rasgo com brilho do Levi na cor original. */
 export function divisorPadrao(): DivisorDaThumb {
-  return { ligado: false, modelo: 'rasgo-brilho', cor: null, contorno: true, inclinacao: 0 }
+  return { ligado: false, modelo: 'rasgo-brilho', cor: null, contorno: true, inclinacao: 0, brilho: 0 }
 }
 
 /** Os arquivos de cada modelo (em modulos/thumb/assets/divisores). O rasgo com brilho usa o MEIO2 como a forma. */
