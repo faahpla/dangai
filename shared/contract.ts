@@ -1238,7 +1238,11 @@ export const captionYSchema = z
  */
 export const CAPTION_SCALE_DEFAULT = 1
 export const CAPTION_SCALE_MIN = 0.7
-export const CAPTION_SCALE_MAX = 1.5
+/**
+ * Ate 3x: o padrao do Dopanimes usa letra de ~110px de altura (medido num short dele,
+ * 1080x1920), mais que o antigo teto de 1,5x. Palavra que nao cabe encolhe sozinha.
+ */
+export const CAPTION_SCALE_MAX = 3
 export const captionScaleSchema = z
   .number()
   .min(CAPTION_SCALE_MIN)

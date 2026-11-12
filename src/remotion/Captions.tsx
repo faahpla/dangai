@@ -17,6 +17,30 @@ import {
 } from '@shared/contract'
 import { carregarFonte, CAPTION_FONT_STACK } from './fonts'
 
+/** Margem de cada lado da legenda e o vao entre palavras, em px do quadro. */
+const MARGEM = 80
+const VAO = 18
+/** 2% de sobra no encolher: a medida do canvas e a do layout diferem um fio, e sem
+ * folga a linha encolhida quebrava em duas e ficava minuscula. */
+const FOLGA = 0.98
+let regua: CanvasRenderingContext2D | null | undefined
+
+/**
+ * Largura da linha na fonte de verdade, no tamanho pedido: as palavras em
+ * caixa alta, os vaos entre elas e o contorno (metade para cada lado, nas
+ * pontas). null quando nao ha canvas para medir: quem chama cai na conta por
+ * letras de antes. A fonte ja esta carregada aqui -- o Video so monta a
+ * legenda depois do fontsReady.
+ */
+function larguraDaLinha(palavras: readonly string[], stack: string, tamanho: number, stroke: number): number | null {
+  if (palavras.length === 0) return 0
+  if (regua === undefined) regua = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
+  if (!regua) return null
+  regua.font = `400 ${tamanho}px ${stack}`
+  const soma = palavras.reduce((s, p) => s + regua!.measureText(p.toUpperCase()).width, 0)
+  return soma + VAO * (palavras.length - 1) + stroke
+}
+
 /**
  * Legendas queimadas no estilo de short: 2 a 4 palavras por vez, centro-inferior,
  * fonte pesada, contorno preto grosso e a palavra sendo dita colorida.
@@ -121,7 +145,7 @@ function Block({
 }) {
   // A altura vem da COMPOSICAO: a legenda desce uma fracao do quadro, e o
   // quadro deixou de ser sempre 1920.
-  const { fps, height } = useVideoConfig()
+  const { fps, height, width } = useVideoConfig()
   // useCurrentFrame dentro da Sequence e relativo a ela; as palavras carregam
   // frames absolutos, entao a comparacao volta para a base absoluta.
   const frame = useCurrentFrame() + block.from
@@ -129,11 +153,17 @@ function Block({
   // Palavra comprida demais encolhe o suficiente para caber inteira, em vez de
   // sair pelos dois lados da tela.
   const textos = block.words.map((word) => textoNaLegenda(word.text, pontuacao))
-  const chars = textos.filter(Boolean).join(' ').length
-  // O tamanho que ele escolheu so vale enquanto a linha couber: passando da
-  // largura, quem manda continua sendo o ajuste automatico. Por isso os dois
-  // disputam no mesmo Math.min, em vez de um multiplicar o outro.
-  const fontSize = FONT_SIZE * Math.min(scale, CAPTION_CHARS_PER_LINE / chars)
+  // O tamanho que ele escolheu vale enquanto a linha couber. A largura e MEDIDA na
+  // fonte de verdade (antes era contada em letras, e com letra grande "FINALMENTE"
+  // encolhia mesmo cabendo -- o short do Dopanimes deixa a palavra larga e da a
+  // mesma altura a todas). So encolhe o que passaria das margens.
+  const pedida = FONT_SIZE * scale
+  const largura = larguraDaLinha(textos.filter(Boolean), stack, pedida, stroke)
+  const util = width - 2 * MARGEM
+  const fontSize =
+    largura === null
+      ? FONT_SIZE * Math.min(scale, CAPTION_CHARS_PER_LINE / Math.max(1, textos.filter(Boolean).join(' ').length))
+      : largura > util ? (pedida * util * FOLGA) / largura : pedida
 
   const marcada = activeWordIndex(block, frame)
 
@@ -166,16 +196,17 @@ function Block({
         // Distancia do rodape. O padrao mantem os 420px de sempre; ver
         // CAPTION_Y_DEFAULT para por que 420 e nao qualquer outro numero.
         paddingBottom: y * height,
-        paddingLeft: 80,
-        paddingRight: 80,
+        paddingLeft: MARGEM,
+        paddingRight: MARGEM,
       }}
     >
       <div
         style={{
           display: 'flex',
-          flexWrap: 'wrap',
+          // Uma linha so: quem nao cabe encolhe (larguraDaLinha), nao quebra.
+          flexWrap: 'nowrap',
           justifyContent: 'center',
-          gap: '0 18px',
+          gap: `0 ${VAO}px`,
           fontFamily: stack,
           // Komika Axis tem um peso so. Pedir 800 faria o Chrome engrossar a
           // letra na marra, e o falso negrito briga com o contorno de 6px.
