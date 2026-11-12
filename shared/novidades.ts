@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.6.1',
+    itens: [
+      'Thumbnail: clique com o botão direito numa sugestão para "Copiar imagem" (e dar Ctrl+V onde quiser) ou "Salvar imagem como..." (PNG ou JPG). Sai o quadro inteiro, em tamanho cheio.',
+      'Thumbnail: o Rasgo com brilho ganhou o controle Brilho, no Divisor. Subindo, o brilho em volta fica maior e mais claro e o meio do rasgo menos escuro. Em 0 fica como antes.',
+    ],
+  },
+  {
     versao: '2.6.0',
     itens: [
       'Legenda sem vírgula: no Estilo da legenda, em Pontuação, escolha "Só ? ! %". Some a vírgula, o ponto, as reticências, as aspas e o travessão do que aparece no vídeo; pergunta, exclamação e porcentagem ficam. O roteiro não muda: os cortes de cena continuam os mesmos.',
