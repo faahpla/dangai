@@ -149,8 +149,9 @@ export function Segmentos<T>({
             aria-pressed={ligado}
             onClick={() => onChange(o.valor)}
             className={[
-              // flex-auto, e nao flex-1: sem caber, a opcao desce de linha em vez de encavalar o texto da vizinha.
-              'flex h-6 min-w-6 flex-auto items-center justify-center gap-1 whitespace-nowrap rounded-[3px] px-1.5 text-[11px] transition-colors',
+              // min-w-fit: sem caber, a opcao desce de linha em vez de encavalar o texto da vizinha (flex-1 sozinho
+              // deixava encolher abaixo do texto). Cabendo, todas continuam da mesma largura.
+              'flex h-6 min-w-fit flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-[3px] px-1.5 text-[11px] transition-colors',
               ligado ? 'bg-accent-dim text-ink ring-1 ring-inset ring-accent' : 'text-ink-3 hover:bg-surface hover:text-ink-2',
             ].join(' ')}
           >

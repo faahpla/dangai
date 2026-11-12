@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Reorder } from 'motion/react'
 import { X } from 'lucide-react'
 import { useProject } from '@/store/project'
@@ -36,6 +37,15 @@ function Card({ image, index }: { image: ImageAsset; index: number }) {
   const selectImage = useProject((s) => s.selectImage)
   const removeImage = useProject((s) => s.removeImage)
   const isSelected = selectedScene !== null && selectedImageIndex === index
+  /*
+   * ABRIR O BLOCO SO NO CLIQUE, NUNCA NO APERTAR. A fila mora na visao geral,
+   * que so existe sem bloco escolhido: abrir o bloco no pointerdown (como era
+   * quando a fila ficava sempre na tela) trocava a visao geral pelo bloco no
+   * mesmo instante, e a fila sumia antes de o arraste comecar -- "clicou pra
+   * arrastar e fechou" (ajk, 2.5.0). Soltar perto de onde apertou e clique;
+   * longe, foi arraste.
+   */
+  const apertou = useRef<{ x: number; y: number } | null>(null)
 
   return (
     <Reorder.Item
@@ -45,7 +55,14 @@ function Card({ image, index }: { image: ImageAsset; index: number }) {
       className="shrink-0 cursor-grab active:cursor-grabbing"
     >
       <div
-        onPointerDown={() => selectImage(image.id)}
+        onPointerDown={(event) => {
+          apertou.current = { x: event.clientX, y: event.clientY }
+        }}
+        onPointerUp={(event) => {
+          const de = apertou.current
+          apertou.current = null
+          if (de && Math.hypot(event.clientX - de.x, event.clientY - de.y) < 5) selectImage(image.id)
+        }}
         className={[
           'lift group relative h-[104px] w-[59px] overflow-hidden rounded-sm border bg-elevated',
           isSelected ? 'border-accent' : 'border-line',

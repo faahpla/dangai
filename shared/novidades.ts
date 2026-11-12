@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.6.2',
+    itens: [
+      'Mudar a ordem das cenas voltou a funcionar: sem nenhum bloco escolhido (aperte Esc), arraste as cenas da fila no alto. Clicar sem arrastar abre o bloco daquela cena. Na 2.5.0, só de apertar o mouse o bloco abria e a fila sumia antes de dar para arrastar.',
+      'Tela menor: com um áudio escolhido, o volume e os fades não ficam mais por cima do tempo e dos botões da linha do tempo. Quando não cabem, eles descem para uma linha própria.',
+      'O preview de cima a baixo agora aparece para todo mundo. Quem já tinha arrastado alguma divisória continuava com o preview ao lado do bloco. Para voltar ao jeito antigo, use o botão de layout no alto.',
+    ],
+  },
+  {
     versao: '2.6.1',
     itens: [
       'Thumbnail: clique com o botão direito numa sugestão para "Copiar imagem" (e dar Ctrl+V onde quiser) ou "Salvar imagem como..." (PNG ou JPG). Sai o quadro inteiro, em tamanho cheio.',

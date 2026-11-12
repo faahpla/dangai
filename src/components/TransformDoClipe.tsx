@@ -257,11 +257,13 @@ function RitmoDasChaves({
    * painel e os nomes encavalavam.
    */
   return (
-    <div
-      className="flex flex-col gap-1.5 border-t border-line pt-2.5"
-      title="Quanto do movimento já aconteceu ao longo de cada passagem de uma chave para a próxima. Acima da caixa, passa do ponto e volta."
-    >
-      <span className="text-[10px] font-medium text-ink-3">Ritmo da animação</span>
+    <div className="flex flex-col gap-1.5 border-t border-line pt-2.5">
+      <span
+        className="cursor-help self-start text-[10px] font-medium text-ink-3"
+        title="Quanto do movimento já aconteceu ao longo de cada passagem de uma chave para a próxima. Acima da caixa, passa do ponto e volta."
+      >
+        Ritmo da animação
+      </span>
       {i >= 0 && chaves.length > 2 && (
         <div className="flex" title="A curva de todas as passagens, ou só da passagem em que a agulha está">
           <Segmentos

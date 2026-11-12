@@ -3,7 +3,7 @@ import { Film, ImagePlus, Library as LibraryIcon, LocateFixed, Maximize2, Pause,
 import { isVisual, type TiraDaCena } from '@shared/channels'
 import { VIDEO_FPS, type ImageAsset, type Scene } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
-import { Chip, Field } from './painel'
+import { Chip } from './painel'
 
 /**
  * A coluna estreita: QUAL CENA e esta, e de onde ela parte.

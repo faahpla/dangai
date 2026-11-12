@@ -734,7 +734,7 @@ export function Timeline() {
   )
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-2">
+    <section className="@container flex min-h-0 flex-1 flex-col gap-2">
       {/*
         A BARRA DA LINHA DO TEMPO: o play e o tempo na esquerda (o play morava
         na barra de cima, longe do tempo que ele anda), o clipe escolhido no
@@ -763,8 +763,15 @@ export function Timeline() {
           "quando eu der zoom eu quero que essas configuracoes de volume
           acompanhem o zoom e fiquem visiveis". Aqui eles ficam sempre a vista,
           com qualquer zoom e qualquer rolagem.
+
+          So no meio da barra quando ela e larga: com o preview de cima a baixo
+          a linha do tempo ficou mais estreita, e numa tela de 1366 o volume e
+          os fades passavam por cima do tempo e do Selecao. Estreita, eles
+          descem para uma linha propria, logo abaixo (ver depois do header).
         */}
-        <ControlesDoEscolhido />
+        <div className="hidden min-w-0 @min-[1340px]:flex">
+          <ControlesDoEscolhido />
+        </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
           <span className="mr-2 text-[11px] text-ink-3">
@@ -827,6 +834,10 @@ export function Timeline() {
           )}
         </div>
       </header>
+
+      <div className="flex justify-center empty:hidden @min-[1340px]:hidden">
+        <ControlesDoEscolhido />
+      </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-md border border-line bg-surface">
       {/*

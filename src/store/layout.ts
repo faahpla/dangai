@@ -33,21 +33,31 @@ const CHAVE = 'dangai.layout'
  * cresceria 44 px e o preview encolheria o mesmo tanto -- na primeira abertura
  * a altura guardada perde a barra, uma vez so (`versao`).
  */
-const VERSAO = 2
+const VERSAO = 3
 const ALTURA_DA_BARRA_ANTIGA = 44
 
 function ler(): Layout {
   try {
     const bruto = JSON.parse(localStorage.getItem(CHAVE) ?? 'null') as (Partial<Layout> & { versao?: number }) | null
     if (!bruto) return LAYOUT_PADRAO
-    const antigo = bruto.versao !== VERSAO
+    const versao = typeof bruto.versao === 'number' ? bruto.versao : 1
+    const antigo = versao !== VERSAO
     const layout: Layout = {
+      // A barra saiu da parte de baixo na versao 2 do layout (2.5.0).
       alturaDeBaixo:
         typeof bruto.alturaDeBaixo === 'number'
-          ? Math.max(150, bruto.alturaDeBaixo - (antigo ? ALTURA_DA_BARRA_ANTIGA : 0))
+          ? Math.max(150, bruto.alturaDeBaixo - (versao < 2 ? ALTURA_DA_BARRA_ANTIGA : 0))
           : LAYOUT_PADRAO.alturaDeBaixo,
       larguraDoBloco: typeof bruto.larguraDoBloco === 'number' ? bruto.larguraDoBloco : LAYOUT_PADRAO.larguraDoBloco,
-      previewAoLado: typeof bruto.previewAoLado === 'boolean' ? bruto.previewAoLado : LAYOUT_PADRAO.previewAoLado,
+      /*
+       * VERSAO 3 (2.6.2): o preview de cima a baixo vale para todo mundo uma
+       * vez. Arrastar uma divisoria guardava o "ao lado" do padrao antigo junto
+       * com a altura, e essa pessoa nunca via o jeito novo -- que as novidades
+       * da 2.5.0 prometem. Quem quiser o antigo volta pelo botao de layout, e
+       * dai em diante a escolha fica.
+       */
+      previewAoLado:
+        versao < 3 ? false : typeof bruto.previewAoLado === 'boolean' ? bruto.previewAoLado : LAYOUT_PADRAO.previewAoLado,
     }
     if (antigo) gravar(layout)
     return layout
