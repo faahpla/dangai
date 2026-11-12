@@ -7,7 +7,6 @@ import { AjustesDasCenas } from './components/AjustesDasCenas'
 import { SecaoDaVoz } from './components/AjustesDeVoz'
 import { BoasVindas, boasVindasAoLigar, gerarRecap } from './components/BoasVindas'
 import { BotaoGerarRecap } from './components/BotaoGerarRecap'
-import { ControleDaMusica } from './components/ControleDaMusica'
 import { BotaoDaEdicaoRapida, rodarEdicaoRapida } from './components/EdicaoRapida'
 import { NaBarraDeStatus } from './components/NaBarraDeStatus'
 import { GerarRecap } from './components/GerarRecap'
@@ -120,12 +119,8 @@ export const recap: ModuloDoRenderer = {
         !(s.render !== null && ['bundling', 'rendering', 'muxing'].includes(s.render.stage)),
     )
     if (!pronto) return null
-    return (
-      <>
-        <BotaoDaEdicaoRapida />
-        <ControleDaMusica />
-      </>
-    )
+    // A Musica saiu da barra (pedido do Faah, nov/2026: "inutil"); a Edicao rapida continua pondo a musica.
+    return <BotaoDaEdicaoRapida />
   },
 
   // O "Video pronto" (a tela pos-render de novo) mora aqui: na barra de render ele empurrava o Renderizar para fora.
