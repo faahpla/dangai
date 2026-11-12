@@ -2,9 +2,10 @@ import { useRef, useState } from 'react'
 import { ArrowLeftRight } from 'lucide-react'
 import { useProject } from '@/store/project'
 import { EditorDaEmenda } from './EditorDeTransicao'
+import { botaoDaBarra } from './barra'
 
 /**
- * O BOTAO "TRANSICAO" na barra acima da linha do tempo.
+ * O BOTAO "TRANSICAO" na barra de cima do editor.
  *
  * Abre o mesmo editor do botao direito nas emendas: com um bloco escolhido,
  * a entrada ou a saida dele; sem bloco, o corte mais perto da agulha. As
@@ -48,17 +49,14 @@ export function BotaoDeTransicao() {
             return
           }
           const r = botao.current?.getBoundingClientRect()
-          // Abre para cima: o botao mora na barra logo acima da linha do tempo.
-          setAberto(r ? { x: r.left + r.width / 2, y: r.top - 8 } : { x: 400, y: 300 })
+          // Abre para baixo: o botao mora na barra do alto da janela.
+          setAberto(r ? { x: r.left + r.width / 2, y: r.bottom - 4 } : { x: 400, y: 300 })
         }}
         title="Transições: Zoom, Light, Pan... (clique, ou botão direito num corte da linha do tempo)"
-        className={[
-          'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-          aberto ? 'border-line-strong bg-elevated text-ink' : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-        ].join(' ')}
+        className={botaoDaBarra(aberto ? 'aberto' : 'normal')}
       >
-        <ArrowLeftRight size={12} strokeWidth={1.5} className={temAlgo ? 'text-accent' : undefined} />
-        Transição
+        <ArrowLeftRight size={14} strokeWidth={1.5} className={temAlgo ? 'text-accent' : undefined} />
+        <span className="group-data-[compacto]/barra:hidden">Transição</span>
       </button>
       {aberto && (
         <EditorDaEmenda

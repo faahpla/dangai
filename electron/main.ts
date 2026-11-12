@@ -34,6 +34,12 @@ import { MODULOS_DO_MAIN } from '../modulos/registro.main'
 
 const isDev = !app.isPackaged
 
+/*
+ * TESTE EM DEV COM O DANGAI DELE ABERTO: outra pasta de dados, para um nao
+ * gravar por cima das configuracoes e dos recentes do outro. So em dev.
+ */
+if (isDev && process.env.DANGAI_DADOS) app.setPath('userData', process.env.DANGAI_DADOS)
+
 // Antes de tudo: o que der errado daqui em diante fica no registro (logs/dangai.log).
 iniciarRegistro(app.getPath('userData'), app.getVersion())
 

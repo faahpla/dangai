@@ -11,29 +11,56 @@ import { create } from 'zustand'
  */
 
 export interface Layout {
-  /** Altura da parte de baixo (barra + linha do tempo), em px. */
+  /** Altura da parte de baixo (a linha do tempo com a barra dela), em px. */
   alturaDeBaixo: number
   /** Largura da coluna do bloco, em px. */
   larguraDoBloco: number
-  /** O preview ao lado do bloco (padrao) ou na direita, depois dos paineis. */
+  /**
+   * O preview ao lado do bloco, ou na direita (padrao desde a 2.5.0): de cima a
+   * baixo, com a linha do tempo ao lado dele, como no DaVinci.
+   */
   previewAoLado: boolean
 }
 
-export const LAYOUT_PADRAO: Layout = { alturaDeBaixo: 330, larguraDoBloco: 236, previewAoLado: true }
+export const LAYOUT_PADRAO: Layout = { alturaDeBaixo: 290, larguraDoBloco: 236, previewAoLado: false }
 
 const CHAVE = 'dangai.layout'
 
+/*
+ * A BARRA DE RENDER SUBIU para o alto da janela (2.5.0). Ela morava dentro da
+ * parte de baixo, com 44 px (botao e folga); quem tinha arrastado a divisoria
+ * guardou uma altura que contava com ela. Sem descontar, a linha do tempo
+ * cresceria 44 px e o preview encolheria o mesmo tanto -- na primeira abertura
+ * a altura guardada perde a barra, uma vez so (`versao`).
+ */
+const VERSAO = 2
+const ALTURA_DA_BARRA_ANTIGA = 44
+
 function ler(): Layout {
   try {
-    const bruto = JSON.parse(localStorage.getItem(CHAVE) ?? 'null') as Partial<Layout> | null
+    const bruto = JSON.parse(localStorage.getItem(CHAVE) ?? 'null') as (Partial<Layout> & { versao?: number }) | null
     if (!bruto) return LAYOUT_PADRAO
-    return {
-      alturaDeBaixo: typeof bruto.alturaDeBaixo === 'number' ? bruto.alturaDeBaixo : LAYOUT_PADRAO.alturaDeBaixo,
+    const antigo = bruto.versao !== VERSAO
+    const layout: Layout = {
+      alturaDeBaixo:
+        typeof bruto.alturaDeBaixo === 'number'
+          ? Math.max(150, bruto.alturaDeBaixo - (antigo ? ALTURA_DA_BARRA_ANTIGA : 0))
+          : LAYOUT_PADRAO.alturaDeBaixo,
       larguraDoBloco: typeof bruto.larguraDoBloco === 'number' ? bruto.larguraDoBloco : LAYOUT_PADRAO.larguraDoBloco,
       previewAoLado: typeof bruto.previewAoLado === 'boolean' ? bruto.previewAoLado : LAYOUT_PADRAO.previewAoLado,
     }
+    if (antigo) gravar(layout)
+    return layout
   } catch {
     return LAYOUT_PADRAO
+  }
+}
+
+function gravar({ alturaDeBaixo, larguraDoBloco, previewAoLado }: Layout): void {
+  try {
+    localStorage.setItem(CHAVE, JSON.stringify({ versao: VERSAO, alturaDeBaixo, larguraDoBloco, previewAoLado }))
+  } catch {
+    /* sem armazenamento: vale so nesta sessao */
   }
 }
 
@@ -42,12 +69,7 @@ export const useLayout = create<Layout & { mudar: (patch: Partial<Layout>) => vo
     ...ler(),
     mudar: (patch) => {
       set(patch)
-      const { alturaDeBaixo, larguraDoBloco, previewAoLado } = get()
-      try {
-        localStorage.setItem(CHAVE, JSON.stringify({ alturaDeBaixo, larguraDoBloco, previewAoLado }))
-      } catch {
-        /* sem armazenamento: vale so nesta sessao */
-      }
+      gravar(get())
     },
     restaurar: () => get().mudar(LAYOUT_PADRAO),
   }),

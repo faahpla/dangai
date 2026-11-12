@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Expand, FlipHorizontal2, RotateCcw, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { idsEscolhidos, useProject } from '@/store/project'
-import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
+import { Botaozinho, Coluna, Colunas, Deslizante, Grupo, Linha, Segmentos } from './painel'
 import { ControleDeRitmo, opcoesDeEfeito } from './SceneEdit'
 import { AjusteEdit } from './AjusteEdit'
 import { AjusteDaTransicaoCampos, PaletaDeTransicoes } from './EditorDeTransicao'
@@ -43,8 +43,8 @@ export function SobreposicaoEdit({ id }: { id: string }) {
   const toca = o.usarSec ?? o.durationSec - o.inicioSec
 
   return (
-    <div className="enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-3">
-      <div className="flex min-h-0 flex-col gap-2 overflow-y-auto pr-1">
+    <Colunas>
+      <Coluna>
         <Grupo
           titulo={`Clipe V${o.faixa + 1}`}
           acao={
@@ -100,9 +100,9 @@ export function SobreposicaoEdit({ id }: { id: string }) {
               texto={`${Math.round(o.opacidade * 100)}%`} onChange={(v) => ajustar(id, { opacidade: v })} />
           </Linha>
         </Grupo>
-      </div>
+      </Coluna>
 
-      <div className="min-h-0 overflow-y-auto pr-1">
+      <Coluna>
         <Grupo titulo="Movimento">
           <Linha label="Efeito">
             <Segmentos
@@ -136,6 +136,9 @@ export function SobreposicaoEdit({ id }: { id: string }) {
           )}
         </Grupo>
 
+      </Coluna>
+
+      <Coluna>
         {/*
           A TRANSICAO DO CLIPE: entra e sai com o mesmo motor das emendas,
           revelando o que estiver por baixo. Tambem da para arrastar uma
@@ -174,7 +177,7 @@ export function SobreposicaoEdit({ id }: { id: string }) {
             )
           })()}
         </Grupo>
-      </div>
-    </div>
+      </Coluna>
+    </Colunas>
   )
 }

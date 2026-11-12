@@ -1,7 +1,7 @@
 import { patchDoTransform, transformNaAgulha } from '@/store/transform-do-clipe'
 import { rotuloDoClipe } from '@/modulos/ganchos'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Columns2, Lock, LockOpen, Magnet, Minus, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
+import { Columns2, Lock, LockOpen, Magnet, Minus, Pause, Play, Plus, SlidersHorizontal, SquareDashedMousePointer, Volume2, X } from 'lucide-react'
 import { classifyFile, isVisual } from '@shared/channels'
 import { AJUSTE_DE_COR_PADRAO, SFX_GAIN_MAX, SFX_GAIN_MIN, VIDEO_FPS, duracaoDoTrecho } from '@shared/contract'
 import { clipesEscolhidos, idsEscolhidos, useProject, formatTimecode } from '@/store/project'
@@ -14,6 +14,7 @@ import { caminhosDoArraste } from './arrastar'
 import { CABECALHO, Cabecalho, ColunaDosCabecalhos, ControleDoClipe, GrupoDeFaixas, Linha, alinhar, alinharTrecho, type Ima } from './Faixas'
 import { duracaoMinima, limitesDaLegenda, reposicionarLegenda } from '@shared/legenda-na-timeline'
 import { EditorDaEmenda, IconeDaTransicao } from './EditorDeTransicao'
+import { botaoDaBarra, Divisoria, iconeDaBarra } from './barra'
 import {
   aplicarNaEmenda,
   ehArrasteDeTransicao,
@@ -733,12 +734,18 @@ export function Timeline() {
   )
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3">
-      <header className="flex items-center justify-between px-1">
-        <div className="flex min-w-0 items-baseline gap-3">
+    <section className="flex min-h-0 flex-1 flex-col gap-2">
+      {/*
+        A BARRA DA LINHA DO TEMPO: o play e o tempo na esquerda (o play morava
+        na barra de cima, longe do tempo que ele anda), o clipe escolhido no
+        meio, e as ferramentas das faixas na direita.
+      */}
+      <header className="flex h-9 items-center justify-between gap-3 px-1">
+        <div className="flex min-w-0 items-center gap-3">
+          <BotaoDeTocar />
           <span className="tnum text-[15px] font-medium text-ink">{formatTimecode(playhead)}</span>
-          <span className="tnum shrink-0 text-[11px] text-ink-3">
-            {duration > 0 ? formatTimecode(duration) : '--:--'}
+          <span className="tnum -ml-1 shrink-0 text-[11px] text-ink-3">
+            / {duration > 0 ? formatTimecode(duration) : '--:--'}
           </span>
           {/*
             A LEGENDA DE AGORA, por extenso.
@@ -759,8 +766,8 @@ export function Timeline() {
         */}
         <ControlesDoEscolhido />
 
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] text-ink-3">
+        <div className="flex shrink-0 items-center gap-0.5">
+          <span className="mr-2 text-[11px] text-ink-3">
             {scenes.length === 0
               ? 'sem imagens'
               : selecionados.length > 1
@@ -780,44 +787,43 @@ export function Timeline() {
               type="button"
               onClick={alternarIma}
               aria-pressed={imaLigado}
+              aria-label="Ímã"
               title={
                 imaLigado
                   ? `Ímã ligado: clipes e agulha grudam nos cortes dos blocos, nas legendas e nas bordas dos clipes. Alt solta.${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
                   : `Ímã desligado: clipes e agulha andam livres${dicaDoAtalho('ima') ? ` (${dicaDoAtalho('ima')})` : ''}`
               }
-              className={[
-                'grid size-[24px] place-items-center rounded-sm border',
-                imaLigado ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
-              ].join(' ')}
+              className={iconeDaBarra(imaLigado ? 'ligado' : 'normal')}
             >
-              <Magnet size={13} strokeWidth={1.75} />
+              <Magnet size={14} strokeWidth={1.75} />
             </button>
           )}
 
           {duration > 0 && !isRendering && (
-            <div className="flex items-center gap-1">
+            <>
+              <Divisoria />
               <button
                 type="button"
                 onClick={() => zoomAt(zoom / 1.6)}
                 disabled={zoom <= 1}
                 aria-label="Afastar"
-                className="grid size-[22px] place-items-center rounded-sm text-ink-3 hover:text-ink disabled:opacity-30"
+                title="Afastar (Ctrl+roda)"
+                className={iconeDaBarra()}
               >
-                <Minus size={12} strokeWidth={1.5} />
+                <Minus size={13} strokeWidth={1.5} />
               </button>
-              <span className="tnum w-9 text-center text-[11px] text-ink-3">
-                {zoom.toFixed(1)}x
-              </span>
+              <span className="tnum w-9 text-center text-[11px] text-ink-3">{zoom.toFixed(1)}x</span>
               <button
                 type="button"
                 onClick={() => zoomAt(zoom * 1.6)}
                 disabled={zoom >= MAX_ZOOM}
                 aria-label="Aproximar"
-                className="grid size-[22px] place-items-center rounded-sm text-ink-3 hover:text-ink disabled:opacity-30"
+                title="Aproximar (Ctrl+roda)"
+                className={iconeDaBarra()}
               >
-                <Plus size={12} strokeWidth={1.5} />
+                <Plus size={13} strokeWidth={1.5} />
               </button>
-            </div>
+            </>
           )}
         </div>
       </header>
@@ -1979,13 +1985,48 @@ function ControlesDaSobreposicao({ id }: { id: string }) {
   )
 }
 
+/**
+ * O PLAY, ao lado do tempo. Morava na barra de cima, longe do relogio que ele
+ * anda; aqui fica onde o olho ja esta quando se edita. O espaco continua sendo
+ * o atalho.
+ */
+function BotaoDeTocar() {
+  const playing = useProject((s) => s.playing)
+  const togglePlay = useProject((s) => s.togglePlay)
+  const pode = useProject((s) => s.audio !== null && s.images.length > 0 && s.render === null)
+  const dica = dicaDoAtalho('tocar')
+  return (
+    <button
+      type="button"
+      onClick={togglePlay}
+      disabled={!pode}
+      aria-label={playing ? 'Pausar' : 'Reproduzir'}
+      title={`${playing ? 'Pausar' : 'Reproduzir'}${dica ? ` (${dica})` : ''}`}
+      className="grid size-8 shrink-0 place-items-center rounded-full bg-white/[0.07] text-ink transition-colors duration-150 hover:bg-white/[0.12] disabled:opacity-40"
+    >
+      {playing ? (
+        <Pause size={13} strokeWidth={1.5} fill="currentColor" />
+      ) : (
+        <Play size={13} strokeWidth={1.5} fill="currentColor" className="ml-0.5" />
+      )}
+    </button>
+  )
+}
+
 /** O painel do clipe escolhido, na barra da linha do tempo. */
 function ControlesDoEscolhido() {
   const escolhido = useProject((s) => s.clipeSelecionado)
   const selecionar = useProject((s) => s.selecionarClipe)
-  if (!escolhido) return null
+  /*
+   * O clipe de VIDEO tem o inspetor inteiro no meio da tela (posicao,
+   * tamanho, fades, a cor da camada de ajuste): repetir aqui era o mesmo
+   * controle duas vezes. A barra fica com ele so quando o meio esta com outra
+   * coisa (legendas, bins) -- e com o audio, que nao tem inspetor.
+   */
+  const inspetorNoMeio = useProject((s) => s.clipeSelecionado?.tipo === 'video' && !s.captionsOpen && !s.binsOpen)
+  if (!escolhido || inspetorNoMeio) return null
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-sm border border-line bg-surface px-2 py-0.5">
+    <div className="flex min-w-0 items-center gap-2 rounded-sm bg-surface px-2.5 py-1">
       {escolhido.tipo === 'audio' ? (
         <ControlesDaTrilha id={escolhido.id} />
       ) : (
@@ -2028,9 +2069,9 @@ function BotaoDeAjuste() {
         add(faixa)
       }}
       title="Camada de ajuste: correção de cor (curvas, exposição, contraste, saturação...) de tudo o que estiver embaixo dela"
-      className="flex h-[24px] items-center gap-1.5 rounded-sm border border-line px-2 text-[11px] text-ink-3 hover:text-ink"
+      className={botaoDaBarra()}
     >
-      <SlidersHorizontal size={12} strokeWidth={1.5} />
+      <SlidersHorizontal size={14} strokeWidth={1.5} />
       Ajuste
     </button>
   )
@@ -2055,12 +2096,9 @@ function BotaoDaFerramenta() {
           ? `Ferramenta de seleção: arraste no vazio das faixas para escolher vários clipes${dica ? ` (${dica})` : ''}`
           : `Ferramenta de seleção${dica ? ` (${dica})` : ''}: arrastar no vazio escolhe vários clipes`
       }
-      className={[
-        'flex h-[24px] items-center gap-1.5 rounded-sm border px-2 text-[11px]',
-        ferramenta === 'selecao' ? 'border-accent bg-accent-dim text-ink' : 'border-line text-ink-3 hover:text-ink',
-      ].join(' ')}
+      className={botaoDaBarra(ferramenta === 'selecao' ? 'ligado' : 'normal')}
     >
-      <SquareDashedMousePointer size={12} strokeWidth={1.5} />
+      <SquareDashedMousePointer size={14} strokeWidth={1.5} />
       Seleção
     </button>
   )

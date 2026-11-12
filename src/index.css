@@ -111,10 +111,16 @@
   border-radius: var(--radius-md);
 }
 
+/*
+ * Paineis que flutuam (popovers, dialogos). Quase opaco e com sombra: a 72% o
+ * que estava embaixo atravessava -- a onda da narracao por tras do painel de
+ * estilo, o titulo grande da tela inicial por tras das boas-vindas.
+ */
 @utility glass {
-  background-color: rgb(23 23 26 / 0.72);
+  background-color: rgb(23 23 26 / 0.92);
   backdrop-filter: var(--blur);
-  border: 1px solid var(--color-line);
+  border: 1px solid var(--color-line-strong);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.5);
 }
 
 /**
@@ -190,4 +196,39 @@
   .lift:hover {
     transform: none;
   }
+}
+
+/*
+ * OS BOTOES DOS MODULOS NA BARRA DE CIMA (Edicao rapida, Musica, Thumbnail).
+ *
+ * Eles chegam no estilo antigo da barra -- borda, fundo e o `lift` -- e a barra
+ * agora e de botao sem caixa (ver src/components/barra.tsx). Em vez de mexer em
+ * cada modulo, esta regra os traz para o mesmo jeito. Fora das camadas de
+ * proposito: assim ela ganha das classes utilitarias que vem no proprio botao.
+ */
+[data-modulos-na-barra] button.lift {
+  height: 32px;
+  font-size: 12px;
+  transform: none;
+}
+[data-modulos-na-barra] button.lift svg {
+  width: 14px;
+  height: 14px;
+}
+[data-modulos-na-barra] button.lift.border-line {
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--color-ink-2);
+}
+[data-modulos-na-barra] button.lift.border-line:hover:not(:disabled) {
+  background-color: rgb(255 255 255 / 0.05);
+  color: var(--color-ink);
+}
+[data-modulos-na-barra] button.lift.border-accent {
+  border-color: transparent;
+}
+[data-modulos-na-barra] div.border-accent.bg-accent-dim {
+  height: 32px;
+  border-color: transparent;
+  font-size: 12px;
 }

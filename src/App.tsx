@@ -13,8 +13,7 @@ import { acaoDoCombo, comboDoEvento, ehTeclaSolta, useAtalhos } from '@/store/at
 import { useFileDrop } from '@/hooks/useFileDrop'
 import { Dropzone } from '@/components/Dropzone'
 import { Timeline } from '@/components/Timeline'
-import { ImageStrip } from '@/components/ImageStrip'
-import { EscolherNaBiblioteca } from '@/components/EscolherNaBiblioteca'
+import { VisaoGeral } from '@/components/VisaoGeral'
 import { SceneCard } from '@/components/SceneCard'
 import { SceneEdit } from '@/components/SceneEdit'
 import { SobreposicaoEdit } from '@/components/SobreposicaoEdit'
@@ -31,7 +30,7 @@ import { EtapaDoRoteiro } from '@/components/EtapaDoRoteiro'
 import { ResumoDeManga } from '@/components/ResumoDeManga'
 import { useResumoDeManga } from '@/store/resumo-de-manga'
 import { Queue } from '@/components/Queue'
-import { VIDEO_FPS } from '@shared/contract'
+import { medidasDo, VIDEO_FPS } from '@shared/contract'
 import { semExtensaoDeProjeto } from '@shared/project-file'
 import { startModulos, TelasDosModulos } from '@/modulos'
 import { Pergunta } from '@/components/Pergunta'
@@ -82,7 +81,26 @@ export function App() {
   // O clipe da faixa de video escolhido: o inspetor dele toma o lugar dos
   // controles do bloco enquanto estiver escolhido.
   const clipeDeVideo = useProject((s) => (s.clipeSelecionado?.tipo === 'video' ? s.clipeSelecionado.id : null))
+  const emPe = useProject((s) => {
+    const q = medidasDo(s.formato)
+    return q.height > q.width
+  })
+  /** O que ocupa o meio do editor agora (um de cada vez). */
+  const meio = captionsOpen
+    ? 'legendas'
+    : binsOpen
+      ? 'bins'
+      : clipeDeVideo
+        ? 'clipe'
+        : temBloco
+          ? 'bloco'
+          : 'nada'
   const layout = useLayout()
+  /*
+   * O PREVIEW DE CIMA A BAIXO (o jeito do DaVinci): com ele na direita e o
+   * video em pe. Deitado (16:9) ele volta para o alto, ao lado dos paineis.
+   */
+  const previewInteiro = !layout.previewAoLado && emPe
   const refreshSfx = useProject((s) => s.refreshSfx)
   const refreshFontes = useProject((s) => s.refreshFontes)
   const setUpdate = useProject((s) => s.setUpdate)
@@ -299,6 +317,33 @@ export function App() {
         return
       }
 
+      /*
+       * Esc SOLTA o que estiver escolhido, um nivel por vez, como nos editores:
+       * primeiro o clipe da faixa (volta ao bloco), depois o bloco (volta a
+       * visao geral das cenas). A agulha nao sai do lugar.
+       */
+      if (
+        event.key === 'Escape' &&
+        !editando(event.target) &&
+        !useConsoleFx.getState().aberto &&
+        // Um painel flutuante aberto (o das transicoes) fecha com o MESMO Esc:
+        // fechar o painel nao pode levar o bloco junto.
+        document.querySelector('[role="dialog"]') === null
+      ) {
+        if (store.legendaEscolhida !== null) {
+          store.escolherLegenda(null)
+          return
+        }
+        if (store.clipeSelecionado !== null) {
+          store.selecionarClipe(null)
+          return
+        }
+        if (store.selectedScene !== null || store.selecionados.length > 0) {
+          store.selectScene(null)
+          return
+        }
+      }
+
       if (!acao || !combo) return
 
       /*
@@ -469,7 +514,15 @@ export function App() {
           <Dropzone isDragging={isDragging} />
         </main>
       ) : (
-        <main className="enter flex min-h-0 flex-1 flex-col px-6 pt-6 pb-3">
+        <main className="enter flex min-h-0 flex-1 flex-col">
+          {/*
+            A BARRA DE CIMA: etapas, ferramentas do video e o Renderizar. Fica
+            no alto da janela, inteira, como no Premiere e no CapCut.
+          */}
+          <RenderBar />
+
+          <div className="flex min-h-0 flex-1 gap-5 px-6 pt-4 pb-3">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/*
             O LAYOUT E DELE, como no Premiere: as divisorias se arrastam (a
             altura da linha do tempo e a largura da coluna do bloco), e o
@@ -478,7 +531,12 @@ export function App() {
             direita, pelo botao Layout. Ver @/store/layout.
           */}
           <div className="flex min-h-0 flex-1">
-            {temBloco && (
+            {/*
+              A coluna do bloco so acompanha os controles DO BLOCO. Com a camada
+              de ajuste, as legendas ou as bins no meio, ela dizia "Bloco 22"
+              ao lado de um painel que nao era do bloco 22.
+            */}
+            {meio === 'bloco' && (
               <>
                 <div className="flex min-h-0 shrink-0" style={{ width: layout.larguraDoBloco }}>
                   <SceneCard />
@@ -500,23 +558,26 @@ export function App() {
               </div>
             )}
             <div className="flex min-w-0 flex-1 flex-col gap-4">
-              <ImageStrip />
-              <EscolherNaBiblioteca />
               {/*
-                A area do meio REVEZA, e nao acumula: legendas, bins ou os
-                controles do bloco.
+                A area do meio REVEZA, e nao acumula: legendas, bins, o clipe da
+                faixa de video, o bloco -- ou, sem nada escolhido, a visao geral
+                das cenas. A fila de miniaturas so aparece nesta ultima: com um
+                bloco aberto ela repetia a faixa de cenas da linha do tempo e
+                empurrava os controles para baixo.
               */}
-              {captionsOpen ? (
+              {meio === 'legendas' ? (
                 <CaptionEditor />
-              ) : binsOpen ? (
+              ) : meio === 'bins' ? (
                 <Bins />
-              ) : clipeDeVideo ? (
+              ) : meio === 'clipe' && clipeDeVideo ? (
                 <SobreposicaoEdit id={clipeDeVideo} />
-              ) : (
+              ) : meio === 'bloco' ? (
                 <SceneEdit />
+              ) : (
+                <VisaoGeral />
               )}
             </div>
-            {!layout.previewAoLado && (
+            {!layout.previewAoLado && !previewInteiro && (
               <div className="ml-6 flex min-h-0 shrink-0">
                 <Preview />
               </div>
@@ -526,7 +587,7 @@ export function App() {
           <Divisor
             eixo="y"
             valor={layout.alturaDeBaixo}
-            min={190}
+            min={150}
             max={Math.max(260, Math.round(window.innerHeight * 0.75))}
             sinal={-1}
             onChange={(v) => layout.mudar({ alturaDeBaixo: v })}
@@ -534,9 +595,23 @@ export function App() {
             titulo="Altura da linha do tempo"
           />
 
-          <div className="flex min-h-0 shrink-0 flex-col gap-3" style={{ height: layout.alturaDeBaixo }}>
-            <RenderBar />
+          <div className="flex min-h-0 shrink-0 flex-col" style={{ height: layout.alturaDeBaixo }}>
             <Timeline />
+          </div>
+          </div>
+          {/*
+            O PREVIEW DE CIMA A BAIXO, como no DaVinci: "quero que preencha o
+            lado da tela e a timeline reduza para caber". O video e em pe, entao
+            quem limita o visor e a altura -- ao lado so dos paineis ele media a
+            altura deles; aqui mede a da janela, e a linha do tempo encolhe na
+            largura. No 16:9 o visor e deitado e seria largo demais: ele fica no
+            alto, como antes.
+          */}
+          {previewInteiro && (
+            <div className="flex min-h-0 shrink-0">
+              <Preview />
+            </div>
+          )}
           </div>
         </main>
       )}

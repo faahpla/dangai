@@ -184,7 +184,7 @@ export function Camera({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] uppercase tracking-wide text-ink-3">{label}</span>
+      <span className="text-[10px] font-medium text-ink-2">{label}</span>
 
       <div
         ref={caixaRef}
@@ -226,7 +226,7 @@ export function Camera({
          */
         style={{
           aspectRatio: String(fonte.aspecto),
-          width: `min(100%, ${Math.round(240 * fonte.aspecto)}px)`,
+          width: `min(100%, ${Math.round(190 * fonte.aspecto)}px)`,
         }}
         className="relative mx-auto cursor-move select-none overflow-hidden rounded-sm border border-line bg-black"
       >

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { ScanFace } from 'lucide-react'
+import { LocateFixed, ScanFace } from 'lucide-react'
 import { medidasDo, type Formato, type ImageAsset } from '@shared/contract'
 import { useProject } from '@/store/project'
 
@@ -39,7 +39,7 @@ export interface TrechoNaTimeline {
 export function Framing({
   image,
   trecho,
-  alturaMax = 180,
+  alturaMax = 150,
   zoom,
 }: {
   image: ImageAsset
@@ -196,8 +196,10 @@ export function Framing({
             setImageFocus(image.id, 0.5, 0.5)
             void commitImageFocus(image.id)
           }}
-          className="text-[11px] text-ink-3 transition-colors duration-150 hover:text-ink-2"
+          title="Volta o enquadramento para o meio da imagem"
+          className="-ml-1.5 flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] text-ink-3 transition-colors duration-150 hover:bg-white/[0.05] hover:text-ink-2"
         >
+          <LocateFixed size={11} strokeWidth={1.5} />
           Centralizar
         </button>
 

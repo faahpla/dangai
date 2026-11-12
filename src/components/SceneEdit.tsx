@@ -32,10 +32,9 @@ import {
   type Scene,
   type MotionCurve,
 } from '@shared/contract'
-import { fonteDaCamera } from '@shared/camera'
 import { useProject } from '@/store/project'
 import { exportarPreset, importarPreset, nomeLivre } from '@/store/arquivo-de-preset'
-import { Botaozinho, Deslizante, Grupo, Linha, Segmentos, type Segmento } from './painel'
+import { Botaozinho, Coluna, Colunas, Deslizante, Grupo, Linha, Segmentos, type Segmento } from './painel'
 import { Framing } from './Framing'
 import { Camera } from './Camera'
 import { GraficoDeCurva } from './GraficoDeCurva'
@@ -65,7 +64,6 @@ export function SceneEdit() {
   const playhead = useProject((s) => s.playhead)
   const seguirRosto = useProject((s) => s.seguirRosto)
   const rastrear = useProject((s) => s.rastrear)
-  const formato = useProject((s) => s.formato)
   const selecionados = useProject((s) => s.selecionados)
   const ajustesCopiados = useProject((s) => s.ajustesCopiados)
   const copiarAjustes = useProject((s) => s.copiarAjustes)
@@ -120,11 +118,15 @@ export function SceneEdit() {
    */
   const separada = scene.effectB != null || scene.intensityB != null
 
-  /* O quadro deste projeto: a geometria da camera depende dele. */
-  const aspectoDoQuadro = (() => {
-    const q = medidasDo(formato)
-    return q.width / q.height
-  })()
+  /*
+   * CAMERA LIVRE LIGADA: o grupo do movimento vira o grupo DELA, com as duas
+   * pontas lado a lado e o espaco de duas colunas. O retangulo do
+   * enquadramento deixa de valer (o quadro e da camera) e encolhe para um
+   * recado; zoom, giro e espelhar continuam por cima dela. Com giro de 90/270
+   * a camera nao manda, e o enquadramento volta.
+   */
+  const cameraLigada = !imageB && scene.camera != null
+  const cameraManda = cameraLigada && (scene.rotation ?? 0) !== 90 && (scene.rotation ?? 0) !== 270
 
   const total = plan?.scenes.length ?? 0
 
@@ -226,9 +228,68 @@ export function SceneEdit() {
     scene.camera != null ||
     (imageB !== undefined && (efeitoB !== 'nenhum' || scene.cameraB != null))
 
+  /*
+   * O GRUPO DO RITMO. Escolher um preset apaga o desenho -- guardar o desenho
+   * por baixo faria o clique seguinte em "Curva" ressuscitar algo que ele
+   * largou.
+   */
+  const grupoDoRitmo = temMovimento ? (
+      <Grupo titulo="Ritmo" dica="Como o movimento anda ao longo do bloco: devagar no começo, constante, freando no fim...">
+          <ControleDeRitmo
+            semRotulo
+            curve={scene.curve}
+            curvePoints={scene.curvePoints}
+            onChange={(patch) => updateScene(index, patch)}
+          />
+
+          {total > 1 && !mesmaCurvaEmTodas && (
+            /*
+             * ESPALHAR A CURVA E DISCRETO E EM DOIS PASSOS: era um botao
+             * largo que ele acertava sem querer, trocando o ritmo dos 52
+             * blocos de uma vez. O primeiro clique so ARMA.
+             */
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  if (espalharArmado !== index) {
+                    setEspalharArmado(index)
+                    return
+                  }
+                  // Havendo selecao, ela manda.
+                  if (selecionados.length > 1) {
+                    for (const i of selecionados) {
+                      updateScene(i, { curve: scene.curve, curvePoints: scene.curvePoints })
+                    }
+                  } else {
+                    applyCurveToAll(scene.curve, scene.curvePoints)
+                  }
+                  setEspalharArmado(null)
+                }}
+                onPointerLeave={() => setEspalharArmado(null)}
+                className={
+                  espalharArmado === index
+                    ? 'rounded px-1.5 py-0.5 text-[10px] text-accent underline decoration-dotted underline-offset-2'
+                    : 'rounded px-1.5 py-0.5 text-[10px] text-ink-3 transition-colors hover:text-ink-2'
+                }
+              >
+                {espalharArmado === index
+                  ? `Confirmar: trocar o ritmo de ${alvos.length > 1 ? alvos.length : total} ${
+                      alvos.length > 1 ? 'selecionados' : 'blocos'
+                    }`
+                  : alvos.length > 1
+                    ? `Usar este ritmo nos ${alvos.length} selecionados`
+                    : `Usar este ritmo em todos os ${total} blocos`}
+              </button>
+            </div>
+          )}
+      </Grupo>
+  ) : null
+
   return (
     /*
-     * DUAS COLUNAS, CADA UMA ROLANDO SOZINHA, e cada controle numa LINHA.
+     * COLUNAS POR ASSUNTO (Enquadramento | Movimento | Ritmo, ver Colunas), e
+     * cada controle numa LINHA.
      *
      * "Ainda acho que a hierarquia desses botoes ta ocupando muito espaco na
      * tela desnecessariamente." Cada escolha era um botao da largura da coluna,
@@ -236,8 +297,8 @@ export function SceneEdit() {
      * tela. Agora e rotulo na esquerda, seletor colado na direita (os efeitos
      * viraram icones) e as explicacoes moram no tooltip.
      */
-    <div className="enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-3">
-      <div className="flex min-h-0 flex-col gap-2 overflow-y-auto pr-1">
+    <Colunas>
+      <Coluna>
         <Grupo titulo="Enquadramento">
           {imageB ? (
             <>
@@ -310,34 +371,26 @@ export function SceneEdit() {
             <>
               {/*
                 CAMERA LIVRE LIGADA: ela manda no quadro, e o retangulo daqui
-                nao muda nada no video -- "mudo o enquadramento e o preview nao
-                muda". Dizer isso na cara, com o atalho para desligar.
+                nao mudaria nada no video -- "mudo o enquadramento e o preview
+                nao muda". Em vez de um retangulo morto com um aviso grande em
+                cima, um recado de uma linha; o desenho e na camera, ao lado.
               */}
-              {scene.camera != null && (scene.rotation ?? 0) !== 90 && (scene.rotation ?? 0) !== 270 && (
-                <div className="flex items-start gap-2 rounded-sm border border-accent/50 bg-accent-dim px-2 py-1.5 text-[11px] leading-snug text-ink-2">
-                  <Video size={12} strokeWidth={1.5} className="mt-0.5 shrink-0 text-accent" />
-                  <span className="min-w-0 flex-1">
-                    A câmera livre está ligada e manda no quadro: este enquadramento não muda o vídeo. Ajuste o
-                    começo e o fim dela ao lado, ou desligue.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => updateScene(index, { camera: null })}
-                    className="shrink-0 rounded-sm border border-line bg-elevated px-1.5 py-0.5 text-[10px] text-ink-2 hover:text-ink"
-                  >
-                    Desligar
-                  </button>
-                </div>
+              {cameraManda ? (
+                <p className="flex items-start gap-1.5 rounded-sm bg-accent-dim px-2 py-1.5 text-[11px] leading-snug text-ink-2">
+                  <Video size={12} strokeWidth={1.5} className="mt-px shrink-0 text-accent" />
+                  <span>O quadro é da câmera livre, ao lado. Zoom, giro e espelhar valem por cima dela.</span>
+                </p>
+              ) : (
+                <Framing
+                  image={image}
+                  trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
+                  zoom={{
+                    escala: scene.escala ?? 1,
+                    origem: scene.escalaOrigem ?? { x: 0.5, y: 0.5 },
+                    onOrigem: (o) => updateScene(index, { escalaOrigem: o }),
+                  }}
+                />
               )}
-              <Framing
-                image={image}
-                trecho={{ inicio: scene.start, fim: scene.end, entrada: scene.sourceStart ?? 0 }}
-                zoom={{
-                  escala: scene.escala ?? 1,
-                  origem: scene.escalaOrigem ?? { x: 0.5, y: 0.5 },
-                  onOrigem: (o) => updateScene(index, { escalaOrigem: o }),
-                }}
-              />
               {/*
                 O "Scale" dos editores: zoom FIXO no bloco inteiro, centrado no
                 enquadramento acima. Duplo clique volta para 100%.
@@ -380,51 +433,60 @@ export function SceneEdit() {
             </>
           )}
         </Grupo>
-
         {/*
-          COPIAR E COLAR AJUSTES: o COMO o bloco se comporta -- movimento,
-          ritmo, giro e transicao. Fica de fora o que descreve o MATERIAL
-          (imagem, ponto de entrada, camera livre): um caminho de camera e
-          desenhado contra aquele clipe, e colado noutro enquadraria o nada.
+          CAMERA LIGADA: o ritmo sobe para baixo do Enquadramento. Numa coluna
+          propria ele caia para a linha de baixo da camera, que e alta, e
+          ficava longe de tudo ("muito la pra baixo").
         */}
+        {cameraLigada && grupoDoRitmo}
+      </Coluna>
+
+      <Coluna largo={cameraLigada}>
         <Grupo
-          titulo="Ajustes"
+          titulo={cameraLigada ? 'Câmera livre' : 'Movimento'}
+          dica={
+            cameraLigada
+              ? 'Desenhe o começo e o fim do bloco: arraste o retângulo de cada ponta, e o slider embaixo aproxima. A câmera anda de um para o outro no ritmo ao lado.'
+              : undefined
+          }
           acao={
             <>
+            {/*
+              COPIAR E COLAR AJUSTES: o COMO o bloco se comporta -- movimento,
+              ritmo, giro e transicao. Fica de fora o que descreve o MATERIAL
+              (imagem, ponto de entrada, camera livre): um caminho de camera e
+              desenhado contra aquele clipe, e colado noutro enquadraria o nada.
+              Morava num grupo proprio, uma caixa vazia com dois botoes; aqui
+              fica no canto do assunto que ele mais carrega.
+            */}
+            <Botaozinho
+              onClick={() => copiarAjustes(index)}
+              title="Copia movimento, ritmo, giro e transição deste bloco. O enquadramento e a câmera ficam, porque são daquele clipe."
+            >
+              <Copy size={11} strokeWidth={1.5} />
+              Copiar
+            </Botaozinho>
+            {ajustesCopiados !== null && (
               <Botaozinho
-                onClick={() => copiarAjustes(index)}
-                title="Copia movimento, ritmo, giro e transição. O enquadramento e a câmera ficam, porque são daquele clipe."
+                onClick={() => colarAjustes(alvos)}
+                title="Cola movimento, ritmo, giro e transição. Marque vários blocos na timeline com Shift ou Ctrl para colar em todos de uma vez."
               >
-                <Copy size={11} strokeWidth={1.5} />
-                Copiar
+                <ClipboardPaste size={11} strokeWidth={1.5} />
+                {alvos.length > 1 ? `Colar nos ${alvos.length}` : 'Colar'}
               </Botaozinho>
-              {ajustesCopiados !== null && (
-                <Botaozinho
-                  onClick={() => colarAjustes(alvos)}
-                  title="Marque vários blocos na timeline com Shift ou Ctrl para colar em todos de uma vez."
-                >
-                  <ClipboardPaste size={11} strokeWidth={1.5} />
-                  {alvos.length > 1 ? `Colar nos ${alvos.length}` : 'Colar'}
-                </Botaozinho>
-              )}
-            </>
-          }
-        />
-      </div>
-
-      <div className="min-h-0 overflow-y-auto pr-1">
-        <Grupo
-          titulo="Movimento"
-          acao={
-            /*
+            )}
+            {/*
              * CAMERA LIVRE no canto do titulo: ela desliga os efeitos, entao e
              * o primeiro galho da decisao, e nao mais uma opcao no meio. Na
              * tela dividida cada metade tem a sua, dentro da propria secao.
-             */
-            !imageB && (
+             */}
+            {!imageB && (
               <Botaozinho
-                active={scene.camera != null}
-                title="Desenhar a mão o enquadramento do começo e do fim do bloco"
+                title={
+                  cameraLigada
+                    ? 'Desliga a câmera livre: o bloco volta ao enquadramento e ao efeito'
+                    : 'Desenhar a mão o enquadramento do começo e do fim do bloco'
+                }
                 onClick={() =>
                   updateScene(index, {
                     camera:
@@ -437,10 +499,11 @@ export function SceneEdit() {
                   })
                 }
               >
-                <Video size={11} strokeWidth={1.5} />
-                Câmera livre
+                {cameraLigada ? <X size={11} strokeWidth={1.5} /> : <Video size={11} strokeWidth={1.5} />}
+                {cameraLigada ? 'Desligar' : 'Câmera livre'}
               </Botaozinho>
-            )
+            )}
+            </>
           }
         >
           {!imageB && scene.camera != null && (
@@ -477,7 +540,7 @@ export function SceneEdit() {
                   </Botaozinho>
                 )}
               </div>
-              <p className="text-[10px] leading-snug text-ink-3">
+              <p className="-mt-1 text-[10px] leading-snug text-ink-3">
                 {(recado?.bloco === index ? recado.texto : null) ??
                   /*
                    * Dizer que o alvo e o CENTRO nao e detalhe: quem poe o rosto
@@ -489,21 +552,16 @@ export function SceneEdit() {
                     : 'Arraste o retangulo para escolher o que aparece; o slider aproxima.')}
               </p>
               {/*
-                Fonte DEITADA empilha (as duas pontas usam a largura inteira, o
-                eixo onde o movimento acontece); fonte em pe fica lado a lado.
+                AS DUAS PONTAS LADO A LADO, comeco e fim, que e como se le um
+                movimento. O grupo tem duas colunas de largura; numa janela
+                estreita (uma coluna so) elas empilham.
               */}
-              <div
-                className={
-                  fonteDaCamera(image, scene.camera, aspectoDoQuadro).aspecto > 1
-                    ? 'flex flex-col gap-2'
-                    : 'grid grid-cols-2 gap-2'
-                }
-              >
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
                 <Camera
                   image={image}
                   camera={scene.camera}
                   instante={instanteComeca}
-                  label="Comeca em"
+                  label="Começa em"
                   aoMexer={() => setPlayhead(scene.start)}
                   value={scene.camera.from}
                   onChange={(from) => updateScene(index, { camera: { ...scene.camera!, from } })}
@@ -588,70 +646,19 @@ export function SceneEdit() {
                   />
                 </Linha>
               )}
-              <Subtitulo>O bloco</Subtitulo>
-            </>
-          )}
-
-          {temMovimento && (
-            <>
-              {/*
-                O ritmo e do BLOCO: vale para as duas metades e para a camera.
-                Escolher um preset apaga o desenho -- guardar o desenho por
-                baixo faria o clique seguinte em "Curva" ressuscitar algo que
-                ele largou.
-              */}
-              <ControleDeRitmo
-                curve={scene.curve}
-                curvePoints={scene.curvePoints}
-                onChange={(patch) => updateScene(index, patch)}
-              />
-
-              {total > 1 && !mesmaCurvaEmTodas && (
-                /*
-                 * ESPALHAR A CURVA E DISCRETO E EM DOIS PASSOS: era um botao
-                 * largo que ele acertava sem querer, trocando o ritmo dos 52
-                 * blocos de uma vez. O primeiro clique so ARMA.
-                 */
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (espalharArmado !== index) {
-                        setEspalharArmado(index)
-                        return
-                      }
-                      // Havendo selecao, ela manda.
-                      if (selecionados.length > 1) {
-                        for (const i of selecionados) {
-                          updateScene(i, { curve: scene.curve, curvePoints: scene.curvePoints })
-                        }
-                      } else {
-                        applyCurveToAll(scene.curve, scene.curvePoints)
-                      }
-                      setEspalharArmado(null)
-                    }}
-                    onPointerLeave={() => setEspalharArmado(null)}
-                    className={
-                      espalharArmado === index
-                        ? 'rounded px-1.5 py-0.5 text-[10px] text-accent underline decoration-dotted underline-offset-2'
-                        : 'rounded px-1.5 py-0.5 text-[10px] text-ink-3 transition-colors hover:text-ink-2'
-                    }
-                  >
-                    {espalharArmado === index
-                      ? `Confirmar: trocar o ritmo de ${alvos.length > 1 ? alvos.length : total} ${
-                          alvos.length > 1 ? 'selecionados' : 'blocos'
-                        }`
-                      : alvos.length > 1
-                        ? `Usar este ritmo nos ${alvos.length} selecionados`
-                        : `Usar este ritmo em todos os ${total} blocos`}
-                  </button>
-                </div>
-              )}
             </>
           )}
         </Grupo>
-      </div>
-    </div>
+      </Coluna>
+
+      {/*
+        O RITMO numa coluna propria: e do BLOCO (vale para as duas metades e
+        para a camera), e o desenho dele precisa de espaco que o Movimento nao
+        tem. Com a camera livre ligada ele mora embaixo do Enquadramento (ver
+        acima).
+      */}
+      {!cameraLigada && grupoDoRitmo && <Coluna>{grupoDoRitmo}</Coluna>}
+    </Colunas>
   )
 }
 
@@ -725,10 +732,13 @@ export function ControleDeRitmo({
   curve,
   curvePoints,
   onChange,
+  semRotulo = false,
 }: {
   curve: MotionCurve
   curvePoints: CurvePoints | null
   onChange: (patch: { curve?: MotionCurve; curvePoints: CurvePoints | null }) => void
+  /** Dentro de um grupo que ja se chama "Ritmo": a barra sem o rotulo do lado. */
+  semRotulo?: boolean
 }) {
   const salvas = useProject((s) => s.curvePresets)
   const carregarCurvas = useProject((s) => s.loadCurvePresets)
@@ -737,9 +747,7 @@ export function ControleDeRitmo({
   const [recado, setRecado] = useState<string | null>(null)
   useEffect(() => void carregarCurvas(), [carregarCurvas])
 
-  return (
-    <>
-      <Linha label="Ritmo">
+  const segmentos = (
         <Segmentos
           opcoes={[
             ...MOTION_CURVES.map((c) => ({
@@ -767,7 +775,11 @@ export function ControleDeRitmo({
             )
           }
         />
-      </Linha>
+  )
+
+  return (
+    <>
+      {semRotulo ? <div className="flex">{segmentos}</div> : <Linha label="Ritmo">{segmentos}</Linha>}
 
       {curvePoints !== null && (
         /*
@@ -897,7 +909,7 @@ const EFFECT_LABEL: Readonly<Record<(typeof KEN_BURNS_EFFECTS)[number], string>>
 const CURVE_LABEL: Readonly<Record<MotionCurve, string>> = {
   'ease-in-out': 'Suave',
   linear: 'Constante',
-  'ease-out': 'Desacelera',
+  'ease-out': 'Freia',
   'ease-in': 'Acelera',
 }
 
@@ -969,7 +981,7 @@ function CameraDaMetade({
             image={image}
             camera={{ source: true }}
             instante={comeca}
-            label="Comeca em"
+            label="Começa em"
             aspectoDoQuadro={aspectoDaMetade}
             aoMexer={() => setPlayhead(scene.start)}
             value={cam.from}

@@ -251,10 +251,19 @@ function RitmoDasChaves({
   const mudarCurva = (c: CurvaLivre): void =>
     naPassagem ? naPassagemDeCada(c) : paraCada(() => ({ pontosDasChaves: [...c] as [number, number, number, number] }))
 
+  /*
+   * O RITMO DA ANIMACAO num bloco proprio, com as barras na largura toda: ao
+   * lado dos rotulos "Vale para" e "Ritmo" elas nao cabiam numa coluna do
+   * painel e os nomes encavalavam.
+   */
   return (
-    <>
+    <div
+      className="flex flex-col gap-1.5 border-t border-line pt-2.5"
+      title="Quanto do movimento já aconteceu ao longo de cada passagem de uma chave para a próxima. Acima da caixa, passa do ponto e volta."
+    >
+      <span className="text-[10px] font-medium text-ink-3">Ritmo da animação</span>
       {i >= 0 && chaves.length > 2 && (
-        <Linha label="Vale para" title="A curva de todas as passagens, ou só da passagem em que a agulha está">
+        <div className="flex" title="A curva de todas as passagens, ou só da passagem em que a agulha está">
           <Segmentos
             opcoes={[
               { valor: false, rotulo: 'Todas as passagens' },
@@ -269,10 +278,10 @@ function RitmoDasChaves({
               if (v && daPassagem === undefined) naPassagemDeCada(doClipe ?? RITMO_EM_CURVA[ritmo])
             }}
           />
-        </Linha>
+        </div>
       )}
       {!naPassagem && (
-        <Linha label="Ritmo" title="Como cada passagem de uma chave para a próxima acelera e freia">
+        <div className="flex" title="Como cada passagem de uma chave para a próxima acelera e freia">
           <Segmentos
             opcoes={[
               ...MOTION_CURVES.map((c) => ({ valor: c as MotionCurve | 'curva', rotulo: RITMO[c] })),
@@ -296,7 +305,7 @@ function RitmoDasChaves({
               )
             }
           />
-        </Linha>
+        </div>
       )}
       {curva && (
         <div className="flex gap-2.5">
@@ -315,15 +324,15 @@ function RitmoDasChaves({
                 </Botaozinho>
               ))}
             </div>
-            <p className="text-[10px] leading-snug text-ink-3">
-              {naPassagem
-                ? `Só a passagem da chave ${i + 1} para a ${i + 2}. As outras seguem o ritmo do clipe.`
-                : 'Quanto do movimento já aconteceu ao longo de cada passagem. Acima da caixa, passa do ponto e volta.'}
-            </p>
+            {naPassagem && (
+              <p className="text-[10px] leading-snug text-ink-3">
+                Só a passagem da chave {i + 1} para a {i + 2}. As outras seguem o ritmo do clipe.
+              </p>
+            )}
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 }
 

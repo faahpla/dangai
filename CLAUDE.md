@@ -35,6 +35,9 @@ npm run dist         # instalador em release/
 
 `GH_TOKEN` (de `gh auth token`) só é necessário para **publicar** release.
 
+Testar em dev com o Dangai instalado aberto: `DANGAI_DADOS=<pasta>` (só em dev) dá outra pasta de
+dados ao app de teste, para um não gravar por cima das configurações e dos recentes do outro.
+
 **Cada versão publicada tem uma entrada em `shared/novidades.ts`** (o que mudou, para quem usa;
 aparece numa janelinha depois de atualizar). Escreva antes do `npm version`: o `v-novidades`
 falha sem ela, e o GitHub não publica com teste falhando.

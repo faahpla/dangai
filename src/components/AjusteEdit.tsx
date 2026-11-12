@@ -10,7 +10,7 @@ import {
 import { curvaInterpolada } from '@shared/cor'
 import { idsEscolhidos, useProject } from '@/store/project'
 import { usePresetsDeCor } from '@/store/presets-de-cor'
-import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
+import { Botaozinho, Coluna, Colunas, Deslizante, Grupo, Linha, Segmentos } from './painel'
 import { TransformDoClipe } from './TransformDoClipe'
 
 /**
@@ -87,10 +87,16 @@ export function AjusteEdit({ id }: { id: string }) {
   const toca = o.usarSec ?? o.durationSec - o.inicioSec
 
   return (
-    <div className="enter grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
-      <div className="flex min-h-0 flex-col gap-2 overflow-y-auto pr-1">
+    /*
+     * TRES COLUNAS POR ASSUNTO: a camada e o que mais se mexe nela (curvas e
+     * presets), a luz e a cor, e o transform com a animacao. Antes eram duas
+     * metades, uma so com o grafico das curvas do tamanho da metade da tela.
+     */
+    <Colunas>
+      <Coluna>
         <Grupo
           titulo={`Camada de ajuste · V${o.faixa + 1}`}
+          dica={`Corrige tudo o que está embaixo dela (as cenas e as faixas de vídeo de número menor) durante ${toca.toFixed(2)}s. Estique ou arraste na linha do tempo.`}
           acao={
             <>
               <Botaozinho onClick={() => mudar({ ...AJUSTE_DE_COR_PADRAO })} title="Zera todos os ajustes e as curvas">
@@ -112,10 +118,6 @@ export function AjusteEdit({ id }: { id: string }) {
           {alvos.length > 1 && (
             <p className="text-[11px] text-accent">{alvos.length} camadas escolhidas -- mexer aqui muda todas.</p>
           )}
-          <p className="text-[10px] leading-snug text-ink-3">
-            Corrige tudo o que está embaixo dela (as cenas e as faixas de vídeo de número menor) durante{' '}
-            <span className="tnum">{toca.toFixed(2)}s</span>. Estique ou arraste na linha do tempo.
-          </p>
           <Linha label="Intensidade" title="Quanto do ajuste vale: 0% é o original">
             <Deslizante
               valor={cor.intensidade}
@@ -151,31 +153,33 @@ export function AjusteEdit({ id }: { id: string }) {
           </Linha>
         </Grupo>
 
-        {/*
-          O TRANSFORM DA CAMADA: move, escala e gira tudo o que esta embaixo,
-          fixo ou animado por quadros-chave. Tambem pela caixa no preview.
-        */}
         <Grupo
-          titulo="Transform"
+          titulo="Curvas"
+          dica="Clique na linha para criar um ponto e arraste. Dois cliques num ponto o tiram. Esquerda são as sombras, direita os realces; subir clareia."
           acao={
             <Botaozinho
-              onClick={() => {
-                for (const alvo of alvos.length > 0 ? alvos : [id]) {
-                  ajustar(alvo, { x: 0, y: 0, escala: 1, rotacao: 0, chaves: undefined })
-                }
-              }}
-              title="Volta posição, tamanho e giro ao padrão (e tira a animação)"
+              onClick={() => mudarCurva(CURVA_DE_COR_RETA.map((p) => ({ ...p })))}
+              title="Volta este canal para a reta"
             >
               <RotateCcw size={11} strokeWidth={1.5} />
-              Resetar
+              Reta
             </Botaozinho>
           }
         >
-          <p className="text-[10px] leading-snug text-ink-3">
-            Move, escala e gira tudo o que está embaixo -- também arrastando no preview. Para animar, ponha a agulha
-            no começo, clique em Animar, ande com a agulha e mexa.
-          </p>
-          <TransformDoClipe o={o} alvos={alvos} />
+          <Segmentos
+            opcoes={(['mestre', 'r', 'g', 'b'] as const).map((c) => ({
+              valor: c,
+              rotulo: c === 'mestre' ? 'RGB' : c.toUpperCase(),
+              title: c === 'mestre' ? 'Os três canais juntos (luminosidade)' : `Só o canal ${c.toUpperCase()}`,
+            }))}
+            ativo={(c) => c === canal}
+            onChange={setCanal}
+          />
+          <EditorDeCurva
+            pontos={cor.curvas[canal]}
+            traco={CORES_DO_CANAL[canal]}
+            onChange={mudarCurva}
+          />
         </Grupo>
 
         {/*
@@ -271,7 +275,9 @@ export function AjusteEdit({ id }: { id: string }) {
           )}
           {recado && <p className="text-[10px] text-ink-3">{recado}</p>}
         </Grupo>
+      </Coluna>
 
+      <Coluna>
         <Grupo titulo="Luz">
           <Linha label="Exposição" title="Em stops: +1 dobra a luz">
             <Deslizante
@@ -312,42 +318,34 @@ export function AjusteEdit({ id }: { id: string }) {
             />
           </Linha>
         </Grupo>
-      </div>
+      </Coluna>
 
-      <div className="min-h-0 overflow-y-auto pr-1">
+      <Coluna>
+        {/*
+          O TRANSFORM DA CAMADA: move, escala e gira tudo o que esta embaixo,
+          fixo ou animado por quadros-chave. Tambem pela caixa no preview.
+        */}
         <Grupo
-          titulo="Curvas"
+          titulo="Transform"
+          dica="Move, escala e gira tudo o que está embaixo -- também arrastando no preview. Para animar, ponha a agulha no começo, clique em Animar, ande com a agulha e mexa."
           acao={
             <Botaozinho
-              onClick={() => mudarCurva(CURVA_DE_COR_RETA.map((p) => ({ ...p })))}
-              title="Volta este canal para a reta"
+              onClick={() => {
+                for (const alvo of alvos.length > 0 ? alvos : [id]) {
+                  ajustar(alvo, { x: 0, y: 0, escala: 1, rotacao: 0, chaves: undefined })
+                }
+              }}
+              title="Volta posição, tamanho e giro ao padrão (e tira a animação)"
             >
               <RotateCcw size={11} strokeWidth={1.5} />
-              Reta
+              Resetar
             </Botaozinho>
           }
         >
-          <Segmentos
-            opcoes={(['mestre', 'r', 'g', 'b'] as const).map((c) => ({
-              valor: c,
-              rotulo: c === 'mestre' ? 'RGB' : c.toUpperCase(),
-              title: c === 'mestre' ? 'Os três canais juntos (luminosidade)' : `Só o canal ${c.toUpperCase()}`,
-            }))}
-            ativo={(c) => c === canal}
-            onChange={setCanal}
-          />
-          <EditorDeCurva
-            pontos={cor.curvas[canal]}
-            traco={CORES_DO_CANAL[canal]}
-            onChange={mudarCurva}
-          />
-          <p className="text-[10px] leading-snug text-ink-3">
-            Clique na linha para criar um ponto e arraste. Dois cliques num ponto o tiram. Esquerda são as sombras,
-            direita os realces; subir clareia.
-          </p>
+          <TransformDoClipe o={o} alvos={alvos} />
         </Grupo>
-      </div>
-    </div>
+      </Coluna>
+    </Colunas>
   )
 }
 
@@ -403,7 +401,7 @@ function EditorDeCurva({
     <svg
       ref={area}
       viewBox="0 0 100 100"
-      className="aspect-square w-full max-w-[300px] touch-none select-none self-center overflow-visible rounded-sm bg-elevated"
+      className="aspect-square w-full max-w-[220px] touch-none select-none self-center overflow-visible rounded-sm bg-elevated"
       onPointerDown={(event) => {
         // Clique no vazio: ponto novo ali, ja pego para arrastar.
         const p = noGrafico(event)

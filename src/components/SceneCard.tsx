@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Film, ImagePlus, Library as LibraryIcon, LocateFixed, Maximize2, Pause, Play, RefreshCcw, Scissors } from 'lucide-react'
+import { Film, ImagePlus, Library as LibraryIcon, LocateFixed, Maximize2, Pause, Play, RefreshCcw, Scissors, X } from 'lucide-react'
 import { isVisual, type TiraDaCena } from '@shared/channels'
 import { VIDEO_FPS, type ImageAsset, type Scene } from '@shared/contract'
 import { useProject, formatTimecode } from '@/store/project'
@@ -25,6 +25,7 @@ export function SceneCard() {
   const insertImages = useProject((s) => s.insertImages)
   const abrirBiblioteca = useProject((s) => s.openLibraryToReplace)
   const mostrarNaBiblioteca = useProject((s) => s.mostrarNaBiblioteca)
+  const selectScene = useProject((s) => s.selectScene)
   // So clipe que veio da biblioteca tem lugar nela para onde ir.
   const library = useProject((s) => s.library)
   const caminhosDaBiblioteca = useMemo(() => new Set((library?.clips ?? []).map((c) => c.path)), [library])
@@ -59,15 +60,47 @@ export function SceneCard() {
   }
 
   return (
-    <aside className="enter flex w-full min-w-0 flex-col gap-5 overflow-y-auto pr-1">
-      <header className="flex items-baseline justify-between">
-        <span className="text-[13px] font-medium text-ink">
-          Bloco {index + 1} <span className="text-ink-3">de {total}</span>
-        </span>
+    /*
+     * UM CARTAO SO, do jeito dos paineis do meio: quem e o bloco no alto (o
+     * numero, onde entra, quanto dura e de que arquivo), o trecho do clipe, e
+     * as acoes em linhas curtas. O "Entra em" e o nome do arquivo tinham uma
+     * linha cada, e o "Inserir imagem" tres botoes da largura da coluna com um
+     * paragrafo embaixo -- a coluna rolava para mostrar o resto.
+     */
+    <aside className="enter flex w-full min-w-0 flex-col gap-4 overflow-y-auto rounded-lg bg-surface p-3">
+      <header className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[15px] font-semibold text-ink">
+            Bloco {index + 1} <span className="text-[12px] font-normal text-ink-3">de {total}</span>
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={() => selectScene(null)}
+            aria-label="Fechar o bloco"
+            title="Fechar o bloco (Esc)"
+            className="grid size-6 place-items-center rounded-sm text-ink-3 transition-colors hover:bg-white/[0.06] hover:text-ink"
+          >
+            <X size={13} strokeWidth={1.75} />
+          </button>
+        </div>
         <span className="tnum text-[11px] text-ink-3">
-          {(scene.end - scene.start).toFixed(1)}s
+          entra em {formatTimecode(scene.start)} · {(scene.end - scene.start).toFixed(1)}s
         </span>
+        <p className="flex min-w-0 items-center gap-1.5 text-[11px] text-ink-3" title={image.path}>
+          {/* Miniatura de clipe e miniatura de print sao a mesma coisa na tela.
+              Sem esta marca nao da para saber qual bloco e qual. */}
+          {image.kind === 'video' && (
+            <span className="flex shrink-0 items-center gap-1 text-accent">
+              <Film size={11} strokeWidth={1.5} />
+              clipe
+            </span>
+          )}
+          <span className="min-w-0 truncate">{image.fileName}</span>
+        </p>
       </header>
+
+      <div className="h-px bg-line" />
 
       <PontoDeEntrada
         index={index}
@@ -76,21 +109,28 @@ export function SceneCard() {
         label={imageB ? 'Trecho do clipe de cima' : 'Trecho do clipe'}
       />
 
-      {image.kind === 'video' && <Inverter index={index} metade="cima" invertido={image.invertido === true} />}
-      {image.kind === 'image' && <Inteira index={index} metade="cima" inteira={image.inteira === true} />}
-
-      <Field label={imageB ? 'Trocar a cena de cima' : 'Trocar por outra cena'}>
+      {/*
+        AS ACOES DA CENA em duas colunas, logo abaixo do trecho: eram tres
+        botoes da largura da coluna, um embaixo do outro.
+      */}
+      <div className="grid grid-cols-2 gap-1.5">
+        {image.kind === 'video' && <Inverter index={index} metade="cima" invertido={image.invertido === true} />}
+        {image.kind === 'image' && <Inteira index={index} metade="cima" inteira={image.inteira === true} />}
         <Chip active={false} onClick={() => void abrirBiblioteca(index, 'cima')}>
-          <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-          Buscar na biblioteca
+          <span title={imageB ? 'Trocar a cena de cima por outra da biblioteca' : 'Trocar esta cena por outra da biblioteca'}>
+            <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+            Trocar cena
+          </span>
         </Chip>
         {naBiblioteca(image.path) && (
-          <Chip active={false} onClick={() => void mostrarNaBiblioteca(image.path)}>
-            <LocateFixed size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-            Ver este clipe na biblioteca
-          </Chip>
+          <span className="col-span-2 grid">
+            <Chip active={false} onClick={() => void mostrarNaBiblioteca(image.path)}>
+              <LocateFixed size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+              Ver este clipe na biblioteca
+            </Chip>
+          </span>
         )}
-      </Field>
+      </div>
 
       {/*
         A METADE DE BAIXO, com os mesmos controles da de cima.
@@ -103,6 +143,17 @@ export function SceneCard() {
       */}
       {imageB && (
         <>
+          <div className="h-px bg-line" />
+          <p className="flex min-w-0 items-center gap-1.5 text-[11px] text-ink-3" title={imageB.path}>
+            <span className="shrink-0 font-medium text-ink-2">Metade de baixo</span>
+            {imageB.kind === 'video' && (
+              <span className="flex shrink-0 items-center gap-1 text-accent">
+                <Film size={11} strokeWidth={1.5} />
+                clipe
+              </span>
+            )}
+            <span className="min-w-0 truncate">{imageB.fileName}</span>
+          </p>
           <PontoDeEntrada
             index={index}
             scene={scene}
@@ -110,73 +161,77 @@ export function SceneCard() {
             campo="sourceStartB"
             label="Trecho do clipe de baixo"
           />
-
-          {imageB.kind === 'video' && (
-            <Inverter index={index} metade="baixo" invertido={imageB.invertido === true} />
-          )}
-          {imageB.kind === 'image' && <Inteira index={index} metade="baixo" inteira={imageB.inteira === true} />}
-
-          <Field label="Trocar a cena de baixo">
+          <div className="grid grid-cols-2 gap-1.5">
+            {imageB.kind === 'video' && (
+              <Inverter index={index} metade="baixo" invertido={imageB.invertido === true} />
+            )}
+            {imageB.kind === 'image' && <Inteira index={index} metade="baixo" inteira={imageB.inteira === true} />}
             <Chip active={false} onClick={() => void abrirBiblioteca(index, 'baixo')}>
-              <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-              Buscar na biblioteca
+              <span title="Trocar a cena de baixo por outra da biblioteca">
+                <LibraryIcon size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                Trocar cena
+              </span>
             </Chip>
             {naBiblioteca(imageB.path) && (
-              <Chip active={false} onClick={() => void mostrarNaBiblioteca(imageB.path)}>
-                <LocateFixed size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-                Ver este clipe na biblioteca
-              </Chip>
+              <span className="col-span-2 grid">
+                <Chip active={false} onClick={() => void mostrarNaBiblioteca(imageB.path)}>
+                  <LocateFixed size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+                  Ver este clipe na biblioteca
+                </Chip>
+              </span>
             )}
-            <p className="flex items-baseline gap-1.5 text-[11px] leading-relaxed text-ink-3">
-              {imageB.kind === 'video' && (
-                <span className="flex items-center gap-1 text-accent">
-                  <Film size={11} strokeWidth={1.5} />
-                  clipe
-                </span>
-              )}
-              <span className="min-w-0 truncate">{imageB.fileName}</span>
-            </p>
-          </Field>
+          </div>
         </>
       )}
 
-      <Field label="Entra em">
-        <span className="tnum text-[13px] text-ink-2">{formatTimecode(scene.start)}</span>
-      </Field>
+      {/*
+        INSERIR IMAGEM: o tempo sai deste bloco, entao o resto da linha do tempo
+        nao se mexe. Arrastar imagens direto na timeline faz o mesmo.
+      */}
+      <div className="h-px bg-line" />
 
-      <Field label="Inserir imagem">
-        <div className="flex flex-col gap-1.5">
-          <Chip active={false} onClick={() => void inserir(scene.start)}>
-            <ImagePlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-            Antes deste bloco
-          </Chip>
-          <Chip active={false} onClick={() => void inserir((scene.start + scene.end) / 2)}>
-            <Scissors size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-            No meio, cortando ao meio
-          </Chip>
-          <Chip active={false} onClick={() => void inserir(scene.end)}>
-            <ImagePlus size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-            Depois deste bloco
-          </Chip>
+      <div className="flex flex-col gap-2">
+        <Rotulo>Inserir imagem</Rotulo>
+        <div className="grid grid-cols-3 gap-1">
+          <BotaoDeInserir titulo="Antes deste bloco" onClick={() => void inserir(scene.start)}>
+            <ImagePlus size={11} strokeWidth={1.5} />
+            Antes
+          </BotaoDeInserir>
+          <BotaoDeInserir titulo="No meio, cortando o bloco ao meio" onClick={() => void inserir((scene.start + scene.end) / 2)}>
+            <Scissors size={11} strokeWidth={1.5} />
+            No meio
+          </BotaoDeInserir>
+          <BotaoDeInserir titulo="Depois deste bloco" onClick={() => void inserir(scene.end)}>
+            <ImagePlus size={11} strokeWidth={1.5} />
+            Depois
+          </BotaoDeInserir>
         </div>
-        <p className="text-[11px] leading-relaxed text-ink-3">
-          O tempo sai deste bloco, então o resto da linha do tempo não se mexe. Arrastar imagens
-          direto na timeline faz o mesmo.
-        </p>
-      </Field>
-
-      <p className="flex items-baseline gap-1.5 text-[11px] leading-relaxed text-ink-3">
-        {/* Miniatura de clipe e miniatura de print sao a mesma coisa na tela.
-            Sem esta marca nao da para saber qual bloco e qual. */}
-        {image.kind === 'video' && (
-          <span className="flex items-center gap-1 text-accent">
-            <Film size={11} strokeWidth={1.5} />
-            clipe
-          </span>
-        )}
-        <span className="min-w-0 truncate">{image.fileName}</span>
-      </p>
+      </div>
     </aside>
+  )
+}
+
+/** O titulo de uma secao do cartao, no mesmo jeito do titulo dos grupos do meio. */
+function Rotulo({ children, extra }: { children: React.ReactNode; extra?: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-3">{children}</span>
+      {extra}
+    </div>
+  )
+}
+
+/** Um dos tres botoes do "Inserir imagem". O tempo sai deste bloco. */
+function BotaoDeInserir({ titulo, onClick, children }: { titulo: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`${titulo}. O tempo sai deste bloco, então o resto da linha do tempo não se mexe. Arrastar imagens direto na linha do tempo faz o mesmo.`}
+      className="flex h-7 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-line bg-elevated px-1 text-[11px] text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+    >
+      {children}
+    </button>
   )
 }
 
@@ -413,7 +468,17 @@ function PontoDeEntrada({
   const larg = (Math.min(bloco, total - inicio) / total) * 100
 
   return (
-    <Field label={label}>
+    <div className="flex flex-col gap-2">
+      <Rotulo
+        extra={
+          <span className="tnum text-[10px] text-ink-2">
+            {inicio.toFixed(1)}–{Math.min(inicio + bloco, total).toFixed(1)}s
+            <span className="text-ink-3"> de {total.toFixed(1)}s</span>
+          </span>
+        }
+      >
+        {label}
+      </Rotulo>
       <div className="flex flex-col gap-1.5">
         <div className="relative">
           <video
@@ -488,21 +553,16 @@ function PontoDeEntrada({
           />
         </div>
 
-        <span className="tnum text-[11px] text-ink-2">
-          {inicio.toFixed(1)}s – {Math.min(inicio + bloco, total).toFixed(1)}s
-          <span className="text-ink-3"> de {total.toFixed(1)}s</span>
-          {parada > 0.05 && (
-            <span
-              className="text-accent"
-              title="O bloco dura mais que o resto do clipe a partir daqui: nesse fim a imagem fica parada no último quadro. Puxe a janela para a esquerda para encurtar isso."
-            >
-              {' '}
-              · imagem parada {parada.toFixed(1)}s no fim
-            </span>
-          )}
-        </span>
+        {parada > 0.05 && (
+          <span
+            className="tnum text-[10px] text-accent"
+            title="O bloco dura mais que o resto do clipe a partir daqui: nesse fim a imagem fica parada no último quadro. Puxe a janela para a esquerda para encurtar isso."
+          >
+            Imagem parada {parada.toFixed(1)}s no fim
+          </span>
+        )}
       </div>
-    </Field>
+    </div>
   )
 }
 
@@ -526,9 +586,10 @@ function Inverter({
   const busy = useProject((s) => s.busy)
   return (
     <Chip active={invertido} onClick={() => busy === null && void inverterClipe(index, metade)}>
-      <RefreshCcw size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-      {invertido ? 'Tocando invertido' : 'Inverter clipe'}
-      {metade === 'baixo' ? ' (baixo)' : ''}
+      <span title={invertido ? 'O clipe toca de trás para frente. Clique para voltar ao normal.' : 'Tocar o clipe de trás para frente'}>
+        <RefreshCcw size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+        {invertido ? 'Invertido' : 'Inverter'}
+      </span>
     </Chip>
   )
 }
@@ -545,9 +606,10 @@ function Inteira({ index, metade, inteira }: { index: number; metade: 'cima' | '
   const busy = useProject((s) => s.busy)
   return (
     <Chip active={inteira} onClick={() => busy === null && void alternar(index, metade)}>
-      <Maximize2 size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
-      {inteira ? 'Imagem inteira (fundo desfocado)' : 'Mostrar a imagem inteira'}
-      {metade === 'baixo' ? ' (baixo)' : ''}
+      <span title={inteira ? 'A imagem aparece inteira, com o fundo desfocado. Clique para preencher a tela.' : 'Mostrar a imagem inteira, com o fundo desfocado'}>
+        <Maximize2 size={11} strokeWidth={1.5} className="mr-1 inline align-[-1px]" />
+        {inteira ? 'Inteira' : 'Imagem inteira'}
+      </span>
     </Chip>
   )
 }

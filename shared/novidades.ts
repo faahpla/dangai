@@ -20,6 +20,17 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.5.0',
+    itens: [
+      'Editor mais limpo: a barra de botões foi para o alto da janela, separada em grupos, e o Renderizar ficou em destaque. O play fica ao lado do tempo, na linha do tempo.',
+      'Preview de cima a baixo, como no DaVinci: ele ocupa a direita inteira e a linha do tempo encolhe para caber, então o vídeo aparece bem maior. Para voltar ao jeito antigo, use o botão de layout no alto (o quadradinho ao lado do Upscale).',
+      'Painéis em colunas: Enquadramento, Movimento e Ritmo do bloco ficam lado a lado, cada um no seu cartão, com sliders e gráficos menores. Na camada de ajuste, as Curvas, a Luz e a Cor e o Transform também ganharam colunas próprias.',
+      'Câmera livre mais clara: o começo e o fim ficam lado a lado, e o enquadramento, que não vale com a câmera ligada, vira um recado curto.',
+      'Com um bloco escolhido, a fila de miniaturas de cima some (ela repetia a linha do tempo); sem nada escolhido, ela volta. Esc solta o que está escolhido, e a coluna do bloco não aparece mais enquanto você mexe na camada de ajuste.',
+      'O botão Música saiu da barra de cima. A Edição rápida continua pondo a música.',
+    ],
+  },
+  {
     versao: '2.4.0',
     itens: [
       'Voltar ao Áudio não bagunça mais o vídeo: com as cenas já na timeline, tire o Fresh Air, mude um efeito, corte uma respiração ou mude a velocidade e dê "Pronto". Só o som troca. As transições, os ajustes de cada bloco, a seleção de cenas e as legendas ficam como você deixou, e tudo anda junto com a voz nova. Você volta direto para a timeline.',

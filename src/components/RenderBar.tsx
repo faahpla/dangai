@@ -1,11 +1,7 @@
 import { BotoesDosModulosNaBarraDeRender } from '@/modulos'
 import {
-  Play,
-  Pause,
   FolderOpen,
   LayoutPanelLeft,
-  Volume2,
-  VolumeX,
   Captions,
   CaptionsOff,
   Pencil,
@@ -31,6 +27,7 @@ import {
 import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
 import { BarraDeEtapas } from './BarraDeEtapas'
 import { BotaoDeTransicao } from './BotaoDeTransicao'
+import { botaoDaBarra, Divisoria, iconeDaBarra } from './barra'
 import { useLayout } from '@/store/layout'
 import { useProject } from '@/store/project'
 import {
@@ -108,14 +105,13 @@ function Home() {
           ? 'Clique de novo para limpar. Ctrl+Z traz de volta.'
           : 'Comecar outro vídeo (Ctrl+Z traz de volta)'
       }
-      className={[
-        'lift flex h-8 shrink-0 items-center gap-1.5 rounded-sm border px-2 text-[11px]',
+      className={
         perguntando
-          ? 'border-danger text-danger'
-          : 'border-line bg-elevated text-ink-3 hover:text-ink',
-      ].join(' ')}
+          ? 'flex h-8 shrink-0 items-center gap-1.5 rounded-sm bg-danger/10 px-2.5 text-[12px] text-danger'
+          : iconeDaBarra()
+      }
     >
-      <House size={14} strokeWidth={1.5} />
+      <House size={15} strokeWidth={1.5} />
       {perguntando && 'Limpar?'}
     </button>
   )
@@ -164,21 +160,24 @@ function useNaoCabe(ref: RefObject<HTMLDivElement | null>): boolean {
 }
 
 /**
- * Transporte e acao. Um botao primario so -- renderizar, que vira cancelar
- * durante o render. O rosa mora no preenchimento da timeline nesse momento,
- * entao aqui o botao fica cinza.
+ * A BARRA DE CIMA DO EDITOR: de onde se vem e para onde se vai.
+ *
+ * Mora no alto da janela, como no Premiere e no CapCut, e nao mais entre o
+ * painel e a linha do tempo: la ela misturava o transporte (play), as etapas,
+ * as ferramentas do video e o render numa fila so de botoes iguais -- "muito
+ * poluido visualmente". Agora sao grupos, da esquerda para a direita:
+ *
+ *   casa e etapas | legendas | o video inteiro (transicao, do meu jeito,
+ *   bins) ... avisos, modulos | layout, upscale e o RENDERIZAR
+ *
+ * O play desceu para a barra da linha do tempo, junto do tempo que ele anda.
+ * Um botao cheio so -- renderizar, que vira cancelar durante o render.
  */
 export function RenderBar() {
   const audio = useProject((s) => s.audio)
   const images = useProject((s) => s.images)
-  const playing = useProject((s) => s.playing)
   const render = useProject((s) => s.render)
   const lastOutput = useProject((s) => s.lastOutput)
-  const sfxEnabled = useProject((s) => s.sfxEnabled)
-  const sfxCount = useProject((s) =>
-    s.plan && s.sfxFiles.length > 0 ? Math.ceil((s.plan.scenes.length - 1) / 2) : 0,
-  )
-  const toggleSfx = useProject((s) => s.toggleSfx)
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   /*
    * No horizontal a legenda some da barra.
@@ -195,7 +194,6 @@ export function RenderBar() {
   const binsOpen = useProject((s) => s.binsOpen)
   const openBins = useProject((s) => s.openBins)
   const openCaptions = useProject((s) => s.openCaptions)
-  const togglePlay = useProject((s) => s.togglePlay)
   const upscale = useProject((s) => s.upscale)
   const toggleUpscale = useProject((s) => s.toggleUpscale)
   const startRender = useProject((s) => s.startRender)
@@ -206,94 +204,74 @@ export function RenderBar() {
   const busy = useProject((s) => s.busy)
   const barra = useRef<HTMLDivElement>(null)
   const naoCabe = useNaoCabe(barra)
+  const temLegendas = captionCount > 0
 
   return (
     <div
       ref={barra}
+      data-barra
       data-compacto={naoCabe || undefined}
-      className="group/barra flex min-w-0 items-center gap-3"
+      className="group/barra flex h-12 min-w-0 shrink-0 items-center gap-0.5 border-b border-line px-4"
     >
       {!isRendering && <Home />}
 
-      <button
-        type="button"
-        onClick={togglePlay}
-        disabled={!canRender || isRendering}
-        aria-label={playing ? 'Pausar' : 'Reproduzir'}
-        className="lift grid size-8 place-items-center rounded-sm border border-line bg-elevated text-ink-2 hover:text-ink disabled:opacity-40"
-      >
-        {playing ? <Pause size={14} strokeWidth={1.5} /> : <Play size={14} strokeWidth={1.5} />}
-      </button>
-
       {/*
-        AS ETAPAS (Audio, Legendas, Cenas, Edicao): a volta para o audio e para
-        a selecao da Biblioteca -- que eram os botoes "Audio" e "Selecao" -- e a
-        sincronia das legendas, todas no mesmo lugar.
+        AS ETAPAS (Audio, Roteiro, Cenas, Edicao): a volta para o audio e para
+        a selecao da Biblioteca, no mesmo lugar onde elas aparecem nas outras
+        telas -- o alto, a esquerda.
       */}
-      {!isRendering && <BarraDeEtapas />}
+      <BarraDeEtapas />
 
-      {captionCount > 0 && !isRendering && (
-        <button
-          type="button"
-          onClick={() => openCaptions(!captionsOpen)}
-          title="Mesclar e dividir legendas"
-          className={[
-            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-            captionsOpen
-              ? 'border-line-strong bg-elevated text-ink'
-              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-          ].join(' ')}
-        >
-          <Pencil size={12} strokeWidth={1.5} />
-          <span className="group-data-[compacto]/barra:hidden">Editar</span>
-        </button>
-      )}
-
-      {!isRendering && (
-        <button
-          type="button"
-          onClick={() => openBins(!binsOpen)}
-          title="Power Bins: seus SFX, músicas e .mov, para arrastar na linha do tempo"
-          className={[
-            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-            binsOpen
-              ? 'border-line-strong bg-elevated text-ink'
-              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-          ].join(' ')}
-        >
-          <FolderOpen size={12} strokeWidth={1.5} />
-          <span className="group-data-[compacto]/barra:hidden">Bins</span>
-        </button>
-      )}
-
-      {!isRendering && <BotaoDoMeuJeito desligado={!canRender || busy !== null} />}
-
-      {captionCount > 0 && !isRendering && !formatoLongo && (
-        <button
-          type="button"
-          onClick={toggleCaptions}
-          title={captionsEnabled ? 'Legendas queimadas no vídeo' : 'Sem legendas'}
-          className={[
-            'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-            captionsEnabled
-              ? 'border-accent bg-accent-dim text-ink'
-              : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-          ].join(' ')}
-        >
-          {captionsEnabled ? (
-            <Captions size={12} strokeWidth={1.5} />
-          ) : (
-            <CaptionsOff size={12} strokeWidth={1.5} />
+      {/* AS LEGENDAS: ligar, mexer no texto e no estilo, lado a lado. */}
+      {temLegendas && !isRendering && (
+        <>
+          <Divisoria />
+          {!formatoLongo && (
+            <button
+              type="button"
+              onClick={toggleCaptions}
+              aria-pressed={captionsEnabled}
+              title={captionsEnabled ? 'Legendas queimadas no vídeo (clique para tirar)' : 'Sem legendas (clique para pôr)'}
+              className={botaoDaBarra(captionsEnabled ? 'ligado' : 'normal')}
+            >
+              {captionsEnabled ? <Captions size={14} strokeWidth={1.5} /> : <CaptionsOff size={14} strokeWidth={1.5} />}
+              <span className="group-data-[compacto]/barra:hidden">Legendas</span>
+            </button>
           )}
-          <span className="group-data-[compacto]/barra:hidden">Legendas</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => openCaptions(!captionsOpen)}
+            title="Mesclar e dividir legendas"
+            aria-pressed={captionsOpen}
+            className={botaoDaBarra(captionsOpen ? 'aberto' : 'normal')}
+          >
+            <Pencil size={14} strokeWidth={1.5} />
+            <span className="group-data-[compacto]/barra:hidden">Editar</span>
+          </button>
+          {captionsEnabled && !formatoLongo && <EstiloControl />}
+        </>
       )}
 
-      {captionCount > 0 && captionsEnabled && !isRendering && !formatoLongo && <EstiloControl />}
+      {/* O VIDEO INTEIRO: o que mexe em todos os blocos de uma vez. */}
+      {!isRendering && (
+        <>
+          <Divisoria />
+          <BotaoDeTransicao />
+          <BotaoDoMeuJeito desligado={!canRender || busy !== null} />
+          <button
+            type="button"
+            onClick={() => openBins(!binsOpen)}
+            title="Power Bins: seus SFX, músicas e .mov, para arrastar na linha do tempo"
+            aria-pressed={binsOpen}
+            className={botaoDaBarra(binsOpen ? 'aberto' : 'normal')}
+          >
+            <FolderOpen size={14} strokeWidth={1.5} />
+            <span className="group-data-[compacto]/barra:hidden">Bins</span>
+          </button>
+        </>
+      )}
 
-      {!isRendering && <BotaoDeTransicao />}
-      {!isRendering && <BotaoDeLayout />}
-
+      <div className="min-w-2 flex-1" />
 
       {!isRendering && <Preflight />}
 
@@ -303,33 +281,31 @@ export function RenderBar() {
           onClick={() => void window.dangai.revealFile(lastOutput)}
           aria-label="Abrir pasta"
           title="Abrir a pasta do vídeo"
-          className="lift flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
+          className={botaoDaBarra()}
         >
-          <FolderOpen size={12} strokeWidth={1.5} />
+          <FolderOpen size={14} strokeWidth={1.5} />
           <span className="group-data-[compacto]/barra:hidden">Abrir pasta</span>
         </button>
       )}
 
-      <div className="flex-1" />
-
-      {/* Os botoes dos modulos ligados, antes do Renderizar. */}
-      <BotoesDosModulosNaBarraDeRender />
+      {/* Os botoes dos modulos ligados, antes do Renderizar (o index.css os poe no jeito desta barra). */}
+      <div data-modulos-na-barra className="flex shrink-0 items-center gap-0.5 empty:hidden">
+        <BotoesDosModulosNaBarraDeRender />
+      </div>
 
       {isRendering ? (
         <div className="flex items-center gap-3">
-          <span className="tnum text-[11px] text-ink-2">
+          <span className="tnum text-[12px] text-ink-2">
             {render.message ?? `${Math.round(render.progress * 100)}%`}
           </span>
-          <button
-            type="button"
-            onClick={() => void cancelRender()}
-            className="lift rounded-sm border border-line bg-elevated px-3 py-1.5 text-[13px] font-medium text-ink-2 hover:text-ink"
-          >
+          <button type="button" onClick={() => void cancelRender()} className={botaoDaBarra()}>
             Cancelar
           </button>
         </div>
       ) : (
         <>
+          <Divisoria />
+          <BotaoDeLayout />
           {/*
             O upscale fica COLADO no Renderizar, e nao no painel de estilo: e
             uma decisao que se toma no instante de apertar o botao, junto com
@@ -345,14 +321,9 @@ export function RenderBar() {
                 ? 'Melhora a imagem das cenas antes de renderizar. Custa alguns minutos.'
                 : 'Renderiza com a qualidade de sempre'
             }
-            className={[
-              'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px] disabled:opacity-40',
-              upscale
-                ? 'border-accent bg-accent-dim text-ink'
-                : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-            ].join(' ')}
+            className={botaoDaBarra(upscale ? 'ligado' : 'normal')}
           >
-            <Sparkle size={12} strokeWidth={1.5} />
+            <Sparkle size={14} strokeWidth={1.5} />
             <span className="group-data-[compacto]/barra:hidden">Upscale</span>
           </button>
 
@@ -360,7 +331,7 @@ export function RenderBar() {
             type="button"
             onClick={() => void startRender()}
             disabled={!canRender}
-            className="lift rounded-sm border border-line bg-elevated px-3.5 py-1.5 text-[13px] font-medium text-ink hover:bg-[#1d1d21] disabled:opacity-40"
+            className="ml-1.5 flex h-8 shrink-0 items-center rounded-sm bg-accent px-4 text-[12px] font-semibold text-white transition-colors duration-150 hover:bg-accent-hover disabled:opacity-40"
           >
             Renderizar
           </button>
@@ -385,9 +356,9 @@ function BotaoDoMeuJeito({ desligado }: { desligado: boolean }) {
       onClick={() => void aplicarMeuJeito()}
       disabled={desligado}
       title={resumoDoPerfil(perfil)}
-      className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink disabled:opacity-40"
+      className={botaoDaBarra()}
     >
-      <Wand2 size={12} strokeWidth={1.5} className="text-accent" />
+      <Wand2 size={14} strokeWidth={1.5} className="text-accent" />
       <span className="group-data-[compacto]/barra:hidden">Do meu jeito</span>
     </button>
   )
@@ -579,17 +550,17 @@ function EstiloControl() {
   const [alturaMax, setAlturaMax] = useState<number | null>(null)
 
   /*
-   * Quanto cabe acima do botao, medido na hora de abrir.
+   * Quanto cabe abaixo do botao, medido na hora de abrir.
    *
-   * O painel e ancorado no topo do botao, entao o teto dele e a distancia ate o
-   * alto da janela -- nao a altura da tela. Redimensionar a janela com o painel
-   * aberto refaz a conta.
+   * O painel desce do pe do botao (a barra mora no alto da janela), entao o
+   * teto dele e a distancia ate o pe da janela -- nao a altura da tela.
+   * Redimensionar a janela com o painel aberto refaz a conta.
    */
   useEffect(() => {
     if (!aberto) return
     const medir = (): void => {
       const caixa = painel.current?.parentElement?.getBoundingClientRect()
-      if (caixa) setAlturaMax(Math.max(Math.round(caixa.top - 16), 160))
+      if (caixa) setAlturaMax(Math.max(Math.round(window.innerHeight - caixa.bottom - 16), 160))
     }
     medir()
     window.addEventListener('resize', medir)
@@ -608,19 +579,14 @@ function EstiloControl() {
         type="button"
         onClick={() => setAberto((v) => !v)}
         aria-label="Estilo da legenda"
-        title="Cor da palavra marcada e altura da legenda"
-        className={[
-          'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-          aberto
-            ? 'border-line-strong bg-elevated text-ink'
-            : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-        ].join(' ')}
+        title="Cor, fonte, tamanho e altura da legenda"
+        className={botaoDaBarra(aberto ? 'aberto' : 'normal')}
       >
         <span
-          className="size-3 rounded-full"
+          className="size-3 rounded-full ring-1 ring-white/15"
           style={{ backgroundColor: corDaLegenda(captionColor) }}
         />
-        Estilo
+        <span className="group-data-[compacto]/barra:hidden">Estilo</span>
       </button>
 
       {aberto && (
@@ -649,7 +615,7 @@ function EstiloControl() {
           <div
             ref={painel}
             style={alturaMax === null ? undefined : { maxHeight: `${alturaMax}px` }}
-            className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 grid w-[520px] grid-cols-2 gap-x-4 overflow-y-auto rounded-md p-3"
+            className="glass enter absolute top-[calc(100%+6px)] left-0 z-50 grid w-[520px] grid-cols-2 gap-x-4 overflow-y-auto rounded-md p-3"
           >
             <PresetsDeEstilo />
             <div>
@@ -1154,14 +1120,10 @@ function Preflight() {
         type="button"
         onClick={() => setAberto((v) => !v)}
         title="Coisas que talvez você queira ver antes de renderizar"
-        className={[
-          'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-          aberto
-            ? 'border-line-strong bg-elevated text-ink'
-            : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-        ].join(' ')}
+        className={botaoDaBarra(aberto ? 'aberto' : 'normal')}
       >
-        <TriangleAlert size={12} strokeWidth={1.5} />
+        {/* Ambar: e para olhar, mas nao e erro (o vermelho e do erro). */}
+        <TriangleAlert size={14} strokeWidth={1.5} className="text-[#e8b65c]" />
         {/* "⚠ 8" sozinho ninguem adivinhava o que era: agora diz "8 avisos". */}
         <span className="tnum">{avisos.length}</span>
         <span className="group-data-[compacto]/barra:hidden">{avisos.length === 1 ? 'aviso' : 'avisos'}</span>
@@ -1171,7 +1133,7 @@ function Preflight() {
         <>
           {/* Fecha ao clicar fora sem virar modal: nao escurece nem prende o foco. */}
           <div className="fixed inset-0 z-40" onPointerDown={() => setAberto(false)} />
-          <ul className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 max-h-[240px] w-[380px] overflow-y-auto rounded-md p-1.5">
+          <ul className="glass enter absolute top-[calc(100%+6px)] right-0 z-50 max-h-[420px] w-[380px] overflow-y-auto rounded-md p-1.5">
             {avisos.map((aviso, index) => (
               <li key={`${aviso.tipo}-${index}`}>
                 <button
@@ -1425,24 +1387,21 @@ function BotaoDeLayout() {
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        title="Onde fica o preview, e voltar o layout ao padrão"
-        className={[
-          'lift flex items-center gap-1.5 rounded-sm border px-2.5 py-1.5 text-[11px]',
-          aberto ? 'border-line-strong bg-elevated text-ink' : 'border-line bg-elevated text-ink-3 hover:text-ink-2',
-        ].join(' ')}
+        aria-label="Layout"
+        title="Layout: onde fica o preview, e voltar ao padrão"
+        className={iconeDaBarra(aberto ? 'aberto' : 'normal')}
       >
-        <LayoutPanelLeft size={12} strokeWidth={1.5} />
-        Layout
+        <LayoutPanelLeft size={15} strokeWidth={1.5} />
       </button>
       {aberto && (
         <>
           <div className="fixed inset-0 z-40" onPointerDown={() => setAberto(false)} />
-          <div className="glass enter absolute bottom-[calc(100%+6px)] left-0 z-50 flex w-[260px] flex-col gap-1 rounded-md p-2">
+          <div className="glass enter absolute top-[calc(100%+6px)] right-0 z-50 flex w-[260px] flex-col gap-1 rounded-md p-2">
             <Opcao ativo={previewAoLado} onClick={() => mudar({ previewAoLado: true })}>
               Preview ao lado do bloco
             </Opcao>
             <Opcao ativo={!previewAoLado} onClick={() => mudar({ previewAoLado: false })}>
-              Preview na direita
+              Preview na direita, de cima a baixo
             </Opcao>
             <button
               type="button"
