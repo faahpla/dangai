@@ -141,6 +141,14 @@ export function SecaoDoRoteiro({
                 />
               </span>
             )}
+            {secao.papel === 'gancho' && (
+              <span
+                className="text-[11px] text-ink-3"
+                title="A imagem de cada frase aqui e so o MOMENTO do episodio. As cenas sao escolhidas no passo Cenas, depois da voz: o gancho sai com 2 ou 3 cenas."
+              >
+                vira 2 ou 3 cenas no passo Cenas
+              </span>
+            )}
             <span className="tnum text-[11px] text-ink-3" title={`${palavras} ${palavras === 1 ? 'palavra' : 'palavras'}`}>
               ~{segundos} s
             </span>
@@ -626,6 +634,12 @@ const Momento = memo(
         {momento && (
           <span className="tnum pointer-events-none absolute bottom-[3px] right-[3px] rounded-[2px] bg-black/70 px-[3px] text-[9px] leading-[13px] text-white">
             {tempoDoEpisodio(momento.t)}
+          </span>
+        )}
+        {/* (13/11) "Confunde muito": a miniatura parecia a CENA escolhida. E so o momento da frase. */}
+        {momento && (
+          <span className="pointer-events-none absolute left-[3px] top-[3px] rounded-[2px] bg-black/70 px-[3px] text-[8px] uppercase leading-[12px] tracking-wide text-white/85">
+            momento
           </span>
         )}
       </button>
