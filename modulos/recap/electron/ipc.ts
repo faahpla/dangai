@@ -339,10 +339,10 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
 
   ctx.handle<[string, PedidoDeImportacao], VozGerada>(C.importarAudio, async (rascunhoId, pedido) => {
     const conferido = pedidoDeImportacaoSchema.parse(pedido)
-    if (classifyFile(conferido.caminho) !== 'audio') {
-      throw new Error(`Esse arquivo nao e audio. Use ${AUDIO_EXTENSIONS.join(', ')}.`)
+    for (const c of [conferido.caminho, ...conferido.mais]) {
+      if (classifyFile(c) !== 'audio') throw new Error(`Esse arquivo nao e audio. Use ${AUDIO_EXTENSIONS.join(', ')}.`)
+      if (!existsSync(c)) throw new Error('Esse audio nao esta mais no disco.')
     }
-    if (!existsSync(conferido.caminho)) throw new Error('Esse audio nao esta mais no disco.')
     return importarAudio(idDoRascunho(rascunhoId), conferido, progressoDaVoz)
   })
 
@@ -364,13 +364,14 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
     audioDoTake(idDoRascunho(rascunhoId), idDoTake(takeId)),
   )
 
-  ctx.handle<[], string | null>(C.escolherNarracao, async () => {
+  // (13/11) Um ou varios (o gancho e o resto): a tela poe na ordem e emenda.
+  ctx.handle<[], string[] | null>(C.escolherNarracao, async () => {
     const r = await dialog.showOpenDialog({
-      title: 'Escolher a narracao gravada',
-      properties: ['openFile'],
+      title: 'Escolher a narracao gravada (um ou mais audios)',
+      properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Audio', extensions: [...AUDIO_EXTENSIONS] }],
     })
-    return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0]!
+    return r.canceled || r.filePaths.length === 0 ? null : r.filePaths.slice(0, 8)
   })
 
   // ------------------------------------------- chaves de voz e voz padrao

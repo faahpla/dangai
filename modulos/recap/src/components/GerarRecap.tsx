@@ -172,9 +172,10 @@ function Assistente() {
          * episodio; o resto ganha o recado no rodape DESTE passo.
          */
         if (noPassoDaVoz) {
-          const audio = caminhos.find((c) => classifyFile(c) === 'audio')
-          if (audio) {
-            void useVoz.getState().importar(audio)
+          // Um ou varios (o gancho e o resto): o store emenda na ordem do nome.
+          const audios = caminhos.filter((c) => classifyFile(c) === 'audio')
+          if (audios.length > 0) {
+            void useVoz.getState().importar(audios)
             return
           }
           if (!caminhos.some(ehEpisodio)) {

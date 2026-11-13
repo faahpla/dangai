@@ -368,7 +368,8 @@ export interface PonteDoRecap {
   desaprovarVoz(rascunhoId: string): Promise<IpcResult<RascunhoDoRecap>>
   /** O WAV do take no servidor de midia do nucleo, pedido por id (nunca por caminho). */
   urlDoAudio(rascunhoId: string, takeId: string): Promise<IpcResult<AudioDoTake>>
-  escolherNarracao(): Promise<IpcResult<string | null>>
+  /** Um ou mais audios (null = desistiu). */
+  escolherNarracao(): Promise<IpcResult<string[] | null>>
   onVozProgresso(listener: (progresso: ProgressoDaVoz) => void): () => void
 
   /** As chaves (so tem/dica) e a voz padrao. */

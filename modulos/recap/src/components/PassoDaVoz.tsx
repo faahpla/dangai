@@ -599,6 +599,7 @@ function Pos({ travado }: { travado: boolean }) {
  */
 function AreaDaNarracao({ take, travado }: { take: TakeDaVoz | null; travado: boolean }) {
   const escolherArquivo = useVoz((s) => s.escolherArquivo)
+  const importados = useVoz((s) => s.importados)
   const nome = take?.config.fonte === 'importado' ? take.config.audio.nome : null
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -606,6 +607,16 @@ function AreaDaNarracao({ take, travado }: { take: TakeDaVoz | null; travado: bo
         <p className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-2" title={nome}>
           <FileAudio size={12} strokeWidth={1.5} className="shrink-0 text-ink-3" />
           <span className="min-w-0 truncate">{nome}</span>
+          {importados && importados.length > 1 && nome?.includes(' + ') && (
+            <Botao
+              pequeno
+              disabled={travado}
+              onClick={() => void useVoz.getState().importar([...importados].reverse(), true)}
+              title="Emenda os audios na ordem contraria (o ultimo vira o primeiro)"
+            >
+              Inverter a ordem
+            </Botao>
+          )}
         </p>
       )}
       <button
@@ -619,7 +630,7 @@ function AreaDaNarracao({ take, travado }: { take: TakeDaVoz | null; travado: bo
         <span className="text-[15px] font-semibold tracking-tight text-ink">
           {nome ? 'Soltar outro audio' : 'Soltar a narracao aqui'}
         </span>
-        <span className="text-[11px] text-ink-3">.wav .mp3 .m4a · ou clique para escolher</span>
+        <span className="text-[11px] text-ink-3">.wav .mp3 .m4a · um ou mais (o gancho e o resto: emenda na ordem do nome) · ou clique para escolher</span>
       </button>
     </div>
   )

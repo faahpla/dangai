@@ -114,6 +114,8 @@ export const PAUSA_CURTA_SEC = 0.15
  * partir de 0,18 s e deixa 0,08 s. O ritmo de short.
  */
 export const PAUSA_LONGA_JUSTA_SEC = 0.18
+/** O silencio entre dois audios importados juntos (o gancho e o resto); o corte de pausas apara depois. */
+export const SILENCIO_ENTRE_AUDIOS_SEC = 0.4
 export const PAUSA_CURTA_JUSTA_SEC = 0.08
 
 /** A pausa minima que o corte pega e o que sobra dela, no modo escolhido. */
@@ -628,6 +630,12 @@ export const pedidoDeImportacaoSchema = z.object({
   cortarPausas: z.boolean().default(false),
   /** O corte justo (com o cortarPausas ligado). */
   pausasJustas: z.boolean().default(true),
+  /**
+   * (13/11) Os OUTROS audios, emendados depois do `caminho` nesta ordem ("e se eu
+   * importar 2 audios? o hook e o resto, separados"): viram um audio so, com
+   * SILENCIO_ENTRE_AUDIOS_SEC entre eles. Vazio = um audio so, como antes.
+   */
+  mais: z.array(z.string().min(1).max(1024)).max(7).default([]),
   /** Padrao true: repeticao, "eee" e frase lida duas vezes saem (V1). */
   cortarErros: z.boolean().default(true),
   pedidoId: pedidoIdSchema,

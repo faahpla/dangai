@@ -462,7 +462,13 @@ interface EstadoDaVozNaTela {
   desistir: () => void
   /** Velocidade/corte do take atual, de graca. */
   aplicarAjuste: () => Promise<void>
-  importar: (caminho: string) => Promise<void>
+  /**
+   * Um audio, ou varios (o gancho e o resto, 13/11): emendados na ordem do NOME
+   * ("1 gancho", "2 resto"...); o "Inverter a ordem" refaz ao contrario.
+   */
+  importar: (caminho: string | readonly string[], naOrdem?: boolean) => Promise<void>
+  /** Os audios da ultima importacao com mais de um (para o "Inverter a ordem"); null = um so. */
+  importados: readonly string[] | null
   escolherArquivo: () => Promise<void>
   cancelar: () => void
   escolherTake: (takeId: string) => Promise<void>
@@ -899,7 +905,14 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
       )
     },
 
-    importar: async (caminho) => {
+    importados: null,
+
+    importar: async (entrada, naOrdem = false) => {
+      const lista = typeof entrada === 'string' ? [entrada] : [...entrada]
+      if (lista.length === 0) return
+      const nome = (c: string): string => c.split(/[\/]/).pop() ?? c
+      const caminhos = naOrdem ? lista : lista.sort((a, b) => nome(a).localeCompare(nome(b), 'pt-BR', { numeric: true, sensitivity: 'base' }))
+      const caminho = caminhos[0]!
       const s = get()
       if (s.pedido) {
         set({ erro: 'Espere a voz terminar (ou cancele) antes de importar.' })
@@ -911,6 +924,7 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
       await executar('importar', [], (id, pedidoId) =>
         ponte.importarAudio(id, {
           caminho,
+          mais: caminhos.slice(1),
           velocidade: arredondar(form.velocidade),
           cortarPausas: form.cortarPausas,
           pausasJustas: form.pausasJustas,
@@ -918,6 +932,7 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
           pedidoId,
         }),
       )
+      set({ importados: caminhos.length > 1 ? caminhos : null })
     },
 
     escolherArquivo: async () => {
@@ -927,7 +942,7 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
         set({ erro: r.error })
         return
       }
-      if (r.value) await get().importar(r.value)
+      if (r.value && r.value.length > 0) await get().importar(r.value)
     },
 
     cancelar: () => {

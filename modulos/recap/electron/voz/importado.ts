@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { basename } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { textoParaNarrar, type EtapaDaVoz, type PedidoDeImportacao, type TakeDaVoz } from '../../shared/voz'
+import { SILENCIO_ENTRE_AUDIOS_SEC, textoParaNarrar, type EtapaDaVoz, type PedidoDeImportacao, type TakeDaVoz } from '../../shared/voz'
 import { lerRascunhoDoDisco } from '../gerar/rascunho'
 import { alinharPeloAudio } from './alinhamento'
 import { chaveDoImportado, guardarAlinhamento, lerAlinhamentoGuardado } from './cache'
@@ -12,7 +12,7 @@ import { decodificar } from './ffmpeg'
 import { brutoPeloSom, montarTake } from './montar'
 import { pastaDaVoz } from './pastas'
 import { medirEnergia } from './pos'
-import { duracaoDoPcm, gravarWavEnderecado } from './wav'
+import { duracaoDoPcm, gravarWavEnderecado, juntar, sha256, type Pcm } from './wav'
 
 /**
  * O AUDIO GRAVADO PELO LEVI (.wav/.mp3/.m4a...): a fonte 'importado'.
@@ -43,6 +43,24 @@ async function hashDoArquivo(caminho: string): Promise<string> {
   const h = createHash('sha256')
   await pipeline(createReadStream(caminho), h)
   return h.digest('hex')
+}
+
+/**
+ * Um audio ou VARIOS emendados na ordem (o gancho e o resto, 13/11): os outros
+ * na taxa do primeiro, com SILENCIO_ENTRE_AUDIOS_SEC entre eles. O hash junta
+ * os dos arquivos: a mesma lista na mesma ordem acha o alinhamento guardado.
+ */
+export async function lerOsAudios(caminhos: readonly string[], signal: AbortSignal): Promise<{ pcm: Pcm; hash: string }> {
+  const hashes = await Promise.all(caminhos.map(hashDoArquivo))
+  const primeiro = await decodificar(caminhos[0]!, null, signal)
+  if (caminhos.length === 1) return { pcm: primeiro, hash: hashes[0]! }
+  const silencio = new Int16Array(Math.round(SILENCIO_ENTRE_AUDIOS_SEC * primeiro.taxa))
+  const pedacos: Int16Array[] = [primeiro.amostras]
+  for (const c of caminhos.slice(1)) {
+    const p = await decodificar(c, primeiro.taxa, signal)
+    pedacos.push(silencio, p.amostras)
+  }
+  return { pcm: { taxa: primeiro.taxa, amostras: juntar(pedacos) }, hash: sha256(hashes.join('|')) }
 }
 
 /** A mensagem do alinhador.ts/whisper.ts na etapa certa da tela. */
@@ -81,8 +99,7 @@ export async function importarAudioDoLevi(
   const { frases } = textoParaNarrar(roteiro)
   if (frases.length === 0) throw new Error('O roteiro esta sem frase para narrar.')
 
-  const hash = await hashDoArquivo(pedido.caminho)
-  const pcm = await decodificar(pedido.caminho, null, signal)
+  const { pcm, hash } = await lerOsAudios([pedido.caminho, ...pedido.mais], signal)
   if (duracaoDoPcm(pcm) < 1) throw new Error('Esse audio e curto demais para este roteiro.')
   /*
    * A DURACAO TEM QUE CABER NO ROTEIRO (v0.1.1). Barato e antes do Whisper: um
@@ -150,7 +167,7 @@ export async function importarAudioDoLevi(
         cortarPausas: pedido.cortarPausas,
         pausasJustas: pedido.pausasJustas,
         cortarErros: pedido.cortarErros,
-        audio: { nome: basename(pedido.caminho).slice(0, 260), hash },
+        audio: { nome: [pedido.caminho, ...pedido.mais].map((c) => basename(c)).join(' + ').slice(0, 260), hash },
       },
       origem: 'alinhador',
       qualidade: { ancoradas: guardado.ancoradas, total: guardado.total, score: guardado.score },
