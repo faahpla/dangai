@@ -114,7 +114,8 @@ export function chaveDaVozDoRitmo(c: ConfigDaVoz): string {
 
 /** A configuracao do ritmo: voz + velocidade nativa (a ENVIADA) + acelerar. O corte de pausa nao entra (so takes com corte sao medidos). */
 export function chaveDoRitmo(c: ConfigDaVoz): string {
-  return `${chaveDaVozDoRitmo(c)}|n${velocidadeNativaEnviada(c).toFixed(2)}|a${c.velocidade.toFixed(2)}`
+  // O corte justo muda o ritmo: medida a parte (as de antes, sem o campo, continuam a do normal).
+  return `${chaveDaVozDoRitmo(c)}|n${velocidadeNativaEnviada(c).toFixed(2)}|a${c.velocidade.toFixed(2)}${c.pausasJustas ? '|j' : ''}`
 }
 
 /** De onde o numero saiu: a tela diz "medido" ou "estimado". */

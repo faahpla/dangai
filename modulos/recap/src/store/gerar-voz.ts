@@ -87,6 +87,8 @@ export interface Formulario {
   /** O "acelerar" (o pos, de graca). */
   velocidade: number
   cortarPausas: boolean
+  /** (13/11) O corte justo: pausa de 0,18 s ou mais vira 0,08 s (o normal: 0,3 vira 0,15). */
+  pausasJustas: boolean
   /** So no audio importado (V1): repeticao, "eee" e frase lida duas vezes saem. Ligado por padrao. */
   cortarErros: boolean
 }
@@ -176,6 +178,7 @@ const FORM_INICIAL: Formulario = {
   nativa: VELOCIDADE_NATIVA_PADRAO,
   velocidade: 1,
   cortarPausas: true,
+  pausasJustas: true,
   cortarErros: true,
 }
 
@@ -197,7 +200,7 @@ function cortaErros(c: ConfigDaVoz): boolean {
 }
 
 function mesmoPos(a: ConfigDaVoz, b: ConfigDaVoz): boolean {
-  return Math.abs(a.velocidade - b.velocidade) < 1e-6 && a.cortarPausas === b.cortarPausas && cortaErros(a) === cortaErros(b)
+  return Math.abs(a.velocidade - b.velocidade) < 1e-6 && a.cortarPausas === b.cortarPausas && (!a.cortarPausas || a.pausasJustas === b.pausasJustas) && cortaErros(a) === cortaErros(b)
 }
 
 /** O formulario com a config de um take (as outras fontes ficam como estavam). */
@@ -208,6 +211,7 @@ function formComTake(take: TakeDaVoz, base: Formulario): Formulario {
     fonte: c.fonte,
     velocidade: c.velocidade,
     cortarPausas: c.cortarPausas,
+    pausasJustas: c.pausasJustas,
     cortarErros: c.fonte === 'importado' ? c.cortarErros : base.cortarErros,
   }
   if (c.fonte === 'elevenlabs') f.eleven = { voiceId: c.voiceId, modelId: c.modelId }
@@ -270,7 +274,7 @@ function completarVozes(form: Formulario, takes: readonly TakeDaVoz[], ajustes: 
  * quando e da mesma fonte -- a tela nao mexe neles --, senao os padroes.
  */
 export function configDoForm(form: Formulario, take: TakeDaVoz | null): ConfigDaVoz | null {
-  const pos = { velocidade: arredondar(form.velocidade), cortarPausas: form.cortarPausas }
+  const pos = { velocidade: arredondar(form.velocidade), cortarPausas: form.cortarPausas, pausasJustas: form.pausasJustas }
   const velocidadeNativa = arrumarVelocidadeNativa(form.nativa)
   let bruto: unknown
   if (form.fonte === 'elevenlabs') {
@@ -789,11 +793,12 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
           ? {
               velocidade: take.config.velocidade,
               cortarPausas: take.config.cortarPausas,
+              pausasJustas: take.config.pausasJustas,
               cortarErros: take.config.fonte === 'importado' ? take.config.cortarErros : true,
             }
           : pago(fonte) && pago(s.form.fonte)
-            ? { velocidade: s.form.velocidade, cortarPausas: s.form.cortarPausas, cortarErros: s.form.cortarErros }
-            : { velocidade: 1, cortarPausas: pago(fonte), cortarErros: true }
+            ? { velocidade: s.form.velocidade, cortarPausas: s.form.cortarPausas, pausasJustas: s.form.pausasJustas, cortarErros: s.form.cortarErros }
+            : { velocidade: 1, cortarPausas: pago(fonte), pausasJustas: true, cortarErros: true }
       set({
         form: { ...s.form, fonte, ...pos },
         formMexido: true,
@@ -882,11 +887,12 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
     desistir: () => set({ pergunta: null }),
 
     aplicarAjuste: async () => {
-      const { velocidade, cortarPausas, cortarErros, fonte } = get().form
+      const { velocidade, cortarPausas, pausasJustas, cortarErros, fonte } = get().form
       await executar('ajustar', [], (id, pedidoId) =>
         ponte.ajustarVoz(id, {
           velocidade: arredondar(velocidade),
           cortarPausas,
+          pausasJustas,
           ...(fonte === 'importado' ? { cortarErros } : {}),
           pedidoId,
         }),
@@ -907,6 +913,7 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
           caminho,
           velocidade: arredondar(form.velocidade),
           cortarPausas: form.cortarPausas,
+          pausasJustas: form.pausasJustas,
           cortarErros: form.cortarErros,
           pedidoId,
         }),

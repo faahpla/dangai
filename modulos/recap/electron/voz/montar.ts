@@ -132,6 +132,7 @@ export async function montarTake(
     palavrasDoBruto,
     {
       cortarPausas: dados.config.cortarPausas,
+      pausasJustas: dados.config.pausasJustas,
       velocidade: dados.config.velocidade,
       extras: cortarErros ? conhecidos : [],
     },

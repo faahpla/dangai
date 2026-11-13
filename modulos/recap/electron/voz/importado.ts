@@ -148,6 +148,7 @@ export async function importarAudioDoLevi(
         modelId: '',
         velocidade: pedido.velocidade,
         cortarPausas: pedido.cortarPausas,
+        pausasJustas: pedido.pausasJustas,
         cortarErros: pedido.cortarErros,
         audio: { nome: basename(pedido.caminho).slice(0, 260), hash },
       },

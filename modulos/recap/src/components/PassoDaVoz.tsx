@@ -41,7 +41,7 @@ import {
 } from '../store/gerar-voz'
 import { nucleo } from '../nucleo'
 import { useRitmoDaConfig } from '../store/ritmo'
-import { Deslizante } from '@/modulos/kit'
+import { Deslizante, Segmentos } from '@/modulos/kit'
 import { Barra, useRelogio } from './AndamentoDaAnalise'
 import { CartaoDoEpisodio } from './CartaoDoEpisodio'
 import { ErrosDoAudio } from './ErrosDoAudio'
@@ -524,6 +524,7 @@ function VelocidadeNativa({ travado }: { travado: boolean }) {
 function Pos({ travado }: { travado: boolean }) {
   const velocidade = useVoz((s) => s.form.velocidade)
   const cortarPausas = useVoz((s) => s.form.cortarPausas)
+  const pausasJustas = useVoz((s) => s.form.pausasJustas)
   const cortarErros = useVoz((s) => s.form.cortarErros)
   const importado = useVoz((s) => s.form.fonte === 'importado')
   const mudarForm = useVoz((s) => s.mudarForm)
@@ -551,11 +552,30 @@ function Pos({ travado }: { travado: boolean }) {
           ligada={cortarPausas}
           onChange={(ligada) => mudarForm((f) => ({ ...f, cortarPausas: ligada }))}
           disabled={travado}
-          title="Pausas de 0,3 s ou mais viram 0,15 s, sem cortar palavra"
+          title={
+            pausasJustas
+              ? 'Justo: pausas de 0,18 s ou mais viram 0,08 s, sem cortar palavra'
+              : 'Normal: pausas de 0,3 s ou mais viram 0,15 s, sem cortar palavra'
+          }
         >
           Cortar pausas
         </Caixinha>
       </div>
+      {cortarPausas && (
+        <div
+          className={['flex h-8 items-center', travado ? 'pointer-events-none opacity-40' : ''].join(' ')}
+          data-voz="pausas-justas"
+        >
+          <Segmentos
+            opcoes={[
+              { valor: 'justo', rotulo: 'Justo', title: 'Pausas de 0,18 s ou mais viram 0,08 s: o ritmo de short' },
+              { valor: 'normal', rotulo: 'Normal', title: 'Pausas de 0,3 s ou mais viram 0,15 s' },
+            ]}
+            ativo={(v) => (v === 'justo') === pausasJustas}
+            onChange={(v) => mudarForm((f) => ({ ...f, pausasJustas: v === 'justo' }))}
+          />
+        </div>
+      )}
       {importado && (
         <div className="flex h-8 items-center">
           <Caixinha
@@ -759,7 +779,7 @@ function PrevisaoDaDuracao({
 }) {
   const roteiro = roteiroAtual(rascunho)
   const reescalado =
-    exata && take && take.config.cortarPausas === config.cortarPausas ? (take.duracao * take.config.velocidade) / config.velocidade : null
+    exata && take && take.config.cortarPausas === config.cortarPausas && take.config.pausasJustas === config.pausasJustas ? (take.duracao * take.config.velocidade) / config.velocidade : null
   const ritmo = useRitmoDaConfig(reescalado === null ? config : null, take?.id ?? null)
   if (!roteiro) return null
   const segundos = reescalado ?? (ritmo ? palavrasDoRoteiro(roteiro) / ritmo : null)

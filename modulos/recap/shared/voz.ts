@@ -108,6 +108,18 @@ export const VOZ_VERSAO = 1 as const
 export const PAUSA_LONGA_SEC = 0.3
 /** Quanto sobra de uma pausa longa depois do corte. */
 export const PAUSA_CURTA_SEC = 0.15
+/**
+ * (13/11) O corte JUSTO ("o corte de pausas nao e muito bom", o Levi: a pausa
+ * de ~0,3 s entre o gancho e o contexto do ElevenLabs passava inteira): age a
+ * partir de 0,18 s e deixa 0,08 s. O ritmo de short.
+ */
+export const PAUSA_LONGA_JUSTA_SEC = 0.18
+export const PAUSA_CURTA_JUSTA_SEC = 0.08
+
+/** A pausa minima que o corte pega e o que sobra dela, no modo escolhido. */
+export function medidasDaPausa(justas: boolean): { longa: number; curta: number } {
+  return justas ? { longa: PAUSA_LONGA_JUSTA_SEC, curta: PAUSA_CURTA_JUSTA_SEC } : { longa: PAUSA_LONGA_SEC, curta: PAUSA_CURTA_SEC }
+}
 
 /** O "acelerar" do pos (atempo). Acima de 1,25 a voz fica robotica; abaixo de 0,9, arrastada. */
 export const VELOCIDADE_MIN = 0.9
@@ -215,6 +227,8 @@ const velocidadeSchema = z.number().min(VELOCIDADE_MIN).max(VELOCIDADE_MAX).defa
 /** Default 1 (e nao o 1,2 do perfil): o take de antes do campo foi gerado a 1,0. */
 const velocidadeNativaSchema = z.number().min(VELOCIDADE_NATIVA_MIN).max(VELOCIDADE_NATIVA_MAX).default(1)
 const cortarPausasSchema = z.boolean().default(true)
+/** O corte justo (PAUSA_LONGA_JUSTA_SEC). Ausente (take de antes) = o normal. */
+const pausasJustasSchema = z.boolean().default(false)
 /** Seguro para cabecalho e caminho de URL: o voice_id do ElevenLabs e o _id do Fish. */
 const idDeVozSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)
 const idDeModeloSchema = z.string().regex(/^[A-Za-z0-9_.-]{1,64}$/)
@@ -235,6 +249,7 @@ export const configDaVozSchema = z.discriminatedUnion('fonte', [
     velocidadeNativa: velocidadeNativaSchema,
     velocidade: velocidadeSchema,
     cortarPausas: cortarPausasSchema,
+    pausasJustas: pausasJustasSchema,
     settings: settingsElevenSchema,
   }),
   z.object({
@@ -247,6 +262,7 @@ export const configDaVozSchema = z.discriminatedUnion('fonte', [
     velocidadeNativa: velocidadeNativaSchema,
     velocidade: velocidadeSchema,
     cortarPausas: cortarPausasSchema,
+    pausasJustas: pausasJustasSchema,
     settings: settingsFishSchema,
   }),
   z.object({
@@ -255,6 +271,7 @@ export const configDaVozSchema = z.discriminatedUnion('fonte', [
     modelId: z.literal('').default(''),
     velocidade: velocidadeSchema,
     cortarPausas: cortarPausasSchema,
+    pausasJustas: pausasJustasSchema,
     /**
      * CORTAR ERROS (V1): os trechos falados fora do roteiro (palavra repetida,
      * "eee", frase lida duas vezes) saem no pos, na borda do silencio. Padrao
@@ -289,6 +306,7 @@ export function configPadrao(voz: VozPadrao): ConfigDaVoz | null {
       velocidadeNativa,
       velocidade: 1,
       cortarPausas: true,
+      pausasJustas: true,
       settings: settingsElevenSchema.parse({}),
     }
   }
@@ -300,6 +318,7 @@ export function configPadrao(voz: VozPadrao): ConfigDaVoz | null {
       velocidadeNativa,
       velocidade: 1,
       cortarPausas: true,
+      pausasJustas: true,
       settings: settingsFishSchema.parse({}),
     }
   }
@@ -347,6 +366,7 @@ function assinaturaSemPos(c: ConfigDaVoz): string {
   const resto: Record<string, unknown> = { ...c }
   delete resto['velocidade']
   delete resto['cortarPausas']
+  delete resto['pausasJustas']
   delete resto['cortarErros']
   if (c.fonte !== 'importado') resto['velocidadeNativa'] = velocidadeNativaEnviada(c)
   return JSON.stringify(emOrdem(resto))
@@ -592,6 +612,8 @@ export type PedidoDeRegravar = z.infer<typeof pedidoDeRegravarSchema>
 export const pedidoDeAjusteSchema = z.object({
   velocidade: velocidadeSchema,
   cortarPausas: cortarPausasSchema,
+  /** O corte justo. Ausente = fica o do take. */
+  pausasJustas: z.boolean().optional(),
   /** So no importado (V1). Ausente = fica o do take. */
   cortarErros: z.boolean().optional(),
   pedidoId: pedidoIdSchema,
@@ -604,6 +626,8 @@ export const pedidoDeImportacaoSchema = z.object({
   velocidade: velocidadeSchema,
   /** Padrao false aqui: a pausa de quem gravou costuma ser de proposito. */
   cortarPausas: z.boolean().default(false),
+  /** O corte justo (com o cortarPausas ligado). */
+  pausasJustas: z.boolean().default(true),
   /** Padrao true: repeticao, "eee" e frase lida duas vezes saem (V1). */
   cortarErros: z.boolean().default(true),
   pedidoId: pedidoIdSchema,

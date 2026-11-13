@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PAUSA_CURTA_SEC, PAUSA_LONGA_SEC, TOLERANCIA_SEC, type PalavraComTempo } from '../../shared/voz'
+import { medidasDaPausa, PAUSA_CURTA_SEC, PAUSA_LONGA_SEC, TOLERANCIA_SEC, type PalavraComTempo } from '../../shared/voz'
 import { rodarFfmpeg, SAIDA_WAV } from './ffmpeg'
 import { lerWav, type Pcm } from './wav'
 
@@ -244,10 +244,11 @@ export function cortesDasPausas(
   e: Energia,
   amostras: number,
   saida?: { ilhas: number },
+  /** (13/11) O corte justo: a partir de 0,18 s, sobra 0,08 s (medidasDaPausa). */
+  justas = false,
 ): Corte[] {
   const duracao = amostras / e.taxa
-  const longa = PAUSA_LONGA_SEC
-  const curta = PAUSA_CURTA_SEC
+  const { longa, curta } = medidasDaPausa(justas)
   const cortes: Corte[] = []
   const empurrar = (r0: number, r1: number): void => {
     if (r1 - r0 < CORTE_MINIMO_SEC) return
@@ -518,7 +519,7 @@ export async function aplicarPos(
   caminhoDoBruto: string,
   bruto: Pcm,
   palavras: readonly Pick<PalavraComTempo, 'start' | 'end'>[],
-  opcoes: { cortarPausas: boolean; velocidade: number; extras?: readonly Corte[] },
+  opcoes: { cortarPausas: boolean; pausasJustas?: boolean; velocidade: number; extras?: readonly Corte[] },
   signal?: AbortSignal,
   energia?: Energia,
 ): Promise<ResultadoDoPos> {
@@ -532,7 +533,7 @@ export async function aplicarPos(
    */
   const extras = (opcoes.extras ?? []).map((c) => ({ de: Math.max(0, c.de), ate: Math.min(amostras, c.ate) }))
   const daPausa = opcoes.cortarPausas
-    ? cortesDasPausas(palavras, energiaSemOsCortes(energia ?? medirEnergia(bruto), extras), amostras, ilhas)
+    ? cortesDasPausas(palavras, energiaSemOsCortes(energia ?? medirEnergia(bruto), extras), amostras, ilhas, opcoes.pausasJustas === true)
     : []
   const cortes = extras.length > 0 ? unirCortes([...daPausa, ...extras]) : daPausa
   const cortado = cortes.reduce((s, c) => s + c.ate - c.de, 0) / bruto.taxa
