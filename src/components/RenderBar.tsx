@@ -28,6 +28,7 @@ import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
 import { BarraDeEtapas } from './BarraDeEtapas'
 import { BotaoDeTransicao } from './BotaoDeTransicao'
 import { botaoDaBarra, Divisoria, iconeDaBarra } from './barra'
+import { SeletorDeCor } from './SeletorDeCor'
 import { useLayout } from '@/store/layout'
 import { useProject } from '@/store/project'
 import {
@@ -1257,13 +1258,15 @@ function CorLivre() {
   }
   return (
     <div className="mt-1.5 flex items-center gap-2">
-      <input
-        type="color"
-        aria-label="Escolher qualquer cor"
-        value={hex}
-        onChange={(e) => setCaptionColor(e.target.value.toUpperCase())}
-        className="h-7 w-9 cursor-pointer rounded-sm border border-line bg-transparent p-0.5"
-      />
+      {/* O seletor do Dangai, e nao a janela branca do sistema. */}
+      <SeletorDeCor
+        cor={hex}
+        onChange={(c) => setCaptionColor(c.toUpperCase())}
+        titulo="Escolher qualquer cor"
+        className="h-7 w-9 cursor-pointer rounded-sm border border-line p-0.5 transition-colors hover:border-line-strong"
+      >
+        <span className="block h-full w-full rounded-[6px]" style={{ background: hex }} />
+      </SeletorDeCor>
       <input
         type="text"
         aria-label="Cor em hexadecimal"

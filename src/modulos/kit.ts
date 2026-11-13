@@ -12,3 +12,8 @@ export { Waveform } from '@/components/Waveform'
  * Configuracoes. Fora delas, `testarAoSalvar` (so grava a que vale) e `focar`.
  */
 export { ChaveDoGemini, LINK_DA_CHAVE_DO_GEMINI } from '@/components/ChaveDoGemini'
+/**
+ * O seletor de cor do Dangai (quadrado, matiz, codigo, conta-gotas e as
+ * ultimas usadas), no lugar do `<input type="color">` do sistema.
+ */
+export { SeletorDeCor } from '@/components/SeletorDeCor'
