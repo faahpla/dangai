@@ -5,6 +5,7 @@ import type { ContextoDoModulo } from '../../../electron/modulos'
 import { CANAIS_DA_THUMB as C, type FonteDoPc, type MotorDaThumb } from '../shared/canais'
 import {
   configDaThumbSchema,
+  listaDeModelosSchema,
   pedidoDeCopiaSchema,
   pedidoDeImagemSchema,
   pedidoDeSalvarComoSchema,
@@ -156,5 +157,9 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   })
   ctx.handle<[unknown], ConfigDaThumb>(C.salvarPreset, async (preset) =>
     configDaThumbSchema.parse(ctx.salvarConfig({ preset: presetDaThumbSchema.parse(preset) })),
+  )
+  // (13/11) Os modelos com nome: a lista inteira, conferida aqui.
+  ctx.handle<[unknown], ConfigDaThumb>(C.salvarModelos, async (modelos) =>
+    configDaThumbSchema.parse(ctx.salvarConfig({ modelos: listaDeModelosSchema.parse(modelos) })),
   )
 }

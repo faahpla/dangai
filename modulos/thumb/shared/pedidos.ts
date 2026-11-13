@@ -35,17 +35,77 @@ export const presetDaThumbSchema = z.object({
   estilo: thumbDoProjetoSchema.shape.estilo,
   degrades: thumbDoProjetoSchema.shape.degrades,
   contorno: thumbDoProjetoSchema.shape.contorno,
+  /** (13/11) A "Sombra" do texto (ausente num preset de antes: a do estilo). */
+  sombra: thumbDoProjetoSchema.shape.sombra,
   formaDaSeta: thumbDoProjetoSchema.shape.seta.shape.forma,
   fontePc: thumbDoProjetoSchema.shape.fontePc,
 })
 export type PresetDaThumb = z.infer<typeof presetDaThumbSchema>
 
+/**
+ * (13/11) UM MODELO DA THUMB, com nome: "quero uma opcao de salvar
+ * preset/modelo". O jeito inteiro de uma thumb -- o estilo, as cores e o
+ * degrade, a fonte, o contorno, a sombra, o tamanho, a rotacao, a altura do
+ * texto, o layout, o divisor e a seta (a livre com o lugar dela) -- para
+ * aplicar com um clique em outra. Ficam de fora o TEXTO e as IMAGENS (sao de
+ * cada video) e a COR das imagens (o "Do projeto" e de cada projeto).
+ */
+const S = thumbDoProjetoSchema.shape
+export const modeloDaThumbSchema = z.object({
+  nome: z.string().trim().min(1).max(40),
+  layout: S.layout,
+  cores: S.cores,
+  degrades: S.degrades,
+  fonte: S.fonte,
+  fontePc: S.fontePc,
+  estilo: S.estilo,
+  contorno: S.contorno,
+  sombra: S.sombra,
+  tamanho: S.tamanho,
+  rotacao: S.rotacao,
+  textoY: S.textoY,
+  divisor: S.divisor,
+  seta: S.seta,
+})
+export type ModeloDaThumb = z.infer<typeof modeloDaThumbSchema>
+/** Quantos modelos cabem (o bastante; a lista nao vira um arquivo). */
+export const MODELOS_NO_MAXIMO = 60
+export const listaDeModelosSchema = z.array(modeloDaThumbSchema).max(MODELOS_NO_MAXIMO)
+
+/** O modelo de uma thumb (a seta que aponta o rosto nao leva as pontas: ela procura o rosto de novo). */
+export function modeloDe(t: ThumbDoProjeto, nome: string): ModeloDaThumb {
+  return {
+    nome: nome.trim().slice(0, 40),
+    layout: t.layout,
+    cores: [t.cores[0], t.cores[1]],
+    degrades: [t.degrades[0], t.degrades[1]],
+    fonte: t.fonte,
+    fontePc: t.fontePc,
+    estilo: t.estilo,
+    contorno: { ...t.contorno },
+    sombra: t.sombra,
+    tamanho: t.tamanho,
+    rotacao: t.rotacao,
+    textoY: t.textoY,
+    divisor: { ...t.divisor },
+    seta: t.seta.livre ? { ...t.seta } : { ...t.seta, base: null, ponta: null },
+  }
+}
+
+/** O que aplicar um modelo muda numa thumb (o texto, as imagens e a cor delas ficam). */
+export function camposDoModelo(m: ModeloDaThumb): Partial<ThumbDoProjeto> {
+  const { nome: _nome, ...campos } = m
+  return { ...campos, seta: { ...m.seta }, divisor: { ...m.divisor }, contorno: { ...m.contorno } }
+}
+
 export const configDaThumbSchema = z.object({
   versao: z.literal(1),
   preset: presetDaThumbSchema.nullable(),
+  /** (13/11) Os modelos com nome (ausente numa config de antes: nenhum). */
+  modelos: listaDeModelosSchema.default([]),
 })
 export type ConfigDaThumb = z.infer<typeof configDaThumbSchema>
-export const CONFIG_DA_THUMB_PADRAO: ConfigDaThumb = { versao: 1, preset: null }
+export const CONFIG_DA_THUMB_PADRAO: ConfigDaThumb = { versao: 1, preset: null, modelos: [] }
 
 /** O preset de uma thumb (o que o editor solto lembra). */
 export function presetDe(t: ThumbDoProjeto): PresetDaThumb {
@@ -62,6 +122,7 @@ export function presetDe(t: ThumbDoProjeto): PresetDaThumb {
     estilo: t.estilo,
     degrades: t.degrades,
     contorno: { ...t.contorno },
+    sombra: t.sombra,
     formaDaSeta: t.seta.forma,
     fontePc: t.fontePc,
   }
@@ -84,6 +145,7 @@ export function thumbDoPreset(preset: PresetDaThumb | null, base: ThumbDoProjeto
     estilo: preset.estilo,
     degrades: preset.degrades,
     contorno: { ...preset.contorno },
+    sombra: preset.sombra,
     fontePc: preset.fontePc,
   }
 }

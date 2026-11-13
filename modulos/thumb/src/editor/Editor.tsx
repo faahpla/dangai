@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { create } from 'zustand'
 import {
   ArrowUpDown,
+  BookmarkPlus,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -15,18 +16,26 @@ import {
   Save,
   ScanFace,
   TriangleAlert,
+  X,
 } from 'lucide-react'
 import { ajusteDeCorSchema, type AjusteDeCor } from '@shared/contract'
-import { Deslizante, Segmentos } from '@/modulos/kit'
+import { camposDoModelo, modeloDe, type ModeloDaThumb } from '../../shared/pedidos'
+import { Deslizante, Segmentos, SeletorDeCor as EscolherCor } from '@/modulos/kit'
 import {
   ALTURA,
   aplicarEstilo,
   COR_DO_CONTORNO,
   CONTORNO_MAXIMO,
+  SOMBRA_MAXIMA,
   degradeDaLinha,
   ESTILO,
   ESTILOS_DO_TEXTO,
   FORMAS_DA_SETA,
+  medidasDaSeta,
+  pontoNaSeta,
+  SETA_LIVRE_MAXIMA,
+  SETA_LIVRE_MINIMA,
+  setaPelasMedidas,
   COR_ORIGINAL_DO_DIVISOR,
   CORES_DA_THUMB,
   CORPO_LEGIVEL,
@@ -143,6 +152,8 @@ type Arrasto =
       cy: number
     }
   | { tipo: 'seta'; qual: 'base' | 'ponta'; outra: Ponto }
+  /** (13/11) A seta livre inteira: a pega e leva, com as duas pontas juntas. */
+  | { tipo: 'mover-seta'; inicio: Ponto; base: Ponto; ponta: Ponto }
 
 /** A previa da thumb, do tamanho do player (9:16), com o arrastar, a rodinha e as guias. */
 export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number; larguraMax: number; aoSoltar?: AoSoltarImagens }) {
@@ -190,7 +201,12 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
       divisor: divisorAgora(ef.divisor),
       escala: w / LARGURA,
       filtroDeCor: filtroDaCor(thumb.cor),
-      guias: { zonas: guias, rostos: guias ? ef.rostos : [], pontasDaSeta: guias || emCima },
+      guias: {
+        zonas: guias,
+        rostos: guias ? ef.rostos : [],
+        pontasDaSeta: !thumb.seta.livre && (guias || emCima),
+        molduraDaSeta: !!thumb.seta.livre && (guias || emCima),
+      },
     })
   }, [thumb, ef, previas, largura, alto, guias, emCima, divisoresProntos, setasProntas])
 
@@ -204,6 +220,14 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
       const efetiva = t ? thumbEfetiva(t, medidor(t)) : null
       if (!t || !efetiva) return
       const p = paraQuadro(el, ev)
+      if (t.seta.livre && efetiva.seta && pontoNaSeta(efetiva.seta, p)) {
+        ev.preventDefault()
+        const m = medidasDaSeta(efetiva.seta.base, efetiva.seta.ponta)
+        const tamanho = Math.max(SETA_LIVRE_MINIMA, Math.min(SETA_LIVRE_MAXIMA, m.tamanho * Math.exp(-ev.deltaY * 0.0015)))
+        s.mudar({ seta: { ...t.seta, ...setaPelasMedidas(m.meio, tamanho, m.giro) } })
+        useGuias.getState().marcar()
+        return
+      }
       const slot = painelEm(t, efetiva.geo, p)
       const img = t.imagens[slot]
       const painel = efetiva.geo.paineis[slot]
@@ -227,8 +251,10 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
     return () => el.removeEventListener('wheel', rodinha)
   }, [useThumb])
 
+  /** (13/11) Na seta livre, o ponto em cima dela (a forma inteira pega, nao as pontas). */
+  const naSetaLivre = (p: Ponto): boolean => !!thumb?.seta.livre && !!ef?.seta && pontoNaSeta(ef.seta, p)
   const pontaPerto = (p: Ponto): 'base' | 'ponta' | null => {
-    if (!ef?.seta) return null
+    if (!ef?.seta || thumb?.seta.livre) return null
     const raio = Math.max(34, (14 * LARGURA) / largura)
     if (Math.hypot(p.x - ef.seta.ponta.x, p.y - ef.seta.ponta.y) < raio) return 'ponta'
     if (Math.hypot(p.x - ef.seta.base.x, p.y - ef.seta.base.y) < raio) return 'base'
@@ -277,7 +303,9 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
             if (!el || ev.button !== 0) return
             const p = paraQuadro(el, ev)
             const qual = pontaPerto(p)
-            if (qual && ef.seta) {
+            if (naSetaLivre(p) && ef.seta) {
+              arrasto.current = { tipo: 'mover-seta', inicio: p, base: ef.seta.base, ponta: ef.seta.ponta }
+            } else if (qual && ef.seta) {
               arrasto.current = {
                 tipo: 'seta',
                 qual,
@@ -307,13 +335,27 @@ export function PreviaDaThumb({ altura, larguraMax, aoSoltar }: { altura: number
             const p = paraQuadro(el, ev)
             const a = arrasto.current
             if (!a) {
-              setCursor(pontaPerto(p) ? 'grab' : thumb.imagens[painelEm(thumb, ef.geo, p)] ? 'move' : 'default')
+              setCursor(naSetaLivre(p) ? 'move' : pontaPerto(p) ? 'grab' : thumb.imagens[painelEm(thumb, ef.geo, p)] ? 'move' : 'default')
               return
             }
             const s = useThumb.getState()
             const t = s.thumb
             if (!t) return
             useGuias.getState().marcar()
+            if (a.tipo === 'mover-seta') {
+              // O meio da seta nao sai do quadro (ela pode passar da borda, mas nunca sumir).
+              const meio = { x: (a.base.x + a.ponta.x) / 2, y: (a.base.y + a.ponta.y) / 2 }
+              const dx = Math.max(-meio.x, Math.min(LARGURA - meio.x, p.x - a.inicio.x))
+              const dy = Math.max(-meio.y, Math.min(ALTURA - meio.y, p.y - a.inicio.y))
+              s.mudar({
+                seta: {
+                  ...t.seta,
+                  base: { x: a.base.x + dx, y: a.base.y + dy },
+                  ponta: { x: a.ponta.x + dx, y: a.ponta.y + dy },
+                },
+              })
+              return
+            }
             if (a.tipo === 'seta') {
               const ponto = {
                 x: Math.max(0, Math.min(LARGURA, p.x)),
@@ -463,6 +505,7 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
 
   return (
     <div className="flex min-w-0 flex-col gap-3" data-thumb="ajustes">
+      <SecaoDeModelos />
       <Secao
         titulo="Imagens"
         acao={
@@ -630,6 +673,7 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
         </div>
         <FonteDoPc />
         <ContornoDoTexto />
+        <SombraDoTexto />
         <TamanhoDoTexto />
         <RotacaoDoTexto />
         <div className="flex items-center gap-2" data-thumb="altura-do-texto">
@@ -652,21 +696,203 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
 
       <SecaoDoDivisor />
 
-      <Secao
-        titulo="Seta"
-        acao={
-          thumb.seta.ligada && (thumb.seta.base || thumb.seta.ponta) ? (
-            <Link onClick={() => mudar({ seta: { ...thumb.seta, ligada: true, base: null, ponta: null } })} title="A seta volta a apontar o rosto sozinha">
-              Apontar o rosto de novo
-            </Link>
-          ) : undefined
-        }
-      >
+      <SecaoDaSeta />
+    </div>
+  )
+}
+
+/**
+ * OS MODELOS (13/11): "quero uma opcao de salvar preset/modelo". O jeito
+ * inteiro da thumb com um nome; um clique aplica em outra (o texto, as
+ * imagens e a cor delas ficam). Salvar com um nome que ja existe atualiza
+ * aquele. Aplicar mostra o "Desfazer" -- trocar o visual inteiro sem volta
+ * seria um susto. Some na aba do recap, que nao guarda modelos.
+ */
+function SecaoDeModelos() {
+  const useThumb = useLoja()
+  const fonte = useThumb((s) => s.modelos)
+  const thumb = useThumb((s) => s.thumb)
+  const [lista, setLista] = useState<ModeloDaThumb[]>(() => fonte?.ler() ?? [])
+  const [nome, setNome] = useState<string | null>(null)
+  const [recado, setRecado] = useState<string | null>(null)
+  const [desfazer, setDesfazer] = useState<{ nome: string; antes: Partial<ThumbDoProjeto> } | null>(null)
+  if (!fonte || !thumb) return null
+
+  const gravar = async (nova: ModeloDaThumb[], texto: string): Promise<void> => {
+    try {
+      setLista(await fonte.gravar(nova))
+      setRecado(texto)
+    } catch (e) {
+      setRecado(`Não deu para salvar: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  const mesmoNome = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
+  const salvar = (): void => {
+    const n = (nome ?? '').trim()
+    setNome(null)
+    if (!n) return
+    const existe = lista.some((m) => mesmoNome(m.nome, n))
+    const nova = existe ? lista.map((m) => (mesmoNome(m.nome, n) ? modeloDe(thumb, n) : m)) : [...lista, modeloDe(thumb, n)]
+    void gravar(nova, existe ? `"${n}" atualizado com a thumb de agora.` : `"${n}" salvo.`)
+  }
+  const aplicar = (m: ModeloDaThumb): void => {
+    const { nome: _n, ...agora } = modeloDe(thumb, 'agora')
+    setDesfazer({ nome: m.nome, antes: { ...agora, seta: { ...thumb.seta } } })
+    useThumb.getState().mudar(camposDoModelo(m))
+    setRecado(null)
+  }
+  const igual = (m: ModeloDaThumb): boolean => {
+    const { nome: _a, ...x } = m
+    const { nome: _b, ...y } = modeloDe(thumb, m.nome)
+    return JSON.stringify(x) === JSON.stringify(y)
+  }
+
+  return (
+    <Secao
+      titulo="Modelos"
+      acao={
+        nome === null ? (
+          <Botao pequeno onClick={() => setNome('')} title="Guarda o jeito desta thumb (estilo, cores, fonte, contorno, sombra, tamanho, divisor e seta) com um nome">
+            <BookmarkPlus size={12} strokeWidth={1.5} />
+            Salvar modelo
+          </Botao>
+        ) : undefined
+      }
+    >
+      <div className="flex flex-col gap-2" data-thumb="modelos">
+        {nome !== null && (
+          <div className="flex items-center gap-1.5">
+            <input
+              autoFocus
+              value={nome}
+              maxLength={40}
+              placeholder="Nome do modelo (Enter salva)"
+              aria-label="Nome do modelo"
+              onChange={(e) => setNome(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') salvar()
+                else if (e.key === 'Escape') setNome(null)
+              }}
+              className={`${CLASSE_DO_CAMPO} ${CAMPO_NORMAL} min-w-0 flex-1`}
+            />
+            <Botao pequeno onClick={salvar} disabled={!nome.trim()}>
+              Salvar
+            </Botao>
+            <Botao pequeno onClick={() => setNome(null)}>
+              Cancelar
+            </Botao>
+          </div>
+        )}
+        {lista.length === 0 ? (
+          nome === null && (
+            <p className="text-[11px] leading-snug text-ink-3">
+              Deixe a thumb do seu jeito e clique em Salvar modelo. Depois, um clique aplica o mesmo visual em outra
+              thumb: o texto e as imagens ficam.
+            </p>
+          )
+        ) : (
+          <div className="flex flex-wrap gap-1.5">
+            {lista.map((m) => {
+              const ativo = igual(m)
+              return (
+                <span
+                  key={m.nome}
+                  className={[
+                    'group/modelo flex h-7 items-center rounded-sm border text-[12px] transition-colors',
+                    ativo ? 'border-accent bg-accent-dim text-ink' : 'border-line bg-elevated text-ink-2 hover:border-line-strong hover:text-ink',
+                  ].join(' ')}
+                >
+                  <button
+                    type="button"
+                    onClick={() => aplicar(m)}
+                    title={`Aplicar "${m.nome}" nesta thumb (o texto e as imagens ficam)`}
+                    className="flex h-full items-center gap-1.5 pl-2 pr-1.5"
+                  >
+                    <span className="flex -space-x-1">
+                      {[0, 1].map((i) => (
+                        <span
+                          key={i}
+                          className="size-3 rounded-full border border-black/60"
+                          style={{ background: m.degrades[i] ? `linear-gradient(${m.degrades[i]![0]}, ${m.degrades[i]![1]})` : m.cores[i as 0 | 1] }}
+                        />
+                      ))}
+                    </span>
+                    {m.nome}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void gravar(lista.filter((x) => x !== m), `"${m.nome}" apagado.`)}
+                    title={`Apagar o modelo "${m.nome}"`}
+                    aria-label={`Apagar o modelo ${m.nome}`}
+                    className="grid h-full w-6 place-items-center text-ink-3 opacity-0 transition-opacity hover:text-danger group-hover/modelo:opacity-100"
+                  >
+                    <X size={11} strokeWidth={2} />
+                  </button>
+                </span>
+              )
+            })}
+          </div>
+        )}
+        {(desfazer || recado) && (
+          <p className="flex items-center gap-2 text-[11px] text-ink-3">
+            {desfazer ? <span>"{desfazer.nome}" aplicado.</span> : <span>{recado}</span>}
+            {desfazer && (
+              <Link
+                onClick={() => {
+                  useThumb.getState().mudar(desfazer.antes)
+                  setDesfazer(null)
+                }}
+                title="Volta a thumb como estava antes de aplicar o modelo"
+              >
+                Desfazer
+              </Link>
+            )}
+          </p>
+        )}
+      </div>
+    </Secao>
+  )
+}
+
+/**
+ * A SETA: ligada ou nao, a forma, e o JEITO -- apontando o rosto (a
+ * automatica, ou as duas bolinhas das pontas) ou LIVRE (13/11): "quero uma
+ * opcao dela livre para eu colocar na posicao que eu quiser, sem depender
+ * daqueles pontos". Na livre a seta e um objeto: arrasta na previa, a
+ * rodinha em cima dela muda o tamanho, e o tamanho, o giro e o espelho ficam
+ * aqui tambem.
+ */
+function SecaoDaSeta() {
+  const useThumb = useLoja()
+  const thumb = useThumb((s) => s.thumb)
+  const ef = useEfetiva()
+  if (!thumb) return null
+  const mudar = useThumb.getState().mudar
+  const seta = thumb.seta
+  const livre = !!seta.livre
+  const irParaLivre = (): void => {
+    // Comeca exatamente onde a seta esta agora (a automatica ou a das bolinhas).
+    const agora = ef?.seta ?? { ...setaPelasMedidas({ x: LARGURA / 2, y: ALTURA * 0.4 }, 420, -35), lado: 1 as const }
+    mudar({ seta: { ...seta, livre: true, base: agora.base, ponta: agora.ponta, espelhada: agora.lado === -1 } })
+  }
+  return (
+    <Secao
+      titulo="Seta"
+      acao={
+        seta.ligada && !livre && (seta.base || seta.ponta) ? (
+          <Link onClick={() => mudar({ seta: { ...seta, ligada: true, base: null, ponta: null } })} title="A seta volta a apontar o rosto sozinha">
+            Apontar o rosto de novo
+          </Link>
+        ) : undefined
+      }
+    >
+      <div className="flex flex-col gap-2.5" data-thumb="secao-da-seta">
         <div className="flex flex-wrap items-center gap-3">
-          <Caixinha ligada={thumb.seta.ligada} onChange={(v) => mudar({ seta: { ...thumb.seta, ligada: v } })}>
-            Seta apontando o rosto
+          <Caixinha ligada={seta.ligada} onChange={(v) => mudar({ seta: { ...seta, ligada: v } })}>
+            Mostrar a seta
           </Caixinha>
-          {thumb.seta.ligada && (
+          {seta.ligada && (
             <div className="w-[230px]" data-thumb="forma-da-seta">
               <Segmentos
                 opcoes={FORMAS_DA_SETA.map((f) => ({
@@ -674,14 +900,92 @@ export function AjustesDaThumb({ fontes: jeitos, textosProntos, extraDoSlot, aoS
                   rotulo: f.nome,
                   title: f.id === 'vermelha' ? 'A seta vermelha (Kizuni)' : f.id === 'roxa' ? 'A seta roxa do Faah' : 'A seta de pincel do AJK',
                 }))}
-                ativo={(v) => thumb.seta.forma === v}
-                onChange={(v) => mudar({ seta: { ...thumb.seta, forma: v } })}
+                ativo={(v) => seta.forma === v}
+                onChange={(v) => mudar({ seta: { ...seta, forma: v } })}
               />
             </div>
           )}
-          {thumb.seta.ligada && <span className="text-[11px] text-ink-3">Arraste as bolinhas da previa para mudar as pontas.</span>}
         </div>
-      </Secao>
+        {seta.ligada && (
+          <div className="flex items-center gap-2" data-thumb="jeito-da-seta">
+            <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Posição</span>
+            <div className="w-[300px]">
+              <Segmentos
+                opcoes={[
+                  { valor: false, rotulo: 'Apontando o rosto', title: 'A seta acha o rosto sozinha; as bolinhas das pontas ajustam' },
+                  { valor: true, rotulo: 'Livre', title: 'Você põe a seta onde quiser: arraste na prévia, gire e mude o tamanho' },
+                ]}
+                ativo={(v) => v === livre}
+                onChange={(v) => {
+                  if (v) irParaLivre()
+                  else mudar({ seta: { ...seta, livre: false, espelhada: false, base: null, ponta: null } })
+                }}
+              />
+            </div>
+          </div>
+        )}
+        {seta.ligada && livre && seta.base && seta.ponta && <ControlesDaSetaLivre />}
+        {seta.ligada && (
+          <span className="text-[11px] text-ink-3">
+            {livre
+              ? 'Arraste a seta na prévia para mudar de lugar. A rodinha em cima dela muda o tamanho.'
+              : 'Arraste as bolinhas da prévia para mudar as pontas.'}
+          </span>
+        )}
+      </div>
+    </Secao>
+  )
+}
+
+/** O tamanho, o giro e o espelho da seta livre (o meio fica onde esta). */
+function ControlesDaSetaLivre() {
+  const useThumb = useLoja()
+  const seta = useThumb((s) => s.thumb?.seta)
+  if (!seta?.base || !seta.ponta) return null
+  const m = medidasDaSeta(seta.base, seta.ponta)
+  const mudarMedidas = (tamanho: number, giro: number): void => {
+    useThumb.getState().mudar({ seta: { ...seta, ...setaPelasMedidas(m.meio, tamanho, giro) } })
+    useGuias.getState().marcar()
+  }
+  return (
+    <div className="flex flex-col gap-2" data-thumb="seta-livre">
+      <div className="flex items-center gap-2">
+        <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Tamanho</span>
+        <Deslizante
+          valor={m.tamanho}
+          min={SETA_LIVRE_MINIMA}
+          max={SETA_LIVRE_MAXIMA}
+          step={1}
+          texto={`${Math.round(m.tamanho)} px`}
+          textoLargo
+          dica="O tamanho da seta (de uma ponta a outra, no quadro de 1080)"
+          onChange={(v) => mudarMedidas(v, m.giro)}
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Giro</span>
+        <Deslizante
+          valor={m.giro}
+          min={-180}
+          max={180}
+          step={1}
+          texto={`${Math.round(m.giro)}°`}
+          textoLargo
+          padrao={0}
+          dica="Para onde a seta aponta: 0° = para a direita, -90° = para cima, 90° = para baixo"
+          onChange={(v) => mudarMedidas(m.tamanho, v)}
+        />
+        <Botao
+          pequeno
+          onClick={() => {
+            useThumb.getState().mudar({ seta: { ...seta, espelhada: !seta.espelhada } })
+            useGuias.getState().marcar()
+          }}
+          title="Espelha a seta: a curva estufa para o outro lado"
+        >
+          Espelhar
+        </Botao>
+      </div>
     </div>
   )
 }
@@ -1259,21 +1563,19 @@ function CorAMao({
 }) {
   const anel = 'ring-2 ring-accent ring-offset-2 ring-offset-[var(--color-surface)]'
   return (
-    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink-3" title={`Cor ${onde}`}>
-      <span
-        className={['relative size-5 shrink-0 overflow-hidden rounded-full border border-black/60', arcoIris === false ? anel : ''].join(' ')}
+    <span className="flex items-center gap-1.5 text-[11px] text-ink-3">
+      <EscolherCor
+        cor={cor}
+        onChange={(c) => onChange(c.toLowerCase())}
+        titulo={`Cor ${onde}`}
+        className={[
+          'relative size-5 shrink-0 cursor-pointer overflow-hidden rounded-full border border-black/60 transition-transform hover:scale-110',
+          arcoIris === false ? anel : '',
+        ].join(' ')}
         style={{ background: arcoIris ? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' : cor }}
-      >
-        <input
-          type="color"
-          value={cor}
-          onChange={(e) => onChange(e.target.value.toLowerCase())}
-          aria-label={`Cor ${onde}`}
-          className="absolute inset-0 cursor-pointer opacity-0"
-        />
-      </span>
+      />
       {rotulo}
-    </label>
+    </span>
   )
 }
 
@@ -1324,6 +1626,37 @@ function ContornoDoTexto() {
         ))}
         <CorAMao rotulo="Outra" cor={cor} arcoIris={cor === '#000000' || cor === '#ffffff'} onChange={(c) => mudar({ cor: c })} onde="do contorno" />
       </div>
+    </div>
+  )
+}
+
+/**
+ * A "SOMBRA" DO TEXTO (13/11, o drop shadow): a distancia e o desfoque da
+ * sombra do estilo juntos, em fracao dela. 0 = sem sombra, 100% = a do
+ * estilo, 200% = o dobro.
+ */
+function SombraDoTexto() {
+  const useThumb = useLoja()
+  const sombra = useThumb((s) => s.thumb?.sombra ?? 1)
+  return (
+    <div className="flex items-center gap-2" data-thumb="sombra-do-texto">
+      <span className="w-[68px] shrink-0 text-[11px] text-ink-3">Sombra</span>
+      <Deslizante
+        valor={sombra}
+        min={0}
+        max={SOMBRA_MAXIMA}
+        step={0.05}
+        texto={sombra < 0.001 ? 'sem' : `${Math.round(sombra * 100)}%`}
+        padrao={1}
+        dica="A sombra das letras: distancia e desfoque juntos. 0 = sem sombra, 100% = a do estilo"
+        onChange={(v) => {
+          useThumb.getState().mudar({ sombra: Math.round(v * 100) / 100 })
+          useGuias.getState().marcar()
+        }}
+      />
+      <Botao pequeno disabled={sombra === 1} onClick={() => useThumb.getState().mudar({ sombra: 1 })} title="Volta a sombra do estilo">
+        Padrao
+      </Botao>
     </div>
   )
 }
@@ -1460,24 +1793,19 @@ function SeletorDeCor({
           className={['size-5 shrink-0 rounded-full border border-black/60 transition-transform hover:scale-110', cor === c.cor ? anel : ''].join(' ')}
         />
       ))}
-      <label
-        title="Outra cor"
+      {/* "Outra cor": o seletor do Dangai (o kit), e nao a janela branca do sistema. */}
+      <EscolherCor
+        cor={cor ?? original?.cor ?? '#ffffff'}
+        onChange={(c) => onChange(c.toLowerCase())}
+        titulo={`Outra cor ${onde}`}
         className={[
-          'relative grid size-5 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full border border-line-strong',
+          'relative grid size-5 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-full border border-line-strong transition-transform hover:scale-110',
           cor === null || pronta ? '' : anel,
         ].join(' ')}
         style={{
           background: cor === null || pronta ? 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' : cor,
         }}
-      >
-        <input
-          type="color"
-          value={cor ?? original?.cor ?? '#ffffff'}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={`Outra cor ${onde}`}
-          className="absolute inset-0 cursor-pointer opacity-0"
-        />
-      </label>
+      />
     </div>
   )
 }

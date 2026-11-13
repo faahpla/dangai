@@ -11,7 +11,7 @@ import type {
   RostoDaThumb,
   SugestoesDaThumb,
 } from './thumb'
-import type { ConfigDaThumb, PedidoDeCopia, PedidoDeImagem, PedidoDeSalvarComo, PedidoDoVideo, PresetDaThumb } from './pedidos'
+import type { ConfigDaThumb, ModeloDaThumb, PedidoDeCopia, PedidoDeImagem, PedidoDeSalvarComo, PedidoDoVideo, PresetDaThumb } from './pedidos'
 
 /**
  * [thumb] O CONTRATO DO MODULO THUMBNAIL entre o main, a ponte e a tela. Os
@@ -34,6 +34,7 @@ export const CANAIS_DA_THUMB = {
   salvarAoLado: 'thumb:salvar-ao-lado',
   salvarComo: 'thumb:salvar-como',
   salvarPreset: 'thumb:salvar-preset',
+  salvarModelos: 'thumb:salvar-modelos',
   fontesDoPc: 'thumb:fontes-do-pc',
   fonteDoPc: 'thumb:fonte-do-pc',
   colar: 'thumb:colar',
@@ -72,6 +73,8 @@ export interface PonteDaThumb {
   salvarAoLado(p: PedidoDeSalvar): Promise<IpcResult<ResultadoDoSalvar>>
   salvarComo(p: PedidoDeSalvarComo): Promise<IpcResult<ResultadoDoSalvar | null>>
   salvarPreset(preset: PresetDaThumb): Promise<IpcResult<ConfigDaThumb>>
+  /** (13/11) A lista inteira dos modelos com nome (salvar, trocar ou apagar um = gravar a lista nova). */
+  salvarModelos(modelos: ModeloDaThumb[]): Promise<IpcResult<ConfigDaThumb>>
   /** As fontes .ttf/.otf instaladas no PC (por nome). */
   fontesDoPc(): Promise<IpcResult<FonteDoPc[]>>
   /** Os bytes de uma fonte da lista (outro caminho e recusado). */

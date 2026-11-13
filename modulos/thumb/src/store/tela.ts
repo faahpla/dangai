@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { thumbDoProjeto, thumbPadrao, type ThumbDoProjeto } from '../../shared/thumb'
 import { cenaNoInstante, cenasDoPlano } from '../../shared/plano'
-import { configDaThumbSchema, presetDe, thumbDoPreset, type PresetDaThumb } from '../../shared/pedidos'
+import { configDaThumbSchema, presetDe, thumbDoPreset, type ModeloDaThumb, type PresetDaThumb } from '../../shared/pedidos'
 import { corDaCamadaDeAjuste } from '../../shared/cor-do-projeto'
 import type { MotorDaThumb } from '../../shared/canais'
 import { criarLojaDoEditor, type FonteDoEditor, type LojaDoEditor } from '../editor/loja'
@@ -37,6 +37,19 @@ function presetGuardado(): PresetDaThumb | null {
   return lido.success ? lido.data.preset : null
 }
 
+/** (13/11) Os modelos com nome, das configuracoes do modulo (solta e de um projeto usam os mesmos). */
+function modelosGuardados(): ModeloDaThumb[] {
+  const lido = configDaThumbSchema.safeParse(nucleo().euMesmo()?.config)
+  return lido.success ? lido.data.modelos : []
+}
+
+async function gravarModelos(lista: ModeloDaThumb[]): Promise<ModeloDaThumb[]> {
+  const r = await ponte.salvarModelos(lista)
+  if (!r.ok) throw new Error(r.error)
+  await nucleo().reler()
+  return r.value.modelos
+}
+
 function padraoComPreset(): ThumbDoProjeto {
   return thumbDoPreset(presetGuardado(), thumbPadrao(null))
 }
@@ -52,6 +65,8 @@ function lembrarImagem(thumb: ThumbDoProjeto): void {
 let presetGravado = ''
 
 const solta: FonteDoEditor = {
+  modelos: modelosGuardados,
+  salvarModelos: gravarModelos,
   quadro: (p) => ponte.quadro(p),
   miniatura: (p) => ponte.miniatura(p),
   rostos: (p) => ponte.rostos(p),
@@ -111,6 +126,8 @@ function pastaDoProjeto(): string | null {
 }
 
 const doProjeto: FonteDoEditor = {
+  modelos: modelosGuardados,
+  salvarModelos: gravarModelos,
   quadro: (p) => ponte.quadro(p),
   miniatura: (p) => ponte.miniatura(p),
   rostos: (p) => ponte.rostos(p),

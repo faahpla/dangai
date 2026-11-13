@@ -100,6 +100,11 @@ export const CONTORNO_POR_PX = 12 / 182
 /** A sombra do PSD: preta, 100%, 13 px para baixo, desfoque gaussiano de 11,4. */
 export const SOMBRA_Y = 13
 export const SOMBRA_DESFOQUE = 11.446
+/**
+ * (13/11) A "Sombra" do texto (o drop shadow), em fracao da do estilo: 1 = a
+ * do estilo, 0 = sem sombra, 2 = o dobro da distancia e do desfoque.
+ */
+export const SOMBRA_MAXIMA = 2
 /** As duas linhas quase encostam (os contornos se tocam), como nas refs: o vao e 10% da altura da letra da linha menor. */
 export const VAO_ENTRE_LINHAS = 0.1
 /** Cor mais viva, sem estourar (o "look" das refs). */
@@ -287,6 +292,15 @@ export const thumbDoProjetoSchema = z.object({
     ponta: pontoSchema.nullable(),
     /** (04/11) A vermelha (a seta.png do Levi) ou a roxa (a do Faah). Ausente = a vermelha. */
     forma: z.enum(['vermelha', 'roxa', 'ajk']).default('vermelha'),
+    /**
+     * (13/11) A SETA LIVRE: um objeto que ele poe onde quiser (arrasta, a
+     * rodinha muda o tamanho, o giro e o espelho no painel), sem as bolinhas
+     * das pontas e sem procurar o rosto. Usa `base`/`ponta` como estao.
+     * Ausente = a de sempre.
+     */
+    livre: z.boolean().optional(),
+    /** (13/11) Na livre: espelhada (a curva estufa para o outro lado). Ausente = nao. */
+    espelhada: z.boolean().optional(),
   }),
   /** [a de cima (ou a unica), a de baixo]. */
   imagens: z.tuple([imagemDaThumbSchema.nullable(), imagemDaThumbSchema.nullable()]),
@@ -308,6 +322,8 @@ export const thumbDoProjetoSchema = z.object({
   degrades: z.tuple([z.tuple([corSchema, corSchema]).nullable(), z.tuple([corSchema, corSchema]).nullable()]).default([null, null]),
   /** O "Contorno": a grossura (px nos 182 do corpo) e a cor. Ausente = o do Kizuni (12 px, preto). */
   contorno: z.object({ px: z.number().min(0).max(CONTORNO_MAXIMO), cor: corSchema }).default({ px: 12, cor: COR_DO_CONTORNO }),
+  /** (13/11) A "Sombra" do texto em fracao da do estilo (SOMBRA_MAXIMA). Ausente (thumb de antes) = a do estilo. */
+  sombra: z.number().min(0).max(SOMBRA_MAXIMA).default(1),
   /**
    * Uma fonte do PC no lugar da `fonte` (o arquivo nas fontes do Windows; o
    * main confere que e mesmo uma fonte instalada). null = a `fonte` do app.
@@ -346,6 +362,7 @@ export function thumbPadrao(textoDeThumb: string | null): ThumbDoProjeto {
     estilo: 'kizuni',
     degrades: [null, null],
     contorno: { px: ESTILO.kizuni.contorno, cor: COR_DO_CONTORNO },
+    sombra: 1,
     fontePc: null,
     cor: null,
   }
@@ -1600,6 +1617,36 @@ export function caixaDaSeta(s: SetaNoQuadro): { x1: number; y1: number; x2: numb
   }
 }
 
+/**
+ * (13/11) O ponto em cima da seta (a forma, com uma folga em volta): e o que
+ * pega a seta livre para arrastar.
+ */
+export function pontoNaSeta(s: SetaNoQuadro, p: Ponto, folga = 24): boolean {
+  const poli = contornoDaSeta(s)
+  return dentroDoPoligono(p, poli) || poli.some((q) => Math.hypot(q.x - p.x, q.y - p.y) < folga)
+}
+
+/** (13/11) A faixa do "Tamanho" da seta livre (a corda, em px no quadro de 1080). */
+export const SETA_LIVRE_MINIMA = 120
+export const SETA_LIVRE_MAXIMA = 1200
+
+/** (13/11) A seta livre em medidas de painel: o meio, o tamanho (a corda) e o giro (graus; 0 = apontando a direita). */
+export function medidasDaSeta(base: Ponto, ponta: Ponto): { meio: Ponto; tamanho: number; giro: number } {
+  return {
+    meio: { x: (base.x + ponta.x) / 2, y: (base.y + ponta.y) / 2 },
+    tamanho: Math.hypot(ponta.x - base.x, ponta.y - base.y),
+    giro: (Math.atan2(ponta.y - base.y, ponta.x - base.x) * 180) / Math.PI,
+  }
+}
+
+/** (13/11) De volta: as pontas da seta com este meio, tamanho e giro. */
+export function setaPelasMedidas(meio: Ponto, tamanho: number, giro: number): { base: Ponto; ponta: Ponto } {
+  const a = (giro * Math.PI) / 180
+  const dx = (Math.cos(a) * tamanho) / 2
+  const dy = (Math.sin(a) * tamanho) / 2
+  return { base: { x: meio.x - dx, y: meio.y - dy }, ponta: { x: meio.x + dx, y: meio.y + dy } }
+}
+
 /** O ponto dentro do poligono (par-impar). */
 function dentroDoPoligono(p: Ponto, poli: readonly Ponto[]): boolean {
   let dentro = false
@@ -2152,7 +2199,10 @@ export function thumbEfetiva(t: ThumbDoProjeto, medir: MedirTexto): ThumbEfetiva
     }
   })
   let seta: SetaNoQuadro | null = null
-  if (t.seta.ligada && geo.linhas.length > 0) {
+  if (t.seta.ligada && t.seta.livre && t.seta.base && t.seta.ponta) {
+    // A LIVRE: onde ele pos, do jeito que ele girou (nem o texto nem o rosto mandam).
+    seta = { base: t.seta.base, ponta: t.seta.ponta, lado: t.seta.espelhada ? -1 : 1, forma: t.seta.forma }
+  } else if (t.seta.ligada && geo.linhas.length > 0) {
     // A automatica so quando falta uma ponta (a procura custa; arrastando, as duas sao dele).
     const auto = t.seta.base && t.seta.ponta ? null : setaSozinha(geo, alvo, t.seta.forma)
     const base = t.seta.base ?? auto?.base ?? null

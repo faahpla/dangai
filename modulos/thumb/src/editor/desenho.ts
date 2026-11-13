@@ -4,6 +4,7 @@ import {
   AREA_SEGURA_TOPO,
   CORPO_PX,
   CONTORNO_DA_LINHA,
+  caixaDaSeta,
   caminhoDaSeta,
   contornoDaSetaPx,
   degradeDaLinha,
@@ -54,6 +55,8 @@ export interface GuiasDaPrevia {
   rostos: { x1: number; y1: number; x2: number; y2: number; ruim: boolean }[]
   /** As pontas da seta para arrastar. */
   pontasDaSeta: boolean
+  /** (13/11) A seta livre: uma moldura tracejada em volta dela (sem bolinhas), para ele ver o que arrasta. */
+  molduraDaSeta?: boolean
 }
 
 /**
@@ -75,7 +78,7 @@ export type DivisorPronto =
 
 export interface EntradaDoDesenho {
   thumb: Pick<ThumbDoProjeto, 'layout' | 'cores' | 'fonte'> &
-    Partial<Pick<ThumbDoProjeto, 'fontePc' | 'estilo' | 'degrades' | 'contorno'>>
+    Partial<Pick<ThumbDoProjeto, 'fontePc' | 'estilo' | 'degrades' | 'contorno' | 'sombra'>>
   geo: GeometriaDaThumb
   paineis: readonly (PainelPronto | null)[]
   seta: SetaNoQuadro | null
@@ -266,11 +269,12 @@ function desenharTexto(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho): void
     const comContorno = l.contorno > 0.05
     if (comContorno) ctx.lineWidth = l.contorno * 2
     // 1) a sombra do estilo (preta, 100%; o Kizuni 13 px abaixo com desfoque 11,4, o Faah 6 e 2,2): a forma
-    // inteira, com o contorno.
-    ctx.shadowColor = 'rgba(0,0,0,1)'
-    ctx.shadowOffsetY = estilo.sombraY * relativo * e.escala
+    // inteira, com o contorno. A "Sombra" (13/11) multiplica a distancia e o desfoque; 0 = sem.
+    const fatorDaSombra = e.thumb.sombra ?? 1
+    ctx.shadowColor = fatorDaSombra > 0.001 ? 'rgba(0,0,0,1)' : 'transparent'
+    ctx.shadowOffsetY = estilo.sombraY * fatorDaSombra * relativo * e.escala
     // O shadowBlur do canvas e ~2x o desvio do gaussiano.
-    ctx.shadowBlur = estilo.sombraDesfoque * 2 * relativo * e.escala
+    ctx.shadowBlur = estilo.sombraDesfoque * 2 * fatorDaSombra * relativo * e.escala
     ctx.strokeStyle = corDoContorno
     ctx.fillStyle = corDoContorno
     if (comContorno) ctx.strokeText(l.texto, 0, 0)
@@ -341,6 +345,14 @@ function desenharGuias(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho, g: Gu
     ctx.stroke()
   }
   ctx.setLineDash([])
+  if (g.molduraDaSeta && e.seta) {
+    const c = caixaDaSeta(e.seta)
+    ctx.setLineDash([10 * px, 7 * px])
+    ctx.lineWidth = 2 * px
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'
+    ctx.strokeRect(c.x1, c.y1, c.x2 - c.x1, c.y2 - c.y1)
+    ctx.setLineDash([])
+  }
   if (g.pontasDaSeta && e.seta) {
     for (const p of [e.seta.base, e.seta.ponta]) {
       ctx.beginPath()

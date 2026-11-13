@@ -22,6 +22,7 @@ import {
   type ThumbDoProjeto,
 } from '../../shared/thumb'
 import type { CenaNoInstante } from '../../shared/plano'
+import type { ModeloDaThumb } from '../../shared/pedidos'
 import { desenharThumb, medidorDoCanvas } from './desenho'
 import { prepararDivisor } from './divisores'
 import { carregarFonteDoPc, carregarFontesDaThumb } from './fontes'
@@ -123,6 +124,10 @@ export interface FonteDoEditor {
   salvarQuadro?(p: PedidoDeSalvarQuadro): Promise<IpcResult<string | null>>
   /** A cor da camada de ajuste do projeto aberto (a da Edicao rapida, senao a maior); null = nao ha. */
   corDoProjeto?(): AjusteDeCor | null
+  /** (13/11) Os modelos com nome; sem isto (a aba do recap), a secao Modelos nao aparece. */
+  modelos?(): ModeloDaThumb[]
+  /** (13/11) Grava a lista inteira dos modelos e devolve a que ficou. */
+  salvarModelos?(lista: ModeloDaThumb[]): Promise<ModeloDaThumb[]>
 }
 
 export interface EstadoDoEditor {
@@ -138,6 +143,8 @@ export interface EstadoDoEditor {
   fontesDoPcProntas: number
   /** As fontes instaladas no PC (null = quem abriu o editor nao da: o "Do PC" some). */
   listarFontesDoPc: (() => Promise<{ nome: string; arquivo: string }[]>) | null
+  /** (13/11) Os modelos com nome (null = quem abriu o editor nao guarda modelos: a secao some). */
+  modelos: { ler: () => ModeloDaThumb[]; gravar: (lista: ModeloDaThumb[]) => Promise<ModeloDaThumb[]> } | null
   temUpscale: boolean | null
   salvando: boolean
   erroAoSalvar: string | null
@@ -499,6 +506,10 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
       avisoDaSugestao: null,
       podeMenuNaSugestao: Boolean(fonte.copiarQuadro && fonte.salvarQuadro),
       lerCorDoProjeto: fonte.corDoProjeto ? () => fonte.corDoProjeto!() : null,
+      modelos:
+        fonte.modelos && fonte.salvarModelos
+          ? { ler: () => fonte.modelos!(), gravar: (lista) => fonte.salvarModelos!(lista) }
+          : null,
       listarFontesDoPc: fonte.fontesDoPc
         ? async () => {
             const r = await fonte.fontesDoPc!().catch(() => null)
@@ -563,7 +574,8 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         pedidoDoSlot[1] += 1
         const carregando = previas.some((p) => p?.carregando || p?.procurandoRosto)
         set({
-          thumb: { ...thumb, imagens, seta: { ...thumb.seta, base: null, ponta: null } },
+          // A seta livre fica onde ele pos (13/11); a de apontar o rosto procura o rosto de novo.
+          thumb: { ...thumb, imagens, seta: thumb.seta.livre ? thumb.seta : { ...thumb.seta, base: null, ponta: null } },
           previas: carregando ? [null, null] : [previas[1], previas[0]],
           slot: slot === 0 ? 1 : 0,
           salvo: null,

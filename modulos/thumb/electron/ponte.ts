@@ -22,6 +22,7 @@ export const criarPonteDaThumb = (({ invocar }) => {
     salvarAoLado: (p) => invocar(C.salvarAoLado, p),
     salvarComo: (p) => invocar(C.salvarComo, p),
     salvarPreset: (preset) => invocar(C.salvarPreset, preset),
+    salvarModelos: (modelos) => invocar(C.salvarModelos, modelos),
     fontesDoPc: () => invocar(C.fontesDoPc),
     fonteDoPc: (arquivo) => invocar(C.fonteDoPc, arquivo),
     colar: (projeto) => invocar(C.colar, projeto),

@@ -1,5 +1,5 @@
 import type { ModuloDoMain } from '../../../electron/modulos'
-import { CONFIG_DA_THUMB_PADRAO, configDaThumbSchema, presetDaThumbSchema, type ConfigDaThumb } from '../shared/pedidos'
+import { CONFIG_DA_THUMB_PADRAO, configDaThumbSchema, listaDeModelosSchema, presetDaThumbSchema, type ConfigDaThumb } from '../shared/pedidos'
 import { guardarContexto } from './contexto'
 import { registrarCanais } from './ipc'
 import { motorDeRostos } from './motor'
@@ -33,9 +33,14 @@ export const thumb: ModuloDoMain = {
     padrao: CONFIG_DA_THUMB_PADRAO,
     coerce: (raw) => configDaThumbSchema.parse(raw),
     paraRenderer: (c) => c,
+    // So o que veio no pedido muda: gravar os modelos nao apaga o preset, e vice-versa.
     validarPatch: (patch, atual) => {
-      const p = patch as { preset?: unknown }
-      return configDaThumbSchema.parse({ ...(atual as ConfigDaThumb), preset: presetDaThumbSchema.nullable().parse(p.preset ?? null) })
+      const p = (patch ?? {}) as { preset?: unknown; modelos?: unknown }
+      return configDaThumbSchema.parse({
+        ...(atual as ConfigDaThumb),
+        ...('preset' in p ? { preset: presetDaThumbSchema.nullable().parse(p.preset ?? null) } : {}),
+        ...('modelos' in p ? { modelos: listaDeModelosSchema.parse(p.modelos) } : {}),
+      })
     },
   },
 
