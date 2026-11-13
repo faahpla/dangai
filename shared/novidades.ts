@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.8.0',
+    itens: [
+      'Thumbnail com modelos: deixe a thumb do seu jeito e clique em "Salvar modelo" (no alto do painel). Um clique aplica o mesmo visual em outra thumb: estilo, cores, fonte, contorno, sombra, tamanho, divisor e seta. O texto e as imagens ficam. Depois de aplicar aparece um "Desfazer".',
+      'Sombra do texto na Thumbnail: o slider "Sombra", embaixo do Contorno. 0 tira a sombra, 100% é a do estilo e 200% é o dobro.',
+      'Seta livre na Thumbnail: em Seta > Posição, escolha "Livre". Arraste a seta inteira na prévia para onde quiser (sem as bolinhas), a rodinha em cima dela muda o tamanho, e o painel tem Tamanho, Giro e Espelhar.',
+      'Seletor de cor novo, no jeito do app: quadrado de cor, faixa de matiz, código, conta-gotas (pega uma cor de qualquer lugar da tela) e as cores usadas há pouco. Vale na Thumbnail e na cor da legenda.',
+    ],
+  },
+  {
     versao: '2.7.0',
     itens: [
       'Filmes na Biblioteca: as cenas dos filmes que o AnCut cortou entram junto com as dos animes, marcadas como "Filme · 2010". Busque pelo nome do filme ou por "filme". O Dangai acha sozinho a pasta "Filmes\\Corte de Filmes" ao lado da biblioteca; para usar outra, vá em Configurações > Filmes cortados. Na primeira vez a Biblioteca demora um pouco mais, criando as miniaturas do filme.',
