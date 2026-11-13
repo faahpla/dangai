@@ -1226,6 +1226,7 @@ function textoDe(clip: LibraryClip): string {
   if (clip.manga) return `${clip.anime} manga mangá ${clip.manga.capitulo} pagina ${clip.manga.pagina}`.toLowerCase()
   const nomes = clip.characters.flatMap((c) => [c, natural(c)]).join(' ')
   if (clip.broll) return `${clip.anime} b-roll broll trailer ${clip.broll.titulo} ${nomes} ${clip.shot}`.toLowerCase()
+  if (clip.filme) return `${clip.anime} ${clip.animeTitle} filme movie ${clip.filme.ano ?? ''} ${nomes} ${clip.shot}`.toLowerCase()
   return `${clip.anime} ${clip.animeTitle} ${nomes} s${clip.season}e${clip.episode} ${clip.shot}`.toLowerCase()
 }
 
@@ -1280,6 +1281,7 @@ interface RailProps {
 export function chaveEpisodio(clip: LibraryClip): string {
   if (clip.manga) return `Mangá · ${clip.manga.capitulo}`
   if (clip.broll) return `B-roll · ${clip.broll.titulo}`
+  if (clip.filme) return clip.filme.ano ? `Filme · ${clip.filme.ano}` : 'Filme'
   return `S${pad(clip.season)}E${pad(clip.episode)}`
 }
 
@@ -1673,7 +1675,7 @@ function Filtros({
           value={texto}
           onChange={(event) => onTexto(event.target.value)}
           onKeyDown={(event) => event.stopPropagation()}
-          placeholder="Buscar por anime, personagem ou episódio (ex.: ichigo, s01e42)"
+          placeholder="Buscar por anime, filme, personagem ou episódio (ex.: ichigo, s01e42, enrolados)"
           spellCheck={false}
           className="w-full select-text rounded-sm border border-line bg-elevated py-1.5 pl-7 pr-2.5 text-[12px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
         />

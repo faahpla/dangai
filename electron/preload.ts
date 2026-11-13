@@ -165,8 +165,8 @@ const bridge: DangaiBridge = {
       IpcResult<Record<string, string> | null>
     >,
 
-  upscaleVideoPronto: () =>
-    ipcRenderer.invoke(IPC.upscaleVideoPronto) as Promise<IpcResult<string | null>>,
+  upscaleVideoPronto: (caminho?: string) =>
+    ipcRenderer.invoke(IPC.upscaleVideoPronto, caminho) as Promise<IpcResult<string | null>>,
 
   cancelarUpscale: () => ipcRenderer.invoke(IPC.cancelarUpscale) as Promise<IpcResult<null>>,
 

@@ -510,6 +510,40 @@ export function Settings() {
                   </>
                 )}
               </p>
+
+              <label className="mb-1.5 mt-4 block text-[11px] font-medium text-ink-2">
+                Filmes cortados
+              </label>
+              <button
+                type="button"
+                onClick={async () => {
+                  const r = await window.dangai.escolherPasta("Escolher a pasta dos filmes cortados");
+                  if (r.ok && r.value) await save({ filmesDir: r.value });
+                }}
+                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
+              >
+                <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {settings?.filmesDir || "Automática: a pasta “Filmes\\Corte de Filmes” ao lado da biblioteca"}
+                </span>
+              </button>
+              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
+                Os filmes que o AnCut cortou: uma pasta por filme e, dentro dela, a
+                “Filme (ano)”. As cenas aparecem na Biblioteca junto das dos animes
+                (busque pelo nome do filme ou por “filme”); a sua pasta fica como está.
+                {settings?.filmesDir && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={() => void save({ filmesDir: "" })}
+                      className="underline hover:text-ink"
+                    >
+                      Voltar para a automática
+                    </button>
+                  </>
+                )}
+              </p>
               <SecoesDosModulos depoisDe="biblioteca" />
               <SecoesDosModulos depoisDe="fim" />
               <ModulosNasConfiguracoes />

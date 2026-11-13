@@ -98,10 +98,10 @@ export const fatiaDoVideoPronto = (set: SetProjeto, get: GetProjeto): FatiaDoVid
     await get().analyze()
   },
 
-  melhorarVideoPronto: async () => {
+  melhorarVideoPronto: async (caminho) => {
     if (get().videoPronto) return
     set({ error: null, videoProntoSaida: null })
-    const r = await window.dangai.upscaleVideoPronto()
+    const r = await window.dangai.upscaleVideoPronto(caminho)
     set({ videoPronto: null })
     if (!r.ok) {
       set({ error: `O upscale do vídeo falhou: ${r.error}` })

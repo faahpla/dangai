@@ -85,8 +85,18 @@ interface CacheFile {
  *
  * 10: B-roll do AnCut (LibraryClip.broll) sai com temporada/episodio 0 e a
  * marca. O cache antigo o tinha como S01E0N.
+ *
+ * O filme cortado (LibraryClip.filme) NAO subiu a versao: a pasta de filmes
+ * tem prefixo proprio e entra lida do zero; subir faria todo mundo reler o
+ * acervo inteiro (5 min sem as miniaturas) por nada. Uma pasta "Filme (ano)"
+ * DENTRO da biblioteca de anime so ganha a marca quando aquele episodio for
+ * relido (o AnCut mexer nele).
  */
 const CACHE_VERSION = 10
+
+/** O prefixo das cenas da pasta de filmes (ver electron/services/filmes.ts). */
+export const PREFIXO_DOS_FILMES = 'filme:'
+
 
 /** Profundidade maxima da varredura a partir da raiz. */
 const MAX_DEPTH = 3
@@ -522,6 +532,22 @@ async function lerEpisodio(
         }
       : undefined
 
+  /*
+   * FILME cortado pelo AnCut: "<titulo>/Filme (2010)/", com o ano gravado no
+   * lugar do episodio ("episode": 2010). Tudo o que vem da pasta de filmes e
+   * filme; fora dela, a pasta "Filme (ano)" tambem diz (um filme de anime
+   * guardado junto da serie). Vai com 0/0 e a marca, como o B-roll.
+   */
+  const pastaFilme = /^Filme(?:\s*\((\d{4})\))?(?:\s|$|-)/i.exec(basename(dir))
+  const anoDoJson = numero((cru as RawShot[])[0]?.episode)
+  const filme =
+    !broll && (prefixoDoId === PREFIXO_DOS_FILMES || pastaFilme)
+      ? {
+          titulo: serie,
+          ano: pastaFilme?.[1] ? Number(pastaFilme[1]) : anoDoJson >= 1900 && anoDoJson <= 2100 ? anoDoJson : null,
+        }
+      : undefined
+
   const saida: StoredClip[] = []
 
   for (const nomeMp4 of [...naPasta].sort(naturalmente)) {
@@ -550,9 +576,10 @@ async function lerEpisodio(
       keyframe: thumb,
       anime: serie,
       animeTitle: titulo,
-      season: broll ? 0 : daPasta ? Number(daPasta[1]) : numero(inicio.season),
-      episode: broll ? 0 : daPasta ? Number(daPasta[2]) : numero(inicio.episode),
+      season: broll || filme ? 0 : daPasta ? Number(daPasta[1]) : numero(inicio.season),
+      episode: broll || filme ? 0 : daPasta ? Number(daPasta[2]) : numero(inicio.episode),
       ...(broll ? { broll } : {}),
+      ...(filme ? { filme } : {}),
       shot,
       start: numero(inicio.start),
       duration: span > 0 ? span : numero(inicio.duration),
@@ -914,8 +941,10 @@ export function naturalmente(a: string, b: string): number {
 function ordemNatural(a: LibraryClip, b: LibraryClip): number {
   return (
     ALFABETICA.compare(a.anime, b.anime) ||
-    // B-roll depois dos episodios do anime, na ordem das pastas dele.
+    // B-roll e filme depois dos episodios do anime, na ordem das pastas dele.
     (a.broll ? 1 : 0) - (b.broll ? 1 : 0) ||
+    (a.filme ? 1 : 0) - (b.filme ? 1 : 0) ||
+    (a.filme?.ano ?? 0) - (b.filme?.ano ?? 0) ||
     (a.broll?.numero ?? 0) - (b.broll?.numero ?? 0) ||
     a.season - b.season ||
     a.episode - b.episode ||

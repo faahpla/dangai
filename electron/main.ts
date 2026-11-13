@@ -11,6 +11,7 @@ import { configureRender } from './services/render'
 import { aoMudarAsConfiguracoes, configureSettings } from './services/settings'
 import { configureLibrary } from './services/library'
 import { configureManga } from './services/manga'
+import { configureFilmes } from './services/filmes'
 import { configureNicknames } from './services/nicknames'
 import { configureFavorites } from './services/favorites'
 import { configureDescribe } from './services/describe'
@@ -213,6 +214,7 @@ app.whenReady().then(async () => {
   // nada do Dangai pode ser gravado dentro dela.
   configureLibrary(userData)
   configureManga(userData)
+  configureFilmes()
   // Apelidos tambem: e escolha do usuario sobre a biblioteca dele, nao parte
   // dela -- a pasta de cenas continua sendo so leitura.
   configureNicknames(userData)

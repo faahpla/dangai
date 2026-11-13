@@ -627,16 +627,28 @@ export function registerIpc(): void {
    * da musica: o caminho escolhido nunca precisa passar pela interface. Sai ao
    * lado do original, com "-upscale" no nome, sem sobrescrever nada.
    */
-  handle<[], string | null>(IPC.upscaleVideoPronto, async () => {
+  handle<[string | undefined], string | null>(IPC.upscaleVideoPronto, async (caminhoDado) => {
     if (!upscaleReady()) {
       throw new Error('O modelo de upscale não veio com esta instalação do app.')
     }
-    const escolha = await dialog.showOpenDialog({
-      title: 'Escolher o vídeo para melhorar',
-      properties: ['openFile'],
-      filters: [{ name: 'Vídeo', extensions: ['mp4', 'mov', 'mkv', 'webm', 'm4v'] }],
-    })
-    const entrada = escolha.canceled ? undefined : escolha.filePaths[0]
+    /*
+     * O video solto em cima do botao vem pronto; sem ele, o dialogo. O que
+     * chega da janela e conferido: precisa ser um video que existe.
+     */
+    let entrada: string | undefined
+    if (caminhoDado !== undefined) {
+      if (typeof caminhoDado !== 'string' || classifyFile(caminhoDado) !== 'video' || !existsSync(caminhoDado)) {
+        throw new Error('Esse arquivo não é um vídeo que dê para melhorar.')
+      }
+      entrada = caminhoDado
+    } else {
+      const escolha = await dialog.showOpenDialog({
+        title: 'Escolher o vídeo para melhorar',
+        properties: ['openFile'],
+        filters: [{ name: 'Vídeo', extensions: ['mp4', 'mov', 'mkv', 'webm', 'm4v'] }],
+      })
+      entrada = escolha.canceled ? undefined : escolha.filePaths[0]
+    }
     if (!entrada) return null
 
     const base = entrada.slice(0, entrada.length - extname(entrada).length)

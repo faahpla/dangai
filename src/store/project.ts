@@ -574,7 +574,8 @@ export interface ProjectState {
   /** Liga ou desliga a imagem inteira (sobre ela mesma desfocada) de uma metade do bloco. */
   alternarImagemInteira: (sceneIndex: number, metade: 'cima' | 'baixo') => Promise<void>
   /** Escolhe um MP4 pronto e passa pelo upscale, fora de qualquer projeto. */
-  melhorarVideoPronto: () => Promise<void>
+  /** Sem caminho, abre o dialogo; com ele (soltou o video no botao), vai direto. */
+  melhorarVideoPronto: (caminho?: string) => Promise<void>
   /**
    * Abre um video PRONTO como projeto: a fala dele vira a narracao, a imagem
    * vira um bloco so, e dali da para legendar, cortar, por transicao, zoom...

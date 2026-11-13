@@ -84,6 +84,12 @@ export interface Settings {
    */
   mangaDir: string
   /**
+   * Pasta dos filmes cortados pelo AnCut: <titulo>/Filme (ano)/. Vazio = a
+   * "Filmes\Corte de Filmes" ao lado da biblioteca, quando existe (ver
+   * pastaDosFilmes).
+   */
+  filmesDir: string
+  /**
    * Onde os projetos nascem: soltar a narracao pergunta o nome e grava
    * <pasta>/<nome>.dangai na hora. Vazio = Documentos\Dangai\Projetos (ver
    * pastaDosProjetos).
@@ -164,6 +170,7 @@ const DEFAULTS: Settings = {
   sfxDir: '',
   libraryDir: '',
   mangaDir: '',
+  filmesDir: '',
   pastaDeProjetos: '',
   somDoPan: null,
   somAoRenderizar: true,
@@ -402,6 +409,7 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'ge
     sfxDir: settings.sfxDir,
     libraryDir: settings.libraryDir,
     mangaDir: settings.mangaDir,
+    filmesDir: settings.filmesDir,
     pastaDeProjetos: settings.pastaDeProjetos,
     somDoPan: settings.somDoPan ?? somDoPanPadrao(),
     somAoRenderizar: settings.somAoRenderizar,
@@ -457,6 +465,7 @@ function coerce(raw: unknown): Settings {
     sfxDir: typeof value['sfxDir'] === 'string' ? value['sfxDir'] : '',
     libraryDir: typeof value['libraryDir'] === 'string' ? value['libraryDir'] : '',
     mangaDir: typeof value['mangaDir'] === 'string' ? value['mangaDir'] : '',
+    filmesDir: typeof value['filmesDir'] === 'string' ? value['filmesDir'] : '',
     pastaDeProjetos: typeof value['pastaDeProjetos'] === 'string' ? value['pastaDeProjetos'] : '',
     somDoPan: typeof value['somDoPan'] === 'string' ? value['somDoPan'] : null,
     somAoRenderizar: value['somAoRenderizar'] !== false,

@@ -323,6 +323,18 @@ export interface LibraryClip {
     /** O numero da pasta ("B-roll 03" = 3). So ordena. */
     numero: number
   }
+  /**
+   * Cena de FILME cortado pelo AnCut ("<titulo>/Filme (2010)/"), da pasta de
+   * filmes (electron/services/filmes.ts). O AnCut grava o ANO no lugar do
+   * episodio ("episode": 2010), e lido assim o filme virava "S01E2010". Como o
+   * B-roll: temporada e episodio 0, que nenhum roteiro de anime cita.
+   */
+  filme?: {
+    /** O nome da pasta do filme ("Enrolados"). */
+    titulo: string
+    /** O ano, da pasta "Filme (2010)" ou do json; null se nenhum diz. */
+    ano: number | null
+  }
   manga?: {
     /** A pasta do capitulo, como ele chamou: "Capítulo 45", "Cap. Especial - ...". */
     capitulo: string
@@ -551,6 +563,8 @@ export interface PublicSettings {
   libraryDir: string
   /** Pasta dos mangas. Vazio = a "Mangás" ao lado da biblioteca, se existir. */
   mangaDir: string
+  /** Pasta dos filmes cortados. Vazio = a "Filmes\Corte de Filmes" ao lado da biblioteca, se existir. */
+  filmesDir: string
   /** Onde os projetos sao gravados. Vazio = Documentos\Dangai\Projetos. */
   pastaDeProjetos: string
   /** O som que entra sozinho quando ele poe a transicao Pan. '' = nenhum. */
@@ -597,6 +611,7 @@ export interface SettingsPatch {
   sfxDir?: string
   libraryDir?: string
   mangaDir?: string
+  filmesDir?: string
   pastaDeProjetos?: string
   somDoPan?: string
   somAoRenderizar?: boolean
@@ -828,10 +843,11 @@ export interface DangaiBridge {
     /** null = cancelado no meio pelo usuario. */
   ): Promise<IpcResult<Record<string, string> | null>>
   /**
-   * Escolhe um MP4 pronto e o passa inteiro pelo upscale. Devolve o caminho do
-   * arquivo novo; null se ele fechou o dialogo ou cancelou no meio.
+   * Passa um MP4 pronto inteiro pelo upscale. Sem `caminho`, abre o dialogo de
+   * escolher; com ele (o video solto em cima do botao), vai direto. Devolve o
+   * caminho do arquivo novo; null se ele fechou o dialogo ou cancelou no meio.
    */
-  upscaleVideoPronto(): Promise<IpcResult<string | null>>
+  upscaleVideoPronto(caminho?: string): Promise<IpcResult<string | null>>
   /** Interrompe o upscale que estiver rodando, do render ou do video pronto. */
   cancelarUpscale(): Promise<IpcResult<null>>
   onVideoProntoProgress(listener: (p: { feitos: number; total: number; nome: string }) => void): () => void

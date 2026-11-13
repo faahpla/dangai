@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import {
+  ArrowDownToLine,
   ArrowRight,
   AudioWaveform,
   BookOpen,
@@ -17,7 +18,7 @@ import {
   Tv,
   X,
 } from "lucide-react";
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { BotoesDosModulosNaTelaInicial, useModulosLigados } from "@/modulos";
 import { useProject } from "@/store/project";
 import { classifyFile } from "@shared/channels";
@@ -51,10 +52,22 @@ export function Dropzone({ isDragging }: DropzoneProps) {
   // Um botao de modulo (o "Gerar recap") com o arquivo em cima dele: a area
   // de soltar do nucleo se apaga, para nao parecer que vai cair nela.
   const [alvoDeModulo, setAlvoDeModulo] = useState(false);
-  const destaque = isDragging && !alvoDeModulo;
+  /*
+   * O CARTAO DE NICHO com o arquivo em cima (Anime, Mangá, Vídeo pronto).
+   * "Quero poder usar o drag e drop na categoria que eu for fazer": a janela
+   * inteira ja aceitava o arquivo, mas so a area de cima acendia, e soltar no
+   * cartao parecia nao valer. Agora o cartao acende e diz o que vai acontecer,
+   * e a area de cima se apaga enquanto isso.
+   */
+  const [cartao, setCartao] = useState<Cartao | null>(null);
+  const destaque = isDragging && !alvoDeModulo && cartao === null;
   useEffect(() => {
-    if (!isDragging) setAlvoDeModulo(false);
+    if (!isDragging) {
+      setAlvoDeModulo(false);
+      setCartao(null);
+    }
   }, [isDragging]);
+  const alvo: PropsDoAlvo = { arrastando: isDragging, cartao, definirCartao: setCartao };
 
   return (
     <div className="relative h-full w-full">
@@ -77,9 +90,9 @@ export function Dropzone({ isDragging }: DropzoneProps) {
             <section className="enter flex shrink-0 flex-col gap-3">
               <h2 className="text-[11px] font-medium uppercase tracking-wide text-ink-3">Por onde começar</h2>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <NichoAnime />
-                <NichoManga />
-                <NichoVideoPronto />
+                <NichoAnime {...alvo} />
+                <NichoManga {...alvo} />
+                <NichoVideoPronto {...alvo} />
                 <NichoModulos arrastando={isDragging} definirAlvo={setAlvoDeModulo} />
               </div>
             </section>
@@ -91,6 +104,87 @@ export function Dropzone({ isDragging }: DropzoneProps) {
       <PrepararODangai />
     </div>
   );
+}
+
+/** Os cartoes de nicho que aceitam arquivo solto em cima. */
+type Cartao = "anime" | "manga" | "video";
+
+interface PropsDoAlvo {
+  /** Algo sendo arrastado por cima da janela (o useFileDrop). */
+  arrastando: boolean;
+  /** O cartao com o arquivo em cima agora. */
+  cartao: Cartao | null;
+  definirCartao: Dispatch<SetStateAction<Cartao | null>>;
+}
+
+type ManipuladoresDeSoltar = Pick<
+  React.HTMLAttributes<HTMLElement>,
+  "onDragEnter" | "onDragLeave" | "onDragOver" | "onDrop"
+>;
+
+/**
+ * UM LUGAR DE SOLTAR ARQUIVO: acende quando o arquivo entra e chama `aoSoltar`
+ * com os caminhos. Se `aoSoltar` devolver true, o arquivo e dele e nao desce
+ * para o soltar da janela inteira (que comecaria um projeto com ele); false
+ * deixa descer.
+ *
+ * Entrar num filho (icone, botao) dispara leave no pai: conta a profundidade.
+ * O arraste cancelado fora da janela zera tudo pelo `arrastando`.
+ */
+function useSoltar(
+  arrastando: boolean,
+  aoAcender: (aceso: boolean) => void,
+  aoSoltar: (caminhos: string[]) => boolean,
+): ManipuladoresDeSoltar {
+  const profundidade = useRef(0);
+  useEffect(() => {
+    if (!arrastando) profundidade.current = 0;
+  }, [arrastando]);
+  return {
+    onDragEnter: (event) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      profundidade.current += 1;
+      if (profundidade.current === 1) aoAcender(true);
+    },
+    onDragLeave: () => {
+      if (profundidade.current === 0) return;
+      profundidade.current -= 1;
+      if (profundidade.current === 0) aoAcender(false);
+    },
+    onDragOver: (event) => {
+      if (!event.dataTransfer.types.includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    onDrop: (event) => {
+      profundidade.current = 0;
+      aoAcender(false);
+      const caminhos = Array.from(event.dataTransfer.files)
+        .map((f) => window.dangai.pathForFile(f))
+        .filter((p): p is string => Boolean(p));
+      if (caminhos.length === 0) return;
+      if (aoSoltar(caminhos)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    },
+  };
+}
+
+/** O cartao inteiro como lugar de soltar: acende com ele, apaga sem tirar o de outro. */
+function useCartaoDeSoltar(
+  id: Cartao,
+  { arrastando, cartao, definirCartao }: PropsDoAlvo,
+  aoSoltar: (caminhos: string[]) => boolean,
+): { aceso: boolean; manipuladores: ManipuladoresDeSoltar } {
+  const manipuladores = useSoltar(
+    arrastando,
+    // Ao passar de um cartao para o outro, o "entrou" do novo chega antes do
+    // "saiu" do velho: apagar so se ainda for este.
+    (aceso) => definirCartao((atual) => (aceso ? id : atual === id ? null : atual)),
+    aoSoltar,
+  );
+  return { aceso: arrastando && cartao === id, manipuladores };
 }
 
 /** As etapas do caminho de sempre, para ele saber o que vem depois de soltar. */
@@ -192,6 +286,7 @@ function Nicho({
   subtitulo,
   children,
   rodape,
+  soltar,
 }: {
   icone: typeof Tv;
   /** Classes de cor do icone (texto e fundo). */
@@ -200,9 +295,22 @@ function Nicho({
   subtitulo: string;
   children: ReactNode;
   rodape?: ReactNode;
+  /**
+   * O cartao aceita arquivo solto em cima. Com `dica`, ele se cobre com o
+   * recado do que vai acontecer; sem, quem mostra sao os proprios botoes (o
+   * Vídeo pronto, que tem dois destinos).
+   */
+  soltar?: { aceso: boolean; manipuladores: ManipuladoresDeSoltar; dica?: string };
 }) {
+  const aceso = soltar?.aceso === true;
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-line-strong">
+    <div
+      {...soltar?.manipuladores}
+      className={[
+        "relative flex min-w-0 flex-col gap-3 rounded-lg border bg-surface p-4 transition-colors",
+        aceso ? "border-accent" : "border-line hover:border-line-strong",
+      ].join(" ")}
+    >
       <div className="flex items-center gap-3">
         <span className={["grid size-9 shrink-0 place-items-center rounded-md", cor].join(" ")}>
           <Icone size={17} strokeWidth={1.75} />
@@ -214,6 +322,19 @@ function Nicho({
       </div>
       <div className="flex flex-col gap-1.5">{children}</div>
       {rodape && <p className="mt-auto text-[11px] leading-snug text-ink-3">{rodape}</p>}
+      {aceso && soltar?.dica && (
+        /*
+         * O RECADO POR CIMA DO CARTAO, sem pegar o mouse: o arraste continua
+         * sendo do cartao, e o recado so diz o que acontece ao soltar.
+         */
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-lg bg-surface/[0.97] px-5 text-center">
+          <span className="grid size-10 place-items-center rounded-full bg-accent text-white">
+            <ArrowDownToLine size={18} strokeWidth={1.75} />
+          </span>
+          <span className="text-[14px] font-semibold text-accent">Solte aqui: {titulo}</span>
+          <span className="text-[12px] leading-snug text-ink-2">{soltar.dica}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -222,30 +343,48 @@ function Nicho({
 function Acao({
   icone: Icone,
   principal = false,
+  aceso = false,
   children,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { icone: typeof Tv; principal?: boolean }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  icone: typeof Tv;
+  principal?: boolean;
+  /** O arquivo arrastado esta em cima dele: soltar faz o que ele faz. */
+  aceso?: boolean;
+}) {
   return (
     <button
       type="button"
       {...props}
       className={[
         "flex w-full items-center gap-2 rounded-sm border px-3 py-2 text-left text-[12px] transition-colors duration-150 disabled:opacity-40",
-        principal
-          ? "border-accent/60 bg-accent-dim text-ink hover:bg-accent/20"
-          : "border-line bg-elevated text-ink-2 hover:border-line-strong hover:text-ink",
+        aceso
+          ? "border-accent bg-accent font-medium text-white"
+          : principal
+            ? "border-accent/60 bg-accent-dim text-ink hover:bg-accent/20"
+            : "border-line bg-elevated text-ink-2 hover:border-line-strong hover:text-ink",
       ].join(" ")}
     >
-      <Icone size={14} strokeWidth={1.5} className={principal ? "shrink-0 text-accent" : "shrink-0 text-ink-3"} />
+      <Icone
+        size={14}
+        strokeWidth={1.5}
+        className={aceso ? "shrink-0 text-white" : principal ? "shrink-0 text-accent" : "shrink-0 text-ink-3"}
+      />
       <span className="flex min-w-0 flex-1 items-center gap-2">{children}</span>
     </button>
   );
 }
 
 /** ANIME: curiosidades e recaps -- a narracao dele com as cenas da Biblioteca. */
-function NichoAnime() {
+function NichoAnime(alvo: PropsDoAlvo) {
   const openLibrary = useProject((s) => s.openLibrary);
+  const ingest = useProject((s) => s.ingest);
   const escolher = useEscolherNarracao();
+  // O mesmo caminho de soltar na area de cima: a narracao abre a etapa de Audio.
+  const soltar = useCartaoDeSoltar("anime", alvo, (caminhos) => {
+    void ingest(caminhos, undefined, "soltar");
+    return true;
+  });
   return (
     <Nicho
       icone={Tv}
@@ -253,8 +392,9 @@ function NichoAnime() {
       titulo="Anime"
       subtitulo="Curiosidades e recaps"
       rodape="Você edita o áudio, sincroniza o roteiro e escolhe as cenas de cada frase."
+      soltar={{ ...soltar, dica: "A narração abre no Áudio. Depois vêm o roteiro e as cenas da Biblioteca." }}
     >
-      <Acao icone={FolderOpen} principal onClick={() => void escolher()} title="Escolher a narração (e, se quiser, o roteiro .txt)">
+      <Acao icone={FolderOpen} principal onClick={() => void escolher()} title="Escolher a narração (e, se quiser, o roteiro .txt). Também dá para soltar o arquivo em cima deste cartão.">
         Começar com a narração
       </Acao>
       <Acao icone={LibraryIcon} onClick={() => void openLibrary(true)} title="Procurar cenas na biblioteca (Ctrl+B)">
@@ -268,10 +408,20 @@ function NichoAnime() {
  * MANGA: o Resumo de mangá (a IA le os capitulos e escreve) e, para quem ja tem
  * o roteiro, o caminho de sempre -- a etapa do Roteiro reconhece o .txt.
  */
-function NichoManga() {
+function NichoManga(alvo: PropsDoAlvo) {
   const abrir = useResumoDeManga((s) => s.abrir);
   const temRascunho = useResumoDeManga((s) => s.resumo !== null);
+  const ingest = useProject((s) => s.ingest);
   const escolher = useEscolherNarracao();
+  /*
+   * Soltar aqui e o caminho de sempre (a narracao abre no Audio). O .txt do
+   * resumo que vier junto e reconhecido na entrada (reconhecerRoteiroDeManga),
+   * e os quadrinhos de cada frase vem com ele.
+   */
+  const soltar = useCartaoDeSoltar("manga", alvo, (caminhos) => {
+    void ingest(caminhos, undefined, "soltar");
+    return true;
+  });
   return (
     <Nicho
       icone={BookOpen}
@@ -279,6 +429,7 @@ function NichoManga() {
       titulo="Mangá"
       subtitulo="Resumos de capítulos"
       rodape="Já tem o roteiro? Solte a narração; na etapa do Roteiro, solte o .txt do resumo e os quadrinhos vêm junto."
+      soltar={{ ...soltar, dica: "A narração abre no Áudio. Solte o .txt do resumo junto e os quadrinhos de cada frase vêm com ele." }}
     >
       <Acao
         icone={Sparkles}
@@ -289,7 +440,7 @@ function NichoManga() {
         {temRascunho ? "Continuar o resumo" : "Escrever resumo com IA"}
         {temRascunho && <span className="ml-auto size-1.5 shrink-0 rounded-full bg-accent" />}
       </Acao>
-      <Acao icone={Mic} onClick={() => void escolher()} title="Já gravou o resumo: escolha a narração. Na etapa do Roteiro, o .txt do resumo traz os quadrinhos.">
+      <Acao icone={Mic} onClick={() => void escolher()} title="Já gravou o resumo: escolha a narração (ou solte em cima deste cartão). Na etapa do Roteiro, o .txt do resumo traz os quadrinhos.">
         Já gravei: começar com a narração
       </Acao>
     </Nicho>
@@ -297,11 +448,38 @@ function NichoManga() {
 }
 
 /** VIDEO PRONTO: o que da para fazer com um MP4 que ja existe. */
-function NichoVideoPronto() {
+function NichoVideoPronto(alvo: PropsDoAlvo) {
+  const legendar = useProject((s) => s.legendarVideoPronto);
+  const melhorar = useProject((s) => s.melhorarVideoPronto);
+  const rodando = useProject((s) => s.videoPronto !== null);
+  /*
+   * DOIS DESTINOS NUM CARTAO: soltar no Upscale melhora o video; em qualquer
+   * outro lugar do cartao, abre para legendar (o principal). O botao sob o
+   * arquivo acende e diz o que vai fazer -- um recado por cima do cartao
+   * esconderia justamente os botoes.
+   */
+  const [sobreUpscale, setSobreUpscale] = useState(false);
+  useEffect(() => {
+    if (!alvo.arrastando) setSobreUpscale(false);
+  }, [alvo.arrastando]);
+  const soltarNoUpscale = useSoltar(alvo.arrastando, setSobreUpscale, (caminhos) => {
+    const video = caminhos.find((p) => classifyFile(p) === "video");
+    if (!video || rodando) return false;
+    void melhorar(video);
+    return true;
+  });
+  // Sem video no que veio, o arquivo desce para o soltar da janela (projeto novo).
+  const soltar = useCartaoDeSoltar("video", alvo, (caminhos) => {
+    const video = caminhos.find((p) => classifyFile(p) === "video");
+    if (!video) return false;
+    // O video e, se vier junto, o roteiro: a legenda sai com o texto dele.
+    void legendar(video, caminhos.find((p) => classifyFile(p) === "script") ?? null);
+    return true;
+  });
   return (
-    <Nicho icone={Clapperboard} cor="bg-emerald-400/10 text-emerald-300" titulo="Vídeo pronto" subtitulo="Legendar e melhorar um MP4">
-      <LegendarVideoPronto />
-      <MelhorarVideoPronto />
+    <Nicho icone={Clapperboard} cor="bg-emerald-400/10 text-emerald-300" titulo="Vídeo pronto" subtitulo="Legendar e melhorar um MP4" soltar={soltar}>
+      <LegendarVideoPronto aceso={soltar.aceso && !sobreUpscale} />
+      <MelhorarVideoPronto aceso={soltar.aceso && sobreUpscale} manipuladores={soltarNoUpscale} />
     </Nicho>
   );
 }
@@ -464,29 +642,19 @@ function Recuperar() {
  * ou algum ajuste como corte e etc". A fala do video vira a narracao e a
  * imagem um bloco so -- ver legendarVideoPronto no store.
  */
-function LegendarVideoPronto() {
+function LegendarVideoPronto({ aceso }: { aceso: boolean }) {
   const legendar = useProject((s) => s.legendarVideoPronto);
 
+  // Soltar o video em qualquer lugar do cartao cai aqui (ver NichoVideoPronto).
   return (
     <Acao
       icone={Captions}
       principal
+      aceso={aceso}
       onClick={() => void legendar()}
-      // Soltar o video EM CIMA do botao tambem vale -- e nao cai na area de
-      // soltar de baixo, que trataria o video como clipe de um projeto novo.
-      onDragOver={(event) => event.preventDefault()}
-      onDrop={(event) => {
-        // O video e, se vier junto, o roteiro: a legenda sai com o texto dele.
-        const caminhos = Array.from(event.dataTransfer.files).map((f) => window.dangai.pathForFile(f));
-        const video = caminhos.find((p) => classifyFile(p) === "video");
-        if (!video) return;
-        event.preventDefault();
-        event.stopPropagation();
-        void legendar(video, caminhos.find((p) => classifyFile(p) === "script") ?? null);
-      }}
-      title="Abre um vídeo já editado para legendar, cortar, por transição, zoom, cor ou SFX. A fala dele vira a narração. Mande o roteiro (.txt) junto e a legenda sai com o texto dele. (Clique e escolha os dois, ou solte os dois aqui.)"
+      title="Abre um vídeo já editado para legendar, cortar, por transição, zoom, cor ou SFX. A fala dele vira a narração. Mande o roteiro (.txt) junto e a legenda sai com o texto dele. (Clique e escolha os dois, ou solte os dois em cima deste cartão.)"
     >
-      Legendar vídeo pronto
+      {aceso ? "Solte para legendar" : "Legendar vídeo pronto"}
     </Acao>
   );
 }
@@ -499,18 +667,20 @@ function LegendarVideoPronto() {
  * dele com "-upscale" no nome. O andamento e o cancelar ficam na barra de
  * baixo, como o de toda tarefa longa.
  */
-function MelhorarVideoPronto() {
+function MelhorarVideoPronto({ aceso, manipuladores }: { aceso: boolean; manipuladores: ManipuladoresDeSoltar }) {
   const melhorar = useProject((s) => s.melhorarVideoPronto);
   const rodando = useProject((s) => s.videoPronto !== null);
 
   return (
     <Acao
+      {...manipuladores}
       icone={Sparkles}
+      aceso={aceso}
       onClick={() => void melhorar()}
       disabled={rodando}
-      title="Escolhe um MP4 pronto e passa pelo upscale. Sai ao lado, com o dobro da resolução."
+      title="Escolhe um MP4 pronto (ou solte o vídeo em cima deste botão) e passa pelo upscale. Sai ao lado, com o dobro da resolução."
     >
-      Upscale (dobro da resolução)
+      {aceso ? "Solte para melhorar (upscale)" : "Upscale (dobro da resolução)"}
     </Acao>
   );
 }

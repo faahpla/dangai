@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.7.0',
+    itens: [
+      'Filmes na Biblioteca: as cenas dos filmes que o AnCut cortou entram junto com as dos animes, marcadas como "Filme · 2010". Busque pelo nome do filme ou por "filme". O Dangai acha sozinho a pasta "Filmes\\Corte de Filmes" ao lado da biblioteca; para usar outra, vá em Configurações > Filmes cortados. Na primeira vez a Biblioteca demora um pouco mais, criando as miniaturas do filme.',
+      'Soltar no cartão certo da tela inicial: arraste a narração em cima de Anime ou Mangá e o cartão acende, dizendo o que vai acontecer. No Vídeo pronto, soltar o vídeo abre para legendar; soltar em cima do Upscale melhora o vídeo direto, sem abrir a janela de escolher.',
+    ],
+  },
+  {
     versao: '2.6.2',
     itens: [
       'Mudar a ordem das cenas voltou a funcionar: sem nenhum bloco escolhido (aperte Esc), arraste as cenas da fila no alto. Clicar sem arrastar abre o bloco daquela cena. Na 2.5.0, só de apertar o mouse o bloco abria e a fila sumia antes de dar para arrastar.',
