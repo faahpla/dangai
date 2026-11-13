@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.8.1',
+    itens: [
+      'Gerar recap, Voz: o "Cortar pausas" ganhou o modo Justo (o novo padrão), que corta pausas a partir de 0,18 s e deixa só 0,08 s. O ritmo fica de short. O Normal continua como antes.',
+      'Gerar recap, Voz: dá para importar mais de um áudio de uma vez, como o gancho e o resto. Solte ou escolha os dois: o app emenda na ordem do nome ("1 gancho", "2 resto"), e o "Inverter a ordem" troca se precisar.',
+      'Gerar recap, Roteiro: a imagem ao lado de cada frase agora diz MOMENTO. Ela é só o momento do episódio, não a cena final. O gancho vira 2 ou 3 cenas no passo Cenas.',
+    ],
+  },
+  {
     versao: '2.8.0',
     itens: [
       'Thumbnail com modelos: deixe a thumb do seu jeito e clique em "Salvar modelo" (no alto do painel). Um clique aplica o mesmo visual em outra thumb: estilo, cores, fonte, contorno, sombra, tamanho, divisor e seta. O texto e as imagens ficam. Depois de aplicar aparece um "Desfazer".',
