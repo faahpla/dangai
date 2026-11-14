@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.8.6',
+    itens: [
+      'Gerar recap, Voz: a caixinha "Fresh Air" no áudio importado passa o seu Fresh Air (Slate Digital) na voz, com o preset do seu padrão da etapa de áudio. Só muda o som; o volume já é igualado sempre. Na primeira vez o Dangai baixa o leitor de plugins (~23 MB).',
+      'Configurações > Biblioteca do recap: "Áudio importado começa com" 100%, 105%, 110%, 115% ou 120%, e o Fresh Air já marcado ou não. É só o começo: no passo Voz você muda quando quiser.',
+    ],
+  },
+  {
     versao: '2.8.5',
     itens: [
       'Edição rápida, rosto: quando o app não tem certeza de quem é o personagem citado, o recorte agora vai pro rosto mais perto de onde ele acha que o personagem está, em vez de encostar na borda e cortar o rosto ao meio. E uma cabeça sem rosto (alguém de costas, um ombro escuro na frente) não ganha mais de um rosto visível do mesmo tamanho.',
