@@ -526,6 +526,7 @@ function Pos({ travado }: { travado: boolean }) {
   const cortarPausas = useVoz((s) => s.form.cortarPausas)
   const pausasJustas = useVoz((s) => s.form.pausasJustas)
   const cortarErros = useVoz((s) => s.form.cortarErros)
+  const freshAir = useVoz((s) => s.form.freshAir)
   const importado = useVoz((s) => s.form.fonte === 'importado')
   const mudarForm = useVoz((s) => s.mudarForm)
   return (
@@ -585,6 +586,18 @@ function Pos({ travado }: { travado: boolean }) {
             title="Repeticao, eee e frase lida 2 vezes saem. Fica a ultima leitura."
           >
             Cortar erros
+          </Caixinha>
+        </div>
+      )}
+      {importado && (
+        <div className="flex h-8 items-center" data-voz="fresh-air">
+          <Caixinha
+            ligada={freshAir}
+            onChange={(ligada) => mudarForm((f) => ({ ...f, freshAir: ligada }))}
+            disabled={travado}
+            title="O seu Fresh Air (Slate Digital) na voz, com o preset do seu padrao da etapa de audio. So muda o som. O volume ja e igualado sempre."
+          >
+            Fresh Air
           </Caixinha>
         </div>
       )}

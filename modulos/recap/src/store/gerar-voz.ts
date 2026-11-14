@@ -71,6 +71,8 @@ export interface AjustesDaVoz {
   elevenKeyHint: string
   fishKeyHint: string
   vozPadrao: VozPadrao
+  /** (14/11) Como o audio importado comeca (Ajustes do recap): o acelerar e o Fresh Air. */
+  vozImportada?: { acelerar: number; freshAir: boolean }
 }
 
 /**
@@ -91,6 +93,8 @@ export interface Formulario {
   pausasJustas: boolean
   /** So no audio importado (V1): repeticao, "eee" e frase lida duas vezes saem. Ligado por padrao. */
   cortarErros: boolean
+  /** So no audio importado (14/11): o Fresh Air dele na narracao (so o som). */
+  freshAir: boolean
 }
 
 export type TipoDoPedido = 'gerar' | 'regravar' | 'ajustar' | 'importar'
@@ -180,6 +184,12 @@ const FORM_INICIAL: Formulario = {
   cortarPausas: true,
   pausasJustas: true,
   cortarErros: true,
+  freshAir: false,
+}
+
+/** O audio importado comeca assim (Ajustes do recap > Audio importado). */
+function inicioDoImportado(a: AjustesDaVoz | null | undefined): { velocidade: number; freshAir: boolean } {
+  return { velocidade: a?.vozImportada?.acelerar ?? 1, freshAir: a?.vozImportada?.freshAir ?? false }
 }
 
 // ------------------------------------------------------------ puras (tela)
@@ -199,8 +209,13 @@ function cortaErros(c: ConfigDaVoz): boolean {
   return c.fonte === 'importado' && c.cortarErros
 }
 
+/** O Fresh Air de uma config (so o importado tem). */
+function comAr(c: ConfigDaVoz): boolean {
+  return c.fonte === 'importado' && c.freshAir
+}
+
 function mesmoPos(a: ConfigDaVoz, b: ConfigDaVoz): boolean {
-  return Math.abs(a.velocidade - b.velocidade) < 1e-6 && a.cortarPausas === b.cortarPausas && (!a.cortarPausas || a.pausasJustas === b.pausasJustas) && cortaErros(a) === cortaErros(b)
+  return Math.abs(a.velocidade - b.velocidade) < 1e-6 && a.cortarPausas === b.cortarPausas && (!a.cortarPausas || a.pausasJustas === b.pausasJustas) && cortaErros(a) === cortaErros(b) && comAr(a) === comAr(b)
 }
 
 /** O formulario com a config de um take (as outras fontes ficam como estavam). */
@@ -213,6 +228,7 @@ function formComTake(take: TakeDaVoz, base: Formulario): Formulario {
     cortarPausas: c.cortarPausas,
     pausasJustas: c.pausasJustas,
     cortarErros: c.fonte === 'importado' ? c.cortarErros : base.cortarErros,
+    freshAir: c.fonte === 'importado' ? c.freshAir : base.freshAir,
   }
   if (c.fonte === 'elevenlabs') f.eleven = { voiceId: c.voiceId, modelId: c.modelId }
   if (c.fonte === 'fish') f.fish = { voiceId: c.voiceId, modelId: c.modelId }
@@ -240,7 +256,8 @@ function formDosAjustes(a: AjustesDaVoz, base: Formulario): Formulario {
         : a.hasFishKey
           ? 'fish'
           : 'importado'
-  return { ...base, fonte, eleven, fish, nativa: velocidadeNativaDoPerfil(v), velocidade: 1, cortarPausas: fonte !== 'importado', cortarErros: true }
+  const importado = fonte === 'importado' ? inicioDoImportado(a) : { velocidade: 1, freshAir: false }
+  return { ...base, fonte, eleven, fish, nativa: velocidadeNativaDoPerfil(v), ...importado, cortarPausas: fonte !== 'importado', cortarErros: true }
 }
 
 /**
@@ -299,7 +316,7 @@ export function configDoForm(form: Formulario, take: TakeDaVoz | null): ConfigDa
     }
   } else {
     if (take?.config.fonte !== 'importado') return null
-    bruto = { ...take.config, ...pos, cortarErros: form.cortarErros }
+    bruto = { ...take.config, ...pos, cortarErros: form.cortarErros, freshAir: form.freshAir }
   }
   const r = configDaVozSchema.safeParse(bruto)
   return r.success ? r.data : null
@@ -549,6 +566,7 @@ function ajustesDe(s: AjustesPublicos): AjustesDaVoz {
     elevenKeyHint: s.elevenKeyHint,
     fishKeyHint: s.fishKeyHint,
     vozPadrao: s.vozPadrao,
+    vozImportada: s.vozImportada,
   }
 }
 
@@ -801,10 +819,11 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
               cortarPausas: take.config.cortarPausas,
               pausasJustas: take.config.pausasJustas,
               cortarErros: take.config.fonte === 'importado' ? take.config.cortarErros : true,
+              freshAir: take.config.fonte === 'importado' ? take.config.freshAir : false,
             }
           : pago(fonte) && pago(s.form.fonte)
-            ? { velocidade: s.form.velocidade, cortarPausas: s.form.cortarPausas, pausasJustas: s.form.pausasJustas, cortarErros: s.form.cortarErros }
-            : { velocidade: 1, cortarPausas: pago(fonte), pausasJustas: true, cortarErros: true }
+            ? { velocidade: s.form.velocidade, cortarPausas: s.form.cortarPausas, pausasJustas: s.form.pausasJustas, cortarErros: s.form.cortarErros, freshAir: false }
+            : { ...(fonte === 'importado' ? inicioDoImportado(s.ajustes) : { velocidade: 1, freshAir: false }), cortarPausas: pago(fonte), pausasJustas: true, cortarErros: true }
       set({
         form: { ...s.form, fonte, ...pos },
         formMexido: true,
@@ -893,13 +912,13 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
     desistir: () => set({ pergunta: null }),
 
     aplicarAjuste: async () => {
-      const { velocidade, cortarPausas, pausasJustas, cortarErros, fonte } = get().form
+      const { velocidade, cortarPausas, pausasJustas, cortarErros, freshAir, fonte } = get().form
       await executar('ajustar', [], (id, pedidoId) =>
         ponte.ajustarVoz(id, {
           velocidade: arredondar(velocidade),
           cortarPausas,
           pausasJustas,
-          ...(fonte === 'importado' ? { cortarErros } : {}),
+          ...(fonte === 'importado' ? { cortarErros, freshAir } : {}),
           pedidoId,
         }),
       )
@@ -919,7 +938,7 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
         return
       }
       // Soltou um audio com outra fonte na tela: a tela passa a ser a do importado.
-      const form = s.form.fonte === 'importado' ? s.form : { ...s.form, fonte: 'importado' as const, velocidade: 1, cortarPausas: false, cortarErros: true }
+      const form = s.form.fonte === 'importado' ? s.form : { ...s.form, fonte: 'importado' as const, ...inicioDoImportado(s.ajustes), cortarPausas: false, cortarErros: true }
       if (form !== s.form) set({ form, formMexido: true })
       await executar('importar', [], (id, pedidoId) =>
         ponte.importarAudio(id, {
@@ -929,6 +948,7 @@ export const useVoz = create<EstadoDaVozNaTela>((set, get) => {
           cortarPausas: form.cortarPausas,
           pausasJustas: form.pausasJustas,
           cortarErros: form.cortarErros,
+          freshAir: form.freshAir,
           pedidoId,
         }),
       )

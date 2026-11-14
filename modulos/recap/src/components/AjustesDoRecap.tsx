@@ -4,6 +4,7 @@ import { RECADO_BIBLIOTECA_DO_ANCUT } from '../../shared/ancut'
 import type { ConfigDoRecapNaTela } from '../../shared/config'
 import { ponte } from '../ponte'
 import { useGerar } from '../store/gerar'
+import { Segmentos } from '@/modulos/kit'
 import { Botao, Caixinha, Link, meioDoCaminho, nuvemDoCaminho } from './pecas'
 
 /**
@@ -46,6 +47,15 @@ export function AjustesDoRecap() {
       // Ligou pelo recado da biblioteca do AnCut: ele ja disse o que tinha a dizer.
       if (ligada) setAviso((a) => (a === RECADO_BIBLIOTECA_DO_ANCUT ? null : a))
     } else setAviso(r.error)
+  }
+
+  // (14/11) Como o audio importado comeca: "deixar em 110%, sendo 110% o normal" e o Fresh Air de quem quiser.
+  const vozImportada = async (patch: Partial<{ acelerar: number; freshAir: boolean }>): Promise<void> => {
+    setSalvando(true)
+    const r = await ponte.salvarConfig({ vozImportada: patch })
+    setSalvando(false)
+    if (r.ok) setConfig(r.value)
+    else setAviso(r.error)
   }
 
   const gravar = async (pasta: string): Promise<void> => {
@@ -128,6 +138,27 @@ export function AjustesDoRecap() {
           Enviar sempre para o AnCut
         </Caixinha>
         <p className="mt-1 pl-6 text-[11px] leading-relaxed text-ink-3">Uma copia so, na biblioteca do AnCut.</p>
+      </div>
+      <div className="mt-4" data-ajuste="voz-importada">
+        <p className="text-[12px] text-ink-2">Audio importado comeca com</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-3">
+          <div className={!config || salvando ? 'pointer-events-none opacity-40' : ''} title="O acelerar do passo Voz ja comeca aqui (muda quando quiser)">
+            <Segmentos
+              opcoes={[1, 1.05, 1.1, 1.15, 1.2].map((v) => ({ valor: String(v), rotulo: `${Math.round(v * 100)}%` }))}
+              ativo={(v) => Math.abs(Number(v) - (config?.vozImportada.acelerar ?? 1)) < 1e-6}
+              onChange={(v) => void vozImportada({ acelerar: Number(v) })}
+            />
+          </div>
+          <Caixinha
+            ligada={config?.vozImportada.freshAir ?? false}
+            onChange={(v) => void vozImportada({ freshAir: v })}
+            disabled={!config || salvando}
+            title="O seu Fresh Air (Slate Digital) ja vem marcado no passo Voz"
+          >
+            Fresh Air
+          </Caixinha>
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-3">O volume da voz ja e igualado sempre.</p>
       </div>
     </div>
   )

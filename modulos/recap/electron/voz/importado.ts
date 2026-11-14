@@ -151,6 +151,7 @@ export async function importarAudioDoLevi(
   const partes = [
     pedido.cortarErros && montado.erros.some((t) => t.corte) ? 'cortando erros' : null,
     pedido.cortarPausas ? 'cortando pausas' : null,
+    pedido.freshAir ? 'Fresh Air' : null,
     pedido.velocidade !== 1 ? `velocidade ${pedido.velocidade.toFixed(2).replace('.', ',')}x` : null]
     .filter(Boolean)
     .join(' e ')
@@ -167,6 +168,7 @@ export async function importarAudioDoLevi(
         cortarPausas: pedido.cortarPausas,
         pausasJustas: pedido.pausasJustas,
         cortarErros: pedido.cortarErros,
+        freshAir: pedido.freshAir,
         audio: { nome: [pedido.caminho, ...pedido.mais].map((c) => basename(c)).join(' + ').slice(0, 260), hash },
       },
       origem: 'alinhador',

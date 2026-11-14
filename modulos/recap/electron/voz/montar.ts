@@ -25,6 +25,7 @@ import {
 import { arrumarPalavras, trechosPelasPalavras, type FraseDoTrecho } from './palavras'
 import { pastaDaVoz } from './pastas'
 import { igualarVolume } from './volume'
+import { comFreshAir } from './fresh-air'
 import { duracaoDoPcm, gravarWavEnderecado, juntar, type Pcm } from './wav'
 
 /**
@@ -139,8 +140,10 @@ export async function montarTake(
     signal,
     energia,
   )
+  // (14/11) O Fresh Air dele (so o importado, so o som: as amostras nao mudam de numero).
+  const comAr = dados.config.fonte === 'importado' && dados.config.freshAir ? await comFreshAir(pos.pcm, pasta, undefined, signal) : { pcm: pos.pcm, aviso: null }
   // O volume: ganho linear ate a referencia (nao mexe em tempo nenhum).
-  const volume = await igualarVolume(pos.pcm, signal)
+  const volume = await igualarVolume(comAr.pcm, signal)
   const amostrasFinais = volume.pcm.amostras.length
   const duracao = amostrasFinais / taxa
   const v = dados.config.velocidade
@@ -183,7 +186,7 @@ export async function montarTake(
     roteiroVersao: dados.roteiroVersao,
     derivadoDe: dados.derivadoDe,
     regravadas: dados.regravadas,
-    avisos: [...new Set([...dados.avisos, ...pos.avisos, ...avisoDasSuspeitas, ...(cortarErros ? avisosDosErros(erros) : [])])],
+    avisos: [...new Set([...dados.avisos, ...pos.avisos, ...avisoDasSuspeitas, ...(cortarErros ? avisosDosErros(erros) : []), ...(comAr.aviso ? [comAr.aviso] : [])])],
     volume: volume.volume,
   })
   const problemas = conferirTake(take)

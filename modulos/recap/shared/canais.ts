@@ -283,6 +283,7 @@ export interface PonteDoRecap {
     modeloGeminiPro?: string
     cenas?: Partial<ConfigDasCenas>
     enviarSempreAoAncut?: boolean
+    vozImportada?: Partial<{ acelerar: number; freshAir: boolean }>
     naoPerguntarChave?: boolean
   }): Promise<IpcResult<ConfigDoRecapNaTela>>
   /** Dialogo de pasta. null = fechou sem escolher. */

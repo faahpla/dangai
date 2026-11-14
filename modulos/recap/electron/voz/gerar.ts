@@ -113,6 +113,8 @@ function mensagemDoPos(c: TakeDaVoz['config'], antes?: TakeDaVoz['config']): str
   if (antes) {
     const erros = (x: TakeDaVoz['config']): boolean => x.fonte === 'importado' && x.cortarErros
     if (erros(antes) !== erros(c)) partes.push(erros(c) ? 'cortando erros' : 'devolvendo os erros')
+    const ar = (x: TakeDaVoz['config']): boolean => x.fonte === 'importado' && x.freshAir
+    if (ar(antes) !== ar(c)) partes.push(ar(c) ? 'passando o Fresh Air' : 'tirando o Fresh Air')
     if (antes.cortarPausas !== c.cortarPausas) partes.push(c.cortarPausas ? 'cortando pausas' : 'devolvendo as pausas')
     else if (c.cortarPausas && antes.pausasJustas !== c.pausasJustas) partes.push(c.pausasJustas ? 'cortando as pausas justo' : 'cortando as pausas normal')
     if (Math.abs(antes.velocidade - c.velocidade) > 1e-6) partes.push(velocidade)
@@ -410,6 +412,7 @@ export async function ajustarVoz(
             cortarPausas: pedido.cortarPausas,
             pausasJustas: pedido.pausasJustas ?? take.config.pausasJustas,
             cortarErros: pedido.cortarErros ?? take.config.cortarErros,
+            freshAir: pedido.freshAir ?? take.config.freshAir,
           }
         : { ...take.config, velocidade: pedido.velocidade, cortarPausas: pedido.cortarPausas, pausasJustas: pedido.pausasJustas ?? take.config.pausasJustas }
     if (mesmaConfig(config, take.config)) throw new Error('A voz ja esta com esse ajuste.')

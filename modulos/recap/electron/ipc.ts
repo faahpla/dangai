@@ -555,6 +555,7 @@ function ajustesDaVoz(): AjustesDaVoz {
     fishKeyHint: fish.dica,
     vozPadrao: getSettings().vozPadrao,
     vozesGuardadas: configDoRecap().vozesGuardadas,
+    vozImportada: configDoRecap().vozImportada,
   }
 }
 

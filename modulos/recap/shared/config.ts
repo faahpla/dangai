@@ -65,6 +65,12 @@ export interface ConfigDoRecap {
    */
   enviarSempreAoAncut: boolean
   /**
+   * (14/11) O AUDIO QUE ELE IMPORTA no passo 3 ja comeca assim: "deixar tipo em
+   * 110%, sendo 110% o normal" e o Fresh Air "quem quiser". So o ponto de
+   * partida do formulario: no passo da voz ele muda quando quiser.
+   */
+  vozImportada: { acelerar: number; freshAir: boolean }
+  /**
    * A BOAS-VINDAS (src/components/BoasVindas.tsx): "Nao perguntar mais" --
    * ligar o modulo (ou clicar "Gerar recap") sem chave de IA nao abre mais a
    * tela que pede a chave. O nome e o do settings do Studio.
@@ -178,6 +184,7 @@ export const CONFIG_PADRAO: ConfigDoRecap = {
   modeloGeminiPro: '',
   cenas: CENAS_PADRAO,
   enviarSempreAoAncut: false,
+  vozImportada: { acelerar: 1, freshAir: false },
   naoPerguntarChave: false,
 }
 
@@ -199,6 +206,7 @@ export function coerceConfig(raw: unknown): ConfigDoRecap {
     modeloGeminiPro: nomeDeModelo(r['modeloGeminiPro'], ''),
     cenas: cenasSalvas(r['cenas']),
     enviarSempreAoAncut: r['enviarSempreAoAncut'] === true,
+    vozImportada: vozImportadaSalva(r['vozImportada']),
     naoPerguntarChave: r['naoPerguntarChave'] === true,
   }
 }
@@ -227,7 +235,15 @@ export function aplicarPatch(atual: ConfigDoRecap, patch: unknown): ConfigDoReca
     p['vozesGuardadas'] && typeof p['vozesGuardadas'] === 'object'
       ? { ...atual.vozesGuardadas, ...(p['vozesGuardadas'] as object) }
       : atual.vozesGuardadas
-  return coerceConfig({ ...atual, ...comVelocidade, cenas, vozesGuardadas })
+  const vozImportada = p['vozImportada'] && typeof p['vozImportada'] === 'object' ? { ...atual.vozImportada, ...(p['vozImportada'] as object) } : atual.vozImportada
+  return coerceConfig({ ...atual, ...comVelocidade, cenas, vozesGuardadas, vozImportada })
+}
+
+/** O acelerar entre 0,90 e 1,25, no passo de 0,05 (o do slider do passo 3). */
+function vozImportadaSalva(raw: unknown): ConfigDoRecap['vozImportada'] {
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const a = typeof r['acelerar'] === 'number' && Number.isFinite(r['acelerar']) ? r['acelerar'] : 1
+  return { acelerar: Math.min(1.25, Math.max(0.9, Math.round(a * 20) / 20)), freshAir: r['freshAir'] === true }
 }
 
 /**

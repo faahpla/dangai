@@ -282,6 +282,11 @@ export const configDaVozSchema = z.discriminatedUnion('fonte', [
      */
     cortarErros: z.boolean().default(false),
     /**
+     * (14/11) O FRESH AIR (Slate Digital) dele na narracao final, depois dos
+     * cortes e antes de igualar o volume (voz/fresh-air.ts). So muda o som.
+     */
+    freshAir: z.boolean().default(false),
+    /**
      * O arquivo que ele soltou: nome (para a tela) e sha256 do conteudo (o
      * cache do audio decodificado e do alinhamento). O caminho original NAO
      * fica: o motor copia o audio para o bruto do take.
@@ -618,6 +623,8 @@ export const pedidoDeAjusteSchema = z.object({
   pausasJustas: z.boolean().optional(),
   /** So no importado (V1). Ausente = fica o do take. */
   cortarErros: z.boolean().optional(),
+  /** So no importado (14/11). Ausente = fica o do take. */
+  freshAir: z.boolean().optional(),
   pedidoId: pedidoIdSchema,
 })
 export type PedidoDeAjuste = z.infer<typeof pedidoDeAjusteSchema>
@@ -638,6 +645,8 @@ export const pedidoDeImportacaoSchema = z.object({
   mais: z.array(z.string().min(1).max(1024)).max(7).default([]),
   /** Padrao true: repeticao, "eee" e frase lida duas vezes saem (V1). */
   cortarErros: z.boolean().default(true),
+  /** (14/11) O Fresh Air dele na narracao (so o som). */
+  freshAir: z.boolean().default(false),
   pedidoId: pedidoIdSchema,
 })
 export type PedidoDeImportacao = z.infer<typeof pedidoDeImportacaoSchema>
