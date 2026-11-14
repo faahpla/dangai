@@ -1303,6 +1303,30 @@ export const useProject = create<ProjectState>((set, get) => ({
       else set({ error: result.error })
     }
 
+    /*
+     * PROJETO JA MONTADO (plano editado: a montagem do recap ou os cortes dele)
+     * e sem narracao nova: o que ele solta entra no FIM, pelo insertImages, e
+     * os outros blocos ficam onde estao. Antes caia no plano provisorio de
+     * fatias iguais -- um video solto na janela "para ver" redistribuiu as 55
+     * cenas do recap da Apotecaria (13/11) em blocos de 1,6 s, cada uma longe
+     * da palavra que ele escolheu.
+     */
+    const montado = (() => {
+      const { plan, audio, planEdited } = get()
+      return !!plan && plan.scenes.length > 0 && !!audio && planEdited && audioPaths.length === 0
+    })()
+    if (imagePaths.length > 0 && montado) {
+      const fim = get().plan!.scenes.at(-1)!.end
+      await get().insertImages(imagePaths, fim)
+      const subtitle = subtitlePaths[0]
+      if (subtitle) set({ subtitlePath: subtitle })
+      set({ busy: null })
+      // So imagens (e legenda): nada a reanalisar. Com roteiro novo, a analise mantem o plano.
+      if (!roteiroLido) return
+      await get().analyze()
+      return
+    }
+
     if (imagePaths.length > 0) {
       set({ busy: `Lendo ${imagePaths.length} ${imagePaths.length === 1 ? 'imagem' : 'imagens'}...` })
       const temParte = imageSections.some((s) => s !== null)
