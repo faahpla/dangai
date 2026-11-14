@@ -157,6 +157,24 @@ function foco(): void {
     ]
     const e = escolherNoPedaco(pedaco(tres([lent], janelas)), ['Empee', 'Lent'], [], JANELA)
     confere(e.como === 'janela' && e.personagem === 'Empee' && perto(e.centro!.centroX, (328 + 264) / 1920, 1e-3), '"Ela ativou": a janela da fadinha ganha do Lent (citado depois)', e)
+  }
+  {
+    // (14/11, Apotecaria S03E07 #2) A Maomao achada mas chamada de "Fuyou" pelo CLIP, e a janela
+    // dela num canto vazio a esquerda: o recorte vai ao ROSTO mais perto da janela, nao a borda.
+    const maomao = rosto(430, 440, { quem: 'Fuyou', sim: 0.8 })
+    const velho = rosto(1210, 380, { personagem: 'Guen', pessoa: 'Guen' })
+    const jan = (x: number, personagem: string | null) => ({ x, w: 528, quem: 'Maomao', sim: 0.85, personagem })
+    const janelas = [0, 1, 2].map(() => [jan(0, 'Maomao'), jan(1044, null)])
+    const e = escolherNoPedaco(pedaco(tres([maomao, velho], janelas)), ['Maomao', 'Dono da terra', 'Guen'], [], JANELA)
+    confere(e.como === 'janela' && e.personagem === 'Maomao' && perto(e.centro!.centroX, (430 + 220) / 1920, 0.02), 'a janela da Maomao centra no rosto achado perto dela (chamado de outro nome)', e)
+  }
+  {
+    // (14/11, #13) O ombro escuro na frente, detectado como CABECA e reconhecido como o citado, perde
+    // do rosto visivel do mesmo porte.
+    const ombro = rosto(100, 380, { tipo: 'cabeca', personagem: 'Guen', pessoa: 'Guen' })
+    const maomao = rosto(1060, 380, { quem: 'Fuyou' })
+    const e = escolherNoPedaco(pedaco(tres([ombro, maomao])), ['Maomao', 'Guen'], [], JANELA)
+    confere(perto(e.centro!.centroX, (1060 + 190) / 1920, 0.02), 'citado so de cabeca perde do rosto visivel do mesmo porte', e)
     const so1 = [janelas[0]!, janelas[0]!, janelas[2]!]
     const e2 = escolherNoPedaco(pedaco(tres([lent], so1)), ['Empee', 'Lent'], [], JANELA)
     confere(e2.como === 'citado' && e2.personagem === 'Lent', 'a janela em 1 de 3 instantes nao basta: o Lent', e2)

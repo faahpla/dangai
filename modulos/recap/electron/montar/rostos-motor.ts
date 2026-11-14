@@ -207,6 +207,8 @@ const ESCALA_NO_MAXIMO = 3
  * voando a 50 px no MRM E02) pesava 0,07-0,18 do maior.
  */
 const CITADO_PESO_MIN = 0.03
+/** (14/11) O rosto visivel que pesa isto do citado-so-cabeca fica no lugar dele. */
+const CITADO_CABECA_PERDE = 0.6
 /** Outro rosto entra junto quando pesa pelo menos isto do escolhido... */
 const JUNTO_PESO_MIN = 0.5
 /** ...e os dois cabem nesta fracao da janela visivel (folga para o Ken Burns). */
@@ -305,7 +307,19 @@ export function escolherNoPedaco(
 
   // 2. A janela do citado de maior preferencia que nenhuma trilha mostra.
   const pelaJanela = janelaDoCitado(quadros, citados, rankDe, rankDaTrilha)
-  if (pelaJanela) {
+  // (14/11) A janela e um palpite de ONDE o citado esta. Havendo rosto achado no quadro, o recorte
+  // centra no rosto MAIS PERTO do palpite (o CLIP o chamou por outro nome -- a Maomao como "Fuyou"
+  // no S03E07 --, ou a janela caiu num canto vazio), e nao na posicao da janela, que encostava o
+  // recorte na borda e cortava o rosto ao meio (#2, #16, #32, #57, #59 do S03E07). Sem rosto
+  // nenhum, vale a janela como antes.
+  const rostoNaJanela = pelaJanela
+    ? porPeso
+        .filter((t) => !t.every((d) => d.tipo === 'cabeca') && !silhueta(t))
+        // Rosto reconhecido como OUTRO citado e a outra pessoa (a fadinha de costas e o Lent achado).
+        .filter((t) => !t.some((d) => d.personagem && Number.isFinite(rankDe(d.personagem)) && rankDe(d.personagem) !== pelaJanela.rank))
+        .sort((a, b) => Math.abs(caixaDaTrilha(a).cx * largura - pelaJanela.centro) - Math.abs(caixaDaTrilha(b).cx * largura - pelaJanela.centro))[0]
+    : undefined
+  if (pelaJanela && !rostoNaJanela) {
     return {
       centro: { centroX: Math.min(1, Math.max(0, pelaJanela.centro / largura)), centroY: 0.5 },
       personagem: citados[pelaJanela.rank] ?? null,
@@ -322,7 +336,20 @@ export function escolherNoPedaco(
   let escolhida = maiorVisivel(porPeso, pesoDa, silhueta)
   let como: ComoEscolheu = 'maior'
   let personagem: string | null = null
-  if (citadas.length > 0) {
+  // (14/11) Citado que e SO CABECA (sem rosto: de costas, ou um ombro escuro na frente que o
+  // detector chamou de cabeca -- o 0190 do S03E07) perde de um rosto visivel do mesmo porte.
+  const soCabeca = (t: readonly Deteccao[]): boolean => t.every((d) => d.tipo === 'cabeca')
+  const citadaComRosto = citadas[0] && soCabeca(citadas[0].t)
+    ? porPeso.find((t) => !soCabeca(t) && !silhueta(t) && pesoDa(t) >= CITADO_CABECA_PERDE * pesoDa(citadas[0]!.t))
+    : undefined
+  if (rostoNaJanela && pelaJanela) {
+    escolhida = rostoNaJanela
+    como = 'janela'
+    personagem = citados[pelaJanela.rank] ?? null
+  } else if (citadaComRosto) {
+    escolhida = citadaComRosto
+    como = 'maior'
+  } else if (citadas.length > 0) {
     escolhida = citadas[0]!.t
     como = 'citado'
     personagem = citados[citadas[0]!.rank] ?? null
@@ -620,6 +647,8 @@ export interface OpcoesDoRostoPeloMotor {
    * null = sem cache.
    */
   cache?: string | null
+  /** Diagnostico (medidas offline): cada decisao, com o que o motor achou. */
+  aoEscolher?: (chave: string, achado: RostosDoPedaco, escolha: EscolhaNoPedaco, citados: readonly string[]) => void
 }
 
 interface Backend {
@@ -1500,6 +1529,7 @@ export async function rostosDosPedacos(lote: LoteDeRostos, o: OpcoesDoRostoPeloM
         janelaDoFormato(achado.largura || 1920, achado.altura || 1080, quadro),
       )
       const foco = escolha.centro ? focoNoQuadro(escolha.centro, achado.largura, achado.altura, quadro) : null
+      o.aoEscolher?.(item.chave, achado, escolha, item.personagens)
       if (escolha.olho) noOlho.push(item.arquivo.replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, ''))
       focos.set(item.chave, {
         chave: item.chave,
