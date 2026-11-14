@@ -188,17 +188,37 @@ function talvezFalhar(onde: Exclude<PontoDeFalha, null>): void {
 // ------------------------------------------------------------ o banco
 
 /** As colunas de cada tabela (ordenadas). Tabela que falta = lista vazia. */
-function esquema(db: DatabaseSync): Map<string, string[]> {
-  const m = new Map<string, string[]>()
+/** Uma coluna: o nome e se ela aceita ficar de fora do INSERT (pode ser nula, tem padrao ou e a chave). */
+interface Coluna {
+  nome: string
+  livre: boolean
+}
+
+function esquema(db: DatabaseSync): Map<string, Coluna[]> {
+  const m = new Map<string, Coluna[]>()
   for (const t of TABELAS) {
-    const cols = db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]
-    m.set(t, cols.map((c) => c.name).sort())
+    const cols = db.prepare(`PRAGMA table_info(${t})`).all() as { name: string; notnull: number; dflt_value: unknown; pk: number }[]
+    m.set(t, cols.map((c) => ({ nome: c.name, livre: !c.notnull || c.dflt_value !== null || c.pk > 0 })))
   }
   return m
 }
 
-function mesmoEsquema(a: Map<string, string[]>, b: Map<string, string[]>): boolean {
-  return TABELAS.every((t) => (a.get(t) ?? []).length > 0 && (a.get(t) ?? []).join(',') === (b.get(t) ?? []).join(','))
+/**
+ * O banco do recap CABE no do AnCut: toda coluna do recap existe la, e o que o
+ * AnCut tem a mais pode ficar de fora do INSERT (nula ou com padrao). Antes era
+ * "o mesmo esquema": o AnCut de 12/11 ganhou `titulo` e `origem` no episode
+ * (os filmes, ambas nulas) e todo episodio do recap passou a ficar no recap,
+ * com o "Enviar sempre" ligado (a Apotecaria S03E07, 13/11). Coluna a mais
+ * OBRIGATORIA no AnCut, ou coluna do recap que la nao existe, continua recusando.
+ */
+function cabeNoAncut(recap: Map<string, Coluna[]>, ancut: Map<string, Coluna[]>): boolean {
+  return TABELAS.every((t) => {
+    const daqui = recap.get(t) ?? []
+    const dela = ancut.get(t) ?? []
+    if (daqui.length === 0) return false
+    const nomes = new Set(daqui.map((c) => c.nome))
+    return daqui.every((c) => dela.some((d) => d.nome === c.nome)) && dela.every((d) => nomes.has(d.nome) || d.livre)
+  })
 }
 
 /** INSERT de todas as colunas da linha menos `id` (autoincremento), com as trocadas. Devolve o id novo. */
@@ -407,7 +427,7 @@ async function conferirTudo(episodioId: string, processo: boolean): Promise<Conf
     const origem = episodioNaOrigem(src, pasta)
     if (!origem) return situacao('sem-banco-do-recap', 'O banco do motor do recap nao tem este episodio.')
     db = new DatabaseSync(ancut.banco, { readOnly: true })
-    if (!mesmoEsquema(esquema(src), esquema(db))) {
+    if (!cabeNoAncut(esquema(src), esquema(db))) {
       return situacao('esquema-diferente', 'O AnCut instalado tem outra versao do banco. Nada foi movido.', { origem })
     }
     const destino = join(ancut.saida, basename(dirname(pasta)), basename(pasta))
@@ -962,7 +982,7 @@ export async function trazerDoAncut(episodioId: string): Promise<ResultadoDaVolt
       const db = new DatabaseSync(ancut.banco, { readOnly: true })
       try {
         origem = episodioNaOrigem(src, la)
-        if (origem && !mesmoEsquema(esquema(src), esquema(db))) return naoTrazido('O AnCut instalado tem outra versao do banco. Nada foi mexido.')
+        if (origem && !cabeNoAncut(esquema(src), esquema(db))) return naoTrazido('O AnCut instalado tem outra versao do banco. Nada foi mexido.')
         ids = episodiosNaPasta(db, la)
       } finally {
         src.close()

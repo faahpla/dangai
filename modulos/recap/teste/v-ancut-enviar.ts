@@ -294,6 +294,38 @@ async function testes(): Promise<void> {
       const r = await enviarAoAncut(ID, true)
       ok('AnCut de esquema antigo: esquema diferente, recusa', c.situacao === 'esquema-diferente' && !r.enviado && sha(velho) === antesDoVelho, c.mensagem)
     }
+    // O AnCut de 12/11: `titulo` e `origem` a mais no episode, nulas (os filmes). Cabe: pronto.
+    const novo = join(BASE, 'ancut-colunas-a-mais.db')
+    copyFileSync(BANCO, novo)
+    {
+      const db = new DatabaseSync(novo)
+      db.exec('ALTER TABLE episode ADD COLUMN titulo TEXT')
+      db.exec('ALTER TABLE episode ADD COLUMN origem TEXT')
+      db.close()
+    }
+    process.env['RECAP_TESTE_ANCUT_BANCO'] = novo
+    {
+      const c = await conferirEnvio(ID)
+      ok('AnCut com colunas a mais que podem ficar nulas: pronto', c.situacao === 'pronto', c.mensagem)
+    }
+    // Coluna a mais OBRIGATORIA (sem padrao): o INSERT do recap nao a preencheria. Recusa.
+    const obrigatoria = join(BASE, 'ancut-coluna-obrigatoria.db')
+    copyFileSync(BANCO, obrigatoria)
+    {
+      const db = new DatabaseSync(obrigatoria)
+      db.exec('CREATE TABLE ep2 AS SELECT * FROM episode')
+      db.exec('DROP TABLE episode')
+      db.exec(
+        "CREATE TABLE episode (id INTEGER PRIMARY KEY AUTOINCREMENT, anime_id INTEGER NOT NULL, season INTEGER NOT NULL, episode INTEGER NOT NULL, source_file TEXT, processed_at TIMESTAMP, output_root TEXT, kind TEXT NOT NULL DEFAULT '', exigida TEXT NOT NULL)",
+      )
+      db.close()
+    }
+    process.env['RECAP_TESTE_ANCUT_BANCO'] = obrigatoria
+    {
+      const c = await conferirEnvio(ID)
+      ok('AnCut com coluna a mais obrigatoria: esquema diferente, recusa', c.situacao === 'esquema-diferente', c.mensagem)
+    }
+    process.env['RECAP_TESTE_ANCUT_BANCO'] = BANCO
     // As copias dos index.db do AnCut desta maquina: so a conferencia (nada e
     // enviado aqui, o resto do teste precisa do episodio no recap). Esquema
     // antigo recusa; o atual fica pronto.
