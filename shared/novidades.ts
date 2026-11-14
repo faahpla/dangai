@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.8.5',
+    itens: [
+      'Edição rápida, rosto: quando o app não tem certeza de quem é o personagem citado, o recorte agora vai pro rosto mais perto de onde ele acha que o personagem está, em vez de encostar na borda e cortar o rosto ao meio. E uma cabeça sem rosto (alguém de costas, um ombro escuro na frente) não ganha mais de um rosto visível do mesmo tamanho.',
+    ],
+  },
+  {
     versao: '2.8.4',
     itens: [
       'Legenda com animação elástica: a palavra comprida não sai mais da tela no meio do bounce. O tamanho agora conta o ponto mais alto da curva, e só encolhe a linha que passaria das bordas.',
