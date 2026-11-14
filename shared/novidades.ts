@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.8.4',
+    itens: [
+      'Legenda com animação elástica: a palavra comprida não sai mais da tela no meio do bounce. O tamanho agora conta o ponto mais alto da curva, e só encolhe a linha que passaria das bordas.',
+    ],
+  },
+  {
     versao: '2.8.3',
     itens: [
       'Gerar recap, corte das cenas: o corte não parte mais tantas cenas que continuam (a câmera andando, alguém passando na frente, o personagem caindo no mesmo plano). Vale para episódio cortado a partir desta versão; os que já estão na biblioteca ficam como estão. Se ainda sobrar uma cena partida, junte com o Mesclar da Biblioteca (Ctrl+clique nas duas).',
