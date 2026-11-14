@@ -606,6 +606,26 @@ function montagem(): void {
   const cheia = file.plan!.scenes.find((s) => s.imageIndexB === null)!
   confere(perto(file.images[cheia.imageIndex]!.focusX, 0.3), 'o bloco de tela cheia continua com o foco do 9:16', file.images[cheia.imageIndex]!.focusX)
 
+  // A aba Cenas do nucleo (13/11): um trecho por bloco, o mesmo tempo, a cena marcada; o grid unido.
+  const bib = file.biblioteca
+  const cenasDoPlano = file.plan!.scenes
+  confere(bib.blocos?.length === cenasDoPlano.length, 'aba Cenas: um trecho por bloco da timeline', [bib.blocos?.length, cenasDoPlano.length])
+  confere(
+    cenasDoPlano.every((s, j) => perto(bib.blocos![j]!.start, s.start) && perto(bib.blocos![j]!.end, s.end)),
+    'aba Cenas: cada trecho com o inicio e o fim do bloco',
+  )
+  confere(
+    cenasDoPlano.every((s, j) => {
+      const marcadas = bib.porBloco[String(j)] ?? []
+      const esperadas = [file.images[s.imageIndex]!.path, ...(s.imageIndexB !== null ? [file.images[s.imageIndexB]!.path] : [])]
+      return JSON.stringify(marcadas) === JSON.stringify(esperadas)
+    }),
+    'aba Cenas: a cena de cada trecho marcada (no grid, cima e baixo)',
+  )
+  const jGrid = cenasDoPlano.indexOf(s0)
+  confere(JSON.stringify(bib.unioes[String(jGrid)]) === '[0]' && bib.unioes[String(cenasDoPlano.indexOf(cheia))] === undefined, 'aba Cenas: o grid unido, a tela cheia nao', bib.unioes)
+  confere(bib.blocos!.every((b) => b.text.length > 0), 'aba Cenas: todo trecho com as palavras dele')
+
   // Os trechos que a montagem enquadra: as duas metades com a marca.
   const trechos = trechosParaFocar(pedacos)
   confere(trechos.filter((t) => t.metade).length === 6 && trechos.length === pedacos.length + 3, 'trechosParaFocar: as duas metades de cada grid, na janela delas', trechos.length)

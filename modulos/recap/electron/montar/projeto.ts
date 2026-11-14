@@ -18,7 +18,7 @@ import { aplicarEstiloNoProjeto, secoesDoTake } from '../../shared/edicao-rapida
 import { encaixarEscolha } from '../../shared/encaixe'
 import type { EpisodeIndex } from '../../shared/episodio'
 import { buildCaptions, cutCandidatesFrom } from '@shared/plan'
-import { PROJECT_FILE_VERSION, projectFileSchema, type ProjectFile } from '@shared/project-file'
+import { PROJECT_FILE_VERSION, projectFileSchema, type BibliotecaSalva, type ProjectFile } from '@shared/project-file'
 import {
   clipeParaONucleo,
   ID_DO_MODULO,
@@ -315,6 +315,43 @@ function semPedacoMinusculo(pedacos: readonly PedacoDaMontagem[]): PedacoDaMonta
 }
 
 /** O transcript do take: o texto do roteiro com o tempo do take, como o Dangai monta do roteiro. */
+/**
+ * A ABA CENAS DO DANGAI COM AS CENAS DO RECAP (13/11): "abri o projeto, fui em
+ * cenas e elas nem tao aqui". A montagem escrevia so o plano; a aba Cenas le
+ * os trechos e as marcacoes (`biblioteca`), que ficavam vazios -- e o
+ * "Remontar com essas cenas" dali trocaria a timeline por nada.
+ *
+ * Um trecho por BLOCO da timeline (o pedaco do recap: a frase cortada na
+ * palavra que ele escolheu), com o mesmo inicio e fim, e a cena dele marcada
+ * (no grid, as duas metades unidas). Assim a aba mostra o que esta na
+ * timeline, e remontar dali reconstroi os mesmos blocos (o nucleo herda o
+ * ponto de entrada e o enquadramento de cada um, herdarAjustes).
+ */
+export function bibliotecaDosPedacos(
+  pedacos: readonly PedacoDaMontagem[],
+  scenes: readonly Pick<Scene, 'start' | 'end' | 'imageIndex' | 'imageIndexB'>[],
+  images: readonly { path: string }[],
+  palavras: readonly Pick<Word, 'text' | 'start'>[],
+  roteiro: Pick<Roteiro, 'secoes'>,
+): BibliotecaSalva {
+  const ordemDaFrase = new Map(roteiro.secoes.flatMap((s) => s.frases).map((f, i) => [f.id, i]))
+  const blocos: NonNullable<BibliotecaSalva['blocos']> = []
+  const porBloco: Record<string, string[]> = {}
+  const unioes: Record<string, number[]> = {}
+  scenes.forEach((s, j) => {
+    const texto = palavras
+      .filter((w) => w.start >= s.start - 1e-6 && w.start < s.end - 1e-6)
+      .map((w) => w.text)
+      .join(' ')
+    blocos.push({ text: texto, start: s.start, end: s.end, sentence: ordemDaFrase.get(pedacos[j]?.fraseId ?? '') ?? 0 })
+    const cima = images[s.imageIndex]?.path
+    const baixo = s.imageIndexB !== null ? images[s.imageIndexB]?.path : undefined
+    if (cima) porBloco[String(j)] = baixo ? [cima, baixo] : [cima]
+    if (cima && baixo) unioes[String(j)] = [0]
+  })
+  return { escolhidos: [], blocos, porBloco, pesos: {}, unioes, cortes: {}, ativo: 0 }
+}
+
 export function transcriptDoTake(
   roteiro: Pick<Roteiro, 'secoes'>,
   take: Pick<TakeDaVoz, 'palavras'>,
@@ -440,7 +477,8 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
   })
 
   const transcript = transcriptDoTake(e.roteiro, e.take)
-  const gancho = e.titulo ? ganchoDaMontagem(e.roteiro, e.take, e.thumbs ?? []) : { texto: '', sec: HOOK_SEC_DEFAULT }
+  const biblioteca = bibliotecaDosPedacos(pedacos, scenes, images, transcript.words, e.roteiro)
+  const gancho =e.titulo ? ganchoDaMontagem(e.roteiro, e.take, e.thumbs ?? []) : { texto: '', sec: HOOK_SEC_DEFAULT }
 
   // [recap] O que no Studio era o `studio` da raiz: `modulos.recap`, versao 1.
   // O transcript fica travado pelo nucleo (`transcriptTravado`), nao por uma
@@ -470,6 +508,7 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
     plan: { scenes },
     planOrigin: 'auto',
     planEdited: true,
+    biblioteca,
     transcript,
     captions: buildCaptions(transcript),
     captionsEdited: false,
