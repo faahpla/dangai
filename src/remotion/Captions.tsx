@@ -23,6 +23,17 @@ const VAO = 18
 /** 2% de sobra no encolher: a medida do canvas e a do layout diferem um fio, e sem
  * folga a linha encolhida quebrava em duas e ficava minuscula. */
 const FOLGA = 0.98
+
+/** O maior tamanho que a entrada elastica atinge (1 = nunca passa do final), amostrado. */
+const picos = new WeakMap<CurvaDaEntrada, number>()
+export function picoDaEntrada(curva: CurvaDaEntrada): number {
+  const ja = picos.get(curva)
+  if (ja !== undefined) return ja
+  let p = 1
+  for (let i = 0; i <= 60; i++) p = Math.max(p, escalaDaEntrada(curva, i / 60))
+  picos.set(curva, p)
+  return p
+}
 let regua: CanvasRenderingContext2D | null | undefined
 
 /**
@@ -159,7 +170,14 @@ function Block({
   // mesma altura a todas). So encolhe o que passaria das margens.
   const pedida = FONT_SIZE * scale
   const largura = larguraDaLinha(textos.filter(Boolean), stack, pedida, stroke)
-  const util = width - 2 * MARGEM
+  /*
+   * O PICO DA ENTRADA cabe tambem: "no bounce o texto da saindo da tela". A
+   * curva elastica passa de 1 (a do Levi chega a 1,11), e a linha que cabia
+   * no tamanho final saia pelas bordas no meio da entrada. A largura util e
+   * dividida pelo maior ponto da curva: so encolhe a linha que estouraria.
+   */
+  const pico = animation === 'elastica' ? picoDaEntrada(animationCurve) : 1
+  const util = (width - 2 * MARGEM) / pico
   const fontSize =
     largura === null
       ? FONT_SIZE * Math.min(scale, CAPTION_CHARS_PER_LINE / Math.max(1, textos.filter(Boolean).join(' ').length))
