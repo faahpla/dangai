@@ -39,6 +39,11 @@ DETECTOR_ID = _IDENTIDADES[min(max(VERSAO_DO_CORTE, 1), 3)]
 #: dos mp4) estao nos rascunhos, no indice e na curadoria do index.db, e um
 #: recorte silencioso apontaria cada id para outro trecho do episodio.
 DETECTORES_ACEITOS = frozenset({DETECTOR_ID_V1, DETECTOR_ID_V2, DETECTOR_ID_V3})
+#: [recap] A CONTINUIDADE (corte_continua.py, 13/11/2026) por cima do v3: tira o
+#: corte fraco que cai no meio de um plano que continua. NAO muda a identidade
+#: (o AnCut instalado so conhece V1-V3 e recortaria um episodio com identidade
+#: nova, trocando os ids de plano): vai no campo `refino` do shot_bounds.json.
+REFINO_CONTINUA = "continua-1"
 
 
 class Cortes(list):
@@ -46,9 +51,11 @@ class Cortes(list):
     que saiu de verdade (o v3 que falha volta ao v2, o v2 ao v1, e o cache grava
     a identidade do que saiu)."""
 
-    def __init__(self, shots=(), detector: str = DETECTOR_ID_V1) -> None:
+    def __init__(self, shots=(), detector: str = DETECTOR_ID_V1, refino: str | None = None) -> None:
         super().__init__(shots)
         self.detector = detector
+        #: [recap] O pos-processamento a mais que rodou (REFINO_CONTINUA) ou None.
+        self.refino = refino
 
 
 @dataclass
@@ -70,6 +77,7 @@ def detect_shots(
     on_progress: Callable[[float], None] | None = None,
     paralelo: int | None = None,
     versao: int | None = None,
+    continuidade: bool = True,
 ) -> Cortes:
     """Onde cada cena começa e termina, por detecção ADAPTATIVA.
 
@@ -170,10 +178,12 @@ def detect_shots(
         sinais = detector.sinais if v2 else None
 
     identidade = DETECTOR_ID_V1
+    refino: list[str] = []
     feito = False
     if nivel >= 3:
         try:
-            scenes = _cenas_v2(scenes, sinais, fps, adaptive_ratio, min_content_val, v3=True)
+            scenes = _cenas_v2(scenes, sinais, fps, adaptive_ratio, min_content_val, v3=True,
+                               video=str(video_path) if continuidade else None, refino=refino)
             identidade = DETECTOR_ID_V3
             feito = True
         except Exception as e:  # noqa: BLE001 -- o corte v2 continua valendo
@@ -211,7 +221,7 @@ def detect_shots(
 
     if on_progress is not None:
         on_progress(1.0)
-    return Cortes(shots, identidade)
+    return Cortes(shots, identidade, refino[0] if refino else None)
 
 
 def _luz_e_hist(quadro):
@@ -260,9 +270,12 @@ class _AdaptiveComSinais(AdaptiveDetector):
         return nota
 
 
-def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float, v3: bool = False):
+def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float, v3: bool = False,
+              video: str | None = None, refino: list | None = None):
     """[recap] As cenas do AdaptiveDetector passadas pelo corte v2 (corte_v2.py)
-    ou, com ``v3``, pelo corte v3 (corte_v3.py, com o hs e a mini dos sinais)."""
+    ou, com ``v3``, pelo corte v3 (corte_v3.py, com o hs e a mini dos sinais).
+    Com ``video`` (so no v3), a continuidade (corte_continua.py) por cima; se ela
+    rodou, ``refino`` recebe REFINO_CONTINUA. Falhou: fica o v3."""
     import numpy as np
 
     from .corte_v2 import refinar_cortes
@@ -282,8 +295,22 @@ def _cenas_v2(scenes, sinais, fps: float, ratio: float, piso: float, v3: bool = 
     if v3:
         if any(len(x) < 6 for x in sinais):
             raise ValueError("sem o hs e a mini dos quadros")
-        final = refinar_v3(nota, luz, hist, np.stack([x[4] for x in sinais]), np.stack([x[5] for x in sinais]),
-                           cortes, fps, razao=ratio, piso=piso)
+        hs = np.stack([x[4] for x in sinais])
+        mini = np.stack([x[5] for x in sinais])
+        final = refinar_v3(nota, luz, hist, hs, mini, cortes, fps, razao=ratio, piso=piso)
+        if video:
+            try:
+                from .corte_continua import fracos_do_v3, tirar_continuos
+
+                segundos = [float(p.get_seconds()) if hasattr(p, "get_seconds") else float(p) for p in pos]
+                fracos = fracos_do_v3(nota, luz, hist, hs, mini, final, fps, ratio, piso)
+                antes = len(final)
+                final = tirar_continuos(video, final, segundos, fracos, mini)
+                print(f"[recap] continuidade: {antes - len(final)} de {len(fracos)} cortes fracos sairam.", flush=True)
+                if refino is not None:
+                    refino.append(REFINO_CONTINUA)
+            except Exception as e:  # noqa: BLE001 -- o v3 continua valendo
+                print(f"[recap] continuidade nao serviu ({type(e).__name__}: {e}); fica o v3.", flush=True)
     else:
         final = refinar_cortes(nota, luz, hist, cortes, fps, razao=ratio, piso=piso)
     inicios = [scenes[0][0]] + [pos[c] for c in final]

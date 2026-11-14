@@ -364,6 +364,22 @@ são pequenas e marcadas `[Studio]`; a 9 é para levar ao ancut-hub-engine.
       Testes: `test_corte_v3.py`, `test_corte_cache.py` e paralelo = sequencial
       (v3, hs e mini iguais) em `test_rapido.py`.
 
+15. **`app/corte_continua.py`** (arquivo novo) + **`app/shot_detection.py`** +
+    **`app/pipeline.py`** (13/11): a CONTINUIDADE por cima do v3, so para episodio
+    NOVO. Os cortes fracos do v3 (fora do piso, nota aprendida z < 1) sao olhados no
+    video (ffmpeg em volta do corte, 224x126, encaixado pela mini do passe): o fluxo
+    otico DIS do 3o quadro antes para o 2o/5o/8o depois, com contraste igualado,
+    explica >= 55% dos pixels com textura = o mesmo plano, o corte sai. Quadro sem
+    contraste, estourado, que nao encaixa, ou qualquer erro: o corte fica.
+    - Identidade: continua `DETECTOR_ID_V3` (o AnCut instalado so conhece V1-V3 e
+      recortaria uma identidade nova, trocando os ids de plano); o que rodou vai no
+      campo `refino` do `shot_bounds.json` (`"continua-1"`, `Cortes.refino`).
+    - Medido (regua escalada pelo fps): estudo 136 -> 124, hold-out 119 -> 110
+      (soma 255 -> 234; falsos 141 -> 110, graves 17 -> 22). Apotecaria S03E07: 401 ->
+      395 cenas (a Maomao parada, a roupa vermelha, o homem caindo, o pano; a chuva de
+      moedas fica, 0,48). Custo: ~74 cortes fracos lidos, poucos segundos.
+      Estudo em `_capturas/corte-v3/cont`. Teste: `test_corte_continua.py`.
+
 Os modelos (CLIP, YOLO, CCIP, SCRFD) no app instalado vão para
 `<runtime>\modelos` (`HF_HOME`, `motor-runtime/ambiente.ts`), não para o
 `~/.cache/huggingface`: entram no disco escolhido, no Remover e no

@@ -2593,6 +2593,8 @@ class Pipeline:
                         "source": str(info.source),
                         # [recap] O corte que saiu de verdade (o v2 que falha grava V1).
                         "detector": getattr(shots, "detector", DETECTOR_ID),
+                        # [recap] O que rodou por cima do detector (a continuidade), ou null.
+                        "refino": getattr(shots, "refino", None),
                         "min_seconds": cfg.min_shot_seconds,
                         "shots": [
                             {"idx": s.idx, "start": s.start, "end": s.end} for s in shots
