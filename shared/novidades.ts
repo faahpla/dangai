@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.8.2',
+    itens: [
+      'Soltar um arquivo num projeto já montado (pelo Gerar recap ou com os cortes que você fez) não bagunça mais as cenas: ele entra no fim e o resto fica onde estava. Antes, um vídeo solto na janela redividia todas as cenas em pedaços iguais.',
+      'Gerar recap: a aba Cenas do editor agora mostra as cenas que você escolheu no recap, um trecho por cena, cortado na palavra certa. O "Remontar com essas cenas" dali refaz a mesma timeline. Vale para projeto aberto no editor a partir desta versão.',
+      'Gerar recap: o "Enviar sempre para o AnCut" voltou a funcionar com o AnCut atualizado. Episódio que ficou no recap: feche o AnCut e use "Mover para o AnCut" no passo 1.',
+    ],
+  },
+  {
     versao: '2.8.1',
     itens: [
       'Gerar recap, Voz: o "Cortar pausas" ganhou o modo Justo (o novo padrão), que corta pausas a partir de 0,18 s e deixa só 0,08 s. O ritmo fica de short. O Normal continua como antes.',
