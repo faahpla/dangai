@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.8.3',
+    itens: [
+      'Gerar recap, corte das cenas: o corte não parte mais tantas cenas que continuam (a câmera andando, alguém passando na frente, o personagem caindo no mesmo plano). Vale para episódio cortado a partir desta versão; os que já estão na biblioteca ficam como estão. Se ainda sobrar uma cena partida, junte com o Mesclar da Biblioteca (Ctrl+clique nas duas).',
+    ],
+  },
+  {
     versao: '2.8.2',
     itens: [
       'Soltar um arquivo num projeto já montado (pelo Gerar recap ou com os cortes que você fez) não bagunça mais as cenas: ele entra no fim e o resto fica onde estava. Antes, um vídeo solto na janela redividia todas as cenas em pedaços iguais.',
