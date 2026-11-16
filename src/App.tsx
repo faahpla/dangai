@@ -25,6 +25,8 @@ import { Script } from '@/components/Script'
 import { CaptionEditor } from '@/components/CaptionEditor'
 import { CommandPalette } from '@/components/CommandPalette'
 import { Library } from '@/components/Library'
+import { JuntarProjetos } from '@/components/JuntarProjetos'
+import { useJuntar } from '@/store/juntar-projetos'
 import { EtapaDoAudio } from '@/components/EtapaDoAudio'
 import { EtapaDoRoteiro } from '@/components/EtapaDoRoteiro'
 import { ResumoDeManga } from '@/components/ResumoDeManga'
@@ -244,6 +246,8 @@ export function App() {
         store.etapaDoRoteiro ||
         // O resumo de manga tem campos de texto: Enter, espaco e Delete sao dele.
         useResumoDeManga.getState().aberta ||
+        // O Juntar projetos tambem (o nome, o texto da frase) -- e o Esc e dele.
+        useJuntar.getState().aberta ||
         useTelaCheia.getState().de !== null
       ) {
         /*
@@ -631,6 +635,8 @@ export function App() {
       <Novidades />
       <Settings />
       <Script />
+      {/* Antes da Biblioteca: a cena da ligacao abre a Biblioteca POR CIMA dele. */}
+      <JuntarProjetos />
       <Library />
       <EtapaDoAudio />
       <EtapaDoRoteiro />

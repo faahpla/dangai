@@ -77,6 +77,7 @@ import {
   saveProjectFile,
   writeAutosave,
 } from './services/project'
+import { juntarProjetosNoDisco, prepararFraseDeLigacao, resumoDoProjeto } from './services/juntar-projetos'
 import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 import { encerrarWhisper } from './services/whisper'
 import { analyze } from './services/transcribe'
@@ -104,9 +105,10 @@ import { componentesDoDangai, prepararDangai } from './services/preparar'
 import { concluirEdicao, exportarEdicao, limparTrabalhoDaEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
 import { descreverPlugin, fecharJanelasDosPlugins, janelaDoPlugin, listarPlugins, prepararPlugins } from './services/vst'
 import type { AudioEditado, DescricaoDoPlugin, OndaDaGravacao, PluginInstalado } from '@shared/channels'
-import type { EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
+import type { CadeiaDeAudio, EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
 import { aprenderDoProjeto, perfilDoMeuJeito } from './services/meu-jeito'
 import type { ComponenteDoDangai, PerfilDoMeuJeito } from '@shared/channels'
+import type { FraseDeLigacaoPronta, PedidoDeJuntar, ResumoDeProjeto } from '@shared/channels'
 import { motivoParaNaoAtualizar } from './modulos'
 import { aprenderResumo, casarRoteiroComOsQuadrinhos, escreverResumoDoManga, guardarRoteiroDeManga, roteirosDeManga, seriesDosMangas } from './services/resumo-de-manga'
 import type { PedidoDoResumo, ResumoDoManga, ResumoNoProjeto, RoteiroDeMangaGuardado, SerieDoManga } from '@shared/resumo-de-manga'
@@ -627,6 +629,21 @@ export function registerIpc(): void {
    * da musica: o caminho escolhido nunca precisa passar pela interface. Sai ao
    * lado do original, com "-upscale" no nome, sem sobrescrever nada.
    */
+  // ------------------------------------------------------ juntar projetos (16/11)
+  handle<[PedidoDeJuntar], string>(IPC.juntarProjetos, (pedido) => juntarProjetosNoDisco(pedido, broadcastAnalyze))
+  handle<[string, CadeiaDeAudio], FraseDeLigacaoPronta>(IPC.prepararFraseDeLigacao, (arquivo, cadeia) =>
+    prepararFraseDeLigacao(arquivo, cadeia, broadcastAnalyze),
+  )
+  handle<[string], ResumoDeProjeto>(IPC.resumoDoProjeto, async (caminho) => resumoDoProjeto(caminho))
+  handle<[], string[]>(IPC.escolherProjetos, async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Escolher os projetos para juntar',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Projeto do Dangai', extensions: ['dangai'] }],
+    })
+    return r.canceled ? [] : r.filePaths
+  })
+
   handle<[string | undefined], string | null>(IPC.upscaleVideoPronto, async (caminhoDado) => {
     if (!upscaleReady()) {
       throw new Error('O modelo de upscale não veio com esta instalação do app.')

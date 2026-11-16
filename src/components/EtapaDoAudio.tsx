@@ -1561,18 +1561,25 @@ function Marcar({ rotulo, ligado, onChange }: { rotulo: string; ligado: boolean;
 const hz = (f: number): string => (f >= 1000 ? `${(f / 1000).toFixed(f >= 10000 ? 0 : 1).replace('.', ',')} kHz` : `${Math.round(f)} Hz`)
 const db = (v: number): string => `${v > 0 ? '+' : ''}${v.toFixed(1).replace('.', ',')} dB`
 
-/** Memo: a etapa re-renderiza a cada zoom e escolha; o painel so quando a cadeia muda. */
-const Efeitos = memo(function Efeitos({
+/**
+ * Memo: a etapa re-renderiza a cada zoom e escolha; o painel so quando a cadeia muda.
+ * Exportado (16/11): a frase de ligacao do Juntar projetos usa o MESMO painel.
+ */
+export const Efeitos = memo(function Efeitos({
   cadeia,
   janela,
   mudar,
+  salvarPadrao: salvarPadraoDeFora,
 }: {
   cadeia: CadeiaDeAudio
   /** A janela de plugin aberta, para quem precisa esperar ela fechar (ver Tela). */
   janela: React.MutableRefObject<Promise<void> | null>
   mudar: (f: (c: CadeiaDeAudio) => CadeiaDeAudio) => void
+  /** O "Salvar como meu padrao" de quem usa o painel fora da etapa (sem: o da narracao do projeto). */
+  salvarPadrao?: () => void
 }) {
-  const salvarPadrao = useProject((s) => s.salvarCadeiaComoPadrao)
+  const salvarDoProjeto = useProject((s) => s.salvarCadeiaComoPadrao)
+  const salvarPadrao = salvarPadraoDeFora ?? salvarDoProjeto
   const { isolarVoz, nivelar, eq, compressor, normalizar } = cadeia
 
   return (
@@ -1717,7 +1724,7 @@ function cadeiaSemVelocidade({ velocidade: _fora, ...resto }: CadeiaDeAudio): Om
  * Mora em cima das faixas (2.0): mexe na linha do tempo inteira -- os trechos e
  * o tempo total encolhem juntos na tela.
  */
-function Velocidade({ valor, onChange }: { valor: number; onChange: (v: number) => void }) {
+export function Velocidade({ valor, onChange, rotulo = true }: { valor: number; onChange: (v: number) => void; rotulo?: boolean }) {
   const [texto, setTexto] = useState(String(valor))
   useEffect(() => setTexto(String(valor)), [valor])
   const aplicar = (): void => {
@@ -1735,7 +1742,7 @@ function Velocidade({ valor, onChange }: { valor: number; onChange: (v: number) 
       className="flex items-center gap-2"
       title="Acelera tudo sem mudar o tom da voz, como o Pitch Correction do DaVinci. A linha do tempo já mostra o tempo final, e a narração sai assim no “Pronto”"
     >
-      <span className="text-[11px] text-ink-3">Velocidade</span>
+      {rotulo && <span className="text-[11px] text-ink-3">Velocidade</span>}
       <div className="w-[230px]">
         <Segmentos
           opcoes={VELOCIDADES_RAPIDAS.map((v) => ({

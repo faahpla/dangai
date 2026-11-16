@@ -3,6 +3,7 @@ import type {
   AudioAnalysis,
   ImageAsset,
   Metadata,
+  RegrasDaLegenda,
   RenderProgress,
   RenderProps,
   Transcript,
@@ -41,6 +42,11 @@ export const IPC = {
   listFontes: 'fontes:list',
   upscaleAssets: 'upscale:assets',
   upscaleVideoPronto: 'upscale:video-pronto',
+  /** (16/11) Juntar projetos de ~30 s num video de 60 s+ (ver shared/juntar-projetos.ts). */
+  juntarProjetos: 'projeto:juntar',
+  prepararFraseDeLigacao: 'projeto:frase-de-ligacao',
+  resumoDoProjeto: 'projeto:resumo',
+  escolherProjetos: 'projeto:escolher-varios',
   videoProntoProgress: 'upscale:video-pronto-progress',
   cancelarUpscale: 'upscale:cancel',
   inverterClipe: 'assets:inverter',
@@ -438,8 +444,52 @@ export interface PreparoDoDangai {
 
 export type { PerfilDoMeuJeito } from './meu-jeito'
 import type { PerfilDoMeuJeito } from './meu-jeito'
-import type { EdicaoDeAudio, OpcoesDosSilencios } from './edicao-de-audio'
+import type { CadeiaDeAudio, EdicaoDeAudio, OpcoesDosSilencios } from './edicao-de-audio'
 import type { PedidoDoResumo, ResumoDoManga, ResumoNoProjeto, RoteiroDeMangaGuardado, SerieDoManga } from './resumo-de-manga'
+
+// ------------------------------------------------- juntar projetos (16/11)
+
+/** Um .dangai na lista do "Juntar projetos": o que da para saber sem abrir no editor. */
+export interface ResumoDeProjeto {
+  caminho: string
+  nome: string
+  duracaoSec: number
+  formato: 'short' | 'long'
+  cenas: number
+}
+
+/** A frase de ligacao ja com os efeitos dele (para ouvir antes de juntar). */
+export interface FraseDeLigacaoPronta {
+  arquivo: string
+  url: string
+  duracao: number
+}
+
+/** A ligacao entre duas partes, como a tela pede. */
+export type LigacaoPedida =
+  | { tipo: 'som'; /** O som do corte; null = so a emenda. */ som: string | null }
+  | {
+      tipo: 'frase'
+      /** O arquivo gravado (cru): os efeitos entram no juntar. */
+      arquivo: string
+      /** O que ele falou: a legenda e o roteiro. */
+      texto: string
+      /** Os efeitos e a velocidade, como na etapa de Audio. */
+      cadeia: CadeiaDeAudio
+      /** A cena escolhida na Biblioteca; null = a primeira da parte seguinte. */
+      cena: string | null
+    }
+
+export interface PedidoDeJuntar {
+  /** O nome do projeto novo (e da narracao juntada). */
+  nome: string
+  /** Os .dangai, na ordem do video. */
+  partes: string[]
+  /** Uma por emenda (partes.length - 1). */
+  ligacoes: LigacaoPedida[]
+  /** As regras da legenda de agora (a frase de ligacao sai com elas). */
+  regras: RegrasDaLegenda
+}
 
 /** O audio que a etapa de audio gerou (electron/services/edicao-de-audio.ts). */
 export interface AudioEditado {
@@ -848,6 +898,14 @@ export interface DangaiBridge {
    * caminho do arquivo novo; null se ele fechou o dialogo ou cancelou no meio.
    */
   upscaleVideoPronto(caminho?: string): Promise<IpcResult<string | null>>
+  /** (16/11) Junta os projetos num novo, na pasta dos projetos. Devolve o caminho do .dangai novo. */
+  juntarProjetos(pedido: PedidoDeJuntar): Promise<IpcResult<string>>
+  /** (16/11) A frase de ligacao com os efeitos (para ouvir antes de juntar). */
+  prepararFraseDeLigacao(arquivo: string, cadeia: CadeiaDeAudio): Promise<IpcResult<FraseDeLigacaoPronta>>
+  /** (16/11) Nome, duracao e formato de um .dangai, sem abrir no editor. */
+  resumoDoProjeto(caminho: string): Promise<IpcResult<ResumoDeProjeto>>
+  /** (16/11) O dialogo de escolher varios .dangai (vazio = desistiu). */
+  escolherProjetos(): Promise<IpcResult<string[]>>
   /** Interrompe o upscale que estiver rodando, do render ou do video pronto. */
   cancelarUpscale(): Promise<IpcResult<null>>
   onVideoProntoProgress(listener: (p: { feitos: number; total: number; nome: string }) => void): () => void

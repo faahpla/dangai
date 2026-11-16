@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Combine,
   Captions as CaptionsIcon,
   AudioWaveform,
   FolderOpen,
@@ -26,6 +27,7 @@ import {
   BookOpen,
 } from 'lucide-react'
 import { useResumoDeManga } from '@/store/resumo-de-manga'
+import { useJuntar } from '@/store/juntar-projetos'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { copiarRelatorio } from '@/store/relatorio'
@@ -361,6 +363,13 @@ function useCommands(): Command[] {
         hint: 'Ctrl ,',
         icon: Settings2,
         run: () => store().openSettings(true),
+      },
+      {
+        id: 'juntar-projetos',
+        label: 'Juntar projetos',
+        hint: 'os vídeos de ~30 s viram um de 60 s+',
+        icon: Combine,
+        run: () => void useJuntar.getState().abrir(),
       },
       {
         id: 'relatorio',

@@ -6,6 +6,7 @@ import {
   BookOpen,
   Captions,
   Clapperboard,
+  Combine,
   FolderOpen,
   History,
   Library as LibraryIcon,
@@ -27,6 +28,7 @@ import { FORMATOS, medidasDo, type Formato } from "@shared/contract";
 import { CartaoRecente, rotulosDoRecente } from "./CartaoRecente";
 import { PrepararODangai } from "./PrepararODangai";
 import { useResumoDeManga } from "@/store/resumo-de-manga";
+import { useJuntar } from "@/store/juntar-projetos";
 
 interface DropzoneProps {
   isDragging: boolean;
@@ -524,10 +526,23 @@ function Recentes() {
 
   return (
     <section className="enter flex shrink-0 flex-col gap-3">
-      <h2 className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-ink-3">
-        <History size={12} strokeWidth={1.75} />
-        Projetos recentes
-      </h2>
+      <div className="flex items-center gap-2">
+        <h2 className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-ink-3">
+          <History size={12} strokeWidth={1.75} />
+          Projetos recentes
+        </h2>
+        <span className="flex-1" />
+        {/* (16/11) Os de ~30 s viram um de 60 s+: e daqui que ele escolhe. */}
+        <button
+          type="button"
+          onClick={() => void useJuntar.getState().abrir()}
+          title="Junta 2 ou 3 projetos num vídeo só (os de ~30 s viram um de 60 s+), com uma ligação entre eles"
+          className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-[12px] text-ink-2 transition-colors hover:bg-white/[0.05] hover:text-ink"
+        >
+          <Combine size={13} strokeWidth={1.75} className="text-accent" />
+          Juntar projetos
+        </button>
+      </div>
       <div className="flex gap-3 overflow-x-auto pb-1">
         {lista.map((r) => (
           <CartaoRecente

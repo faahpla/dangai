@@ -35,6 +35,7 @@ import { useBrollDosTrechos, useItensDoBroll } from '@/hooks/useBroll'
 import { useVisaoDosTrechos } from '@/hooks/useVisao'
 import { tempoDeLeitura } from '@shared/visao'
 import { useProject } from '@/store/project'
+import { useEscolhaAvulsa } from '@/store/escolha-avulsa'
 import { BarraDeEtapas } from './BarraDeEtapas'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
@@ -115,6 +116,12 @@ export function Library() {
   const toggleFavorite = useProject((s) => s.toggleFavorite)
   const tags = useProject((s) => s.tags)
   const replaceTarget = useProject((s) => s.replaceTarget)
+  // (16/11) A Biblioteca respondendo "qual cena?" para quem pediu (a ligacao do Juntar projetos).
+  const pedidoDeCena = useEscolhaAvulsa((s) => s.pedido)
+  // Fechou sem escolher (Esc, o X): o pedido morre junto, e a proxima abertura e a de sempre.
+  useEffect(() => {
+    if (!open) useEscolhaAvulsa.getState().limpar()
+  }, [open])
   const replaceSceneWith = useProject((s) => s.replaceSceneWith)
   const taggerBusy = useProject((s) => s.taggerBusy)
   const tagLibrary = useProject((s) => s.tagLibrary)
@@ -458,7 +465,7 @@ export function Library() {
    * proprio roteiro, entao um filtro ja esta ativo na primeira tela.
    */
   const semFiltro =
-    !anime && !episodio && !personagem && texto.trim() === '' && !soFavoritos && replaceTarget === null
+    !anime && !episodio && !personagem && texto.trim() === '' && !soFavoritos && replaceTarget === null && pedidoDeCena === null
 
   const filtrados = useMemo(() => {
     if (!library) return []
@@ -586,14 +593,14 @@ export function Library() {
     : 0
 
   const sugestoes = useMemo(() => {
-    if (!contexto || activeBlock === null || replaceTarget !== null) return []
+    if (!contexto || activeBlock === null || replaceTarget !== null || pedidoDeCena !== null) return []
     return sugerirParaBloco(
       contexto,
       activeBlock,
       usadasEmOutras,
       maisSugestoes ? MAIS_SUGESTOES : SUGESTOES,
     )
-  }, [contexto, activeBlock, replaceTarget, usadasEmOutras, maisSugestoes])
+  }, [contexto, activeBlock, replaceTarget, pedidoDeCena, usadasEmOutras, maisSugestoes])
 
   /*
    * As pastas dos personagens que o trecho cita -- todos, e nao so o primeiro.
@@ -641,6 +648,15 @@ export function Library() {
   if (!open) return null
 
   const escolher = (id: string): void => {
+    // Quem pediu UMA cena (a ligacao do Juntar projetos): o clique responde e fecha.
+    if (pedidoDeCena !== null) {
+      const path = library?.clips.find((c) => c.id === id)?.path
+      if (!path) return
+      pedidoDeCena.aoEscolher(path)
+      useEscolhaAvulsa.getState().limpar()
+      void openLibrary(false)
+      return
+    }
     /*
      * Substituir vem ANTES de tudo: e um gesto de um clique so, e enquanto ele
      * esta ativo a Biblioteca nao esta montando nada -- esta respondendo uma
@@ -843,6 +859,21 @@ export function Library() {
         pelo Escape sao dois caminhos, e sem dizer o que esta acontecendo o
         proximo clique viraria surpresa.
       */}
+      {pedidoDeCena !== null && (
+        <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-accent bg-accent-dim px-5">
+          <span className="text-[12px] text-ink">{pedidoDeCena.titulo} — um clique escolhe</span>
+          <button
+            type="button"
+            onClick={() => {
+              useEscolhaAvulsa.getState().limpar()
+              void openLibrary(false)
+            }}
+            className="rounded-sm px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
       {replaceTarget !== null && (
         <div className="flex h-[34px] shrink-0 items-center justify-between border-b border-accent bg-accent-dim px-5">
           <span className="text-[12px] text-ink">
