@@ -5,6 +5,7 @@ import sharp from 'sharp'
 import type { InferenceSession } from 'onnxruntime-node'
 import type { ImageAsset } from '@shared/contract'
 import { formatoAtual, medidasAtuais } from './formato'
+import { montarInteira, orientedSize } from './assets'
 import { ffmpegPath } from './ffmpeg-path'
 
 /**
@@ -418,11 +419,22 @@ function clamp255(v: number): number {
   return n < 0 ? 0 : n > 255 ? 255 : n
 }
 
-/** Um print: um quadro so, e sai um JPEG como o makeRenderReady faz. */
+/**
+ * Um print: um quadro so, e sai um JPEG como o makeRenderReady faz.
+ *
+ * A IMAGEM INTEIRA (o quadrinho de manga que aparece todo, sobre ele mesmo
+ * desfocado) e ampliada pela MONTAGEM, que e o que o video mostra -- e e dela o
+ * tamanho guardado no asset. "O upscale falhou (extract_area: bad extract
+ * area)" (16/11): o quadrinho cru, de 805x1071, recebia a janela calculada
+ * para a montagem, de 1863x3312. O tamanho agora e medido no arquivo que vai
+ * ser lido, e nao confiado ao asset.
+ */
 async function ampliarPrint(asset: ImageAsset, destino: string): Promise<void> {
   const medidas = medidasAtuais()
-  const janela = janelaDaFonte(asset.width, asset.height, asset.focusX, asset.focusY)
-  const { data, info } = await sharp(asset.path)
+  const fonte = asset.inteira ? (await montarInteira(asset.path)).caminho : asset.path
+  const tamanho = await orientedSize(fonte)
+  const janela = janelaDaFonte(tamanho.width, tamanho.height, asset.focusX, asset.focusY)
+  const { data, info } = await sharp(fonte)
     .rotate()
     .extract(janela)
     .raw()

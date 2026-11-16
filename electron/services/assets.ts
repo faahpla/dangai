@@ -502,7 +502,7 @@ export async function alternarInteira(asset: ImageAsset, inteira: boolean): Prom
  * celular em retrato costuma chegar como paisagem com orientacao 6. Sem a troca
  * o app trataria um retrato como paisagem e o recorte sairia do eixo errado.
  */
-async function orientedSize(path: string): Promise<{ width: number; height: number }> {
+export async function orientedSize(path: string): Promise<{ width: number; height: number }> {
   const metadata = await sharp(path, { failOn: 'error' }).metadata()
   const width = metadata.width
   const height = metadata.height
