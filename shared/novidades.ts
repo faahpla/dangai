@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.9.1',
+    itens: [
+      'Upscale: projeto com quadrinho de mangá que aparece inteiro (sobre ele mesmo desfocado) não falha mais com "bad extract area". Antes o render seguia sem upscale em nenhuma cena; agora o quadrinho é melhorado junto com o resto.',
+    ],
+  },
+  {
     versao: '2.9.0',
     itens: [
       'Juntar projetos: dois ou três vídeos de ~30 s viram um de 60 s+ (o do TikTok), sem gravar de novo. Na tela inicial, em Recentes, clique em "Juntar projetos", escolha os projetos na ordem e o Dangai monta um projeto novo com tudo de cada um: cenas, legendas, sons, músicas e cor. Os projetos originais não mudam.',
