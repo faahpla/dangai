@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.9.0',
+    itens: [
+      'Juntar projetos: dois ou três vídeos de ~30 s viram um de 60 s+ (o do TikTok), sem gravar de novo. Na tela inicial, em Recentes, clique em "Juntar projetos", escolha os projetos na ordem e o Dangai monta um projeto novo com tudo de cada um: cenas, legendas, sons, músicas e cor. Os projetos originais não mudam.',
+      'Entre uma parte e outra, a ligação: "Só som" (um som no corte) ou "Frase gravada" ("E não para por aí..."). A frase tem a velocidade e os efeitos da etapa de Áudio, o botão Ouvir, a legenda no mesmo estilo e uma cena que você busca na Biblioteca. A música da parte anterior segue por baixo da frase.',
+      'Embaixo, o tempo total diz se já passou de 1 minuto ou quanto falta.',
+    ],
+  },
+  {
     versao: '2.8.6',
     itens: [
       'Gerar recap, Voz: a caixinha "Fresh Air" no áudio importado passa o seu Fresh Air (Slate Digital) na voz, com o preset do seu padrão da etapa de áudio. Só muda o som; o volume já é igualado sempre. Na primeira vez o Dangai baixa o leitor de plugins (~23 MB).',
