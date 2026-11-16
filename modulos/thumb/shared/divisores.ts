@@ -56,8 +56,24 @@ export const divisorSchema = z.object({
    * Ausente (thumb e preset de antes) = 0.
    */
   brilho: z.number().min(0).max(100).default(0),
+  /**
+   * (16/11) O DEGRADE PROPRIO do divisor, como o de uma linha do texto: [em
+   * cima, embaixo]. Ganha da `cor`. null/ausente = a `cor` com o degrade do
+   * estilo do texto (tintaDoDivisor, em thumb.ts).
+   */
+  degrade: z.tuple([corSchema, corSchema]).nullable().optional(),
 })
 export type DivisorDaThumb = z.infer<typeof divisorSchema>
+
+/**
+ * (16/11) A TINTA escolhida para o divisor ou a seta: o degrade (0 = em cima,
+ * 1 = embaixo) e a cor principal (o tom do brilho do rasgo, a Linha, a
+ * bolinha do seletor). null, onde ela entra = a cor original do desenho.
+ */
+export interface Tinta {
+  paradas: ParadaDoDegrade[]
+  cor: string
+}
 
 /** O padrao: desligado, o rasgo com brilho do Levi na cor original. */
 export function divisorPadrao(): DivisorDaThumb {
@@ -227,12 +243,15 @@ const SLASH_VERMELHO = 253
  *   sao o escuro = 0): o escuro fica, e o laranja vira o degrade da cor -- a
  *   posicao no degrade sai do proprio laranja (mais vermelho = topo da faixa,
  *   que fica o mais claro; mais amarelo = base, a mais escura).
+ *
+ * `tinta`: uma cor (o degrade de luz dela, degradeDaCor -- o de sempre) ou a
+ * tinta pronta (16/11: o degrade do estilo do texto, o proprio, o da linha 2).
  */
-export function recolorirDivisor(modelo: ModeloComPng, cor: string, png: PixelsRgba, forma?: PixelsRgba | null): Uint8ClampedArray {
+export function recolorirDivisor(modelo: ModeloComPng, tinta: string | Tinta, png: PixelsRgba, forma?: PixelsRgba | null): Uint8ClampedArray {
   const { largura, altura, dados } = png
   const saida = new Uint8ClampedArray(dados.length)
   saida.set(dados)
-  const degrade = degradeDaCor(cor)
+  const { paradas: degrade, cor } = typeof tinta === 'string' ? { paradas: degradeDaCor(tinta), cor: tinta } : tinta
   // O degrade em 256 degraus (a conta por pixel fica barata).
   const tabela: Rgb[] = Array.from({ length: 256 }, (_, i) => corNoDegrade(degrade, i / 255))
   const brilho = hexParaRgb(tomDoBrilho(cor))

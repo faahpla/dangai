@@ -39,6 +39,11 @@ export const presetDaThumbSchema = z.object({
   sombra: thumbDoProjetoSchema.shape.sombra,
   formaDaSeta: thumbDoProjetoSchema.shape.seta.shape.forma,
   fontePc: thumbDoProjetoSchema.shape.fontePc,
+  /** (16/11) O angulo da sombra, as cores juntas e a cor da seta (ausentes num preset de antes: os de sempre). */
+  anguloDaSombra: thumbDoProjetoSchema.shape.anguloDaSombra,
+  coresJuntas: thumbDoProjetoSchema.shape.coresJuntas,
+  corDaSeta: thumbDoProjetoSchema.shape.seta.shape.cor,
+  degradeDaSeta: thumbDoProjetoSchema.shape.seta.shape.degrade,
 })
 export type PresetDaThumb = z.infer<typeof presetDaThumbSchema>
 
@@ -66,6 +71,15 @@ export const modeloDaThumbSchema = z.object({
   textoY: S.textoY,
   divisor: S.divisor,
   seta: S.seta,
+  /** (16/11) O angulo da sombra e as cores juntas (ausentes num modelo de antes: os de sempre). */
+  anguloDaSombra: S.anguloDaSombra,
+  coresJuntas: S.coresJuntas,
+  /**
+   * (16/11) O MODELO DE ABERTURA: "quero poder definir um modelo pra ir direto
+   * sempre que o modulo for aberto". Um so na lista (marcar outro desmarca);
+   * a thumb nova (solta, ou de um projeto que ainda nao tem) nasce com ele.
+   */
+  padrao: z.boolean().optional(),
 })
 export type ModeloDaThumb = z.infer<typeof modeloDaThumbSchema>
 /** Quantos modelos cabem (o bastante; a lista nao vira um arquivo). */
@@ -89,13 +103,47 @@ export function modeloDe(t: ThumbDoProjeto, nome: string): ModeloDaThumb {
     textoY: t.textoY,
     divisor: { ...t.divisor },
     seta: t.seta.livre ? { ...t.seta } : { ...t.seta, base: null, ponta: null },
+    ...(t.anguloDaSombra === undefined ? {} : { anguloDaSombra: t.anguloDaSombra }),
+    ...(t.coresJuntas === undefined ? {} : { coresJuntas: t.coresJuntas }),
   }
 }
 
-/** O que aplicar um modelo muda numa thumb (o texto, as imagens e a cor delas ficam). */
+/**
+ * O que aplicar um modelo muda numa thumb (o texto, as imagens e a cor delas
+ * ficam). O que o modelo nao tem (um de antes do angulo da sombra) volta ao de
+ * sempre, e nao fica o da thumb anterior.
+ */
 export function camposDoModelo(m: ModeloDaThumb): Partial<ThumbDoProjeto> {
-  const { nome: _nome, ...campos } = m
-  return { ...campos, seta: { ...m.seta }, divisor: { ...m.divisor }, contorno: { ...m.contorno } }
+  const { nome: _nome, padrao: _padrao, ...campos } = m
+  return {
+    anguloDaSombra: undefined,
+    coresJuntas: undefined,
+    ...campos,
+    seta: { ...m.seta },
+    divisor: { ...m.divisor },
+    contorno: { ...m.contorno },
+  }
+}
+
+/** JSON com as chaves em ordem (a seta montada aos pedacos tem as chaves em outra ordem que a do zod). */
+function estavel(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) =>
+    x && typeof x === 'object' && !Array.isArray(x)
+      ? Object.fromEntries(Object.entries(x as Record<string, unknown>).filter(([, y]) => y !== undefined).sort(([a], [b]) => a.localeCompare(b)))
+      : x,
+  )
+}
+
+/** O mesmo jeito (o nome e o "de abertura" nao contam). */
+export function mesmoJeito(m: ModeloDaThumb, t: ThumbDoProjeto): boolean {
+  const { nome: _a, padrao: _p, ...x } = m
+  const { nome: _b, ...y } = modeloDe(t, m.nome)
+  return estavel(x) === estavel(y)
+}
+
+/** O modelo de abertura da lista (null = nenhum marcado). */
+export function modeloDeAbertura(lista: readonly ModeloDaThumb[]): ModeloDaThumb | null {
+  return lista.find((m) => m.padrao) ?? null
 }
 
 export const configDaThumbSchema = z.object({
@@ -125,6 +173,10 @@ export function presetDe(t: ThumbDoProjeto): PresetDaThumb {
     sombra: t.sombra,
     formaDaSeta: t.seta.forma,
     fontePc: t.fontePc,
+    anguloDaSombra: t.anguloDaSombra,
+    coresJuntas: t.coresJuntas,
+    corDaSeta: t.seta.cor,
+    degradeDaSeta: t.seta.degrade,
   }
 }
 
@@ -138,7 +190,9 @@ export function thumbDoPreset(preset: PresetDaThumb | null, base: ThumbDoProjeto
     cores: preset.cores,
     fonte: preset.fonte,
     textoY: preset.textoY,
-    seta: { ligada: preset.seta, base: null, ponta: null, forma: preset.formaDaSeta },
+    seta: { ligada: preset.seta, base: null, ponta: null, forma: preset.formaDaSeta, cor: preset.corDaSeta, degrade: preset.degradeDaSeta },
+    anguloDaSombra: preset.anguloDaSombra,
+    coresJuntas: preset.coresJuntas,
     tamanho: preset.tamanho,
     divisor: { ...preset.divisor },
     rotacao: preset.rotacao,

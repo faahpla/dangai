@@ -1,7 +1,15 @@
 import { create } from 'zustand'
 import { thumbDoProjeto, thumbPadrao, type ThumbDoProjeto } from '../../shared/thumb'
 import { cenaNoInstante, cenasDoPlano } from '../../shared/plano'
-import { configDaThumbSchema, presetDe, thumbDoPreset, type ModeloDaThumb, type PresetDaThumb } from '../../shared/pedidos'
+import {
+  camposDoModelo,
+  configDaThumbSchema,
+  modeloDeAbertura,
+  presetDe,
+  thumbDoPreset,
+  type ModeloDaThumb,
+  type PresetDaThumb,
+} from '../../shared/pedidos'
 import { corDaCamadaDeAjuste } from '../../shared/cor-do-projeto'
 import type { MotorDaThumb } from '../../shared/canais'
 import { criarLojaDoEditor, type FonteDoEditor, type LojaDoEditor } from '../editor/loja'
@@ -50,8 +58,16 @@ async function gravarModelos(lista: ModeloDaThumb[]): Promise<ModeloDaThumb[]> {
   return r.value.modelos
 }
 
+/**
+ * A thumb nova: o ultimo preset (o texto e o jeito de antes) e, por cima, o
+ * MODELO DE ABERTURA quando ele marcou um (16/11: "um modelo pra ir direto
+ * sempre que o modulo for aberto"). A thumb ja guardada no projeto ganha dos
+ * dois: ela e a daquele video.
+ */
 function padraoComPreset(): ThumbDoProjeto {
-  return thumbDoPreset(presetGuardado(), thumbPadrao(null))
+  const base = thumbDoPreset(presetGuardado(), thumbPadrao(null))
+  const modelo = modeloDeAbertura(modelosGuardados())
+  return modelo ? { ...base, ...camposDoModelo(modelo) } : base
 }
 
 /** A ultima imagem do PC que ele usou (o dialogo e o "Salvar PNG" abrem na pasta dela). */

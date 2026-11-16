@@ -152,6 +152,7 @@ async function principal(): Promise<void> {
   await testarEstilos(T, D)
   await testarFontesDoPc()
   await testarCor(T)
+  await testarCoresESombra(T, D)
   await testarMain()
   await testarLoja()
   await testarTela()
@@ -393,17 +394,32 @@ async function testarTela(): Promise<void> {
   const { createElement } = await import('react')
   const { renderToStaticMarkup } = await import('react-dom/server')
   const { JanelaDaThumb } = await import('../src/components/TelaDaThumb')
+  const { useAbaDaThumb } = await import('../src/editor/Editor')
   for (const l of [useTela, useSolta, useDoProjeto]) Object.assign(l.getInitialState(), l.getState())
-  const solta = renderToStaticMarkup(createElement(JanelaDaThumb))
+  // (16/11) As abas: so a aberta e desenhada. Cada uma, uma vez, e a da Imagens no modo projeto.
+  const naAba = (aba: 'imagens' | 'texto' | 'cores' | 'divisor' | 'seta'): string => {
+    useAbaDaThumb.setState({ aba })
+    Object.assign(useAbaDaThumb.getInitialState(), useAbaDaThumb.getState())
+    return renderToStaticMarkup(createElement(JanelaDaThumb))
+  }
+  const abas = { imagens: naAba('imagens'), texto: naAba('texto'), cores: naAba('cores'), divisor: naAba('divisor'), seta: naAba('seta') }
   useTela.setState({ modo: 'projeto' })
   Object.assign(useTela.getInitialState(), useTela.getState())
-  const projeto = renderToStaticMarkup(createElement(JanelaDaThumb))
+  const projeto = naAba('imagens')
   const texto = (h: string): string => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
-  for (const rotulo of ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Salvar PNG', 'Abrir pasta', 'Fechar', 'Linha 1', 'Seta apontando o rosto', 'Tamanho', 'Divisor entre as imagens', 'Inclinacao da emenda', '= texto'])
-    confere(texto(solta).includes(rotulo), `solta: "${rotulo}"`)
+  const esperado: Record<keyof typeof abas, string[]> = {
+    imagens: ['Thumbnail', 'Imagens soltas', 'De um projeto', 'Imagens', 'Texto', 'Cores', 'Divisor', 'Seta', 'Escolher imagem...', 'Solte uma imagem aqui', 'Enquadramento automatico precisa do motor de personagens', 'Cor das imagens', 'Salvar PNG', 'Abrir pasta', 'Fechar'],
+    texto: ['Linha 1', 'Linha 2', 'Estilo', 'Fonte', 'Tamanho e posição', 'Tamanho', 'Altura', 'Rotação', 'Contorno e sombra', 'Força', 'Ângulo'],
+    cores: ['Linha 1', 'Linha 2', 'Contorno', 'Divisor e seta', 'Com a cor da linha 2', 'Divisor', 'Seta', 'Original', 'Degradê'],
+    divisor: ['Divisor entre as imagens', 'Emenda', 'Inclinação', '= texto'],
+    seta: ['Mostrar a seta', 'Forma', 'Posição', 'Apontando o rosto', 'Livre', 'Cor'],
+  }
+  for (const [aba, rotulos] of Object.entries(esperado)) for (const rotulo of rotulos) confere(texto(abas[aba as keyof typeof abas]).includes(rotulo), `aba ${aba}: "${rotulo}"`)
   for (const rotulo of ['Normal.dangai', 'Trocar projeto...', 'Sugestoes', 'Quadro do projeto', 'Do computador', 'Quadro dentro da cena', 'Sem render ainda'])
     confere(texto(projeto).includes(rotulo), `projeto: "${rotulo}"`)
-  confere(ascii(texto(solta)) && ascii(texto(projeto)), 'os textos da tela em ASCII')
+  // O que importa e nao sair caractere quebrado (o acento do portugues e bem-vindo: o resto do app tem).
+  confere([...Object.values(abas), projeto].every((h) => !/�|Ã[£§©¡³ª]/.test(texto(h))), 'os textos da tela sem caractere quebrado')
+  useAbaDaThumb.setState({ aba: 'imagens' })
   void gravacoes
 }
 
@@ -1290,6 +1306,102 @@ async function testarEstilos(T: typeof import('../shared/thumb'), D: typeof impo
   for (const k of ['estilo', 'degrades', 'contorno', 'formaDaSeta', 'fontePc']) delete presetVelho[k]
   const pv = D.presetDaThumbSchema.safeParse(presetVelho)
   confere(pv.success && pv.data.estilo === 'kizuni' && pv.data.contorno.px === 12 && pv.data.formaDaSeta === 'vermelha', 'um preset de antes abre no Kizuni de sempre')
+}
+
+/**
+ * (16/11) A COR DA SETA E DO DIVISOR, AS CORES JUNTAS, O ANGULO DA SOMBRA E O
+ * MODELO DE ABERTURA:
+ * - o divisor e a seta com uma cor usam o degrade do ESTILO do texto (o Faah:
+ *   20% mais clara em cima, sem o topo rosado do de luz -- "o Slash ta com um
+ *   brilho feio em cima"); o degrade proprio ganha da cor; sem nada, a original;
+ * - "Com a cor da linha 2": o divisor e a seta seguem a tinta da linha 2;
+ * - o angulo da sombra como o do Photoshop (90 = reto para baixo, exato);
+ * - a estrela: a thumb nova nasce com o modelo marcado; um modelo de antes
+ *   (sem angulo nem cores juntas) volta ao de sempre; o "mesmo jeito" nao
+ *   depende da ordem das chaves.
+ */
+async function testarCoresESombra(T: typeof import('../shared/thumb'), D: typeof import('../shared/pedidos')): Promise<void> {
+  console.log('\n== a cor da seta e do divisor, as cores juntas, o angulo e o modelo de abertura (16/11)')
+  const medir = (texto: string, px: number) => ({ largura: texto.length * px * 0.58, cap: px * 0.7 })
+  const base = T.thumbPadrao('FALTOU EXPLICAR')
+  const faah = {
+    ...T.aplicarEstilo(base, 'faah'),
+    cores: ['#ffffff', '#ff2b2b'] as [string, string],
+    degrades: [null, null] as typeof base.degrades,
+    divisor: { ...base.divisor, ligado: true, modelo: 'slash' as const, cor: '#ff2b2b' },
+  }
+  const doDivisor = T.tintaDoDivisor(faah)
+  const topo = doDivisor?.paradas[0]?.cor
+  const deLuz = T.degradeDaCor('#ff2b2b')[0]!.cor
+  confere(topo === '#ff5555' && deLuz === '#ff8c8c', `o Slash vermelho no estilo Faah: o topo ${topo} (20% mais claro), e nao o ${deLuz} rosado do de luz`)
+  const kizuni = T.tintaDoDivisor({ ...faah, estilo: 'kizuni' })
+  confere(kizuni?.paradas[0]?.cor === deLuz, 'no Kizuni o divisor continua com o degrade de luz (as thumbs do Levi nao mudam)')
+  confere(T.tintaDoDivisor({ ...faah, divisor: { ...faah.divisor, cor: null } }) === null, 'sem cor: a original do PNG')
+  const proprio = T.tintaDoDivisor({ ...faah, divisor: { ...faah.divisor, degrade: ['#ffe600', '#ff2b2b'] } })
+  confere(proprio?.paradas.length === 2 && proprio.paradas[0]!.cor === '#ffe600' && proprio.cor === '#ffe600', 'o degrade proprio do divisor ganha da cor')
+
+  confere(T.tintaDaSeta(faah) === null && T.thumbEfetiva(faah, medir).seta?.tinta === null, 'a seta sem cor: as cores da forma')
+  const verde = { ...faah, seta: { ...faah.seta, cor: '#39f05a' } }
+  const efVerde = T.thumbEfetiva(verde, medir)
+  confere(efVerde.seta?.tinta?.cor === '#39f05a' && efVerde.seta.tinta.paradas.length === 2, 'a seta verde: a tinta vai junto da seta na thumb efetiva (a previa e o PNG usam a mesma)')
+  const lida = T.thumbDoProjeto(JSON.parse(JSON.stringify({ ...verde, seta: { ...verde.seta, degrade: ['#2fb4ff', '#7d00e5'] }, coresJuntas: false, anguloDaSombra: 135 })))
+  confere(lida?.seta.cor === '#39f05a' && lida.seta.degrade?.[1] === '#7d00e5' && lida.anguloDaSombra === 135, 'a cor, o degrade da seta e o angulo sao salvos e lidos de volta')
+  confere(T.thumbDoProjeto({ ...verde, seta: { ...verde.seta, cor: 'verde' } }) === null && T.thumbDoProjeto({ ...verde, anguloDaSombra: 400 }) === null, 'cor que nao e #rrggbb ou angulo fora da faixa: nao passa')
+  confere(T.aplicarEstilo(verde, 'ajk').seta.cor === null, 'escolher um estilo volta a seta as cores da forma dele')
+
+  const juntas = { ...verde, coresJuntas: true, degrades: [null, ['#a654f2', '#7d00e5']] as typeof base.degrades }
+  const ef = T.thumbEfetiva(juntas, medir)
+  const daLinha2 = JSON.stringify(T.degradeDaLinha(juntas, 1))
+  confere(
+    JSON.stringify(ef.divisor?.tinta?.paradas) === daLinha2 && JSON.stringify(ef.seta?.tinta?.paradas) === daLinha2 && ef.seta?.tinta?.cor === '#a654f2',
+    'com a cor da linha 2: o divisor e a seta com o degrade da linha 2 (o proprio dela, se tiver)',
+  )
+
+  const reto = T.deslocamentoDaSombra(10)
+  const ps = T.deslocamentoDaSombra(10, 120)
+  confere(reto.x === 0 && reto.y === 10, 'o angulo de sempre (90): reto para baixo, exato')
+  confere(ps.x > 4.9 && ps.x < 5.1 && ps.y > 8.6 && ps.y < 8.7, `120 (o do Photoshop): para baixo e a direita (${ps.x.toFixed(2)}, ${ps.y.toFixed(2)})`)
+
+  // O desenho: a sombra do texto anda no angulo, e a seta com cor pinta o degrade dela.
+  const registro: { sombras: [number, number][]; degrades: number }= { sombras: [], degrades: 0 }
+  const guardado: Record<string | symbol, unknown> = {}
+  const ctx = new Proxy(guardado, {
+    get(alvo, prop) {
+      if (prop in alvo) return alvo[prop]
+      if (prop === 'createLinearGradient') return () => ({ addColorStop: () => (registro.degrades += 1) })
+      if (prop === 'measureText') return (t: string) => ({ width: t.length * 50, actualBoundingBoxAscent: 120, actualBoundingBoxDescent: 0, actualBoundingBoxLeft: 0, actualBoundingBoxRight: t.length * 50 })
+      return () => {}
+    },
+    set(alvo, prop, valor) {
+      alvo[prop] = valor
+      if (prop === 'shadowOffsetY') registro.sombras.push([alvo['shadowOffsetX'] as number, valor as number])
+      return true
+    },
+  }) as unknown as CanvasRenderingContext2D
+  const { desenharThumb } = await import('../src/editor/desenho')
+  const comAngulo = { ...verde, anguloDaSombra: 120 }
+  const efA = T.thumbEfetiva(comAngulo, medir)
+  desenharThumb(ctx, { thumb: comAngulo, geo: efA.geo, paineis: [null, null], seta: efA.seta, escala: 1, guias: null })
+  confere(registro.sombras.length > 0 && registro.sombras.every(([x, y]) => x > 0 && y > 0), 'desenhado a 120: a sombra (do texto e da seta) cai para baixo e a direita')
+
+  // O recolorir aceita a tinta pronta: o topo do Slash (o laranja mais vermelho) vira a cor do topo dela.
+  const png = { largura: 1, altura: 1, dados: new Uint8ClampedArray([253, 100, 0, 255]) }
+  const r = T.recolorirDivisor('slash', { paradas: [{ em: 0, cor: '#ff5555' }, { em: 1, cor: '#cc2222' }], cor: '#ff2b2b' }, png)
+  confere(r[0] === 255 && r[1] === 85 && r[3] === 255, `o recolorir com a tinta do estilo: o topo do Slash em #ff5555 (${r[0]}, ${r[1]}, ${r[2]})`)
+
+  // A ESTRELA: um so, e a thumb nova nasce com ele.
+  const m = { ...D.modeloDe({ ...faah, layout: 'uma', anguloDaSombra: 135 }, 'EUFORILMES'), padrao: true }
+  const outro = D.modeloDe(base, 'Outro')
+  confere(D.modeloDeAbertura([outro, m])?.nome === 'EUFORILMES' && D.modeloDeAbertura([outro]) === null, 'o modelo de abertura e o marcado (nenhum marcado: nenhum)')
+  const lista = D.listaDeModelosSchema.parse(JSON.parse(JSON.stringify([outro, m])))
+  confere(lista[1]!.padrao === true && lista[1]!.anguloDaSombra === 135, 'a marca e o angulo passam pelo schema da lista')
+  const nova = { ...base, ...D.camposDoModelo(lista[1]!) }
+  confere(nova.layout === 'uma' && nova.anguloDaSombra === 135 && nova.divisor.modelo === 'slash' && !('padrao' in nova), 'aplicado: a thumb fica com o jeito do modelo (e sem a marca dentro dela)')
+  const { anguloDaSombra: _a, coresJuntas: _c, ...antigo } = D.modeloDe(faah, 'Antigo')
+  const voltou = { ...comAngulo, coresJuntas: true, ...D.camposDoModelo(D.modeloDaThumbSchema.parse(antigo)) }
+  confere(voltou.anguloDaSombra === undefined && voltou.coresJuntas === undefined, 'um modelo de antes (sem angulo nem cores juntas) volta ao de sempre, e nao fica o da thumb anterior')
+  const embaralhado = { ...m, seta: Object.fromEntries(Object.entries(m.seta).reverse()) as typeof m.seta }
+  confere(D.mesmoJeito(embaralhado, { ...faah, layout: 'uma', anguloDaSombra: 135 }), 'o "mesmo jeito" nao depende da ordem das chaves (nem da marca de abertura)')
 }
 
 /** (05/11) A cor das imagens: a da camada de ajuste do projeto, e a thumb de antes sem cor. */

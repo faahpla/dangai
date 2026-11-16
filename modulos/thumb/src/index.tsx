@@ -4,7 +4,8 @@ import { BotaoThumbDoProjeto } from './components/BotaoThumbDoProjeto'
 import { BotaoThumbnail } from './components/BotaoThumbnail'
 import { TelaDaThumb } from './components/TelaDaThumb'
 import { guardarNucleo } from './nucleo'
-import { useTela } from './store/tela'
+import { pngDaThumb } from './editor/loja'
+import { useDoProjeto, useSolta, useTela } from './store/tela'
 
 /**
  * [thumb] O MODULO THUMBNAIL no renderer (pedido do Levi, 30/10): o editor
@@ -24,6 +25,8 @@ export const thumb: ModuloDoRenderer = {
 
   iniciar(n) {
     guardarNucleo(n)
+    // So em dev: a tela e as lojas para o teste pelo CDP (scripts/teste/cdp.mjs).
+    if (import.meta.env.DEV) Reflect.set(window, 'dangaiThumb', { useTela, useSolta, useDoProjeto, pngDaThumb })
     // Desligado com a tela aberta: ela fecha (o nucleo ja solta o inerte).
     return () => useTela.setState({ aberta: false })
   },

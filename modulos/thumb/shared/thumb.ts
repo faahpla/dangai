@@ -12,6 +12,7 @@ import {
   meioNaColuna,
   type DivisorDaThumb,
   type ModeloDeDivisor,
+  type Tinta,
 } from './divisores'
 
 export * from './cor'
@@ -181,11 +182,72 @@ export function degradeDaLinha(
 ): ParadaDoDegrade[] {
   const proprio = t.degrades?.[linha]
   if (proprio) return [{ em: 0, cor: proprio[0] }, { em: 1, cor: proprio[1] }]
-  const cor = t.cores[linha]
-  const jeito = ESTILO[t.estilo ?? 'kizuni'].degrade
+  return degradeNoEstilo(t.cores[linha], t.estilo)
+}
+
+/**
+ * O degrade de UMA cor no jeito do estilo do texto: o Kizuni com o de luz
+ * (degradeDaCor), o Faah 20% mais clara em cima e 20% mais escura embaixo, o
+ * AJK chapado. (16/11) O divisor e a seta pintados com uma cor usam ESTE: "o
+ * Slash ta com um brilho feio em cima, quero que o degrade dele seja o mesmo
+ * do meu preset de texto Faah" -- o de luz clareava o topo do Slash quase ate
+ * o rosa.
+ */
+export function degradeNoEstilo(cor: string, estilo: EstiloDoTexto = 'kizuni'): ParadaDoDegrade[] {
+  const jeito = ESTILO[estilo].degrade
   if (jeito === 'chapado') return [{ em: 0, cor }, { em: 1, cor }]
   if (jeito === 'vinte') return [{ em: 0, cor: misturar(cor, '#ffffff', 0.2) }, { em: 1, cor: misturar(cor, '#000000', 0.2) }]
   return degradeDaCor(cor)
+}
+
+/**
+ * A TINTA de uma peca (o divisor, a seta) pelo que ele escolheu: o degrade
+ * proprio, a cor no degrade do estilo, ou null (a cor original do desenho).
+ */
+export function tintaEscolhida(
+  cor: string | null | undefined,
+  degrade: readonly [string, string] | null | undefined,
+  estilo: EstiloDoTexto | undefined,
+): Tinta | null {
+  if (degrade) return { paradas: [{ em: 0, cor: degrade[0] }, { em: 1, cor: degrade[1] }], cor: degrade[0] }
+  if (cor) return { paradas: degradeNoEstilo(cor, estilo), cor }
+  return null
+}
+
+/**
+ * (16/11) AS CORES JUNTAS: "uma opcao pra marcar e alterar os 3 juntos". Ligada,
+ * o divisor e a seta usam a tinta da LINHA 2 (a de destaque: o amarelo, o roxo,
+ * o vermelho) -- a cor e o degrade dela, como estiverem. Mudar a linha 2 muda
+ * os tres.
+ */
+export function tintaDaLinha2(t: Pick<ThumbDoProjeto, 'cores' | 'estilo' | 'degrades'>): Tinta {
+  return { paradas: degradeDaLinha(t, 1), cor: t.degrades[1]?.[0] ?? t.cores[1] }
+}
+
+/** A tinta do divisor (null = a cor original do PNG). */
+export function tintaDoDivisor(t: Pick<ThumbDoProjeto, 'cores' | 'estilo' | 'degrades' | 'divisor'> & { coresJuntas?: boolean }): Tinta | null {
+  if (t.coresJuntas) return tintaDaLinha2(t)
+  return tintaEscolhida(t.divisor.cor, t.divisor.degrade, t.estilo)
+}
+
+/** A tinta da seta (null = as cores da forma escolhida). */
+export function tintaDaSeta(t: Pick<ThumbDoProjeto, 'cores' | 'estilo' | 'degrades' | 'seta'> & { coresJuntas?: boolean }): Tinta | null {
+  if (t.coresJuntas) return tintaDaLinha2(t)
+  return tintaEscolhida(t.seta.cor, t.seta.degrade, t.estilo)
+}
+
+/**
+ * (16/11) O ANGULO DA SOMBRA, como o do Photoshop: de onde vem a luz, em graus
+ * (0 = da direita, 90 = de cima, 180 = da esquerda). A sombra cai do lado
+ * oposto: 90 = reto para baixo (o de sempre), 120 = para baixo e a direita.
+ */
+export const ANGULO_DA_SOMBRA_PADRAO = 90
+
+/** O deslocamento da sombra (px) pela distancia e o angulo da luz. 90 = so para baixo, exato. */
+export function deslocamentoDaSombra(distancia: number, angulo: number = ANGULO_DA_SOMBRA_PADRAO): { x: number; y: number } {
+  if (angulo === ANGULO_DA_SOMBRA_PADRAO) return { x: 0, y: distancia }
+  const a = (angulo * Math.PI) / 180
+  return { x: -Math.cos(a) * distancia, y: Math.sin(a) * distancia }
 }
 
 export const FONTES_DA_THUMB = [
@@ -301,6 +363,14 @@ export const thumbDoProjetoSchema = z.object({
     livre: z.boolean().optional(),
     /** (13/11) Na livre: espelhada (a curva estufa para o outro lado). Ausente = nao. */
     espelhada: z.boolean().optional(),
+    /**
+     * (16/11) A COR da seta, como a do texto e a do divisor: "quero poder mudar
+     * a cor da seta exatamente da mesma forma". null/ausente = as cores da
+     * forma (o vermelho, o roxo, o pincel); a cor sai no degrade do estilo.
+     */
+    cor: corSchema.nullable().optional(),
+    /** (16/11) O degrade proprio da seta: [em cima, embaixo]. Ganha da `cor`. */
+    degrade: z.tuple([corSchema, corSchema]).nullable().optional(),
   }),
   /** [a de cima (ou a unica), a de baixo]. */
   imagens: z.tuple([imagemDaThumbSchema.nullable(), imagemDaThumbSchema.nullable()]),
@@ -324,6 +394,10 @@ export const thumbDoProjetoSchema = z.object({
   contorno: z.object({ px: z.number().min(0).max(CONTORNO_MAXIMO), cor: corSchema }).default({ px: 12, cor: COR_DO_CONTORNO }),
   /** (13/11) A "Sombra" do texto em fracao da do estilo (SOMBRA_MAXIMA). Ausente (thumb de antes) = a do estilo. */
   sombra: z.number().min(0).max(SOMBRA_MAXIMA).default(1),
+  /** (16/11) O angulo da sombra (do texto e da seta), em graus, como o do Photoshop. Ausente = 90 (reto para baixo). */
+  anguloDaSombra: z.number().min(-180).max(180).optional(),
+  /** (16/11) O divisor e a seta com a tinta da linha 2 (tintaDaLinha2). Ausente = cada um com a sua. */
+  coresJuntas: z.boolean().optional(),
   /**
    * Uma fonte do PC no lugar da `fonte` (o arquivo nas fontes do Windows; o
    * main confere que e mesmo uma fonte instalada). null = a `fonte` do app.
@@ -382,7 +456,8 @@ export function aplicarEstilo(t: ThumbDoProjeto, estilo: EstiloDoTexto): ThumbDo
     cores: faah ? ['#ffffff', DEGRADE_ROXO_DO_FAAH[0]] : [COR_LINHA_1, COR_LINHA_2],
     degrades: faah ? [null, [DEGRADE_ROXO_DO_FAAH[0], DEGRADE_ROXO_DO_FAAH[1]]] : [null, null],
     contorno: { px: Math.round(ESTILO[estilo].contorno), cor: COR_DO_CONTORNO },
-    seta: { ...t.seta, forma: ESTILO[estilo].seta },
+    // A seta do estilo, nas cores dela (a cor escolhida antes era para a outra forma).
+    seta: { ...t.seta, forma: ESTILO[estilo].seta, cor: null, degrade: null },
     fonte: FONTE_PADRAO,
     fontePc: null,
   }
@@ -1063,6 +1138,8 @@ export interface SetaNoQuadro {
   lado: 1 | -1
   /** (04/11) Qual seta (FORMAS_DA_SETA). Ausente = a vermelha. */
   forma?: FormaDaSeta
+  /** (16/11) A tinta dele (tintaDaSeta): o degrade de cima a baixo da seta na tela. Ausente/null = as cores da forma. */
+  tinta?: Tinta | null
 }
 
 export const FORMAS_DA_SETA = [
@@ -2159,8 +2236,8 @@ export interface ThumbEfetiva {
   seta: SetaNoQuadro | null
   avisos: AvisoDaArea[]
   rostos: RostoNaPrevia[]
-  /** O divisor que entra na emenda (null = desligado, ou 1 imagem). */
-  divisor: DivisorDaThumb | null
+  /** O divisor que entra na emenda (null = desligado, ou 1 imagem), com a tinta dele (null = o PNG como veio). */
+  divisor: (DivisorDaThumb & { tinta: Tinta | null }) | null
 }
 
 /**
@@ -2199,9 +2276,10 @@ export function thumbEfetiva(t: ThumbDoProjeto, medir: MedirTexto): ThumbEfetiva
     }
   })
   let seta: SetaNoQuadro | null = null
+  const tinta = tintaDaSeta(t)
   if (t.seta.ligada && t.seta.livre && t.seta.base && t.seta.ponta) {
     // A LIVRE: onde ele pos, do jeito que ele girou (nem o texto nem o rosto mandam).
-    seta = { base: t.seta.base, ponta: t.seta.ponta, lado: t.seta.espelhada ? -1 : 1, forma: t.seta.forma }
+    seta = { base: t.seta.base, ponta: t.seta.ponta, lado: t.seta.espelhada ? -1 : 1, forma: t.seta.forma, tinta }
   } else if (t.seta.ligada && geo.linhas.length > 0) {
     // A automatica so quando falta uma ponta (a procura custa; arrastando, as duas sao dele).
     const auto = t.seta.base && t.seta.ponta ? null : setaSozinha(geo, alvo, t.seta.forma)
@@ -2209,8 +2287,9 @@ export function thumbEfetiva(t: ThumbDoProjeto, medir: MedirTexto): ThumbEfetiva
     const ponta = t.seta.ponta ?? auto?.ponta ?? null
     if (base && ponta) {
       const lado: 1 | -1 = t.seta.base || t.seta.ponta ? (ponta.x >= base.x ? 1 : -1) : (auto?.lado ?? 1)
-      seta = { base, ponta, lado, forma: t.seta.forma }
+      seta = { base, ponta, lado, forma: t.seta.forma, tinta }
     }
   }
-  return { geo, enquadramentos, seta, avisos, rostos, divisor: geo.emenda === null ? null : divisorEfetivo(t) }
+  const d = geo.emenda === null ? null : divisorEfetivo(t)
+  return { geo, enquadramentos, seta, avisos, rostos, divisor: d ? { ...d, tinta: tintaDoDivisor(t) } : null }
 }

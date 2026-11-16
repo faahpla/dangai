@@ -9,6 +9,7 @@ import {
   contornoDaSetaPx,
   degradeDaLinha,
   degradeDaSeta,
+  deslocamentoDaSombra,
   desenhoDaSeta,
   emendaNoX,
   ESPESSURA_DA_LINHA,
@@ -25,7 +26,7 @@ import {
   type ThumbDoProjeto,
 } from '../../shared/thumb'
 import { familiaDaThumb } from './fontes'
-import { imagemDaSeta } from './setas'
+import { imagemDaSeta, setaBranca } from './setas'
 
 /**
  * [thumb] O DESENHO DA THUMBNAIL num canvas (o mesmo codigo na previa e no
@@ -78,7 +79,7 @@ export type DivisorPronto =
 
 export interface EntradaDoDesenho {
   thumb: Pick<ThumbDoProjeto, 'layout' | 'cores' | 'fonte'> &
-    Partial<Pick<ThumbDoProjeto, 'fontePc' | 'estilo' | 'degrades' | 'contorno' | 'sombra'>>
+    Partial<Pick<ThumbDoProjeto, 'fontePc' | 'estilo' | 'degrades' | 'contorno' | 'sombra' | 'anguloDaSombra'>>
   geo: GeometriaDaThumb
   paineis: readonly (PainelPronto | null)[]
   seta: SetaNoQuadro | null
@@ -129,8 +130,23 @@ function tracarSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro): void {
   ctx.closePath()
 }
 
-/** A seta padrao (a seta.png vetorizada): a sombra, o contorno preto por fora e o degrade da png. */
-function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala: number): void {
+/**
+ * (16/11) O degrade da cor dele na seta: de cima a baixo DA SETA NA TELA, como
+ * o das letras (0 = o topo da caixa dela, 1 = a base) -- o "Em cima" e o
+ * "Embaixo" querem dizer o mesmo no texto, no divisor e na seta.
+ */
+function degradeDaTinta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, paradas: readonly { em: number; cor: string }[]): CanvasGradient {
+  const caixa = caixaDaSeta(seta)
+  const g = ctx.createLinearGradient(0, caixa.y1, 0, caixa.y2)
+  for (const p of paradas) g.addColorStop(p.em, p.cor)
+  return g
+}
+
+/**
+ * A seta padrao (a seta.png vetorizada): a sombra, o contorno preto por fora e
+ * o degrade da png (ou o da cor dele). `angulo` = o da sombra (o mesmo da do texto).
+ */
+function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala: number, angulo?: number): void {
   const desenho = desenhoDaSeta(seta)
   const img = desenho.imagem ? imagemDaSeta(seta) : null
   if (desenho.imagem && img) {
@@ -149,8 +165,40 @@ function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala:
     const b = (Dy * dx + l * Dx * -dy) / L2
     const cc = (Dx * dy - l * Dy * dx) / L2
     const d = (Dy * dy + l * Dx * dx) / L2
+    const noLugar = (alvo: CanvasRenderingContext2D): void =>
+      alvo.transform(a, b, cc, d, seta.base.x - a * c.x - cc * c.y, seta.base.y - b * c.x - d * c.y)
+    // (16/11) COM A COR DELE: a seta em branco (o pincel e a sombra pretos ficam) vezes o degrade, numa
+    // folha do tamanho do quadro, e a folha por cima. Sem DOM (o teste), a de sempre.
+    const branca = seta.tinta && typeof document !== 'undefined' ? setaBranca(seta) : null
+    if (seta.tinta && branca) {
+      const folha = document.createElement('canvas')
+      folha.width = ctx.canvas.width
+      folha.height = ctx.canvas.height
+      const f = folha.getContext('2d')
+      if (f) {
+        const base = ctx.getTransform()
+        f.imageSmoothingEnabled = true
+        f.imageSmoothingQuality = 'high'
+        f.setTransform(base)
+        noLugar(f)
+        f.drawImage(branca, 0, 0)
+        f.setTransform(base)
+        f.globalCompositeOperation = 'multiply'
+        f.fillStyle = degradeDaTinta(f, seta, seta.tinta.paradas)
+        f.fillRect(0, 0, LARGURA, ALTURA)
+        // O multiply pintou o quadro inteiro: so fica onde a seta existe (o alpha dela).
+        f.globalCompositeOperation = 'destination-in'
+        noLugar(f)
+        f.drawImage(branca, 0, 0)
+        ctx.save()
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+        ctx.drawImage(folha, 0, 0)
+        ctx.restore()
+        return
+      }
+    }
     ctx.save()
-    ctx.transform(a, b, cc, d, seta.base.x - a * c.x - cc * c.y, seta.base.y - b * c.x - d * c.y)
+    noLugar(ctx)
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
     ctx.drawImage(img, 0, 0)
@@ -161,9 +209,11 @@ function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala:
   ctx.save()
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
-  // Sombra (a do texto, menor), depois o contorno por fora e o vermelho por cima.
+  // Sombra (a do texto, menor, e na mesma direcao), depois o contorno por fora e o vermelho por cima.
+  const sombra = deslocamentoDaSombra(8 * escala, angulo)
   ctx.shadowColor = 'rgba(0,0,0,0.85)'
-  ctx.shadowOffsetY = 8 * escala
+  ctx.shadowOffsetX = sombra.x
+  ctx.shadowOffsetY = sombra.y
   ctx.shadowBlur = 14 * escala
   tracarSeta(ctx, seta)
   if (contorno > 0.05) {
@@ -174,12 +224,16 @@ function desenharSeta(ctx: CanvasRenderingContext2D, seta: SetaNoQuadro, escala:
   ctx.shadowColor = 'transparent'
   ctx.fillStyle = '#000'
   ctx.fill()
-  const d = degradeDaSeta(seta)
-  const g = ctx.createLinearGradient(d.de.x, d.de.y, d.ate.x, d.ate.y)
-  const cores = desenhoDaSeta(seta).degrade.cores
-  g.addColorStop(0, cores[0])
-  g.addColorStop(1, cores[1])
-  ctx.fillStyle = g
+  if (seta.tinta) {
+    ctx.fillStyle = degradeDaTinta(ctx, seta, seta.tinta.paradas)
+  } else {
+    const d = degradeDaSeta(seta)
+    const g = ctx.createLinearGradient(d.de.x, d.de.y, d.ate.x, d.ate.y)
+    const cores = desenhoDaSeta(seta).degrade.cores
+    g.addColorStop(0, cores[0])
+    g.addColorStop(1, cores[1])
+    ctx.fillStyle = g
+  }
   tracarSeta(ctx, seta)
   ctx.fill()
   ctx.restore()
@@ -272,7 +326,10 @@ function desenharTexto(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho): void
     // inteira, com o contorno. A "Sombra" (13/11) multiplica a distancia e o desfoque; 0 = sem.
     const fatorDaSombra = e.thumb.sombra ?? 1
     ctx.shadowColor = fatorDaSombra > 0.001 ? 'rgba(0,0,0,1)' : 'transparent'
-    ctx.shadowOffsetY = estilo.sombraY * fatorDaSombra * relativo * e.escala
+    // (16/11) O angulo da luz, como o do Photoshop (90 = a sombra reto para baixo, o de sempre).
+    const sombra = deslocamentoDaSombra(estilo.sombraY * fatorDaSombra * relativo * e.escala, e.thumb.anguloDaSombra)
+    ctx.shadowOffsetX = sombra.x
+    ctx.shadowOffsetY = sombra.y
     // O shadowBlur do canvas e ~2x o desvio do gaussiano.
     ctx.shadowBlur = estilo.sombraDesfoque * 2 * fatorDaSombra * relativo * e.escala
     ctx.strokeStyle = corDoContorno
@@ -406,7 +463,7 @@ export function desenharThumb(ctx: CanvasRenderingContext2D, e: EntradaDoDesenho
   })
   // As camadas: imagens -> divisor -> seta e texto.
   if (e.divisor && e.geo.emenda !== null && e.thumb.layout === 'duas') desenharDivisor(ctx, e.divisor, e.geo.emenda, e.geo.inclinacao)
-  if (e.seta) desenharSeta(ctx, e.seta, e.escala)
+  if (e.seta) desenharSeta(ctx, e.seta, e.escala, e.thumb.anguloDaSombra)
   desenharTexto(ctx, e)
   if (e.guias) desenharGuias(ctx, e, e.guias)
   ctx.restore()

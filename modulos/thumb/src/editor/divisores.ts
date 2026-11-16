@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import {
   CENTRO_DO_DIVISOR,
   COR_ORIGINAL_DO_DIVISOR,
+  degradeDaCor,
   FAIXA_DO_DIVISOR,
   PNG_DA_FORMA_DO_RASGO,
   PNG_DO_DIVISOR,
@@ -10,6 +11,7 @@ import {
   type DivisorDaThumb,
   type ModeloComPng,
   type PixelsRgba,
+  type Tinta,
 } from '../../shared/thumb'
 import type { DivisorPronto } from './desenho'
 
@@ -69,9 +71,28 @@ async function lerPixels(nome: string): Promise<PixelsRgba> {
   return p
 }
 
-function chaveDo(d: DivisorDaThumb): string {
+/**
+ * O divisor como o desenho recebe: o da thumb e, desde 16/11, a TINTA dele
+ * (o degrade do estilo, o proprio ou o da linha 2; thumbEfetiva). Sem `tinta`
+ * (um chamador de antes), a `cor` com o degrade de luz, como sempre foi.
+ */
+type DivisorParaDesenhar = DivisorDaThumb & { tinta?: Tinta | null }
+
+function tintaDo(d: DivisorParaDesenhar): Tinta | null {
+  if (d.tinta !== undefined) return d.tinta
+  return d.cor ? { paradas: degradeDaCor(d.cor), cor: d.cor } : null
+}
+
+function chaveDo(d: DivisorParaDesenhar): string {
   const brilho = d.modelo === 'rasgo-brilho' ? Math.round(d.brilho) : 0
-  return `${d.modelo}|${d.modelo === 'linha' ? '' : (d.cor ?? '')}|${d.modelo === 'linha' ? String(d.contorno) : ''}|${brilho}`
+  const tinta = tintaDo(d)
+  const daTinta = tinta ? `${tinta.cor}:${tinta.paradas.map((p) => `${p.em}${p.cor}`).join(',')}` : ''
+  return `${d.modelo}|${d.modelo === 'linha' ? (tinta?.cor ?? '') : daTinta}|${d.modelo === 'linha' ? String(d.contorno) : ''}|${brilho}`
+}
+
+/** A Linha: a cor principal da tinta (ou a branca de sempre). */
+function linhaDo(d: DivisorParaDesenhar): DivisorPronto {
+  return { tipo: 'linha', cor: tintaDo(d)?.cor ?? COR_ORIGINAL_DO_DIVISOR.linha, contorno: d.contorno }
 }
 
 /** O azul do brilho do Rasgo com brilho original (o do MEIO.png, um pouco mais claro). */
@@ -134,10 +155,11 @@ function comBrilho(base: HTMLCanvasElement, forma: PixelsRgba, cor: string | nul
 }
 
 /** Os pixels do divisor (o original, ou recolorido) num canvas do tamanho do arquivo. */
-async function montar(modelo: ModeloComPng, cor: string | null, brilho = 0): Promise<DivisorPronto> {
+async function montar(modelo: ModeloComPng, tinta: Tinta | null, brilho = 0): Promise<DivisorPronto> {
+  const cor = tinta?.cor ?? null
   const png = await lerPixels(PNG_DO_DIVISOR[modelo])
-  const forma = modelo === 'rasgo-brilho' && (cor || brilho > 0) ? await lerPixels(PNG_DA_FORMA_DO_RASGO) : null
-  const dados = cor ? recolorirDivisor(modelo, cor, png, forma) : new Uint8ClampedArray(png.dados)
+  const forma = modelo === 'rasgo-brilho' && (tinta || brilho > 0) ? await lerPixels(PNG_DA_FORMA_DO_RASGO) : null
+  const dados = tinta ? recolorirDivisor(modelo, tinta, png, forma) : new Uint8ClampedArray(png.dados)
   const canvas = document.createElement('canvas')
   canvas.width = png.largura
   canvas.height = png.altura
@@ -149,16 +171,16 @@ async function montar(modelo: ModeloComPng, cor: string | null, brilho = 0): Pro
 }
 
 /** O divisor pronto para o desenho (esperando o PNG ficar pronto). null = sem divisor. */
-export async function prepararDivisor(d: DivisorDaThumb | null): Promise<DivisorPronto | null> {
+export async function prepararDivisor(d: DivisorParaDesenhar | null): Promise<DivisorPronto | null> {
   if (!d) return null
-  if (d.modelo === 'linha') return { tipo: 'linha', cor: d.cor ?? COR_ORIGINAL_DO_DIVISOR.linha, contorno: d.contorno }
+  if (d.modelo === 'linha') return linhaDo(d)
   if (semDom()) return null
   const chave = chaveDo(d)
   const pronto = prontos.get(chave)
   if (pronto) return pronto
   let p = preparando.get(chave)
   if (!p) {
-    p = montar(d.modelo, d.cor, d.modelo === 'rasgo-brilho' ? d.brilho : 0)
+    p = montar(d.modelo, tintaDo(d), d.modelo === 'rasgo-brilho' ? d.brilho : 0)
       .then((m) => {
         prontos.set(chave, m)
         ultimoDoModelo.set(d.modelo, m)
@@ -178,9 +200,9 @@ export async function prepararDivisor(d: DivisorDaThumb | null): Promise<Divisor
 }
 
 /** Para a previa: o pronto agora, ou null (e pede; quando ficar pronto, useDivisoresProntos muda). */
-export function divisorAgora(d: DivisorDaThumb | null): DivisorPronto | null {
+export function divisorAgora(d: DivisorParaDesenhar | null): DivisorPronto | null {
   if (!d) return null
-  if (d.modelo === 'linha') return { tipo: 'linha', cor: d.cor ?? COR_ORIGINAL_DO_DIVISOR.linha, contorno: d.contorno }
+  if (d.modelo === 'linha') return linhaDo(d)
   const pronto = prontos.get(chaveDo(d))
   if (pronto) return pronto
   void prepararDivisor(d)
