@@ -20,6 +20,16 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.10.0',
+    itens: [
+      'Thumbnail com abas: Imagens, Texto, Cores, Divisor e Seta. Cada uma cabe na tela sem rolar, um controle por linha, e a explicação aparece ao passar o mouse. Os modelos ficam numa faixa no alto.',
+      'Modelo de abertura: clique na estrela de um modelo e a Thumbnail já abre com ele aplicado. Thumb já salva num projeto continua a dela.',
+      'A seta e o divisor mudam de cor do mesmo jeito que o texto: cores prontas, "Outra" e Degradê (em cima e embaixo). Vale também para a seta de pincel. Na aba Cores, "Com a cor da linha 2" faz o divisor e a seta seguirem a linha 2: mudou ela, mudam os três.',
+      'Ângulo da sombra, como no Photoshop (90° = reto para baixo), com uma rodinha para girar. Vale para o texto e para a seta.',
+      'O divisor com cor usa o degradê do estilo do texto: no estilo Faah, o Slash não tem mais aquele brilho rosado em cima.',
+    ],
+  },
+  {
     versao: '2.9.1',
     itens: [
       'Upscale: projeto com quadrinho de mangá que aparece inteiro (sobre ele mesmo desfocado) não falha mais com "bad extract area". Antes o render seguia sem upscale em nenhuma cena; agora o quadrinho é melhorado junto com o resto.',
