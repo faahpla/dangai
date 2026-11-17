@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.10.2',
+    itens: [
+      'Edição rápida (Gerar recap): as cenas agora entram com zoom em vez de deslizar para o lado — o deslize tirava o rosto do centro no vertical. Só o grid continua com as duas metades deslizando.',
+      'Edição rápida: sem a transição de zoom na virada de cada parte; tudo em corte seco.',
+      'Edição rápida: a música não entra mais no final da faixa, onde ela vai sumindo, nem recomeça do segundo zero, que é mudo. Antes isso deixava um trecho quase sem música e uma "troca" no meio de uma frase.',
+    ],
+  },
+  {
     versao: '2.10.1',
     itens: [
       'Biblioteca de cenas: se nenhuma pasta foi escolhida, o Dangai agora usa sozinho a pasta onde o AnCut grava as cenas. Episódio mandado para o AnCut pelo Gerar recap aparece na Biblioteca junto com os outros. Quem já escolheu uma pasta continua com a dela.',
