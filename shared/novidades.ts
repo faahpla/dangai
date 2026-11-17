@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.10.4',
+    itens: [
+      'Módulo novo, "Claude (MCP)" (Configurações > Módulos): liga o Claude Code ao Dangai. Ligado, as Configurações mostram um comando para colar no terminal uma vez; depois o Claude edita o projeto aberto sozinho — vê as cenas no recorte vertical, muda enquadramento, ponto de entrada, efeito, zoom, grid, põe sons e setas — e o projeto reabre com a mudança. Tudo fica no seu PC, com senha.',
+    ],
+  },
+  {
     versao: '2.10.3',
     itens: [
       'Thumbnail: estilo Kiumaz, com a fonte Bangers e o contorno mais fino. O Kizuni continua do jeito de sempre (Luckiest Guy).',
