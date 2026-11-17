@@ -4,7 +4,6 @@ import {
   CLIP_INTENSITY,
   CLIP_MOTION_CURVE,
   HOOK_SEC_DEFAULT,
-  KEN_BURNS_EFFECTS,
   medidasDo,
   VIDEO_FPS,
   type CaptionStyle,
@@ -50,10 +49,8 @@ import type { TakeDaVoz } from '../../shared/voz'
  *   `sourceStart` = o ponto dentro do arquivo (trechosDoCandidato);
  * - os cortes caem nas FRONTEIRAS DE FRASE do take (trecho.offset, exato) e
  *   nas palavras escolhidas com a barrinha (o start da palavra no take);
- * - movimento como o planoDosBlocos do store (src/store/project.ts): rodizio
- *   de KEN_BURNS_EFFECTS, CLIP_INTENSITY, curva CLIP_MOTION_CURVE; corte seco
- *   dentro da secao e uma transicao curta (TRANSICAO_DA_VIRADA) na virada de
- *   secao; o primeiro bloco entra seco;
+ * - movimento: EFEITO_DO_BLOCO (zoom, nunca pan fora do grid), CLIP_INTENSITY,
+ *   curva CLIP_MOTION_CURVE; corte seco em tudo (TRANSICAO_DA_VIRADA = 'cut');
  * - card de gancho com o textoDeTela da 1a frase (sem ele, a 1a sugestao de
  *   thumb: ganchoDaMontagem);
  * - legendas: as do editor (buildCaptions com as regras padrao), com
@@ -70,10 +67,24 @@ import type { TakeDaVoz } from '../../shared/voz'
  * cena dele) e planEdited true, como a montagem automatica do Dangai.
  */
 
-/** A virada de secao: um zoom curto (a regra do Levi: corte seco dentro da secao). */
-export const TRANSICAO_DA_VIRADA: Transition = 'zoom-in'
+/**
+ * A virada de secao. Era um zoom curto; o Levi tira as transicoes de zoom da
+ * Edicao rapida (17/11: "nao gosto das transicoes do dangai de zoom"): corte seco
+ * em tudo. Fica a constante para quem quiser voltar a marcar a virada.
+ */
+export const TRANSICAO_DA_VIRADA: Transition = 'cut'
 /** ~334 ms: curta, mas com tempo para a curva do zoom acelerar e frear. */
 export const QUADROS_DA_VIRADA = 8
+
+/**
+ * O MOVIMENTO DE CADA BLOCO (17/11). Era o rodizio do nucleo (zoom-in, zoom-out e
+ * os quatro pans): o pan desliza a janela 9:16 sem olhar onde esta o rosto, e o
+ * Levi achou cena "descentralizada porque colocou slide ao inves de zoom". O zoom
+ * cresce do centro do enquadramento, que e onde o foco poe o rosto: dois zoom-in
+ * e um zoom-out, para nao ficar tudo igual. O grid continua com as metades em pan
+ * para lados opostos (o padrao do nucleo).
+ */
+export const EFEITO_DO_BLOCO = ['zoom-in', 'zoom-in', 'zoom-out'] as const
 
 /** Pedaco menor que isto nao vira bloco: o tempo dele vai para o vizinho (2 quadros). */
 export const PEDACO_MINIMO_SEC = 2 / VIDEO_FPS
@@ -460,7 +471,7 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
       imageIndexB: metade ? baixo : null,
       start,
       end,
-      effect: metade ? 'pan-left' : KEN_BURNS_EFFECTS[j % KEN_BURNS_EFFECTS.length]!,
+      effect: metade ? 'pan-left' : EFEITO_DO_BLOCO[j % EFEITO_DO_BLOCO.length]!,
       intensity: CLIP_INTENSITY,
       effectB: metade ? 'pan-right' : null,
       intensityB: null,
@@ -471,7 +482,7 @@ export function montarArquivoDoProjeto(e: EntradaDaMontagem): { file: ProjectFil
       sourceStartB: metade ? metade.de : 0,
       rotation: 0,
       transitionIn: virada ? TRANSICAO_DA_VIRADA : 'cut',
-      ...(virada ? { transicao: { frames: QUADROS_DA_VIRADA } } : {}),
+      ...(virada && TRANSICAO_DA_VIRADA !== 'cut' ? { transicao: { frames: QUADROS_DA_VIRADA } } : {}),
       reason: metade ? `${p.fraseId}: grid ${p.planoId} / ${metade.planoId}${porque}` : `${p.fraseId}${porque}`,
     }
   })
