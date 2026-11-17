@@ -31,6 +31,10 @@ import { configureSettings } from '../../electron/services/settings.ts'
 import { vocabularioDaBiblioteca } from '../../electron/services/vocabulario.ts'
 import type { LibraryIndex } from '../../shared/channels.ts'
 
+// Sem a pasta do AnCut desta maquina entrando como libraryDir padrao (settings.ts):
+// aqui "sem libraryDir" tem que ser sem libraryDir mesmo.
+process.env['DANGAI_SEM_BIBLIOTECA_DO_ANCUT'] = '1'
+
 let falhas = 0
 const ok = (nome: string, c: boolean, d = ''): void => {
   console.log((c ? '  ok    ' : '  FALHA ') + nome + (d ? `  -- ${d}` : ''))

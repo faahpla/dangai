@@ -159,6 +159,37 @@ export interface Settings {
   modulosLigados: Record<string, boolean>
 }
 
+/**
+ * A PASTA ONDE O ANCUT GRAVA AS CENAS (17/11, pedido do Levi: "por padrao o
+ * Dangai tem que colocar na mesma pasta do AnCut").
+ *
+ * A Biblioteca de cenas e a saida do AnCut. Sem pasta escolhida, a Biblioteca
+ * so via o que outro leitor contribuia (o recap) e um episodio mandado ao AnCut
+ * sumia dela. Agora a pasta vazia vira a `output_dir` da config do AnCut (ou a
+ * saida padrao dele, Documentos\CorteCenas\Output), quando ela existe. Escolher
+ * outra pasta nas Configuracoes continua valendo; sem AnCut, nada muda.
+ */
+export function saidaDoAncut(): string | null {
+  const base = process.env['LOCALAPPDATA']
+  const candidatas: string[] = []
+  if (base) {
+    try {
+      const cfg = JSON.parse(readFileSync(join(base, 'CorteCenas', 'CorteCenas', 'config.json'), 'utf8')) as { output_dir?: unknown }
+      if (typeof cfg.output_dir === 'string' && cfg.output_dir.trim()) candidatas.push(cfg.output_dir.trim())
+    } catch {
+      /* sem config: a saida padrao */
+    }
+  }
+  candidatas.push(join(homedir(), 'Documents', 'CorteCenas', 'Output'))
+  return candidatas.find((p) => existsSync(p)) ?? null
+}
+
+function comBibliotecaDoAncut(s: Settings): Settings {
+  if (s.libraryDir || process.env['DANGAI_SEM_BIBLIOTECA_DO_ANCUT']) return s
+  const ancut = saidaDoAncut()
+  return ancut ? { ...s, libraryDir: ancut } : s
+}
+
 const DEFAULTS: Settings = {
   anthropicApiKey: '',
   geminiApiKey: '',
@@ -235,13 +266,13 @@ export function getSettings(): Settings {
     raw = JSON.parse(readFileSync(filePath, 'utf8'))
   } catch {
     // Arquivo ausente ou corrompido: volta ao padrao em vez de derrubar o app.
-    cache = { ...DEFAULTS }
+    cache = comBibliotecaDoAncut({ ...DEFAULTS })
     extrasDoArquivo = {}
     return cache
   }
 
   const { chaves, emTextoPuro } = abrirChaves(raw)
-  cache = coerce({ ...(raw as object), ...chaves })
+  cache = comBibliotecaDoAncut(coerce({ ...(raw as object), ...chaves }))
   extrasDoArquivo = camposDesconhecidos(raw)
 
   // Settings de antes da cifra, com a chave aberta no arquivo: regrava ja
