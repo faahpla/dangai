@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.10.3',
+    itens: [
+      'Thumbnail: estilo Kiumaz, com a fonte Bangers e o contorno mais fino. O Kizuni continua do jeito de sempre (Luckiest Guy).',
+      'Thumbnail: divisor novo, "Brilho dentro": o rasgo azul-marinho com o azul aceso nas bordas, por dentro, sem o brilho em volta. O controle de Brilho deixa o aceso mais largo.',
+    ],
+  },
+  {
     versao: '2.10.2',
     itens: [
       'Edição rápida (Gerar recap): as cenas agora entram com zoom em vez de deslizar para o lado — o deslize tirava o rosto do centro no vertical. Só o grid continua com as duas metades deslizando.',
