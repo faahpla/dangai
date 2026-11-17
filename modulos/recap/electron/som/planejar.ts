@@ -23,6 +23,7 @@ import {
 } from '../../shared/edicao-rapida'
 import {
   CLIMAS_CALMOS,
+  fimUtilDaMusica,
   inicioParaODrop,
   musicaDoClima,
   trechosDaTrilha,
@@ -426,10 +427,15 @@ async function musicaNoTrecho(
     return null
   }
   const entradas = await entradasDaMusica(caminho).catch(() => ({ durationSec: m.durationSec, entradas: [] }))
-  const { inSec: bruto, entrada } = inicioParaODrop({ entradas: entradas.entradas, durationSec: m.durationSec, inicioSomSec: m.inicioSomSec }, trecho)
+  // (17/11) Onde ela comeca a sumir: o trecho nao entra no fade do fim.
+  const fimUtilSec = fimUtilDaMusica(m.blocos, m.lufsIntegrado, m.durationSec, m.fimSomSec)
+  const { inSec: bruto, entrada } = inicioParaODrop(
+    { entradas: entradas.entradas, durationSec: m.durationSec, inicioSomSec: m.inicioSomSec, fimUtilSec },
+    trecho,
+  )
   const inSec = Math.min(bruto, Math.max(m.durationSec - 1, 0))
   const dura = trecho.ate - trecho.at
-  const toca = Math.min(dura, m.durationSec - inSec)
+  const toca = Math.min(dura, fimUtilSec - inSec)
   // Mais curta que o trecho: ela volta do comeco, entao vale o arquivo inteiro.
   const lufs = toca < dura - 0.05 ? m.lufsIntegrado : (integradoNoTrecho(m.blocos, inSec, inSec + toca) ?? m.lufsIntegrado)
   const lufsArred = lufs === null ? null : Math.round(lufs * 10) / 10
@@ -445,6 +451,8 @@ async function musicaNoTrecho(
     ducking: regras.musica.ducking,
     inSec: Math.round(inSec * 1000) / 1000,
     durationSec: m.durationSec,
+    inicioSomSec: Math.round(m.inicioSomSec * 1000) / 1000,
+    fimUtilSec: Math.round(fimUtilSec * 1000) / 1000,
     lufsIntegrado: lufsArred,
     at: Math.round(trecho.at * 1000) / 1000,
     ate: ultima ? null : Math.round(trecho.ate * 1000) / 1000,

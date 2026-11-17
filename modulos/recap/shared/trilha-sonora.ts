@@ -223,6 +223,40 @@ export interface MusicaParaTrilha {
   entradas: readonly EntradaDaMusica[]
   /** Comeco do som no arquivo (pula silencio). */
   inicioSomSec: number
+  /**
+   * Onde a musica comeca a SUMIR (o fade do fim, o silencio): o trecho nao passa
+   * daqui. Ausente = o arquivo inteiro (o de antes). Ver fimUtilDaMusica.
+   */
+  fimUtilSec?: number
+}
+
+/** Abaixo do integrado da musica, um bloco ja e o fim sumindo (o fade, a cauda). */
+export const QUEDA_DO_FIM_LU = 9
+
+/**
+ * ONDE A MUSICA COMECA A SUMIR (17/11). A Edicao rapida punha o trecho ate o
+ * fim do arquivo, e o fim de uma faixa e o fade: no Nia S01E07 os ultimos 13 s
+ * (de -12 para -45 LUFS) viraram um vazio de 0:20 a 0:32 no video, e logo depois
+ * a faixa recomecava do segundo 0, que e mudo.
+ *
+ * `blocos` = loudness de cada bloco de 400 ms, passo de 100 ms (medir.ts). O
+ * fim util e o fim do ULTIMO bloco a menos de QUEDA_DO_FIM_LU do integrado.
+ * Sem blocos ou sem integrado: `fimSomSec` (o fim do som), senao o arquivo.
+ */
+export function fimUtilDaMusica(
+  blocos: readonly number[] | null | undefined,
+  lufsIntegrado: number | null,
+  durationSec: number,
+  fimSomSec?: number | null,
+): number {
+  const fimDoSom = typeof fimSomSec === 'number' && fimSomSec > 0 ? Math.min(fimSomSec, durationSec) : durationSec
+  if (!blocos || blocos.length === 0 || lufsIntegrado === null || !Number.isFinite(lufsIntegrado)) return fimDoSom
+  const limiar = lufsIntegrado - QUEDA_DO_FIM_LU
+  for (let i = blocos.length - 1; i >= 0; i--) {
+    const v = blocos[i]!
+    if (Number.isFinite(v) && v >= limiar) return Math.min(fimDoSom, Math.round((i * 0.1 + 0.4) * 1000) / 1000)
+  }
+  return fimDoSom
 }
 
 /**
@@ -251,12 +285,25 @@ export function musicaDoClima<T extends Pick<MusicaParaTrilha, 'path' | 'clima'>
  * as que deixam o trecho inteiro tocar sem dar a volta no arquivo. Sem
  * entrada que caiba: o comeco do som.
  */
-export function inicioParaODrop(m: Pick<MusicaParaTrilha, 'entradas' | 'durationSec' | 'inicioSomSec'>, trecho: Pick<TrechoDaTrilha, 'at' | 'ate' | 'drop'>): { inSec: number; entrada: EntradaDaMusica | null } {
+export function inicioParaODrop(
+  m: Pick<MusicaParaTrilha, 'entradas' | 'durationSec' | 'inicioSomSec' | 'fimUtilSec'>,
+  trecho: Pick<TrechoDaTrilha, 'at' | 'ate' | 'drop'>,
+): { inSec: number; entrada: EntradaDaMusica | null } {
   const antes = Math.max(trecho.drop - trecho.at, 0)
   const dura = trecho.ate - trecho.at
-  const cabem = m.entradas.filter((e) => e.t - antes >= Math.max(m.inicioSomSec - 0.05, 0))
-  const inteiras = cabem.filter((e) => e.t - antes + dura <= m.durationSec)
-  const melhor = [...(inteiras.length > 0 ? inteiras : cabem)].sort((a, b) => b.forca - a.forca || a.t - b.t)[0]
-  if (!melhor) return { inSec: Math.max(m.inicioSomSec - 0.05, 0), entrada: null }
-  return { inSec: Math.round((melhor.t - antes) * 1000) / 1000, entrada: melhor }
+  const comeco = Math.max(m.inicioSomSec - 0.05, 0)
+  // (17/11) O trecho nao entra no fim que some: "inteira" e caber ate o fim util.
+  const fim = Math.min(m.fimUtilSec ?? m.durationSec, m.durationSec)
+  const cabem = m.entradas.filter((e) => e.t - antes >= comeco)
+  const inteiras = cabem.filter((e) => e.t - antes + dura <= fim)
+  const melhor = [...inteiras].sort((a, b) => b.forca - a.forca || a.t - b.t)[0]
+  if (melhor) return { inSec: Math.round((melhor.t - antes) * 1000) / 1000, entrada: melhor }
+  // Nenhum drop deixa a musica inteira no trecho. Se ela e longa o bastante, toca
+  // sem drop e sem recomecar (o fim do trecho no fim util): melhor que o drop
+  // seguido do fade e da volta muda do comeco. Curta demais: o drop mais forte, e
+  // ela repete (trilhasDoPlano recomeca no inicioSomSec).
+  if (fim - comeco >= dura) return { inSec: Math.round(comeco * 1000) / 1000, entrada: null }
+  const qualquer = [...cabem].sort((a, b) => b.forca - a.forca || a.t - b.t)[0]
+  if (!qualquer) return { inSec: comeco, entrada: null }
+  return { inSec: Math.round((qualquer.t - antes) * 1000) / 1000, entrada: qualquer }
 }

@@ -585,6 +585,14 @@ export const musicaPlanejadaSchema = z.object({
   inSec: z.number().nonnegative().default(0),
   /** Duracao do ARQUIVO inteiro, s. Mais curta que o video = repete (um trecho por volta). */
   durationSec: z.number().positive(),
+  /**
+   * (17/11) Onde o som comeca (pula o mudo do inicio) e onde ele comeca a sumir
+   * (o fade do fim). Uma volta toca no maximo ate `fimUtilSec`; a seguinte
+   * recomeca em `inicioSomSec`, e nao no segundo 0 (que e mudo). null = o
+   * arquivo inteiro, como antes.
+   */
+  inicioSomSec: z.number().nonnegative().nullable().default(null),
+  fimUtilSec: z.number().positive().nullable().default(null),
   /** O integrado medido do arquivo (documenta o ganho). null = nao deu para medir. */
   lufsIntegrado: z.number().nullable().default(null),
   /**
@@ -1113,10 +1121,13 @@ export function trilhasDoPlanoDeSom(
     // Sem at/ate (plano de antes): o video inteiro.
     const fimDoTrecho = Math.min(m.ate ?? opcoes.duracaoSec, opcoes.duracaoSec)
     let at = Math.min(m.at ?? 0, opcoes.duracaoSec)
-    let inicio = Math.min(m.inSec, Math.max(m.durationSec - 0.5, 0))
+    // (17/11) A volta toca ate onde a musica comeca a sumir, e recomeca onde o som comeca.
+    const fimDoArquivo = Math.min(m.fimUtilSec ?? m.durationSec, m.durationSec)
+    const recomeco = Math.min(m.inicioSomSec ?? 0, Math.max(fimDoArquivo - 0.5, 0))
+    let inicio = Math.min(m.inSec, Math.max(fimDoArquivo - 0.5, 0))
     let primeira = true
     while (at < fimDoTrecho - 0.05 && volta < 1000) {
-      const cabe = m.durationSec - inicio
+      const cabe = fimDoArquivo - inicio
       if (cabe <= 0.05) break
       const toca = Math.min(cabe, fimDoTrecho - at)
       const ultima = at + toca >= fimDoTrecho - 0.05
@@ -1128,7 +1139,7 @@ export function trilhasDoPlanoDeSom(
         at: arredondar(at),
         durationSec: m.durationSec,
         inicioSec: arredondar(inicio),
-        usarSec: toca < cabe - 1e-3 ? arredondar(toca) : null,
+        usarSec: toca < cabe - 1e-3 || fimDoArquivo < m.durationSec - 1e-3 ? arredondar(toca) : null,
         gainDb: m.ganhoDb,
         fadeInSec: primeira ? m.fadeInSec : 0,
         // A ultima musica fecha com o fade dela; a que da lugar a outra sai no corte.
@@ -1141,8 +1152,8 @@ export function trilhasDoPlanoDeSom(
       at += toca
       volta += 1
       primeira = false
-      // As voltas seguintes tocam o arquivo do comeco.
-      inicio = 0
+      // As voltas seguintes tocam do comeco do som (pulando o mudo do inicio).
+      inicio = recomeco
     }
   })
   return saida

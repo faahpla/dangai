@@ -15,7 +15,7 @@
  *   npx tsx --tsconfig tsconfig.node.json modulos/recap/teste/v-trilha-sonora.ts
  */
 import { planejarSfx, sfxPeloNome, trilhasDoPlanoDeSom, type ArquivoDeSfx, type PlanoDeSom } from '../shared/edicao-rapida'
-import { climaDaPasta, climaPelaFala, inicioParaODrop, musicaDoClima, trechosDaTrilha, type ParteComClima } from '../shared/trilha-sonora'
+import { climaDaPasta, climaPelaFala, fimUtilDaMusica, inicioParaODrop, musicaDoClima, trechosDaTrilha, type ParteComClima } from '../shared/trilha-sonora'
 import { climaPeloNomeDaMusica } from '../electron/som/clima'
 import { entradasDaOnda } from '../electron/som/entradas'
 
@@ -132,6 +132,8 @@ const mus = (arquivo: string, at: number, ate: number | null, inSec: number) => 
   ducking: { abaixoDb: 6, ataqueSec: 0.1, soltaSec: 0.25, pausaMinSec: 0.5 },
   inSec,
   durationSec: 120,
+  inicioSomSec: null,
+  fimUtilSec: null,
   lufsIntegrado: -10,
   at,
   ate,
@@ -145,6 +147,35 @@ confere(tri[0]!.at === 0 && tri[0]!.inicioSec === 54 && tri[0]!.usarSec === 26 &
 confere(tri[1]!.at === 26 && tri[1]!.inicioSec === 58 && tri[1]!.usarSec === 32 && tri[1]!.fadeInSec === 0.05 && tri[1]!.fadeOutSec === 2, 'a 2a: entra no drop (58 s) na troca, ate o fim com o fade')
 const umaSo = trilhasDoPlanoDeSom({ musica: mus('C:/m/a.mp3', 0, null, 3), musicas: [], sfx: [], avisos: [] }, { duracaoSec: 30, faixas: { musica: 0, whoosh: 1, impacto: 2, riser: 3, tema: 4 }, prefixoId: 't' })
 confere(umaSo.length === 1 && umaSo[0]!.usarSec === 30, 'projeto de antes (so `musica`): igual')
+
+console.log('o fim que some e o comeco mudo (17/11, Nia S01E07)')
+// A faixa do Nia: 90 s, 1 s mudo no comeco, -12 LUFS, o fim sumindo de 77 s (-14) a 90 s (-45).
+const blocosNia: number[] = []
+for (let i = 0; i < 898; i++) {
+  const t = i * 0.1 + 0.2
+  blocosNia.push(t < 1 ? -74 : t < 77 ? -12 : t < 83 ? -14 - (t - 77) * 1.2 : -24 - (t - 83) * 3)
+}
+const fimNia = fimUtilDaMusica(blocosNia, -12, 90.186, 89.9)
+confere(fimNia > 80 && fimNia < 84, `o fim util da faixa do Nia fica antes do fade (${fimNia} s)`)
+confere(fimUtilDaMusica(null, -12, 90, 88) === 88 && fimUtilDaMusica([], null, 90) === 90, 'sem blocos: o fim do som, senao o arquivo')
+// O drop forte em 70 s pede comecar em 66 s (4 s de gancho antes): 66 + 73 passa do fim util.
+const nia = { entradas: [{ t: 70, forca: 9 }, { t: 8, forca: 3 }], durationSec: 90.186, inicioSomSec: 1, fimUtilSec: fimNia }
+const vid = { at: 0, ate: 73, drop: 4 }
+const esc = inicioParaODrop(nia, vid)
+confere(esc.inSec + 73 <= fimNia + 1e-6, `o trecho de 73 s nao entra no fade (inSec ${esc.inSec})`)
+confere(esc.entrada?.t === 8 && esc.inSec === 4, 'fica com o drop que cabe inteiro (8 s), mesmo mais fraco')
+const semDrop = inicioParaODrop({ ...nia, entradas: [{ t: 70, forca: 9 }] }, vid)
+confere(semDrop.entrada === null && semDrop.inSec === 0.95, `nenhum drop cabe e a faixa e longa: do comeco do som, sem recomecar (${semDrop.inSec})`)
+const antigo = inicioParaODrop({ entradas: [{ t: 70, forca: 9 }], durationSec: 200, inicioSomSec: 1 }, vid)
+confere(antigo.entrada?.t === 70, 'sem fimUtilSec (o de antes): o arquivo inteiro vale')
+// Curta demais (40 s util para 73 s de video): repete, recomecando no comeco do som e sem o fade.
+const curta = trilhasDoPlanoDeSom(
+  { musica: null, musicas: [{ ...mus('C:/m/c.mp3', 0, null, 5), durationSec: 50, inicioSomSec: 1.5, fimUtilSec: 45 }], sfx: [], avisos: [] },
+  { duracaoSec: 73, faixas: { musica: 0, whoosh: 1, impacto: 2, riser: 3, tema: 4 }, prefixoId: 't' },
+)
+confere(curta.length === 2, `curta: 2 voltas (${curta.length})`)
+confere(curta[0]!.inicioSec === 5 && curta[0]!.usarSec === 40, `a 1a volta para no fim util (5 + 40 = 45) (${curta[0]!.inicioSec}+${curta[0]!.usarSec})`)
+confere(curta[1]!.at === 40 && curta[1]!.inicioSec === 1.5, `a 2a recomeca no comeco do som, nao no 0 mudo (${curta[1]!.inicioSec})`)
 
 console.log('entradas pela onda')
 const rms: number[] = []
