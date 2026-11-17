@@ -117,7 +117,8 @@ export const LOOK = { saturacao: 1.22, contraste: 1.1 } as const
  * ficam na thumb (ele mexe); escolher o estilo aplica os de cada um
  * (aplicarEstilo).
  *
- * - "kizuni" (Kizuni e Kiumaz, o de sempre): o PSD do Levi -- Luckiest Guy
+ * - "kiumaz" (17/11): o jeito do Kizuni com a Bangers e o contorno mais fino (7 px);
+ * - "kizuni" (o de sempre): o PSD do Levi -- Luckiest Guy
  *   esticada 1,11, contorno de 12 px, sombra 13 px abaixo com desfoque 11,4 e o
  *   degrade de luz de cada cor (degradeDaCor);
  * - "faah" (o PSD "ELA TAVA PREPARADA?" do Faah): sem esticar, contorno de 8 px
@@ -127,6 +128,7 @@ export const LOOK = { saturacao: 1.22, contraste: 1.1 } as const
  *   #7530e3 -> #e1afcc.
  */
 export const ESTILOS_DO_TEXTO = [
+  { id: 'kiumaz', nome: 'Kiumaz' },
   { id: 'kizuni', nome: 'Kizuni' },
   { id: 'faah', nome: 'Faah' },
   { id: 'ajk', nome: 'AJK' },
@@ -138,6 +140,11 @@ export const ESTILO: Record<
   { contorno: number; sombraY: number; sombraDesfoque: number; esticar: boolean; degrade: 'luz' | 'vinte' | 'chapado'; seta: FormaDaSeta }
 > = {
   kizuni: { contorno: 12, sombraY: SOMBRA_Y, sombraDesfoque: SOMBRA_DESFOQUE, esticar: true, degrade: 'luz', seta: 'vermelha' },
+  // (17/11) O Kiumaz era o Kizuni com outro nome; o Levi: "Kiumaz e Bangers mesmo!". O mesmo
+  // jeito (o PSD dele), so a fonte muda: FONTE_DO_ESTILO.
+  // Contorno mais fino que o Kizuni (o Levi, 17/11): medido na thumb "ELA NAO E REAL!?", ~7 px em letras
+  // de ~200 px -- metade do Kizuni.
+  kiumaz: { contorno: 7, sombraY: SOMBRA_Y, sombraDesfoque: SOMBRA_DESFOQUE, esticar: true, degrade: 'luz', seta: 'vermelha' },
   faah: {
     contorno: (7 * CORPO_PX) / 163,
     sombraY: (6 * CORPO_PX) / 163,
@@ -444,7 +451,7 @@ export function thumbPadrao(textoDeThumb: string | null): ThumbDoProjeto {
 
 /**
  * Escolher um ESTILO aplica o que e dele: as cores e o degrade das duas
- * linhas, o contorno, a seta e a fonte (a Luckiest Guy nos dois). O texto, as
+ * linhas, o contorno, a seta e a fonte (FONTE_DO_ESTILO: a Bangers no Kiumaz, a Luckiest Guy nos outros). O texto, as
  * imagens, a altura, o tamanho e a rotacao ficam.
  */
 export function aplicarEstilo(t: ThumbDoProjeto, estilo: EstiloDoTexto): ThumbDoProjeto {
@@ -458,10 +465,13 @@ export function aplicarEstilo(t: ThumbDoProjeto, estilo: EstiloDoTexto): ThumbDo
     contorno: { px: Math.round(ESTILO[estilo].contorno), cor: COR_DO_CONTORNO },
     // A seta do estilo, nas cores dela (a cor escolhida antes era para a outra forma).
     seta: { ...t.seta, forma: ESTILO[estilo].seta, cor: null, degrade: null },
-    fonte: FONTE_PADRAO,
+    fonte: FONTE_DO_ESTILO[estilo] ?? FONTE_PADRAO,
     fontePc: null,
   }
 }
+
+/** A fonte que cada estilo aplica (ausente = a FONTE_PADRAO, a Luckiest Guy). */
+export const FONTE_DO_ESTILO: Partial<Record<EstiloDoTexto, FonteDaThumb>> = { kiumaz: 'bangers' }
 
 /**
  * O meio do bloco de texto quando ele nao mexeu. Duas imagens: 52% (as refs).

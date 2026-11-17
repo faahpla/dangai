@@ -6,6 +6,7 @@ import {
   FAIXA_DO_DIVISOR,
   PNG_DA_FORMA_DO_RASGO,
   PNG_DO_DIVISOR,
+  brilhoPorDentro,
   recolorirDivisor,
   tomDoBrilho,
   type DivisorDaThumb,
@@ -84,7 +85,7 @@ function tintaDo(d: DivisorParaDesenhar): Tinta | null {
 }
 
 function chaveDo(d: DivisorParaDesenhar): string {
-  const brilho = d.modelo === 'rasgo-brilho' ? Math.round(d.brilho) : 0
+  const brilho = d.modelo === 'rasgo-brilho' || d.modelo === 'rasgo-dentro' ? Math.round(d.brilho) : 0
   const tinta = tintaDo(d)
   const daTinta = tinta ? `${tinta.cor}:${tinta.paradas.map((p) => `${p.em}${p.cor}`).join(',')}` : ''
   return `${d.modelo}|${d.modelo === 'linha' ? (tinta?.cor ?? '') : daTinta}|${d.modelo === 'linha' ? String(d.contorno) : ''}|${brilho}`
@@ -159,7 +160,9 @@ async function montar(modelo: ModeloComPng, tinta: Tinta | null, brilho = 0): Pr
   const cor = tinta?.cor ?? null
   const png = await lerPixels(PNG_DO_DIVISOR[modelo])
   const forma = modelo === 'rasgo-brilho' && (tinta || brilho > 0) ? await lerPixels(PNG_DA_FORMA_DO_RASGO) : null
-  const dados = tinta ? recolorirDivisor(modelo, tinta, png, forma) : new Uint8ClampedArray(png.dados)
+  // (17/11) O brilho por dentro e sempre desenhado (nao ha PNG pronto dele): a forma + a tinta.
+  const dados =
+    modelo === 'rasgo-dentro' ? brilhoPorDentro(png, tinta, brilho) : tinta ? recolorirDivisor(modelo, tinta, png, forma) : new Uint8ClampedArray(png.dados)
   const canvas = document.createElement('canvas')
   canvas.width = png.largura
   canvas.height = png.altura
@@ -180,7 +183,7 @@ export async function prepararDivisor(d: DivisorParaDesenhar | null): Promise<Di
   if (pronto) return pronto
   let p = preparando.get(chave)
   if (!p) {
-    p = montar(d.modelo, tintaDo(d), d.modelo === 'rasgo-brilho' ? d.brilho : 0)
+    p = montar(d.modelo, tintaDo(d), d.modelo === 'rasgo-brilho' || d.modelo === 'rasgo-dentro' ? d.brilho : 0)
       .then((m) => {
         prontos.set(chave, m)
         ultimoDoModelo.set(d.modelo, m)

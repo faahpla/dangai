@@ -24,6 +24,7 @@ import { corSchema, degradeDaCor, hexParaRgb, hslParaHex, rgbParaHsl, type Parad
 
 export const MODELOS_DE_DIVISOR = [
   { id: 'rasgo-brilho', nome: 'Rasgo com brilho' },
+  { id: 'rasgo-dentro', nome: 'Brilho dentro' },
   { id: 'rasgo', nome: 'Rasgo' },
   { id: 'slash', nome: 'Slash' },
   { id: 'linha', nome: 'Linha' },
@@ -83,6 +84,7 @@ export function divisorPadrao(): DivisorDaThumb {
 /** Os arquivos de cada modelo (em modulos/thumb/assets/divisores). O rasgo com brilho usa o MEIO2 como a forma. */
 export const PNG_DO_DIVISOR: Record<ModeloComPng, string> = {
   'rasgo-brilho': 'MEIO.png',
+  'rasgo-dentro': 'MEIO2.png',
   rasgo: 'MEIO2.png',
   slash: 'Slash_Anime.png',
 }
@@ -95,6 +97,7 @@ export const PNG_DA_FORMA_DO_RASGO = 'MEIO2.png'
  */
 export const CENTRO_DO_DIVISOR: Record<ModeloComPng, number> = {
   'rasgo-brilho': 1010,
+  'rasgo-dentro': 1010,
   rasgo: 1010,
   slash: 974,
 }
@@ -107,6 +110,7 @@ export const CENTRO_DO_DIVISOR: Record<ModeloComPng, number> = {
  */
 export const FAIXA_DO_DIVISOR: Record<ModeloComPng, { de: number; ate: number }> = {
   'rasgo-brilho': { de: 796, ate: 1203 },
+  'rasgo-dentro': { de: 936, ate: 1095 },
   rasgo: { de: 936, ate: 1095 },
   slash: { de: 862, ate: 1142 },
 }
@@ -124,6 +128,7 @@ export const FAIXA_DO_DIVISOR: Record<ModeloComPng, { de: number; ate: number }>
 export const MEIO_DO_DIVISOR: Record<ModeloComPng, readonly number[]> = {
   'rasgo-brilho': [17.5, 28, 28.5, 29.5, 21.5, 8.5, 6, -6.5, -24, -24.5, -12.5, 14, 0, -11, -13.5, -25, -22, -11.5, -9.5, -12.5, -16.5, -18.5, -4.5, 2.5, 2.5, 6.5, 26, 37.5],
   rasgo: [17.5, 28, 28.5, 29.5, 21.5, 8.5, 6, -6.5, -24, -24.5, -12.5, 14, 0, -11, -13.5, -25, -22, -11.5, -9.5, -12.5, -16.5, -18.5, -4.5, 2.5, 2.5, 6.5, 26, 37.5],
+  'rasgo-dentro': [17.5, 28, 28.5, 29.5, 21.5, 8.5, 6, -6.5, -24, -24.5, -12.5, 14, 0, -11, -13.5, -25, -22, -11.5, -9.5, -12.5, -16.5, -18.5, -4.5, 2.5, 2.5, 6.5, 26, 37.5],
   slash: [58, 41, 38, 28.5, 16, 6.5, 0, -15.5, -19, -20, -19.5, -26, -23, -21.5, -17.5, -11.5, -4.5, 0.5, 0, -3, 2.5, 4.5, 2, -2, -2, -16, -25, -32],
 }
 
@@ -170,6 +175,7 @@ export const CONTORNO_DA_LINHA = 3
 /** A cor que cada modelo tem sem escolher nenhuma (o seletor mostra esta). */
 export const COR_ORIGINAL_DO_DIVISOR: Record<ModeloDeDivisor, string> = {
   'rasgo-brilho': '#000a26',
+  'rasgo-dentro': '#000a26',
   rasgo: '#000000',
   slash: '#fd7a0c',
   linha: '#ffffff',
@@ -287,3 +293,89 @@ export function recolorirDivisor(modelo: ModeloComPng, tinta: string | Tinta, pn
   return saida
 }
 
+
+/** O azul vivo do brilho do rasgo do Levi (o do MEIO.png, um pouco mais claro). */
+export const AZUL_DO_BRILHO = '#2f74e0'
+
+/**
+ * (17/11) O BRILHO POR DENTRO do rasgo: a thumb do Kiumaz ("ELA NAO E REAL!?")
+ * tem o rasgo azul-marinho com o azul vivo ACESO NAS BORDAS, por dentro, e o meio
+ * escuro -- sem o halo em volta do Rasgo com brilho ("o brilho e interno").
+ *
+ * Usa so a forma do rasgo (MEIO2): o alpha sai igual (nada fora da forma). O
+ * brilho interno classico: o FORA da forma borrado (caixa, 3 passadas = quase
+ * gaussiano) entra pelas bordas; quanto mais perto da borda, mais aceso. Borrar
+ * em 2D (e nao medir coluna por coluna) deixa o aceso liso, sem listras. O fundo
+ * e o degrade da cor (o da tinta, ou o azul-marinho do rasgo original); o aceso,
+ * o tom vivo dela (tomDoBrilho, ou o AZUL_DO_BRILHO). `brilho` 0-100 alarga o
+ * aceso (raio de 7 a 24 px) e o deixa mais forte.
+ */
+export function brilhoPorDentro(forma: PixelsRgba, tinta: Tinta | null, brilho = 0): Uint8ClampedArray {
+  const { largura: L, altura: A, dados } = forma
+  const saida = new Uint8ClampedArray(dados.length)
+  saida.set(dados)
+  const b = Math.min(100, Math.max(0, brilho)) / 100
+  const raio = Math.round(7 + 17 * b)
+  const forca = 1.6 + 0.8 * b
+  // So as linhas onde a forma existe (mais a margem do borrao): o resto e transparente.
+  let y0 = A
+  let y1 = -1
+  for (let y = 0; y < A; y++) {
+    for (let x = 0; x < L; x += 4) {
+      if (dados[(y * L + x) * 4 + 3]! > 0) {
+        if (y < y0) y0 = y
+        y1 = y
+        break
+      }
+    }
+  }
+  if (y1 < 0) return saida
+  const m = raio * 3
+  const top = Math.max(0, y0 - m)
+  const bot = Math.min(A - 1, y1 + m)
+  const H = bot - top + 1
+  // fora = 1 - cobertura da forma
+  let a = new Float32Array(L * H)
+  for (let y = 0; y < H; y++) for (let x = 0; x < L; x++) a[y * L + x] = 1 - dados[((y + top) * L + x) * 4 + 3]! / 255
+  let tmp = new Float32Array(L * H)
+  const caixa = (src: Float32Array, dst: Float32Array, horizontal: boolean): void => {
+    const n = horizontal ? L : H
+    const linhas = horizontal ? H : L
+    const w = 2 * raio + 1
+    for (let l = 0; l < linhas; l++) {
+      const at = (k: number): number => {
+        const kk = Math.max(0, Math.min(n - 1, k))
+        return horizontal ? src[l * L + kk]! : src[kk * L + l]!
+      }
+      let soma = 0
+      for (let k = -raio; k <= raio; k++) soma += at(k)
+      for (let k = 0; k < n; k++) {
+        if (horizontal) dst[l * L + k] = soma / w
+        else dst[k * L + l] = soma / w
+        soma += at(k + raio + 1) - at(k - raio)
+      }
+    }
+  }
+  for (let passada = 0; passada < 3; passada++) {
+    caixa(a, tmp, true)
+    caixa(tmp, a, false)
+  }
+  const cor = tinta?.cor ?? COR_ORIGINAL_DO_DIVISOR['rasgo-dentro']
+  const degrade = tinta?.paradas ?? degradeDaCor(cor)
+  const tabela: Rgb[] = Array.from({ length: 256 }, (_, i) => corNoDegrade(degrade, i / 255))
+  const aceso = hexParaRgb(tinta ? tomDoBrilho(cor) : AZUL_DO_BRILHO)
+  for (let y = 0; y < H; y++) {
+    const f = tabela[Math.round(Math.max(0, Math.min(1, (y + top - RASGO_TOPO) / (RASGO_BASE - RASGO_TOPO))) * 255)]!
+    for (let x = 0; x < L; x++) {
+      const i = ((y + top) * L + x) * 4
+      if (dados[i + 3]! === 0) continue
+      const luz = Math.min(1, a[y * L + x]! * forca)
+      saida[i] = f[0] + (aceso[0] - f[0]) * luz
+      saida[i + 1] = f[1] + (aceso[1] - f[1]) * luz
+      saida[i + 2] = f[2] + (aceso[2] - f[2]) * luz
+    }
+  }
+  tmp = new Float32Array(0)
+  a = new Float32Array(0)
+  return saida
+}

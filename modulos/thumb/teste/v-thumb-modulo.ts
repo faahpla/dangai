@@ -150,6 +150,7 @@ async function principal(): Promise<void> {
   await testarInclinacao(T, D)
   await testarCobrirEBarras(T)
   await testarEstilos(T, D)
+  testarKiumazEBrilhoDentro(T)
   await testarFontesDoPc()
   await testarCor(T)
   await testarCoresESombra(T, D)
@@ -570,6 +571,33 @@ async function testarDivisoresETamanho(T: typeof import('../shared/thumb'), D: t
   confere(!media80.noMaximo && media140.noMaximo && media140.px > media80.px && media140.px < T.CORPO_PX * 1.4, `linha comprida: a 80% cabe (${Math.round(media80.px)}px); a 140% so cresce ate caber (${Math.round(media140.px)}px, no maximo da largura)`)
   const curta140 = T.geometriaDaThumb({ layout: 'duas', linhas: ['poder', 'supremo'], textoY: null, tamanho: 1.4 }, medir).linhas[0]!
   confere(Math.abs(curta140.px - T.CORPO_PX * 1.4) < 1e-9 && !curta140.noMaximo, 'linha curta a 140%: cresce 1,4x (contorno e sombra pelo corpo)')
+}
+
+/** (17/11) O estilo Kiumaz (Bangers, contorno 7) e o divisor "Brilho dentro". */
+function testarKiumazEBrilhoDentro(T: typeof import('../shared/thumb')): void {
+  console.log('Kiumaz e o brilho dentro')
+  const base = T.thumbPadrao('APOSTOU TUDO')
+  {
+    const k = T.aplicarEstilo(base, 'kiumaz')
+    confere(k.estilo === 'kiumaz' && k.fonte === 'bangers' && k.contorno.px === 7, `Kiumaz: Bangers e contorno 7 (${k.fonte}, ${k.contorno.px})`)
+    const z = T.aplicarEstilo(k, 'kizuni')
+    confere(z.fonte === T.FONTE_PADRAO && z.contorno.px === 12, 'voltar ao Kizuni: Luckiest e contorno 12')
+  }
+  confere(T.ESTILOS_DO_TEXTO[0]!.id === 'kiumaz' && T.ESTILOS_DO_TEXTO.some((e) => e.id === 'kizuni'), 'Kiumaz primeiro na lista, Kizuni continua')
+  // Uma faixa de 1080 x 40 opaca no meio de 1080 x 200: borda acesa, meio escuro, nada fora.
+  const L = 1080
+  const A = 200
+  const dados = new Uint8ClampedArray(L * A * 4)
+  for (let y = 80; y < 120; y++) for (let x = 0; x < L; x++) dados[(y * L + x) * 4 + 3] = 255
+  const out = T.brilhoPorDentro({ largura: L, altura: A, dados }, null, 0)
+  const px = (x: number, y: number): number[] => Array.from(out.slice((y * L + x) * 4, (y * L + x) * 4 + 4))
+  const lum = (c: number[]): number => c[0]! + c[1]! + c[2]!
+  confere(px(540, 80)[3] === 255 && px(540, 60)[3] === 0, 'o alpha e o da forma: nada fora dela')
+  confere(lum(px(540, 80)) > lum(px(540, 100)) + 120, `a borda acesa, o meio escuro (${lum(px(540, 80))} > ${lum(px(540, 100))})`)
+  const linha = [100, 400, 700, 1000].map((x) => lum(px(x, 84)))
+  confere(Math.max(...linha) - Math.min(...linha) <= 3, `liso ao longo da faixa, sem listras (${linha.join(',')})`)
+  const forte = T.brilhoPorDentro({ largura: L, altura: A, dados }, null, 100)
+  confere(lum(Array.from(forte.slice((100 * L + 540) * 4, (100 * L + 540) * 4 + 3))) > lum(px(540, 100)), 'brilho 100 entra mais fundo que o padrao')
 }
 
 function testarSeta(T: typeof import('../shared/thumb')): void {

@@ -1494,8 +1494,10 @@ function AbaDoTexto({ textosProntos }: Pick<PropsDosAjustes, 'textosProntos'>) {
                 valor: e.id,
                 rotulo: e.nome,
                 title:
-                  e.id === 'kizuni'
-                    ? 'Kizuni e Kiumaz: branco e amarelo com o degradê de luz, contorno grosso, sombra longa, seta vermelha'
+                  e.id === 'kiumaz'
+                    ? 'Kiumaz: fonte Bangers, branco e amarelo com o degradê de luz, contorno fino, sombra longa, seta vermelha'
+                    : e.id === 'kizuni'
+                    ? 'Kizuni: fonte Luckiest Guy, branco e amarelo com o degradê de luz, contorno grosso, sombra longa, seta vermelha'
                     : e.id === 'faah'
                       ? 'Faah: branco e roxo com o degradê dele, contorno fino, sombra curta, seta roxa'
                       : 'AJK (Anipoison): branco e amarelo chapados, contorno fino, sombra curta, seta de pincel',
@@ -2335,7 +2337,7 @@ function AbaDoDivisor() {
                 onChange={(v) => mudar({ modelo: v })}
               />
             </Linha>
-            {d.modelo === 'rasgo-brilho' && (
+            {(d.modelo === 'rasgo-brilho' || d.modelo === 'rasgo-dentro') && (
               <div data-thumb="brilho-do-divisor">
                 <Linha label="Brilho">
                   <Deslizante
@@ -2343,9 +2345,13 @@ function AbaDoDivisor() {
                     min={0}
                     max={100}
                     step={1}
-                    texto={d.brilho === 0 ? 'original' : `${Math.round(d.brilho)}%`}
+                    texto={d.brilho === 0 ? (d.modelo === 'rasgo-dentro' ? 'padrão' : 'original') : `${Math.round(d.brilho)}%`}
                     padrao={0}
-                    dica="O brilho em volta do rasgo: maior e mais claro, e o meio do rasgo menos escuro. 0 = o rasgo como veio."
+                    dica={
+                      d.modelo === 'rasgo-dentro'
+                        ? 'O brilho por dentro do rasgo: maior, ele entra mais fundo a partir das bordas.'
+                        : 'O brilho em volta do rasgo: maior e mais claro, e o meio do rasgo menos escuro. 0 = o rasgo como veio.'
+                    }
                     onChange={(v) => mudar({ brilho: Math.round(v) })}
                   />
                 </Linha>
