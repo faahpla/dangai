@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.10.1',
+    itens: [
+      'Biblioteca de cenas: se nenhuma pasta foi escolhida, o Dangai agora usa sozinho a pasta onde o AnCut grava as cenas. Episódio mandado para o AnCut pelo Gerar recap aparece na Biblioteca junto com os outros. Quem já escolheu uma pasta continua com a dela.',
+    ],
+  },
+  {
     versao: '2.10.0',
     itens: [
       'Thumbnail com abas: Imagens, Texto, Cores, Divisor e Seta. Cada uma cabe na tela sem rolar, um controle por linha, e a explicação aparece ao passar o mouse. Os modelos ficam numa faixa no alto.',
