@@ -47,6 +47,7 @@ export type EstadoPublico = Pick<
   | 'update'
   | 'modulos'
   | 'transcriptTravado'
+  | 'captionPresets'
 >
 
 /** A tela cheia de modulo aberta agora (o assistente do recap), se houver. */
@@ -85,6 +86,11 @@ export interface Nucleo {
   abrirBiblioteca(): Promise<void>
   sincronizarBiblioteca(): Promise<void>
   mostrarNaBiblioteca(caminho: string): Promise<void>
+  /**
+   * Os ids das cenas favoritas da Biblioteca (a estrela), relidos do disco: o
+   * nucleo so os carrega ao abrir a Biblioteca. Id = `<serie>/<SxxExx>/<shot>`.
+   */
+  lerFavoritas(): Promise<string[]>
   /** O projeto como iria para o disco agora (null sem narracao). */
   paraArquivo(): ReturnType<ProjectState['toProjectFile']>
   /**
@@ -155,6 +161,10 @@ export function criarNucleo(id: string): Nucleo {
     abrirBiblioteca: () => store().openLibrary(true),
     sincronizarBiblioteca: () => store().syncLibrary(),
     mostrarNaBiblioteca: (caminho) => store().mostrarNaBiblioteca(caminho),
+    lerFavoritas: async () => {
+      await store().loadFavorites()
+      return [...store().favorites]
+    },
     paraArquivo: () => store().toProjectFile(),
     gerarMetadata: () => store().generateMetadata(),
 
