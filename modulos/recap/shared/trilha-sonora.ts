@@ -298,12 +298,14 @@ export function inicioParaODrop(
   const inteiras = cabem.filter((e) => e.t - antes + dura <= fim)
   const melhor = [...inteiras].sort((a, b) => b.forca - a.forca || a.t - b.t)[0]
   if (melhor) return { inSec: Math.round((melhor.t - antes) * 1000) / 1000, entrada: melhor }
-  // Nenhum drop deixa a musica inteira no trecho. Se ela e longa o bastante, toca
-  // sem drop e sem recomecar (o fim do trecho no fim util): melhor que o drop
-  // seguido do fade e da volta muda do comeco. Curta demais: o drop mais forte, e
-  // ela repete (trilhasDoPlano recomeca no inicioSomSec).
-  if (fim - comeco >= dura) return { inSec: Math.round(comeco * 1000) / 1000, entrada: null }
-  const qualquer = [...cabem].sort((a, b) => b.forca - a.forca || a.t - b.t)[0]
-  if (!qualquer) return { inSec: comeco, entrada: null }
-  return { inSec: Math.round((qualquer.t - antes) * 1000) / 1000, entrada: qualquer }
+  // Nenhum drop deixa a musica inteira no trecho: o DROP NO RISER VALE MAIS que
+  // nao dar a volta (18/11, Levi: "antes o climax da musica entrava junto com o
+  // riser"). Tocar do comeco sem drop (17/11) tirava isso de toda faixa com
+  // poucos segundos de folga. Ela repete, e a volta ja para no fim util e
+  // recomeca no inicioSomSec (trilhasDoPlano), sem o vazio do Nia. Entre os
+  // drops fortes (>= metade do mais forte), o MAIS CEDO: a volta fica mais curta.
+  if (cabem.length === 0) return { inSec: comeco, entrada: null }
+  const maisForte = Math.max(...cabem.map((e) => e.forca))
+  const escolhido = [...cabem].filter((e) => e.forca >= maisForte * 0.5).sort((a, b) => a.t - b.t)[0]!
+  return { inSec: Math.round((escolhido.t - antes) * 1000) / 1000, entrada: escolhido }
 }

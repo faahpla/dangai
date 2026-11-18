@@ -164,8 +164,14 @@ const vid = { at: 0, ate: 73, drop: 4 }
 const esc = inicioParaODrop(nia, vid)
 confere(esc.inSec + 73 <= fimNia + 1e-6, `o trecho de 73 s nao entra no fade (inSec ${esc.inSec})`)
 confere(esc.entrada?.t === 8 && esc.inSec === 4, 'fica com o drop que cabe inteiro (8 s), mesmo mais fraco')
-const semDrop = inicioParaODrop({ ...nia, entradas: [{ t: 70, forca: 9 }] }, vid)
-confere(semDrop.entrada === null && semDrop.inSec === 0.95, `nenhum drop cabe e a faixa e longa: do comeco do som, sem recomecar (${semDrop.inSec})`)
+// (18/11) Nenhum drop cabe inteiro: o drop no riser vale mais que nao dar a volta (Levi).
+const semFolga = inicioParaODrop({ ...nia, entradas: [{ t: 70, forca: 9 }] }, vid)
+confere(semFolga.entrada?.t === 70 && semFolga.inSec === 66, `nenhum drop cabe inteiro: fica o drop no riser e ela da a volta (${semFolga.inSec})`)
+const cedo = inicioParaODrop({ ...nia, entradas: [{ t: 70, forca: 9 }, { t: 40, forca: 6 }, { t: 30, forca: 3 }] }, vid)
+confere(cedo.entrada?.t === 40, `entre os drops fortes, o mais cedo (volta mais curta) (${cedo.entrada?.t})`)
+// Laid-Off S01E07: faixa de 79 s para um trecho de 76 s, gancho de 6,15 s.
+const laid = inicioParaODrop({ entradas: [{ t: 22, forca: 10 }], durationSec: 79.17, inicioSomSec: 0.72, fimUtilSec: 77.5 }, { at: 0, ate: 76.34, drop: 6.15 })
+confere(laid.entrada?.t === 22 && Math.abs(laid.inSec - 15.85) < 1e-9, `trecho quase do tamanho da faixa: o drop cai no riser (${laid.inSec})`)
 const antigo = inicioParaODrop({ entradas: [{ t: 70, forca: 9 }], durationSec: 200, inicioSomSec: 1 }, vid)
 confere(antigo.entrada?.t === 70, 'sem fimUtilSec (o de antes): o arquivo inteiro vale')
 // Curta demais (40 s util para 73 s de video): repete, recomecando no comeco do som e sem o fade.
