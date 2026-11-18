@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.11.0',
+    itens: [
+      'Biblioteca: pasta com vídeos e imagens soltos (sem passar pelo AnCut) agora aparece. Cada vídeo entra inteiro, como uma cena (o trecho você escolhe no editor), e cada imagem como imagem. Ficam no nome da pasta, em "Soltos" (ou no nome da subpasta, tipo "Baixados"), e a busca acha pelo nome do arquivo.',
+    ],
+  },
+  {
     versao: '2.10.5',
     itens: [
       'Edição rápida (Gerar recap): o clímax da música volta a entrar junto com o riser do gancho. Desde a 2.10.2, quando a música mal cobria o trecho, ela tocava do começo sem o drop.',
