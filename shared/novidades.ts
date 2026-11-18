@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.10.5',
+    itens: [
+      'Edição rápida (Gerar recap): o clímax da música volta a entrar junto com o riser do gancho. Desde a 2.10.2, quando a música mal cobria o trecho, ela tocava do começo sem o drop.',
+      'Edição rápida: o drop agora é a pancada de verdade. Em música com uma subida antes (o grave crescendo), o Dangai marcava o meio da subida, uns 2 segundos cedo; agora marca o primeiro bumbo depois dela.',
+      'Claude (MCP): o Claude agora vê as suas cenas favoritas (a estrela da Biblioteca) e usa elas primeiro quando servem, e lista e aplica os seus presets de legenda.',
+    ],
+  },
+  {
     versao: '2.10.4',
     itens: [
       'Módulo novo, "Claude (MCP)" (Configurações > Módulos): liga o Claude Code ao Dangai. Ligado, as Configurações mostram um comando para colar no terminal uma vez; depois o Claude edita o projeto aberto sozinho — vê as cenas no recorte vertical, muda enquadramento, ponto de entrada, efeito, zoom, grid, põe sons e setas — e o projeto reabre com a mudança. Tudo fica no seu PC, com senha.',
