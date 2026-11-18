@@ -30,7 +30,7 @@ export interface EntradasDaMusica {
   entradas: EntradaDaMusica[]
 }
 
-const VERSAO = 2
+const VERSAO = 3
 const TAXA = 11_025
 const PASSO = Math.round(TAXA * 0.05)
 const JANELA_SEC = 3
@@ -143,9 +143,53 @@ export function entradasDaOnda(rms: readonly number[], grave: readonly number[],
           melhor = i
         }
       }
+      // (18/11) Musica com SUBIDA antes da pancada (o grave crescendo, um riser): a
+      // media de 3 s acha o meio da subida, e o drop de verdade e o 1o bumbo depois
+      // dela. Na Montagem Batchi a subida vai de 16,2 a 18,9 s e o bumbo entra em
+      // 19,2 s (+7,5 dB no grave num quadro; o Levi moveu a musica a mao para ele).
+      const bumbo = primeiroBumbo(grave, c.i - raio, c.i + Math.round(BUMBO_ATE_SEC / passoSec))
+      if (bumbo !== null && bumbo > melhor && subidaLisa(grave, melhor, bumbo)) melhor = bumbo
       return { t: Math.round(melhor * passoSec * 1000) / 1000, forca: Math.round(c.f * 10) / 10 }
     })
     .sort((a, b) => a.t - b.t)
+}
+
+/** Ate quanto depois da subida o 1o bumbo pode vir. */
+const BUMBO_ATE_SEC = 4
+/** Salto minimo do grave (dB, de um quadro para o mais baixo dos 2 anteriores) para ser bumbo. */
+const BUMBO_MIN_DB = 4
+
+/**
+ * O 1o BUMBO FORTE do grave em [de, ate]: o primeiro quadro cujo salto chega a
+ * 60% do maior salto da janela (e a BUMBO_MIN_DB). Os bumbos seguintes do mesmo
+ * ritmo saltam igual, entao "o maior" cairia num qualquer; "o primeiro forte" e a
+ * entrada. null = sem bumbo (musica sem batida marcada: fica o ataque do RMS).
+ */
+function primeiroBumbo(grave: readonly number[], de: number, ate: number): number | null {
+  const ini = Math.max(de, 2)
+  const fim = Math.min(ate, grave.length - 1)
+  const saltos: { i: number; d: number }[] = []
+  for (let i = ini; i <= fim; i++) saltos.push({ i, d: grave[i]! - Math.min(grave[i - 1]!, grave[i - 2]!) })
+  if (saltos.length === 0) return null
+  const maior = Math.max(...saltos.map((s) => s.d))
+  if (maior < BUMBO_MIN_DB) return null
+  const limiar = Math.max(BUMBO_MIN_DB, maior * 0.6)
+  return saltos.find((s) => s.d >= limiar)?.i ?? null
+}
+
+/** Na subida LISA nenhum quadro do grave pula mais que isto (dB) do anterior. */
+const SUBIDA_LISA_DB = 5
+
+/**
+ * O trecho [de, ate) e uma SUBIDA LISA (o grave cresce sem picotar)? So entao o
+ * 1o bumbo depois dele e o drop. Grave picotado o tempo todo (o Naruto - Afternoon
+ * of Konoha) tem "saltos" em todo buraco do picote: la fica o ataque do RMS.
+ */
+function subidaLisa(grave: readonly number[], de: number, ate: number): boolean {
+  const difs: number[] = []
+  for (let j = Math.max(de + 1, 1); j < ate - 1; j++) difs.push(Math.abs(grave[j]! - grave[j - 1]!))
+  if (difs.length < 4) return false
+  return Math.max(...difs) < SUBIDA_LISA_DB
 }
 
 /** RMS e grave (dB) por janela de 50 ms, mono 11025 Hz. */

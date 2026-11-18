@@ -197,6 +197,24 @@ confere(entradasDaOnda(new Array(600).fill(-12), new Array(600).fill(-20), 0.05)
 const doZero = [...new Array(40).fill(-80), ...new Array(560).fill(-12)]
 confere(entradasDaOnda(doZero, doZero, 0.05).length === 0, 'o comeco da musica (silencio > som) nao e drop')
 
+// (18/11, Montagem Batchi) Subida LISA de 13 a 17,5 s e o 1o bumbo em 17,6 s: o drop e o bumbo.
+const rmsS: number[] = []
+const graveS: number[] = []
+for (let i = 0; i < 600; i++) {
+  const t = i * 0.05
+  const subindo = t >= 13 && t < 17.5
+  const batida = t >= 17.6
+  const bumbo = batida && Math.round((t - 17.6) / 0.05) % 9 === 0
+  rmsS.push(t < 13 ? -24 : subindo ? -24 + (t - 13) * 2.6 : batida ? (bumbo ? -6 : -10) : -14)
+  graveS.push(t < 13 ? -34 : subindo ? -34 + (t - 13) * 3.8 : batida ? (bumbo ? -9 : -16) : -20)
+}
+const eS = entradasDaOnda(rmsS, graveS, 0.05)
+confere(eS.some((x) => Math.abs(x.t - 17.6) < 0.06), `subida lisa: o drop e o 1o bumbo, nao o meio da subida (${eS.map((x) => x.t).join(',')})`)
+// Grave picotado o tempo todo (o Naruto): os buracos nao sao bumbo, fica o ataque do RMS.
+const graveP = grave.map((g, i) => (i % 7 === 3 ? g - 25 : g))
+const eP = entradasDaOnda(rms, graveP, 0.05)
+confere(eP.length === 1 && Math.abs(eP[0]!.t - 15) < 0.06, `grave picotado: fica no ataque (${eP.map((x) => x.t).join(',')})`)
+
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s)`)
   process.exit(1)
