@@ -330,6 +330,21 @@ export interface LibraryClip {
     numero: number
   }
   /**
+   * (18/11) ARQUIVO SOLTO numa pasta da biblioteca, sem passar pelo AnCut:
+   * "criei a pasta D:\Animes\BUGs GTA 6 pra fazer um video de GTA, por que
+   * isso nao aparece na biblioteca". O video baixado entra INTEIRO, como uma
+   * cena so (o trecho ele escolhe no editor, pelo ponto de entrada); a imagem
+   * entra como imagem, como o quadrinho de manga. Temporada e episodio 0, como
+   * o B-roll: nenhum roteiro cita. Sem mesclar (nao existe no banco do AnCut).
+   */
+  solto?: {
+    /** O nome do arquivo, sem a extensao e sem o [codigo] do download ("Cae debajo del mapa"). */
+    titulo: string
+    imagem: boolean
+    /** A subpasta abaixo da serie ("Baixados"); null = os arquivos estao na pasta da serie. */
+    pasta: string | null
+  }
+  /**
    * Cena de FILME cortado pelo AnCut ("<titulo>/Filme (2010)/"), da pasta de
    * filmes (electron/services/filmes.ts). O AnCut grava o ANO no lugar do
    * episodio ("episode": 2010), e lido assim o filme virava "S01E2010". Como o

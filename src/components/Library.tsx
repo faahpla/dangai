@@ -1253,8 +1253,15 @@ function natural(nome: string): string {
  * O personagem entra cru e no nome da tela (nomeNatural): quem le "Ryusui" no
  * botao e digita isso tem que achar o "Nanami, Ryuusui".
  */
+/** Imagem, e nao video: o quadrinho de manga e a imagem solta (sem tira, sem player). */
+function ehImagem(clip: LibraryClip): boolean {
+  return !!clip.manga || !!clip.solto?.imagem
+}
+
 function textoDe(clip: LibraryClip): string {
   if (clip.manga) return `${clip.anime} manga mangá ${clip.manga.capitulo} pagina ${clip.manga.pagina}`.toLowerCase()
+  if (clip.solto)
+    return `${clip.anime} solto soltos ${clip.solto.pasta ?? ''} ${clip.solto.titulo} ${clip.solto.imagem ? 'imagem foto' : 'video'}`.toLowerCase()
   const nomes = clip.characters.flatMap((c) => [c, natural(c)]).join(' ')
   if (clip.broll) return `${clip.anime} b-roll broll trailer ${clip.broll.titulo} ${nomes} ${clip.shot}`.toLowerCase()
   if (clip.filme) return `${clip.anime} ${clip.animeTitle} filme movie ${clip.filme.ano ?? ''} ${nomes} ${clip.shot}`.toLowerCase()
@@ -1311,6 +1318,8 @@ interface RailProps {
  */
 export function chaveEpisodio(clip: LibraryClip): string {
   if (clip.manga) return `Mangá · ${clip.manga.capitulo}`
+  // (18/11) Os arquivos soltos da pasta: "Soltos", ou a subpasta ("Baixados").
+  if (clip.solto) return clip.solto.pasta ?? 'Soltos'
   if (clip.broll) return `B-roll · ${clip.broll.titulo}`
   if (clip.filme) return clip.filme.ano ? `Filme · ${clip.filme.ano}` : 'Filme'
   return `S${pad(clip.season)}E${pad(clip.episode)}`
@@ -1959,8 +1968,8 @@ function Grade({
                 onFavoritar={() => onFavoritar(clip.id)}
                 onClick={(event) => {
                   // Ctrl+clique: marcar para mesclar, sem escolher a cena.
-                  // Manga nao mescla: a mescla e do AnCut, de clipes seguidos.
-                  if (event && (event.ctrlKey || event.metaKey) && onMesclar && !clip.manga) onMesclar(clip.id)
+                  // Manga e arquivo solto nao mesclam: a mescla e do AnCut, de clipes seguidos.
+                  if (event && (event.ctrlKey || event.metaKey) && onMesclar && !clip.manga && !clip.solto) onMesclar(clip.id)
                   else onEscolher(clip.id)
                 }}
                 destacado={clip.id === destaque}
@@ -2217,6 +2226,7 @@ function Cartao({
   const [tira, setTira] = useState<TiraDaCena | null>(null)
   const [fracao, setFracao] = useState<number | null>(null)
   const pedindo = useRef(false)
+  const imagem = ehImagem(clip)
 
   const apontar = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     const caixa = event.currentTarget.getBoundingClientRect()
@@ -2227,8 +2237,8 @@ function Cartao({
     (event: React.MouseEvent<HTMLDivElement>) => {
       setDentro(true)
       apontar(event)
-      // Quadrinho nao tem tempo para percorrer: a miniatura ja e tudo.
-      if (clip.manga || tira || pedindo.current) return
+      // Quadrinho (e imagem solta) nao tem tempo para percorrer: a miniatura ja e tudo.
+      if (imagem || tira || pedindo.current) return
       /*
        * Uma espera curta antes de pedir a tira, para nao montar uma para cada
        * cartao que o mouse atravessa a caminho de outro. Curta porque a tira e
@@ -2256,7 +2266,7 @@ function Cartao({
         })
       }, 120)
     },
-    [clip.path, clip.manga, apontar, tira],
+    [clip.path, imagem, apontar, tira],
   )
 
   const sair = useCallback(() => {
@@ -2295,7 +2305,7 @@ function Cartao({
   const cobertura = coberturaDaFonte(aspecto, quadroW / quadroH).largura
   const visivel = Math.min(1, 16 / 9 / aspecto)
   const janela = cobertura / visivel
-  const mostraJanela = dentro && janela < 0.98 && !clip.manga
+  const mostraJanela = dentro && janela < 0.98 && !imagem
 
   /*
    * <div role="button">, e nao <button>.
@@ -2329,6 +2339,8 @@ function Cartao({
       title={
         clip.manga
           ? `${clip.anime} · mangá · ${clip.manga.capitulo} · página ${clip.manga.pagina}${clip.manga.quadro === null ? ' inteira' : ` · quadro ${clip.manga.quadro}`}${usada ? ' · já usado em outra frase' : ''}`
+          : clip.solto
+            ? `${clip.anime} · ${clip.solto.pasta ?? 'solto'} · ${clip.solto.titulo}${clip.solto.imagem ? ' · imagem' : ` · ${clip.duration.toFixed(1)}s (o vídeo inteiro: o trecho você escolhe no editor)`}${usada ? ' · já usado em outra frase' : ''}`
           : `${clip.animeTitle || clip.anime} · ${chaveEpisodio(clip)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · já usada em outra frase' : ''}
 Ctrl+clique: marcar para mesclar com outras cenas seguidas`
       }
@@ -2392,6 +2404,8 @@ Ctrl+clique: marcar para mesclar com outras cenas seguidas`
             ? clip.manga.quadro === null
               ? `pág. ${clip.manga.pagina}`
               : `${clip.manga.pagina}.${clip.manga.quadro}`
+            : clip.solto?.imagem
+              ? 'imagem'
             : `${clip.duration.toFixed(1)}s`}
         </span>
         {/*
@@ -2737,6 +2751,15 @@ function Tocador({
                 {' '}· mangá · {clip.manga.capitulo} · página {clip.manga.pagina}
                 {clip.manga.quadro !== null && ` · quadro ${clip.manga.quadro}`}
               </>
+            ) : clip.solto ? (
+              <>
+                {' '}· {clip.solto.pasta ?? 'solto'} · {clip.solto.titulo}
+                {!clip.solto.imagem && (
+                  <>
+                    {' '}· <span className="tnum">{clip.duration.toFixed(1)}s</span>
+                  </>
+                )}
+              </>
             ) : (
               <>
                 {' '}· {chaveEpisodio(clip)} · cena {clip.shot} ·{' '}
@@ -2762,7 +2785,7 @@ function Tocador({
           >
             <ChevronLeft size={20} />
           </button>
-          {url && clip.manga ? (
+          {url && ehImagem(clip) ? (
             <img key={url} src={url} alt="" className="max-h-[78vh] w-full rounded-md bg-black object-contain" />
           ) : url ? (
             <video

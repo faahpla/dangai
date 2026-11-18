@@ -6,12 +6,14 @@ import {
   renameSync,
   statSync,
   writeFileSync,
+  type Dirent,
 } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { ffmpegPath } from './ffmpeg-path'
-import { converterRgbHdr, ehHdrPeloFfmpeg } from './cor-hdr'
+import { comConversaoHdr, converterRgbHdr, ehHdrPeloFfmpeg } from './cor-hdr'
+import { probeClip } from './clips'
 import { basename, join, resolve } from 'node:path'
 import sharp from 'sharp'
 import type { LibraryClip, LibraryIndex } from '@shared/channels'
@@ -216,6 +218,31 @@ export async function scanLibrary(
       // `thumb` vira DUAS coisas: a URL que a grade desenha e o caminho que o
       // etiquetador le. Sao o mesmo arquivo, e quem le do disco nao deveria ter
       // que desmontar uma URL para chegar nele.
+      clips.push({ ...resto, thumbUrl: publishThumb(thumb), thumbPath: thumb })
+    }
+  }
+
+  // (18/11) As PASTAS SOLTAS: video e imagem direto na pasta, sem o AnCut (ver pastasSoltasEm).
+  const soltas = [...pastasSoltasEm(root, 0)]
+  for (const [posicao, dir] of soltas.entries()) {
+    await daVez()
+    const midia = midiaSoltaEm(dir)
+    // A assinatura da pasta: quantos arquivos e a data do mais novo (trocar, por ou tirar um muda).
+    const mtimeMs = midia.reduce((m, a) => Math.max(m, a.mtimeMs), 0)
+    const chave = `${prefixo}${dir}`
+    const anterior = cache.episodes[chave]
+    const aproveitavel =
+      anterior &&
+      (anterior.prefixo ?? '') === prefixo &&
+      anterior.mtimeMs === mtimeMs &&
+      anterior.fileCount === midia.length &&
+      (anterior.clips.length === 0 || existsSync(anterior.clips[0]!.thumb))
+    if (!aproveitavel) onProgress(`Lendo os arquivos soltos de ${relativo(root, dir)}... (${posicao + 1}/${soltas.length})`)
+    const guardados = aproveitavel ? anterior.clips : await lerPastaSolta(dir, root, midia, prefixo)
+    if (!aproveitavel) scanned += 1
+    proximos[chave] = { mtimeMs, fileCount: midia.length, ...(prefixo ? { prefixo } : {}), clips: guardados }
+    for (const clip of guardados) {
+      const { thumb, ...resto } = clip
       clips.push({ ...resto, thumbUrl: publishThumb(thumb), thumbPath: thumb })
     }
   }
@@ -854,6 +881,156 @@ export function* episodiosEm(dir: string, profundidade: number): Generator<strin
   }
 }
 
+// ------------------------------------------------------------ pastas soltas
+
+/** O que entra de uma pasta solta: video (a cena inteira) e imagem. */
+const VIDEO_SOLTO = /\.(mp4|mov|mkv|webm|m4v)$/i
+const IMAGEM_SOLTA = /\.(jpe?g|png|webp)$/i
+
+/**
+ * AS PASTAS SOLTAS (18/11): "criei a pasta D:\Animes\BUGs GTA 6 pra fazer um
+ * video de GTA, por que isso nao aparece na biblioteca". A biblioteca so lia
+ * o que o AnCut cortou (o episodio com shots/ e metadata/shots.json); os
+ * videos baixados direto na pasta ficavam de fora sem aviso. Agora a pasta
+ * abaixo da raiz com video ou imagem DIRETO dentro dela entra tambem
+ * (lerPastaSolta) -- no acervo dele, a do GTA e as "Baixados" de trailers.
+ *
+ * Fica de fora o que e do AnCut: o episodio (com o shots.json) e a pasta que
+ * tem uma shots/ dentro -- o episodio que o AnCut ainda esta cortando, sem o
+ * json, que viraria centenas de "soltos" ate ele terminar. E a raiz em si (os
+ * soltos precisam de uma pasta que diga de que serie sao), o que comeca com
+ * `_` ou `.` (a lixeira) e as pastas de trabalho de dentro do episodio.
+ */
+export function* pastasSoltasEm(dir: string, profundidade: number): Generator<string> {
+  if (profundidade > MAX_DEPTH) return
+  if (existsSync(join(dir, 'metadata', 'shots.json')) || ehPasta(join(dir, 'shots'))) return
+  let entradas: Dirent[]
+  try {
+    entradas = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  if (profundidade >= 1 && entradas.some((e) => e.isFile() && !e.name.startsWith('.') && (VIDEO_SOLTO.test(e.name) || IMAGEM_SOLTA.test(e.name)))) {
+    yield dir
+  }
+  for (const e of entradas.sort((a, b) => NUMERICA.compare(a.name, b.name))) {
+    if (!e.isDirectory() || e.name.startsWith('_') || e.name.startsWith('.')) continue
+    if (['shots', 'keyframes', 'metadata'].includes(e.name.toLowerCase())) continue
+    yield* pastasSoltasEm(join(dir, e.name), profundidade + 1)
+  }
+}
+
+/** Os videos e imagens soltos de uma pasta, na ordem dos nomes, com a data de cada um. */
+export function midiaSoltaEm(dir: string): { nome: string; mtimeMs: number }[] {
+  let entradas: Dirent[]
+  try {
+    entradas = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const saida: { nome: string; mtimeMs: number }[] = []
+  for (const e of entradas) {
+    if (!e.isFile() || e.name.startsWith('.') || !(VIDEO_SOLTO.test(e.name) || IMAGEM_SOLTA.test(e.name))) continue
+    try {
+      saida.push({ nome: e.name, mtimeMs: statSync(join(dir, e.name)).mtimeMs })
+    } catch {
+      /* sumiu no meio da leitura */
+    }
+  }
+  return saida.sort((a, b) => naturalmente(a.nome, b.nome))
+}
+
+/**
+ * O titulo de um arquivo baixado: sem a extensao, sem o [codigo] que o
+ * baixador poe no fim ("Cae_debajo_del_mapa. [2123017353315188736]") e com
+ * espaco no lugar do sublinhado: "Cae debajo del mapa".
+ */
+export function tituloDoSolto(nome: string): string {
+  const base = nome.replace(/\.[^.]+$/, '')
+  const limpo = base
+    .replace(/\s*\[[^\]]{6,}\]\s*$/, '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[.\s]+$/, '')
+    .trim()
+  return limpo || base
+}
+
+/**
+ * As cenas de uma pasta solta: cada video INTEIRO e uma cena (a duracao dele,
+ * a miniatura de um quadro de dentro), cada imagem uma imagem. A serie e a
+ * primeira pasta abaixo da raiz, como num episodio; a subpasta ("Baixados")
+ * vai no `solto.pasta`. Video que o ffmpeg nao le (so som, quebrado) fica de
+ * fora, sem derrubar a pasta.
+ */
+async function lerPastaSolta(
+  dir: string,
+  root: string,
+  midia: readonly { nome: string }[],
+  prefixoDoId = '',
+): Promise<StoredClip[]> {
+  const rel = relativo(root, dir)
+  const partes = rel.split('/').filter(Boolean)
+  const serie = partes[0] || basename(dir)
+  const pasta = partes.length > 1 ? partes.slice(1).join(' / ') : null
+  const saida: StoredClip[] = []
+  for (const [i, { nome }] of midia.entries()) {
+    await daVez()
+    const caminho = join(dir, nome)
+    const imagem = IMAGEM_SOLTA.test(nome)
+    const id = `${prefixoDoId}${rel}/${nome.replace(/\.[^.]+$/, '')}`
+    const destino = caminhoDaMiniatura(`${id}#solto`)
+    let duracao = 0
+    try {
+      mkdirSync(join(destino, '..'), { recursive: true })
+      if (imagem) {
+        if (!existsSync(destino)) {
+          await sharp(caminho).rotate().resize({ width: THUMB_WIDTH, withoutEnlargement: true }).webp({ quality: THUMB_QUALITY }).toFile(destino)
+        }
+      } else {
+        const info = await probeClip(caminho)
+        duracao = info.durationSec
+        if (!existsSync(destino)) {
+          // Um quadro de dentro (1 s, ou a metade do curto), como a miniatura do clipe na timeline.
+          await quadroDoVideo(caminho, Math.min(1, duracao / 2), comConversaoHdr(info.hdr, `scale=${THUMB_WIDTH}:-2`), destino)
+        }
+      }
+    } catch {
+      continue
+    }
+    if (!existsSync(destino)) continue
+    saida.push({
+      id,
+      path: caminho,
+      thumb: destino,
+      keyframe: '',
+      anime: serie,
+      animeTitle: '',
+      season: 0,
+      episode: 0,
+      solto: { titulo: tituloDoSolto(nome), imagem, pasta },
+      shot: String(i + 1).padStart(3, '0'),
+      start: 0,
+      duration: duracao,
+      characters: [],
+    })
+  }
+  return saida
+}
+
+/** Um quadro do video, ja reduzido, num webp. */
+function quadroDoVideo(caminho: string, instante: number, filtro: string, destino: string): Promise<void> {
+  return new Promise((ok, falhou) => {
+    const filho = spawn(
+      ffmpegPath,
+      ['-hide_banner', '-loglevel', 'error', '-ss', instante.toFixed(3), '-i', caminho, '-frames:v', '1', '-vf', filtro, '-c:v', 'libwebp', '-quality', String(THUMB_QUALITY), '-y', destino],
+      { windowsHide: true },
+    )
+    filho.on('error', falhou)
+    filho.on('close', (codigo) => (codigo === 0 && existsSync(destino) ? ok() : falhou(new Error(`ffmpeg saiu com ${codigo}`))))
+  })
+}
+
 /**
  * Nomes dos arquivos de uma pasta, em Set.
  *
@@ -946,6 +1123,9 @@ function ordemNatural(a: LibraryClip, b: LibraryClip): number {
     (a.filme ? 1 : 0) - (b.filme ? 1 : 0) ||
     (a.filme?.ano ?? 0) - (b.filme?.ano ?? 0) ||
     (a.broll?.numero ?? 0) - (b.broll?.numero ?? 0) ||
+    // Os soltos por ultimo, por pasta.
+    (a.solto ? 1 : 0) - (b.solto ? 1 : 0) ||
+    NUMERICA.compare(a.solto?.pasta ?? '', b.solto?.pasta ?? '') ||
     a.season - b.season ||
     a.episode - b.episode ||
     // Dois capitulos sem numero ("Cap. Especial") tem o mesmo episodio 0: o
