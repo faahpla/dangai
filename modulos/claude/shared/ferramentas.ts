@@ -153,7 +153,7 @@ export const FERRAMENTAS: DefinicaoDeFerramenta[] = [
   },
   {
     name: 'buscar_na_biblioteca',
-    description: 'Procura clipes ja cortados na Biblioteca do Dangai (todos os episodios): por texto (anime, personagem, etiqueta), personagem ou episodio (ex.: "S01E07").',
+    description: 'Procura clipes ja cortados na Biblioteca do Dangai (todos os episodios): por texto (anime, personagem, etiqueta), personagem ou episodio (ex.: "S01E07"). favoritas: true = so as cenas que o usuario marcou com a estrela (as preferidas dele: use primeiro quando servirem). Cada clipe diz se e favorita.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -162,8 +162,15 @@ export const FERRAMENTAS: DefinicaoDeFerramenta[] = [
         episodio: str('Episodio, ex.: "S01E07".'),
         anime: str('Parte do nome do anime.'),
         limite: num('Maximo de resultados (padrao 40).'),
+        favoritas: { type: 'boolean', description: 'So as favoritas (a estrela da Biblioteca).' },
       },
     },
+  },
+  {
+    name: 'presets_de_legenda',
+    description:
+      'Os presets de legenda salvos no Dangai (nome e estilo) e qual deles bate com a legenda do projeto aberto. aplicar: "<nome>" poe aquele preset na legenda do projeto (sem virar o padrao dos proximos videos).',
+    inputSchema: { type: 'object', properties: { aplicar: str('Nome do preset para aplicar.') } },
   },
   {
     name: 'abrir_projeto',

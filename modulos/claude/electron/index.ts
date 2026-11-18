@@ -231,6 +231,8 @@ async function chamar(nome: string, args: Record<string, unknown>): Promise<Cont
     }
     case 'buscar_na_biblioteca':
       return [json(await pedirAJanela('biblioteca', args, 180_000))]
+    case 'presets_de_legenda':
+      return [json(await pedirAJanela('legenda', args))]
     case 'abrir_projeto': {
       const caminho = String(args['caminho'] ?? '')
       if (!/\.dangai$/i.test(caminho) || !existsSync(caminho)) throw new Error(`Nao achei o projeto: ${caminho}`)

@@ -31,7 +31,9 @@ export const INSTRUCOES =
   'Edita o projeto aberto no Dangai (shorts 9:16 de anime). Fluxo: "estado" -> "listar_cenas" -> "ver_cenas" (imagem do recorte 9:16) -> ' +
   '"editar" com TODAS as mudancas num lote so -> "ver_cenas" de novo para conferir. "desfazer" volta o ultimo lote. ' +
   'focoX vai de 0 (esquerda) a 1 (direita); para centrar um rosto que esta na fracao cx da largura do quadro 16:9: focoX = (cx - 0,158) / 0,684. ' +
-  'Prefira zoom-in/zoom-out (pan tira o rosto do centro), entrada no melhor momento do clipe (ver_clipe), corpo inteiro > close.'
+  'Prefira zoom-in/zoom-out (pan tira o rosto do centro), entrada no melhor momento do clipe (ver_clipe), corpo inteiro > close. ' +
+  'Cenas favoritas do usuario (a estrela da Biblioteca): buscar_na_biblioteca com favoritas: true -- use primeiro quando servirem. ' +
+  'Legenda: presets_de_legenda lista os presets salvos e diz qual bate com o projeto; aplicar: "<nome>" poe o preset.'
 
 /** O JSON-RPC puro (sem HTTP), para o teste. null = notificacao (sem resposta). */
 export async function responderRpc(pedido: Rpc, versaoDoApp: string, chamar: ChamarFerramenta): Promise<Record<string, unknown> | null> {
