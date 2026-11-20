@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.11.2',
+    itens: [
+      'Claude (MCP): o Claude agora faz o "Reconhecer na mão" dos personagens. Ele agrupa os rostos do episódio, compara com as fotos do elenco, dá o nome de cada grupo e confirma — e o próximo episódio do anime já vem reconhecido. Vale para episódios cortados pelo Dangai (os do AnCut se reconhecem no AnCut).',
+    ],
+  },
+  {
     versao: '2.11.1',
     itens: [
       'Etapa de Áudio, "Encolher as pausas": não fica mais parecendo travado. O "Lendo a gravação..." some quando termina, e o resultado aparece ali mesmo, embaixo da linha do tempo. Se não houver pausa para encolher, o painel continua aberto e diz para diminuir "Pausa maior que".',
