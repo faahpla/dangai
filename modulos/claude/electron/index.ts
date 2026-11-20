@@ -6,7 +6,7 @@ import { saveProjectFile } from '../../../electron/services/project'
 import { projectFileSchema, type ProjectFile } from '../../../shared/project-file'
 import { CANAIS_DO_CLAUDE as C, type AcaoDaJanela, type EstadoDoServidor, type RespostaDoClaude } from '../shared/canais'
 import { aplicarLote, resumoDasCenas, type ArquivoDoProjeto, type LoteDeMudancas, type Medidas } from '../shared/ferramentas'
-import { aspectoDe, folha, folhasDoReconhecer, janelaDaCena, sondar, type Ladrilho } from './imagens'
+import { aspectoDe, folha, folhaDeVarios, folhasDoReconhecer, janelaDaCena, sondar, type Ladrilho } from './imagens'
 import { arquivosDaBusca, falasDoArquivo, procurarNasFalas } from './legendas'
 import { subirServidor, type Conteudo, type ServidorLigado } from './servidor'
 
@@ -249,6 +249,18 @@ async function chamar(nome: string, args: Record<string, unknown>): Promise<Cont
       const { arquivo } = await projetoAberto()
       const quais = Array.isArray(args['cenas']) ? (args['cenas'] as unknown[]).map(Number).filter(Number.isFinite) : []
       return verCenas(arquivo, quais)
+    }
+    case 'ver_varios': {
+      const caminhos = (Array.isArray(args['caminhos']) ? (args['caminhos'] as unknown[]).map(String) : []).slice(0, 48)
+      if (!caminhos.length) throw new Error('Mande os caminhos dos clipes (ate 48).')
+      const faltam = caminhos.filter((c) => !existsSync(c))
+      if (faltam.length) throw new Error(`Nao existem: ${faltam.slice(0, 3).join(', ')}`)
+      const momento = typeof args['momento'] === 'number' ? Math.min(1, Math.max(0, args['momento'])) : 0.5
+      const duracoes = await Promise.all(caminhos.map(async (c) => (await sondar(c)).duracao))
+      return [
+        texto(`${caminhos.length} clipes, o quadro inteiro (16:9) em ${Math.round(momento * 100)}% de cada um. Numero = a posicao na lista.`),
+        { type: 'image', mimeType: 'image/jpeg', data: await folhaDeVarios(caminhos, momento, duracoes) },
+      ]
     }
     case 'ver_clipe':
       return verClipe(String(args['caminho'] ?? ''), typeof args['focoX'] === 'number' ? args['focoX'] : 0.5)

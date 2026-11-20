@@ -59,6 +59,21 @@ export const FERRAMENTAS: DefinicaoDeFerramenta[] = [
     },
   },
   {
+    name: 'ver_varios',
+    description:
+      'IMAGEM com o quadro INTEIRO (16:9) de varios clipes lado a lado (ate 48), numerados na ordem da lista: para escolher por EXPRESSAO ou ACAO ' +
+      'entre muitos candidatos (ex.: "ele odeia" = a cara mais brava entre as cenas do personagem; "empurrado" = o empurrao). ' +
+      'Os caminhos vem do buscar_na_biblioteca. momento 0-1 = onde em cada clipe (0,5 = o meio).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        caminhos: { type: 'array', items: { type: 'string' }, description: 'Os mp4 dos clipes.' },
+        momento: num('Onde em cada clipe, 0-1 (padrao 0,5).'),
+      },
+      required: ['caminhos'],
+    },
+  },
+  {
     name: 'editar',
     description:
       'Aplica um LOTE de mudancas no projeto aberto, valida, grava e reabre o projeto no Dangai (o recorte das cenas e refeito). Junte tudo num pedido so. Desfaz com "desfazer".',

@@ -209,3 +209,44 @@ export async function folhasDoReconhecer(
   }
   return saida
 }
+
+/**
+ * VER VARIOS: uma folha com o quadro INTEIRO (16:9) de varios clipes, para
+ * escolher por expressao/acao entre muitos candidatos (a "cara de bravo" entre
+ * 40 cenas do personagem). `momento` 0..1 = onde no clipe (0,5 = o meio).
+ * Rotulo = o numero na lista + o nome do arquivo.
+ */
+export async function folhaDeVarios(caminhos: readonly string[], momento: number, duracoes: readonly (number | null)[]): Promise<string> {
+  const W = 256
+  const H = 144
+  const C = Math.min(6, caminhos.length)
+  const linhas = Math.ceil(caminhos.length / C)
+  const prontos: (Buffer | null)[] = new Array(caminhos.length).fill(null)
+  let proxima = 0
+  await Promise.all(
+    Array.from({ length: 6 }, async () => {
+      while (proxima < caminhos.length) {
+        const k = proxima++
+        const d = duracoes[k] ?? 1
+        const t = Math.max(0, Math.min(d - 0.05, d * momento))
+        const r = await rodar(['-v', 'error', '-ss', t.toFixed(3), '-i', caminhos[k]!, '-frames:v', '1', '-vf', `scale=${W}:${H}`, '-f', 'image2pipe', '-vcodec', 'png', '-'])
+        prontos[k] = r.saida.length ? r.saida : null
+      }
+    }),
+  )
+  const camadas: OverlayOptions[] = []
+  caminhos.forEach((c, k) => {
+    const x = (k % C) * (W + 6)
+    const y = Math.floor(k / C) * (H + 24)
+    const img = prontos[k]
+    if (img) camadas.push({ input: img, left: x, top: y })
+    const nome = c.split(/[\/]/).slice(-3).join('/').replace(/\.mp4$/i, '')
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="22"><text x="2" y="16" font-family="Arial" font-weight="bold" font-size="13" fill="#ffd400">${k + 1}</text><text x="26" y="16" font-family="Arial" font-size="12" fill="#fff">${esc(nome.slice(-30))}</text></svg>`
+    camadas.push({ input: Buffer.from(svg), left: x, top: y + H + 1 })
+  })
+  const jpg = await sharp({ create: { width: C * (W + 6) - 6, height: linhas * (H + 24), channels: 3, background: '#141414' } })
+    .composite(camadas)
+    .jpeg({ quality: 82 })
+    .toBuffer()
+  return jpg.toString('base64')
+}
