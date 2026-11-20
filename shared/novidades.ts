@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.11.4',
+    itens: [
+      'Claude (MCP): a cena acompanha a expressão da frase. "Ele odeia" vira uma cara de bravo, "foi empurrado" vira o empurrão: o Claude vê dezenas de cenas lado a lado e escolhe a expressão mais forte.',
+    ],
+  },
+  {
     versao: '2.11.3',
     itens: [
       'Claude (MCP): em vídeo de curiosidade, o Claude acha a cena certa em vários episódios. Ele procura a fala nas legendas dos episódios que você mandar (diz o episódio e o minuto) e pega só as cenas daquele trecho na Biblioteca. Antes de montar, ele mostra de qual episódio e minuto é cada frase para você conferir.',
