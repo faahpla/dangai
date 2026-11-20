@@ -58,7 +58,7 @@ import {
 } from '@shared/edicao-de-audio'
 import { useProject } from '@/store/project'
 import { desfazer, refazer } from '@/store/undo'
-import { avisar } from '@/store/aviso'
+import { avisar, useAviso } from '@/store/aviso'
 import { BarraDeEtapas } from './BarraDeEtapas'
 import { Botaozinho, Deslizante, Grupo, Linha, Segmentos } from './painel'
 
@@ -139,6 +139,7 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
   const [ondas, setOndas] = useState<Record<string, OndaDaGravacao> | null>(null)
   const [som, setSom] = useState<AudioEditado | null>(null)
   const [andamento, setAndamento] = useState<string | null>(null)
+  const recado = useAviso((s) => s.texto)
   const [erro, setErro] = useState<string | null>(null)
   const [tocando, setTocando] = useState(false)
   /** Um pedaco do tempo, em todas as faixas (arrastar no vazio). */
@@ -186,6 +187,8 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
     const t = setTimeout(() => {
       void window.dangai.ondaDaEdicao(edicao, comEfeitos).then((r) => {
         if (!vivo) return
+        // O andamento que a onda deixou ("Lendo a gravação...") nao pode ficar girando depois dela.
+        setAndamento(null)
         if (r.ok) setOndas(r.value)
         else setErro(r.error)
       })
@@ -730,9 +733,18 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
           {silencios && (
             <CortarSilencios
               edicao={edicao}
-              aoCortar={(n, s) => {
+              aoTerminar={() => setAndamento(null)}
+              aoCortar={(n, s, minimo) => {
+                if (n === 0) {
+                  // Nada mudou: o painel fica aberto, para ele baixar o "Pausa maior que" e tentar de novo.
+                  avisar(
+                    `Nenhuma pausa maior que ${minimo.toFixed(2).replace('.', ',')} s nesta narração. Para encolher as mais curtas, diminua "Pausa maior que".`,
+                    9000,
+                  )
+                  return
+                }
                 setSilencios(false)
-                avisar(n === 0 ? 'Nenhuma pausa longa para encolher.' : `${n} ${n === 1 ? 'pausa encolhida' : 'pausas encolhidas'}: ${(s / fator).toFixed(1).replace('.', ',')} s a menos.`, 6000)
+                avisar(`${n} ${n === 1 ? 'pausa encolhida' : 'pausas encolhidas'}: ${(s / fator).toFixed(1).replace('.', ',')} s a menos.`, 6000)
               }}
             />
           )}
@@ -763,6 +775,12 @@ function Tela({ edicao }: { edicao: EdicaoDeAudio }) {
                 <Loader2 size={12} className="animate-spin text-accent" />
                 {andamento}
               </>
+            ) : recado ? (
+              // (20/11) O recado da barra de baixo, AQUI: a etapa cobre a tela inteira e ele nao via
+              // o "Nenhuma pausa longa para encolher" -- so o painel fechando sem mudar nada.
+              <span className="text-ink-2" data-audio="recado">
+                {recado}
+              </span>
             ) : (
               'Arraste o trecho para mudar de lugar ou de faixa · puxe a borda para aparar · arraste no vazio para selecionar · solte um áudio na faixa que quiser · C corta · B corta e junta no último corte · Delete apaga e fecha o vão · Backspace apaga e deixa o vão · Ctrl ou Alt + roda: zoom · Ctrl+Z desfaz'
             )}
@@ -1462,7 +1480,20 @@ function Correcoes({
 
 // ------------------------------------------------------------- silencios
 
-function CortarSilencios({ edicao, aoCortar }: { edicao: EdicaoDeAudio; aoCortar: (n: number, segundos: number) => void }) {
+function CortarSilencios({
+  edicao,
+  aoCortar,
+  aoTerminar,
+}: {
+  edicao: EdicaoDeAudio
+  aoCortar: (n: number, segundos: number, minimoSec: number) => void
+  /**
+   * (20/11) Acabou (deu certo ou nao): a etapa apaga o andamento. "Ficou mais
+   * de 3 minutos lendo a gravação": o calculo terminava em 1 s, mas o "Lendo a
+   * gravação..." que ele mandou continuava girando embaixo da linha do tempo.
+   */
+  aoTerminar: () => void
+}) {
   const mudar = useProject((s) => s.mudarEdicaoDeAudio)
   const [op, setOp] = useState<OpcoesDosSilencios>(SILENCIOS_PADRAO)
   const [lendo, setLendo] = useState(false)
@@ -1473,13 +1504,14 @@ function CortarSilencios({ edicao, aoCortar }: { edicao: EdicaoDeAudio; aoCortar
     setErro(null)
     const r = await window.dangai.silenciosDaGravacao(edicao, op)
     setLendo(false)
+    aoTerminar()
     if (!r.ok) {
       setErro(r.error)
       return
     }
     const feito = cortarSilencios(edicao.trechos, r.value, op.sobraSec, duracoesDasFontes(edicao))
     if (feito.cortados > 0) mudar((e) => ({ ...e, trechos: feito.trechos }))
-    aoCortar(feito.cortados, feito.segundos)
+    aoCortar(feito.cortados, feito.segundos, op.minimoSec)
   }
 
   return (
