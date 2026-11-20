@@ -141,3 +141,71 @@ export function janelaDaCena(cena: Record<string, unknown>, focoX: number, fr: 0
   const zoom = e === 'zoom-in' ? 1 + i * fr : e === 'zoom-out' ? 1 + i * (1 - fr) : 1 + i
   return { cx: 0.158 + focoX * 0.684, zoom: zoom * fixo, ox, oy }
 }
+
+/**
+ * As folhas do RECONHECER PERSONAGENS: uma linha por grupo (key, cenas, palpite e
+ * ate 8 rostos) e a do elenco (foto + nome). Rostos em base64 (vem da janela).
+ * Devolve JPEGs em base64: ate 14 grupos por folha, para caber na leitura.
+ */
+export async function folhasDoReconhecer(
+  grupos: { key: number; cenas: number; rostos: string[]; conhecido: boolean; figurante: boolean; palpite: string | null }[],
+  elenco: { nome: string; foto: string | null }[],
+): Promise<string[]> {
+  const T = 96
+  const ROTULO = 250
+  const POR_FOLHA = 14
+  const txt = (w: number, h: number, linhas: { t: string; cor: string }[]): Buffer =>
+    Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${linhas
+        .map((l, i) => `<text x="4" y="${18 + i * 20}" font-family="Arial" font-weight="bold" font-size="15" fill="${l.cor}">${esc(l.t)}</text>`)
+        .join('')}</svg>`,
+    )
+  const rosto = async (b64: string, lado: number): Promise<Buffer | null> => {
+    try {
+      return await sharp(Buffer.from(b64, 'base64')).resize(lado, lado, { fit: 'cover' }).jpeg().toBuffer()
+    } catch {
+      return null
+    }
+  }
+  const saida: string[] = []
+  for (let n = 0; n < grupos.length; n += POR_FOLHA) {
+    const lote = grupos.slice(n, n + POR_FOLHA)
+    const W = ROTULO + 8 * (T + 3)
+    const H = lote.length * (T + 6)
+    const camadas: OverlayOptions[] = []
+    for (const [r, g] of lote.entries()) {
+      const y = r * (T + 6)
+      camadas.push({
+        input: txt(ROTULO, T, [
+          { t: `g${g.key} - ${g.cenas} cenas${g.figurante ? ' (figurante)' : ''}`, cor: '#ffd400' },
+          { t: g.conhecido ? `JA TEM NOME: ${g.palpite ?? ''}`.slice(0, 30) : `palpite: ${g.palpite ?? '-'}`.slice(0, 30), cor: '#ffffff' },
+        ]),
+        left: 0,
+        top: y,
+      })
+      for (const [i, b] of g.rostos.slice(0, 8).entries()) {
+        const img = await rosto(b, T)
+        if (img) camadas.push({ input: img, left: ROTULO + i * (T + 3), top: y })
+      }
+    }
+    const jpg = await sharp({ create: { width: W, height: Math.max(H, 1), channels: 3, background: '#121212' } }).composite(camadas).jpeg({ quality: 82 }).toBuffer()
+    saida.push(jpg.toString('base64'))
+  }
+  if (elenco.length) {
+    const C = 8
+    const L = 130
+    const W = C * L
+    const H = Math.ceil(elenco.length / C) * (L + 22)
+    const camadas: OverlayOptions[] = []
+    for (const [k, e] of elenco.entries()) {
+      const x = (k % C) * L
+      const y = Math.floor(k / C) * (L + 22)
+      const img = e.foto ? await rosto(e.foto, L - 8) : null
+      if (img) camadas.push({ input: img, left: x + 4, top: y })
+      camadas.push({ input: txt(L, 22, [{ t: e.nome.slice(0, 18), cor: '#ffffff' }]), left: x, top: y + L - 4 })
+    }
+    const jpg = await sharp({ create: { width: W, height: H, channels: 3, background: '#121212' } }).composite(camadas).jpeg({ quality: 82 }).toBuffer()
+    saida.push(jpg.toString('base64'))
+  }
+  return saida
+}

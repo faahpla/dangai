@@ -136,7 +136,100 @@ export async function executar(n: Nucleo, p: PedidoDoClaude): Promise<unknown> {
         })),
       }
     }
+    case 'episodios': {
+      const r = await doRecap().listarRascunhos()
+      const lista = desembrulhar<{ id: string; episodioId: string; titulo: string; passo: number; atualizadoEm: string }[]>(r)
+      return lista.map((x) => ({ rascunho: x.id, episodio: x.episodioId, titulo: x.titulo, passo: x.passo, atualizadoEm: x.atualizadoEm }))
+    }
+    case 'reconhecer':
+      return reconhecer(p.args)
     default:
       throw new Error(`Acao desconhecida: ${String(p.acao)}`)
   }
+}
+
+// ------------------------------------------------- reconhecer personagens
+
+/**
+ * O "Reconhecer na mao" do Gerar recap, pela ponte DELE (window.dangai.modulos.recap):
+ * o motor agrupa os rostos do episodio, o Claude da nome a cada grupo e confirma.
+ * So quando o modulo Gerar recap esta ligado; cenas do AnCut o recap recusa (so le).
+ */
+interface PonteDoRecap {
+  listarRascunhos(): Promise<unknown>
+  iniciarDescoberta(pedido: { episodioId: string }): Promise<unknown>
+  descobertaAtual(episodioId: string): Promise<unknown>
+  confirmarDescoberta(jobId: string, decisao: unknown): Promise<unknown>
+  cancelarDescoberta(jobId: string, manter?: boolean): Promise<unknown>
+}
+
+function doRecap(): PonteDoRecap {
+  const r = (window as unknown as { dangai?: { modulos?: { recap?: PonteDoRecap } } }).dangai?.modulos?.recap
+  if (!r) throw new Error('O modulo Gerar recap esta desligado (Configuracoes > Modulos).')
+  return r
+}
+
+function desembrulhar<T>(r: unknown): T {
+  const x = r as { ok?: boolean; value?: T; error?: string } | null
+  if (!x || x.ok !== true) throw new Error(x?.error ?? 'O Gerar recap nao respondeu.')
+  return x.value as T
+}
+
+interface GrupoDaJanela {
+  key: number
+  rostos: string[]
+  totalDeRostos: number
+  cenas: number
+  sugestao: { nome: string; similaridade: number } | null
+  sugestoes: { nome: string; similaridade: number }[]
+  conhecido: boolean
+  figurante: boolean
+}
+
+async function reconhecer(args: Record<string, unknown>): Promise<unknown> {
+  const r = doRecap()
+  const acao = String(args['acao'] ?? 'ver')
+  const episodioId = String(args['episodio'] ?? '')
+  if (acao === 'confirmar' || acao === 'cancelar') {
+    const jobId = String(args['jobId'] ?? '')
+    if (!jobId) throw new Error('Falta o jobId (vem no resultado do "iniciar"/"ver").')
+    if (acao === 'cancelar') return desembrulhar(await r.cancelarDescoberta(jobId, false))
+    const d = (args['decisao'] ?? {}) as Record<string, unknown>
+    const decisao = { nomes: d['nomes'] ?? {}, ignorados: d['ignorados'] ?? [], juntar: d['juntar'] ?? [], removidos: d['removidos'] ?? {} }
+    return desembrulhar(await r.confirmarDescoberta(jobId, decisao))
+  }
+  if (!/^ep_[0-9a-f]{40}$/.test(episodioId)) throw new Error('Falta o episodio (ep_..., veja "listar_episodios").')
+  if (acao === 'iniciar') desembrulhar(await r.iniciarDescoberta({ episodioId }))
+  // Espera o agrupamento (com o corte pronto, ~20 s; sem corte, minutos).
+  for (let k = 0; k < 110; k++) {
+    const ev = desembrulhar<{
+      estado: { status: string; mensagem: string; erro: string | null }
+      pronta: { jobId: string; anime: string; online: boolean; grupos: GrupoDaJanela[]; elenco: { nome: string; foto: string | null }[] } | null
+    } | null>(await r.descobertaAtual(episodioId))
+    const st = ev?.estado.status
+    if (st === 'pronta' && ev?.pronta) {
+      const p = ev.pronta
+      // As imagens vao como URL do servidor de midia local: quem baixa e o main
+      // (a janela em dev nao pode, CORS).
+      const grupos = []
+      for (const g of p.grupos) {
+        const rostos = g.rostos.slice(0, 8)
+        grupos.push({
+          key: g.key,
+          cenas: g.cenas,
+          rostos,
+          conhecido: g.conhecido,
+          figurante: g.figurante,
+          palpite: g.sugestao?.nome ?? null,
+          sugestoes: g.sugestoes.slice(0, 3).map((s) => s.nome),
+        })
+      }
+      const elenco = p.elenco.map((e) => ({ nome: e.nome, foto: e.foto }))
+      return { jobId: p.jobId, anime: p.anime, online: p.online, grupos, elenco }
+    }
+    if (st === 'falhou' || st === 'cancelada') throw new Error(`Reconhecimento ${st}: ${ev?.estado.erro ?? ''}`)
+    if (!ev && acao === 'ver') throw new Error('Nenhum reconhecimento em andamento neste episodio (use acao "iniciar").')
+    await espera(3000)
+  }
+  throw new Error('O agrupamento ainda nao acabou: chame de novo com acao "ver".')
 }

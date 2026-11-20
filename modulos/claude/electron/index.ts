@@ -6,7 +6,7 @@ import { saveProjectFile } from '../../../electron/services/project'
 import { projectFileSchema, type ProjectFile } from '../../../shared/project-file'
 import { CANAIS_DO_CLAUDE as C, type AcaoDaJanela, type EstadoDoServidor, type RespostaDoClaude } from '../shared/canais'
 import { aplicarLote, resumoDasCenas, type ArquivoDoProjeto, type LoteDeMudancas, type Medidas } from '../shared/ferramentas'
-import { aspectoDe, folha, janelaDaCena, sondar, type Ladrilho } from './imagens'
+import { aspectoDe, folha, folhasDoReconhecer, janelaDaCena, sondar, type Ladrilho } from './imagens'
 import { subirServidor, type Conteudo, type ServidorLigado } from './servidor'
 
 /**
@@ -164,6 +164,48 @@ async function verClipe(caminho: string, focoX: number): Promise<Conteudo[]> {
   ]
 }
 
+interface ReconhecerDaJanela {
+  jobId: string
+  anime: string
+  online: boolean
+  grupos: { key: number; cenas: number; rostos: string[]; conhecido: boolean; figurante: boolean; palpite: string | null; sugestoes: string[] }[]
+  elenco: { nome: string; foto: string | null }[]
+}
+
+/** reconhecer_personagens: iniciar/ver devolvem o resumo + as folhas; confirmar/cancelar, o resultado. */
+async function reconhecerPersonagens(args: Record<string, unknown>): Promise<Conteudo[]> {
+  const acao = String(args['acao'] ?? 'ver')
+  const r = await pedirAJanela('reconhecer', args, 360_000)
+  if (acao === 'confirmar' || acao === 'cancelar') return [json(r)]
+  const d = r as ReconhecerDaJanela
+  // A janela manda as URLs do servidor de midia local (127.0.0.1); o main baixa.
+  const baixar = async (url: string | null): Promise<string | null> => {
+    if (!url || !/^http:\/\/127\.0\.0\.1:\d+\//.test(url)) return null
+    try {
+      const resp = await fetch(url)
+      return resp.ok ? Buffer.from(await resp.arrayBuffer()).toString('base64') : null
+    } catch {
+      return null
+    }
+  }
+  const grupos = await Promise.all(
+    d.grupos.map(async (g) => ({ ...g, rostos: (await Promise.all(g.rostos.map(baixar))).filter((x): x is string => x !== null) })),
+  )
+  const elenco = await Promise.all(d.elenco.map(async (e) => ({ nome: e.nome, foto: await baixar(e.foto) })))
+  const imagens = await folhasDoReconhecer(grupos, elenco)
+  return [
+    json({
+      jobId: d.jobId,
+      anime: d.anime,
+      elencoOnline: d.online,
+      grupos: d.grupos.map((g) => ({ key: g.key, cenas: g.cenas, conhecido: g.conhecido, figurante: g.figurante, palpite: g.palpite, sugestoes: g.sugestoes })),
+      elenco: d.elenco.map((e) => e.nome),
+      folhas: `${imagens.length} imagens: os grupos (14 por folha) e por ultimo o elenco`,
+    }),
+    ...imagens.map((data) => ({ type: 'image' as const, mimeType: 'image/jpeg', data })),
+  ]
+}
+
 async function chamar(nome: string, args: Record<string, unknown>): Promise<Conteudo[]> {
   switch (nome) {
     case 'estado':
@@ -233,6 +275,10 @@ async function chamar(nome: string, args: Record<string, unknown>): Promise<Cont
       return [json(await pedirAJanela('biblioteca', args, 180_000))]
     case 'presets_de_legenda':
       return [json(await pedirAJanela('legenda', args))]
+    case 'listar_episodios':
+      return [json(await pedirAJanela('episodios'))]
+    case 'reconhecer_personagens':
+      return reconhecerPersonagens(args)
     case 'abrir_projeto': {
       const caminho = String(args['caminho'] ?? '')
       if (!/\.dangai$/i.test(caminho) || !existsSync(caminho)) throw new Error(`Nao achei o projeto: ${caminho}`)

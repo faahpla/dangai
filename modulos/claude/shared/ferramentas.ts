@@ -173,6 +173,31 @@ export const FERRAMENTAS: DefinicaoDeFerramenta[] = [
     inputSchema: { type: 'object', properties: { aplicar: str('Nome do preset para aplicar.') } },
   },
   {
+    name: 'listar_episodios',
+    description: 'Os episodios do Gerar recap (rascunhos): id do episodio (ep_...), titulo, passo. Para o reconhecer_personagens.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'reconhecer_personagens',
+    description:
+      'O "Reconhecer na mao" do Gerar recap: o motor agrupa os rostos do episodio e voce da nome a cada grupo. ' +
+      'acao "iniciar" (agrupa e devolve a FOLHA: uma linha por grupo com ate 8 rostos, + a folha do elenco com foto) -> ' +
+      'voce compara e decide -> acao "confirmar" com jobId e decisao {nomes:{"<key>":"Nome"}, ignorados:[key], juntar:[[k1,k2]], removidos:{"<key>":[i]}}. ' +
+      'Regras: grupo que JA TEM NOME (conhecido) define o texto do personagem -- use o mesmo nos outros grupos dele; personagem novo = nome EXATO do elenco; ' +
+      'grupo misturado/figurante/duvida = sem nome. As fotos viram referencia: o proximo episodio ja vem reconhecido. ' +
+      'Cenas cortadas pelo AnCut: o Dangai recusa (o reconhecimento e no AnCut). "ver" = a folha de novo; "cancelar" = nada muda.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        acao: { type: 'string', enum: ['iniciar', 'ver', 'confirmar', 'cancelar'] },
+        episodio: str('Id do episodio (ep_...), de listar_episodios.'),
+        jobId: str('O jobId que o iniciar/ver devolveu (confirmar/cancelar).'),
+        decisao: { type: 'object', description: '{nomes, ignorados, juntar, removidos} (confirmar).' },
+      },
+      required: ['acao'],
+    },
+  },
+  {
     name: 'abrir_projeto',
     description: 'Abre um projeto .dangai no Dangai.',
     inputSchema: { type: 'object', properties: { caminho: str('Caminho do .dangai.') }, required: ['caminho'] },

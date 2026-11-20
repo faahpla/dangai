@@ -15,7 +15,7 @@ export const CANAIS_DO_CLAUDE = {
 } as const
 
 /** O que a janela sabe fazer (ver src/executar.ts). */
-export type AcaoDaJanela = 'estado' | 'projeto' | 'abrir' | 'biblioteca' | 'legenda'
+export type AcaoDaJanela = 'estado' | 'projeto' | 'abrir' | 'biblioteca' | 'legenda' | 'episodios' | 'reconhecer'
 
 export interface PedidoDoClaude {
   id: string
