@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.11.1',
+    itens: [
+      'Etapa de Áudio, "Encolher as pausas": não fica mais parecendo travado. O "Lendo a gravação..." some quando termina, e o resultado aparece ali mesmo, embaixo da linha do tempo. Se não houver pausa para encolher, o painel continua aberto e diz para diminuir "Pausa maior que".',
+    ],
+  },
+  {
     versao: '2.11.0',
     itens: [
       'Biblioteca: pasta com vídeos e imagens soltos (sem passar pelo AnCut) agora aparece. Cada vídeo entra inteiro, como uma cena (o trecho você escolhe no editor), e cada imagem como imagem. Ficam no nome da pasta, em "Soltos" (ou no nome da subpasta, tipo "Baixados"), e a busca acha pelo nome do arquivo.',
