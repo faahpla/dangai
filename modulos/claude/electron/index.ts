@@ -7,6 +7,7 @@ import { projectFileSchema, type ProjectFile } from '../../../shared/project-fil
 import { CANAIS_DO_CLAUDE as C, type AcaoDaJanela, type EstadoDoServidor, type RespostaDoClaude } from '../shared/canais'
 import { aplicarLote, resumoDasCenas, type ArquivoDoProjeto, type LoteDeMudancas, type Medidas } from '../shared/ferramentas'
 import { aspectoDe, folha, folhasDoReconhecer, janelaDaCena, sondar, type Ladrilho } from './imagens'
+import { arquivosDaBusca, falasDoArquivo, procurarNasFalas } from './legendas'
 import { subirServidor, type Conteudo, type ServidorLigado } from './servidor'
 
 /**
@@ -275,6 +276,26 @@ async function chamar(nome: string, args: Record<string, unknown>): Promise<Cont
       return [json(await pedirAJanela('biblioteca', args, 180_000))]
     case 'presets_de_legenda':
       return [json(await pedirAJanela('legenda', args))]
+    case 'buscar_fala': {
+      const texto = String(args['texto'] ?? '').trim()
+      if (!texto) throw new Error('Diga as palavras da fala (texto).')
+      const lista = arquivosDaBusca(
+        Array.isArray(args['arquivos']) ? (args['arquivos'] as unknown[]).map(String) : [],
+        typeof args['pasta'] === 'string' && args['pasta'] ? args['pasta'] : null,
+      )
+      if (!lista.length) throw new Error('Mande os episodios (.mkv) ou as legendas (.ass/.srt) em "arquivos", ou uma "pasta".')
+      const idioma = typeof args['idioma'] === 'string' ? args['idioma'] : undefined
+      const achados = []
+      const semLegenda: string[] = []
+      for (const arq of lista) {
+        if (!existsSync(arq)) throw new Error(`Nao achei: ${arq}`)
+        const falas = await falasDoArquivo(arq, idioma)
+        if (!falas.length) semLegenda.push(arq)
+        achados.push(...procurarNasFalas(arq, falas, texto))
+      }
+      const limite = typeof args['limite'] === 'number' ? args['limite'] : 30
+      return [json({ total: achados.length, achados: achados.slice(0, limite), semLegenda })]
+    }
     case 'listar_episodios':
       return [json(await pedirAJanela('episodios'))]
     case 'reconhecer_personagens':

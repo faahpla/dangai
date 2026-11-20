@@ -163,7 +163,27 @@ export const FERRAMENTAS: DefinicaoDeFerramenta[] = [
         anime: str('Parte do nome do anime.'),
         limite: num('Maximo de resultados (padrao 40).'),
         favoritas: { type: 'boolean', description: 'So as favoritas (a estrela da Biblioteca).' },
+        perto: str('Com episodio: so as cenas perto deste momento do episodio ("12:30" ou segundos), da mais perto para a mais longe.'),
+        raio: num('Segundos para cada lado do "perto" (padrao 15).'),
       },
+    },
+  },
+  {
+    name: 'buscar_fala',
+    description:
+      'Acha um momento pelas LEGENDAS dos episodios (video de curiosidade: cada frase pode ser de um episodio). ' +
+      'Le a legenda dos .mkv (portugues primeiro) ou .ass/.srt soltos. Devolve episodio (SxxEyy do nome do arquivo), em/ate (segundos) e a fala. ' +
+      'Depois: buscar_na_biblioteca {anime, episodio, perto: em} para as cenas daquele trecho.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        texto: str('Palavras da fala (todas precisam aparecer; sem acento tudo bem).'),
+        arquivos: { type: 'array', items: { type: 'string' }, description: 'Episodios (.mkv) ou legendas (.ass/.srt) para procurar.' },
+        pasta: str('Ou uma pasta: procura em todos os videos/legendas dela.'),
+        idioma: str('Faixa de legenda preferida (ex.: "por", "eng"). Padrao: portugues, depois ingles.'),
+        limite: num('Maximo de resultados (padrao 30).'),
+      },
+      required: ['texto'],
     },
   },
   {

@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { projectFileSchema } from '../../../shared/project-file'
 import { aplicarLote, resumoDasCenas, type ArquivoDoProjeto } from '../shared/ferramentas'
 import { responderRpc, subirServidor } from '../electron/servidor'
+import { escolherFaixa, lerSrt, procurarNasFalas } from '../electron/legendas'
 
 let falhas = 0
 function ok(cond: unknown, msg: string): void {
@@ -164,6 +165,16 @@ void (async () => {
   ok(s2.porta === s.porta + 1, 'porta ocupada -> a proxima')
   await s2.fechar()
   await s.fechar()
+
+  // buscar_fala: o SRT do ffmpeg, a faixa em portugues e a busca sem acento.
+  const srt = '1\n00:20:28,780 --> 00:20:30,100\n{\\an8}Não dá! Gastei\\Ntodo meu dinheiro!\n\n2\n00:20:31,100 --> 00:20:32,200\nEu empresto <i>500 milhões</i>!\n'
+  const falas = lerSrt(srt)
+  ok(falas.length === 2 && falas[0]!.inicio === 1228.78 && falas[0]!.texto === 'Não dá! Gastei todo meu dinheiro!', 'lerSrt tira as marcas do ASS e le o tempo')
+  const faixas = 'Stream #0:2(eng): Subtitle: ass\nStream #0:3(por): Subtitle: ass\nStream #0:4(jpn): Subtitle: hdmv_pgs_subtitle'
+  ok(escolherFaixa(faixas) === 1 && escolherFaixa(faixas, 'eng') === 0 && escolherFaixa('Stream #0:1(jpn): Subtitle: hdmv_pgs_subtitle') === null, 'faixa: portugues primeiro, imagem nao conta')
+  const a = procurarNasFalas('C:/x/Anime.S01E07.mkv', falas, 'empresto 500 milhoes')
+  ok(a.length === 1 && a[0]!.episodio === 'S01E07' && a[0]!.em === 1231.1, 'acha sem acento, episodio pelo nome')
+  ok(procurarNasFalas('ep.mkv', falas, 'dinheiro empresto').length === 1, 'palavras em duas falas seguidas')
 
   console.log(falhas ? `\n${falhas} FALHARAM` : '\ntudo ok')
   process.exitCode = falhas ? 1 : 0

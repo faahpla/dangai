@@ -51,6 +51,15 @@ function diferencas(preset: CaptionStyle, atual: Record<string, unknown>): strin
   return Object.keys(atual).filter((k) => p[k] !== undefined && JSON.stringify(p[k]) !== JSON.stringify(atual[k]))
 }
 
+/** "12:30", "1:02:03", "750" ou 750 em segundos. null = nao veio. */
+function segundosDe(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v !== 'string' || !v.trim()) return null
+  const partes = v.trim().split(':').map(Number)
+  if (partes.some((x) => !Number.isFinite(x))) throw new Error(`Tempo invalido: "${v}" (use "12:30" ou segundos).`)
+  return partes.reduce((s, x) => s * 60 + x, 0)
+}
+
 export async function executar(n: Nucleo, p: PedidoDoClaude): Promise<unknown> {
   switch (p.acao) {
     case 'estado': {
@@ -111,7 +120,14 @@ export async function executar(n: Nucleo, p: PedidoDoClaude): Promise<unknown> {
       const anime = normal(String(p.args['anime'] ?? ''))
       const ep = /s(\d+)\s*e(\d+)/i.exec(String(p.args['episodio'] ?? ''))
       const limite = Math.min(200, Number(p.args['limite']) || 40)
+      // "perto": so as cenas daquele trecho do episodio (o minuto que a fala/o roteiro diz).
+      const perto = segundosDe(p.args['perto'])
+      if (perto !== null && !ep) throw new Error('"perto" precisa do episodio (ex.: episodio "S01E12", perto "14:32").')
+      const raio = Number(p.args['raio']) > 0 ? Number(p.args['raio']) : 15
+      const distancia = (c: { start: number; duration: number }): number =>
+        perto === null ? 0 : perto < c.start ? c.start - perto : perto > c.start + c.duration ? perto - (c.start + c.duration) : 0
       const achados = lib.clips.filter((c) => {
+        if (perto !== null && distancia(c) > raio) return false
         if (soFavoritas && !favoritas.has(c.id)) return false
         if (ep &&(c.season !== Number(ep[1]) || c.episode !== Number(ep[2]))) return false
         if (anime && !normal(`${c.anime} ${c.animeTitle}`).includes(anime)) return false
@@ -122,6 +138,7 @@ export async function executar(n: Nucleo, p: PedidoDoClaude): Promise<unknown> {
         }
         return true
       })
+      if (perto !== null) achados.sort((a, b) => distancia(a) - distancia(b))
       return {
         total: achados.length,
         clipes: achados.slice(0, limite).map((c) => ({
