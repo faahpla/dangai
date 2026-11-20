@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.11.3',
+    itens: [
+      'Claude (MCP): em vídeo de curiosidade, o Claude acha a cena certa em vários episódios. Ele procura a fala nas legendas dos episódios que você mandar (diz o episódio e o minuto) e pega só as cenas daquele trecho na Biblioteca. Antes de montar, ele mostra de qual episódio e minuto é cada frase para você conferir.',
+    ],
+  },
+  {
     versao: '2.11.2',
     itens: [
       'Claude (MCP): o Claude agora faz o "Reconhecer na mão" dos personagens. Ele agrupa os rostos do episódio, compara com as fotos do elenco, dá o nome de cada grupo e confirma — e o próximo episódio do anime já vem reconhecido. Vale para episódios cortados pelo Dangai (os do AnCut se reconhecem no AnCut).',
