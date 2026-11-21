@@ -5,6 +5,7 @@ import './index.css'
 import { App } from './App'
 import { useProject } from './store/project'
 import { useJuntar } from './store/juntar-projetos'
+import { useCortar } from './store/cortar-episodios'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('Elemento #root não encontrado')
@@ -15,6 +16,8 @@ if (import.meta.env.DEV) {
   Reflect.set(window, 'dangaiStore', useProject)
   // A tela do Juntar projetos, para o teste pelo CDP (scripts/teste/cdp.mjs).
   Reflect.set(window, 'dangaiJuntar', useJuntar)
+  // A fila do Cortar episodios, para o teste pelo CDP.
+  Reflect.set(window, 'dangaiCortar', useCortar)
 }
 
 createRoot(container).render(

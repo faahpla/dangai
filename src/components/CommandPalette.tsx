@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Combine,
+  Link2,
+  Scissors,
   Captions as CaptionsIcon,
   AudioWaveform,
   FolderOpen,
@@ -28,6 +30,7 @@ import {
 } from 'lucide-react'
 import { useResumoDeManga } from '@/store/resumo-de-manga'
 import { useJuntar } from '@/store/juntar-projetos'
+import { useCortar } from '@/store/cortar-episodios'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { copiarRelatorio } from '@/store/relatorio'
@@ -370,6 +373,20 @@ function useCommands(): Command[] {
         hint: 'os vídeos de ~30 s viram um de 60 s+',
         icon: Combine,
         run: () => void useJuntar.getState().abrir(),
+      },
+      {
+        id: 'cortar-episodios',
+        label: 'Cortar episódios',
+        hint: 'o corte do AnCut: o episódio vira as cenas da Biblioteca',
+        icon: Scissors,
+        run: () => useCortar.getState().abrir('arquivos'),
+      },
+      {
+        id: 'broll-por-link',
+        label: 'Baixar B-roll por link',
+        hint: 'trailer, gameplay, teaser: baixa e corta',
+        icon: Link2,
+        run: () => useCortar.getState().abrir('link'),
       },
       {
         id: 'relatorio',

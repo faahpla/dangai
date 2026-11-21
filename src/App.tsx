@@ -26,6 +26,8 @@ import { CaptionEditor } from '@/components/CaptionEditor'
 import { CommandPalette } from '@/components/CommandPalette'
 import { Library } from '@/components/Library'
 import { JuntarProjetos } from '@/components/JuntarProjetos'
+import { CortarEpisodios } from '@/components/CortarEpisodios'
+import { useCortar } from '@/store/cortar-episodios'
 import { useJuntar } from '@/store/juntar-projetos'
 import { EtapaDoAudio } from '@/components/EtapaDoAudio'
 import { EtapaDoRoteiro } from '@/components/EtapaDoRoteiro'
@@ -248,6 +250,8 @@ export function App() {
         useResumoDeManga.getState().aberta ||
         // O Juntar projetos tambem (o nome, o texto da frase) -- e o Esc e dele.
         useJuntar.getState().aberta ||
+        // O Cortar episodios tambem (os campos do anime e do episodio).
+        useCortar.getState().aberta ||
         useTelaCheia.getState().de !== null
       ) {
         /*
@@ -637,6 +641,8 @@ export function App() {
       <Script />
       {/* Antes da Biblioteca: a cena da ligacao abre a Biblioteca POR CIMA dele. */}
       <JuntarProjetos />
+      {/* (20/11) Antes da Biblioteca: o "Abrir a Biblioteca" dele abre por cima. */}
+      <CortarEpisodios />
       <Library />
       <EtapaDoAudio />
       <EtapaDoRoteiro />

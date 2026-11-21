@@ -15,6 +15,7 @@ import {
   Puzzle,
   RectangleHorizontal,
   RectangleVertical,
+  Scissors,
   Sparkles,
   Tv,
   X,
@@ -29,6 +30,7 @@ import { CartaoRecente, rotulosDoRecente } from "./CartaoRecente";
 import { PrepararODangai } from "./PrepararODangai";
 import { useResumoDeManga } from "@/store/resumo-de-manga";
 import { useJuntar } from "@/store/juntar-projetos";
+import { useCortar } from "@/store/cortar-episodios";
 
 interface DropzoneProps {
   isDragging: boolean;
@@ -401,6 +403,10 @@ function NichoAnime(alvo: PropsDoAlvo) {
       </Acao>
       <Acao icone={LibraryIcon} onClick={() => void openLibrary(true)} title="Procurar cenas na biblioteca (Ctrl+B)">
         Biblioteca de cenas
+      </Acao>
+      {/* (20/11) O corte do AnCut, aqui: o episodio vira as cenas da Biblioteca. */}
+      <Acao icone={Scissors} onClick={() => useCortar.getState().abrir("arquivos")} title="Cortar episódios em cenas (o mesmo corte do AnCut) e baixar B-roll por link">
+        Cortar episódios
       </Acao>
     </Nicho>
   );
