@@ -9,6 +9,7 @@ import {
   Loader2,
   Maximize2,
   RefreshCw,
+  Scissors,
   Search,
   Sparkles,
   Star,
@@ -39,6 +40,8 @@ import { useEscolhaAvulsa } from '@/store/escolha-avulsa'
 import { BarraDeEtapas } from './BarraDeEtapas'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
+import { RevisarCena, useRevisarCena } from './RevisarCena'
+import { useCortar } from '@/store/cortar-episodios'
 
 /**
  * Busca na biblioteca de cenas que o AnCut HUB ja cortou.
@@ -843,6 +846,19 @@ export function Library() {
             )}
             Sincronizar
           </button>
+          {/* (20/11) O corte do AnCut sem sair daqui: o episodio novo aparece nesta grade. */}
+          <button
+            type="button"
+            onClick={() => {
+              void openLibrary(false)
+              useCortar.getState().abrir('arquivos')
+            }}
+            title="Cortar episódios em cenas (o mesmo corte do AnCut) e baixar B-roll por link"
+            className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink"
+          >
+            <Scissors size={12} strokeWidth={1.5} />
+            Cortar episódio
+          </button>
           <button
             type="button"
             onClick={() => void openLibrary(false)}
@@ -1037,8 +1053,14 @@ export function Library() {
                 paraMesclar={paraMesclar}
                 onMesclar={alternarMescla}
                 onAbrir={setTocador}
+                onMenu={(clip, x, y) => {
+                  const porId = new Map(library.clips.map((c) => [c.id, c.path]))
+                  const alvos = paraMesclar.includes(clip.id) ? paraMesclar.map((id) => porId.get(id)).filter((c): c is string => !!c) : [clip.path]
+                  useRevisarCena.getState().abrirMenu({ clip, x, y, alvos })
+                }}
               />
             )}
+            <RevisarCena aoMudar={() => setParaMesclar([])} />
             {(paraMesclar.length > 0 || recadoDaMescla) && library && (
               <BarraDeMescla
                 ids={paraMesclar}
@@ -1822,6 +1844,8 @@ interface GradeProps {
   onMesclar?: (id: string) => void
   /** Abre o player grande. */
   onAbrir?: (clip: LibraryClip) => void
+  /** (20/11) O botao direito numa cena (o menu de revisar). */
+  onMenu?: (clip: LibraryClip, x: number, y: number) => void
 }
 
 /**
@@ -1846,6 +1870,7 @@ function Grade({
   paraMesclar = [],
   onMesclar,
   onAbrir,
+  onMenu,
 }: GradeProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [largura, setLargura] = useState(0)
@@ -1975,6 +2000,7 @@ function Grade({
                 destacado={clip.id === destaque}
                 paraMesclar={paraMesclar.indexOf(clip.id) + 1}
                 onAbrir={onAbrir ? () => onAbrir(clip) : undefined}
+                onMenu={onMenu ? (x, y) => onMenu(clip, x, y) : undefined}
               />
             ))}
         </div>
@@ -2186,8 +2212,11 @@ function Cartao({
   destacado = false,
   paraMesclar = 0,
   onAbrir,
+  onMenu,
 }: {
   clip: LibraryClip
+  /** (20/11) O botao direito: o menu de revisar a cena (RevisarCena). */
+  onMenu?: (x: number, y: number) => void
   /** Posicao na fila, comecando em 1. Zero quando nao foi escolhida. */
   ordem: number
   /** Acabou de ser procurada ("ir ate o clipe"): acende por um instante. */
@@ -2328,6 +2357,14 @@ function Cartao({
       onMouseEnter={entrar}
       onMouseMove={apontar}
       onMouseLeave={sair}
+      onContextMenu={
+        onMenu
+          ? (event) => {
+              event.preventDefault()
+              onMenu(event.clientX, event.clientY)
+            }
+          : undefined
+      }
       /*
        * Tudo que e texto vive AQUI, no tooltip, e nao embaixo da miniatura.
        *
@@ -2342,7 +2379,7 @@ function Cartao({
           : clip.solto
             ? `${clip.anime} · ${clip.solto.pasta ?? 'solto'} · ${clip.solto.titulo}${clip.solto.imagem ? ' · imagem' : ` · ${clip.duration.toFixed(1)}s (o vídeo inteiro: o trecho você escolhe no editor)`}${usada ? ' · já usado em outra frase' : ''}`
           : `${clip.animeTitle || clip.anime} · ${chaveEpisodio(clip)} · cena ${clip.shot} · ${clip.duration.toFixed(1)}s${clip.characters.length > 0 ? ` · ${clip.characters.map(natural).join(', ')}` : ''}${usada ? ' · já usada em outra frase' : ''}
-Ctrl+clique: marcar para mesclar com outras cenas seguidas`
+Ctrl+clique: marcar para mesclar com outras cenas seguidas · botão direito: quem está na cena, lixeira`
       }
       className={[
         'group flex cursor-pointer flex-col overflow-hidden rounded-sm border text-left transition-colors duration-150',
