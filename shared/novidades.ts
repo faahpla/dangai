@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.12.0',
+    itens: [
+      'Cortar episódios aqui mesmo, sem abrir o AnCut: no cartão Anime da tela inicial (ou "Cortar episódio" na Biblioteca), solte os episódios, confira anime, temporada e episódio, e corte. É o mesmo corte do AnCut: mesma pasta, mesmo histórico, e o AnCut vê tudo igual. Dá para enfileirar vários e escolher "Só cortar" ou "Cortar e reconhecer". Precisa do AnCut instalado (o motor é dele).',
+      'B-roll por link: na mesma janela, aba "B-roll por link", cole o link de um trailer ou gameplay (ou uma playlist), diga de que anime é, e ele baixa e corta como B-roll do anime.',
+      'Biblioteca, botão direito numa cena: "Quem está na cena" (tirar o personagem errado, marcar quem faltou, ou um nome novo), "Mandar para a lixeira" (as cenas marcadas com Ctrl+clique vão juntas) e "Apagar o episódio inteiro" (mostra o que vai sumir e pede para confirmar). Muda no AnCut também.',
+    ],
+  },
+  {
     versao: '2.11.4',
     itens: [
       'Claude (MCP): a cena acompanha a expressão da frase. "Ele odeia" vira uma cara de bravo, "foi empurrado" vira o empurrão: o Claude vê dezenas de cenas lado a lado e escolhe a expressão mais forte.',
