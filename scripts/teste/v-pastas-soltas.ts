@@ -9,7 +9,9 @@
  * - o video solto entra INTEIRO (a duracao dele), com miniatura, o titulo do
  *   nome do arquivo sem o [codigo] do download, temporada/episodio 0;
  * - a imagem solta entra como imagem (duracao 0);
- * - a serie e a pasta de cima; a subpasta ("Baixados") vai junto;
+ * - a serie e a pasta de cima; a subpasta ("Clipes") vai junto;
+ * - a "Baixados" fica de fora: e onde o AnCut guarda o video antes de cortar
+ *   como B-roll (lida como solta, o trailer aparecia duas vezes);
  * - NAO entra: o episodio do AnCut (continua como sempre), o episodio que o
  *   AnCut ainda esta cortando (shots/ sem o json), a lixeira, arquivo na raiz,
  *   o que nao e video nem imagem;
@@ -70,8 +72,11 @@ async function main(): Promise<void> {
   await imagem(join(gta, 'HXauRbaXYAAZMXl.jpg'))
   writeFileSync(join(gta, 'leia-me.txt'), 'nao e midia')
   await episodio(join(raiz, 'Chainsaw Man', 'S01E01'))
+  mkdirSync(join(raiz, 'Chainsaw Man', 'Clipes'), { recursive: true })
+  video(join(raiz, 'Chainsaw Man', 'Clipes', 'Official Trailer 2 [s8cP1Vt5US8].mp4'), 2)
+  // A pasta de trabalho do download do AnCut: o mesmo trailer ja esta cortado como B-roll.
   mkdirSync(join(raiz, 'Chainsaw Man', 'Baixados'), { recursive: true })
-  video(join(raiz, 'Chainsaw Man', 'Baixados', 'Official Trailer 2 [s8cP1Vt5US8].mp4'), 2)
+  video(join(raiz, 'Chainsaw Man', 'Baixados', 'Official Teaser [_PRaywfa1LE].mp4'), 1)
   // O episodio que o AnCut ainda esta cortando: shots/ sem o json.
   await episodio(join(raiz, 'Chainsaw Man', 'S01E02'), false)
   mkdirSync(join(raiz, '_lixeira'), { recursive: true })
@@ -80,7 +85,7 @@ async function main(): Promise<void> {
 
   console.log('\n== quais pastas sao soltas')
   const soltas = [...pastasSoltasEm(raiz, 0)].map((d) => d.slice(raiz.length + 1).replace(/\\/g, '/'))
-  ok('a do GTA e a Baixados; nem o episodio, nem o que o AnCut esta cortando, nem a lixeira, nem a raiz', soltas.join('|') === 'BUGs GTA 6|Chainsaw Man/Baixados', soltas.join('|'))
+  ok('a do GTA e a Clipes; nem o episodio, nem o que o AnCut esta cortando, nem a Baixados, nem a lixeira, nem a raiz', soltas.join('|') === 'BUGs GTA 6|Chainsaw Man/Clipes', soltas.join('|'))
   ok('so video e imagem contam (o .txt fica de fora)', midiaSoltaEm(gta).map((m) => m.nome).join('|') === 'Bug_de_la_catapulta. [2123047311479611393].mp4|HXauRbaXYAAZMXl.jpg|Motorista_fantasma. [2123050397027684353].mp4')
 
   console.log('\n== na grade')
@@ -101,7 +106,7 @@ async function main(): Promise<void> {
   )
   ok('a imagem: duracao 0 e marcada como imagem', !!foto && foto.duration === 0 && foto.path.endsWith('.jpg'))
   const trailer = indice.clips.find((c) => c.solto && c.anime === 'Chainsaw Man')
-  ok('a Baixados: a serie e a de cima, a subpasta vai junto', trailer?.solto?.pasta === 'Baixados' && trailer.solto.titulo === 'Official Trailer 2', JSON.stringify(trailer?.solto))
+  ok('a Clipes: a serie e a de cima, a subpasta vai junto', trailer?.solto?.pasta === 'Clipes' && trailer.solto.titulo === 'Official Trailer 2', JSON.stringify(trailer?.solto))
   const ep = indice.clips.find((c) => c.anime === 'Chainsaw Man' && !c.solto)
   ok('o episodio do AnCut continua como sempre (S01E01)', ep?.season === 1 && ep.episode === 1)
   ok('nada da lixeira, da raiz nem do episodio pela metade', !indice.clips.some((c) => /descartado|na-raiz|S01E02/.test(c.path)))

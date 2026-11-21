@@ -900,7 +900,14 @@ const IMAGEM_SOLTA = /\.(jpe?g|png|webp)$/i
  * json, que viraria centenas de "soltos" ate ele terminar. E a raiz em si (os
  * soltos precisam de uma pasta que diga de que serie sao), o que comeca com
  * `_` ou `.` (a lixeira) e as pastas de trabalho de dentro do episodio.
+ *
+ * (20/11) E a "Baixados" de cada anime: e onde o AnCut (e agora o Dangai, no
+ * "B-roll por link") guarda o video baixado ANTES de cortar -- o que aparece
+ * na Biblioteca e o B-roll cortado ("B-roll 01 - Titulo"). Lida como solta, o
+ * mesmo trailer aparecia duas vezes (os tres do acervo dele).
  */
+export const PASTAS_DE_TRABALHO = ['shots', 'keyframes', 'metadata', 'baixados']
+
 export function* pastasSoltasEm(dir: string, profundidade: number): Generator<string> {
   if (profundidade > MAX_DEPTH) return
   if (existsSync(join(dir, 'metadata', 'shots.json')) || ehPasta(join(dir, 'shots'))) return
@@ -915,7 +922,7 @@ export function* pastasSoltasEm(dir: string, profundidade: number): Generator<st
   }
   for (const e of entradas.sort((a, b) => NUMERICA.compare(a.name, b.name))) {
     if (!e.isDirectory() || e.name.startsWith('_') || e.name.startsWith('.')) continue
-    if (['shots', 'keyframes', 'metadata'].includes(e.name.toLowerCase())) continue
+    if (PASTAS_DE_TRABALHO.includes(e.name.toLowerCase())) continue
     yield* pastasSoltasEm(join(dir, e.name), profundidade + 1)
   }
 }
