@@ -88,6 +88,9 @@ function rodarFfmpeg(args: string[]): Promise<void> {
  * Publico: o modulo recap ("Enviar para o AnCut") usa o mesmo.
  */
 export function bancoDoAncut(): string | null {
+  // O banco do motor de TESTE (ver electron/services/ancut/motor.ts): o teste nunca abre o de verdade.
+  const deTeste = process.env['DANGAI_ANCUT_BANCO']
+  if (deTeste) return existsSync(deTeste) ? deTeste : null
   const base = process.env['LOCALAPPDATA']
   if (!base) return null
   const pasta = join(base, 'CorteCenas', 'CorteCenas')

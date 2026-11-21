@@ -271,6 +271,36 @@ const bridge: DangaiBridge = {
     }
   },
 
+  // (20/11) O AnCut dentro do Dangai.
+  ancutMotor: () => ipcRenderer.invoke(IPC.ancutMotor),
+  ancutLerNome: (video) => ipcRenderer.invoke(IPC.ancutLerNome, video),
+  ancutPastaDoAnime: (anime) => ipcRenderer.invoke(IPC.ancutPastaDoAnime, anime),
+  ancutEscolherVideos: () => ipcRenderer.invoke(IPC.ancutEscolherVideos),
+  ancutCortar: (pedido) => ipcRenderer.invoke(IPC.ancutCortar, pedido),
+  ancutCancelar: () => ipcRenderer.invoke(IPC.ancutCancelar),
+  onAncutEvento: (listener) => {
+    const handler = (_event: unknown, e: Parameters<typeof listener>[0]): void => listener(e)
+    ipcRenderer.on(IPC.ancutEvento, handler)
+    return () => {
+      ipcRenderer.off(IPC.ancutEvento, handler)
+    }
+  },
+  ancutCena: (clipe) => ipcRenderer.invoke(IPC.ancutCena, clipe),
+  ancutLixeira: (clipes) => ipcRenderer.invoke(IPC.ancutLixeira, clipes),
+  ancutMarcar: (clipe, personagemId, remover) => ipcRenderer.invoke(IPC.ancutMarcar, clipe, personagemId, remover),
+  ancutNovoPersonagem: (clipe, nome) => ipcRenderer.invoke(IPC.ancutNovoPersonagem, clipe, nome),
+  ancutApagarEpisodio: (clipe, aplicar) => ipcRenderer.invoke(IPC.ancutApagarEpisodio, clipe, aplicar),
+  ancutLinkListar: (url) => ipcRenderer.invoke(IPC.ancutLinkListar, url),
+  ancutLinkBaixar: (pedido) => ipcRenderer.invoke(IPC.ancutLinkBaixar, pedido),
+  ancutLinkCancelar: () => ipcRenderer.invoke(IPC.ancutLinkCancelar),
+  onAncutLinkEvento: (listener) => {
+    const handler = (_event: unknown, e: Parameters<typeof listener>[0]): void => listener(e)
+    ipcRenderer.on(IPC.ancutLinkEvento, handler)
+    return () => {
+      ipcRenderer.off(IPC.ancutLinkEvento, handler)
+    }
+  },
+
   startRender: (args: StartRenderArgs) =>
     ipcRenderer.invoke(IPC.startRender, args) as Promise<IpcResult<string | null>>,
 

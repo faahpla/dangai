@@ -9,6 +9,18 @@ import type {
   Transcript,
 } from './contract'
 import type { PontoDeGanho } from './ducking'
+import type {
+  CenaNoAncut,
+  EventoDoCorte,
+  EventoDoDownload,
+  MotorDoAncut,
+  NomeLido,
+  PedidoDeCorte,
+  PedidoDeDownload,
+  PlanoDeApagarEpisodio,
+  VideoBaixado,
+  VideoDoLink,
+} from './ancut'
 import type { MedidaDoSom } from './loudness'
 import type { OpenedProject, ProjectFile } from './project-file'
 import type { ModuloPublico } from './modulos'
@@ -47,6 +59,23 @@ export const IPC = {
   prepararFraseDeLigacao: 'projeto:frase-de-ligacao',
   resumoDoProjeto: 'projeto:resumo',
   escolherProjetos: 'projeto:escolher-varios',
+  /** (20/11) O AnCut dentro do Dangai (ver shared/ancut.ts e electron/services/ancut). */
+  ancutMotor: 'ancut:motor',
+  ancutLerNome: 'ancut:ler-nome',
+  ancutPastaDoAnime: 'ancut:pasta-do-anime',
+  ancutEscolherVideos: 'ancut:escolher-videos',
+  ancutCortar: 'ancut:cortar',
+  ancutCancelar: 'ancut:cancelar',
+  ancutEvento: 'ancut:evento',
+  ancutCena: 'ancut:cena',
+  ancutLixeira: 'ancut:lixeira',
+  ancutMarcar: 'ancut:marcar',
+  ancutNovoPersonagem: 'ancut:novo-personagem',
+  ancutApagarEpisodio: 'ancut:apagar-episodio',
+  ancutLinkListar: 'ancut:link-listar',
+  ancutLinkBaixar: 'ancut:link-baixar',
+  ancutLinkCancelar: 'ancut:link-cancelar',
+  ancutLinkEvento: 'ancut:link-evento',
   videoProntoProgress: 'upscale:video-pronto-progress',
   cancelarUpscale: 'upscale:cancel',
   inverterClipe: 'assets:inverter',
@@ -921,6 +950,30 @@ export interface DangaiBridge {
   resumoDoProjeto(caminho: string): Promise<IpcResult<ResumoDeProjeto>>
   /** (16/11) O dialogo de escolher varios .dangai (vazio = desistiu). */
   escolherProjetos(): Promise<IpcResult<string[]>>
+  /** (20/11) O motor do AnCut nesta maquina (achado, versao, pasta de saida). */
+  ancutMotor(): Promise<IpcResult<MotorDoAncut>>
+  /** Anime, temporada e episodio pelo nome do arquivo (null = o motor nao respondeu). */
+  ancutLerNome(video: string): Promise<IpcResult<NomeLido | null>>
+  /** Em que pasta da saida o anime cai, e as que ja existem. */
+  ancutPastaDoAnime(anime: string): Promise<IpcResult<{ pasta: string; existentes: string[] } | null>>
+  /** O dialogo de escolher os episodios (videos) para cortar (vazio = desistiu). */
+  ancutEscolherVideos(): Promise<IpcResult<string[]>>
+  /** Corta um episodio; volta como acabou (o andamento chega por onAncutEvento). */
+  ancutCortar(pedido: PedidoDeCorte): Promise<IpcResult<EventoDoCorte>>
+  ancutCancelar(): Promise<IpcResult<null>>
+  onAncutEvento(listener: (e: EventoDoCorte) => void): () => void
+  /** A cena de um clipe da Biblioteca no AnCut (null = nao e de um episodio do AnCut). */
+  ancutCena(clipe: string): Promise<IpcResult<CenaNoAncut | null>>
+  /** Manda as cenas para a lixeira do episodio (a _lixeira dentro da pasta dele). */
+  ancutLixeira(clipes: readonly string[]): Promise<IpcResult<{ apagadas: number; erro?: string }>>
+  ancutMarcar(clipe: string, personagemId: number, remover: boolean): Promise<IpcResult<CenaNoAncut | null>>
+  ancutNovoPersonagem(clipe: string, nome: string): Promise<IpcResult<CenaNoAncut | null>>
+  /** Apagar o episodio do clipe: sem `aplicar`, so o plano. */
+  ancutApagarEpisodio(clipe: string, aplicar: boolean): Promise<IpcResult<PlanoDeApagarEpisodio | null>>
+  ancutLinkListar(url: string): Promise<IpcResult<{ itens: VideoDoLink[]; erro?: string }>>
+  ancutLinkBaixar(pedido: PedidoDeDownload): Promise<IpcResult<VideoBaixado | { erro: string }>>
+  ancutLinkCancelar(): Promise<IpcResult<null>>
+  onAncutLinkEvento(listener: (e: EventoDoDownload) => void): () => void
   /** Interrompe o upscale que estiver rodando, do render ou do video pronto. */
   cancelarUpscale(): Promise<IpcResult<null>>
   onVideoProntoProgress(listener: (p: { feitos: number; total: number; nome: string }) => void): () => void

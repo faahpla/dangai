@@ -78,6 +78,20 @@ import {
   writeAutosave,
 } from './services/project'
 import { juntarProjetosNoDisco, prepararFraseDeLigacao, resumoDoProjeto } from './services/juntar-projetos'
+import { cancelarCorte, cortar as cortarNoAncut, estadoDoMotor, lerNome, pastaDoAnime } from './services/ancut/motor'
+import { apagarEpisodio, cenaNoAncut, mandarParaALixeira, marcarNovoPersonagem, marcarPersonagem } from './services/ancut/revisar'
+import { baixarLink, cancelarDownload, listarLink } from './services/ancut/baixar'
+import type {
+  CenaNoAncut,
+  EventoDoCorte,
+  MotorDoAncut,
+  NomeLido,
+  PedidoDeCorte,
+  PedidoDeDownload,
+  PlanoDeApagarEpisodio,
+  VideoBaixado,
+  VideoDoLink,
+} from '@shared/ancut'
 import { cancelRender, RenderCancelled, renderVideo } from './services/render'
 import { encerrarWhisper } from './services/whisper'
 import { analyze } from './services/transcribe'
@@ -642,6 +656,47 @@ export function registerIpc(): void {
       filters: [{ name: 'Projeto do Dangai', extensions: ['dangai'] }],
     })
     return r.canceled ? [] : r.filePaths
+  })
+
+  // ---------------------------------------------------------- o AnCut (20/11)
+
+  const enviarAoAncut = (canal: string, e: unknown): void => {
+    for (const janela of BrowserWindow.getAllWindows()) janela.webContents.send(canal, e)
+  }
+  handle<[], MotorDoAncut>(IPC.ancutMotor, () => estadoDoMotor())
+  handle<[string], NomeLido | null>(IPC.ancutLerNome, (video) => lerNome(String(video)))
+  handle<[string], { pasta: string; existentes: string[] } | null>(IPC.ancutPastaDoAnime, (anime) => pastaDoAnime(String(anime ?? '')))
+  handle<[], string[]>(IPC.ancutEscolherVideos, async () => {
+    const r = await dialog.showOpenDialog({
+      title: 'Escolher os episódios para cortar',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Vídeo', extensions: ['mkv', 'mp4', 'avi', 'mov', 'webm', 'm4v', 'ts', 'm2ts'] }],
+    })
+    return r.canceled ? [] : r.filePaths
+  })
+  handle<[PedidoDeCorte], EventoDoCorte>(IPC.ancutCortar, (pedido) => cortarNoAncut(pedido, (e) => enviarAoAncut(IPC.ancutEvento, e)))
+  handle<[], null>(IPC.ancutCancelar, async () => {
+    cancelarCorte()
+    return null
+  })
+  handle<[string], CenaNoAncut | null>(IPC.ancutCena, async (clipe) => cenaNoAncut(String(clipe)))
+  handle<[readonly string[]], { apagadas: number; erro?: string }>(IPC.ancutLixeira, (clipes) =>
+    mandarParaALixeira(Array.isArray(clipes) ? clipes.filter((c): c is string => typeof c === 'string') : []),
+  )
+  handle<[string, number, boolean], CenaNoAncut | null>(IPC.ancutMarcar, (clipe, personagemId, remover) =>
+    marcarPersonagem(String(clipe), Number(personagemId), remover === true),
+  )
+  handle<[string, string], CenaNoAncut | null>(IPC.ancutNovoPersonagem, (clipe, nome) => marcarNovoPersonagem(String(clipe), String(nome ?? '')))
+  handle<[string, boolean], PlanoDeApagarEpisodio | null>(IPC.ancutApagarEpisodio, (clipe, aplicar) => apagarEpisodio(String(clipe), aplicar === true))
+  handle<[string], { itens: VideoDoLink[]; erro?: string }>(IPC.ancutLinkListar, (url) =>
+    listarLink(String(url ?? ''), (e) => enviarAoAncut(IPC.ancutLinkEvento, e)),
+  )
+  handle<[PedidoDeDownload], VideoBaixado | { erro: string }>(IPC.ancutLinkBaixar, (pedido) =>
+    baixarLink(pedido, (e) => enviarAoAncut(IPC.ancutLinkEvento, e)),
+  )
+  handle<[], null>(IPC.ancutLinkCancelar, async () => {
+    cancelarDownload()
+    return null
   })
 
   handle<[string | undefined], string | null>(IPC.upscaleVideoPronto, async (caminhoDado) => {

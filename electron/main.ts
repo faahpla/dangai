@@ -21,6 +21,8 @@ import { configureInverter } from './services/inverter'
 import { configureSobreposicao } from './services/sobreposicao'
 import { configureEdicaoDeAudio } from './services/edicao-de-audio'
 import { configureVst, fecharJanelasDosPlugins } from './services/vst'
+import { encerrarAncut } from './services/ancut/motor'
+import { cancelarDownload } from './services/ancut/baixar'
 import { configureAudio } from './services/audio'
 import { configureSfx, ensureSfxDir } from './services/sfx'
 import { configureFontes, ensureFontesDir } from './services/fontes'
@@ -321,6 +323,11 @@ app.on('before-quit', (evento) => segurarSaida(evento, () => app.quit()))
 app.on('before-quit', encerrarWhisper)
 // A janela de um plugin (o Fresh Air) e outro programa: fecha junto com o Dangai.
 app.on('before-quit', fecharJanelasDosPlugins)
+// (20/11) O motor do AnCut e o download do B-roll nao ficam orfaos segurando a placa e a rede.
+app.on('before-quit', () => {
+  encerrarAncut()
+  cancelarDownload()
+})
 // Depois de tudo fechado: os arquivos de trabalho desta sessao (ver services/faxina).
 app.on('will-quit', () => {
   limparAoSair()
