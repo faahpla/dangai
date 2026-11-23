@@ -20,6 +20,7 @@ encerra uma cena.
 | `src/remotion/` | composições Remotion que geram o vídeo |
 | `electron/` | processo main e `electron/services/` |
 | `shared/` | contrato entre main e renderer: `channels.ts`, `contract.ts`, `plan.ts`, `align.ts`, `rhythm.ts`, `sfx.ts`, `selection.ts` |
+| `motor/ancut/` | o código do motor de cortes (o do AnCut), copiado do `ancut-hub-engine` por `node scripts/motor-ancut.mjs` (`--lock` regera a lista do Python). Não editar aqui: conserto vai no `ancut-hub-engine` e volta pelo script. O Python dele é baixado pela tela "Motor de cortes" (`electron/services/ancut/runtime`, o instalador do recap trazido para o núcleo) |
 
 Mudou o formato de uma mensagem IPC? O tipo mora em `shared/` — mexa lá primeiro
 e deixe os dois lados seguirem o tipo.

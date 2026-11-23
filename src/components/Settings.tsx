@@ -6,6 +6,7 @@ import { tocarSomDePronto } from "@/store/som-de-pronto";
 import { Atalhos } from "./Atalhos";
 import { ChaveDoGemini, LINK_DA_CHAVE_DO_GEMINI } from "./ChaveDoGemini";
 import { ModulosNasConfiguracoes, SecoesDosModulos } from "@/modulos";
+import { ConfigDoCorte } from "./MotorDeCortes";
 
 /**
  * Um campo que importa: a chave da IA. O resto e escolha rara.
@@ -544,6 +545,11 @@ export function Settings() {
                   </>
                 )}
               </p>
+              <div className="my-5 h-px bg-line" />
+              <label data-secao="cortar" className="mb-1.5 block text-[11px] font-medium text-ink-2">
+                Cortar episódios
+              </label>
+              <ConfigDoCorte />
               <SecoesDosModulos depoisDe="biblioteca" />
               <SecoesDosModulos depoisDe="fim" />
               <ModulosNasConfiguracoes />

@@ -22,6 +22,7 @@ import { configureSobreposicao } from './services/sobreposicao'
 import { configureEdicaoDeAudio } from './services/edicao-de-audio'
 import { configureVst, fecharJanelasDosPlugins } from './services/vst'
 import { encerrarAncut } from './services/ancut/motor'
+import { configurarMotorRuntime, encerrarMotorRuntime, iniciarMotorRuntime } from './services/ancut/runtime'
 import { cancelarDownload } from './services/ancut/baixar'
 import { configureAudio } from './services/audio'
 import { configureSfx, ensureSfxDir } from './services/sfx'
@@ -286,6 +287,15 @@ app.whenReady().then(async () => {
     versaoDoApp: app.getVersion(),
   })
 
+  // (23/11) O motor de cortes do Dangai: o codigo vem no instalador, o Python e baixado pela tela.
+  configurarMotorRuntime({
+    userData,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath,
+    empacotado: app.isPackaged,
+    versaoDoApp: app.getVersion(),
+  })
+
   registerIpc()
   registrarIpcDosModulos()
   // Configuracoes gravadas (pela tela, por um modulo, pelo dialogo da
@@ -295,6 +305,8 @@ app.whenReady().then(async () => {
   })
   createWindow()
   void ligarModulosNoInicio()
+  // Restos de um Remover, a conta na GPU quando o driver muda e a atualizacao sozinha dos pacotes.
+  iniciarMotorRuntime()
   // O "Do meu jeito" le os projetos que ainda nao conhece, sem atrasar a janela.
   setTimeout(() => void aprenderDasPastas().catch((err: unknown) => console.warn('[meu-jeito] varredura:', err)), 5000)
 
@@ -327,6 +339,8 @@ app.on('before-quit', fecharJanelasDosPlugins)
 app.on('before-quit', () => {
   encerrarAncut()
   cancelarDownload()
+  // A instalacao do motor para e guarda onde parou (o Continuar retoma).
+  encerrarMotorRuntime()
 })
 // Depois de tudo fechado: os arquivos de trabalho desta sessao (ver services/faxina).
 app.on('will-quit', () => {

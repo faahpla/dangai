@@ -48,6 +48,16 @@ extraResources:
   # momento possivel.
   - from: assets/upscale
     to: upscale
+  # (23/11) O CODIGO do motor de cortes (o do AnCut, ~1,2 MB de Python,
+  # copiado do ancut-hub-engine por scripts/motor-ancut.mjs) e a lista do
+  # Python dele. O Python + torch (~5 GB) NAO vai aqui: a tela "Motor de
+  # cortes" baixa so para quem quiser, em %LOCALAPPDATA%\Dangai\ancut.
+  - from: motor/ancut
+    to: motor/ancut
+    filter:
+      - '**/*'
+      - '!**/__pycache__{,/**}'
+      - '!**/*.pyc'
   # O CODIGO do motor de personagens do modulo recap (~1,5 MB de Python). O
   # runtime dele (Python oficial + torch, ~5 GB) e o uv NAO vao aqui: a tela do
   # modulo instala no 1o uso, em %LOCALAPPDATA%\Dangai\recap. Fica de fora o

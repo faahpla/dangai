@@ -91,6 +91,12 @@ export function bancoDoAncut(): string | null {
   // O banco do motor de TESTE (ver electron/services/ancut/motor.ts): o teste nunca abre o de verdade.
   const deTeste = process.env['DANGAI_ANCUT_BANCO']
   if (deTeste) return existsSync(deTeste) ? deTeste : null
+  // (23/11) Os dados de teste do motor do Dangai (DANGAI_ANCUT_DADOS = o ANCUT_DADOS do motor).
+  const dados = process.env['DANGAI_ANCUT_DADOS']?.trim()
+  if (dados) {
+    const banco = join(dados, 'cache', 'index.db')
+    return existsSync(banco) ? banco : null
+  }
   const base = process.env['LOCALAPPDATA']
   if (!base) return null
   const pasta = join(base, 'CorteCenas', 'CorteCenas')
