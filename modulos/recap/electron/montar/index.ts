@@ -115,7 +115,8 @@ export function encaixarTudo(
     return feito.escolha
   })
   if (!take) return { escolhas: encaixadas, avisos }
-  const { escolhas, juntadas } = semPiscar(encaixadas, contexto, minimoSec)
+  // (22/11) O gancho (a 1a frase) corta rapido de proposito: fica fora do semPiscar.
+  const { escolhas, juntadas } = semPiscar(encaixadas, contexto, minimoSec, frasesDoRoteiro(roteiro)[0]?.id ?? null)
   for (const id of juntadas) avisos.push(`${id}: voltou a ter uma cena (pedaco curto na voz)`)
   return { escolhas, avisos }
 }

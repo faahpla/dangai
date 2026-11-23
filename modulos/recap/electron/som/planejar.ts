@@ -31,6 +31,7 @@ import {
   type ParteComClima,
   type TrechoDaTrilha,
 } from '../../shared/trilha-sonora'
+import { COMBO_DO_GANCHO, entradaDoGuia, musicaDoGuia, servePeloAnime } from '../../shared/guia-de-musicas'
 import { integradoNoTrecho } from '@shared/loudness'
 import { listSfx, sfxDir } from '../sfx'
 import { climasDasMusicas, climasDasPartes } from './clima'
@@ -339,8 +340,10 @@ async function planejarTrilha(
   }
   // A forcada (o "trocar"): uma so, o video inteiro, com o drop na saida do gancho.
   if (forcada) {
-    const m = await musicaNoTrecho(forcada, { at: 0, ate: pedido.duracaoSec, drop: gancho ?? 0, clima: 'acao' }, true, true, regras, avisos)
-    return { musicas: m ? [{ ...m, clima: null }] : [], trocas: [] }
+    const m = await musicaNoTrecho(forcada, { at: 0, ate: pedido.duracaoSec, drop: gancho ?? 0, clima: 'acao' }, true, true, regras, avisos, {
+      entradaSec: entradaDoGuia(musicaDoGuia(forcada), 'acao'),
+    })
+    return { musicas: m ? comOGanchoAberto({ ...m, clima: null }, gancho, pedido.duracaoSec) : [], trocas: [] }
   }
 
   const todas = await listarMusicas()
@@ -371,8 +374,15 @@ async function planejarTrilha(
 
   // A ordem do "sem repetir": nunca usadas, depois a usada ha mais tempo; as de agora por ultimo.
   const evitar = new Set(pedido.evitarMusicas.map((p) => p.replace(/\\/g, '/').toLowerCase()))
+  // (22/11) A abertura de um anime (Haruka Mirai) so no video dele, e nele ela vem primeiro.
+  const doVideo = (m: { fileName: string }): boolean => servePeloAnime(musicaDoGuia(m.fileName), pedido.vozPath)
+  const daquiPrimeiro = (m: { fileName: string }): number => (musicaDoGuia(m.fileName)?.doAnime && doVideo(m) ? 0 : 1)
   const ordem = [...todas]
+    .filter(doVideo)
     .sort((a, b) => {
+      const pa = daquiPrimeiro(a)
+      const pb = daquiPrimeiro(b)
+      if (pa !== pb) return pa - pb
       const ea = evitar.has(a.path.replace(/\\/g, '/').toLowerCase()) ? 1 : 0
       const eb = evitar.has(b.path.replace(/\\/g, '/').toLowerCase()) ? 1 : 0
       if (ea !== eb) return ea - eb
@@ -381,7 +391,19 @@ async function planejarTrilha(
       if (ua !== ub) return ua < ub ? -1 : 1
       return a.fileName.localeCompare(b.fileName, 'pt-BR')
     })
-    .map((m) => ({ ...m, clima: climaDaMusica.get(m.path) ?? null }))
+    .map((m) => {
+      // (22/11) O guia do Levi manda no clima (shared/guia-de-musicas.ts).
+      const guia = musicaDoGuia(m.fileName)
+      return {
+        ...m,
+        guia,
+        clima: guia?.climas[0] ?? climaDaMusica.get(m.path) ?? null,
+        climas: guia?.climas,
+        especifica: guia?.especifica,
+        soNoGancho: guia?.soNoGancho,
+      }
+    })
+  const doGuia = (id: string): (typeof ordem)[number] | undefined => ordem.find((m) => m.guia?.id === id)
 
   const musicas: MusicaPlanejada[] = []
   const usadas = new Set<string>()
@@ -389,27 +411,89 @@ async function planejarTrilha(
   for (const [k, trecho] of trechos.entries()) {
     let feita: MusicaPlanejada | null = null
     for (let tentativa = 0; tentativa < 4 && !feita; tentativa++) {
-      const vez = musicaDoClima(trecho.clima, ordem.filter((m) => !ruins.has(m.path)), usadas)
+      const vez = musicaDoClima(trecho.clima, ordem.filter((m) => !ruins.has(m.path)), usadas, k === 0, trecho.ate - trecho.at)
       if (!vez) break
-      feita = await musicaNoTrecho(vez.path, trecho, k === 0, k === trechos.length - 1, regras, avisos).catch((err) => {
+      const ultima = k === trechos.length - 1
+      const falhou = (err: unknown): null => {
         console.warn('[som] musica ilegivel, tentando a proxima:', vez.fileName, err)
         return null
-      })
+      }
+      // (22/11) O COMBO DO GANCHO do Levi ("a que mais gosto"): a Montagem Batchi slowed sob o gancho e,
+      // na virada, a instrumental (0:25 da slowed = 0:19 da instrumental, no corte).
+      const slowed = doGuia(COMBO_DO_GANCHO.gancho)
+      const instrumental = doGuia(COMBO_DO_GANCHO.depois)
+      const ehCombo = vez.guia?.id === COMBO_DO_GANCHO.gancho || vez.guia?.id === COMBO_DO_GANCHO.depois
+      if (k === 0 && gancho !== null && gancho > 0.5 && ehCombo && slowed && instrumental && !ruins.has(slowed.path) && !ruins.has(instrumental.path)) {
+        const noGancho = await musicaNoTrecho(slowed.path, { ...trecho, ate: gancho, drop: gancho }, true, false, regras, avisos, {
+          entradaSec: COMBO_DO_GANCHO.corteNoGanchoSec,
+        }).catch(falhou)
+        const depois = await musicaNoTrecho(instrumental.path, { ...trecho, at: gancho, drop: gancho }, false, ultima, regras, avisos, {
+          entradaSec: COMBO_DO_GANCHO.entradaDepoisSec,
+        }).catch(falhou)
+        if (noGancho && depois) {
+          musicas.push({ ...noGancho, ducking: null, fadeInSec: 0.05, emenda: true }, { ...depois, fadeInSec: 0 })
+          usadas.add(slowed.path)
+          usadas.add(instrumental.path)
+          feita = null
+          break
+        }
+        if (!noGancho) ruins.add(slowed.path)
+        if (!depois) ruins.add(instrumental.path)
+        continue
+      }
+      // A slowed sem o par (ou fora do gancho): fica de fora.
+      if (vez.guia?.id === COMBO_DO_GANCHO.gancho) {
+        ruins.add(vez.path)
+        continue
+      }
+      feita = await musicaNoTrecho(vez.path, trecho, k === 0, ultima, regras, avisos, {
+        entradaSec: entradaDoGuia(vez.guia, trecho.clima),
+        comecoSec: vez.guia?.comecoSec ?? null,
+      }).catch(falhou)
       if (!feita) ruins.add(vez.path)
       else {
         usadas.add(vez.path)
-        if (vez.clima !== trecho.clima) avisos.push(`Sem musica de ${trecho.clima}: usei ${vez.clima ?? 'outra'}`)
+        const serve = vez.clima === trecho.clima || !!vez.climas?.includes(trecho.clima)
+        if (!serve) avisos.push(`Sem musica de ${trecho.clima}: usei ${vez.clima ?? 'outra'}`)
+        // (22/11) O gancho com musica que se ouve: ate a saida dele, sem abaixar sob a voz e sem o
+        // fade lento ("parece que comeca sem musica"); do drop em diante, a mesma faixa seguindo.
+        if (k === 0) {
+          musicas.push(...comOGanchoAberto(feita, gancho, trecho.ate))
+          feita = null
+          break
+        }
       }
     }
     if (feita) musicas.push(feita)
   }
   if (musicas.length === 0) avisos.push('Nenhuma musica da pasta deu para ler')
   // As trocas: o comeco de cada musica depois da primeira.
-  const trocas = musicas.slice(1).map((m, i) => ({
-    t: m.at,
-    calma: CLIMAS_CALMOS.has(m.clima as Clima) && !CLIMAS_CALMOS.has(musicas[i]!.clima as Clima),
-  }))
+  // A emenda (a mesma faixa seguindo, o combo do gancho) nao e troca: ali ja tem o riser do gancho.
+  const trocas = musicas
+    .slice(1)
+    .map((m, i) => ({ m, antes: musicas[i]! }))
+    .filter(({ antes }) => !antes.emenda)
+    .map(({ m, antes }) => ({
+      t: m.at,
+      calma: CLIMAS_CALMOS.has(m.clima as Clima) && !CLIMAS_CALMOS.has(antes.clima as Clima),
+    }))
   return { musicas, trocas }
+}
+
+/**
+ * (22/11) O GANCHO COM MUSICA QUE SE OUVE ("parece que comeca sem musica", o
+ * Levi no Overgeared S01E09): a 1a musica vira dois pedacos da mesma faixa,
+ * emendados -- ate a saida do gancho sem ducking e sem o fade lento; dali em
+ * diante a mesma faixa seguindo (o drop cai ali), com o ducking de sempre.
+ * Sem gancho (ou gancho que nao cabe no trecho): a musica como veio.
+ */
+function comOGanchoAberto(m: MusicaPlanejada, gancho: number | null, fimDoTrecho: number): MusicaPlanejada[] {
+  if (gancho === null || !(gancho > 0.5) || gancho > fimDoTrecho - 0.5 || m.at > 0.01) return [m]
+  const g = Math.round(gancho * 1000) / 1000
+  return [
+    { ...m, ate: g, ducking: null, fadeInSec: 0.05, emenda: true, dropSec: null },
+    { ...m, at: g, inSec: Math.round((m.inSec + gancho) * 1000) / 1000, fadeInSec: 0 },
+  ]
 }
 
 /** Uma musica num trecho: o ponto do arquivo que poe o drop no corte, o ganho do pedaco que toca. */
@@ -420,6 +504,12 @@ async function musicaNoTrecho(
   ultima: boolean,
   regras: RegrasDeSom,
   avisos: string[],
+  /**
+   * (22/11) O guia do Levi: `entradaSec` = o drop que ele usa (manda no
+   * detector, se couber); `comecoSec` = de onde ela toca (CLIMA LINDO 0:10,
+   * River's End 1:20), sem procurar drop.
+   */
+  doGuia: { entradaSec?: number | null; comecoSec?: number | null } = {},
 ): Promise<MusicaPlanejada | null> {
   const m = await medirSomDetalhado(caminho)
   if (!(m.durationSec > 1)) {
@@ -429,10 +519,15 @@ async function musicaNoTrecho(
   const entradas = await entradasDaMusica(caminho).catch(() => ({ durationSec: m.durationSec, entradas: [] }))
   // (17/11) Onde ela comeca a sumir: o trecho nao entra no fade do fim.
   const fimUtilSec = fimUtilDaMusica(m.blocos, m.lufsIntegrado, m.durationSec, m.fimSomSec)
-  const { inSec: bruto, entrada } = inicioParaODrop(
-    { entradas: entradas.entradas, durationSec: m.durationSec, inicioSomSec: m.inicioSomSec, fimUtilSec },
-    trecho,
-  )
+  const daMusica = { durationSec: m.durationSec, inicioSomSec: m.inicioSomSec, fimUtilSec }
+  let escolha: { inSec: number; entrada: { t: number; forca: number } | null } | null = null
+  if (typeof doGuia.comecoSec === 'number' && doGuia.comecoSec < fimUtilSec - 2) {
+    escolha = { inSec: doGuia.comecoSec, entrada: null }
+  } else if (typeof doGuia.entradaSec === 'number' && doGuia.entradaSec < fimUtilSec - 1) {
+    const r = inicioParaODrop({ ...daMusica, entradas: [{ t: doGuia.entradaSec, forca: 100 }] }, trecho)
+    if (r.entrada) escolha = r
+  }
+  const { inSec: bruto, entrada } = escolha ?? inicioParaODrop({ ...daMusica, entradas: entradas.entradas }, trecho)
   const inSec = Math.min(bruto, Math.max(m.durationSec - 1, 0))
   const dura = trecho.ate - trecho.at
   const toca = Math.min(dura, fimUtilSec - inSec)

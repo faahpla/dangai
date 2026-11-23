@@ -94,6 +94,12 @@ export interface OpcoesDaDivisao {
   limiarSec: number
   /** Nenhum pedaco abaixo disto (o "Minimo na tela" da config Cenas). Ausente = PEDACO_MIN_SEC. */
   minimoSec?: number
+  /**
+   * (22/11) Teto de cenas do gancho nesta rodada. O casar baixa quando um
+   * pedaco do gancho nao acha cena boa (a guarda), em vez de juntar tudo numa
+   * cena so. Ausente = GANCHO_MAX_CENAS.
+   */
+  ganchoMaxCenas?: number
 }
 
 export const DIVISAO_PADRAO: OpcoesDaDivisao = { ligada: true, limiarSec: LIMIAR_DE_DIVISAO_PADRAO_SEC }
@@ -409,10 +415,33 @@ export function cortarFrase(
  * (E03) O GANCHO sai com 2 ou 3 cenas ("normalmente o hook sempre tem 2 ou 3
  * cenas", o Levi; as edicoes dele: Nia E03 f01 0302/0267/0275, Nia E01 f01
  * 0003/0033, MRM E02 f01 0006/0007): 3 acima disto, 2 abaixo.
+ *
+ * (22/11, Overgeared S01E09) Conta pelo TEMPO, nao so pelo numero: 3 cenas em
+ * 5,6 s deixaram o gancho "muito tempo parado" (1,9 mil views contra 45 mil do
+ * Black Clover da vespera). Cada cena do gancho fica perto de
+ * GANCHO_CENA_IDEAL_SEC (ate GANCHO_CENA_MAX_SEC; a 1a ate GANCHO_PRIMEIRA_MAX_SEC):
+ * um gancho de 5,6 s vira 6 cenas, o de 3,2 s continua com 3.
  */
 export const GANCHO_TRES_SEC = 3.2
+/** O tempo de cada cena do gancho que o numero de cenas mira (22/11). */
+export const GANCHO_CENA_IDEAL_SEC = 0.95
+/** Acima disto a cena do gancho ja parece parada (22/11): o corte paga. */
+export const GANCHO_CENA_MAX_SEC = 1.2
+/** A 1a cena do gancho ("a 1a cena ficou muito tempo"): no maximo isto, se der. */
+export const GANCHO_PRIMEIRA_MAX_SEC = 1
+/** Teto de cenas do gancho (22/11: 5 a 7 cortes num gancho de ~6 s). */
+export const GANCHO_MAX_CENAS = 7
 /** Nenhum pedaco do gancho abaixo disto ("invadiu a mafia", 0,85 s no E03). */
 export const GANCHO_PEDACO_MIN_SEC = 0.8
+/** Com 4 cenas ou mais o pedaco pode ser mais curto (o corte rapido da v2 do Overgeared: 0,6 s). */
+export const GANCHO_PEDACO_MIN_RAPIDO_SEC = 0.6
+
+/** Quantas cenas o gancho de `duracao` segundos mira: uma a cada ~0,95 s, de 2 a 7. */
+export function cenasDoGancho(duracao: number): number {
+  if (!(duracao > 0)) return 2
+  if (duracao <= GANCHO_TRES_SEC) return 2
+  return Math.min(GANCHO_MAX_CENAS, Math.max(3, Math.round(duracao / GANCHO_CENA_IDEAL_SEC)))
+}
 /** O adverbio que vai junto com o que vem depois ("so | pra arrumar briga"). */
 const MODIFICADORES = new Set(['so', 'ate', 'logo', 'bem', 'mesmo', 'ainda', 'quase', 'nem'])
 const ARTIGOS = new Set(['a', 'o', 'as', 'os', 'um', 'uma', 'essa', 'esse', 'esta', 'este', 'aquela', 'aquele', 'sua', 'seu'])
@@ -436,49 +465,71 @@ function pesoDoInicio(tokens: readonly string[], j: number): number {
 }
 
 /**
- * O corte do GANCHO em `n` pedacos (2 ou 3): no comeco das palavras de peso
- * (pesoDoInicio, mais a forca do limite natural; com 3, os dois cortes nelas),
- * equilibrado pelo tempo, cada
- * pedaco com GANCHO_PEDACO_MIN_SEC, duas palavras e conteudo, nunca deixando
- * artigo, preposicao ou adverbio no fim de um pedaco ("Mano... essa
- * garotinha | invadiu a mafia | so pra arrumar briga", o corte do Levi no E03).
- * null = nenhum corte cabe.
+ * O corte do GANCHO em `n` pedacos (de 2 a GANCHO_MAX_CENAS): no comeco das
+ * palavras de peso (pesoDoInicio, mais a forca do limite natural; com 3, os
+ * dois cortes nelas), equilibrado pelo tempo, cada pedaco com o minimo de
+ * tempo (GANCHO_PEDACO_MIN_SEC; com 4 ou mais, GANCHO_PEDACO_MIN_RAPIDO_SEC),
+ * duas palavras e conteudo, nunca deixando artigo, preposicao ou adverbio no
+ * fim de um pedaco ("Mano... essa garotinha | invadiu a mafia | so pra arrumar
+ * briga", o corte do Levi no E03). (22/11) Pedaco acima de GANCHO_CENA_MAX_SEC
+ * (a 1a, acima de GANCHO_PRIMEIRA_MAX_SEC) perde nota. null = nenhum corte cabe.
  */
-export function cortarOGancho(frase: Pick<Frase, 'id' | 'texto'>, take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null, n: 2 | 3): CorteDaFrase | null {
+export function cortarOGancho(frase: Pick<Frase, 'id' | 'texto'>, take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null, n: number): CorteDaFrase | null {
   const tokens = palavrasDaFrase(frase.texto)
   const d = duracaoDaFrase(frase, take)
   const total = d.duracao
-  if (tokens.length < n * PEDACO_MIN_PALAVRAS || total < n * GANCHO_PEDACO_MIN_SEC) return null
+  const minimo = n >= 4 ? GANCHO_PEDACO_MIN_RAPIDO_SEC : GANCHO_PEDACO_MIN_SEC
+  if (n < 2 || tokens.length < n * PEDACO_MIN_PALAVRAS || total < n * minimo) return null
   const t = tokens.map((_, i) => (i === 0 ? 0 : inicioDaPalavra(i, frase, take, d)))
   const limites = new Map(limitesNaturais(tokens).map((l) => [l.palavra, l]))
-  const valido = (cortes: readonly number[]): boolean => {
+  const fimDe = (b: number): number => (b < tokens.length ? t[b]! : total)
+  /** O pedaco [a, b) serve: palavras, conteudo, sem funcional no fim, o minimo de tempo. */
+  const pedacoOk = (a: number, b: number): boolean => {
+    if (b - a < PEDACO_MIN_PALAVRAS || !temConteudo(tokens.slice(a, b))) return false
+    if (b < tokens.length && FUNCIONAIS.has(limpo(tokens[b - 1]!))) return false
+    return fimDe(b) - t[a]! >= minimo - 1e-6
+  }
+  const nota = (cortes: readonly number[]): number => {
+    let v = cortes.reduce((s, c, k) => s + pesoDoInicio(tokens, c) + (limites.get(c)?.forca ?? 0) - (4 * Math.abs(t[c]! - ((k + 1) / n) * total)) / total, 0)
+    // (22/11) Cena longa no gancho e o que deixa ele parado.
     const bordas = [0, ...cortes, tokens.length]
     for (let k = 0; k + 1 < bordas.length; k++) {
-      const a = bordas[k]!
-      const b = bordas[k + 1]!
-      if (b - a < PEDACO_MIN_PALAVRAS || !temConteudo(tokens.slice(a, b))) return false
-      if (b < tokens.length && FUNCIONAIS.has(limpo(tokens[b - 1]!))) return false
-      if ((b < tokens.length ? t[b]! : total) - t[a]! < GANCHO_PEDACO_MIN_SEC - 1e-6) return false
+      const dur = fimDe(bordas[k + 1]!) - t[bordas[k]!]!
+      const teto = k === 0 ? GANCHO_PRIMEIRA_MAX_SEC : GANCHO_CENA_MAX_SEC
+      if (dur > teto) v -= 3 * (dur - teto)
     }
-    return true
+    return v
   }
-  const nota = (cortes: readonly number[]): number =>
-    cortes.reduce((v, c, k) => v + pesoDoInicio(tokens, c) + (limites.get(c)?.forca ?? 0) - (4 * Math.abs(t[c]! - ((k + 1) / n) * total)) / total, 0)
-  const possiveis: number[][] = []
-  if (n === 2) for (let j = 1; j < tokens.length; j++) possiveis.push([j])
-  else for (let a = 1; a < tokens.length; a++) for (let b = a + 1; b < tokens.length; b++) possiveis.push([a, b])
   // Tres pedacos so com os dois cortes em palavras de peso ("Essa garotinha | de quatro anos | guarda..."
-  // do Nia E01 nao: fica "Essa garotinha de quatro anos | guarda um segredo bizarro").
-  const dePeso = (c: number): boolean => pesoDoInicio(tokens, c) > 0 || (limites.get(c)?.forca ?? 0) >= FORCA_NATURAL
-  const cortes = possiveis
-    .filter((c) => valido(c) && (n === 2 || c.every(dePeso)))
-    .map((c) => ({ c, v: nota(c) }))
-    .sort((x, y) => y.v - x.v)[0]?.c
+  // do Nia E01 nao: fica "Essa garotinha de quatro anos | guarda um segredo bizarro"). Vale para 3 ou mais:
+  // com 4, o Nia E01 saia "de quatro | anos guarda" (22/11).
+  const dePeso = (c: number): boolean => n === 2 || pesoDoInicio(tokens, c) > 0 || (limites.get(c)?.forca ?? 0) >= FORCA_NATURAL
+  let melhor: { c: number[]; v: number } | null = null
+  let passos = 0
+  const atual: number[] = []
+  const procurar = (de: number, faltam: number): void => {
+    if (++passos > 300_000) return
+    if (faltam === 0) {
+      if (!pedacoOk(de, tokens.length)) return
+      const v = nota(atual)
+      if (!melhor || v > melhor.v) melhor = { c: [...atual], v }
+      return
+    }
+    for (let j = de + PEDACO_MIN_PALAVRAS; j <= tokens.length - faltam * PEDACO_MIN_PALAVRAS; j++) {
+      if (!pedacoOk(de, j)) continue
+      if (!dePeso(j)) continue
+      atual.push(j)
+      procurar(j, faltam - 1)
+      atual.pop()
+    }
+  }
+  procurar(0, n - 1)
+  const cortes = (melhor as { c: number[]; v: number } | null)?.c
   if (!cortes) return null
   const bordas = [0, ...cortes, tokens.length]
   const pedacos: PedacoDaFrase[] = bordas.slice(0, -1).map((a, k) => {
     const b = bordas[k + 1]!
-    return { palavraInicio: a, texto: tokens.slice(a, b).join(' '), inicio: t[a]!, fim: b < tokens.length ? t[b]! : total }
+    return { palavraInicio: a, texto: tokens.slice(a, b).join(' '), inicio: t[a]!, fim: fimDe(b) }
   })
   const natural = cortes.every((c) => (limites.get(c)?.forca ?? 0) >= FORCA_NATURAL)
   return { pedacos, natural, duasAcoes: natural && cortes.every((c) => !!limites.get(c)?.acoes), gancho: true }
@@ -498,7 +549,7 @@ export interface ProvasDaDivisao {
   planoCurto?: boolean
   /** (4a rodada) A frase e o gancho: la a frase longa divide pelos motivos, como sempre (o Levi dividiu as duas do Nia E01). */
   gancho?: boolean
-  /** (E03) A frase e a 1a do roteiro: o corte do gancho (cortarOGancho), 2 ou 3 cenas sempre. */
+  /** (E03) A frase e a 1a do roteiro: o corte do gancho (cortarOGancho), 2 a 7 cenas pelo tempo (22/11). */
   abreOVideo?: boolean
   /**
    * (5a rodada) A frase nao tem evento (a janela herdada: o "Comenta ai" do
@@ -528,14 +579,17 @@ export function corteDaFrase(
   frase: Pick<Frase, 'id' | 'texto' | 'citacaoCueId'>,
   take: Pick<TakeDaVoz, 'trechos' | 'palavras'> | null,
   opcoes: OpcoesDaDivisao,
-  /** (E03) A frase e o GANCHO (a 1a do roteiro): 2 ou 3 cenas sempre que couber (cortarOGancho). */
+  /** (E03) A frase e o GANCHO (a 1a do roteiro): 2 a 7 cenas pelo tempo sempre que couber (cortarOGancho). */
   gancho = false,
 ): CorteDaFrase | null {
   if (!opcoes.ligada) return null
   const d = duracaoDaFrase(frase, take).duracao
   if (gancho) {
-    const doGancho = (d > GANCHO_TRES_SEC ? cortarOGancho(frase, take, 3) : null) ?? cortarOGancho(frase, take, 2)
-    if (doGancho) return doGancho
+    // (22/11) O numero de cenas pelo tempo (cenasDoGancho); nao cabe, tenta uma a menos.
+    for (let n = Math.min(cenasDoGancho(d), opcoes.ganchoMaxCenas ?? GANCHO_MAX_CENAS); n >= 2; n--) {
+      const doGancho = cortarOGancho(frase, take, n)
+      if (doGancho) return doGancho
+    }
   }
   if (frase.citacaoCueId || ASPAS.test(frase.texto)) return null
   const limiar = limiarDeDivisao(opcoes.limiarSec)
@@ -564,7 +618,7 @@ export function dividirFrase(
 ): DivisaoDaFrase | null {
   const corte = corteDaFrase(frase, take, opcoes, provas.gancho === true && provas.abreOVideo === true)
   if (!corte) return null
-  // (E03) O gancho divide sempre (2 ou 3 cenas): sem motivo, sem pedir que um pedaco ganhe.
+  // (E03) O gancho divide sempre (2 a 7 cenas, pelo tempo): sem motivo, sem pedir que um pedaco ganhe.
   if (corte.gancho) return { ...corte, motivos: ['gancho'] }
   // (4a rodada) O corte de socorro (pedaco abaixo do ritmo) so quando a cena unica congelaria.
   if (corte.socorro && !provas.planoCurto && !provas.semMomento) return null

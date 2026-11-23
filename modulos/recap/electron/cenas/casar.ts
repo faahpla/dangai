@@ -33,6 +33,7 @@ import { FOLGA_SEM_EMENDA_SEC } from '../../shared/encaixe'
 import { acaoFisica, tagsDoTexto, type AcaoDaFrase } from '../../shared/ponte-visual'
 import {
   corteDaFrase,
+  GANCHO_MAX_CENAS,
   dividirFrase,
   idDoPedaco,
   MINIMO_NA_TELA_PADRAO_SEC,
@@ -2977,6 +2978,23 @@ function copiarEstado(s: EstadoDoCasar): EstadoDoCasar {
  * guarda, `ResultadoDoCasar.guarda`).
  */
 export function casarFrases(e: EntradaDoCasar): ResultadoDoCasar {
+  // (22/11) O gancho divide pelo tempo (5 a 7 cenas num gancho de ~6 s). Se a guarda desfaz a divisao
+  // dele (um pedaco sem cena boa), tenta com uma cena a menos antes de deixar a frase com uma so: o
+  // Overgeared S01E09 tinha 3 cenas em 5,6 s e o Levi achou "muito tempo parado".
+  let r = casarFrasesUmaVez(e)
+  const f0 = e.frases[0]
+  if (!e.divisao?.ligada || !f0 || !e.refazer.has(f0.id)) return r
+  for (let teto = GANCHO_MAX_CENAS; teto > 2; ) {
+    if (!r.guarda?.includes(f0.id)) return r
+    const tentou = corteDaFrase(f0, e.take, { ...e.divisao, ganchoMaxCenas: teto }, true)?.pedacos.length ?? 0
+    if (tentou <= 2) return r
+    teto = tentou - 1
+    r = casarFrasesUmaVez({ ...e, divisao: { ...e.divisao, ganchoMaxCenas: teto } })
+  }
+  return r
+}
+
+function casarFrasesUmaVez(e: EntradaDoCasar): ResultadoDoCasar {
   const todos = prepararPlanos(e.indice)
   const porId = new Map(todos.map((p) => [p.plano.id, p]))
   const elenco = elencoDoEpisodio(todos, e.indice, e.eventos)

@@ -259,23 +259,41 @@ export function fimUtilDaMusica(
   return fimDoSom
 }
 
+/** (22/11) A musica especifica (ELSE PARIS, Afternoon of Konoha) so num trecho deste tamanho ou maior. */
+export const ESPECIFICA_MIN_SEC = 15
+
 /**
  * A musica do clima, sem repetir: `ordem` ja vem do "sem repetir" (a primeira
  * e a da vez). Prefere o clima exato, depois os vizinhos, depois qualquer uma;
  * nunca uma que ja esta no video (`usadas`), se der.
+ *
+ * (22/11, o guia do Levi, shared/guia-de-musicas.ts) `climas` = todos os climas
+ * em que a musica serve (o `clima` e o principal). A `especifica` (ELSE PARIS,
+ * Afternoon of Konoha) so entra no clima exato: nunca como vizinha nem como
+ * "qualquer uma". A `soNoGancho` (a slowed da Montagem Batchi) so no 1o trecho
+ * (`primeiro`). E a especifica so num trecho de ESPECIFICA_MIN_SEC ou mais ("dificilmente o
+ * suspense dura muito pra valer a pena trocar"), `trechoSec`.
  */
-export function musicaDoClima<T extends Pick<MusicaParaTrilha, 'path' | 'clima'>>(
-  clima: Clima,
-  ordem: readonly T[],
-  usadas: ReadonlySet<string>,
-): T | null {
-  const livres = ordem.filter((m) => !usadas.has(m.path))
-  const lista = livres.length > 0 ? livres : ordem
-  for (const c of [clima, ...VIZINHOS_DO_CLIMA[clima]]) {
-    const achou = lista.find((m) => m.clima === c)
-    if (achou) return achou
+export function musicaDoClima<
+  T extends Pick<MusicaParaTrilha, 'path' | 'clima'> & { climas?: readonly Clima[]; especifica?: boolean; soNoGancho?: boolean },
+>(clima: Clima, ordem: readonly T[], usadas: ReadonlySet<string>, primeiro = true, trechoSec = Number.POSITIVE_INFINITY): T | null {
+  const podem = ordem.filter((m) => (primeiro || !m.soNoGancho) && (!m.especifica || trechoSec >= ESPECIFICA_MIN_SEC))
+  const livres = podem.filter((m) => !usadas.has(m.path))
+  const serve = (m: T, c: Clima): boolean => m.clima === c || !!m.climas?.includes(c)
+  // Livres antes das ja usadas; o clima exato antes dos vizinhos; a especifica so no exato.
+  for (const lista of livres.length > 0 ? [livres, podem] : [podem]) {
+    const exata = lista.find((m) => serve(m, clima))
+    if (exata) return exata
   }
-  return lista.find((m) => m.clima === null) ?? lista[0] ?? null
+  for (const lista of livres.length > 0 ? [livres, podem] : [podem]) {
+    const gerais = lista.filter((m) => !m.especifica)
+    for (const c of VIZINHOS_DO_CLIMA[clima]) {
+      const achou = gerais.find((m) => serve(m, c))
+      if (achou) return achou
+    }
+  }
+  const gerais = (livres.length > 0 ? livres : podem).filter((m) => !m.especifica)
+  return gerais.find((m) => m.clima === null) ?? gerais[0] ?? null
 }
 
 /**

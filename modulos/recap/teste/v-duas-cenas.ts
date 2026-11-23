@@ -446,8 +446,13 @@ function desligadoEGuloso(): void {
   confere(escolhaDaFraseSchema.safeParse(g1.escolha).success, 'o guloso: a escolha passa no schema')
 
   // Frase muito longa (8 s, acima de 2,5x o limiar): tres cenas, em ordem, planos diferentes.
+  // (22/11) Fora do gancho: a 1a frase do roteiro e o gancho, que agora divide pelo tempo (5 a 7 cenas).
   const longa = 'O Lent implorou pra ficar no grupo, o Guy agarrou o garoto pelo pescoco, e a Elle foi embora rindo da cara dele.'
-  const r3 = casar([fr('f01', longa, { eventoIds: ['e01', 'e02'], cueDoMomento: 'c0003' })], takeDe([{ id: 'f01', texto: longa, dur: 8 }]))
+  const abre = 'Tudo comecou no grupo.'
+  const r3 = casar(
+    [fr('f00', abre), fr('f01', longa, { eventoIds: ['e01', 'e02'], cueDoMomento: 'c0003' })],
+    takeDe([{ id: 'f00', texto: abre, dur: 1.2 }, { id: 'f01', texto: longa, dur: 8 }]),
+  )
   const t3 = da(r3, 'f01')!
   const ps = t3.escolha.cenas.map((c) => c.candidato)
   confere(ps.length === 3, 'frase de 8 s: tres cenas', t3.pedacos?.map((p) => p.texto))

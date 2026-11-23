@@ -186,7 +186,12 @@ export const TEMAS_DE_SFX: readonly TemaDeSfx[] = [
 const NOME_DE_RISER = /riser|rise|uplift|build.?up|swell|crescendo|tension|tensao|suspense/i
 const NOME_DE_RISER_CURTO = /sharp|short|curto|quick|fast|rapido|snap/i
 const NOME_DE_WHOOSH = /whoosh|woosh|swoosh|swish|swipe|sweep|transi|wind|vento/i
-const NOME_DE_IMPACTO = /impact|impacto|hit|boom|thud|slam|stomp|batida|drop|bell|sino/i
+/**
+ * (22/11) Sem "bell"/"sino": o Levi vetou o "som do sino" como impacto ("nunca
+ * mais faz isso!", Overgeared S01E09). Arquivo com sino no nome fica de fora.
+ */
+const NOME_DE_SINO = /(^|[^a-z])(bells?|sinos?)([^a-z]|$)/i
+const NOME_DE_IMPACTO = /impact|impacto|hit|boom|thud|slam|stomp|batida|drop/i
 const NOME_DE_ABERTURA = /cartoon|pop|boing|abertura|opening|intro/i
 /** O "derruba o clima": tape stop, record scratch. Entra na troca para uma musica calma. */
 const NOME_DE_PARADA = /tape.?stop|record.?scratch|vinyl|scratch|rewind|freio|parada/i
@@ -205,6 +210,7 @@ export interface SfxPeloNome {
 
 export function sfxPeloNome(fileName: string): SfxPeloNome | null {
   const nome = nomeDoArquivo(fileName)
+  if (NOME_DE_SINO.test(nome)) return null
   if (NOME_DE_PARADA.test(nome)) return { tipo: 'impacto', parada: true }
   if (NOME_DE_RISER.test(nome)) return NOME_DE_RISER_CURTO.test(nome) ? { tipo: 'riser', riserCurto: true } : { tipo: 'riser' }
   const tema = TEMAS_DE_SFX.find((t) => t.arquivo.test(nome))
@@ -414,9 +420,13 @@ export const REGRAS_DE_SOM_PADRAO: RegrasDeSom = {
    * 0,25 s) para o respiro de 0,15 s entre frases subir ~2,6 dB ("sobe um
    * pouco nas pausas"); com as rampas do DUCKING_PADRAO (0,15/0,6) a subida
    * medida foi de 1,0 dB, nao se ouvia.
+   *
+   * (22/11, Overgeared S01E09) "a musica ta muito baixa": com 16 LU ela ficava
+   * ~-30 LUFS no mix, quase 20 dB abaixo da voz. O conserto feito a mao no V1
+   * (+4 dB em todas, aprovado) vira a regra: 12 LU (-26 nas pausas, -32 sob a voz).
    */
   musica: {
-    abaixoDaVozLu: 16,
+    abaixoDaVozLu: 12,
     fadeInSec: 1.2,
     fadeOutSec: 2,
     ducking: { abaixoDb: 6, ataqueSec: 0.1, soltaSec: 0.25, pausaMinSec: 0.5 },
@@ -580,7 +590,8 @@ export const musicaPlanejadaSchema = z.object({
   ganhoDb: z.number().min(GANHO_MIN_DB).max(GANHO_MAX_DB),
   fadeInSec: z.number().min(0).max(60),
   fadeOutSec: z.number().min(0).max(60),
-  ducking: duckingSchema,
+  /** null = nao abaixa sob a voz (o gancho, 22/11: "parece que comeca sem musica"). */
+  ducking: duckingSchema.nullable(),
   /** De que ponto do arquivo a musica parte (pular silencio de comeco), s. */
   inSec: z.number().nonnegative().default(0),
   /** Duracao do ARQUIVO inteiro, s. Mais curta que o video = repete (um trecho por volta). */
@@ -605,6 +616,12 @@ export const musicaPlanejadaSchema = z.object({
   clima: z.string().nullable().default(null),
   /** O instante do VIDEO onde o drop dela cai (a saida do gancho, a troca). null = sem drop achado. */
   dropSec: z.number().nonnegative().nullable().default(null),
+  /**
+   * (22/11) A proxima da lista CONTINUA esta (o mesmo arquivo seguindo, ou a
+   * instrumental da Montagem Batchi depois da slowed): sai no corte, sem fade,
+   * e nao e troca de musica (sem riser + impacto).
+   */
+  emenda: z.boolean().optional(),
 })
 export type MusicaPlanejada = z.infer<typeof musicaPlanejadaSchema>
 
@@ -1142,12 +1159,12 @@ export function trilhasDoPlanoDeSom(
         usarSec: toca < cabe - 1e-3 || fimDoArquivo < m.durationSec - 1e-3 ? arredondar(toca) : null,
         gainDb: m.ganhoDb,
         fadeInSec: primeira ? m.fadeInSec : 0,
-        // A ultima musica fecha com o fade dela; a que da lugar a outra sai no corte.
-        fadeOutSec: ultima ? (k === musicas.length - 1 ? m.fadeOutSec : Math.min(m.fadeOutSec, 0.6)) : 0,
+        // A ultima musica fecha com o fade dela; a que da lugar a outra sai no corte (a emenda, seco).
+        fadeOutSec: ultima ? (k === musicas.length - 1 ? m.fadeOutSec : m.emenda ? 0 : Math.min(m.fadeOutSec, 0.6)) : 0,
         peaks: [],
         rms: [],
         papel: 'musica',
-        ducking: m.ducking,
+        ...(m.ducking ? { ducking: m.ducking } : {}),
       })
       at += toca
       volta += 1

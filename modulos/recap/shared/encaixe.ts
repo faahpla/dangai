@@ -487,11 +487,16 @@ const VOLTAS_SEM_PISCAR = 8
  *      frases): a frase dividida da rajada junta, a de pedaco mais curto antes.
  * A escolha travada (ele mexeu) fica como esta. Puro e idempotente; devolve as
  * frases que juntou.
+ *
+ * (22/11) O GANCHO (`gancho`, a 1a frase do roteiro) fica fora das duas regras:
+ * ali o corte rapido e de proposito (5 a 7 cenas de ~1 s, cortarOGancho). Juntar
+ * o gancho numa cena so foi o que deixou o Overgeared S01E09 "muito tempo parado".
  */
 export function semPiscar(
   escolhas: readonly EscolhaDaFrase[],
   contexto: (fraseId: string) => ContextoDoEncaixe | null,
   minimoSec: number = MINIMO_NA_TELA_PADRAO_SEC,
+  gancho: string | null = null,
 ): { escolhas: EscolhaDaFrase[]; juntadas: string[] } {
   const minimo = minimoNaTela(minimoSec)
   const saida = [...escolhas]
@@ -501,7 +506,7 @@ export function semPiscar(
     if (!ctx || e.cenas.length === 0) return []
     return temposDasCenas(e, ctx.frase, ctx.take).map((t) => t.fim - t.inicio)
   }
-  const podeJuntar = (e: EscolhaDaFrase): boolean => !e.travada && e.cenas.length > 1 && (e.inteira?.length ?? 0) > 0
+  const podeJuntar = (e: EscolhaDaFrase): boolean => !e.travada && e.fraseId !== gancho && e.cenas.length > 1 && (e.inteira?.length ?? 0) > 0
   const juntar = (i: number): boolean => {
     const e = saida[i]!
     const ctx = contexto(e.fraseId)
@@ -517,7 +522,7 @@ export function semPiscar(
   })
   // 2. A rajada: 3 cenas seguidas abaixo de RAJADA_SEC.
   for (let volta = 0; volta < VOLTAS_SEM_PISCAR; volta++) {
-    const cenas = saida.flatMap((e, i) => duracoes(e).map((d) => ({ i, d })))
+    const cenas = saida.flatMap((e, i) => (e.fraseId === gancho ? [] : duracoes(e).map((d) => ({ i, d }))))
     let juntou = false
     for (let k = 0; k + 2 < cenas.length && !juntou; k++) {
       const trio = cenas.slice(k, k + 3)

@@ -265,7 +265,11 @@ async function principal(): Promise<void> {
   const sfx = f2.trilhas.filter((t) => papelDaTrilha(t) === 'whoosh' || papelDaTrilha(t) === 'impacto')
   console.log(`  resumo: ${JSON.stringify(m2.edicaoRapida)}`)
   confere(m2.projetoPath !== m1.projetoPath, 'uma pasta por montagem (nunca por cima)')
-  confere(musica.length > 0 && musica.every((t) => t.ducking && t.ducking.abaixoDb > 0 && t.path.startsWith(MUSICAS)), 'a musica da pasta, com o ducking do nucleo')
+  // (22/11) O trecho do gancho (no 0) sem ducking, para a musica se ouvir; do drop em diante, com.
+  confere(
+    musica.length > 0 && musica.every((t) => t.path.startsWith(MUSICAS)) && musica.filter((t) => t.at > 0.01).every((t) => t.ducking && t.ducking.abaixoDb > 0),
+    'a musica da pasta, com o ducking do nucleo depois do gancho',
+  )
   confere(sfx.length > 0 && sfx.every((t) => t.path.includes('assets')), `${sfx.length} SFX de fabrica (a reserva do app)`)
   confere(f2.trilhas.every((t) => !('papel' in t) && (t.modulos as { recap?: { papel?: string } }).recap?.papel), 'o papel em modulos.recap de cada trecho')
   const cor = f2.sobreposicoes.filter((o) => papelDaSobreposicao(o) === 'cor')

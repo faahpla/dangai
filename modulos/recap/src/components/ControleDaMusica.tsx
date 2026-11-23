@@ -89,7 +89,7 @@ export function ControleDaMusica() {
       >
         <FolderOpen size={11} strokeWidth={1.5} />
       </button>
-      <Volume gainDb={primeira.gainDb} abaixoDb={primeira.ducking?.abaixoDb ?? null} ocupado={ocupado} />
+      <Volume gainDb={primeira.gainDb} abaixoDb={(musica.find((t) => t.ducking) ?? primeira).ducking?.abaixoDb ?? null} ocupado={ocupado} />
       <button
         type="button"
         onClick={() =>
