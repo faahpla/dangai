@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.13.0',
+    itens: [
+      'Motor de cortes do Dangai: agora o Dangai corta sozinho, sem precisar do AnCut instalado. Em "Cortar episódios" (ou nas Configurações), "Baixar o motor" baixa uma vez só (uns 3 GB; tem a versão leve, sem a placa de vídeo). Quem tem o AnCut continua usando o motor dele até baixar o do Dangai. O histórico, os personagens e a pasta dos animes são os mesmos do AnCut.',
+      '"Batizar na mão" (o Modo Descoberta do AnCut): o Dangai agrupa os rostos do episódio e você dá o nome de cada um, escolhendo pela foto do elenco. Clicar num rosto tira ele das fotos do personagem. Os nomeados passam a ser reconhecidos nos próximos episódios. Quando o "Cortar e reconhecer" não acha o anime ou as fotos, o próprio episódio na fila oferece batizar na mão.',
+      'Biblioteca, botão direito num anime ou episódio da coluna da esquerda: juntar dois animes numa pasta só, mudar a temporada, passar para B-roll, ver os personagens do episódio (tirar o errado, reconhecer de novo), reforçar as fotos do elenco e repescar quem ficou sem marcação. Antes de mudar, ele mostra o que vai mudar.',
+      'Configurações, "Cortar episódios": o motor, a pasta onde as cenas cortadas ficam, pular abertura e encerramento, Danbooru e o formato dos clipes (os mesmos ajustes do AnCut).',
+    ],
+  },
+  {
     versao: '2.12.1',
     itens: [
       'Thumbnail: no "Quadro do vídeo" (e no "Quadro do projeto" do módulo Thumbnail) agora dá para copiar e salvar o quadro que você escolheu: botões "Copiar imagem" e "Salvar imagem como...", sempre o quadro limpo, sem legenda. No grid, um par para cima e outro para baixo.',
