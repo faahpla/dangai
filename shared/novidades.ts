@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.12.1',
+    itens: [
+      'Thumbnail: no "Quadro do vídeo" (e no "Quadro do projeto" do módulo Thumbnail) agora dá para copiar e salvar o quadro que você escolheu: botões "Copiar imagem" e "Salvar imagem como...", sempre o quadro limpo, sem legenda. No grid, um par para cima e outro para baixo.',
+      'Edição rápida (Gerar recap): o gancho ganha 5 a 7 cortes, a música sai do guia das suas músicas (cada uma no clima e no ponto de entrada certos) e um pouco mais alta, e som de sino não entra mais como impacto.',
+    ],
+  },
+  {
     versao: '2.12.0',
     itens: [
       'Cortar episódios aqui mesmo, sem abrir o AnCut: no cartão Anime da tela inicial (ou "Cortar episódio" na Biblioteca), solte os episódios, confira anime, temporada e episódio, e corte. É o mesmo corte do AnCut: mesma pasta, mesmo histórico, e o AnCut vê tudo igual. Dá para enfileirar vários e escolher "Só cortar" ou "Cortar e reconhecer". Precisa do AnCut instalado (o motor é dele).',
