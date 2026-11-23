@@ -1,14 +1,17 @@
 import { create } from 'zustand'
 import {
   andamentoGeral,
+  type BatismoDoMotor,
   type EventoDoCorte,
   type ModoDoCorte,
   type MotorDoAncut,
   type PedidoDeCorte,
   type QualidadeDoDownload,
+  type RespostaDoBatismo,
   type VideoDoLink,
 } from '@shared/ancut'
 import { useProject } from './project'
+import { quandoOMotorMudar } from './motor-de-cortes'
 
 /**
  * A FILA DE CORTE (20/11, o AnCut dentro do Dangai): os episodios soltos (ou
@@ -21,7 +24,12 @@ import { useProject } from './project'
  * dela pula o resto), e a cena ja aparece para usar.
  */
 
-export type StatusDoItem = 'esperando' | 'baixando' | 'cortando' | 'pronto' | 'falhou' | 'cancelado'
+/**
+ * 'pergunta': o motor parou e quer uma decisao (anime que o AniList nao tem,
+ * elenco sem fotos) -- o item oferece batizar na mao ou so cortar.
+ * 'batizando': o corte parou no batismo, esperando os nomes (a janela abre).
+ */
+export type StatusDoItem = 'esperando' | 'baixando' | 'cortando' | 'batizando' | 'pergunta' | 'pronto' | 'falhou' | 'cancelado'
 
 export interface ItemDoCorte {
   id: string
@@ -38,6 +46,10 @@ export interface ItemDoCorte {
   personagens?: string[]
   /** Veio de um link: baixa primeiro. `pedido.video` fica vazio ate o download terminar. */
   link?: { url: string; pasta: string; qualidade: QualidadeDoDownload }
+  /** A decisao que o motor pediu (status 'pergunta'). */
+  pergunta?: { motivo: string; mensagem: string; pastaDasFotos?: string }
+  /** Reforcar as fotos do elenco quando o corte terminar (escolhido no batismo). */
+  reforcarAoTerminar?: boolean
 }
 
 interface EstadoDoCorte {
@@ -50,11 +62,25 @@ interface EstadoDoCorte {
   lendo: boolean
   /** O modo dos que entram (o de todo dia: so cortar). */
   modo: ModoDoCorte
+  /** O batismo aberto (o corte parado esperando os nomes). */
+  batismo: { itemId: string; batismo: BatismoDoMotor } | null
+  /** O reforco das fotos rodando depois de um batismo ("Reforcando a Maomao (3/12)"). */
+  reforco: string | null
+  /** Manda os nomes; o corte continua. `reforcar`: reforcar as fotos quando terminar. */
+  responderBatismo: (resposta: RespostaDoBatismo, reforcar: boolean) => Promise<void>
+  /** Desiste do batismo: o corte do episodio e cancelado (as cenas cortadas ficam no disco). */
+  desistirDoBatismo: () => void
+  /** Um item que parou numa pergunta volta para a fila num modo novo e a fila anda. */
+  refazer: (id: string, modo: ModoDoCorte) => void
   abrir: (aba?: 'arquivos' | 'link') => void
+  /** Pergunta de novo qual motor vale (o do Dangai acabou de baixar, a pasta de saida mudou). */
+  atualizarMotor: () => Promise<void>
   fechar: () => void
   setAba: (aba: 'arquivos' | 'link') => void
   setModo: (modo: ModoDoCorte) => void
   adicionar: (videos: readonly string[]) => Promise<void>
+  /** Um pedido ja montado (o "Reconhecer de novo" de um episodio da Biblioteca). */
+  adicionarPedido: (pedido: PedidoDeCorte, nome: string) => void
   adicionarLinks: (videos: readonly VideoDoLink[], o: { anime: string; pastaDoAnime: string; pasta: string; qualidade: QualidadeDoDownload }) => void
   mudar: (id: string, pedido: Partial<PedidoDeCorte>) => void
   remover: (id: string) => void
@@ -67,7 +93,8 @@ const LEMBRAR_MODO = 'dangai.cortar.modo'
 
 function modoLembrado(): ModoDoCorte {
   try {
-    return localStorage.getItem(LEMBRAR_MODO) === 'reconhecer' ? 'reconhecer' : 'cortar'
+    const m = localStorage.getItem(LEMBRAR_MODO)
+    return m === 'reconhecer' || m === 'batizar' ? m : 'cortar'
   } catch {
     return 'cortar'
   }
@@ -85,10 +112,42 @@ export const useCortar = create<EstadoDoCorte>((set, get) => ({
   rodando: false,
   lendo: false,
   modo: modoLembrado(),
+  batismo: null,
+  reforco: null,
+
+  responderBatismo: async (resposta, reforcar) => {
+    const b = get().batismo
+    if (!b) return
+    set({ batismo: null })
+    editar(b.itemId, { status: 'cortando', etapa: 'Gravando os personagens…', reforcarAoTerminar: reforcar })
+    const r = await window.dangai.ancutResponderBatismo(resposta)
+    if (!r.ok || !r.value) editar(b.itemId, { status: 'falhou', etapa: undefined, erro: 'O motor já tinha fechado. Corte de novo em "Batizar na mão".' })
+  },
+
+  desistirDoBatismo: () => {
+    const b = get().batismo
+    set({ batismo: null })
+    if (b) editar(b.itemId, { status: 'cortando', etapa: 'Cancelando…' })
+    void window.dangai.ancutCancelar()
+  },
+
+  refazer: (id, modo) => {
+    set({
+      itens: get().itens.map((i) =>
+        i.id === id ? { ...i, status: 'esperando', erro: undefined, pergunta: undefined, andamento: 0, etapa: undefined, pedido: { ...i.pedido, modo } } : i,
+      ),
+    })
+    void get().comecar()
+  },
 
   abrir: (aba) => {
     set({ aberta: true, ...(aba ? { aba } : {}) })
-    void window.dangai.ancutMotor().then((r) => set({ motor: r.ok ? r.value : null }))
+    void get().atualizarMotor()
+  },
+
+  atualizarMotor: async () => {
+    const r = await window.dangai.ancutMotor()
+    set({ motor: r.ok ? r.value : null })
   },
 
   fechar: () => set({ aberta: false }),
@@ -132,6 +191,11 @@ export const useCortar = create<EstadoDoCorte>((set, get) => ({
     set({ lendo: false })
   },
 
+  adicionarPedido: (pedido, nome) => {
+    if (get().itens.some((i) => i.status === 'esperando' && i.pedido.video === pedido.video && i.pedido.modo === pedido.modo)) return
+    set({ itens: [...get().itens, { id: novoId(), nome, status: 'esperando', andamento: 0, pedido }], aba: 'arquivos' })
+  },
+
   adicionarLinks: (videos, o) => {
     const itens: ItemDoCorte[] = videos.map((v) => ({
       id: novoId(),
@@ -167,10 +231,10 @@ export const useCortar = create<EstadoDoCorte>((set, get) => ({
   },
 
   cancelar: () => {
-    set({ rodando: false })
-    const atual = get().itens.find((i) => i.status === 'cortando' || i.status === 'baixando')
+    set({ rodando: false, batismo: null })
+    const atual = get().itens.find((i) => i.status === 'cortando' || i.status === 'baixando' || i.status === 'batizando')
     if (atual?.status === 'baixando') void window.dangai.ancutLinkCancelar()
-    if (atual?.status === 'cortando') void window.dangai.ancutCancelar()
+    if (atual?.status === 'cortando' || atual?.status === 'batizando') void window.dangai.ancutCancelar()
   },
 }))
 
@@ -203,14 +267,33 @@ async function processar(id: string): Promise<void> {
   editar(id, { status: 'cortando', etapa: 'Abrindo o motor do AnCut…', andamento: 0, erro: undefined })
   const r = await window.dangai.ancutCortar(atual.pedido)
   const fim: EventoDoCorte = r.ok ? r.value : { tipo: 'falhou', mensagem: r.error }
+  if (useCortar.getState().batismo?.itemId === id) useCortar.setState({ batismo: null })
   if (fim.tipo === 'pronto') {
     editar(id, { status: 'pronto', andamento: 1, etapa: undefined, cenas: fim.cenas, personagens: fim.personagens })
     // A Biblioteca ja aberta le de novo (so o episodio novo); fechada, le quando abrir.
     if (useProject.getState().library) void useProject.getState().syncLibrary()
+    // Batizou e pediu para reforcar: os rostos mais confiaveis viram foto do elenco (so acrescenta).
+    if (item(id)?.reforcarAoTerminar && fim.pasta) await reforcarDepois(fim.pasta)
   } else if (fim.tipo === 'cancelado') {
     editar(id, { status: 'cancelado', etapa: undefined })
   } else if (fim.tipo === 'falhou') {
     editar(id, { status: 'falhou', etapa: undefined, erro: fim.mensagem })
+  } else if (fim.tipo === 'pergunta') {
+    editar(id, { status: 'pergunta', etapa: undefined, pergunta: { motivo: fim.motivo, mensagem: fim.mensagem, ...(fim.pastaDasFotos ? { pastaDasFotos: fim.pastaDasFotos } : {}) } })
+  }
+}
+
+/** O reforco das fotos depois de um batismo (o "Reforcar refs ao terminar" do AnCut). */
+async function reforcarDepois(pastaDoEpisodio: string): Promise<void> {
+  useCortar.setState({ reforco: 'Reforçando as fotos do elenco…' })
+  const sair = window.dangai.onAncutOrganizar((e) => {
+    if (e.tipo === 'reforcar') useCortar.setState({ reforco: `Reforçando as fotos: ${e.nome}${e.total ? ` (${e.feitos}/${e.total})` : ''}` })
+  })
+  try {
+    await window.dangai.ancutReforcar(`${pastaDoEpisodio}\\shots\\_`)
+  } finally {
+    sair()
+    useCortar.setState({ reforco: null })
   }
 }
 
@@ -221,6 +304,13 @@ export function ouvirOMotor(): void {
   if (ouvindo) return
   ouvindo = true
   window.dangai.onAncutEvento((e) => {
+    if (e.tipo === 'batismo') {
+      const quem = useCortar.getState().itens.find((i) => i.status === 'cortando')
+      if (!quem) return
+      editar(quem.id, { status: 'batizando', etapa: 'Esperando os nomes' })
+      useCortar.setState({ batismo: { itemId: quem.id, batismo: e.batismo }, aberta: true })
+      return
+    }
     if (e.tipo !== 'etapa') return
     const atual = useCortar.getState().itens.find((i) => i.status === 'cortando')
     if (!atual) return
@@ -246,3 +336,8 @@ export function ouvirOMotor(): void {
     editar(atual.id, { etapa: partes.filter(Boolean).join(' · '), andamento: e.fracao >= 0 ? e.fracao : atual.andamento })
   })
 }
+
+// O motor do Dangai baixou, atualizou ou foi removido: a tela pergunta de novo qual motor vale.
+quandoOMotorMudar(() => {
+  if (useCortar.getState().aberta) void useCortar.getState().atualizarMotor()
+})

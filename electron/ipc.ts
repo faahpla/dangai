@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync, readdirSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
@@ -78,11 +78,56 @@ import {
   writeAutosave,
 } from './services/project'
 import { juntarProjetosNoDisco, prepararFraseDeLigacao, resumoDoProjeto } from './services/juntar-projetos'
-import { cancelarCorte, cortar as cortarNoAncut, estadoDoMotor, lerNome, pastaDoAnime } from './services/ancut/motor'
+import {
+  ancutInstalado,
+  cancelarCorte,
+  caminhoDaConfig,
+  configDoMotor,
+  motorOcupado,
+  cortar as cortarNoAncut,
+  esquecerMotor,
+  estadoDoMotor,
+  gravarConfigDoMotor,
+  lerNome,
+  pastaDeSaida,
+  pastaDoAnime,
+  responderBatismo,
+} from './services/ancut/motor'
+import {
+  animesVizinhos,
+  episodioDoAncut,
+  juntarAnimes,
+  mudarTemporada,
+  passarParaBroll,
+  reforcar,
+  repescar,
+  tirarPersonagem,
+} from './services/ancut/organizar'
+import {
+  cancelarMotorRuntime,
+  definirAoMudarORuntime,
+  definirAvisoDoMotorRuntime,
+  definirFetchDoMotorRuntime,
+  definirMotorEmUso,
+  estadoDoMotorRuntime,
+  instalarMotorRuntime,
+  removerMotorRuntime,
+  usarPastaDoMotorRuntime,
+} from './services/ancut/runtime'
+import { pastaDoRuntime } from './services/ancut/runtime/pastas'
+import type { FetchDoMotor } from './services/ancut/runtime/baixar'
+import { pedidoDeInstalacaoSchema, type EstadoDoMotorRuntime } from '@shared/runtime-do-motor'
 import { apagarEpisodio, cenaNoAncut, mandarParaALixeira, marcarNovoPersonagem, marcarPersonagem } from './services/ancut/revisar'
 import { baixarLink, cancelarDownload, listarLink } from './services/ancut/baixar'
 import type {
   CenaNoAncut,
+  ConfigDoMotor,
+  EpisodioNoAncut,
+  FimDaRepescagem,
+  FimDoReforco,
+  PlanoDeJuntarAnimes,
+  PlanoDeRenomear,
+  RespostaDoBatismo,
   EventoDoCorte,
   MotorDoAncut,
   NomeLido,
@@ -697,6 +742,87 @@ export function registerIpc(): void {
   handle<[], null>(IPC.ancutLinkCancelar, async () => {
     cancelarDownload()
     return null
+  })
+
+  // ---------------------------------------------- o motor de cortes do Dangai (23/11)
+
+  definirAvisoDoMotorRuntime((estado: EstadoDoMotorRuntime) => enviarAoAncut(IPC.ancutRuntimeMudou, estado))
+  // net.fetch: a pilha de rede do Chromium respeita o proxy e os certificados do sistema.
+  definirFetchDoMotorRuntime(((url, init) => net.fetch(url, init)) as FetchDoMotor)
+  // Instalou, atualizou ou removeu: o proximo pedido procura o motor de novo.
+  definirAoMudarORuntime(() => esquecerMotor())
+  // Reinstalar com um corte rodando apagaria o venv debaixo dele.
+  definirMotorEmUso(() => motorOcupado())
+  handle<[], EstadoDoMotorRuntime>(IPC.ancutRuntimeEstado, () => estadoDoMotorRuntime())
+  handle<[unknown], EstadoDoMotorRuntime>(IPC.ancutRuntimeInstalar, (pedido) => instalarMotorRuntime(pedidoDeInstalacaoSchema.parse(pedido ?? {})))
+  handle<[], null>(IPC.ancutRuntimeCancelar, async () => {
+    await cancelarMotorRuntime()
+    return null
+  })
+  handle<[unknown], EstadoDoMotorRuntime>(IPC.ancutRuntimePasta, async (padrao) => {
+    if (padrao === true) return usarPastaDoMotorRuntime(null)
+    const janela = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const opcoes: Electron.OpenDialogOptions = {
+      title: 'Pasta do motor de cortes (~5 GB)',
+      defaultPath: pastaDoRuntime().pasta,
+      properties: ['openDirectory', 'createDirectory'],
+    }
+    const r = janela ? await dialog.showOpenDialog(janela, opcoes) : await dialog.showOpenDialog(opcoes)
+    if (r.canceled || !r.filePaths[0]) return estadoDoMotorRuntime()
+    return usarPastaDoMotorRuntime(r.filePaths[0])
+  })
+  handle<[], EstadoDoMotorRuntime>(IPC.ancutRuntimeRemover, () => removerMotorRuntime())
+  handle<[], { config: ConfigDoMotor; caminho: string; ancutInstalado: boolean }>(IPC.ancutConfig, async () => ({
+    config: { ...configDoMotor(), output_dir: pastaDeSaida() ?? undefined },
+    caminho: caminhoDaConfig(),
+    ancutInstalado: await ancutInstalado(),
+  }))
+  handle<[Partial<ConfigDoMotor>], ConfigDoMotor>(IPC.ancutGravarConfig, async (mudancas) => {
+    const m = mudancas && typeof mudancas === 'object' ? mudancas : {}
+    // So os campos que a tela muda: as chaves de IA e o resto do AnCut ficam como estao.
+    const permitidos: (keyof ConfigDoMotor)[] = [
+      'output_dir',
+      'default_threshold',
+      'argmax_margin',
+      'min_shots_per_character',
+      'use_danbooru',
+      'render_export_mode',
+      'pular_capitulos',
+    ]
+    const limpo: Partial<ConfigDoMotor> = {}
+    for (const k of permitidos) if (k in m) (limpo as Record<string, unknown>)[k] = (m as Record<string, unknown>)[k]
+    return gravarConfigDoMotor(limpo)
+  })
+  // ---------------------------------------------- o batismo e o organizar (23/11)
+
+  const clipesDe = (v: unknown): string[] => (Array.isArray(v) ? v.filter((c): c is string => typeof c === 'string') : [])
+  handle<[RespostaDoBatismo], boolean>(IPC.ancutResponderBatismo, async (r) =>
+    responderBatismo({ nomes: r?.nomes ?? {}, removidos: r?.removidos ?? {} }),
+  )
+  handle<[string], EpisodioNoAncut | null>(IPC.ancutEpisodio, (clipe) => episodioDoAncut(String(clipe)))
+  handle<[string], string[]>(IPC.ancutAnimesVizinhos, async (clipe) => animesVizinhos(String(clipe)))
+  handle<[string, string, boolean], PlanoDeJuntarAnimes>(IPC.ancutJuntarAnimes, (clipe, destino, aplicar) =>
+    juntarAnimes(String(clipe), String(destino), aplicar === true),
+  )
+  handle<[readonly string[], number, boolean], PlanoDeRenomear>(IPC.ancutTemporada, (clipes, temporada, aplicar) =>
+    mudarTemporada(clipesDe(clipes), Number(temporada) || 1, aplicar === true),
+  )
+  handle<[readonly string[], boolean], PlanoDeRenomear>(IPC.ancutParaBroll, (clipes, aplicar) => passarParaBroll(clipesDe(clipes), aplicar === true))
+  handle<[string, number], EpisodioNoAncut | null>(IPC.ancutTirarPersonagem, (clipe, id) => tirarPersonagem(String(clipe), Number(id)))
+  handle<[string], FimDoReforco>(IPC.ancutReforcar, (clipe) => reforcar(String(clipe), (e) => enviarAoAncut(IPC.ancutOrganizarEvento, e)))
+  handle<[readonly string[]], FimDaRepescagem>(IPC.ancutRepescar, (clipes) => repescar(clipesDe(clipes), (e) => enviarAoAncut(IPC.ancutOrganizarEvento, e)))
+
+  handle<[], string | null>(IPC.ancutEscolherSaida, async () => {
+    const janela = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const opcoes: Electron.OpenDialogOptions = {
+      title: 'Onde guardar as cenas cortadas (a pasta dos animes)',
+      defaultPath: pastaDeSaida() ?? app.getPath('documents'),
+      properties: ['openDirectory', 'createDirectory'],
+    }
+    const r = janela ? await dialog.showOpenDialog(janela, opcoes) : await dialog.showOpenDialog(opcoes)
+    if (r.canceled || !r.filePaths[0]) return null
+    gravarConfigDoMotor({ output_dir: r.filePaths[0] })
+    return r.filePaths[0]
   })
 
   handle<[string | undefined], string | null>(IPC.upscaleVideoPronto, async (caminhoDado) => {

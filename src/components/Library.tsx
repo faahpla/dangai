@@ -41,6 +41,7 @@ import { BarraDeEtapas } from './BarraDeEtapas'
 import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
 import { RevisarCena, useRevisarCena } from './RevisarCena'
+import { abrirMenuDoOrganizar, OrganizarAnime, type AlvoDoOrganizar } from './OrganizarAnime'
 import { useCortar } from '@/store/cortar-episodios'
 
 /**
@@ -953,6 +954,7 @@ export function Library() {
               setPersonagem(nome)
               if (nome !== null) setAnime(doAnime)
             }}
+            onOrganizar={(e, { anime: serie, chave }) => abrirMenuDoOrganizar(e, alvoDoOrganizar(library.clips, serie, chave))}
           />
 
           <div className="relative flex min-w-0 flex-1 flex-col">
@@ -1061,6 +1063,7 @@ export function Library() {
               />
             )}
             <RevisarCena aoMudar={() => setParaMesclar([])} />
+            <OrganizarAnime />
             {(paraMesclar.length > 0 || recadoDaMescla) && library && (
               <BarraDeMescla
                 ids={paraMesclar}
@@ -1332,6 +1335,24 @@ interface RailProps {
   onAnime: (v: string | null) => void
   onEpisodio: (chave: string | null, doAnime: string) => void
   onPersonagem: (nome: string | null, doAnime: string | null) => void
+  /** (23/11) O botao direito num anime ou episodio: organizar (OrganizarAnime). */
+  onOrganizar?: (e: React.MouseEvent, alvo: { anime: string; chave?: string }) => void
+}
+
+/**
+ * Os clipes que representam um anime (um por episodio) ou um episodio (o
+ * primeiro), so do que veio do corte: pasta solta e manga nao tem o que
+ * organizar no motor.
+ */
+export function alvoDoOrganizar(clips: readonly LibraryClip[], anime: string, chave?: string): AlvoDoOrganizar {
+  const porEpisodio = new Map<string, LibraryClip>()
+  for (const c of clips) {
+    if (c.anime !== anime || c.solto || c.manga) continue
+    const k = chaveEpisodio(c)
+    if (chave && k !== chave) continue
+    if (!porEpisodio.has(k)) porEpisodio.set(k, c)
+  }
+  return { tipo: chave ? 'episodio' : 'anime', anime, ...(chave ? { chave } : {}), clipes: [...porEpisodio.values()] }
 }
 
 /**
@@ -1365,6 +1386,7 @@ function Rail({
   onAnime,
   onEpisodio,
   onPersonagem,
+  onOrganizar,
 }: RailProps) {
   // Grupo aberto na mao. O do anime selecionado abre sozinho, entao aqui so
   // entra o que o usuario abriu por conta.
@@ -1472,7 +1494,12 @@ function Rail({
                 )}
               </button>
               <div className="min-w-0 flex-1">
-                <Item ativo={anime === nome && episodio === null} onClick={() => onAnime(nome)} contagem={n}>
+                <Item
+                  ativo={anime === nome && episodio === null}
+                  onClick={() => onAnime(nome)}
+                  contagem={n}
+                  onMenu={onOrganizar ? (e) => onOrganizar(e, { anime: nome }) : undefined}
+                >
                   {nome}
                 </Item>
               </div>
@@ -1486,6 +1513,7 @@ function Rail({
                   onClick={() => onEpisodio(episodio === chave && anime === nome ? null : chave, nome)}
                   contagem={quantas}
                   recuado
+                  onMenu={onOrganizar ? (e) => onOrganizar(e, { anime: nome, chave }) : undefined}
                 >
                   {chave}
                 </Item>
@@ -1649,6 +1677,7 @@ function Item({
   onClick,
   contagem,
   recuado = false,
+  onMenu,
   children,
 }: {
   ativo: boolean
@@ -1656,12 +1685,16 @@ function Item({
   contagem: number
   /** Personagem dentro do grupo do anime. */
   recuado?: boolean
+  /** O botao direito (organizar o anime ou o episodio). */
+  onMenu?: (e: React.MouseEvent) => void
   children: React.ReactNode
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onContextMenu={onMenu}
+      title={onMenu ? 'Botão direito: juntar, temporada, personagens…' : undefined}
       className={[
         'flex w-full items-center gap-2 rounded-sm py-1 pr-1.5 text-left text-[12px] transition-colors duration-150',
         recuado ? 'pl-5' : 'pl-1.5',

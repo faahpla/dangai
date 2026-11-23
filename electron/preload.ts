@@ -293,6 +293,37 @@ const bridge: DangaiBridge = {
   ancutLinkListar: (url) => ipcRenderer.invoke(IPC.ancutLinkListar, url),
   ancutLinkBaixar: (pedido) => ipcRenderer.invoke(IPC.ancutLinkBaixar, pedido),
   ancutLinkCancelar: () => ipcRenderer.invoke(IPC.ancutLinkCancelar),
+  ancutRuntimeEstado: () => ipcRenderer.invoke(IPC.ancutRuntimeEstado),
+  ancutRuntimeInstalar: (pedido) => ipcRenderer.invoke(IPC.ancutRuntimeInstalar, pedido),
+  ancutRuntimeCancelar: () => ipcRenderer.invoke(IPC.ancutRuntimeCancelar),
+  ancutRuntimePasta: (padrao) => ipcRenderer.invoke(IPC.ancutRuntimePasta, padrao),
+  ancutRuntimeRemover: () => ipcRenderer.invoke(IPC.ancutRuntimeRemover),
+  onAncutRuntime: (listener) => {
+    const handler = (_event: unknown, estado: Parameters<typeof listener>[0]): void => listener(estado)
+    ipcRenderer.on(IPC.ancutRuntimeMudou, handler)
+    return () => {
+      ipcRenderer.off(IPC.ancutRuntimeMudou, handler)
+    }
+  },
+  ancutConfig: () => ipcRenderer.invoke(IPC.ancutConfig),
+  ancutGravarConfig: (mudancas) => ipcRenderer.invoke(IPC.ancutGravarConfig, mudancas),
+  ancutEscolherSaida: () => ipcRenderer.invoke(IPC.ancutEscolherSaida),
+  ancutResponderBatismo: (resposta) => ipcRenderer.invoke(IPC.ancutResponderBatismo, resposta),
+  ancutEpisodio: (clipe) => ipcRenderer.invoke(IPC.ancutEpisodio, clipe),
+  ancutAnimesVizinhos: (clipe) => ipcRenderer.invoke(IPC.ancutAnimesVizinhos, clipe),
+  ancutJuntarAnimes: (clipe, destino, aplicar) => ipcRenderer.invoke(IPC.ancutJuntarAnimes, clipe, destino, aplicar),
+  ancutTemporada: (clipes, temporada, aplicar) => ipcRenderer.invoke(IPC.ancutTemporada, clipes, temporada, aplicar),
+  ancutParaBroll: (clipes, aplicar) => ipcRenderer.invoke(IPC.ancutParaBroll, clipes, aplicar),
+  ancutTirarPersonagem: (clipe, personagemId) => ipcRenderer.invoke(IPC.ancutTirarPersonagem, clipe, personagemId),
+  ancutReforcar: (clipe) => ipcRenderer.invoke(IPC.ancutReforcar, clipe),
+  ancutRepescar: (clipes) => ipcRenderer.invoke(IPC.ancutRepescar, clipes),
+  onAncutOrganizar: (listener) => {
+    const handler = (_event: unknown, e: Parameters<typeof listener>[0]): void => listener(e)
+    ipcRenderer.on(IPC.ancutOrganizarEvento, handler)
+    return () => {
+      ipcRenderer.off(IPC.ancutOrganizarEvento, handler)
+    }
+  },
   onAncutLinkEvento: (listener) => {
     const handler = (_event: unknown, e: Parameters<typeof listener>[0]): void => listener(e)
     ipcRenderer.on(IPC.ancutLinkEvento, handler)

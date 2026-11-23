@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Check, CircleAlert, FolderOpen, Link2, Loader2, Play, Scissors, Square, Trash2, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronDown, CircleAlert, CircleHelp, Cpu, FolderOpen, Link2, Loader2, Play, Scissors, Square, Trash2, Users, X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { rotuloDoEpisodio, type QualidadeDoDownload, type VideoDoLink } from '@shared/ancut'
 import { useCortar, ouvirOMotor, type ItemDoCorte } from '@/store/cortar-episodios'
 import { useProject } from '@/store/project'
 import { Segmentos } from './painel'
+import { PainelDoMotor } from './MotorDeCortes'
+import { Batismo } from './Batismo'
 
 /**
  * CORTAR EPISODIOS (20/11, o AnCut dentro do Dangai): "so corto o episodio" --
@@ -20,14 +22,19 @@ export function CortarEpisodios() {
     if (aberta) ouvirOMotor()
   }, [aberta])
   if (!aberta) return null
-  return <Tela />
+  return (
+    <>
+      <Tela />
+      <Batismo />
+    </>
+  )
 }
 
 const VIDEO = /\.(mkv|mp4|avi|mov|webm|m4v|ts|m2ts)$/i
 
 function Tela() {
-  const { aba, motor, itens, rodando, lendo, modo } = useCortar(
-    useShallow((s) => ({ aba: s.aba, motor: s.motor, itens: s.itens, rodando: s.rodando, lendo: s.lendo, modo: s.modo })),
+  const { aba, motor, itens, rodando, lendo, modo, reforco } = useCortar(
+    useShallow((s) => ({ aba: s.aba, motor: s.motor, itens: s.itens, rodando: s.rodando, lendo: s.lendo, modo: s.modo, reforco: s.reforco })),
   )
   const [sobre, setSobre] = useState(false)
 
@@ -46,6 +53,8 @@ function Tela() {
   const prontos = itens.filter((i) => i.status === 'pronto').length
   const terminados = itens.filter((i) => i.status === 'pronto' || i.status === 'falhou' || i.status === 'cancelado').length
   const semMotor = motor !== null && !motor.achado
+  const semSaida = motor !== null && !motor.saida
+  const [verMotor, setVerMotor] = useState(false)
 
   const soltar = (ev: React.DragEvent): void => {
     ev.preventDefault()
@@ -65,8 +74,14 @@ function Tela() {
           </span>
           <div className="flex min-w-0 flex-col">
             <h2 className="text-[15px] font-semibold text-ink">Cortar episódios</h2>
-            <p className="truncate text-[12px] text-ink-3">
-              O mesmo corte do AnCut: as cenas vão para {motor?.saida ? <span className="text-ink-2">{motor.saida}</span> : 'a pasta do AnCut'} e já aparecem na Biblioteca.
+            <p className="flex min-w-0 items-center gap-1.5 text-[12px] text-ink-3" data-cortar="saida">
+              <span className="truncate">
+                As cenas vão para {motor?.saida ? <span className="text-ink-2">{motor.saida}</span> : <span className="text-[#f6a23c]">(escolha a pasta)</span>} e já
+                aparecem na Biblioteca.
+              </span>
+              <button type="button" onClick={() => void escolherSaida()} className="shrink-0 underline-offset-2 hover:text-ink hover:underline" disabled={rodando}>
+                {motor?.saida ? 'Trocar' : 'Escolher'}
+              </button>
             </p>
           </div>
           <span className="flex-1" />
@@ -91,12 +106,31 @@ function Tela() {
           </button>
         </header>
 
-        {semMotor && (
-          <div className="flex items-start gap-2 border-b border-line bg-[#f6a23c]/10 px-5 py-3 text-[12px] text-ink" data-cortar="sem-motor">
-            <TriangleAlert size={14} strokeWidth={1.75} className="mt-0.5 shrink-0 text-[#f6a23c]" />
-            {motor.motivo}
+        {semMotor ? (
+          <div className="border-b border-line bg-surface px-5 py-4" data-cortar="sem-motor">
+            <PainelDoMotor />
           </div>
-        )}
+        ) : motor ? (
+          <div className="border-b border-line px-5 py-2" data-cortar="motor">
+            <button
+              type="button"
+              onClick={() => setVerMotor((v) => !v)}
+              className="flex items-center gap-1.5 text-[11px] text-ink-3 hover:text-ink"
+              title="O motor que corta (o do Dangai, ou o do AnCut instalado)"
+            >
+              <Cpu size={12} strokeWidth={1.5} />
+              {motor.qual === 'ancut'
+                ? 'Usando o motor do AnCut HUB instalado. Baixar o do Dangai'
+                : `${motor.origem}${motor.placa ? ` · ${motor.placa.replace(/^NVIDIA\s+(GeForce\s+)?/i, '')}` : ''}${motor.versao ? ` · ${motor.versao}` : ''}`}
+              <ChevronDown size={12} strokeWidth={1.5} className={verMotor ? 'rotate-180' : ''} />
+            </button>
+            {verMotor && (
+              <div className="mt-2 mb-1">
+                <PainelDoMotor compacto={motor.qual === 'ancut'} />
+              </div>
+            )}
+          </div>
+        ) : null}
 
         {aba === 'link' ? (
           <PorLink />
@@ -124,14 +158,19 @@ function Tela() {
               </button>
               <span className="text-[12px] text-ink-3">ou solte os arquivos aqui</span>
               <span className="flex-1" />
-              <div className="w-[340px]" data-cortar="modo">
+              <div className="w-[440px]" data-cortar="modo">
                 <Segmentos
                   opcoes={[
                     { valor: 'cortar' as const, rotulo: 'Só cortar', title: 'Pica o episódio em cenas: rápido, sem internet' },
                     {
                       valor: 'reconhecer' as const,
                       rotulo: 'Cortar e reconhecer',
-                      title: 'Também marca quem o AnCut já conhece (o elenco do AniList e quem você batizou antes). Mais demorado.',
+                      title: 'Também marca quem já é conhecido (o elenco do AniList e quem você batizou antes). Mais demorado.',
+                    },
+                    {
+                      valor: 'batizar' as const,
+                      rotulo: 'Batizar na mão',
+                      title: 'Agrupa os rostos do episódio e, no fim, você dá o nome de cada um. Para anime que o AniList não tem, ou personagem novo.',
                     },
                   ]}
                   ativo={(v) => modo === v}
@@ -158,7 +197,9 @@ function Tela() {
 
         <footer className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line px-5 py-3">
           <span className="text-[12px] text-ink-3">
-            {lendo
+            {reforco
+              ? reforco
+              : lendo
               ? 'Lendo o nome dos arquivos…'
               : itens.length === 0
                 ? 'Nada na fila.'
@@ -195,7 +236,8 @@ function Tela() {
             <button
               type="button"
               onClick={() => void useCortar.getState().comecar()}
-              disabled={esperando === 0 || semMotor || lendo}
+              disabled={esperando === 0 || semMotor || semSaida || lendo}
+              title={semSaida ? 'Escolha antes onde guardar as cenas (no alto)' : semMotor ? 'Baixe o motor de cortes antes' : undefined}
               className="flex h-9 items-center gap-2 rounded-sm bg-accent px-5 text-[13px] font-semibold text-white transition-colors hover:bg-accent-hover disabled:opacity-40"
               data-cortar="comecar"
             >
@@ -209,6 +251,19 @@ function Tela() {
   )
 }
 
+/**
+ * A pasta onde as cenas cortadas ficam (a output_dir do motor, a mesma do
+ * AnCut). Quem ainda nao tem a Biblioteca apontada para lugar nenhum passa a
+ * ler esta: senao o episodio cortado nao apareceria.
+ */
+async function escolherSaida(): Promise<void> {
+  const r = await window.dangai.ancutEscolherSaida()
+  if (!r.ok || !r.value) return
+  const s = await window.dangai.getSettings()
+  if (s.ok && !s.value.libraryDir) await window.dangai.saveSettings({ libraryDir: r.value })
+  await useCortar.getState().atualizarMotor()
+}
+
 const campo = 'h-8 rounded-sm border border-line bg-elevated px-2.5 text-[12px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none disabled:opacity-60'
 
 /** Um episodio da fila: o arquivo, o que ele e (editavel ate comecar), e o andamento. */
@@ -217,7 +272,7 @@ function ItemDaFila({ item }: { item: ItemDoCorte }) {
   const editavel = item.status === 'esperando'
   const mudar = useCortar.getState().mudar
   const broll = p.tipo === 'BROLL'
-  const ativo = item.status === 'cortando' || item.status === 'baixando'
+  const ativo = item.status === 'cortando' || item.status === 'baixando' || item.status === 'batizando'
   return (
     <div
       className={[
@@ -321,6 +376,38 @@ function ItemDaFila({ item }: { item: ItemDoCorte }) {
           {' '}· já na Biblioteca
         </p>
       )}
+      {item.status === 'pergunta' && item.pergunta && (
+        <div className="flex flex-col gap-2 rounded-sm border border-[#f6a23c]/40 bg-[#f6a23c]/10 px-3 py-2" data-cortar="pergunta">
+          <p className="text-[12px] leading-relaxed text-ink">{item.pergunta.mensagem}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => useCortar.getState().refazer(item.id, 'batizar')}
+              className="flex h-7 items-center gap-1.5 rounded-sm bg-accent px-3 text-[12px] font-semibold text-white hover:bg-accent-hover"
+            >
+              <Users size={12} strokeWidth={2} />
+              Batizar na mão
+            </button>
+            <button
+              type="button"
+              onClick={() => useCortar.getState().refazer(item.id, 'cortar')}
+              className="h-7 rounded-sm border border-line bg-elevated px-3 text-[12px] text-ink-2 hover:text-ink"
+            >
+              Só cortar
+            </button>
+            {item.pergunta.pastaDasFotos && (
+              <button
+                type="button"
+                onClick={() => void window.dangai.revealFile(item.pergunta!.pastaDasFotos!)}
+                className="text-[11px] text-ink-3 underline-offset-2 hover:text-ink hover:underline"
+                title="Cada personagem tem uma subpasta: 3 a 8 fotos com o rosto bem visível, e corte de novo em Cortar e reconhecer"
+              >
+                Abrir a pasta das fotos
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {item.erro && <p className="text-[11px] text-danger">{item.erro}</p>}
     </div>
   )
@@ -329,6 +416,8 @@ function ItemDaFila({ item }: { item: ItemDoCorte }) {
 function Situacao({ item }: { item: ItemDoCorte }) {
   const tamanho = 14
   if (item.status === 'cortando' || item.status === 'baixando') return <Loader2 size={tamanho} className="shrink-0 animate-spin text-accent" />
+  if (item.status === 'batizando') return <Users size={tamanho} strokeWidth={1.75} className="shrink-0 text-accent" />
+  if (item.status === 'pergunta') return <CircleHelp size={tamanho} strokeWidth={1.75} className="shrink-0 text-[#f6a23c]" />
   if (item.status === 'pronto') return <Check size={tamanho} strokeWidth={2} className="shrink-0 text-emerald-300" />
   if (item.status === 'falhou') return <CircleAlert size={tamanho} strokeWidth={1.75} className="shrink-0 text-danger" />
   if (item.status === 'cancelado') return <X size={tamanho} strokeWidth={1.75} className="shrink-0 text-ink-3" />

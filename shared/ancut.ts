@@ -23,9 +23,12 @@ export type TipoDoCorte = '' | 'BROLL'
  * "Só cortar": pica o episodio em cenas, sem internet e sem reconhecer
  * ninguem -- o rapido, o de todo dia dele. "Cortar e reconhecer": a Analise
  * rapida do AnCut -- reconhece quem o app ja conhece (o elenco do AniList e
- * quem foi batizado antes); o que ela perguntaria vira falha com o motivo.
+ * quem foi batizado antes). "Batizar": o Modo Descoberta do AnCut (23/11) --
+ * agrupa os rostos do proprio episodio e ele da os nomes no fim (anime que o
+ * AniList nao tem, personagem novo); os nomeados viram referencia para os
+ * proximos episodios.
  */
-export type ModoDoCorte = 'cortar' | 'reconhecer'
+export type ModoDoCorte = 'cortar' | 'reconhecer' | 'batizar'
 
 export interface PedidoDeCorte {
   video: string
@@ -52,8 +55,10 @@ export interface NomeLido {
 /** O motor do AnCut nesta maquina. */
 export interface MotorDoAncut {
   achado: boolean
-  /** De onde veio ("AnCut HUB instalado"). */
+  /** De onde veio ("Motor do Dangai", "AnCut HUB instalado"). */
   origem: string
+  /** O do Dangai (baixado pela tela), o do AnCut instalado, ou o de teste. null = nenhum. */
+  qual: 'dangai' | 'ancut' | 'teste' | null
   /** A versao do motor (o `probe`); null = nao respondeu. */
   versao: string | null
   /** A placa que ele usa ("NVIDIA GeForce RTX 3060"); null = CPU. */
@@ -116,6 +121,60 @@ export type EventoDoCorte =
     }
   | { tipo: 'falhou'; mensagem: string }
   | { tipo: 'cancelado' }
+  /**
+   * O motor parou e precisa de uma decisao (o needs-input do AnCut): o anime
+   * nao esta no AniList, ou o elenco ficou sem fotos. O motor ja saiu: a
+   * resposta e um corte novo, no modo 'batizar' (ou 'cortar').
+   */
+  | { tipo: 'pergunta'; motivo: 'anime-nao-achado' | 'sem-fotos' | 'outra'; mensagem: string; pastaDasFotos?: string }
+  /**
+   * O batismo esta pronto (o discovery-ready do AnCut): os grupos de rostos
+   * esperando nome. O motor CONTINUA aberto ate a resposta (responderBatismo)
+   * -- os recortes e as contas nao sobreviveriam a uma ida ao disco.
+   */
+  | { tipo: 'batismo'; batismo: BatismoDoMotor }
+
+/** Um "personagem sem nome" que o agrupamento achou. */
+export interface GrupoDoBatismo {
+  chave: number
+  rostos: number
+  cenas: number
+  /** Os recortes que viram referencia (URL para a tela; o indice vai em `removidos`). */
+  recortes: string[]
+  /** O palpite ("parece a Maomao") e a semelhanca. */
+  sugestao: string
+  semelhanca: number
+  /** Figurante de fundo (ou mais nuca que rosto): fica atras de um botao. */
+  figurante: boolean
+  /** Reconhecido com folga como alguem batizado antes: ja vem com nome. */
+  conhecido: boolean
+  /** Ate 3 palpites, do mais parecido para o menos. */
+  palpites: { nome: string; semelhanca: number }[]
+}
+
+/** O batismo de um episodio: os grupos e o elenco para escolher o nome. */
+export interface BatismoDoMotor {
+  pasta: string
+  anime: string
+  temporada: number
+  episodio: number
+  rostos: number
+  /** O anime foi achado online: o elenco oficial vira sugestao. */
+  online: boolean
+  /** Os nomes do elenco (o autocompletar). */
+  elenco: string[]
+  /** O elenco com foto (URL para a tela; vazia = sem foto). */
+  fotos: { nome: string; foto: string }[]
+  grupos: GrupoDoBatismo[]
+}
+
+/** Os nomes dados no batismo (o commit-discovery do AnCut). */
+export interface RespostaDoBatismo {
+  /** chave do grupo -> nome (vazio = ignorar). Dois grupos com o mesmo nome viram um so. */
+  nomes: Record<number, string>
+  /** chave do grupo -> indices dos recortes que NAO viram referencia. */
+  removidos: Record<number, number[]>
+}
 
 /** O nome de uma etapa do motor (a desconhecida, um motor mais novo, vai como veio). */
 export function rotuloDaEtapa(id: string): string {
@@ -127,7 +186,7 @@ export function rotuloDaEtapa(id: string): string {
  * `fracao` -1 (o motor nao sabe quanto falta) conta como metade da etapa.
  */
 export function andamentoGeral(etapa: string, fracao: number, modo: ModoDoCorte): number {
-  const conta = ETAPAS_DO_CORTE.filter((e) => modo === 'reconhecer' || e.soCorte)
+  const conta = ETAPAS_DO_CORTE.filter((e) => modo !== 'cortar' || e.soCorte)
   const total = conta.reduce((s, e) => s + e.peso, 0)
   const i = conta.findIndex((e) => e.id === etapa)
   if (i < 0 || total <= 0) return 0
@@ -164,7 +223,8 @@ export function pedidoParaOMotor(p: PedidoDeCorte, cfg: ConfigDoMotor, saida: st
       credit: num(cfg.credit_edge_threshold, 0.55),
     },
     aiReview: false,
-    discovery: false,
+    // O batismo: o motor para no fim com os grupos de rostos e espera os nomes (responderBatismo).
+    discovery: p.modo === 'batizar' && !broll,
     // B-roll e sempre so corte: trailer de jogo nao tem elenco.
     cutOnly: p.modo === 'cortar' || broll,
     // A Analise rapida soma por cima do que ja existe (nao apaga marcacao a mao).
@@ -220,25 +280,77 @@ export function eventoDoMotor(cru: unknown): EventoDoCorte | null {
       return { tipo: 'cancelado' }
     case 'needs-input': {
       const tipo = texto(e['kind'])
+      const pastaDasFotos = texto(e['refsDir']) || undefined
       if (tipo === 'anime-not-found') {
         return {
-          tipo: 'falhou',
-          mensagem: 'Não achei esse anime no AniList para reconhecer os personagens. Confira o nome do anime, ou use "Só cortar".',
+          tipo: 'pergunta',
+          motivo: 'anime-nao-achado',
+          mensagem: 'Não achei esse anime no AniList nem no MyAnimeList, e ainda não há personagens batizados dele. Confira o nome, ou batize na mão: o Dangai agrupa os rostos do episódio e você dá os nomes.',
         }
       }
       if (tipo === 'refs-missing') {
         return {
-          tipo: 'falhou',
-          mensagem: 'Faltam as fotos dos personagens desse anime para reconhecer. Use "Só cortar" e identifique depois no AnCut.',
+          tipo: 'pergunta',
+          motivo: 'sem-fotos',
+          mensagem: 'Nenhum personagem desse anime tem fotos boas para reconhecer. Batize na mão: o Dangai agrupa os rostos do episódio e você dá os nomes.',
+          ...(pastaDasFotos ? { pastaDasFotos } : {}),
         }
       }
-      return { tipo: 'falhou', mensagem: texto(e['message']) || 'O motor pediu uma resposta que esta tela ainda não dá.' }
+      return { tipo: 'pergunta', motivo: 'outra', mensagem: texto(e['message']) || 'O motor precisa de uma decisão.' }
     }
     case 'discovery-ready':
-      // Nunca pedido daqui (discovery: false); se vier, nao fica girando para sempre.
-      return { tipo: 'falhou', mensagem: 'O motor abriu o Modo Descoberta, que ainda é só no AnCut.' }
+      return { tipo: 'batismo', batismo: batismoDoMotor(e) }
     default:
       return null
+  }
+}
+
+/**
+ * O discovery-ready do motor no batismo do Dangai. Os recortes e as fotos vem
+ * RELATIVOS a pasta do episodio: o main troca por URL (motor.ts) antes de
+ * mandar para a tela.
+ */
+export function batismoDoMotor(e: Record<string, unknown>): BatismoDoMotor {
+  const lista = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+  const grupos = lista(e['groups']).flatMap((g): GrupoDoBatismo[] => {
+    if (!g || typeof g !== 'object') return []
+    const o = g as Record<string, unknown>
+    const shots = numero(o['shots'])
+    return [
+      {
+        chave: numero(o['key']),
+        rostos: numero(o['faces']),
+        cenas: shots,
+        recortes: lista(o['crops']).filter((c): c is string => typeof c === 'string'),
+        sugestao: texto(o['suggestedName']),
+        semelhanca: numero(o['suggestedSim']),
+        // Motor velho sem `minor`: o piso de antes (menos de 2 cenas).
+        figurante: o['known'] !== true && (typeof o['minor'] === 'boolean' ? o['minor'] : shots < 2),
+        conhecido: o['known'] === true,
+        palpites: lista(o['candidates']).flatMap((c) => {
+          if (!c || typeof c !== 'object') return []
+          const p = c as Record<string, unknown>
+          const nome = texto(p['name'])
+          return nome ? [{ nome, semelhanca: numero(p['sim']) }] : []
+        }),
+      },
+    ]
+  })
+  return {
+    pasta: texto(e['episodeRoot']),
+    anime: texto(e['animeTitle']),
+    temporada: numero(e['season']),
+    episodio: numero(e['episode']),
+    rostos: numero(e['totalFaces']),
+    online: e['online'] === true,
+    elenco: lista(e['roster']).filter((n): n is string => typeof n === 'string'),
+    fotos: lista(e['cast']).flatMap((c) => {
+      if (!c || typeof c !== 'object') return []
+      const o = c as Record<string, unknown>
+      const nome = texto(o['name'])
+      return nome ? [{ nome, foto: texto(o['photo']) }] : []
+    }),
+    grupos,
   }
 }
 
@@ -326,4 +438,76 @@ export type EventoDoDownload =
 export function tituloDoArquivoBaixado(arquivo: string): string {
   const nome = arquivo.split(/[\\/]/).pop() ?? arquivo
   return nome.replace(/\s*\[[^\]]+\].*$/, '').replace(/\.[^.]+$/, '')
+}
+
+// ------------------------------------------------------------- organizar (23/11)
+
+/** Um personagem de um episodio, com quantas cenas tem nele. */
+export interface PersonagemDoEpisodio {
+  id: number
+  nome: string
+  cenas: number
+}
+
+/** Um episodio do AnCut visto da Biblioteca (o `results` do motor). */
+export interface EpisodioNoAncut {
+  episodioId: number
+  anime: string
+  temporada: number
+  episodio: number
+  /** '' = episodio; 'BROLL'; o que mais o motor mandar ("MOVIE"). */
+  tipo: string
+  titulo: string
+  pasta: string
+  /** A pasta do anime (a de cima da do episodio). */
+  pastaDoAnime: string
+  cenas: number
+  semPersonagem: number
+  personagens: PersonagemDoEpisodio[]
+  /** O video de onde saiu (para reconhecer depois de um "Só cortar"). */
+  video: string
+  videoExiste: boolean
+}
+
+/** Juntar duas pastas de anime: o plano (e, aplicado, o que foi feito). */
+export interface PlanoDeJuntarAnimes {
+  origem: string
+  destino: string
+  /** Pastas de episodio que vao (ou foram) para o destino. */
+  mover: string[]
+  conflitos: string[]
+  linhas: number
+  erro: string
+  pode: boolean
+  aplicado: boolean
+}
+
+/** Mudar a temporada (ou passar para B-roll): o que muda de nome. */
+export interface PlanoDeRenomear {
+  mudancas: { episodioId: number; de: string; para: string }[]
+  conflitos: string[]
+  erro: string
+  pode: boolean
+  aplicado: boolean
+}
+
+/** O andamento de um reforco ou de uma repescagem (main -> tela). */
+export type EventoDeOrganizar =
+  | { tipo: 'reforcar'; nome: string; feitos: number; total: number }
+  | { tipo: 'repescar'; feitos: number; total: number; cenas: number }
+
+export interface FimDoReforco {
+  /** nome -> quantas fotos entraram. */
+  adicionadas: Record<string, number>
+  total: number
+  personagens: number
+  erro?: string
+}
+
+export interface FimDaRepescagem {
+  episodios: number
+  /** Cenas que ganharam personagem. */
+  cenas: number
+  porPersonagem: Record<string, number>
+  erro?: string
 }

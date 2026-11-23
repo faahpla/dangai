@@ -11,7 +11,15 @@ import type {
 import type { PontoDeGanho } from './ducking'
 import type {
   CenaNoAncut,
+  ConfigDoMotor,
+  EpisodioNoAncut,
+  EventoDeOrganizar,
   EventoDoCorte,
+  FimDaRepescagem,
+  FimDoReforco,
+  PlanoDeJuntarAnimes,
+  PlanoDeRenomear,
+  RespostaDoBatismo,
   EventoDoDownload,
   MotorDoAncut,
   NomeLido,
@@ -21,6 +29,7 @@ import type {
   VideoBaixado,
   VideoDoLink,
 } from './ancut'
+import type { EstadoDoMotorRuntime, PedidoDeInstalacao } from './runtime-do-motor'
 import type { MedidaDoSom } from './loudness'
 import type { OpenedProject, ProjectFile } from './project-file'
 import type { ModuloPublico } from './modulos'
@@ -76,6 +85,28 @@ export const IPC = {
   ancutLinkBaixar: 'ancut:link-baixar',
   ancutLinkCancelar: 'ancut:link-cancelar',
   ancutLinkEvento: 'ancut:link-evento',
+  /** (23/11) O motor de cortes do proprio Dangai: baixar, continuar, remover (electron/services/ancut/runtime). */
+  ancutRuntimeEstado: 'ancut:runtime-estado',
+  ancutRuntimeInstalar: 'ancut:runtime-instalar',
+  ancutRuntimeCancelar: 'ancut:runtime-cancelar',
+  ancutRuntimePasta: 'ancut:runtime-pasta',
+  ancutRuntimeRemover: 'ancut:runtime-remover',
+  ancutRuntimeMudou: 'ancut:runtime-mudou',
+  /** As configuracoes do motor (o config.json do AnCut): pasta de saida, sensibilidade. */
+  ancutConfig: 'ancut:config',
+  ancutGravarConfig: 'ancut:gravar-config',
+  ancutEscolherSaida: 'ancut:escolher-saida',
+  /** (23/11) O batismo (Modo Descoberta) e o organizar da Biblioteca (electron/services/ancut/organizar.ts). */
+  ancutResponderBatismo: 'ancut:responder-batismo',
+  ancutEpisodio: 'ancut:episodio',
+  ancutAnimesVizinhos: 'ancut:animes-vizinhos',
+  ancutJuntarAnimes: 'ancut:juntar-animes',
+  ancutTemporada: 'ancut:temporada',
+  ancutParaBroll: 'ancut:para-broll',
+  ancutTirarPersonagem: 'ancut:tirar-personagem',
+  ancutReforcar: 'ancut:reforcar',
+  ancutRepescar: 'ancut:repescar',
+  ancutOrganizarEvento: 'ancut:organizar-evento',
   videoProntoProgress: 'upscale:video-pronto-progress',
   cancelarUpscale: 'upscale:cancel',
   inverterClipe: 'assets:inverter',
@@ -974,6 +1005,34 @@ export interface DangaiBridge {
   ancutLinkBaixar(pedido: PedidoDeDownload): Promise<IpcResult<VideoBaixado | { erro: string }>>
   ancutLinkCancelar(): Promise<IpcResult<null>>
   onAncutLinkEvento(listener: (e: EventoDoDownload) => void): () => void
+  /** (23/11) O motor de cortes do Dangai (o Python dele, baixado so por quem quiser). */
+  ancutRuntimeEstado(): Promise<IpcResult<EstadoDoMotorRuntime>>
+  ancutRuntimeInstalar(pedido: PedidoDeInstalacao): Promise<IpcResult<EstadoDoMotorRuntime>>
+  ancutRuntimeCancelar(): Promise<IpcResult<null>>
+  /** Troca a pasta do motor (o dialogo); `padrao` volta para a de sempre. */
+  ancutRuntimePasta(padrao: boolean): Promise<IpcResult<EstadoDoMotorRuntime>>
+  ancutRuntimeRemover(): Promise<IpcResult<EstadoDoMotorRuntime>>
+  onAncutRuntime(listener: (e: EstadoDoMotorRuntime) => void): () => void
+  /** O config.json do motor (o mesmo do AnCut) e onde ele fica. */
+  ancutConfig(): Promise<IpcResult<{ config: ConfigDoMotor; caminho: string; ancutInstalado: boolean }>>
+  ancutGravarConfig(mudancas: Partial<ConfigDoMotor>): Promise<IpcResult<ConfigDoMotor>>
+  /** O dialogo da pasta onde as cenas cortadas ficam (grava no config do motor). null = desistiu. */
+  ancutEscolherSaida(): Promise<IpcResult<string | null>>
+  /** Os nomes do batismo: o corte que parou no Modo Descoberta continua. false = o motor ja tinha saido. */
+  ancutResponderBatismo(resposta: RespostaDoBatismo): Promise<IpcResult<boolean>>
+  /** O episodio de um clipe no AnCut (personagens, cenas sem ninguem, o video). null = nao e do AnCut. */
+  ancutEpisodio(clipe: string): Promise<IpcResult<EpisodioNoAncut | null>>
+  /** As outras pastas de anime ao lado da do clipe (para onde juntar). */
+  ancutAnimesVizinhos(clipe: string): Promise<IpcResult<string[]>>
+  ancutJuntarAnimes(clipe: string, destino: string, aplicar: boolean): Promise<IpcResult<PlanoDeJuntarAnimes>>
+  ancutTemporada(clipes: readonly string[], temporada: number, aplicar: boolean): Promise<IpcResult<PlanoDeRenomear>>
+  ancutParaBroll(clipes: readonly string[], aplicar: boolean): Promise<IpcResult<PlanoDeRenomear>>
+  ancutTirarPersonagem(clipe: string, personagemId: number): Promise<IpcResult<EpisodioNoAncut | null>>
+  /** Reforca as fotos do elenco com este episodio (o andamento por onAncutOrganizar). */
+  ancutReforcar(clipe: string): Promise<IpcResult<FimDoReforco>>
+  /** Repesca quem ficou sem marcacao nos episodios destes clipes. */
+  ancutRepescar(clipes: readonly string[]): Promise<IpcResult<FimDaRepescagem>>
+  onAncutOrganizar(listener: (e: EventoDeOrganizar) => void): () => void
   /** Interrompe o upscale que estiver rodando, do render ou do video pronto. */
   cancelarUpscale(): Promise<IpcResult<null>>
   onVideoProntoProgress(listener: (p: { feitos: number; total: number; nome: string }) => void): () => void

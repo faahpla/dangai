@@ -47,14 +47,14 @@ export const useRevisarCena = create<{
 }))
 
 let apagarRecado: ReturnType<typeof setTimeout> | null = null
-function avisarNaBiblioteca(texto: string): void {
+export function avisarNaBiblioteca(texto: string): void {
   useRevisarCena.setState({ recado: texto })
   if (apagarRecado) clearTimeout(apagarRecado)
   apagarRecado = setTimeout(() => useRevisarCena.setState({ recado: null }), 7000)
 }
 
 /** Depois de mudar no AnCut: a Biblioteca le de novo (so o episodio que mudou e relido). */
-function releBiblioteca(): void {
+export function releBiblioteca(): void {
   void useProject.getState().syncLibrary()
 }
 
@@ -175,7 +175,7 @@ function MenuDaCena({ menu, aoMudar }: { menu: Menu; aoMudar?: () => void }) {
   )
 }
 
-function Janela({ titulo, children, aoFechar, largura = 460 }: { titulo: string; children: React.ReactNode; aoFechar: () => void; largura?: number }) {
+export function Janela({ titulo, children, aoFechar, largura = 460 }: { titulo: string; children: React.ReactNode; aoFechar: () => void; largura?: number }) {
   useEffect(() => {
     const tecla = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return
