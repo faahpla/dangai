@@ -176,6 +176,10 @@ export interface EstadoDoEditor {
   podeMenuNaSugestao: boolean
   /** O instante `t` do video, tirado LIMPO da cena de origem (sem a legenda queimada); `metade` no grid. */
   usarQuadroDoVideo(t: number, metade?: 'a' | 'b'): Promise<void>
+  /** (23/11) "Quadro do video": o quadro LIMPO daquele instante para a area de transferencia. */
+  copiarQuadroDoVideo(t: number, metade?: 'a' | 'b'): Promise<void>
+  /** (23/11) "Quadro do video": "Salvar imagem como" do quadro limpo daquele instante. */
+  salvarQuadroDoVideo(t: number, metade?: 'a' | 'b'): Promise<void>
   usarArquivo(): Promise<void>
   /** Um arquivo de imagem que ele soltou (ja no lugar certo) no slot. */
   usarCaminho(caminho: string, slot?: 0 | 1): Promise<void>
@@ -620,6 +624,26 @@ export function criarLojaDoEditor(fonte: FonteDoEditor): LojaDoEditor {
         const quando = s.noVideo !== null ? `${Math.floor(s.noVideo / 60)}m${String(Math.floor(s.noVideo % 60)).padStart(2, '0')}s` : `cena ${s.ordem + 1}`
         const r = await fonte
           .salvarQuadro({ arquivo: s.arquivo, t: s.t, nome: `quadro ${quando}.png`, pasta: get().pastaDeSalvar })
+          .catch((e: unknown) => ({ ok: false as const, error: String(e) }))
+        if (!r.ok) avisar(r.error)
+        else if (r.value) avisar(`Salva: ${r.value.replace(/^.*[\\/]/, '')}`)
+      },
+
+      copiarQuadroDoVideo: async (t, metade = 'a') => {
+        const cena = fonte.cenaNoInstante?.(t) ?? null
+        const de = metade === 'b' ? (cena?.b ?? cena?.a) : cena?.a
+        if (!de || !fonte.copiarQuadro) return
+        const r = await fonte.copiarQuadro({ arquivo: de.arquivo, t: de.t }).catch((e: unknown) => ({ ok: false as const, error: String(e) }))
+        avisar(r.ok ? 'Imagem copiada: é só dar Ctrl+V onde quiser.' : r.error)
+      },
+
+      salvarQuadroDoVideo: async (t, metade = 'a') => {
+        const cena = fonte.cenaNoInstante?.(t) ?? null
+        const de = metade === 'b' ? (cena?.b ?? cena?.a) : cena?.a
+        if (!de || !fonte.salvarQuadro) return
+        const quando = `${Math.floor(t / 60)}m${String(Math.floor(t % 60)).padStart(2, '0')}s`
+        const r = await fonte
+          .salvarQuadro({ arquivo: de.arquivo, t: de.t, nome: `quadro ${quando}.png`, pasta: get().pastaDeSalvar })
           .catch((e: unknown) => ({ ok: false as const, error: String(e) }))
         if (!r.ok) avisar(r.error)
         else if (r.value) avisar(`Salva: ${r.value.replace(/^.*[\\/]/, '')}`)

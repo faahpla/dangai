@@ -5,6 +5,7 @@ import { Segmentos } from '@/modulos/kit'
 import { cenaNoInstante, duracaoDoPlano } from '../../shared/plano'
 import {
   AjustesDaThumb,
+  CopiarQuadroDoInstante,
   DoComputador,
   GradeDeSugestoes,
   PreviaDaThumb,
@@ -432,6 +433,7 @@ function QuadroDoProjeto() {
             botao('a', 'Usar este quadro', cena ? `Tira o quadro limpo de ${cena.a.nome} em ${formatarTempo(cena.a.t, 1)}` : '')
           )}
         </div>
+        <CopiarQuadroDoInstante tempo={() => tempo} grid={Boolean(cena?.b)} ativo={Boolean(cena)} />
         <p className="text-[11px] leading-snug text-ink-3" data-thumb="cena-no-instante">
           {cena
             ? `Cena ${atual + 1}: sai limpo, sem legenda, ${cena.b ? 'o grid tem duas cenas, escolha a metade' : `de ${cena.a.nome.replace(/\.[^.]+$/, '')} em ${formatarTempo(cena.a.t, 1)}`}.`

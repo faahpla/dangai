@@ -7,6 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardPaste,
+  Copy,
+  Download,
   FolderCog,
   FolderOpen,
   ImageIcon,
@@ -1206,7 +1208,37 @@ export function GradeDeSugestoes({
   )
 }
 
-function AvisoDaSugestao() {
+/**
+ * (23/11, Levi) "Quadro do video"/"Quadro do projeto": COPIAR e SALVAR o quadro
+ * LIMPO (sem legenda) do instante escolhido, como o botao direito das
+ * Sugestoes. `tempo()` = o instante agora; no grid, um par por metade.
+ */
+export function CopiarQuadroDoInstante({ tempo, grid, ativo }: { tempo: () => number; grid: boolean; ativo: boolean }) {
+  const useThumb = useLoja()
+  const pode = useThumb((s) => s.podeMenuNaSugestao)
+  if (!pode) return null
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2" data-thumb="copiar-quadro">
+        {(grid ? (['a', 'b'] as const) : (['a'] as const)).map((metade) => (
+          <span key={metade} className="flex items-center gap-2">
+            <Botao disabled={!ativo} onClick={() => void useThumb.getState().copiarQuadroDoVideo(tempo(), metade)} title="Copia o quadro limpo (sem legenda) para o Ctrl+V em outro lugar">
+              <Copy size={13} strokeWidth={1.5} />
+              {grid ? `Copiar ${metade === 'a' ? 'cima' : 'baixo'}` : 'Copiar imagem'}
+            </Botao>
+            <Botao disabled={!ativo} onClick={() => void useThumb.getState().salvarQuadroDoVideo(tempo(), metade)} title="Salva o quadro limpo (sem legenda) como PNG">
+              <Download size={13} strokeWidth={1.5} />
+              {grid ? `Salvar ${metade === 'a' ? 'cima' : 'baixo'}...` : 'Salvar imagem como...'}
+            </Botao>
+          </span>
+        ))}
+      </div>
+      <AvisoDaSugestao />
+    </>
+  )
+}
+
+export function AvisoDaSugestao() {
   const aviso = useLoja()((s) => s.avisoDaSugestao)
   return aviso ? (
     <p className="text-[11px] text-ink-3" data-thumb="aviso-da-sugestao">

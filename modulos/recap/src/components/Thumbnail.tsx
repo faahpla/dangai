@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Loader2, Sparkles } from 'lucide-react'
 import {
   AjustesDaThumb as AjustesDoEditor,
+  CopiarQuadroDoInstante,
   DoComputador,
   GradeDeSugestoes,
   PreviaDaThumb as PreviaDoEditor,
@@ -150,6 +151,7 @@ function QuadroDoVideo() {
             botao('a', 'Usar este quadro', cena ? `Tira o quadro limpo de ${cena.a.nome} em ${formatarTempo(cena.a.t, 1)}` : '')
           )}
         </div>
+        <CopiarQuadroDoInstante tempo={() => video.current?.currentTime ?? tempo} grid={Boolean(cena?.b)} ativo={duracao > 0 && Boolean(cena)} />
         <p className="text-[11px] leading-snug text-ink-3" data-thumb="cena-no-instante">
           {cena
             ? `Sai limpo, sem legenda: ${cena.b ? 'o grid tem duas cenas, escolha a metade' : `da cena ${cena.a.nome.replace(/\.[^.]+$/, '')} em ${formatarTempo(cena.a.t, 1)}`}.`
