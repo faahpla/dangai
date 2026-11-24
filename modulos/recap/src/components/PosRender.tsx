@@ -431,7 +431,9 @@ function Tocador({ url, altura, larguraMax }: { url: string; altura: number; lar
       <video
         ref={video}
         src={url}
-        autoPlay
+        // (24/11, Levi) Sem autoPlay: "ta me assustando td vez" -- o video abre parado
+        // no 1o quadro e so toca no play (ou clicando nele).
+        preload="auto"
         playsInline
         onClick={alternar}
         onPlay={() => setTocando(true)}
