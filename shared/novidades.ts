@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.13.1',
+    itens: [
+      'Gerar recap: quando o render termina, a tela "Vídeo pronto" abre com o vídeo parado no primeiro quadro. Ele só toca quando você clicar no play (ou no vídeo).',
+    ],
+  },
+  {
     versao: '2.13.0',
     itens: [
       'Motor de cortes do Dangai: agora o Dangai corta sozinho, sem precisar do AnCut instalado. Em "Cortar episódios" (ou nas Configurações), "Baixar o motor" baixa uma vez só (uns 3 GB; tem a versão leve, sem a placa de vídeo). Quem tem o AnCut continua usando o motor dele até baixar o do Dangai. O histórico, os personagens e a pasta dos animes são os mesmos do AnCut.',
