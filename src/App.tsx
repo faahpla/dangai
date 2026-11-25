@@ -28,6 +28,8 @@ import { Library } from '@/components/Library'
 import { JuntarProjetos } from '@/components/JuntarProjetos'
 import { CortarEpisodios } from '@/components/CortarEpisodios'
 import { useCortar } from '@/store/cortar-episodios'
+import { useAcervo } from '@/store/acervo'
+import { Acervo } from '@/components/acervo/Acervo'
 import { useJuntar } from '@/store/juntar-projetos'
 import { EtapaDoAudio } from '@/components/EtapaDoAudio'
 import { EtapaDoRoteiro } from '@/components/EtapaDoRoteiro'
@@ -252,6 +254,7 @@ export function App() {
         useJuntar.getState().aberta ||
         // O Cortar episodios tambem (os campos do anime e do episodio).
         useCortar.getState().aberta ||
+        useAcervo.getState().aberto ||
         useTelaCheia.getState().de !== null
       ) {
         /*
@@ -643,6 +646,7 @@ export function App() {
       <JuntarProjetos />
       {/* (20/11) Antes da Biblioteca: o "Abrir a Biblioteca" dele abre por cima. */}
       <CortarEpisodios />
+      <Acervo />
       <Library />
       <EtapaDoAudio />
       <EtapaDoRoteiro />

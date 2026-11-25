@@ -81,6 +81,12 @@ interface EstadoDoCorte {
   adicionar: (videos: readonly string[]) => Promise<void>
   /** Um pedido ja montado (o "Reconhecer de novo" de um episodio da Biblioteca). */
   adicionarPedido: (pedido: PedidoDeCorte, nome: string) => void
+  /**
+   * Videos de um anime que ja existe no Acervo (o "Cortar os que faltam"): o
+   * numero vem do nome do arquivo, mas o anime e a pasta sao os dele -- o
+   * episodio novo cai junto dos outros, nao numa pasta com o nome do release.
+   */
+  adicionarDoAnime: (videos: readonly string[], o: { anime: string; pastaDoAnime: string; temporadas: Record<string, number> }) => Promise<void>
   adicionarLinks: (videos: readonly VideoDoLink[], o: { anime: string; pastaDoAnime: string; pasta: string; qualidade: QualidadeDoDownload }) => void
   mudar: (id: string, pedido: Partial<PedidoDeCorte>) => void
   remover: (id: string) => void
@@ -184,6 +190,42 @@ export const useCortar = create<EstadoDoCorte>((set, get) => ({
         itens: get().itens.map((i) =>
           i.id === item.id && !i.pedido.anime
             ? { ...i, pedido: { ...i.pedido, anime: lido.anime, temporada: lido.temporada, episodio: lido.episodio, tipo: lido.tipo } }
+            : i,
+        ),
+      })
+    }
+    set({ lendo: false })
+  },
+
+  adicionarDoAnime: async (videos, o) => {
+    const novos = videos.filter((v) => !get().itens.some((i) => i.pedido.video === v && i.status === 'esperando'))
+    if (novos.length === 0) return
+    const modo = get().modo
+    const itens: ItemDoCorte[] = novos.map((video) => ({
+      id: novoId(),
+      nome: nomeDe(video),
+      status: 'esperando',
+      andamento: 0,
+      pedido: { video, anime: o.anime, temporada: o.temporadas[video] ?? 1, episodio: 1, tipo: '', modo, pastaDoAnime: o.pastaDoAnime },
+    }))
+    set({ itens: [...get().itens, ...itens], lendo: true, aba: 'arquivos' })
+    for (const item of itens) {
+      const r = await window.dangai.ancutLerNome(item.pedido.video)
+      const lido = r.ok ? r.value : null
+      if (!lido) continue
+      set({
+        itens: get().itens.map((i) =>
+          i.id === item.id && i.status === 'esperando'
+            ? {
+                ...i,
+                pedido: {
+                  ...i.pedido,
+                  episodio: lido.episodio,
+                  // A temporada do nome so quando ele diz uma (o motor responde 1 quando nao sabe).
+                  temporada: lido.temporada > 1 ? lido.temporada : i.pedido.temporada,
+                  tipo: lido.tipo,
+                },
+              }
             : i,
         ),
       })

@@ -6,6 +6,7 @@ import { App } from './App'
 import { useProject } from './store/project'
 import { useJuntar } from './store/juntar-projetos'
 import { useCortar } from './store/cortar-episodios'
+import { useAcervo } from './store/acervo'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('Elemento #root não encontrado')
@@ -18,6 +19,7 @@ if (import.meta.env.DEV) {
   Reflect.set(window, 'dangaiJuntar', useJuntar)
   // A fila do Cortar episodios, para o teste pelo CDP.
   Reflect.set(window, 'dangaiCortar', useCortar)
+  Reflect.set(window, 'dangaiAcervo', useAcervo)
 }
 
 createRoot(container).render(

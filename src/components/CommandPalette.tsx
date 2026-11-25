@@ -19,6 +19,7 @@ import {
   ListVideo,
   Hash,
   Library as LibraryIcon,
+  Users,
   Undo2,
   Redo2,
   LifeBuoy,
@@ -31,6 +32,7 @@ import {
 import { useResumoDeManga } from '@/store/resumo-de-manga'
 import { useJuntar } from '@/store/juntar-projetos'
 import { useCortar } from '@/store/cortar-episodios'
+import { abrirAcervo } from '@/components/acervo/Acervo'
 import { dicaDoAtalho } from '@/store/atalhos'
 import { useProject } from '@/store/project'
 import { copiarRelatorio } from '@/store/relatorio'
@@ -380,6 +382,20 @@ function useCommands(): Command[] {
         hint: 'o corte do AnCut: o episódio vira as cenas da Biblioteca',
         icon: Scissors,
         run: () => useCortar.getState().abrir('arquivos'),
+      },
+      {
+        id: 'acervo',
+        label: 'Acervo: o que já cortei e o que falta',
+        hint: 'animes, episódios, o que falta cortar, exportar e importar elenco',
+        icon: LibraryIcon,
+        run: () => abrirAcervo('animes'),
+      },
+      {
+        id: 'personagens',
+        label: 'Personagens do acervo',
+        hint: 'marcar cenas, juntar e renomear personagens',
+        icon: Users,
+        run: () => abrirAcervo('personagens'),
       },
       {
         id: 'broll-por-link',

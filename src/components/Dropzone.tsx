@@ -31,6 +31,7 @@ import { PrepararODangai } from "./PrepararODangai";
 import { useResumoDeManga } from "@/store/resumo-de-manga";
 import { useJuntar } from "@/store/juntar-projetos";
 import { useCortar } from "@/store/cortar-episodios";
+import { abrirAcervo } from "@/components/acervo/Acervo";
 
 interface DropzoneProps {
   isDragging: boolean;
@@ -407,6 +408,9 @@ function NichoAnime(alvo: PropsDoAlvo) {
       {/* (20/11) O corte do AnCut, aqui: o episodio vira as cenas da Biblioteca. */}
       <Acao icone={Scissors} onClick={() => useCortar.getState().abrir("arquivos")} title="Cortar episódios em cenas (o mesmo corte do AnCut) e baixar B-roll por link">
         Cortar episódios
+      </Acao>
+      <Acao icone={LibraryIcon} onClick={() => abrirAcervo("animes")} title="O que você já cortou, o que falta cortar, os personagens e o pacote de elenco (a Biblioteca do AnCut)">
+        Acervo e personagens
       </Acao>
     </Nicho>
   );

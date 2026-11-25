@@ -30,6 +30,7 @@ import type {
   VideoDoLink,
 } from './ancut'
 import type { EstadoDoMotorRuntime, PedidoDeInstalacao } from './runtime-do-motor'
+import type { Acervo, CenaDoAcervo, InfoDoPacote, PersonagemDoAcervo, PersonagemDoEpisodioAberto, ResultadoDoPacote } from './acervo'
 import type { MedidaDoSom } from './loudness'
 import type { OpenedProject, ProjectFile } from './project-file'
 import type { ModuloPublico } from './modulos'
@@ -107,6 +108,21 @@ export const IPC = {
   ancutReforcar: 'ancut:reforcar',
   ancutRepescar: 'ancut:repescar',
   ancutOrganizarEvento: 'ancut:organizar-evento',
+  /** (25/11) O Acervo: a Biblioteca do AnCut no Dangai (electron/services/ancut/acervo.ts). */
+  acervoLer: 'acervo:ler',
+  acervoPersonagens: 'acervo:personagens',
+  acervoCenasDoPersonagem: 'acervo:cenas-do-personagem',
+  acervoEpisodio: 'acervo:episodio',
+  acervoCenasDoEpisodio: 'acervo:cenas-do-episodio',
+  acervoMarcar: 'acervo:marcar',
+  acervoMarcarComNome: 'acervo:marcar-com-nome',
+  acervoLixeira: 'acervo:lixeira',
+  acervoJuntarPersonagem: 'acervo:juntar-personagem',
+  acervoExportarElenco: 'acervo:exportar-elenco',
+  acervoEscolherPacote: 'acervo:escolher-pacote',
+  acervoLerPacote: 'acervo:ler-pacote',
+  acervoImportarPacote: 'acervo:importar-pacote',
+  acervoEvento: 'acervo:evento',
   videoProntoProgress: 'upscale:video-pronto-progress',
   cancelarUpscale: 'upscale:cancel',
   inverterClipe: 'assets:inverter',
@@ -1033,6 +1049,28 @@ export interface DangaiBridge {
   /** Repesca quem ficou sem marcacao nos episodios destes clipes. */
   ancutRepescar(clipes: readonly string[]): Promise<IpcResult<FimDaRepescagem>>
   onAncutOrganizar(listener: (e: EventoDeOrganizar) => void): () => void
+  /** (25/11) O Acervo: os episodios cortados, o que falta cortar e os sem pasta. */
+  acervoLer(): Promise<IpcResult<Acervo>>
+  /** Os personagens do acervo inteiro, com o rosto. */
+  acervoPersonagens(): Promise<IpcResult<PersonagemDoAcervo[]>>
+  /** As cenas de um personagem (os ids do grupo); `anime` = so as daquela pasta. */
+  acervoCenasDoPersonagem(ids: readonly number[], anime?: string): Promise<IpcResult<CenaDoAcervo[]>>
+  /** Os personagens de um episodio aberto (quantas cenas cada um, sem ninguem, o video). */
+  acervoEpisodio(episodioId: number): Promise<IpcResult<{ personagens: PersonagemDoEpisodioAberto[]; cenas: number; semNinguem: number; video: string; videoExiste: boolean }>>
+  /** As cenas de um episodio: de um personagem, todas (0) ou sem ninguem (-2). */
+  acervoCenasDoEpisodio(episodioId: number, pasta: string, personagemId: number): Promise<IpcResult<CenaDoAcervo[]>>
+  acervoMarcar(cenaIds: readonly number[], personagemId: number, remover: boolean): Promise<IpcResult<number>>
+  acervoMarcarComNome(cenaIds: readonly number[], nome: string): Promise<IpcResult<number>>
+  acervoLixeira(porEpisodio: readonly { episodioId: number; cenaIds: number[] }[]): Promise<IpcResult<number>>
+  /** Junta um personagem no outro, so dentro do anime. O andamento por onAcervo. */
+  acervoJuntarPersonagem(de: { ids: number[]; anime: string }, para: { id: number }): Promise<IpcResult<{ cenas: number; episodios: number }>>
+  /** O "Salvar como" e o .zip do elenco destes episodios. null = desistiu. */
+  acervoExportarElenco(episodioIds: readonly number[], nome: string): Promise<IpcResult<ResultadoDoPacote | null>>
+  /** O "Abrir" de um pacote de elenco. null = desistiu. */
+  acervoEscolherPacote(): Promise<IpcResult<string | null>>
+  acervoLerPacote(arquivo: string): Promise<IpcResult<InfoDoPacote>>
+  acervoImportarPacote(arquivo: string, titulo: string): Promise<IpcResult<ResultadoDoPacote>>
+  onAcervo(listener: (e: { tipo: 'juntar'; feitos: number; total: number }) => void): () => void
   /** Interrompe o upscale que estiver rodando, do render ou do video pronto. */
   cancelarUpscale(): Promise<IpcResult<null>>
   onVideoProntoProgress(listener: (p: { feitos: number; total: number; nome: string }) => void): () => void

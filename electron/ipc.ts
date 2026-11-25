@@ -104,6 +104,22 @@ import {
   tirarPersonagem,
 } from './services/ancut/organizar'
 import {
+  acervo,
+  cenasDoEpisodio,
+  cenasDoPersonagem,
+  exportarElenco,
+  importarPacote,
+  juntarPersonagem,
+  lerPacote,
+  lixeiraDasCenas,
+  marcarCenas,
+  marcarCenasComNome,
+  pacoteValido,
+  personagensDoAcervo,
+  personagensDoEpisodio,
+} from './services/ancut/acervo'
+import type { Acervo, CenaDoAcervo, InfoDoPacote, PersonagemDoAcervo, PersonagemDoEpisodioAberto, ResultadoDoPacote } from '@shared/acervo'
+import {
   cancelarMotorRuntime,
   definirAoMudarORuntime,
   definirAvisoDoMotorRuntime,
@@ -811,6 +827,69 @@ export function registerIpc(): void {
   handle<[string, number], EpisodioNoAncut | null>(IPC.ancutTirarPersonagem, (clipe, id) => tirarPersonagem(String(clipe), Number(id)))
   handle<[string], FimDoReforco>(IPC.ancutReforcar, (clipe) => reforcar(String(clipe), (e) => enviarAoAncut(IPC.ancutOrganizarEvento, e)))
   handle<[readonly string[]], FimDaRepescagem>(IPC.ancutRepescar, (clipes) => repescar(clipesDe(clipes), (e) => enviarAoAncut(IPC.ancutOrganizarEvento, e)))
+
+  // ---------------------------------------------------------- o acervo (25/11)
+
+  const numeros = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is number => Number.isInteger(n)) : [])
+  handle<[], Acervo>(IPC.acervoLer, () => acervo())
+  handle<[], PersonagemDoAcervo[]>(IPC.acervoPersonagens, () => personagensDoAcervo())
+  handle<[readonly number[], string | undefined], CenaDoAcervo[]>(IPC.acervoCenasDoPersonagem, (ids, anime) =>
+    cenasDoPersonagem(numeros(ids), typeof anime === 'string' ? anime : undefined),
+  )
+  handle<[number], { personagens: PersonagemDoEpisodioAberto[]; cenas: number; semNinguem: number; video: string; videoExiste: boolean }>(
+    IPC.acervoEpisodio,
+    (id) => personagensDoEpisodio(Number(id)),
+  )
+  handle<[number, string, number], CenaDoAcervo[]>(IPC.acervoCenasDoEpisodio, (id, pasta, personagemId) =>
+    cenasDoEpisodio(Number(id), String(pasta ?? ''), Number(personagemId)),
+  )
+  handle<[readonly number[], number, boolean], number>(IPC.acervoMarcar, (ids, personagemId, remover) => marcarCenas(numeros(ids), Number(personagemId), remover === true))
+  handle<[readonly number[], string], number>(IPC.acervoMarcarComNome, (ids, nome) => marcarCenasComNome(numeros(ids), String(nome ?? '')))
+  handle<[readonly { episodioId: number; cenaIds: number[] }[]], number>(IPC.acervoLixeira, (grupos) =>
+    lixeiraDasCenas(
+      Array.isArray(grupos)
+        ? grupos.flatMap((g) => (g && typeof g === 'object' ? [{ episodioId: Number(g.episodioId), cenaIds: numeros(g.cenaIds) }] : []))
+        : [],
+    ),
+  )
+  handle<[{ ids: number[]; anime: string }, { id: number }], { cenas: number; episodios: number }>(IPC.acervoJuntarPersonagem, (de, para) => {
+    const origem = { ids: numeros(de?.ids), anime: String(de?.anime ?? '') }
+    if (origem.ids.length === 0 || !origem.anime) throw new Error('Escolha o personagem que vai sair.')
+    const id = Number(para?.id)
+    if (!Number.isInteger(id) || id <= 0) throw new Error('Escolha o personagem que fica.')
+    return juntarPersonagem(origem, { id }, (feitos, total) => enviarAoAncut(IPC.acervoEvento, { tipo: 'juntar', feitos, total }))
+  })
+  handle<[readonly number[], string], ResultadoDoPacote | null>(IPC.acervoExportarElenco, async (ids, nome) => {
+    const janela = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const seguro = String(nome || 'anime').replace(/[<>:"/\\|?*]+/g, ' ').trim() || 'anime'
+    const opcoes: Electron.SaveDialogOptions = {
+      title: 'Exportar o elenco',
+      defaultPath: join(app.getPath('desktop'), `${seguro} - personagens AnCut.zip`),
+      filters: [{ name: 'Pacote de personagens do AnCut', extensions: ['zip'] }],
+    }
+    const r = janela ? await dialog.showSaveDialog(janela, opcoes) : await dialog.showSaveDialog(opcoes)
+    if (r.canceled || !r.filePath) return null
+    return exportarElenco(r.filePath, numeros(ids), String(nome ?? ''))
+  })
+  handle<[], string | null>(IPC.acervoEscolherPacote, async () => {
+    const janela = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const opcoes: Electron.OpenDialogOptions = {
+      title: 'Importar um elenco',
+      properties: ['openFile'],
+      filters: [{ name: 'Pacote de personagens do AnCut', extensions: ['zip'] }],
+    }
+    const r = janela ? await dialog.showOpenDialog(janela, opcoes) : await dialog.showOpenDialog(opcoes)
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
+  })
+  handle<[string], InfoDoPacote>(IPC.acervoLerPacote, async (arquivo) => {
+    if (!pacoteValido(String(arquivo ?? ''))) throw new Error('Esse arquivo não é um pacote de elenco (.zip).')
+    return lerPacote(String(arquivo))
+  })
+  handle<[string, string], ResultadoDoPacote>(IPC.acervoImportarPacote, async (arquivo, titulo) => {
+    if (!pacoteValido(String(arquivo ?? ''))) throw new Error('Esse arquivo não é um pacote de elenco (.zip).')
+    if (!String(titulo ?? '').trim()) throw new Error('Escolha a qual anime ligar o elenco.')
+    return importarPacote(String(arquivo), String(titulo))
+  })
 
   handle<[], string | null>(IPC.ancutEscolherSaida, async () => {
     const janela = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]

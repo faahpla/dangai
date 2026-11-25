@@ -317,6 +317,26 @@ const bridge: DangaiBridge = {
   ancutTirarPersonagem: (clipe, personagemId) => ipcRenderer.invoke(IPC.ancutTirarPersonagem, clipe, personagemId),
   ancutReforcar: (clipe) => ipcRenderer.invoke(IPC.ancutReforcar, clipe),
   ancutRepescar: (clipes) => ipcRenderer.invoke(IPC.ancutRepescar, clipes),
+  acervoLer: () => ipcRenderer.invoke(IPC.acervoLer),
+  acervoPersonagens: () => ipcRenderer.invoke(IPC.acervoPersonagens),
+  acervoCenasDoPersonagem: (ids, anime) => ipcRenderer.invoke(IPC.acervoCenasDoPersonagem, ids, anime),
+  acervoEpisodio: (episodioId) => ipcRenderer.invoke(IPC.acervoEpisodio, episodioId),
+  acervoCenasDoEpisodio: (episodioId, pasta, personagemId) => ipcRenderer.invoke(IPC.acervoCenasDoEpisodio, episodioId, pasta, personagemId),
+  acervoMarcar: (cenaIds, personagemId, remover) => ipcRenderer.invoke(IPC.acervoMarcar, cenaIds, personagemId, remover),
+  acervoMarcarComNome: (cenaIds, nome) => ipcRenderer.invoke(IPC.acervoMarcarComNome, cenaIds, nome),
+  acervoLixeira: (porEpisodio) => ipcRenderer.invoke(IPC.acervoLixeira, porEpisodio),
+  acervoJuntarPersonagem: (de, para) => ipcRenderer.invoke(IPC.acervoJuntarPersonagem, de, para),
+  acervoExportarElenco: (episodioIds, nome) => ipcRenderer.invoke(IPC.acervoExportarElenco, episodioIds, nome),
+  acervoEscolherPacote: () => ipcRenderer.invoke(IPC.acervoEscolherPacote),
+  acervoLerPacote: (arquivo) => ipcRenderer.invoke(IPC.acervoLerPacote, arquivo),
+  acervoImportarPacote: (arquivo, titulo) => ipcRenderer.invoke(IPC.acervoImportarPacote, arquivo, titulo),
+  onAcervo: (listener) => {
+    const handler = (_event: unknown, e: Parameters<typeof listener>[0]): void => listener(e)
+    ipcRenderer.on(IPC.acervoEvento, handler)
+    return () => {
+      ipcRenderer.off(IPC.acervoEvento, handler)
+    }
+  },
   onAncutOrganizar: (listener) => {
     const handler = (_event: unknown, e: Parameters<typeof listener>[0]): void => listener(e)
     ipcRenderer.on(IPC.ancutOrganizarEvento, handler)

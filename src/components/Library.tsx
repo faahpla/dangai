@@ -15,6 +15,7 @@ import {
   Star,
   Tags,
   X,
+  Users,
 } from 'lucide-react'
 import type { LibraryClip, TiraDaCena } from '@shared/channels'
 import { medidasDo } from '@shared/contract'
@@ -42,6 +43,7 @@ import { ScriptColumn } from '@/components/ScriptColumn'
 import { Nicknames } from './Nicknames'
 import { RevisarCena, useRevisarCena } from './RevisarCena'
 import { abrirMenuDoOrganizar, OrganizarAnime, type AlvoDoOrganizar } from './OrganizarAnime'
+import { abrirAcervo } from './acervo/Acervo'
 import { useCortar } from '@/store/cortar-episodios'
 
 /**
@@ -859,6 +861,17 @@ export function Library() {
           >
             <Scissors size={12} strokeWidth={1.5} />
             Cortar episódio
+          </button>
+          {/* (25/11) A Biblioteca do AnCut: o que ja foi cortado, o que falta, os personagens, o elenco. */}
+          <button
+            type="button"
+            onClick={() => abrirAcervo('animes')}
+            title="O que você já cortou, o que falta cortar, os personagens e o pacote de elenco"
+            className="lift flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 py-1 text-[12px] text-ink-2 hover:text-ink"
+            data-biblioteca="acervo"
+          >
+            <Users size={12} strokeWidth={1.5} />
+            Acervo
           </button>
           <button
             type="button"

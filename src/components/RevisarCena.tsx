@@ -5,6 +5,7 @@ import { Loader2, Plus, Trash2, TriangleAlert, UserRound, Users, X } from 'lucid
 import type { CenaNoAncut, PlanoDeApagarEpisodio } from '@shared/ancut'
 import type { LibraryClip } from '@shared/channels'
 import { useProject } from '@/store/project'
+import { useAcervo } from '@/store/acervo'
 
 /**
  * REVISAR A CENA NA BIBLIOTECA (20/11, o AnCut dentro do Dangai): o botao
@@ -55,7 +56,8 @@ export function avisarNaBiblioteca(texto: string): void {
 
 /** Depois de mudar no AnCut: a Biblioteca le de novo (so o episodio que mudou e relido). */
 export function releBiblioteca(): void {
-  void useProject.getState().syncLibrary()
+  // O Acervo (se aberto) le de novo, e a Biblioteca so se ja estiver carregada (nunca a carga inteira por aqui).
+  useAcervo.getState().mudou()
 }
 
 /** O menu, as janelas e o recado. Montado dentro da Biblioteca. */
