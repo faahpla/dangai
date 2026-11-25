@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.13.2',
+    itens: [
+      'Claude (MCP): o Claude agora põe a câmera livre sozinho — diz onde o personagem está no começo e no fim (e no meio, para seguir quem anda), e o Dangai segura dentro da borda, sem faixa preta. Também escolhe o ritmo do movimento (constante, suave, freia, ou o "chega rápido e assenta" do Levi).',
+      'Claude (MCP): na conferência, a cena com câmera livre aparece no começo, no meio e no fim do movimento, igual ao preview.',
+    ],
+  },
+  {
     versao: '2.13.1',
     itens: [
       'Gerar recap: quando o render termina, a tela "Vídeo pronto" abre com o vídeo parado no primeiro quadro. Ele só toca quando você clicar no play (ou no vídeo).',
