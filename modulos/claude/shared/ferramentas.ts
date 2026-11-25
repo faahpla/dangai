@@ -1,3 +1,5 @@
+import { naFolga } from '../../../shared/camera'
+import type { CameraFrame } from '../../../shared/contract'
 /**
  * [claude] AS FERRAMENTAS DO MCP DO DANGAI (17/11) e o que aplica um lote de mudancas.
  *
@@ -11,6 +13,17 @@
  */
 
 export const EFEITOS = ['nenhum', 'zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down'] as const
+
+/** O ritmo (o grafico da cena) em palavras -> o preset do nucleo ou a bezier desenhada. */
+export const CURVAS = ['constante', 'suave', 'acelera', 'freia', 'chega-rapido'] as const
+const CURVA_DO_NUCLEO: Record<(typeof CURVAS)[number], { curve: string; pontos: [number, number, number, number] | null }> = {
+  constante: { curve: 'linear', pontos: null },
+  suave: { curve: 'ease-in-out', pontos: null },
+  acelera: { curve: 'ease-in', pontos: null },
+  freia: { curve: 'ease-out', pontos: null },
+  // O pan do Levi (Nia E08, 24/11): chega rapido e assenta.
+  'chega-rapido': { curve: 'ease-out', pontos: [0, 0, 0.052, 0.964] },
+}
 export type Efeito = (typeof EFEITOS)[number]
 
 export interface DefinicaoDeFerramenta {
@@ -94,7 +107,31 @@ export const FERRAMENTAS: DefinicaoDeFerramenta[] = [
               intensidade: num('Intensidade do movimento (0,02-0,2; padrao 0,1).'),
               zoomFixo: num('Zoom fixo do bloco (1 = sem; 1,3 = 30% mais perto).'),
               origemDoZoom: { type: 'object', properties: { x: num('0-1'), y: num('0-1') }, description: 'De onde o zoom fixo parte (0,0 = canto de cima a esquerda).' },
-              camera: { type: 'string', enum: ['desligar'], description: '"desligar" tira a camera livre (volta ao focoX + efeito).' },
+              camera: {
+                description:
+                  'CAMERA LIVRE: o caminho do enquadramento, em pontos onde o ASSUNTO esta no quadro 16:9 original ' +
+                  '{pontos:[{t:0, cx:0.2}, {t:1, cx:0.7}]} (t = fracao da cena 0-1; cx/cy = centro do que mostrar, 0 = esquerda/topo, 1 = direita/base; zoom 1-3). ' +
+                  'Pontos no meio (0<t<1) seguem quem anda. Fora do alcance, a janela para na borda (sem tarja preta). "desligar" volta ao focoX + efeito.',
+                anyOf: [
+                  { type: 'string', enum: ['desligar'] },
+                  {
+                    type: 'object',
+                    properties: {
+                      pontos: {
+                        type: 'array',
+                        items: { type: 'object', properties: { t: num('0-1'), cx: num('0-1'), cy: num('0-1 (padrao 0,5)'), zoom: num('1-3 (padrao 1)') }, required: ['t', 'cx'] },
+                      },
+                    },
+                    required: ['pontos'],
+                  },
+                ],
+              },
+              curva: {
+                type: 'string',
+                enum: [...CURVAS],
+                description: 'O RITMO do movimento (o grafico): constante, suave (acelera e freia), acelera, freia, chega-rapido (o pan do Levi: chega rapido e assenta).',
+              },
+              curvaPontos: { type: 'array', items: { type: 'number' }, description: 'O grafico desenhado: [x1, y1, x2, y2] do cubic-bezier, tudo 0-1.' },
               grid: {
                 description: 'Tela dividida: a metade de baixo ({clipe, entrada, focoX}) ou "desligar".',
                 anyOf: [
@@ -250,7 +287,9 @@ export interface MudancaDeCena {
   intensidade?: number
   zoomFixo?: number
   origemDoZoom?: { x: number; y: number }
-  camera?: 'desligar'
+  camera?: 'desligar' | { pontos: { t: number; cx: number; cy?: number; zoom?: number }[] }
+  curva?: string
+  curvaPontos?: number[]
   grid?: 'desligar' | { clipe: string; entrada?: number; focoX?: number }
 }
 
@@ -269,6 +308,30 @@ export interface LoteDeMudancas {
 export interface Medidas {
   duracao: Record<string, number>
   aspecto: Record<string, number>
+}
+
+/** A camera livre a partir de onde o ASSUNTO esta (cx/cy da fonte): presa na folga, sem tarja. */
+export function cameraDosPontos(
+  pontos: readonly { t: number; cx: number; cy?: number; zoom?: number }[],
+  aspectoDaFonte: number,
+  aspectoDoQuadro: number,
+): { camera: { from: CameraFrame; to: CameraFrame; source: true; keys: (CameraFrame & { t: number })[] }; presos: number } {
+  if (!pontos.length) throw new Error('A camera livre precisa de pelo menos 1 ponto ({t, cx}).')
+  let presos = 0
+  const frame = (q: { cx: number; cy?: number; zoom?: number }): CameraFrame => {
+    const pedido = { scale: entre(q.zoom ?? 1, 1, 3), x: (0.5 - entre(q.cx, 0, 1)) * 100, y: (0.5 - entre(q.cy ?? 0.5, 0, 1)) * 100 }
+    const f = naFolga(pedido, aspectoDaFonte, aspectoDoQuadro)
+    if (Math.abs(f.x - pedido.x) > 0.5 || Math.abs(f.y - pedido.y) > 0.5) presos++
+    return { scale: Math.round(f.scale * 1000) / 1000, x: Math.round(f.x * 100) / 100, y: Math.round(f.y * 100) / 100 }
+  }
+  const ord = [...pontos].sort((a, b) => a.t - b.t)
+  const de = ord.find((q) => q.t <= 0.001) ?? ord[0]!
+  const ate = [...ord].reverse().find((q) => q.t >= 0.999) ?? ord[ord.length - 1]!
+  const meio = ord.filter((q) => q !== de && q !== ate && q.t > 0.001 && q.t < 0.999)
+  return {
+    camera: { from: frame(de), to: frame(ate), source: true, keys: meio.map((q) => ({ t: Math.round(q.t * 1000) / 1000, ...frame(q) })) },
+    presos,
+  }
 }
 
 /** O projeto como o .dangai guarda (so os campos que o lote toca; o resto passa intacto). */
@@ -360,6 +423,26 @@ export function aplicarLote(original: ArquivoDoProjeto, lote: LoteDeMudancas, me
     if (m.camera === 'desligar') {
       s['camera'] = null
       o.push('camera desligada')
+    } else if (m.camera && typeof m.camera === 'object') {
+      const caminho = String((p.images[s['imageIndex'] as number] ?? {})['path'] ?? '')
+      const aspecto = medidas.aspecto[caminho]
+      if (!(aspecto && aspecto > 0)) throw new Error(`Nao consegui medir o clipe da cena ${m.cena} para a camera livre.`)
+      const quadro = p['formato'] === 'long' ? 16 / 9 : 9 / 16
+      const { camera, presos } = cameraDosPontos(m.camera.pontos ?? [], aspecto, quadro)
+      s['camera'] = camera
+      o.push(`camera livre ${camera.keys.length + 2} pontos (x ${camera.from.x} -> ${camera.to.x})${presos ? `, ${presos} ponto(s) parado(s) na borda` : ''}`)
+    }
+    if (m.curva !== undefined) {
+      const c = CURVA_DO_NUCLEO[m.curva as (typeof CURVAS)[number]]
+      if (!c) throw new Error(`Curva "${m.curva}" nao existe: ${CURVAS.join(', ')}.`)
+      s['curve'] = c.curve
+      s['curvePoints'] = c.pontos
+      o.push(`curva ${m.curva}`)
+    }
+    if (m.curvaPontos !== undefined) {
+      if (m.curvaPontos.length !== 4 || m.curvaPontos.some((v) => !Number.isFinite(v))) throw new Error('curvaPontos = [x1, y1, x2, y2] (4 numeros 0-1).')
+      s['curvePoints'] = m.curvaPontos.map((v) => entre(v, 0, 1))
+      o.push(`grafico [${(s['curvePoints'] as number[]).join(', ')}]`)
     }
     if (m.grid === 'desligar') {
       s['imageIndexB'] = null
@@ -511,7 +594,10 @@ export function resumoDasCenas(p: ArquivoDoProjeto, de = 1, ate = Number.POSITIV
     .map((s, k) => {
       const img = p.images[s['imageIndex'] as number] ?? {}
       const b = s['imageIndexB'] === null || s['imageIndexB'] === undefined ? null : p.images[s['imageIndexB'] as number]
-      const cam = s['camera'] as { from?: { x: number; scale: number }; to?: { x: number; scale: number } } | null | undefined
+      const cam = s['camera'] as { from?: CameraFrame; to?: CameraFrame; keys?: (CameraFrame & { t: number })[] } | null | undefined
+      // A camera na MESMA lingua do editar: onde o assunto fica no quadro 16:9 (cx/cy 0-1).
+      const ponto = (t: number, f: CameraFrame | undefined) => ({ t, cx: r(0.5 - (f?.x ?? 0) / 100, 3), cy: r(0.5 - (f?.y ?? 0) / 100, 3), zoom: r(f?.scale ?? 1, 2) })
+      const curva = Object.entries(CURVA_DO_NUCLEO).find(([, c]) => c.curve === s['curve'] && JSON.stringify(c.pontos) === JSON.stringify(s['curvePoints'] ?? null))?.[0]
       const r = (v: unknown, c = 2): number | null => (typeof v === 'number' ? Math.round(v * 10 ** c) / 10 ** c : null)
       return {
         cena: k + 1,
@@ -524,7 +610,10 @@ export function resumoDasCenas(p: ArquivoDoProjeto, de = 1, ate = Number.POSITIV
         focoAutomatico: img['focusAuto'] === true,
         efeito: s['effect'],
         intensidade: s['intensity'],
-        ...(cam ? { camera: { de: { x: r(cam.from?.x, 1), zoom: cam.from?.scale }, ate: { x: r(cam.to?.x, 1), zoom: cam.to?.scale } } } : {}),
+        ...(cam
+          ? { camera: { pontos: [ponto(0, cam.from), ...(cam.keys ?? []).map((k) => ponto(k.t, k)), ponto(1, cam.to)] } }
+          : {}),
+        curva: curva ?? (Array.isArray(s['curvePoints']) ? `grafico [${(s['curvePoints'] as number[]).join(', ')}]` : (s['curve'] ?? 'ease-in-out')),
         ...(b ? { grid: { clipe: b['path'], entrada: r(s['sourceStartB'] ?? 0), focoX: r(b['focusX']) } } : {}),
         ...(typeof s['escala'] === 'number' && s['escala'] > 1 ? { zoomFixo: s['escala'], origemDoZoom: s['escalaOrigem'] } : {}),
       }

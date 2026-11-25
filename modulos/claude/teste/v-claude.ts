@@ -16,7 +16,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { projectFileSchema } from '../../../shared/project-file'
-import { aplicarLote, resumoDasCenas, type ArquivoDoProjeto } from '../shared/ferramentas'
+import { aplicarLote, cameraDosPontos, resumoDasCenas, type ArquivoDoProjeto } from '../shared/ferramentas'
 import { responderRpc, subirServidor } from '../electron/servidor'
 import { escolherFaixa, lerSrt, procurarNasFalas } from '../electron/legendas'
 
@@ -166,6 +166,18 @@ void (async () => {
   await s2.fechar()
   await s.fechar()
 
+
+  // Camera livre pelo assunto (cx/cy): a conta do nucleo (enquadrar) e a borda presa.
+  const c1 = cameraDosPontos([{ t: 0, cx: 0.3 }, { t: 0.5, cx: 0.5, zoom: 1.3 }, { t: 1, cx: 0.7 }], 16 / 9, 9 / 16)
+  ok(c1.camera.from.x === 20 && c1.camera.to.x === -20 && c1.camera.keys.length === 1 && c1.camera.keys[0]!.scale === 1.3 && c1.camera.source === true && c1.presos === 0, 'camera: cx 0,3 -> x 20, cx 0,7 -> x -20, chave do meio com zoom')
+  const c2 = cameraDosPontos([{ t: 0, cx: 0.02 }, { t: 1, cx: 0.98 }], 16 / 9, 9 / 16)
+  ok(Math.abs(c2.camera.from.x - 34.18) < 0.05 && Math.abs(c2.camera.to.x + 34.18) < 0.05 && c2.presos === 2, 'camera: assunto na beirada para na folga (34,2%), sem tarja')
+  const pc = projeto()
+  const rc = aplicarLote(pc, { cenas: [{ cena: 1, camera: { pontos: [{ t: 0, cx: 0.4 }, { t: 1, cx: 0.6 }] }, curva: 'chega-rapido' }] }, { duracao: {}, aspecto: { [String(pc.images[pc.plan.scenes[0]!['imageIndex'] as number]!['path'])]: 16 / 9 } })
+  const s0 = rc.arquivo.plan.scenes[0]!
+  ok((s0['camera'] as { from: { x: number } }).from.x === 10 && s0['curve'] === 'ease-out' && JSON.stringify(s0['curvePoints']) === '[0,0,0.052,0.964]', 'editar grava camera livre e a curva chega-rapido')
+  const lido = resumoDasCenas(rc.arquivo, 1, 1)[0] as { camera: { pontos: { cx: number }[] }; curva: string }
+  ok(lido.camera.pontos[0]!.cx === 0.4 && lido.camera.pontos[1]!.cx === 0.6 && lido.curva === 'chega-rapido', 'listar_cenas devolve a camera na mesma lingua (cx) e o nome da curva')
   // buscar_fala: o SRT do ffmpeg, a faixa em portugues e a busca sem acento.
   const srt = '1\n00:20:28,780 --> 00:20:30,100\n{\\an8}Não dá! Gastei\\Ntodo meu dinheiro!\n\n2\n00:20:31,100 --> 00:20:32,200\nEu empresto <i>500 milhões</i>!\n'
   const falas = lerSrt(srt)

@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process'
 import sharp, { type OverlayOptions } from 'sharp'
 import { ffmpegPath } from '../../../electron/services/ffmpeg-path'
+import { amostrarCamera } from '../../../shared/camera'
+import type { CameraFrame } from '../../../shared/contract'
+import { bezierNoTempo, curvaNoTempo } from '../../../shared/transform'
 
 /**
  * [claude] O QUE O CLAUDE VE: folhas JPEG com o recorte 9:16 como o Dangai
@@ -125,16 +128,39 @@ export async function folha(ladrilhos: Ladrilho[], colunas: number): Promise<str
   return jpg.toString('base64')
 }
 
-/** O centro e o zoom da janela 9:16 de uma cena no comeco (fr=0) ou no fim (fr=1). */
-export function janelaDaCena(cena: Record<string, unknown>, focoX: number, fr: 0 | 1): { cx: number; zoom: number; ox: number; oy: number } {
-  const cam = cena['camera'] as { from?: { x: number; scale: number }; to?: { x: number; scale: number } } | null | undefined
+/** O ritmo da cena (o grafico) no progresso fr: a bezier desenhada ou o preset, como o render. */
+function ritmo(cena: Record<string, unknown>, fr: number): number {
+  const pontos = cena['curvePoints'] as [number, number, number, number] | null | undefined
+  if (Array.isArray(pontos) && pontos.length === 4) return bezierNoTempo(pontos, fr)
+  const c = cena['curve']
+  return curvaNoTempo(c === 'linear' || c === 'ease-in' || c === 'ease-out' ? c : 'ease-in-out', fr)
+}
+
+/**
+ * O centro e o zoom da janela 9:16 de uma cena no progresso fr (0 = comeco, 1 = fim).
+ * Com CAMERA LIVRE: o caminho inteiro (pontas + chaves do meio, com o ritmo da cena),
+ * o x E o y, e a janela presa na borda como o render (24/11: antes so as pontas, sem y).
+ */
+export function janelaDaCena(cena: Record<string, unknown>, focoX: number, fr: number): { cx: number; zoom: number; ox: number; oy: number } {
+  const cam = cena['camera'] as { from?: CameraFrame; to?: CameraFrame; keys?: (CameraFrame & { t: number })[] } | null | undefined
   const fixo = typeof cena['escala'] === 'number' ? Math.max(1, cena['escala']) : 1
   const o = (cena['escalaOrigem'] as { x?: number; y?: number } | undefined) ?? {}
   const ox = fixo > 1 ? (o.x ?? 0.5) : 0.5
   const oy = fixo > 1 ? (o.y ?? 0.5) : 0.5
   if (cam?.from && cam.to) {
-    const c = fr === 0 ? cam.from : cam.to
-    return { cx: 0.5 - c.x / 100, zoom: c.scale * fixo, ox, oy }
+    const c = amostrarCamera({ from: cam.from, to: cam.to, keys: cam.keys ?? [] }, ritmo(cena, fr))
+    const z = Math.max(1, c.scale)
+    const cx = 0.5 - c.x / 100
+    const cy = 0.5 - (c.y ?? 0) / 100
+    // A janela sem zoom (9:16 do 16:9 = 0,316 da largura), presa na fonte; o zoom dentro dela.
+    const W1 = 0.316
+    const left1 = Math.min(Math.max(cx - W1 / 2, 0), 1 - W1)
+    const W2 = W1 / z
+    const left2 = Math.min(Math.max(cx - W2 / 2, left1), left1 + W1 - W2)
+    const oxCam = W1 - W2 > 1e-6 ? (left2 - left1) / (W1 - W2) : 0.5
+    const H2 = 1 / z
+    const oyCam = 1 - H2 > 1e-6 ? Math.min(Math.max((cy - H2 / 2) / (1 - H2), 0), 1) : 0.5
+    return { cx, zoom: z * fixo, ox: fixo > 1 ? ox : oxCam, oy: fixo > 1 ? oy : oyCam }
   }
   const e = cena['effect']
   const i = typeof cena['intensity'] === 'number' ? cena['intensity'] : 0.1

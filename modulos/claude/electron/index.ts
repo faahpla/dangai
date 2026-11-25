@@ -96,7 +96,7 @@ async function gravarEReabrir(caminho: string, arquivo: unknown): Promise<void> 
   await pedirAJanela('abrir', { caminho })
 }
 
-async function medir(lote: LoteDeMudancas): Promise<Medidas> {
+async function medir(lote: LoteDeMudancas, arquivo: ArquivoDoProjeto): Promise<Medidas> {
   const m: Medidas = { duracao: {}, aspecto: {} }
   const confere = (c: string): void => {
     if (!existsSync(c)) throw new Error(`Arquivo nao existe: ${c}`)
@@ -118,6 +118,15 @@ async function medir(lote: LoteDeMudancas): Promise<Medidas> {
   for (const c of lote.cenas ?? []) {
     if (c.clipe) confere(c.clipe)
     if (c.grid && typeof c.grid === 'object') confere(c.grid.clipe)
+    // Camera livre: a folga depende do aspecto do clipe (o novo, se trocou).
+    if (c.camera && typeof c.camera === 'object') {
+      const s = arquivo.plan.scenes[Math.round(c.cena) - 1]
+      const caminho = c.clipe ?? String((arquivo.images[(s?.['imageIndex'] as number) ?? -1] ?? {})['path'] ?? '')
+      if (caminho && existsSync(caminho) && !m.aspecto[caminho]) {
+        const a = await aspectoDe(caminho)
+        if (a) m.aspecto[caminho] = a
+      }
+    }
   }
   return m
 }
@@ -133,15 +142,13 @@ async function verCenas(arquivo: ArquivoDoProjeto, quais: number[]): Promise<Con
     const foco = typeof img['focusX'] === 'number' ? img['focusX'] : 0.5
     const d = (s['end'] as number) - (s['start'] as number)
     const ss = typeof s['sourceStart'] === 'number' ? s['sourceStart'] : 0
-    const a = janelaDaCena(s, foco, 0)
-    const b = janelaDaCena(s, foco, 1)
     const grid = s['imageIndexB'] !== null && s['imageIndexB'] !== undefined ? ' grid' : ''
+    // Camera livre: comeco, meio e fim do caminho (o movimento aparece); sem ela, comeco e fim.
+    const livre = Boolean(s['camera'])
+    const fracoes = livre ? [0, 0.5, 1] : [0, 1]
     return {
-      quadros: [
-        { caminho, t: ss + 0.04, ...a },
-        { caminho, t: ss + Math.max(0.05, d - 0.06), ...b },
-      ],
-      rotulo: `#${n} ${(s['start'] as number).toFixed(1)}s${grid}`,
+      quadros: fracoes.map((f) => ({ caminho, t: ss + Math.min(Math.max(0.04, f * d), Math.max(0.05, d - 0.06)), ...janelaDaCena(s, foco, f) })),
+      rotulo: `#${n} ${(s['start'] as number).toFixed(1)}s${grid}${livre ? ' cam' : ''}`,
     }
   })
   const saida: Conteudo[] = [texto(`Cenas ${numeros.join(', ')}: 1o e ultimo quadro de cada uma, no recorte 9:16 do video.`)]
@@ -267,7 +274,7 @@ async function chamar(nome: string, args: Record<string, unknown>): Promise<Cont
     case 'editar': {
       const lote = args as LoteDeMudancas
       const { caminho, arquivo } = await projetoAberto()
-      const { arquivo: novo, feito } = aplicarLote(arquivo, lote, await medir(lote))
+      const { arquivo: novo, feito } = aplicarLote(arquivo, lote, await medir(lote, arquivo))
       if (!feito.length) return [texto('Nada para mudar.')]
       await gravarEReabrir(caminho, novo)
       const h = historico.get(caminho) ?? []
