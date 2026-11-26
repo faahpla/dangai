@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.14.1',
+    itens: [
+      'Acervo: o episódio com muitas cenas (600+) não fica mais espremido em fiapos — cada cena aparece inteira na grade.',
+      'Cortar episódios: episódio com 4 dígitos no nome ("One Piece - 1053 - Título") agora é lido certo — One Piece, episódio 1053. Antes o nome inteiro virava um anime separado, com episódio 1.',
+      'Acervo: um vídeo que já foi cortado não aparece mais em "para cortar", mesmo que tenha entrado com outro nome de anime.',
+    ],
+  },
+  {
     versao: '2.14.0',
     itens: [
       'Acervo (a Biblioteca do AnCut aqui dentro): no cartão Anime da tela inicial, "Acervo e personagens" (ou o botão "Acervo" na Biblioteca). Cada anime em capa, com quanto dele já tem personagem marcado.',
