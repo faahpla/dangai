@@ -20,6 +20,16 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.14.0',
+    itens: [
+      'Acervo (a Biblioteca do AnCut aqui dentro): no cartão Anime da tela inicial, "Acervo e personagens" (ou o botão "Acervo" na Biblioteca). Cada anime em capa, com quanto dele já tem personagem marcado.',
+      'O que falta cortar: na página do anime aparecem os episódios que pulam ("Faltam na temporada 1: E03, E07") e os vídeos que ainda estão na pasta de onde você baixou e não foram cortados, com o botão "Cortar esse" — o episódio novo cai na mesma pasta do anime.',
+      'Episódio aberto: as cenas separadas por personagem e as "Sem ninguém". Marque as cenas (Shift marca um trecho, Ctrl+A todas) e escolha "Marcar com…", "Tirar do personagem" ou "Lixeira". Quando o reconhecimento tem um palpite, aparece "É a Makima?" e um clique confirma.',
+      'Personagens: todos do acervo, por anime, com o rosto. Clicou, vê as cenas dele de todos os episódios, e dá para marcar, tirar ou juntar com outro personagem (o mesmo personagem com dois nomes vira um só).',
+      'Pacote de elenco: "Exportar elenco" na página do anime e "Importar elenco…" no alto do Acervo. Funciona com os pacotes do AnCut.',
+    ],
+  },
+  {
     versao: '2.13.2',
     itens: [
       'Claude (MCP): o Claude agora põe a câmera livre sozinho — diz onde o personagem está no começo e no fim (e no meio, para seguir quem anda), e o Dangai segura dentro da borda, sem faixa preta. Também escolhe o ritmo do movimento (constante, suave, freia, ou o "chega rápido e assenta" do Levi).',
