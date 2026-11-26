@@ -5,11 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Episódio com ATÉ 4 dígitos (25/11/2026): One Piece passa de 1000 e o arquivo
+# vem "One Piece - 1053 - Título". Com 3 dígitos o número não casava, o nome
+# inteiro virava o anime e cada episódio virava um anime próprio com S01E01.
+# Ano (19xx/20xx) continua virando filme: a regra do ano roda depois.
 # Combined season+episode patterns — strongest signal when both are present.
 _SE_PATTERNS = [
-    re.compile(r"\b[Ss](\d{1,2})[Ee](\d{1,3})\b"),
-    re.compile(r"\bSeason\s*(\d{1,2}).*?Episode\s*(\d{1,3})\b", re.IGNORECASE),
-    re.compile(r"\b(\d{1,2})x(\d{1,3})\b"),
+    re.compile(r"\b[Ss](\d{1,2})[Ee](\d{1,4})\b"),
+    re.compile(r"\bSeason\s*(\d{1,2}).*?Episode\s*(\d{1,4})\b", re.IGNORECASE),
+    re.compile(r"\b(\d{1,2})x(\d{1,4})\b"),
 ]
 
 # Season-only signals (when episode is specified separately).
@@ -23,11 +27,11 @@ _SEASON_PATTERNS = [
 
 # Episode-only signals.
 _EPISODE_PATTERNS = [
-    re.compile(r"\s-\s*(\d{1,3})(?:\s*(?:v\d+)?(?:\s|$))"),               # " - 01"
-    re.compile(r"\bEpis[oó]dio\s*(\d{1,3})\b", re.IGNORECASE),             # PT
-    re.compile(r"\bEpisode\s*(\d{1,3})\b", re.IGNORECASE),
-    re.compile(r"\bEp\.?\s*(\d{1,3})\b", re.IGNORECASE),
-    re.compile(r"\s#(\d{1,3})\b"),
+    re.compile(r"\s-\s*(\d{1,4})(?:\s*(?:v\d+)?(?:\s|$))"),               # " - 01", " - 1053"
+    re.compile(r"\bEpis[oó]dio\s*(\d{1,4})\b", re.IGNORECASE),             # PT
+    re.compile(r"\bEpisode\s*(\d{1,4})\b", re.IGNORECASE),
+    re.compile(r"\bEp\.?\s*(\d{1,4})\b", re.IGNORECASE),
+    re.compile(r"\s#(\d{1,4})\b"),
 ]
 
 # Fansub / release tags and quality markers that should be stripped from names.
@@ -136,7 +140,7 @@ def format_mmss(seconds: float) -> str:
 
 
 _STRIP_ANIME = [
-    re.compile(r"\s*-?\s*\b[Ss]\d{1,2}[Ee]\d{1,3}\b.*$"),
+    re.compile(r"\s*-?\s*\b[Ss]\d{1,2}[Ee]\d{1,4}\b.*$"),
     re.compile(r"\s*-?\s*\b\d+(?:st|nd|rd|th)\s*Season\b.*$", re.IGNORECASE),  # "4th Season ..."
     re.compile(r"\s*-?\s*\bSeason\s*\d+\b.*$", re.IGNORECASE),
     re.compile(r"\s*-?\s*\bTemporada\s*\d+\b.*$", re.IGNORECASE),
@@ -144,8 +148,8 @@ _STRIP_ANIME = [
     re.compile(r"\s*-?\s*\bEpis[oó]dio\s*\d+\b.*$", re.IGNORECASE),
     re.compile(r"\s*-?\s*\bEp\.?\s*\d+\b.*$", re.IGNORECASE),
     re.compile(r"\s+\b[Ss]\d{1,2}\b.*$"),             # " S4 ..."
-    re.compile(r"\s+-\s*\d{1,3}(?:\s|$).*$"),          # " - 01"
-    re.compile(r"\s+\d{1,2}x\d{1,3}\b.*$"),            # " 4x01"
+    re.compile(r"\s+-\s*\d{1,4}(?:\s|$).*$"),          # " - 01", " - 1053"
+    re.compile(r"\s+\d{1,2}x\d{1,4}\b.*$"),            # " 4x01"
 ]
 
 # Pastas que indicam ORGANIZAÇÃO por temporada — o nome do anime está um
@@ -164,7 +168,7 @@ _STORAGE_DIR = re.compile(
 )
 
 # "S01E01-Título do Episódio" → tag no COMEÇO = arquivo sem nome de anime.
-_LEADING_SE_TAG = re.compile(r"^\s*[Ss]\d{1,2}[Ee]\d{1,3}\s*[-–—_.]*\s*")
+_LEADING_SE_TAG = re.compile(r"^\s*[Ss]\d{1,2}[Ee]\d{1,4}\s*[-–—_.]*\s*")
 # "... V2" no fim = versão de fansub, não faz parte de nome nenhum.
 _VERSION_SUFFIX = re.compile(r"\s+[Vv]\d+\s*$")
 

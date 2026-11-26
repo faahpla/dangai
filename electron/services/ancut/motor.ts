@@ -6,6 +6,7 @@ import { ambienteDosDados, dadosDeTeste, usaRuntime } from './runtime/pastas'
 import { pythonDoMotor } from './runtime/python-do-motor'
 import { publish } from '../media-server'
 import {
+  corrigirNomeLido,
   eventoDoMotor,
   pedidoParaOMotor,
   type ConfigDoMotor,
@@ -345,12 +346,13 @@ export async function estadoDoMotor(): Promise<MotorDoAncut> {
 export async function lerNome(video: string): Promise<NomeLido | null> {
   const r = await perguntar<{ anime?: string; season?: number; episode?: number; kind?: string }>(['parse', video], 'parsed')
   if (!r) return null
-  return {
+  // O motor do AnCut instalado (antes do 0.24.7) le "One Piece - 1053 - ..." como um anime so.
+  return corrigirNomeLido({
     anime: String(r.anime ?? ''),
     temporada: Number(r.season) || 1,
     episodio: Number(r.episode) || 1,
     tipo: r.kind === 'BROLL' ? 'BROLL' : '',
-  }
+  })
 }
 
 /** Em que pasta da saida um anime cai (a memoria de pastas do motor), e as que ja existem. */

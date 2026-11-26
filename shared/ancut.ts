@@ -52,6 +52,23 @@ export interface NomeLido {
   tipo: TipoDoCorte
 }
 
+/**
+ * EPISODIO COM 4 DIGITOS (25/11). O motor do AnCut antes do 0.24.7 so lia
+ * numero de ate 3 digitos: "[Anime Time] One Piece - 1053 - Titulo.mkv" voltava
+ * como o anime "One Piece - 1053 - Titulo", episodio 1 -- e cada episodio virava
+ * um anime proprio. Quem usa o motor do AnCut instalado (o de antes) continua
+ * recebendo isso; aqui o nome se acerta antes de ir para a fila. Ano (19xx,
+ * 20xx) nao e episodio: fica como veio.
+ */
+export function corrigirNomeLido(lido: NomeLido): NomeLido {
+  if (lido.tipo !== '' || lido.episodio !== 1) return lido
+  const m = /^(.+?)\s+-\s+(\d{4})(?:\s*v\d+)?(?:\s+-\s+.*)?$/.exec(lido.anime.trim())
+  if (!m) return lido
+  const n = Number(m[2])
+  if (!(n > 0) || (n >= 1900 && n < 2050)) return lido
+  return { ...lido, anime: m[1]!.trim(), episodio: n }
+}
+
 /** O motor do AnCut nesta maquina. */
 export interface MotorDoAncut {
   achado: boolean

@@ -18,6 +18,7 @@
  */
 import {
   andamentoGeral,
+  corrigirNomeLido,
   ETAPAS_DO_CORTE,
   eventoDoMotor,
   pedidoParaOMotor,
@@ -154,6 +155,18 @@ ok('B-roll com titulo', rotuloDoEpisodio({ tipo: 'BROLL', temporada: 1, episodio
 ok('B-roll sem titulo', rotuloDoEpisodio({ tipo: 'BROLL', temporada: 1, episodio: 0 }) === 'B-roll')
 ok('video baixado: sem o [codigo] e a extensao', tituloDoArquivoBaixado('D:\\Animes\\GTA 6\\Baixados\\Official Trailer [abc123def45].mp4') === 'Official Trailer')
 ok('video baixado sem codigo: so tira a extensao', tituloDoArquivoBaixado('/tmp/Gameplay.webm') === 'Gameplay')
+
+console.log('o nome lido pelo motor antigo (episodio de 4 digitos, 25/11)')
+const lido = (anime: string, episodio = 1) => corrigirNomeLido({ anime, temporada: 1, episodio, tipo: '' })
+const op = lido('One Piece - 1053 - Sanji’s Mutation – The Two Arms in Crisis!')
+ok('"One Piece - 1053 - Titulo" vira One Piece, ep. 1053', op.anime === 'One Piece' && op.episodio === 1053, JSON.stringify(op))
+const op925 = lido('One Piece - 0925 - Dashing! The Righteous Soba Mask!')
+ok('zero na frente: 0925 vira 925', op925.anime === 'One Piece' && op925.episodio === 925, JSON.stringify(op925))
+ok('sem titulo depois: "One Piece - 1178"', lido('One Piece - 1178').episodio === 1178)
+ok('motor novo (ja leu o numero): nao mexe', lido('One Piece', 1053).anime === 'One Piece')
+ok('ano nao e episodio', lido('Your Name - 2016').anime === 'Your Name - 2016')
+ok('nome comum fica igual', lido('Chainsaw Man').anime === 'Chainsaw Man')
+ok('B-roll fica igual', corrigirNomeLido({ anime: 'GTA - 1234', temporada: 1, episodio: 1, tipo: 'BROLL' }).anime === 'GTA - 1234')
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : '\ntudo ok')
 process.exit(falhas ? 1 : 0)
