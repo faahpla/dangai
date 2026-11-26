@@ -6,6 +6,7 @@ import type { EpisodioNoAncut, PlanoDeJuntarAnimes, PlanoDeRenomear } from '@sha
 import type { LibraryClip } from '@shared/channels'
 import { useCortar } from '@/store/cortar-episodios'
 import { useProject } from '@/store/project'
+import { ComoReconhecer } from './ComoReconhecer'
 import { avisarNaBiblioteca, Janela, releBiblioteca, useRevisarCena } from './RevisarCena'
 
 /**
@@ -438,7 +439,9 @@ function PersonagensDoEpisodio({ alvo }: { alvo: AlvoDoOrganizar }) {
     setEp(r.value)
     setMudou(true)
   }
-  const reconhecer = (): void => {
+  const [comoReconhecer, setComoReconhecer] = useState(false)
+  const reconhecer = (modo: 'batizar' | 'reconhecer'): void => {
+    setComoReconhecer(false)
     if (!ep) return
     useCortar.getState().adicionarPedido(
       {
@@ -447,7 +450,7 @@ function PersonagensDoEpisodio({ alvo }: { alvo: AlvoDoOrganizar }) {
         temporada: ep.temporada,
         episodio: ep.episodio,
         tipo: ep.tipo === 'BROLL' ? 'BROLL' : '',
-        modo: 'reconhecer',
+        modo,
         pastaDoAnime: ultimaPasta(ep.pastaDoAnime),
         ...(ep.titulo ? { titulo: ep.titulo } : {}),
       },
@@ -458,6 +461,8 @@ function PersonagensDoEpisodio({ alvo }: { alvo: AlvoDoOrganizar }) {
     useCortar.getState().abrir('arquivos')
     void useCortar.getState().comecar()
   }
+  // A escolha ocupa o lugar da janela (uma janela dentro da outra ficaria presa nela); fechar volta.
+  if (comoReconhecer) return <ComoReconhecer aoEscolher={reconhecer} aoFechar={() => setComoReconhecer(false)} />
   return (
     <Janela titulo={`Personagens · ${alvo.anime} · ${alvo.chave ?? ''}`} aoFechar={fechar} largura={520}>
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto px-4 py-4 text-[12px] text-ink-2" data-organizar="personagens">
@@ -516,9 +521,9 @@ function PersonagensDoEpisodio({ alvo }: { alvo: AlvoDoOrganizar }) {
       <footer className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
         <button
           type="button"
-          onClick={reconhecer}
+          onClick={() => setComoReconhecer(true)}
           disabled={!ep || !ep.videoExiste}
-          title={ep && !ep.videoExiste ? `O vídeo original não está mais no lugar (${ep.video || 'sem registro'}): sem ele não há rosto para reconhecer.` : 'Corta de novo com o reconhecimento ligado; o que já foi marcado na mão fica.'}
+          title={ep && !ep.videoExiste ? `O vídeo original não está mais no lugar (${ep.video || 'sem registro'}): sem ele não há rosto para reconhecer.` : 'Batizar na mão (Modo Descoberta) ou reconhecer sozinho; o que já foi marcado na mão fica.'}
           className={principal}
         >
           <ScanFace size={13} strokeWidth={2} />

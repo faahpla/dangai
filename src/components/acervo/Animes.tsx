@@ -15,6 +15,7 @@ import {
 import type { LibraryClip } from '@shared/channels'
 import { useAcervo } from '@/store/acervo'
 import { useCortar } from '@/store/cortar-episodios'
+import { ComoReconhecer } from '../ComoReconhecer'
 import { abrirMenuDoOrganizar, useOrganizar, type AlvoDoOrganizar } from '../OrganizarAnime'
 import { GradeDeCenas, MarcarCom } from './Cenas'
 
@@ -515,7 +516,9 @@ export function PaginaDoEpisodio({ anime, episodio }: { anime: AnimeDoAcervo; ep
   }, [info, personagensDoAcervo, anime.nome])
 
   const atual = info?.personagens.find((p) => p.id === filtro) ?? null
-  const reconhecer = (): void => {
+  const [comoReconhecer, setComoReconhecer] = useState(false)
+  const reconhecer = (modo: 'batizar' | 'reconhecer'): void => {
+    setComoReconhecer(false)
     if (!info?.videoExiste) return
     useCortar.getState().adicionarPedido(
       {
@@ -524,7 +527,7 @@ export function PaginaDoEpisodio({ anime, episodio }: { anime: AnimeDoAcervo; ep
         temporada: episodio.temporada,
         episodio: episodio.episodio,
         tipo: episodio.tipo === 'BROLL' ? 'BROLL' : '',
-        modo: 'reconhecer',
+        modo,
         pastaDoAnime: anime.nome,
         ...(episodio.titulo ? { titulo: episodio.titulo } : {}),
       },
@@ -551,8 +554,9 @@ export function PaginaDoEpisodio({ anime, episodio }: { anime: AnimeDoAcervo; ep
         <ChevronRight size={12} />
         <span className="text-ink-2">{rotuloDoEpisodioDoAcervo(episodio)}</span>
         <span className="flex-1" />
+        {/* O que o episodio diz agora (info), e nao o que o acervo leu ao abrir: depois de reconhecer de novo, os dois diferiam. */}
         <span>
-          {episodio.cenas} cenas · {pct(episodio.marcadas, episodio.cenas)}% com personagem
+          {info ? `${info.cenas} cenas · ${pct(info.cenas - info.semNinguem, info.cenas)}% com personagem` : `${episodio.cenas} cenas · ${pct(episodio.marcadas, episodio.cenas)}% com personagem`}
         </span>
       </nav>
       <div className="flex min-h-0 flex-1 gap-4">
@@ -580,9 +584,9 @@ export function PaginaDoEpisodio({ anime, episodio }: { anime: AnimeDoAcervo; ep
             <button
               type="button"
               className={botao}
-              onClick={reconhecer}
+              onClick={() => setComoReconhecer(true)}
               disabled={!info?.videoExiste}
-              title={info && !info.videoExiste ? `O vídeo original não está mais no lugar (${info.video || 'sem registro'})` : 'Corta de novo com o reconhecimento ligado; o que foi marcado na mão fica'}
+              title={info && !info.videoExiste ? `O vídeo original não está mais no lugar (${info.video || 'sem registro'})` : 'Batizar na mão (Modo Descoberta) ou reconhecer sozinho; o que foi marcado na mão fica'}
             >
               <ScanFace size={13} strokeWidth={1.75} />
               Reconhecer de novo
@@ -641,6 +645,7 @@ export function PaginaDoEpisodio({ anime, episodio }: { anime: AnimeDoAcervo; ep
           />
         </div>
       </div>
+      {comoReconhecer && <ComoReconhecer aoEscolher={reconhecer} aoFechar={() => setComoReconhecer(false)} />}
       {marcando && (
         <MarcarCom
           quantas={marcando.length}
