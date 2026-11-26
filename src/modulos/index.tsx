@@ -1,7 +1,7 @@
-import { Component, useMemo, type ReactNode } from 'react'
+import { Component, useMemo, type ComponentType, type ReactNode } from 'react'
 import type { ModuloPublico } from '@shared/modulos'
 import { MODULOS_DO_RENDERER } from '../../modulos/registro.renderer'
-import type { AncoraDasConfiguracoes, ComandoDoModulo, ModuloDoRenderer, PropsDosBotoesDaTelaInicial } from './api'
+import type { ComandoDoModulo, ModuloDoRenderer, PropsDosBotoesDaTelaInicial } from './api'
 import { definirModulosAtivos, emitir } from './ganchos'
 import { criarNucleo, useTelaCheia, type Nucleo } from './nucleo'
 import { useModulos } from './lista'
@@ -154,20 +154,53 @@ export function ItensDosModulosNaBarraDeStatus() {
   return <Encaixes conteudo={({ ItemDaBarraDeStatus }) => (ItemDaBarraDeStatus ? <ItemDaBarraDeStatus /> : null)} />
 }
 
-/** As secoes de modulo que entram depois de uma ancora das Configuracoes. */
-export function SecoesDosModulos({ depoisDe }: { depoisDe: AncoraDasConfiguracoes }) {
+/**
+ * UMA PAGINA POR MODULO nas Configuracoes (26/11): "organiza essa merda, ta
+ * tudo jogado". As secoes de um modulo ficavam espalhadas entre as do nucleo
+ * (o roteiro do recap embaixo das chaves da IA, a edicao rapida no meio dos
+ * sons); agora cada modulo ligado com secoes ganha a propria pagina, com o
+ * nome dele, e as secoes em ordem. O `depoisDe` diz so a ordem antiga.
+ */
+export interface PaginaDeModulo {
+  id: string
+  nome: string
+  secoes: { id: string; titulo: string }[]
+}
+
+export function usePaginasDosModulos(): PaginaDeModulo[] {
+  const lista = useModulos((s) => s.lista)
+  const ativos = useModulosLigados()
+  return useMemo(
+    () =>
+      ativos
+        .filter((m) => (m.secoesDasConfiguracoes ?? []).length > 0)
+        .map((m) => ({
+          id: m.id,
+          nome: lista.find((p) => p.id === m.id)?.nome ?? m.id,
+          secoes: (m.secoesDasConfiguracoes ?? []).map(({ id, titulo }) => ({ id, titulo })),
+        })),
+    [ativos, lista],
+  )
+}
+
+/** As secoes de UM modulo, cada uma no cartao que o nucleo da. */
+export function SecoesDoModulo({
+  id,
+  Cartao,
+}: {
+  id: string
+  Cartao: ComponentType<{ secao: string; titulo: string; children: ReactNode }>
+}) {
   return (
     <Encaixes
       conteudo={(m) =>
-        (m.secoesDasConfiguracoes ?? [])
-          .filter((s) => s.depoisDe === depoisDe)
-          .map(({ id, titulo, Componente }) => (
-            <div key={id} data-secao={id}>
-              <div className="my-5 h-px bg-line" />
-              <label className="mb-1.5 block text-[11px] font-medium text-ink-2">{titulo}</label>
-              <Componente />
-            </div>
-          ))
+        m.id !== id
+          ? null
+          : (m.secoesDasConfiguracoes ?? []).map(({ id: secao, titulo, Componente }) => (
+              <Cartao key={secao} secao={secao} titulo={titulo}>
+                <Componente />
+              </Cartao>
+            ))
       }
     />
   )
@@ -192,11 +225,9 @@ export function comandosDosModulos(): ComandoDoModulo[] {
 export function ModulosNasConfiguracoes() {
   const lista = useModulos((s) => s.lista)
   const ligar = useModulos((s) => s.ligar)
-  if (lista.length === 0) return null
+  if (lista.length === 0) return <p className="text-[12px] text-ink-3">Nenhum módulo instalado.</p>
   return (
-    <div data-secao="modulos">
-      <div className="my-5 h-px bg-line" />
-      <label className="mb-1.5 block text-[11px] font-medium text-ink-2">Módulos</label>
+    <div>
       <div className="flex flex-col gap-1.5">
         {lista.map((m) => (
           <label

@@ -90,7 +90,9 @@ o módulo pelos três arquivos de registro, uma linha por módulo:
 - **Ponte:** `window.dangai.modulos.<id>`, montada pelo preload do núcleo com um
   `invocar`/`assinar` presos ao prefixo. A ponte roda no sandbox: só `import type` e constantes.
 - **Renderer:** telas cheias (`nucleo.telaCheia` deixa o resto inerte e os atalhos quietos),
-  botões na tela inicial, seções nas Configurações (com âncora e "abrir numa seção"),
+  botões na tela inicial, seções nas Configurações (desde 26/11 cada módulo ligado tem a
+  própria página no menu da esquerda, com as seções dele em ordem; o `depoisDe` não muda
+  mais o lugar; "abrir numa seção" acha a página e rola até ela),
   comandos na paleta, barra de render, barra de status, rótulo do clipe na timeline,
   etiqueta no card dos "Projetos recentes" (`rotuloDoProjeto`: o recente guarda os ids com
   `modulos.<id>` no projeto) e `interceptarArquivos` (soltar/diálogo). O módulo usa a

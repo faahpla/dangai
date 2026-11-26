@@ -1,28 +1,105 @@
-import { useEffect, useState } from "react";
-import { FolderOpen, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  FolderOpen,
+  Keyboard,
+  Puzzle,
+  Scissors,
+  Sparkles,
+  Volume2,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import type { PublicSettings } from "@shared/channels";
 import { useProject } from "@/store/project";
 import { tocarSomDePronto } from "@/store/som-de-pronto";
 import { Atalhos } from "./Atalhos";
 import { ChaveDoGemini, LINK_DA_CHAVE_DO_GEMINI } from "./ChaveDoGemini";
-import { ModulosNasConfiguracoes, SecoesDosModulos } from "@/modulos";
+import { ModulosNasConfiguracoes, SecoesDoModulo, usePaginasDosModulos } from "@/modulos";
 import { ConfigDoCorte } from "./MotorDeCortes";
 
 /**
- * Um campo que importa: a chave da IA. O resto e escolha rara.
+ * AS CONFIGURACOES EM PAGINAS (26/11): "organiza essa merda, ta tudo jogado,
+ * nao da pra se encontrar, ta tudo encavalado e nada intuitivo".
  *
- * A chave nunca volta do main por inteiro -- so um hint com os quatro ultimos
- * caracteres, o suficiente para reconhecer qual chave esta salva.
+ * Era uma coluna so, de 440 px, com tudo um embaixo do outro -- e as secoes do
+ * recap enfiadas no meio das do nucleo (o roteiro do recap logo abaixo das
+ * chaves da IA). Agora: um menu na esquerda com poucas paginas de nome claro,
+ * e cada coisa num cartao com titulo e uma frase do que faz.
  *
- * O Gemini vem primeiro porque tem cota gratis; quem ja tem a chave da
- * Anthropic continua nela sem mexer em nada (o main cai na que tiver chave).
+ * - Inteligencia artificial: quem responde, as chaves, o modelo e o Whisper;
+ * - Sons: a pasta de SFX, o som do Pan e o aviso do render;
+ * - Pastas: projetos, biblioteca, mangas e filmes;
+ * - Cortar episodios: o motor de cortes;
+ * - Atalhos de teclado;
+ * - Modulos: ligar e desligar, e uma pagina por modulo ligado (o Gerar recap
+ *   com o roteiro, a voz, as cenas... tudo junto).
+ *
+ * "Abrir numa secao" (`openSettings(true, 'recap-voz')`) acha a pagina que tem
+ * a secao, abre nela e rola ate o cartao.
  */
+
+type IdDaPagina = "ia" | "sons" | "pastas" | "cortar" | "atalhos" | "modulos" | `modulo:${string}`;
+
+interface Pagina {
+  id: IdDaPagina;
+  rotulo: string;
+  icone: LucideIcon;
+  /** Uma frase no alto da pagina. */
+  sobre?: string;
+  /** As secoes (data-secao) que moram nela, para o "abrir numa secao". */
+  secoes: string[];
+}
+
+const PAGINAS_DO_NUCLEO: Pagina[] = [
+  {
+    id: "ia",
+    rotulo: "Inteligência artificial",
+    icone: Sparkles,
+    sobre: "Quem escreve e analisa (Gemini ou Anthropic) e quem transcreve a narração.",
+    secoes: ["ia", "gemini", "anthropic", "whisper"],
+  },
+  {
+    id: "sons",
+    rotulo: "Sons",
+    icone: Volume2,
+    sobre: "Os efeitos que entram nas transições e o aviso de render pronto.",
+    secoes: ["sons", "som-do-pan", "som-do-render"],
+  },
+  {
+    id: "pastas",
+    rotulo: "Pastas",
+    icone: FolderOpen,
+    sobre: "Onde o Dangai guarda os projetos e de onde ele lê as cenas.",
+    secoes: ["projetos", "biblioteca", "mangas", "filmes"],
+  },
+  {
+    id: "cortar",
+    rotulo: "Cortar episódios",
+    icone: Scissors,
+    sobre: "O motor que corta os episódios em cenas e reconhece os personagens.",
+    secoes: ["cortar"],
+  },
+  { id: "atalhos", rotulo: "Atalhos de teclado", icone: Keyboard, secoes: ["atalhos"] },
+];
+
+const PAGINA_DOS_MODULOS: Pagina = {
+  id: "modulos",
+  rotulo: "Ligar e desligar",
+  icone: Puzzle,
+  sobre: "Os módulos são partes extras do Dangai. Ligado, cada um ganha a sua página aqui no menu.",
+  secoes: ["modulos"],
+};
+
+/** A ultima pagina aberta, nesta sessao: reabrir volta para ela. */
+let ultimaPagina: IdDaPagina = "ia";
+
 export function Settings() {
   const open = useProject((s) => s.settingsOpen);
   const openSettings = useProject((s) => s.openSettings);
   const analyze = useProject((s) => s.analyze);
   const sfxFiles = useProject((s) => s.sfxFiles);
   const refreshSfx = useProject((s) => s.refreshSfx);
+  const paginasDosModulos = usePaginasDosModulos();
 
   const [settings, setSettings] = useState<PublicSettings | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -30,25 +107,66 @@ export function Settings() {
   // A lista vem do "Testar": o main so conhece os modelos depois de falar com
   // o Google usando a chave.
   const [modelos, setModelos] = useState<string[]>([]);
-  const [aba, setAba] = useState<"geral" | "atalhos">("geral");
+  const [pagina, setPaginaDeVerdade] = useState<IdDaPagina>(ultimaPagina);
+  const setPagina = (p: IdDaPagina): void => {
+    ultimaPagina = p;
+    setPaginaDeVerdade(p);
+  };
   /** A pasta dos projetos de verdade (a escolhida, ou a padrao nos Documentos). */
   const [pastaDosProjetos, setPastaDosProjetos] = useState("");
+  const conteudo = useRef<HTMLDivElement | null>(null);
+
+  const paginas: Pagina[] = [
+    ...PAGINAS_DO_NUCLEO,
+    PAGINA_DOS_MODULOS,
+    ...paginasDosModulos.map((m) => ({
+      id: `modulo:${m.id}` as const,
+      rotulo: m.nome,
+      icone: Puzzle,
+      secoes: m.secoes.map((s) => s.id),
+    })),
+  ];
+  // Desligou o modulo com a pagina dele aberta: volta para a primeira.
+  const atual = paginas.find((p) => p.id === pagina) ?? paginas[0]!;
 
   /*
    * ABRIR NUMA SECAO: "abrir as Configuracoes ja na do motor", por exemplo.
-   * Vai para a aba Geral e rola ate a secao, que tem o `data-secao` dela.
+   * Vai para a pagina que tem a secao e rola ate o cartao dela.
    */
   const secao = useProject((s) => s.settingsSecao);
+  const [rolarPara, setRolarPara] = useState<string | null>(null);
   useEffect(() => {
     if (!open || !secao) return;
-    setAba("geral");
-    const quadro = requestAnimationFrame(() =>
-      document
-        .querySelector(`[data-secao="${CSS.escape(secao)}"]`)
-        ?.scrollIntoView({ block: "start", behavior: "smooth" }),
-    );
-    return () => cancelAnimationFrame(quadro);
-  }, [open, secao]);
+    const dona = paginas.find((p) => p.secoes.includes(secao));
+    if (dona) setPagina(dona.id);
+    setRolarPara(secao);
+    // A lista de paginas dos modulos chega depois de ligar: refaz quando ela muda.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, secao, paginasDosModulos.length]);
+  useLayoutEffect(() => {
+    if (!rolarPara) return;
+    // Imediato, e de novo depois que a pagina assenta: as secoes dos modulos
+    // leem a config ao montar e crescem, e o cartao saia do lugar no meio da
+    // rolagem suave.
+    const ir = (): void => {
+      conteudo.current?.querySelector(`[data-secao="${CSS.escape(rolarPara)}"]`)?.scrollIntoView({ block: "start" });
+    };
+    const quadro = requestAnimationFrame(ir);
+    const depois = setTimeout(() => {
+      ir();
+      setRolarPara(null);
+    }, 350);
+    return () => {
+      cancelAnimationFrame(quadro);
+      clearTimeout(depois);
+    };
+  }, [rolarPara, pagina]);
+
+  // Trocou de pagina: comeca do alto.
+  useEffect(() => {
+    if (!rolarPara) conteudo.current?.scrollTo({ top: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagina]);
 
   useEffect(() => {
     if (!open) return;
@@ -132,6 +250,8 @@ export function Settings() {
       ? [settings.geminiModelo, ...modelos]
       : modelos;
 
+  const paginaDoModulo = atual.id.startsWith("modulo:") ? paginasDosModulos.find((m) => `modulo:${m.id}` === atual.id) : undefined;
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-6"
@@ -139,424 +259,447 @@ export function Settings() {
     >
       <div
         onPointerDown={(event) => event.stopPropagation()}
-        className={[
-          "glass enter flex max-h-[88vh] w-full flex-col rounded-lg p-5",
-          aba === "atalhos" ? "max-w-[560px]" : "max-w-[440px]",
-        ].join(" ")}
+        className="glass enter flex h-[min(720px,88vh)] w-full max-w-[880px] overflow-hidden rounded-lg"
       >
-        <header className="mb-4 flex shrink-0 items-center gap-3">
-          <h2 className="text-[15px] font-semibold text-ink">Configurações</h2>
-          <div className="flex gap-0.5 rounded-sm border border-line bg-elevated p-0.5">
-            {(["geral", "atalhos"] as const).map((qual) => (
-              <button
-                key={qual}
-                type="button"
-                onClick={() => setAba(qual)}
-                className={[
-                  "rounded-[3px] px-2.5 py-0.5 text-[11px]",
-                  aba === qual
-                    ? "bg-accent-dim text-ink ring-1 ring-inset ring-accent"
-                    : "text-ink-3 hover:text-ink-2",
-                ].join(" ")}
-              >
-                {qual === "geral" ? "Geral" : "Atalhos de teclado"}
-              </button>
-            ))}
-          </div>
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={() => openSettings(false)}
-            aria-label="Fechar"
-            className="grid size-6 place-items-center rounded-sm text-ink-3 hover:text-ink"
-          >
-            <X size={13} strokeWidth={1.5} />
-          </button>
-        </header>
+        {/* O MENU: poucas paginas, de nome claro. */}
+        <nav aria-label="Seções das configurações" className="flex w-[210px] shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-line p-3">
+          <h2 className="mb-3 px-2 pt-1 text-[15px] font-semibold text-ink">Configurações</h2>
+          {PAGINAS_DO_NUCLEO.map((p) => (
+            <ItemDoMenu key={p.id} pagina={p} ativa={atual.id === p.id} onClick={() => setPagina(p.id)} />
+          ))}
+          <span className="mt-4 mb-1 px-2 text-[10px] uppercase tracking-wide text-ink-3">Módulos</span>
+          <ItemDoMenu pagina={PAGINA_DOS_MODULOS} ativa={atual.id === "modulos"} onClick={() => setPagina("modulos")} />
+          {paginasDosModulos.map((m) => {
+            const id = `modulo:${m.id}` as const;
+            return (
+              <ItemDoMenu
+                key={id}
+                pagina={{ id, rotulo: m.nome, icone: Puzzle, secoes: [] }}
+                ativa={atual.id === id}
+                onClick={() => setPagina(id)}
+              />
+            );
+          })}
+        </nav>
 
-        <div className="min-h-0 overflow-y-auto pr-1">
-          {aba === "atalhos" ? (
-            <Atalhos />
-          ) : (
-            <>
-              <label data-secao="ia" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Inteligência artificial
-              </label>
-              <div className="flex gap-1.5">
-                {(
-                  [
-                    ["gemini", "Gemini (grátis)"],
-                    ["anthropic", "Anthropic"],
-                  ] as const
-                ).map(([qual, nome]) => (
-                  <button
-                    key={qual}
-                    type="button"
-                    onClick={() => void save({ iaProvedor: qual })}
-                    className={[
-                      "lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]",
-                      settings?.iaProvedor === qual
-                        ? "border-accent bg-accent-dim text-ink"
-                        : "border-line bg-elevated text-ink-2",
-                    ].join(" ")}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex shrink-0 items-start gap-3 border-b border-line px-6 pt-5 pb-4">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-[16px] font-semibold text-ink">{atual.rotulo}</h3>
+              {atual.sobre && <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">{atual.sobre}</p>}
+              {/* Pagina de modulo com varias secoes: atalhos para cada uma. */}
+              {paginaDoModulo && paginaDoModulo.secoes.length > 1 && (
+                <div className="mt-2.5 flex flex-wrap gap-1">
+                  {paginaDoModulo.secoes.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setRolarPara(s.id)}
+                      className="rounded-full border border-line bg-elevated px-2.5 py-0.5 text-[11px] text-ink-2 hover:border-line-strong hover:text-ink"
+                    >
+                      {s.titulo}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => openSettings(false)}
+              aria-label="Fechar"
+              title="Fechar (Esc)"
+              className="grid size-7 shrink-0 place-items-center rounded-sm text-ink-3 hover:bg-elevated hover:text-ink"
+            >
+              <X size={14} strokeWidth={1.5} />
+            </button>
+          </header>
+
+          <div ref={conteudo} className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            <div className="flex flex-col gap-3 pb-6">
+              {atual.id === "ia" && (
+                <>
+                  <Cartao secao="ia" titulo="Quem responde" sobre="Escreve o roteiro, escolhe as cenas e o título. O Gemini tem cota grátis.">
+                    <Escolha
+                      opcoes={[
+                        ["gemini", "Gemini (grátis)"],
+                        ["anthropic", "Anthropic"],
+                      ]}
+                      valor={settings?.iaProvedor}
+                      onChange={(qual) => void save({ iaProvedor: qual })}
+                    />
+                    {settings && emUso !== null && emUso !== settings.iaProvedor && (
+                      <Nota>
+                        {emUso === "anthropic"
+                          ? "Sem a chave do Gemini, usa a da Anthropic."
+                          : "Sem a chave da Anthropic, usa a do Gemini."}
+                      </Nota>
+                    )}
+                    {settings && emUso === null && (
+                      <Nota>Sem nenhuma chave, as cenas são distribuídas pelas pausas da narração.</Nota>
+                    )}
+                  </Cartao>
+
+                  <Cartao
+                    secao="gemini"
+                    titulo="Gemini"
+                    acao={
+                      <a
+                        href={LINK_DA_CHAVE_DO_GEMINI}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-ink-3 underline-offset-2 hover:text-ink hover:underline"
+                      >
+                        Pegar chave grátis
+                      </a>
+                    }
                   >
-                    {nome}
-                  </button>
-                ))}
-              </div>
-              {settings && emUso !== null && emUso !== settings.iaProvedor && (
-                <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                  {emUso === "anthropic"
-                    ? "Sem a chave do Gemini, usa a da Anthropic."
-                    : "Sem a chave da Anthropic, usa a do Gemini."}
-                </p>
+                    <Rotulo>Chave</Rotulo>
+                    {/* Chave nova refaz o plano: o usuario acabou de habilitar a IA,
+                        como na da Anthropic. */}
+                    <ChaveDoGemini
+                      settings={settings}
+                      onSettings={setSettings}
+                      onModelos={setModelos}
+                      aoSalvar={() => void analyze()}
+                    />
+                    <Rotulo className="mt-4">Modelo</Rotulo>
+                    <select
+                      value={settings?.geminiModelo ?? ""}
+                      onChange={(event) => void save({ geminiModelo: event.target.value })}
+                      className="w-full rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink"
+                    >
+                      <option value="">Automático</option>
+                      {opcoesDeModelo.map((modelo) => (
+                        <option key={modelo} value={modelo}>
+                          {modelo}
+                        </option>
+                      ))}
+                    </select>
+                    <Nota>
+                      {modelos.length === 0 ? "Teste a chave para ver a lista. " : ""}
+                      No automático, usa o melhor flash e troca sozinho se lotar.
+                    </Nota>
+                  </Cartao>
+
+                  <Cartao secao="anthropic" titulo="Anthropic (Claude)">
+                    <Rotulo>Chave da API</Rotulo>
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={keyInput}
+                        onChange={(event) => setKeyInput(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") void saveKey();
+                          event.stopPropagation();
+                        }}
+                        placeholder={settings?.hasApiKey ? settings.apiKeyHint : "sk-ant-..."}
+                        spellCheck={false}
+                        autoComplete="off"
+                        className="min-w-0 flex-1 select-text rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void saveKey()}
+                        disabled={saving || keyInput.trim().length === 0}
+                        className="lift shrink-0 rounded-sm border border-line bg-elevated px-3 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
+                      >
+                        Salvar
+                      </button>
+                    </div>
+                    <Nota>
+                      As chaves ficam só nesta máquina{settings?.chavesProtegidas ? ", cifradas" : ""}.
+                    </Nota>
+                  </Cartao>
+
+                  <Cartao
+                    secao="whisper"
+                    titulo="Transcrição da narração (Whisper)"
+                    sobre="Roda no seu PC e serve só para os tempos das palavras: o texto da legenda vem sempre do roteiro."
+                  >
+                    <Escolha
+                      opcoes={[
+                        ["base", "base"],
+                        ["small", "small"],
+                        ["medium", "medium"],
+                      ]}
+                      valor={settings?.whisperModel}
+                      onChange={(model) => void save({ whisperModel: model })}
+                    />
+                    <Nota>Baixado uma vez na primeira transcrição. Maior transcreve melhor e mais devagar.</Nota>
+                  </Cartao>
+                </>
               )}
 
-              <div className="mt-4 mb-1.5 flex items-baseline gap-2">
-                <label className="block text-[11px] font-medium text-ink-2">
-                  Chave do Gemini
-                </label>
-                <span className="flex-1" />
-                <a
-                  href={LINK_DA_CHAVE_DO_GEMINI}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] text-ink-3 underline-offset-2 hover:text-ink hover:underline"
-                >
-                  Pegar chave grátis
-                </a>
-              </div>
-              {/* Chave nova refaz o plano: o usuario acabou de habilitar a IA,
-                  como na da Anthropic. */}
-              <ChaveDoGemini
-                settings={settings}
-                onSettings={setSettings}
-                onModelos={setModelos}
-                aoSalvar={() => void analyze()}
-              />
-
-              <label className="mt-4 mb-1.5 block text-[11px] font-medium text-ink-2">
-                Modelo do Gemini
-              </label>
-              <select
-                value={settings?.geminiModelo ?? ""}
-                onChange={(event) =>
-                  void save({ geminiModelo: event.target.value })
-                }
-                className="w-full rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink"
-              >
-                <option value="">Automático</option>
-                {opcoesDeModelo.map((modelo) => (
-                  <option key={modelo} value={modelo}>
-                    {modelo}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                {modelos.length === 0
-                  ? "Teste a chave para ver a lista. "
-                  : ""}
-                No automático, usa o melhor flash e troca sozinho se lotar.
-              </p>
-
-              <label className="mt-4 mb-1.5 block text-[11px] font-medium text-ink-2">
-                Chave da API da Anthropic
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={keyInput}
-                  onChange={(event) => setKeyInput(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") void saveKey();
-                    event.stopPropagation();
-                  }}
-                  placeholder={
-                    settings?.hasApiKey ? settings.apiKeyHint : "sk-ant-..."
-                  }
-                  spellCheck={false}
-                  autoComplete="off"
-                  className="min-w-0 flex-1 select-text rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
-                />
-                <button
-                  type="button"
-                  onClick={() => void saveKey()}
-                  disabled={saving || keyInput.trim().length === 0}
-                  className="lift shrink-0 rounded-sm border border-line bg-elevated px-3 py-1.5 text-[13px] font-medium text-ink disabled:opacity-40"
-                >
-                  Salvar
-                </button>
-              </div>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                As chaves ficam só nesta máquina
-                {settings?.chavesProtegidas ? ", cifradas" : ""}. Sem nenhuma,
-                as cenas são distribuídas pelas pausas da narração.
-              </p>
-              <SecoesDosModulos depoisDe="ia" />
-
-              <div className="my-5 h-px bg-line" />
-
-              <label data-secao="whisper" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Modelo do Whisper
-              </label>
-              <div className="flex gap-1.5">
-                {(["base", "small", "medium"] as const).map((model) => (
-                  <button
-                    key={model}
-                    type="button"
-                    onClick={() => void save({ whisperModel: model })}
-                    className={[
-                      "lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]",
-                      settings?.whisperModel === model
-                        ? "border-accent bg-accent-dim text-ink"
-                        : "border-line bg-elevated text-ink-2",
-                    ].join(" ")}
+              {atual.id === "sons" && (
+                <>
+                  <Cartao
+                    secao="sons"
+                    titulo="Sons de transição"
+                    sobre="Solte os seus .mp3 ou .wav na pasta. Eles entram em rodízio, uma transição sim e outra não — som em todo corte vira ruído de fundo."
                   >
-                    {model}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Baixado uma vez na primeira transcrição. Maior transcreve melhor
-                e mais devagar.
-              </p>
-              <SecoesDosModulos depoisDe="whisper" />
+                    <BotaoDePasta
+                      onClick={() => {
+                        void window.dangai.openSfxDir();
+                        // A pasta abre fora do app; quando ele voltar, a lista ja esta certa.
+                        void refreshSfx();
+                      }}
+                      texto="Abrir a pasta de SFX"
+                      lado={`${sfxFiles.length} ${sfxFiles.length === 1 ? "som" : "sons"}`}
+                    />
+                  </Cartao>
 
-              <div className="my-5 h-px bg-line" />
-
-              <label data-secao="sons" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Sons de transição
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  void window.dangai.openSfxDir();
-                  // A pasta abre fora do app; quando ele voltar, a lista ja esta certa.
-                  void refreshSfx();
-                }}
-                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
-              >
-                <FolderOpen size={13} strokeWidth={1.5} />
-                Abrir a pasta de SFX
-                <span className="tnum ml-auto text-[11px] text-ink-3">
-                  {sfxFiles.length} {sfxFiles.length === 1 ? "som" : "sons"}
-                </span>
-              </button>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Solte os seus .mp3 ou .wav aí dentro. Eles entram em rodízio,
-                uma transição sim e outra não — som em todo corte vira ruído de
-                fundo.
-              </p>
-
-              <label className="mt-4 mb-1.5 block text-[11px] font-medium text-ink-2">
-                Quando o render termina
-              </label>
-              <div className="flex gap-1.5">
-                {(
-                  [
-                    [true, "Com som"],
-                    [false, "Sem som"],
-                  ] as const
-                ).map(([ligado, nome]) => (
-                  <button
-                    key={nome}
-                    type="button"
-                    onClick={() => {
-                      void save({ somAoRenderizar: ligado });
-                      // Ligar ja toca: ele ouve o que escolheu.
-                      if (ligado) tocarSomDePronto();
-                    }}
-                    className={[
-                      "lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]",
-                      (settings?.somAoRenderizar ?? true) === ligado
-                        ? "border-accent bg-accent-dim text-ink"
-                        : "border-line bg-elevated text-ink-2",
-                    ].join(" ")}
+                  <Cartao
+                    secao="som-do-pan"
+                    titulo="Som da transição Pan"
+                    sobre="Pôs a transição Pan numa emenda, este som entra sozinho na faixa de SFX, com o ponto mais forte bem no corte. Dá para mover ou apagar como os outros; tirar o Pan tira o som."
                   >
-                    {nome}
-                  </button>
-                ))}
-              </div>
-              <label className="mb-1.5 mt-4 block text-[11px] font-medium text-ink-2">
-                Som da transição Pan
-              </label>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const r = await window.dangai.pickFiles();
-                    const som = r.ok ? r.value.find((c) => /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(c)) : undefined;
-                    if (som) await save({ somDoPan: som });
-                  }}
-                  title="Trocar o som"
-                  className="lift flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
-                >
-                  <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">
-                    {settings?.somDoPan ? settings.somDoPan.split(/[\\/]/).pop() : "Nenhum (escolher...)"}
-                  </span>
-                </button>
-                {settings?.somDoPan && (
-                  <button
-                    type="button"
-                    onClick={() => void save({ somDoPan: "" })}
-                    className="lift shrink-0 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
+                    <div className="flex gap-1.5">
+                      <BotaoDePasta
+                        onClick={async () => {
+                          const r = await window.dangai.pickFiles();
+                          const som = r.ok ? r.value.find((c) => /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(c)) : undefined;
+                          if (som) await save({ somDoPan: som });
+                        }}
+                        texto={settings?.somDoPan ? (settings.somDoPan.split(/[\\/]/).pop() ?? "") : "Nenhum (escolher...)"}
+                        title="Trocar o som"
+                      />
+                      {settings?.somDoPan && (
+                        <BotaoPequeno onClick={() => void save({ somDoPan: "" })}>Nenhum</BotaoPequeno>
+                      )}
+                    </div>
+                  </Cartao>
+
+                  <Cartao secao="som-do-render" titulo="Quando o render termina">
+                    <Escolha
+                      opcoes={[
+                        [true, "Tocar um som"],
+                        [false, "Em silêncio"],
+                      ]}
+                      valor={settings?.somAoRenderizar ?? true}
+                      onChange={(ligado) => {
+                        void save({ somAoRenderizar: ligado });
+                        // Ligar ja toca: ele ouve o que escolheu.
+                        if (ligado) tocarSomDePronto();
+                      }}
+                    />
+                  </Cartao>
+                </>
+              )}
+
+              {atual.id === "pastas" && (
+                <>
+                  <Cartao
+                    secao="projetos"
+                    titulo="Projetos"
+                    sobre="Soltou a narração, o Dangai pergunta o nome e cria o projeto aqui. Daí em diante ele se salva sozinho. Depois do render, os arquivos de trabalho são apagados e fica só o projeto."
                   >
-                    Nenhum
-                  </button>
-                )}
-              </div>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Pôs a transição Pan numa emenda, este som entra sozinho na faixa
-                de SFX, com o ponto mais forte dele bem no corte. Dá para mover
-                ou apagar como os outros. Tirar o Pan tira o som.
-              </p>
-              <SecoesDosModulos depoisDe="sons" />
+                    <div className="flex gap-1.5">
+                      <BotaoDePasta
+                        onClick={async () => {
+                          const r = await window.dangai.escolherPasta("Escolher a pasta dos projetos");
+                          if (r.ok && r.value) await save({ pastaDeProjetos: r.value });
+                        }}
+                        texto={pastaDosProjetos || "..."}
+                        title="Trocar a pasta"
+                      />
+                      <BotaoPequeno onClick={() => void window.dangai.abrirPastaDosProjetos()}>Abrir</BotaoPequeno>
+                    </div>
+                    {settings?.pastaDeProjetos && (
+                      <Voltar onClick={() => void save({ pastaDeProjetos: "" })}>Voltar para a padrão (Documentos)</Voltar>
+                    )}
+                  </Cartao>
 
-              <div className="my-5 h-px bg-line" />
+                  <Cartao
+                    secao="biblioteca"
+                    titulo="Biblioteca de cenas"
+                    sobre="A pasta onde o AnCut grava as cenas. O Dangai só lê: nunca renomeia, move nem apaga nada aí dentro. Ctrl+B abre a busca."
+                  >
+                    <BotaoDePasta onClick={() => void escolherBiblioteca()} texto={settings?.libraryDir || "Escolher a pasta..."} />
+                  </Cartao>
 
-              <label data-secao="projetos" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Pasta dos projetos
-              </label>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const r = await window.dangai.escolherPasta("Escolher a pasta dos projetos");
-                    if (r.ok && r.value) await save({ pastaDeProjetos: r.value });
-                  }}
-                  title="Trocar a pasta"
-                  className="lift flex min-w-0 flex-1 items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
-                >
-                  <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">{pastaDosProjetos || "..."}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void window.dangai.abrirPastaDosProjetos()}
-                  className="lift shrink-0 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
-                >
-                  Abrir
-                </button>
-              </div>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Soltou a narração, o Dangai pergunta o nome e cria o projeto
-                aqui. Daí em diante ele se salva sozinho enquanto você edita.
-                Depois do render, os arquivos de trabalho são apagados e fica
-                só o projeto.
-                {settings?.pastaDeProjetos && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() => void save({ pastaDeProjetos: "" })}
-                      className="underline hover:text-ink"
-                    >
-                      Voltar para a padrão (Documentos)
-                    </button>
-                  </>
-                )}
-              </p>
+                  <Cartao
+                    secao="mangas"
+                    titulo="Mangás"
+                    sobre="Uma pasta por anime e, dentro dela, uma por capítulo, com as páginas do jeito que você baixa. O Dangai recorta os quadrinhos sozinho; a sua pasta fica como está."
+                  >
+                    <BotaoDePasta
+                      onClick={async () => {
+                        const r = await window.dangai.escolherPasta("Escolher a pasta dos mangás");
+                        if (r.ok && r.value) await save({ mangaDir: r.value });
+                      }}
+                      texto={settings?.mangaDir || "Automática: a pasta “Mangás” ao lado da biblioteca"}
+                    />
+                    {settings?.mangaDir && <Voltar onClick={() => void save({ mangaDir: "" })}>Voltar para a automática</Voltar>}
+                  </Cartao>
 
-              <div className="my-5 h-px bg-line" />
+                  <Cartao
+                    secao="filmes"
+                    titulo="Filmes cortados"
+                    sobre="Os filmes que o AnCut cortou: uma pasta por filme e, dentro dela, a “Filme (ano)”. As cenas aparecem na Biblioteca junto das dos animes (busque pelo nome do filme ou por “filme”)."
+                  >
+                    <BotaoDePasta
+                      onClick={async () => {
+                        const r = await window.dangai.escolherPasta("Escolher a pasta dos filmes cortados");
+                        if (r.ok && r.value) await save({ filmesDir: r.value });
+                      }}
+                      texto={settings?.filmesDir || "Automática: a pasta “Filmes\\Corte de Filmes” ao lado da biblioteca"}
+                    />
+                    {settings?.filmesDir && <Voltar onClick={() => void save({ filmesDir: "" })}>Voltar para a automática</Voltar>}
+                  </Cartao>
+                </>
+              )}
 
-              <label data-secao="biblioteca" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Biblioteca de cenas
-              </label>
-              <button
-                type="button"
-                onClick={() => void escolherBiblioteca()}
-                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
-              >
-                <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
-                <span className="min-w-0 flex-1 truncate">
-                  {settings?.libraryDir || "Escolher a pasta..."}
-                </span>
-              </button>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                A pasta onde o AnCut grava as cenas. O Dangai só lê: nunca
-                renomeia, move nem apaga nada aí dentro. Ctrl+B abre a busca.
-              </p>
+              {atual.id === "cortar" && (
+                <Cartao titulo="Motor de cortes">
+                  <ConfigDoCorte />
+                </Cartao>
+              )}
 
-              <label className="mb-1.5 mt-4 block text-[11px] font-medium text-ink-2">
-                Mangás
-              </label>
-              <button
-                type="button"
-                onClick={async () => {
-                  const r = await window.dangai.escolherPasta("Escolher a pasta dos mangás");
-                  if (r.ok && r.value) await save({ mangaDir: r.value });
-                }}
-                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
-              >
-                <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
-                <span className="min-w-0 flex-1 truncate">
-                  {settings?.mangaDir || "Automática: a pasta “Mangás” ao lado da biblioteca"}
-                </span>
-              </button>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Uma pasta por anime e, dentro dela, uma por capítulo, com as
-                páginas do jeito que você baixa. O Dangai recorta os quadrinhos
-                sozinho e mostra na Biblioteca; a sua pasta fica como está.
-                {settings?.mangaDir && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() => void save({ mangaDir: "" })}
-                      className="underline hover:text-ink"
-                    >
-                      Voltar para a automática
-                    </button>
-                  </>
-                )}
-              </p>
+              {atual.id === "atalhos" && (
+                <Cartao secao="atalhos" titulo="Atalhos" sobre="Clique no + de uma ação e aperte a tecla que quer usar.">
+                  <Atalhos />
+                </Cartao>
+              )}
 
-              <label className="mb-1.5 mt-4 block text-[11px] font-medium text-ink-2">
-                Filmes cortados
-              </label>
-              <button
-                type="button"
-                onClick={async () => {
-                  const r = await window.dangai.escolherPasta("Escolher a pasta dos filmes cortados");
-                  if (r.ok && r.value) await save({ filmesDir: r.value });
-                }}
-                className="lift flex w-full items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
-              >
-                <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
-                <span className="min-w-0 flex-1 truncate">
-                  {settings?.filmesDir || "Automática: a pasta “Filmes\\Corte de Filmes” ao lado da biblioteca"}
-                </span>
-              </button>
-              <p className="mt-2 text-[11px] leading-relaxed text-ink-3">
-                Os filmes que o AnCut cortou: uma pasta por filme e, dentro dela, a
-                “Filme (ano)”. As cenas aparecem na Biblioteca junto das dos animes
-                (busque pelo nome do filme ou por “filme”); a sua pasta fica como está.
-                {settings?.filmesDir && (
-                  <>
-                    {" "}
-                    <button
-                      type="button"
-                      onClick={() => void save({ filmesDir: "" })}
-                      className="underline hover:text-ink"
-                    >
-                      Voltar para a automática
-                    </button>
-                  </>
-                )}
-              </p>
-              <div className="my-5 h-px bg-line" />
-              <label data-secao="cortar" className="mb-1.5 block text-[11px] font-medium text-ink-2">
-                Cortar episódios
-              </label>
-              <ConfigDoCorte />
-              <SecoesDosModulos depoisDe="biblioteca" />
-              <SecoesDosModulos depoisDe="fim" />
-              <ModulosNasConfiguracoes />
-            </>
-          )}
+              {atual.id === "modulos" && (
+                <Cartao secao="modulos" titulo="Módulos instalados">
+                  <ModulosNasConfiguracoes />
+                </Cartao>
+              )}
+
+              {paginaDoModulo && <SecoesDoModulo id={paginaDoModulo.id} Cartao={Cartao} />}
+            </div>
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function ItemDoMenu({ pagina, ativa, onClick }: { pagina: Pagina; ativa: boolean; onClick: () => void }) {
+  const Icone = pagina.icone;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={ativa ? "page" : undefined}
+      className={[
+        "flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-left text-[13px]",
+        ativa ? "bg-accent-dim text-ink ring-1 ring-inset ring-accent/40" : "text-ink-2 hover:bg-elevated hover:text-ink",
+      ].join(" ")}
+    >
+      <Icone size={14} strokeWidth={1.6} className={["shrink-0", ativa ? "text-accent" : "text-ink-3"].join(" ")} />
+      <span className="min-w-0 flex-1 truncate">{pagina.rotulo}</span>
+    </button>
+  );
+}
+
+/** Um assunto: titulo, uma frase do que faz, e os controles. */
+function Cartao({
+  secao,
+  titulo,
+  sobre,
+  acao,
+  children,
+}: {
+  secao?: string;
+  titulo: string;
+  sobre?: string;
+  acao?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section data-secao={secao} className="scroll-mt-3 rounded-md border border-line bg-surface p-4">
+      <div className="flex items-baseline gap-2">
+        <h4 className="text-[13px] font-semibold text-ink">{titulo}</h4>
+        <span className="flex-1" />
+        {acao}
+      </div>
+      {sobre && <p className="mt-1 text-[11px] leading-relaxed text-ink-3">{sobre}</p>}
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function Rotulo({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <label className={`mb-1.5 block text-[11px] font-medium text-ink-2 ${className}`}>{children}</label>;
+}
+
+function Nota({ children }: { children: ReactNode }) {
+  return <p className="mt-2 text-[11px] leading-relaxed text-ink-3">{children}</p>;
+}
+
+/** Botoes lado a lado, um aceso: o jeito de escolher uma entre poucas opcoes. */
+function Escolha<T extends string | boolean>({
+  opcoes,
+  valor,
+  onChange,
+}: {
+  opcoes: readonly (readonly [T, string])[];
+  valor: T | undefined;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="flex gap-1.5">
+      {opcoes.map(([v, nome]) => (
+        <button
+          key={String(v)}
+          type="button"
+          onClick={() => onChange(v)}
+          aria-pressed={valor === v}
+          className={[
+            "lift flex-1 rounded-sm border px-2 py-1.5 text-[13px]",
+            valor === v ? "border-accent bg-accent-dim text-ink" : "border-line bg-elevated text-ink-2",
+          ].join(" ")}
+        >
+          {nome}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function BotaoDePasta({
+  onClick,
+  texto,
+  lado,
+  title,
+}: {
+  onClick: () => void;
+  texto: string;
+  lado?: string;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="lift flex w-full min-w-0 flex-1 items-center gap-2 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-left text-[13px] text-ink-2 hover:text-ink"
+    >
+      <FolderOpen size={13} strokeWidth={1.5} className="shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{texto}</span>
+      {lado && <span className="tnum ml-auto shrink-0 text-[11px] text-ink-3">{lado}</span>}
+    </button>
+  );
+}
+
+function BotaoPequeno({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="lift shrink-0 rounded-sm border border-line bg-elevated px-2.5 py-1.5 text-[13px] text-ink-2 hover:text-ink"
+    >
+      {children}
+    </button>
+  );
+}
+
+function Voltar({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} className="mt-2 text-[11px] text-ink-3 underline underline-offset-2 hover:text-ink">
+      {children}
+    </button>
   );
 }

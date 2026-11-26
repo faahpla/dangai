@@ -12,6 +12,7 @@ import {
   type CaptionMark,
   type CaptionPontuacao,
   type CaptionShadow,
+  type SinteseDaFonte,
   sombraCss,
   textoNaLegenda,
 } from '@shared/contract'
@@ -43,11 +44,12 @@ let regua: CanvasRenderingContext2D | null | undefined
  * letras de antes. A fonte ja esta carregada aqui -- o Video so monta a
  * legenda depois do fontsReady.
  */
-function larguraDaLinha(palavras: readonly string[], stack: string, tamanho: number, stroke: number): number | null {
+function larguraDaLinha(palavras: readonly string[], stack: string, tamanho: number, stroke: number, italico: boolean): number | null {
   if (palavras.length === 0) return 0
   if (regua === undefined) regua = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d')
   if (!regua) return null
-  regua.font = `400 ${tamanho}px ${stack}`
+  // Com o mesmo italico da legenda (o "Forcar negrito" entra no `stroke`: e traco, nao peso).
+  regua.font = `${italico ? 'italic ' : ''}400 ${tamanho}px ${stack}`
   const soma = palavras.reduce((s, p) => s + regua!.measureText(p.toUpperCase()).width, 0)
   return soma + VAO * (palavras.length - 1) + stroke
 }
@@ -66,6 +68,7 @@ export function Captions({
   color,
   y,
   font,
+  sintese,
   animation,
   animationFrames,
   animationCurve,
@@ -81,6 +84,8 @@ export function Captions({
   y: number
   /** A fonte que ele escolheu, ou null para a embutida. */
   font: { family: string; url: string } | null
+  /** Na marra: engrossar (Forcar negrito, um traco da propria cor) e inclinar (italico sem arquivo italico). */
+  sintese: SinteseDaFonte
   animation: CaptionAnimation
   animationFrames: number
   animationCurve: CurvaDaEntrada
@@ -111,6 +116,7 @@ export function Captions({
             color={color}
             y={y}
             stack={stack}
+            sintese={sintese}
             animation={animation}
             animationFrames={animationFrames}
             animationCurve={animationCurve}
@@ -131,6 +137,7 @@ function Block({
   color,
   y,
   stack,
+  sintese,
   animation,
   animationFrames,
   animationCurve,
@@ -144,6 +151,7 @@ function Block({
   color: CaptionColor
   y: number
   stack: string
+  sintese: SinteseDaFonte
   animation: CaptionAnimation
   animationFrames: number
   animationCurve: CurvaDaEntrada
@@ -169,7 +177,8 @@ function Block({
   // encolhia mesmo cabendo -- o short do Dopanimes deixa a palavra larga e da a
   // mesma altura a todas). So encolhe o que passaria das margens.
   const pedida = FONT_SIZE * scale
-  const largura = larguraDaLinha(textos.filter(Boolean), stack, pedida, stroke)
+  // O "Forcar negrito" engrossa cada ponta da linha tambem.
+  const largura = larguraDaLinha(textos.filter(Boolean), stack, pedida, stroke + (sintese.negrito ? 2 * pedida * ENGROSSAR : 0), sintese.italico)
   /*
    * O PICO DA ENTRADA cabe tambem: "no bounce o texto da saindo da tela". A
    * curva elastica passa de 1 (a do Levi chega a 1,11), e a linha que cabia
@@ -206,6 +215,24 @@ function Block({
   const progresso = Math.min(Math.max((frame - block.from) / Math.max(animationFrames, 1), 0), 1)
   const escala = animation === 'elastica' ? escalaDaEntrada(animationCurve, progresso) : 1
 
+  const engrossar = sintese.negrito ? Math.round(fontSize * ENGROSSAR * 10) / 10 : 0
+  /*
+   * Em 'tudo' a legenda inteira sai da cor escolhida e nenhuma palavra e
+   * marcada -- e o visual de bloco unico, sem o karaoke. Em 'palavra', que e o
+   * padrao, so a que esta sendo dita ganha cor.
+   */
+  const palavras = block.words.flatMap((word, index) =>
+    textos[index] === ''
+      ? []
+      : [
+          {
+            chave: `${word.text}-${index}`,
+            texto: textos[index]!,
+            cor: mark === 'tudo' || index === marcada ? corDaLegenda(color) : '#FFFFFF',
+          },
+        ],
+  )
+
   return (
     <AbsoluteFill
       style={{
@@ -220,34 +247,7 @@ function Block({
     >
       <div
         style={{
-          display: 'flex',
-          // Uma linha so: quem nao cabe encolhe (larguraDaLinha), nao quebra.
-          flexWrap: 'nowrap',
-          justifyContent: 'center',
-          gap: `0 ${VAO}px`,
-          fontFamily: stack,
-          // Komika Axis tem um peso so. Pedir 800 faria o Chrome engrossar a
-          // letra na marra, e o falso negrito briga com o contorno de 6px.
-          fontWeight: 400,
-          fontSize,
-          lineHeight: 1.15,
-          textAlign: 'center',
-          textTransform: 'uppercase',
-          /*
-           * Zero desliga o contorno: o -webkit-text-stroke com 0px ainda
-           * desenha uma linha de meio pixel em alguns zooms, e `undefined`
-           * some de verdade.
-           */
-          WebkitTextStroke: stroke > 0 ? `${stroke}px #000` : undefined,
-          paintOrder: 'stroke fill',
-          /*
-           * Sombra projetada por baixo do contorno.
-           *
-           * O contorno preto ja separa a letra do fundo, mas em cena clara ele
-           * encosta no claro do fundo e a legenda "gruda" na imagem. A sombra
-           * deslocada para baixo devolve profundidade sem engrossar a letra.
-           */
-          textShadow: sombraCss(shadow),
+          position: 'relative',
           transform: `scale(${escala})`,
           /*
            * Cresce a partir do CENTRO da propria legenda.
@@ -261,23 +261,116 @@ function Block({
           transformOrigin: 'center center',
         }}
       >
-        {block.words.map((word, index) => textos[index] === '' ? null : (
-          <span
-            key={`${word.text}-${index}`}
-            /*
-             * Em 'tudo' a legenda inteira sai da cor escolhida e nenhuma palavra
-             * e marcada -- e o visual de bloco unico, sem o karaoke. Em
-             * 'palavra', que e o padrao, so a que esta sendo dita ganha cor.
-             */
-            style={{
-              color:
-                mark === 'tudo' || index === marcada ? corDaLegenda(color) : '#FFFFFF',
-            }}
-          >
-            {textos[index]}
-          </span>
-        ))}
+        <Linha
+          camada="contorno"
+          palavras={palavras}
+          stack={stack}
+          italico={sintese.italico}
+          fontSize={fontSize}
+          stroke={stroke + 2 * engrossar}
+          shadow={shadow}
+        />
+        {/* O "Forcar negrito": a letra engrossada na propria cor, por cima. */}
+        {engrossar > 0 && (
+          <Linha
+            camada="engrossar"
+            palavras={palavras}
+            stack={stack}
+            italico={sintese.italico}
+            fontSize={fontSize}
+            stroke={2 * engrossar}
+            shadow={shadow}
+          />
+        )}
       </div>
     </AbsoluteFill>
+  )
+}
+
+/**
+ * Quanto o "Forcar negrito" engrossa a letra, de cada lado, em fracao do
+ * corpo. O negrito sintetico do Chrome (font-weight na marra) quase nao
+ * aparecia na Komika, que ja e grossa, com o contorno de 6 a 12 px por cima.
+ */
+const ENGROSSAR = 0.025
+
+/**
+ * Uma linha da legenda.
+ *
+ * Normalmente e uma so: a letra na cor dela com o contorno preto por baixo
+ * (paint-order: stroke fill). Com o "Forcar negrito" sao DUAS no mesmo lugar:
+ * embaixo, a de contorno, com o traco preto mais largo; em cima, a mesma letra
+ * com um traco da PROPRIA cor, que a engrossa. O preto que sobra por fora
+ * continua da largura que ele escolheu.
+ */
+function Linha({
+  camada,
+  palavras,
+  stack,
+  italico,
+  fontSize,
+  stroke,
+  shadow,
+}: {
+  camada: 'contorno' | 'engrossar'
+  palavras: readonly { chave: string; texto: string; cor: string }[]
+  stack: string
+  italico: boolean
+  fontSize: number
+  stroke: number
+  shadow: CaptionShadow
+}) {
+  const engrossar = camada === 'engrossar'
+  return (
+    <div
+      style={{
+        display: 'flex',
+        // Uma linha so: quem nao cabe encolhe (larguraDaLinha), nao quebra.
+        flexWrap: 'nowrap',
+        justifyContent: 'center',
+        gap: `0 ${VAO}px`,
+        fontFamily: stack,
+        /*
+         * Cada arquivo de fonte e registrado com peso e estilo NORMAIS (o
+         * negrito de verdade e outro arquivo, ver fonteDaLegenda): 400 desenha
+         * o arquivo como ele e. O italico pedido numa fonte sem italico e o
+         * Chrome que inclina.
+         */
+        fontWeight: 400,
+        fontStyle: italico ? 'italic' : 'normal',
+        fontSize,
+        lineHeight: 1.15,
+        textAlign: 'center',
+        textTransform: 'uppercase',
+        /*
+         * Zero desliga o contorno: o -webkit-text-stroke com 0px ainda
+         * desenha uma linha de meio pixel em alguns zooms, e `undefined`
+         * some de verdade.
+         */
+        WebkitTextStroke: !engrossar && stroke > 0 ? `${stroke}px #000` : undefined,
+        paintOrder: 'stroke fill',
+        /*
+         * Sombra projetada por baixo do contorno.
+         *
+         * O contorno preto ja separa a letra do fundo, mas em cena clara ele
+         * encosta no claro do fundo e a legenda "gruda" na imagem. A sombra
+         * deslocada para baixo devolve profundidade sem engrossar a letra.
+         */
+        textShadow: engrossar ? undefined : sombraCss(shadow),
+        ...(engrossar ? { position: 'absolute', inset: 0 } : {}),
+      }}
+    >
+      {palavras.map((p) => (
+        <span
+          key={p.chave}
+          style={{
+            color: p.cor,
+            WebkitTextStroke: engrossar ? `${stroke}px ${p.cor}` : undefined,
+          }}
+        >
+          {p.texto}
+        </span>
+      ))}
+    </div>
   )
 }

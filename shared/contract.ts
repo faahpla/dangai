@@ -564,6 +564,101 @@ export function familiaDaFonte(nomeDoArquivo: string): string {
   return nomeDoArquivo.replace(/\.[^.]+$/, '')
 }
 
+/*
+ * AS FONTES INSTALADAS NO PC (26/11): a legenda escolhe pela FAMILIA ("Arial"),
+ * e nao mais so pelo arquivo largado na pasta. O nome guardado no projeto e no
+ * estilo leva o prefixo -- "pc:Arial" --, e o que nao tem prefixo continua
+ * sendo um arquivo da pasta de fontes, como sempre foi.
+ */
+export const PREFIXO_DA_FONTE_DO_PC = 'pc:'
+
+export function ehFonteDoPc(nome: string): boolean {
+  return nome.startsWith(PREFIXO_DA_FONTE_DO_PC)
+}
+
+/** O nome que aparece na tela: a familia, sem prefixo nem extensao. */
+export function nomeDaFonteNaTela(nome: string): string {
+  return ehFonteDoPc(nome) ? nome.slice(PREFIXO_DA_FONTE_DO_PC.length) : familiaDaFonte(nome)
+}
+
+/** Os arquivos de uma familia: normal, negrito, italico, negrito italico. */
+export type VarianteDaFonte = 'r' | 'b' | 'i' | 'bi'
+
+/**
+ * A fonte escolhida, com a URL que toca nesta sessao. A de uma familia do PC
+ * traz a URL de cada estilo que ela tem (`variantes`); `url` e o normal (ou o
+ * unico arquivo que houver).
+ */
+export interface FonteEscolhida {
+  nome: string
+  url: string
+  variantes?: Partial<Record<VarianteDaFonte, string>>
+}
+
+/**
+ * NEGRITO, ITALICO E O NEGRITO FORCADO: "quero escolher se quero ela bold ou
+ * nao, italic ou nao, e ativar o bold mesmo que ela nao tenha".
+ *
+ * - negrito: usa o arquivo negrito DA FONTE. Fonte sem negrito ignora (a tela
+ *   apaga o botao e aponta o forcado);
+ * - italico: o arquivo italico da fonte; sem ele, o Chrome inclina a letra;
+ * - forcarNegrito: o Dangai engrossa a letra na marra (um traco da propria
+ *   cor por cima, ver Linha em src/remotion/Captions.tsx), por cima do que
+ *   houver -- inclusive do negrito de verdade, para ficar ainda mais grossa.
+ */
+export const estiloDaFonteSchema = z.object({
+  negrito: z.boolean().catch(false),
+  italico: z.boolean().catch(false),
+  forcarNegrito: z.boolean().catch(false),
+})
+export type EstiloDaFonte = z.infer<typeof estiloDaFonteSchema>
+export const ESTILO_DA_FONTE_PADRAO: EstiloDaFonte = { negrito: false, italico: false, forcarNegrito: false }
+
+/** O que se faz na marra por cima do arquivo: engrossar (o Dangai) e inclinar (o Chrome). */
+export const sinteseDaFonteSchema = z.object({ negrito: z.boolean(), italico: z.boolean() })
+export type SinteseDaFonte = z.infer<typeof sinteseDaFonteSchema>
+export const SEM_SINTESE: SinteseDaFonte = { negrito: false, italico: false }
+
+/** A familia tem negrito de verdade? (Os arquivos da pasta e a embutida tem um estilo so.) */
+export function temNegritoDeVerdade(f: FonteEscolhida | null): boolean {
+  return Boolean(f?.variantes?.b || f?.variantes?.bi)
+}
+
+/** A familia tem italico de verdade? */
+export function temItalicoDeVerdade(f: FonteEscolhida | null): boolean {
+  return Boolean(f?.variantes?.i || f?.variantes?.bi)
+}
+
+/**
+ * A fonte que a legenda CARREGA para o estilo pedido, e o que o Chrome ainda
+ * faz na marra. Uma conta so, para o preview e o render.
+ *
+ * Cada arquivo e registrado como uma familia CSS propria (peso e estilo
+ * normais). Pedir italic a ela e o que faz o Chrome inclinar -- entao isso so
+ * acontece quando a gente quer, nunca porque ele achou um estilo "mais perto".
+ * O negrito forcado e um traco da propria cor (ver Linha, em Captions.tsx).
+ */
+export function fonteDaLegenda(
+  f: FonteEscolhida | null,
+  e: EstiloDaFonte,
+): { font: { family: string; url: string } | null; sintese: SinteseDaFonte } {
+  if (!f?.url) return { font: null, sintese: { negrito: e.forcarNegrito, italico: e.italico } }
+  if (!ehFonteDoPc(f.nome) || !f.variantes) {
+    return { font: { family: familiaDaFonte(f.nome), url: f.url }, sintese: { negrito: e.forcarNegrito, italico: e.italico } }
+  }
+  const v = f.variantes
+  // Do estilo pedido para o mais perto que existir; o que faltar vira sintese.
+  const ordem: VarianteDaFonte[] =
+    e.negrito && e.italico ? ['bi', 'b', 'i', 'r'] : e.negrito ? ['b', 'r', 'bi', 'i'] : e.italico ? ['i', 'r', 'bi', 'b'] : ['r', 'i', 'b', 'bi']
+  const escolhida = ordem.find((k) => v[k]) ?? null
+  const url = escolhida ? v[escolhida]! : f.url
+  const italicoReal = escolhida === 'i' || escolhida === 'bi'
+  return {
+    font: { family: `${nomeDaFonteNaTela(f.nome)} (Dangai ${escolhida ?? 'r'})`, url },
+    sintese: { negrito: e.forcarNegrito, italico: e.italico && !italicoReal },
+  }
+}
+
 /**
  * A curva da entrada elastica: a ESCALA da legenda ao longo da entrada.
  *
@@ -1303,6 +1398,8 @@ export const captionStyleSchema = z.object({
   y: captionYSchema.catch(CAPTION_Y_DEFAULT).optional(),
   scale: captionScaleSchema.catch(CAPTION_SCALE_DEFAULT).optional(),
   fontNome: z.string().catch('').optional(),
+  /** Negrito, italico e o negrito forcado (26/11). */
+  fontEstilo: estiloDaFonteSchema.catch(ESTILO_DA_FONTE_PADRAO).optional(),
   animation: captionAnimationSchema.catch(CAPTION_ANIMATION_DEFAULT).optional(),
   animationFrames: captionAnimationFramesSchema.catch(CAPTION_ANIMATION_FRAMES_DEFAULT).optional(),
   animationCurve: curvaDaEntradaSchema.catch(CURVA_DA_ENTRADA_PADRAO).optional(),
@@ -1736,6 +1833,12 @@ export const renderPropsSchema = z.object({
     .object({ family: z.string(), url: z.string() })
     .nullable()
     .default(null),
+  /**
+   * O que se faz na marra por cima da fonte: engrossar (o "Forcar negrito",
+   * um traco da propria cor) e inclinar (italico pedido numa fonte sem
+   * italico). Ver fonteDaLegenda. Default para props antigas.
+   */
+  captionFontSintese: sinteseDaFonteSchema.default(SEM_SINTESE),
   /**
    * Como cada bloco de legenda ENTRA na tela.
    *

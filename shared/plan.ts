@@ -1,6 +1,8 @@
 import { boundariesFrom, pickCuts } from './rhythm'
 import { fonteDaCamera } from './camera'
 import {
+  SEM_SINTESE,
+  type SinteseDaFonte,
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CURVA_DA_ENTRADA_PADRAO,
@@ -409,6 +411,8 @@ export function toRenderProps(
    */
   legenda: {
     font?: { family: string; url: string } | null
+    /** O que se faz na marra por cima da fonte: engrossar e inclinar (fonteDaLegenda). */
+    fontSintese?: SinteseDaFonte
     animation?: CaptionAnimation
     animationFrames?: number
     animationCurve?: CurvaDaEntrada
@@ -501,6 +505,7 @@ export function toRenderProps(
   const quadro = medidasDo(formato)
   const aspectoDoQuadro = quadro.width / quadro.height
   const captionFont = legenda.font ?? null
+  const captionFontSintese = legenda.fontSintese ?? SEM_SINTESE
   const captionAnimation = legenda.animation ?? CAPTION_ANIMATION_DEFAULT
   const captionAnimationFrames = legenda.animationFrames ?? CAPTION_ANIMATION_FRAMES_DEFAULT
   const captionAnimationCurve = legenda.animationCurve ?? CURVA_DA_ENTRADA_PADRAO
@@ -521,6 +526,7 @@ export function toRenderProps(
       captionColor,
       captionY,
       captionFont,
+      captionFontSintese,
       captionAnimation,
       captionAnimationFrames,
       captionAnimationCurve,
@@ -782,6 +788,7 @@ export function toRenderProps(
     captionColor,
     captionY,
     captionFont,
+    captionFontSintese,
     captionAnimation,
     captionAnimationFrames,
     captionAnimationCurve,

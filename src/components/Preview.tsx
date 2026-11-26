@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
-import { duracaoDoTrecho, familiaDaFonte, medidasDo, VIDEO_FPS } from '@shared/contract'
+import { duracaoDoTrecho, fonteDaLegenda, medidasDo, SEM_SINTESE, VIDEO_FPS } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
 import type { ImageAsset, ScenePlan } from '@shared/contract'
 import { sfxParaDisparar } from '@shared/sfx'
@@ -91,6 +91,7 @@ export function Preview() {
   const captionsEnabled = useProject((s) => s.captionsEnabled)
   const captionColor = useProject((s) => s.captionColor)
   const captionFont = useProject((s) => s.captionFont)
+  const captionFontEstilo = useProject((s) => s.captionFontEstilo)
   const captionAnimation = useProject((s) => s.captionAnimation)
   const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
   const captionAnimationCurve = useProject((s) => s.captionAnimationCurve)
@@ -151,11 +152,8 @@ export function Preview() {
             {
               // Sem URL resolvida (projeto recem-aberto), vale a embutida ate o
               // refreshFontes reencontrar o arquivo na pasta.
-              font: captionFont?.url ? {
-                    family: familiaDaFonte(captionFont.nome),
-                    url: captionFont.url,
-                  }
-                : null,
+              font: fonteDaLegenda(captionFont, captionFontEstilo).font,
+              fontSintese: fonteDaLegenda(captionFont, captionFontEstilo).sintese,
               animation: captionAnimation,
               animationFrames: captionAnimationFrames,
               animationCurve: captionAnimationCurve,
@@ -178,6 +176,7 @@ export function Preview() {
             captionColor,
             captionY,
             captionFont: null,
+            captionFontSintese: SEM_SINTESE,
             captionAnimation,
             captionAnimationFrames,
             captionAnimationCurve,
@@ -206,6 +205,7 @@ export function Preview() {
        * porque le o estado direto, e foi por isso que passou despercebido.
        */
       captionFont,
+      captionFontEstilo,
       captionAnimation,
       captionAnimationFrames,
       captionAnimationCurve,

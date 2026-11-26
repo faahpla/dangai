@@ -24,6 +24,7 @@ import {
   removerPreset,
   salvarPreset,
 } from '@/store/estilo-legenda'
+import { EscolherFonte } from './EscolherFonte'
 import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
 import { BarraDeEtapas } from './BarraDeEtapas'
 import { BotaoDeTransicao } from './BotaoDeTransicao'
@@ -32,7 +33,6 @@ import { SeletorDeCor } from './SeletorDeCor'
 import { useLayout } from '@/store/layout'
 import { useProject } from '@/store/project'
 import {
-  familiaDaFonte,
   CAPTION_ANIMATION_FRAMES_MAX,
   CAPTION_ANIMATION_FRAMES_MIN,
   CAPTION_COLOR_HEX,
@@ -529,11 +529,7 @@ function EstiloControl() {
   const captionScale = useProject((s) => s.captionScale)
   const setCaptionScale = useProject((s) => s.setCaptionScale)
   const formato = useProject((s) => s.formato)
-  const fontes = useProject((s) => s.fontes)
-  const captionFont = useProject((s) => s.captionFont)
-  const setCaptionFont = useProject((s) => s.setCaptionFont)
   const refreshFontes = useProject((s) => s.refreshFontes)
-  const openFontesDir = useProject((s) => s.openFontesDir)
   const captionAnimation = useProject((s) => s.captionAnimation)
   const setCaptionAnimation = useProject((s) => s.setCaptionAnimation)
   const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
@@ -816,30 +812,7 @@ function EstiloControl() {
 
             <div className="my-3 h-px bg-line" />
 
-            <span className="text-[10px] uppercase tracking-wide text-ink-3">Fonte</span>
-            <div className="mt-1.5 flex flex-col gap-1">
-              <Opcao ativo={captionFont === null} onClick={() => setCaptionFont(null)}>
-                Komika Axis <span className="text-ink-3">(a que vem no app)</span>
-              </Opcao>
-              {fontes.map((fonte) => (
-                <Opcao
-                  key={fonte.nome}
-                  ativo={captionFont?.nome === fonte.nome}
-                  onClick={() => setCaptionFont(fonte.nome)}
-                >
-                  {familiaDaFonte(fonte.nome)}
-                </Opcao>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => void openFontesDir()}
-              className="mt-1.5 text-[11px] text-ink-3 underline-offset-2 hover:text-ink-2 hover:underline"
-            >
-              {fontes.length === 0
-                ? 'Abrir a pasta e largar suas fontes (.ttf, .otf)'
-                : 'Abrir a pasta de fontes'}
-            </button>
+            <EscolherFonte />
 
             <div className="my-3 h-px bg-line" />
 

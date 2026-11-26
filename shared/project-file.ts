@@ -3,6 +3,8 @@ import { edicaoDeAudioSchema } from './edicao-de-audio'
 import { resumoNoProjetoSchema } from './resumo-de-manga'
 import {
   captionBlockSchema,
+  ESTILO_DA_FONTE_PADRAO,
+  estiloDaFonteSchema,
   CAPTION_ANIMATION_DEFAULT,
   CAPTION_ANIMATION_FRAMES_DEFAULT,
   CAPTION_MARK_DEFAULT,
@@ -247,6 +249,8 @@ export const projectFileSchema = z.object({
    * se o arquivo nao estiver mais la, volta para a fonte embutida.
    */
   captionFont: z.string().default(''),
+  /** Negrito, italico e o negrito forcado da fonte (26/11). Projeto antigo: nenhum. */
+  captionFontEstilo: estiloDaFonteSchema.default(ESTILO_DA_FONTE_PADRAO),
   /** Como a legenda entra. Default para projeto salvo antes disto abrir igual. */
   captionAnimation: captionAnimationSchema.default(CAPTION_ANIMATION_DEFAULT),
   /** Velocidade da entrada elastica, em frames. Default para projeto antigo. */

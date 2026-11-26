@@ -34,7 +34,7 @@ import type {
 import type { OpenedProject, ProjectFile } from '@shared/project-file'
 import type { MedidaDoSom } from '@shared/loudness'
 import type { ResumoDoManga, ResumoNoProjeto, RoteiroDeMangaGuardado, SerieDoManga } from '@shared/resumo-de-manga'
-import type { AudioEditado, OndaDaGravacao, ComponenteDoDangai, DescricaoDoPlugin, PerfilDoMeuJeito, PluginInstalado, PreparoDoDangai } from '@shared/channels'
+import type { AudioEditado, FamiliaDeFonteDoPc, OndaDaGravacao, ComponenteDoDangai, DescricaoDoPlugin, PerfilDoMeuJeito, PluginInstalado, PreparoDoDangai } from '@shared/channels'
 
 /**
  * Unica superficie entre renderer e sistema. Tipada por DangaiBridge, entao um
@@ -159,6 +159,8 @@ const bridge: DangaiBridge = {
     ipcRenderer.invoke(IPC.listFontes) as Promise<IpcResult<{ nome: string; url: string }[]>>,
 
   openFontesDir: () => ipcRenderer.invoke(IPC.openFontesDir) as Promise<IpcResult<null>>,
+
+  fontesDoPc: () => ipcRenderer.invoke(IPC.fontesDoPc) as Promise<IpcResult<FamiliaDeFonteDoPc[]>>,
 
   upscaleAssets: (assets, limites) =>
     ipcRenderer.invoke(IPC.upscaleAssets, assets, limites) as Promise<

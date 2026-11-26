@@ -1,5 +1,8 @@
 import {
   curvaDaEntradaSchema,
+  ehFonteDoPc,
+  PREFIXO_DA_FONTE_DO_PC,
+  type FonteEscolhida,
   CAPTION_ANIMATION_FRAMES_MAX,
   CAPTION_ANIMATION_FRAMES_MIN,
   CAPTION_STROKE_MAX,
@@ -7,10 +10,30 @@ import {
   MUSIC_GAIN_DB_MAX,
   MUSIC_GAIN_DB_MIN,
 } from '@shared/contract'
+import type { FamiliaDeFonteDoPc } from '@shared/channels'
 import type { GetProjeto, ProjectState, SetProjeto } from '../project'
 
+/**
+ * A fonte pelo nome: um arquivo da pasta, ou "pc:Familia" entre as instaladas
+ * (sem diferenca de maiusculas: o Windows tambem nao faz). null = nao existe
+ * neste PC (ou a lista ainda nao foi lida).
+ */
+export function resolverFonte(
+  nome: string,
+  fontes: readonly { nome: string; url: string }[],
+  fontesDoPc: readonly FamiliaDeFonteDoPc[] | null,
+): FonteEscolhida | null {
+  if (!ehFonteDoPc(nome)) return fontes.find((f) => f.nome === nome) ?? null
+  const alvo = nome.slice(PREFIXO_DA_FONTE_DO_PC.length).toLowerCase()
+  const f = fontesDoPc?.find((x) => x.familia.toLowerCase() === alvo)
+  if (!f) return null
+  const v = f.variantes
+  const url = v.r ?? v.b ?? v.i ?? v.bi
+  return url ? { nome: PREFIXO_DA_FONTE_DO_PC + f.familia, url, variantes: v } : null
+}
+
 /** Do store do editor (ver ../project.ts): o estilo da legenda, a musica, os textos do card e o metadata. */
-export type FatiaDoEstilo = Pick<ProjectState, 'toggleSfx' | 'setCard' | 'generateMetadata' | 'pickMusic' | 'clearMusic' | 'setMusicGain' | 'refreshSfx' | 'setUpdate' | 'setAppVersion' | 'toggleCaptions' | 'setCaptionColor' | 'refreshFontes' | 'setCaptionFont' | 'openFontesDir' | 'setCaptionAnimation' | 'setCaptionAnimationFrames' | 'setCaptionAnimationCurve' | 'setCaptionMark' | 'setCaptionPontuacao' | 'setCaptionShadow' | 'setCaptionStroke'>
+export type FatiaDoEstilo = Pick<ProjectState, 'toggleSfx' | 'setCard' | 'generateMetadata' | 'pickMusic' | 'clearMusic' | 'setMusicGain' | 'refreshSfx' | 'setUpdate' | 'setAppVersion' | 'toggleCaptions' | 'setCaptionColor' | 'refreshFontes' | 'setCaptionFont' | 'setCaptionFontEstilo' | 'openFontesDir' | 'setCaptionAnimation' | 'setCaptionAnimationFrames' | 'setCaptionAnimationCurve' | 'setCaptionMark' | 'setCaptionPontuacao' | 'setCaptionShadow' | 'setCaptionStroke'>
 
 export const fatiaDoEstilo = (set: SetProjeto, get: GetProjeto): FatiaDoEstilo => ({
 
@@ -89,19 +112,22 @@ export const fatiaDoEstilo = (set: SetProjeto, get: GetProjeto): FatiaDoEstilo =
   setCaptionColor: (color) => set({ captionColor: color }),
 
   refreshFontes: async () => {
-    const r = await window.dangai.listFontes()
-    if (!r.ok) return
-    const fontes = r.value
+    // As duas listas juntas: a da pasta e as instaladas no Windows (26/11).
+    const [r, pc] = await Promise.all([window.dangai.listFontes(), window.dangai.fontesDoPc()])
+    const fontes = r.ok ? r.value : get().fontes
+    const fontesDoPc = pc.ok ? pc.value : get().fontesDoPc
     /*
      * A fonte escolhida some quando o arquivo some.
      *
-     * Ele pode apagar da pasta entre uma sessao e outra. Manter a escolha
-     * apontando para um arquivo que nao existe faria o render cair na fonte
-     * reserva sem dizer por que.
+     * Ele pode apagar da pasta (ou desinstalar a fonte) entre uma sessao e
+     * outra. Manter a escolha apontando para um arquivo que nao existe faria o
+     * render cair na fonte reserva sem dizer por que. Lista que NAO veio (erro
+     * ao ler) nao derruba nada: so o que se sabe que sumiu.
      */
     const escolhida = get().captionFont
-    const aindaExiste = escolhida && fontes.find((f) => f.nome === escolhida.nome)
-    set({ fontes, captionFont: aindaExiste ?? null })
+    const listaDela = escolhida && ehFonteDoPc(escolhida.nome) ? pc.ok : r.ok
+    const achada = escolhida ? resolverFonte(escolhida.nome, fontes, fontesDoPc) : null
+    set({ fontes, fontesDoPc, captionFont: escolhida && !achada && !listaDela ? escolhida : achada })
   },
 
   setCaptionFont: (nome) => {
@@ -109,9 +135,11 @@ export const fatiaDoEstilo = (set: SetProjeto, get: GetProjeto): FatiaDoEstilo =
       set({ captionFont: null })
       return
     }
-    const achada = get().fontes.find((f) => f.nome === nome)
+    const achada = resolverFonte(nome, get().fontes, get().fontesDoPc)
     if (achada) set({ captionFont: achada })
   },
+
+  setCaptionFontEstilo: (patch) => set((s) => ({ captionFontEstilo: { ...s.captionFontEstilo, ...patch } })),
 
   openFontesDir: async () => {
     await window.dangai.openFontesDir()

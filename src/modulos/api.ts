@@ -26,7 +26,10 @@ export interface ModuloDoRenderer {
    * inerte e os atalhos quietos por baixo dela.
    */
   Telas?: ComponentType
-  /** Secoes nas Configuracoes, cada uma depois de uma ancora do nucleo. */
+  /**
+   * Secoes nas Configuracoes. Desde 26/11 todas as do modulo ficam na PAGINA
+   * dele (o nome do modulo, no menu da esquerda), na ordem desta lista.
+   */
   secoesDasConfiguracoes?: SecaoDasConfiguracoes[]
   /** Comandos na paleta (Ctrl+K). Chamado a cada vez que a paleta monta a lista. */
   comandos?(): ComandoDoModulo[]
@@ -58,7 +61,11 @@ export interface PropsDosBotoesDaTelaInicial {
   definirAlvo(alvo: boolean): void
 }
 
-/** Onde uma secao do modulo entra nas Configuracoes. */
+/**
+ * Onde uma secao do modulo entrava na lista corrida das Configuracoes. Desde
+ * 26/11 cada modulo tem a propria pagina e isto nao muda mais o lugar; fica
+ * para os modulos continuarem compilando.
+ */
 export type AncoraDasConfiguracoes = 'ia' | 'whisper' | 'sons' | 'biblioteca' | 'fim'
 
 export interface SecaoDasConfiguracoes {

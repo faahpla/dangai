@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { episodiosQueFaltam, lerBroll, pareceBroll, resolverTemporadas, resumoDoBroll, rotuloDoItem } from '@shared/broll'
 import { buildScriptIndex } from '@shared/script-reader'
-import { classifyFile } from '@shared/channels'
+import { classifyFile, type FamiliaDeFonteDoPc } from '@shared/channels'
 import { avisar } from './aviso'
 import type {
   ScriptBlock,
@@ -17,6 +17,9 @@ import {
   REGRAS_DA_LEGENDA_PADRAO,
   type RegrasDaLegenda,
   type CaptionPreset,
+  type EstiloDaFonte,
+  type FonteEscolhida,
+  ESTILO_DA_FONTE_PADRAO,
   type CurvaGuardada,
   type Bin,
   CAPTION_ANIMATION_DEFAULT,
@@ -264,9 +267,16 @@ export interface ProjectState {
    * do arquivo junto com a URL: o nome e o que sobrevive no projeto salvo, a
    * URL morre com a sessao que a criou.
    */
-  captionFont: { nome: string; url: string } | null
+  captionFont: FonteEscolhida | null
   /** As fontes disponiveis na pasta. Lida na abertura e ao voltar das settings. */
   fontes: { nome: string; url: string }[]
+  /**
+   * As familias instaladas no Windows (26/11), com a URL de cada estilo.
+   * null = ainda nao lidas (a primeira leitura e na abertura do app).
+   */
+  fontesDoPc: FamiliaDeFonteDoPc[] | null
+  /** Negrito, italico e o negrito forcado da fonte da legenda. */
+  captionFontEstilo: EstiloDaFonte
   /** Como a legenda entra na tela. 'nenhuma' e o padrao. */
   captionAnimation: CaptionAnimation
   /** Quantos frames a entrada elastica leva. Menos = mais rapida. */
@@ -610,8 +620,13 @@ export interface ProjectState {
   setCaptionColor: (color: CaptionColor) => void
   /** Recarrega a lista de fontes da pasta. */
   refreshFontes: () => Promise<void>
-  /** Escolhe a fonte da legenda pelo nome do arquivo. null volta a embutida. */
+  /**
+   * Escolhe a fonte da legenda pelo nome: o arquivo da pasta, ou "pc:Familia"
+   * para uma instalada. null volta a embutida.
+   */
   setCaptionFont: (nome: string | null) => void
+  /** Liga ou desliga negrito, italico e o negrito forcado. */
+  setCaptionFontEstilo: (patch: Partial<EstiloDaFonte>) => void
   /** Abre a pasta de fontes no explorador, para ele largar os arquivos dele. */
   openFontesDir: () => Promise<void>
   setCaptionAnimation: (animation: CaptionAnimation) => void
@@ -1061,6 +1076,8 @@ export const useProject = create<ProjectState>((set, get) => ({
   captionColor: CAPTION_COLOR_DEFAULT,
   captionFont: null,
   fontes: [],
+  fontesDoPc: null,
+  captionFontEstilo: ESTILO_DA_FONTE_PADRAO,
   captionAnimation: CAPTION_ANIMATION_DEFAULT,
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
   captionAnimationCurve: CURVA_DA_ENTRADA_PADRAO,

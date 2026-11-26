@@ -161,6 +161,7 @@ import { iaDisponivel, testarGemini } from './services/llm'
 import { getSettings, getSettingsForRenderer, saveSettings } from './services/settings'
 import { ensureSfxDir, listSfx, sfxDir } from './services/sfx'
 import { caminhoDaFonte, ensureFontesDir, fontesDir, listFontes } from './services/fontes'
+import { fontesDoPc } from './services/fontes-do-pc'
 import {
   ampliarVideoPronto,
   cancelarUpscale,
@@ -179,7 +180,7 @@ import { montarRelatorio } from './services/registro'
 import { componentesDoDangai, prepararDangai } from './services/preparar'
 import { concluirEdicao, exportarEdicao, limparTrabalhoDaEdicao, ondaDaEdicao, renderizarEdicao, silenciosDaGravacao } from './services/edicao-de-audio'
 import { descreverPlugin, fecharJanelasDosPlugins, janelaDoPlugin, listarPlugins, prepararPlugins } from './services/vst'
-import type { AudioEditado, DescricaoDoPlugin, OndaDaGravacao, PluginInstalado } from '@shared/channels'
+import type { AudioEditado, DescricaoDoPlugin, FamiliaDeFonteDoPc, OndaDaGravacao, PluginInstalado } from '@shared/channels'
 import type { CadeiaDeAudio, EdicaoDeAudio, OpcoesDosSilencios } from '@shared/edicao-de-audio'
 import { aprenderDoProjeto, perfilDoMeuJeito } from './services/meu-jeito'
 import type { ComponenteDoDangai, PerfilDoMeuJeito } from '@shared/channels'
@@ -521,6 +522,14 @@ export function registerIpc(): void {
       const caminho = caminhoDaFonte(nome)
       return caminho ? [{ nome, url: publish(caminho) }] : []
     }),
+  )
+
+  handle<[], FamiliaDeFonteDoPc[]>(IPC.fontesDoPc, async () =>
+    (await fontesDoPc()).map(({ familia, arquivos }) => ({
+      familia,
+      // publish so registra o caminho (sem ler nada): centenas sao baratas.
+      variantes: Object.fromEntries(Object.entries(arquivos).map(([k, caminho]) => [k, publish(caminho)])),
+    })),
   )
 
   handle<[], null>(IPC.openFontesDir, async () => {

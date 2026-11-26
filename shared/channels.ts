@@ -7,6 +7,7 @@ import type {
   RenderProgress,
   RenderProps,
   Transcript,
+  VarianteDaFonte,
 } from './contract'
 import type { PontoDeGanho } from './ducking'
 import type {
@@ -49,6 +50,13 @@ import type { PontesDosModulos } from '../modulos/registro.preload'
  * ponte: vira um valor com mensagem pronta para a interface. A copy do erro
  * explica o que aconteceu e como resolver -- nunca pede desculpa.
  */
+
+/** Uma familia de fonte instalada no PC: a URL de cada estilo que ela tem. */
+export interface FamiliaDeFonteDoPc {
+  familia: string
+  variantes: Partial<Record<VarianteDaFonte, string>>
+}
+
 export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 /** Canais de IPC, centralizados para nao existir string solta nos dois lados. */
@@ -62,6 +70,8 @@ export const IPC = {
   readScript: 'script:read',
   listSfx: 'sfx:list',
   listFontes: 'fontes:list',
+  /** (26/11) As familias de fonte instaladas no Windows, para a legenda. */
+  fontesDoPc: 'fontes:pc',
   upscaleAssets: 'upscale:assets',
   upscaleVideoPronto: 'upscale:video-pronto',
   /** (16/11) Juntar projetos de ~30 s num video de 60 s+ (ver shared/juntar-projetos.ts). */
@@ -969,6 +979,12 @@ export interface DangaiBridge {
    * nem o disco: ele busca o arquivo pelo mesmo 127.0.0.1 que serve os clipes.
    */
   listFontes(): Promise<IpcResult<{ nome: string; url: string }[]>>
+  /**
+   * As familias de fonte INSTALADAS no Windows (26/11), cada uma com a URL de
+   * cada estilo que tem (normal, negrito, italico, negrito italico) -- o mesmo
+   * 127.0.0.1 das fontes da pasta, para o render achar o arquivo.
+   */
+  fontesDoPc(): Promise<IpcResult<FamiliaDeFonteDoPc[]>>
   /** Abre a pasta de fontes no explorador. */
   openFontesDir(): Promise<IpcResult<null>>
   /**

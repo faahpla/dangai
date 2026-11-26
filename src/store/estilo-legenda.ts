@@ -6,8 +6,10 @@ import {
   type CaptionStyle,
   type CurvaDaEntrada,
   type CurvaGuardada,
+  nomeDaFonteNaTela,
 } from '@shared/contract'
 import { useProject } from './project'
+import { resolverFonte } from './projeto/estilo'
 import { estaCarregando } from './quiet'
 import { estaDesfazendo } from './undo'
 import { exportarPreset, importarPreset, nomeLivre } from './arquivo-de-preset'
@@ -46,6 +48,7 @@ function estiloDe(s: ReturnType<typeof useProject.getState>): CaptionStyle {
     // Pelo NOME: a URL e desta sessao e nao vale amanha. Quem reencontra o
     // arquivo na pasta e o refreshFontes, na abertura.
     fontNome: s.captionFont?.nome ?? '',
+    fontEstilo: s.captionFontEstilo,
     animation: s.captionAnimation,
     animationFrames: s.captionAnimationFrames,
     mark: s.captionMark,
@@ -65,6 +68,7 @@ function mudou(a: ReturnType<typeof useProject.getState>, b: typeof a): boolean 
     a.captionY !== b.captionY ||
     a.captionScale !== b.captionScale ||
     a.captionFont?.nome !== b.captionFont?.nome ||
+    a.captionFontEstilo !== b.captionFontEstilo ||
     a.captionAnimation !== b.captionAnimation ||
     a.captionAnimationFrames !== b.captionAnimationFrames ||
     a.captionMark !== b.captionMark ||
@@ -163,6 +167,18 @@ export async function aplicarEstiloGuardado(): Promise<void> {
   const parsed = captionStyleSchema.safeParse(r.value.captionStyle)
   if (!parsed.success) return
   aplicarEstilo(parsed.data, false)
+
+  /*
+   * A FONTE vem depois, quando as listas (pasta e PC) estiverem lidas -- antes
+   * ela nunca voltava: escolher uma fonte valia so ate fechar o app (26/11).
+   * Se um projeto abriu nesse meio tempo, a fonte e a DELE: nao mexe.
+   */
+  const fonte = parsed.data.fontNome
+  if (!fonte) return
+  await useProject.getState().refreshFontes()
+  const s = useProject.getState()
+  if (s.projectPath || s.audio || s.captionFont) return
+  aplicarEstilo({ fontNome: fonte }, true)
 }
 
 /**
@@ -185,10 +201,16 @@ export function aplicarEstilo(e: CaptionStyle, comFonte: boolean): void {
   if (e.shadow !== undefined) store.setCaptionShadow(e.shadow)
   if (e.stroke !== undefined) store.setCaptionStroke(e.stroke)
   if (e.regras !== undefined) store.setCaptionRules(e.regras)
+  if (e.fontEstilo !== undefined) store.setCaptionFontEstilo(e.fontEstilo)
   if (comFonte && e.fontNome !== undefined) {
-    const existe = store.fontes.some((f) => f.nome === e.fontNome)
-    store.setCaptionFont(e.fontNome && existe ? e.fontNome : null)
+    store.setCaptionFont(e.fontNome && fonteExiste(e.fontNome) ? e.fontNome : null)
   }
+}
+
+/** A fonte (da pasta ou instalada) existe neste PC? */
+function fonteExiste(nome: string): boolean {
+  const s = useProject.getState()
+  return resolverFonte(nome, s.fontes, s.fontesDoPc) !== null
 }
 
 function gravarPresets(lista: CaptionPreset[]): void {
@@ -237,9 +259,9 @@ export async function importarEstilo(): Promise<string | null> {
   gravarPresets([...useProject.getState().captionPresets, { nome, estilo: r.dados }])
   aplicarEstilo(r.dados, true)
   const fonte = r.dados.fontNome
-  const semFonte = fonte && !useProject.getState().fontes.some((f) => f.nome === fonte)
+  const semFonte = fonte && !fonteExiste(fonte)
   return semFonte
-    ? `"${nome}" importado e aplicado. A fonte "${fonte}" não está na sua pasta de fontes -- ficou a embutida.`
+    ? `"${nome}" importado e aplicado. A fonte "${nomeDaFonteNaTela(fonte)}" não está instalada neste PC -- ficou a embutida.`
     : `"${nome}" importado e aplicado.`
 }
 

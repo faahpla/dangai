@@ -1,4 +1,4 @@
-import { familiaDaFonte, medidasDo } from '@shared/contract'
+import { fonteDaLegenda, medidasDo } from '@shared/contract'
 import { alvoDoRastreio, chavesDoCaminho, enquadrar, fonteDaCamera, janelaDaCamera } from '@shared/camera'
 import { toRenderProps, totalFrames } from '@shared/plan'
 import { trilhaParaMixar } from '@shared/ducking'
@@ -157,11 +157,8 @@ export const fatiaDoRender = (set: SetProjeto, get: GetProjeto): FatiaDoRender =
         // separadas, e quando discordavam o fim do video ficava sem imagem.
         audio.durationSec,
         {
-          font: get().captionFont?.url ? {
-            family: familiaDaFonte(get().captionFont!.nome),
-            url: get().captionFont!.url,
-          }
-        : null,
+          font: fonteDaLegenda(get().captionFont, get().captionFontEstilo).font,
+          fontSintese: fonteDaLegenda(get().captionFont, get().captionFontEstilo).sintese,
           animation: get().captionAnimation,
           animationFrames: get().captionAnimationFrames,
           animationCurve: get().captionAnimationCurve,

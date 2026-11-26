@@ -12,7 +12,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion'
-import { rampaDoFade, resolverTransicao, VIDEO_FPS, type RenderProps } from '@shared/contract'
+import { rampaDoFade, resolverTransicao, SEM_SINTESE, VIDEO_FPS, type RenderProps } from '@shared/contract'
 import { transformNoTempo } from '@shared/transform'
 import { Scene, easingFor, motionFor } from './Scene'
 import { CamadaDeAjuste } from './Ajuste'
@@ -65,6 +65,7 @@ export function Video({
   captionColor,
   captionY,
   captionFont,
+  captionFontSintese,
   captionAnimation,
   captionAnimationFrames,
   captionAnimationCurve,
@@ -175,6 +176,7 @@ export function Video({
           color={captionColor}
           y={captionY}
           font={captionFont}
+          sintese={captionFontSintese ?? SEM_SINTESE}
           animation={captionAnimation}
           animationFrames={captionAnimationFrames}
           animationCurve={captionAnimationCurve}
