@@ -15,6 +15,7 @@ import {
   faltando,
   filtrarAnimes,
   numeroDoArquivo,
+  chaveDoVideo,
   paraCortarNaPasta,
   pastaDoAnime,
   prefixoDaSerie,
@@ -117,6 +118,15 @@ ok('o mesmo arquivo e o mesmo numero nao contam', !falta.some((f) => f.episodio 
 ok('abertura e legenda ficam de fora', !falta.some((f) => /NCOP|srt/i.test(f.arquivo)))
 ok('o que nao tem numero entra no fim', falta[falta.length - 1]?.arquivo.endsWith('Especial.mkv') === true && falta[falta.length - 1]?.episodio === null)
 ok('a temporada da pasta e a dos cortados', falta.every((f) => f.temporada === 1))
+// 25/11: o 0925 e o 1053 cortados como animes proprios (nome lido errado) apareciam como "falta" no 1057.
+const wano = 'D:\\Episódios\\One Piece\\Season 20 - Wano Country\\'
+const doWano = ['0925 - Dashing!', '1053 - Sanji', '1057 - For Luffy', '1071 - Gear Five!'].map((t) => `${wano}[Anime Time] One Piece - ${t}.mkv`)
+const so1057 = [{ video: doWano[2]!, temporada: 1, episodio: 1, tipo: '' as const }]
+const todos = new Set(doWano.slice(0, 3).map(chaveDoVideo))
+const faltaWano = paraCortarNaPasta(doWano, so1057, todos)
+ok('cortado como OUTRO anime nao falta', faltaWano.length === 1 && faltaWano[0]!.episodio === 1071, faltaWano.map((f) => f.episodio).join())
+ok('sem a lista do acervo, aparecia (o defeito)', paraCortarNaPasta(doWano, so1057).length === 3)
+ok('a chave ignora barra e maiuscula', chaveDoVideo('D:/Episódios/A.MKV') === chaveDoVideo('d:\\episódios\\a.mkv'))
 
 console.log('rotulos e titulos')
 ok('S01E05', rotuloDoEpisodioDoAcervo({ tipo: '', temporada: 1, episodio: 5, titulo: '' }) === 'S01E05')

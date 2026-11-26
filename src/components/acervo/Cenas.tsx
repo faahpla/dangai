@@ -110,7 +110,15 @@ export function GradeDeCenas({
           <input type="range" min={130} max={340} step={10} value={largura} onChange={(e) => setLargura(Number(e.target.value))} className="h-1 w-24 accent-[var(--color-accent)]" />
         </label>
       </div>
-      <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto pb-20" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${largura}px, 1fr))` }}>
+      {/*
+        QUEM ROLA E A CAIXA DE FORA, NAO A GRADE (25/11). Com a grade sendo a
+        propria area de rolar (altura presa), o navegador repartia a altura da
+        tela entre as linhas: o cartao tem overflow-hidden, entao o minimo dele
+        e zero, e com 602 cenas cada linha virava um fiapo de 5px. Sem altura
+        presa, cada linha ganha a altura do 16:9.
+      */}
+      <div className="min-h-0 flex-1 overflow-y-auto pb-20" data-acervo="rolagem">
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${largura}px, 1fr))` }}>
         {cenas.map((c, i) => (
           <Cena
             key={c.id}
@@ -125,6 +133,7 @@ export function GradeDeCenas({
             }
           />
         ))}
+      </div>
       </div>
       {escolhidas.length > 0 && (
         <div className="sticky bottom-0 z-10 -mt-16 flex shrink-0 flex-wrap items-center gap-2 rounded-md border border-accent/40 bg-elevated px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.5)]" data-acervo="barra">

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import {
+  chaveDoVideo,
   paraCortarNaPasta,
   pastaDoAnime,
   type Acervo,
@@ -62,6 +63,8 @@ function videosDeOrigem(): Map<number, string> {
  * de origem (nunca a biblioteca inteira).
  */
 function oQueFaltaCortar(episodios: readonly EpisodioDoAcervo[]): Record<string, ParaCortar[]> {
+  // Os de origem do acervo todo: o cortado como outro anime tambem e cortado.
+  const jaCortados = new Set(episodios.filter((e) => e.video).map((e) => chaveDoVideo(e.video)))
   const porAnime = new Map<string, EpisodioDoAcervo[]>()
   for (const e of episodios) {
     if (!e.video || e.tipo === 'BROLL') continue
@@ -88,7 +91,7 @@ function oQueFaltaCortar(episodios: readonly EpisodioDoAcervo[]): Record<string,
       } catch {
         continue
       }
-      achados.push(...paraCortarNaPasta(arquivos, daPasta))
+      achados.push(...paraCortarNaPasta(arquivos, daPasta, jaCortados))
     }
     if (achados.length) saida[anime] = achados
   }

@@ -272,18 +272,28 @@ export function prefixoDaSerie(arquivo: string): string {
     .trim()
 }
 
+/** O caminho de um video do jeito que se compara (barra invertida, minusculo). */
+export function chaveDoVideo(caminho: string): string {
+  return caminho.replace(/\//g, '\\').toLowerCase()
+}
+
 /**
  * O que falta cortar numa pasta de origem: os videos que nao viraram
  * episodio. Cortado = o mesmo arquivo de algum episodio, ou o mesmo numero na
  * temporada que a pasta tem. So entram os arquivos da MESMA serie (o mesmo
  * comeco de nome dos ja cortados de la): a pasta de downloads costuma ter
  * varios animes.
+ *
+ * `jaCortados`: os videos de origem do acervo INTEIRO (`chaveDoVideo`). Um
+ * arquivo cortado como outro anime (o nome lido errado, 25/11: "One Piece -
+ * 1053 - Titulo" virou um anime proprio) continua cortado -- nao "falta".
  */
 export function paraCortarNaPasta(
   arquivos: readonly string[],
   cortados: readonly { video: string; temporada: number; episodio: number; tipo: TipoDoEpisodio }[],
+  jaCortados: ReadonlySet<string> = new Set(),
 ): ParaCortar[] {
-  const normal = (p: string): string => p.replace(/\//g, '\\').toLowerCase()
+  const normal = chaveDoVideo
   const daPasta = new Set(cortados.map((c) => normal(c.video)))
   // A temporada da pasta: a mais comum entre os cortados que vieram dela.
   const conta = new Map<number, number>()
@@ -293,7 +303,7 @@ export function paraCortarNaPasta(
   const prefixos = new Set(cortados.map((c) => prefixoDaSerie(c.video)).filter((p) => p.length >= 3))
   const saida: ParaCortar[] = []
   for (const arquivo of arquivos) {
-    if (!ehVideo(arquivo) || daPasta.has(normal(arquivo))) continue
+    if (!ehVideo(arquivo) || daPasta.has(normal(arquivo)) || jaCortados.has(normal(arquivo))) continue
     if (prefixos.size > 0) {
       const p = prefixoDaSerie(arquivo)
       if (![...prefixos].some((x) => p === x || p.startsWith(x) || x.startsWith(p) && p.length >= 3)) continue
