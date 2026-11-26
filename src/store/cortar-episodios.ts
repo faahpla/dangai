@@ -11,6 +11,7 @@ import {
   type VideoDoLink,
 } from '@shared/ancut'
 import { useProject } from './project'
+import { useAcervo } from './acervo'
 import { quandoOMotorMudar } from './motor-de-cortes'
 
 /**
@@ -314,6 +315,10 @@ async function processar(id: string): Promise<void> {
     editar(id, { status: 'pronto', andamento: 1, etapa: undefined, cenas: fim.cenas, personagens: fim.personagens })
     // A Biblioteca ja aberta le de novo (so o episodio novo); fechada, le quando abrir.
     if (useProject.getState().library) void useProject.getState().syncLibrary()
+    // O Acervo tambem (25/11: depois de reconhecer de novo, ele mostrava as contagens de antes).
+    // Aberto, le agora; fechado, esquece o que leu e le ao abrir.
+    if (useAcervo.getState().aberto) void useAcervo.getState().ler()
+    else useAcervo.setState({ dados: null, personagens: null })
     // Batizou e pediu para reforcar: os rostos mais confiaveis viram foto do elenco (so acrescenta).
     if (item(id)?.reforcarAoTerminar && fim.pasta) await reforcarDepois(fim.pasta)
   } else if (fim.tipo === 'cancelado') {
