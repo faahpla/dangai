@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useProject } from '@/store/project'
+import { useAcervo } from '@/store/acervo'
+import { useCortar } from '@/store/cortar-episodios'
 
 /**
  * Drop em toda a janela, nao apenas na area da dropzone. Devolve se algo esta
@@ -46,6 +48,9 @@ export function useFileDrop(): boolean {
 
     const onDrop = (event: DragEvent) => {
       event.preventDefault()
+      // Com uma tela de ferramenta aberta por cima (Cortar episodios, Acervo), o arquivo
+      // solto nao e narracao nem clipe: o resto do app (e os modulos) nao o pegam (26/11).
+      if (useCortar.getState().aberta || useAcervo.getState().aberto) return
 
       const files = Array.from(event.dataTransfer?.files ?? [])
       if (files.length === 0) return

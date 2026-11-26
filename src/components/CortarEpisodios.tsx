@@ -58,6 +58,9 @@ function Tela() {
 
   const soltar = (ev: React.DragEvent): void => {
     ev.preventDefault()
+    // O arquivo e DESTA tela: sem isto o soltar seguia para a janela inteira, e o modulo
+    // do recap perguntava "Usar como clipe / Gerar recap" por cima da fila (26/11).
+    ev.stopPropagation()
     setSobre(false)
     const caminhos = Array.from(ev.dataTransfer.files)
       .map((f) => window.dangai.pathForFile(f))
@@ -66,7 +69,15 @@ function Tela() {
   }
 
   return (
-    <div className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-6" onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
+    <div
+      className="fixed inset-0 z-30 grid place-items-center bg-black/60 p-6"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        // Solto fora da area da fila (no cabecalho, no fundo escuro): nao faz nada -- nem o soltar do resto do app.
+        e.preventDefault()
+        e.stopPropagation()
+      }}
+    >
       <div role="dialog" aria-label="Cortar episódios" className="glass enter flex h-[min(800px,94vh)] w-[min(1080px,96vw)] flex-col overflow-hidden rounded-lg" data-cortar="tela">
         <header className="flex shrink-0 items-center gap-3 border-b border-line px-5 py-4">
           <span className="grid size-9 place-items-center rounded-md bg-accent-dim text-accent">
