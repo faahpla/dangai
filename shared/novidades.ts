@@ -20,6 +20,16 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.14.2',
+    itens: [
+      'Acervo mais enxuto: capas menores (cabem mais animes na tela), e o topo do anime numa faixa só — os números, o que falta e os botões.',
+      'Na página do anime, escolha a ordem dos episódios (do primeiro ao último, do último ao primeiro, cortados por último, mais ou menos marcados) e o que mostrar (todos, só cortados, com personagem ou os que faltam). Fica guardado para a próxima vez.',
+      '"Reconhecer os N só cortados": um botão manda todos os episódios do anime que ainda não têm ninguém marcado para a fila, de uma vez. Você escolhe Modo Descoberta (batizar na mão) ou reconhecer sozinho.',
+      '"Reconhecer de novo" agora pergunta como: Batizar na mão (Modo Descoberta) ou sozinho, pelo elenco da internet. Antes ia direto para o automático, que em anime de elenco enorme demora e erra.',
+      'Depois de cortar ou reconhecer, o Acervo mostra os números novos (antes ficava com os de quando abriu).',
+    ],
+  },
+  {
     versao: '2.14.1',
     itens: [
       'Acervo: o episódio com muitas cenas (600+) não fica mais espremido em fiapos — cada cena aparece inteira na grade.',
