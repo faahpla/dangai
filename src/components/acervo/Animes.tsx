@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronRight, Combine, Film, FolderOpen, Loader2, MoreHorizontal, RefreshCw, ScanFace, Scissors, Share2, Sparkles, UserSearch, Users } from 'lucide-react'
+import { ChevronRight, Film, FolderOpen, Loader2, MoreHorizontal, RefreshCw, ScanFace, Scissors, Share2, Sparkles, Tags, UserSearch, Users } from 'lucide-react'
 import {
   agruparPorAnime,
   filtrarAnimes,
+  filtrarEpisodios,
+  ordenarEpisodios,
+  ORDENS_DOS_EPISODIOS,
   rotuloDoEpisodioDoAcervo,
   SEM_NINGUEM,
+  soCortados,
   TODAS,
   type AnimeDoAcervo,
+  type FiltroDosEpisodios,
+  type OrdemDosEpisodios,
   type CenaDoAcervo,
   type EpisodioDoAcervo,
   type ParaCortar,
@@ -59,9 +65,9 @@ function Capa({ url, className }: { url: string; className?: string }) {
   )
 }
 
-function Cobertura({ marcadas, cenas }: { marcadas: number; cenas: number }) {
+function Cobertura({ marcadas, cenas, fina = false }: { marcadas: number; cenas: number; fina?: boolean }) {
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-black/40">
+    <div className={['w-full overflow-hidden rounded-full bg-black/40', fina ? 'h-1' : 'h-1.5'].join(' ')}>
       <div className="h-full rounded-full bg-accent" style={{ width: `${pct(marcadas, cenas)}%` }} />
     </div>
   )
@@ -75,6 +81,17 @@ function faltaDo(a: AnimeDoAcervo, paraCortar: ParaCortar[]): { buracos: number;
 // ---------------------------------------------------------------- a grade
 
 type Ordem = 'nome' | 'recentes' | 'cenas' | 'menos'
+
+/** "22 ep · 1 B-roll · 9.541 cenas": a linha de numeros de um anime, curta. */
+function contagemDoAnime(a: AnimeDoAcervo): string {
+  return [
+    a.episodios > 0 && `${a.episodios} ${a.filme ? (a.episodios === 1 ? 'filme' : 'filmes') : 'ep'}`,
+    a.broll.length > 0 && `${a.broll.length} B-roll`,
+    `${a.cenas.toLocaleString('pt-BR')} cenas`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
 
 export function GradeDeAnimes() {
   const dados = useAcervo((s) => s.dados)
@@ -96,7 +113,7 @@ export function GradeDeAnimes() {
   const episodios = animes.reduce((s, a) => s + a.episodios + a.broll.length, 0)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5" data-acervo="animes">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 py-4" data-acervo="animes">
       <div className="flex flex-wrap items-center gap-3">
         <p className="text-[12px] text-ink-3">
           {animes.length} {animes.length === 1 ? 'anime' : 'animes'} · {episodios} {episodios === 1 ? 'episódio cortado' : 'episódios cortados'}
@@ -109,9 +126,9 @@ export function GradeDeAnimes() {
           onKeyDown={(e) => e.stopPropagation()}
           placeholder="Procurar anime…"
           aria-label="Procurar anime"
-          className="h-8 w-60 rounded-sm border border-line bg-elevated px-2.5 text-[12px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none"
+          className="h-7 w-56 rounded-sm border border-line bg-elevated px-2.5 text-[12px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none"
         />
-        <select value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)} aria-label="Ordem" className="h-8 rounded-sm border border-line bg-elevated px-2 text-[12px] text-ink-2 focus:outline-none">
+        <select value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)} aria-label="Ordem" className="h-7 rounded-sm border border-line bg-elevated px-2 text-[12px] text-ink-2 focus:outline-none">
           <option value="recentes">Cortados por último</option>
           <option value="nome">Nome</option>
           <option value="cenas">Mais cenas</option>
@@ -122,40 +139,37 @@ export function GradeDeAnimes() {
       {visiveis.length === 0 ? (
         <p className="py-16 text-center text-[13px] text-ink-3">{busca ? `Nenhum anime com “${busca}”.` : 'Nada cortado ainda. Corte um episódio em "Cortar episódios".'}</p>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-3">
           {visiveis.map((a) => {
             const falta = faltaDo(a, dados?.paraCortar[a.pasta.toLowerCase()] ?? [])
+            const p = pct(a.marcadas, a.cenas)
             return (
               <button
                 key={a.pasta}
                 type="button"
                 onClick={() => useAcervo.getState().abrirAnime(a.pasta)}
                 onContextMenu={(e) => abrirMenuDoOrganizar(e, alvoDoAnime(a))}
-                title={`${a.pasta}\nBotão direito: juntar, temporada, repescar`}
-                className="lift group flex flex-col overflow-hidden rounded-lg border border-line bg-surface text-left transition-colors hover:border-accent/40"
+                title={`${a.nome}\n${a.pasta}\nBotão direito: juntar, temporada, repescar`}
+                className="lift group flex flex-col overflow-hidden rounded-md border border-line bg-surface text-left transition-colors hover:border-accent/40"
                 data-acervo="anime"
               >
                 <span className="relative block">
                   <Capa url={a.capa} className="aspect-video w-full" />
-                  {(falta.buracos > 0 || falta.naPasta > 0) && (
-                    <span className="absolute right-2 top-2 rounded bg-black/75 px-2 py-0.5 text-[11px] font-semibold text-[#f6a23c]">
-                      {falta.naPasta > 0 ? `${falta.naPasta} para cortar` : `faltam ${falta.buracos}`}
+                  {falta.naPasta > 0 && (
+                    <span className="absolute right-1.5 top-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-[#f6a23c]" title="Vídeos na pasta de onde os episódios vieram, ainda não cortados">
+                      {falta.naPasta} para cortar
                     </span>
                   )}
                 </span>
-                <span className="flex flex-col gap-1.5 px-3 py-2.5">
-                  <span className="truncate text-[13px] font-semibold text-ink">{a.nome}</span>
-                  <span className="text-[11px] text-ink-3">
-                    {[
-                      a.episodios > 0 && `${a.episodios} ${a.filme ? (a.episodios === 1 ? 'filme' : 'filmes') : a.episodios === 1 ? 'episódio' : 'episódios'}`,
-                      a.broll.length > 0 && `${a.broll.length} B-roll`,
-                      `${a.cenas.toLocaleString('pt-BR')} cenas`,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
+                <span className="flex flex-col gap-1 px-2.5 py-2">
+                  <span className="truncate text-[12px] font-semibold text-ink">{a.nome}</span>
+                  <span className="flex items-center gap-2 text-[10px] text-ink-3">
+                    <span className="min-w-0 flex-1 truncate">{contagemDoAnime(a)}</span>
+                    <span className={['tnum font-semibold', p >= 60 ? 'text-emerald-300' : p > 0 ? 'text-ink-2' : 'text-ink-3'].join(' ')} title="Das cenas com personagem marcado">
+                      {p}%
+                    </span>
                   </span>
-                  <Cobertura marcadas={a.marcadas} cenas={a.cenas} />
-                  <span className="text-[10px] text-ink-3">{pct(a.marcadas, a.cenas)}% das cenas com personagem</span>
+                  <Cobertura marcadas={a.marcadas} cenas={a.cenas} fina />
                 </span>
               </button>
             )
@@ -184,12 +198,19 @@ export function GradeDeAnimes() {
 
 // ------------------------------------------------------------- um anime
 
+const rotuloDoFalta = (temporada: number, n: number): string => `S${String(temporada).padStart(2, '0')}E${String(n).padStart(2, '0')}`
+
 export function PaginaDoAnime({ anime }: { anime: AnimeDoAcervo }) {
   const dados = useAcervo((s) => s.dados)
   const personagens = useAcervo((s) => s.personagens)
+  const ordem = useAcervo((s) => s.ordemEps)
+  const filtro = useAcervo((s) => s.filtroEps)
+  const setVista = useAcervo((s) => s.setVistaEps)
   const [aba, setAba] = useState<number | 'broll'>(anime.temporadas[0]?.numero ?? 'broll')
   const [exportando, setExportando] = useState(false)
+  const [comoReconhecer, setComoReconhecer] = useState(false)
   const paraCortar = dados?.paraCortar[anime.pasta.toLowerCase()] ?? []
+  const so = useMemo(() => soCortados(anime), [anime])
 
   useEffect(() => {
     if (!personagens) void useAcervo.getState().lerPersonagens()
@@ -209,8 +230,13 @@ export function PaginaDoAnime({ anime }: { anime: AnimeDoAcervo }) {
     [personagens, anime.nome],
   )
   const temporada = aba === 'broll' ? null : (anime.temporadas.find((t) => t.numero === aba) ?? null)
-  const lista = aba === 'broll' ? anime.broll : (temporada?.episodios ?? [])
-  const faltamAqui = temporada?.faltam ?? []
+  const daAba = aba === 'broll' ? anime.broll : (temporada?.episodios ?? [])
+  const lista = useMemo(() => ordenarEpisodios(filtrarEpisodios(daAba, filtro), ordem), [daAba, filtro, ordem])
+  const faltamAqui = useMemo(() => {
+    const f = temporada?.faltam ?? []
+    return ordem === 'numero-desc' ? [...f].reverse() : f
+  }, [temporada, ordem])
+  const buracos = anime.temporadas.reduce((s, t) => s + t.faltam.length, 0)
   const paraCortarAqui = (n: number): ParaCortar | undefined => paraCortar.find((f) => f.episodio === n && (temporada ? f.temporada === temporada.numero : true))
 
   const exportar = async (): Promise<void> => {
@@ -230,28 +256,56 @@ export function PaginaDoAnime({ anime }: { anime: AnimeDoAcervo }) {
     if (v.arquivo) void window.dangai.revealFile(v.arquivo)
   }
 
-  const cortarOsQueFaltam = (): void => {
-    if (paraCortar.length === 0) return
+  const cortar = (videos: ParaCortar[]): void => {
+    if (videos.length === 0) return
     void useCortar.getState().adicionarDoAnime(
-      paraCortar.map((f) => f.arquivo),
-      { anime: anime.titulos[0] ?? anime.nome, pastaDoAnime: anime.nome, temporadas: Object.fromEntries(paraCortar.map((f) => [f.arquivo, f.temporada])) },
+      videos.map((f) => f.arquivo),
+      { anime: anime.titulos[0] ?? anime.nome, pastaDoAnime: anime.nome, temporadas: Object.fromEntries(videos.map((f) => [f.arquivo, f.temporada])) },
     )
     useAcervo.getState().fechar()
     useCortar.getState().abrir('arquivos')
   }
 
-  const abrirOrganizar = (tipo: 'juntar' | 'temporada' | 'repescar'): void => useOrganizar.setState({ menu: null, dialogo: { tipo, alvo: alvoDoAnime(anime) } })
+  /** "Reconhecer tudo que falta numa talagada so": os so cortados vao todos para a fila. */
+  const reconhecerOsSoCortados = (modo: 'batizar' | 'reconhecer'): void => {
+    setComoReconhecer(false)
+    if (so.prontos.length === 0) return
+    const fila = useCortar.getState()
+    for (const e of ordenarEpisodios(so.prontos, 'numero')) {
+      fila.adicionarPedido(
+        {
+          video: e.video,
+          anime: e.anime,
+          temporada: e.temporada,
+          episodio: e.episodio,
+          tipo: '',
+          modo,
+          pastaDoAnime: anime.nome,
+          ...(e.titulo ? { titulo: e.titulo } : {}),
+        },
+        `${anime.nome} · ${rotuloDoEpisodioDoAcervo(e)}`,
+      )
+    }
+    useAcervo.getState().fechar()
+    fila.abrir('arquivos')
+    void fila.comecar()
+  }
+
   const resumo = [
-    anime.temporadas.length > 0 && `${anime.temporadas.length} ${anime.temporadas.length === 1 ? 'temporada' : 'temporadas'}`,
-    anime.episodios > 0 && `${anime.episodios} ${anime.filme ? 'filme' : anime.episodios === 1 ? 'episódio' : 'episódios'}`,
-    anime.broll.length > 0 && `${anime.broll.length} de B-roll`,
+    anime.temporadas.length > 1 && `${anime.temporadas.length} temporadas`,
+    anime.episodios > 0 && `${anime.episodios} ${anime.filme ? (anime.episodios === 1 ? 'filme' : 'filmes') : anime.episodios === 1 ? 'episódio' : 'episódios'}`,
+    anime.broll.length > 0 && `${anime.broll.length} B-roll`,
     `${anime.cenas.toLocaleString('pt-BR')} cenas`,
     gente.length > 0 && `${gente.length} ${gente.length === 1 ? 'personagem' : 'personagens'}`,
   ].filter(Boolean)
-  const botao = 'flex h-8 items-center gap-1.5 rounded-sm border border-line bg-elevated px-3 text-[12px] text-ink-2 hover:border-line-strong hover:text-ink disabled:opacity-40'
+  const botao = 'flex h-7 items-center gap-1.5 rounded-sm border border-line bg-elevated px-2.5 text-[12px] text-ink-2 hover:border-line-strong hover:text-ink disabled:opacity-40'
+  const principal = 'flex h-7 items-center gap-1.5 rounded-sm bg-accent px-2.5 text-[12px] font-semibold text-white hover:bg-accent-hover'
+  const select = 'h-7 rounded-sm border border-line bg-elevated px-2 text-[12px] text-ink-2 focus:outline-none'
+  const p = pct(anime.marcadas, anime.cenas)
+  const contaDoFiltro = (f: FiltroDosEpisodios): number => (f === 'faltam' ? (temporada?.faltam.length ?? 0) : filtrarEpisodios(daAba, f).length)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5" data-acervo="pagina-do-anime">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4" data-acervo="pagina-do-anime">
       <nav className="flex items-center gap-1.5 text-[12px] text-ink-3">
         <button type="button" onClick={() => useAcervo.getState().abrirAnime(null)} className="text-accent hover:underline">
           Acervo
@@ -260,51 +314,75 @@ export function PaginaDoAnime({ anime }: { anime: AnimeDoAcervo }) {
         <span className="truncate text-ink-2">{anime.nome}</span>
       </nav>
 
-      <section className="flex flex-wrap items-start gap-6">
-        <Capa url={anime.capa} className="aspect-video w-[360px] max-w-full rounded-lg" />
-        <div className="flex min-w-[320px] flex-1 flex-col gap-3">
-          <h2 className="text-[24px] font-bold leading-tight text-ink">{anime.nome}</h2>
-          <p className="text-[12px] text-ink-3">{resumo.join(' · ')}</p>
-          {anime.titulos.length > 1 && (
-            <p className="text-[11px] text-ink-3" title={anime.titulos.join('\n')}>
-              {anime.titulos.length} títulos diferentes no histórico
-            </p>
-          )}
-          <div className="flex max-w-[560px] flex-col gap-1.5 rounded-md border border-line bg-surface px-3 py-2.5">
-            <div className="flex justify-between text-[12px]">
-              <span>
-                <span className="font-semibold text-ink">{pct(anime.marcadas, anime.cenas)}%</span> <span className="text-ink-3">das cenas têm personagem</span>
+      {/* O TOPO EM UMA FAIXA (25/11, "mais compacto, mais objetivo"): capa pequena, numeros numa linha, o que falta numa linha, as acoes numa linha. */}
+      <section className="flex gap-4">
+        <Capa url={anime.capa} className="aspect-video w-[200px] shrink-0 rounded-md" />
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+            <h2 className="text-[20px] font-bold leading-tight text-ink">{anime.nome}</h2>
+            <span className="text-[12px] text-ink-3">{resumo.join(' · ')}</span>
+            {anime.titulos.length > 1 && (
+              <span className="text-[11px] text-ink-3" title={anime.titulos.join('\n')}>
+                · {anime.titulos.length} títulos no histórico
               </span>
-              {anime.cenas - anime.marcadas > 0 && <span className="text-[#f6a23c]">{(anime.cenas - anime.marcadas).toLocaleString('pt-BR')} sem ninguém</span>}
-            </div>
-            <Cobertura marcadas={anime.marcadas} cenas={anime.cenas} />
+            )}
           </div>
-          {(paraCortar.length > 0 || anime.temporadas.some((t) => t.faltam.length > 0)) && (
-            <div className="flex max-w-[560px] flex-col gap-1.5 rounded-md border border-[#f6a23c]/40 bg-[#f6a23c]/10 px-3 py-2.5 text-[12px] text-ink" data-acervo="falta">
-              {anime.temporadas
-                .filter((t) => t.faltam.length > 0)
-                .map((t) => (
-                  <p key={t.numero}>
-                    Faltam na temporada {t.numero}: {t.faltam.slice(0, 20).map((n) => `E${String(n).padStart(2, '0')}`).join(', ')}
-                    {t.faltam.length > 20 ? '…' : ''}
-                  </p>
-                ))}
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px]">
+            <span>
+              <span className="tnum font-semibold text-ink">{p}%</span> <span className="text-ink-3">das cenas com personagem</span>
+            </span>
+            <span className="w-[180px]">
+              <Cobertura marcadas={anime.marcadas} cenas={anime.cenas} />
+            </span>
+            {anime.cenas - anime.marcadas > 0 && <span className="text-ink-3">{(anime.cenas - anime.marcadas).toLocaleString('pt-BR')} sem ninguém</span>}
+          </div>
+          {(buracos > 0 || paraCortar.length > 0 || so.prontos.length > 0) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-2" data-acervo="falta">
+              {so.prontos.length > 0 && (
+                <span>
+                  <span className="font-semibold text-[#f6a23c]">{so.prontos.length}</span> {so.prontos.length === 1 ? 'episódio só cortado' : 'episódios só cortados'} (sem ninguém marcado)
+                </span>
+              )}
               {paraCortar.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-ink-2">
-                    Na pasta de onde os episódios vieram, {paraCortar.length === 1 ? '1 vídeo ainda não foi cortado' : `${paraCortar.length} vídeos ainda não foram cortados`}
-                    {paraCortar.some((f) => f.episodio !== null) ? ` (${paraCortar.filter((f) => f.episodio !== null).slice(0, 8).map((f) => f.episodio).join(', ')})` : ''}.
-                  </span>
-                  <button type="button" onClick={cortarOsQueFaltam} className="flex h-7 items-center gap-1.5 rounded-sm bg-accent px-3 text-[12px] font-semibold text-white hover:bg-accent-hover" data-acervo="cortar-falta">
-                    <Scissors size={12} strokeWidth={2} />
-                    Cortar {paraCortar.length === 1 ? 'esse' : `os ${paraCortar.length}`}
-                  </button>
-                </div>
+                <span title={paraCortar.map((f) => f.arquivo).join('\n')}>
+                  <span className="font-semibold text-[#f6a23c]">{paraCortar.length}</span> {paraCortar.length === 1 ? 'vídeo' : 'vídeos'} na pasta de origem para cortar
+                </span>
+              )}
+              {buracos > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setVista({ filtro: 'faltam' })}
+                  className="text-ink-3 underline decoration-dotted underline-offset-2 hover:text-ink"
+                  title={anime.temporadas
+                    .filter((t) => t.faltam.length > 0)
+                    .map((t) => `Temporada ${t.numero}: ${t.faltam.slice(0, 40).map((n) => `E${String(n).padStart(2, '0')}`).join(', ')}${t.faltam.length > 40 ? '…' : ''}`)
+                    .join('\n')}
+                >
+                  {buracos} {buracos === 1 ? 'número pulado' : 'números pulados'} na numeração
+                </button>
               )}
             </div>
           )}
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={botao} onClick={() => abrirOrganizar('repescar')} title="Procura personagem nas cenas sem ninguém: só marca quando as duas IAs concordam">
+          <div className="flex flex-wrap gap-1.5">
+            {so.prontos.length > 0 && (
+              <button
+                type="button"
+                className={principal}
+                onClick={() => setComoReconhecer(true)}
+                title="Todos os episódios deste anime que só foram cortados vão para a fila, de uma vez (Modo Descoberta ou sozinho)"
+                data-acervo="reconhecer-so-cortados"
+              >
+                <Tags size={13} strokeWidth={2} />
+                Reconhecer {so.prontos.length === 1 ? 'o só cortado' : `os ${so.prontos.length} só cortados`}
+              </button>
+            )}
+            {paraCortar.length > 0 && (
+              <button type="button" onClick={() => cortar(paraCortar)} className={principal} data-acervo="cortar-falta">
+                <Scissors size={13} strokeWidth={2} />
+                Cortar {paraCortar.length === 1 ? 'o da pasta' : `os ${paraCortar.length} da pasta`}
+              </button>
+            )}
+            <button type="button" className={botao} onClick={() => useOrganizar.setState({ menu: null, dialogo: { tipo: 'repescar', alvo: alvoDoAnime(anime) } })} title="Procura personagem nas cenas sem ninguém: só marca quando as duas IAs concordam">
               <UserSearch size={13} strokeWidth={1.75} />
               Achar quem ficou sem marca
             </button>
@@ -312,61 +390,51 @@ export function PaginaDoAnime({ anime }: { anime: AnimeDoAcervo }) {
               {exportando ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} strokeWidth={1.75} />}
               Exportar elenco
             </button>
-            <button type="button" className={botao} onClick={() => abrirOrganizar('juntar')}>
-              <Combine size={13} strokeWidth={1.75} />
-              Juntar com outro anime
-            </button>
-            <button type="button" className={botao} onClick={() => abrirOrganizar('temporada')}>
+            <button type="button" className={botao} onClick={(e) => abrirMenuDoOrganizar(e, alvoDoAnime(anime))} title="Juntar com outro anime, mudar a temporada de todos">
               <MoreHorizontal size={13} strokeWidth={1.75} />
-              Mudar a temporada de todos
+              Juntar, temporada…
             </button>
-            <button type="button" className={botao} onClick={() => void window.dangai.revealFile(anime.pasta)} title={anime.pasta}>
+            <button type="button" className={botao} onClick={() => void window.dangai.revealFile(anime.pasta)} title={anime.pasta} aria-label="Abrir a pasta">
               <FolderOpen size={13} strokeWidth={1.75} />
-              Abrir a pasta
+              Pasta
             </button>
           </div>
         </div>
       </section>
 
       {gente.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h3 className="text-[13px] font-semibold text-ink">Personagens</h3>
-          <div className="flex flex-wrap gap-2">
-            {gente.slice(0, 16).map(({ p, n }) => (
-              <button
-                key={p.nome}
-                type="button"
-                onClick={() => useAcervo.getState().abrirPersonagem(p, anime.nome)}
-                className="flex items-center gap-2 rounded-full border border-line bg-surface py-1 pl-1 pr-3 text-left hover:border-accent/50"
-                title={p.apelidos.length ? `também: ${p.apelidos.join(', ')}` : p.nome}
-              >
-                <Rosto url={p.rosto} nome={p.nome} tamanho={28} />
-                <span className="flex flex-col leading-tight">
-                  <span className="text-[12px] font-medium text-ink">{p.nome}</span>
-                  <span className="text-[10px] text-ink-3">{n} cenas</span>
-                </span>
-              </button>
-            ))}
-            {gente.length > 16 && (
-              <button type="button" onClick={() => useAcervo.getState().setAba('personagens')} className="px-2 text-[12px] text-accent hover:underline">
-                Ver todos ({gente.length})
-              </button>
-            )}
-          </div>
+        <section className="flex flex-wrap items-center gap-1.5">
+          {gente.slice(0, 14).map(({ p: g, n }) => (
+            <button
+              key={g.nome}
+              type="button"
+              onClick={() => useAcervo.getState().abrirPersonagem(g, anime.nome)}
+              className="flex items-center gap-1.5 rounded-full border border-line bg-surface py-0.5 pl-0.5 pr-2.5 text-left hover:border-accent/50"
+              title={`${g.nome}: ${n} cenas${g.apelidos.length ? `\ntambém: ${g.apelidos.join(', ')}` : ''}`}
+            >
+              <Rosto url={g.rosto} nome={g.nome} tamanho={22} />
+              <span className="text-[11px] font-medium text-ink">{g.nome}</span>
+              <span className="tnum text-[10px] text-ink-3">{n}</span>
+            </button>
+          ))}
+          {gente.length > 14 && (
+            <button type="button" onClick={() => useAcervo.getState().setAba('personagens')} className="px-1.5 text-[11px] text-accent hover:underline">
+              Ver todos ({gente.length})
+            </button>
+          )}
         </section>
       )}
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-[13px] font-semibold text-ink">{anime.filme ? 'Filmes' : 'Episódios'}</h3>
-          {(anime.temporadas.length > 1 || anime.broll.length > 0) && (
+          {(anime.temporadas.length > 1 || anime.broll.length > 0) ? (
             <div className="flex gap-1 rounded-md border border-line bg-surface p-0.5">
               {anime.temporadas.map((t) => (
                 <button
                   key={t.numero}
                   type="button"
                   onClick={() => setAba(t.numero)}
-                  className={['h-7 rounded-sm px-3 text-[12px] font-medium', aba === t.numero ? 'bg-accent-dim text-ink' : 'text-ink-3 hover:text-ink'].join(' ')}
+                  className={['h-6 rounded-sm px-2.5 text-[12px] font-medium', aba === t.numero ? 'bg-accent-dim text-ink' : 'text-ink-3 hover:text-ink'].join(' ')}
                 >
                   Temporada {t.numero} <span className="text-ink-3">{t.episodios.length}</span>
                 </button>
@@ -375,71 +443,96 @@ export function PaginaDoAnime({ anime }: { anime: AnimeDoAcervo }) {
                 <button
                   type="button"
                   onClick={() => setAba('broll')}
-                  className={['flex h-7 items-center gap-1 rounded-sm px-3 text-[12px] font-medium', aba === 'broll' ? 'bg-accent-dim text-ink' : 'text-ink-3 hover:text-ink'].join(' ')}
+                  className={['flex h-6 items-center gap-1 rounded-sm px-2.5 text-[12px] font-medium', aba === 'broll' ? 'bg-accent-dim text-ink' : 'text-ink-3 hover:text-ink'].join(' ')}
                 >
                   <Film size={12} />
                   B-roll <span className="text-ink-3">{anime.broll.length}</span>
                 </button>
               )}
             </div>
+          ) : (
+            <h3 className="text-[13px] font-semibold text-ink">{anime.filme ? 'Filmes' : 'Episódios'}</h3>
           )}
           <span className="flex-1" />
-          <span className="text-[11px] text-ink-3">Clique para abrir · botão direito para mais opções</span>
+          <select value={filtro} onChange={(e) => setVista({ filtro: e.target.value as FiltroDosEpisodios })} aria-label="Mostrar" className={select} data-acervo="filtro-episodios">
+            <option value="todos">Todos ({contaDoFiltro('todos')})</option>
+            <option value="so-cortados">Só cortados ({contaDoFiltro('so-cortados')})</option>
+            <option value="com-personagem">Com personagem ({contaDoFiltro('com-personagem')})</option>
+            {aba !== 'broll' && <option value="faltam">Os que faltam ({contaDoFiltro('faltam')})</option>}
+          </select>
+          <select value={ordem} onChange={(e) => setVista({ ordem: e.target.value as OrdemDosEpisodios })} aria-label="Ordem dos episódios" className={select} data-acervo="ordem-episodios">
+            {ORDENS_DOS_EPISODIOS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.rotulo}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
-          {lista.map((e) => (
-            <button
-              key={e.episodioId}
-              type="button"
-              onClick={() => useAcervo.getState().abrirEpisodio(e)}
-              onContextMenu={(ev) => abrirMenuDoOrganizar(ev, alvoDoEpisodio(anime, e))}
-              className="lift flex flex-col overflow-hidden rounded-md border border-line bg-surface text-left hover:border-accent/40"
-              data-acervo="episodio"
-            >
-              <span className="relative block">
-                <Capa url={e.capa} className="aspect-video w-full" />
-                <span className="absolute bottom-1.5 left-1.5 max-w-[90%] truncate rounded bg-black/75 px-1.5 py-0.5 text-[11px] font-semibold text-white">{rotuloDoEpisodioDoAcervo(e)}</span>
-              </span>
-              <span className="flex items-center justify-between gap-2 px-2.5 py-2 text-[11px]">
-                <span className="text-ink-3">{e.cenas} cenas</span>
-                <span className={pct(e.marcadas, e.cenas) >= 60 ? 'text-emerald-300' : e.marcadas > 0 ? 'text-[#f6a23c]' : 'text-ink-3'}>
-                  {e.marcadas > 0 ? `${pct(e.marcadas, e.cenas)}% com personagem` : 'só cortado'}
-                </span>
-              </span>
-            </button>
-          ))}
-          {faltamAqui.map((n) => {
-            const arquivo = paraCortarAqui(n)
-            return (
-              <div key={`falta-${n}`} className="flex aspect-[16/11] flex-col items-center justify-center gap-2 rounded-md border border-dashed border-line-strong px-3 text-center" data-acervo="falta-episodio">
-                <span className="text-[13px] font-semibold text-ink-3">
-                  S{String(temporada?.numero ?? 1).padStart(2, '0')}E{String(n).padStart(2, '0')}
-                </span>
-                <span className="text-[11px] text-ink-3">ainda não cortado</span>
-                {arquivo && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void useCortar.getState().adicionarDoAnime([arquivo.arquivo], {
-                        anime: anime.titulos[0] ?? anime.nome,
-                        pastaDoAnime: anime.nome,
-                        temporadas: { [arquivo.arquivo]: arquivo.temporada },
-                      })
-                      useAcervo.getState().fechar()
-                      useCortar.getState().abrir('arquivos')
-                    }}
-                    title={arquivo.arquivo}
-                    className="flex h-7 items-center gap-1.5 rounded-sm border border-accent/50 px-3 text-[11px] text-accent hover:bg-accent-dim"
-                  >
-                    <Scissors size={11} />
-                    Cortar
-                  </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
+
+        {filtro === 'faltam' && aba !== 'broll' ? (
+          faltamAqui.length === 0 ? (
+            <p className="py-8 text-center text-[12px] text-ink-3">Nenhum número pulado nesta temporada.</p>
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1.5" data-acervo="faltam">
+              {faltamAqui.map((n) => {
+                const arquivo = paraCortarAqui(n)
+                return (
+                  <div key={`falta-${n}`} className="flex h-9 items-center justify-between gap-1 rounded-sm border border-dashed border-line-strong px-2" data-acervo="falta-episodio">
+                    <span className="tnum text-[11px] font-semibold text-ink-3">{rotuloDoFalta(temporada?.numero ?? 1, n)}</span>
+                    {arquivo && (
+                      <button type="button" onClick={() => cortar([arquivo])} title={`Cortar ${arquivo.arquivo}`} className="grid size-6 place-items-center rounded-sm text-accent hover:bg-accent-dim" aria-label="Cortar">
+                        <Scissors size={12} />
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        ) : lista.length === 0 ? (
+          <p className="py-8 text-center text-[12px] text-ink-3">Nenhum episódio com esse filtro.</p>
+        ) : (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-2.5">
+            {lista.map((e) => {
+              const pe = pct(e.marcadas, e.cenas)
+              return (
+                <button
+                  key={e.episodioId}
+                  type="button"
+                  onClick={() => useAcervo.getState().abrirEpisodio(e)}
+                  onContextMenu={(ev) => abrirMenuDoOrganizar(ev, alvoDoEpisodio(anime, e))}
+                  title={`${rotuloDoEpisodioDoAcervo(e)} · ${e.cenas} cenas\nBotão direito: personagens, temporada, B-roll, apagar`}
+                  className="lift flex flex-col overflow-hidden rounded-md border border-line bg-surface text-left hover:border-accent/40"
+                  data-acervo="episodio"
+                >
+                  <span className="relative block">
+                    <Capa url={e.capa} className="aspect-video w-full" />
+                    <span className="absolute bottom-1 left-1 max-w-[90%] truncate rounded bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-white">{rotuloDoEpisodioDoAcervo(e)}</span>
+                  </span>
+                  <span className="flex items-center justify-between gap-2 px-2 py-1.5 text-[10px]">
+                    <span className="tnum text-ink-3">{e.cenas} cenas</span>
+                    <span className={pe >= 60 ? 'text-emerald-300' : e.marcadas > 0 ? 'text-[#f6a23c]' : 'text-ink-3'}>{e.marcadas > 0 ? `${pe}%` : 'só cortado'}</span>
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        )}
       </section>
+      {comoReconhecer && (
+        <ComoReconhecer
+          titulo={`Reconhecer ${so.prontos.length === 1 ? 'o episódio só cortado' : `os ${so.prontos.length} episódios só cortados`}`}
+          detalhe={[
+            `${so.prontos.length === 1 ? 'Ele vai' : `Os ${so.prontos.length} vão`} para a fila de uma vez. No Modo Descoberta, cada um para e pergunta os nomes quando chegar a vez dele; os batizados nos primeiros já vêm com nome nos seguintes.`,
+            so.semVideo.length > 0 &&
+              `${so.semVideo.length} ${so.semVideo.length === 1 ? 'fica' : 'ficam'} de fora: o vídeo original não está mais no lugar (${so.semVideo.slice(0, 4).map(rotuloDoEpisodioDoAcervo).join(', ')}${so.semVideo.length > 4 ? '…' : ''}).`,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          aoEscolher={reconhecerOsSoCortados}
+          aoFechar={() => setComoReconhecer(false)}
+        />
+      )}
     </div>
   )
 }

@@ -36,6 +36,8 @@ export interface EpisodioDoAcervo {
   origem: string
   /** O video de onde saiu ('' = o banco nao guardou). */
   video: string
+  /** O video de origem ainda esta no lugar (sem ele nao da para reconhecer de novo). */
+  videoExiste: boolean
 }
 
 /** Um episodio que o historico tem e a pasta sumiu do disco. */
@@ -408,4 +410,59 @@ export function tituloBase(t: string): string {
     .replace(/\b(?:\d+(?:st|nd|rd|th)\s+season|season\s*\d+|s\d{1,2}|part\s*\d+|cour\s*\d+|final\s+season|ii|iii|iv)\b/g, ' ')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
+}
+
+// ------------------------------------------------- como os episodios aparecem
+
+/**
+ * A ORDEM E O FILTRO DOS EPISODIOS de um anime (25/11, "me deixe escolher o
+ * modo de exibicao: do maior para o menor ou vice-versa"). "faltam" mostra so
+ * os numeros que pulam (o lugar vazio, com o "Cortar" quando o video esta na
+ * pasta de origem); os outros filtros mostram so os cortados.
+ */
+export type OrdemDosEpisodios = 'numero' | 'numero-desc' | 'recentes' | 'mais-marcados' | 'menos-marcados'
+export type FiltroDosEpisodios = 'todos' | 'so-cortados' | 'com-personagem' | 'faltam'
+
+export const ORDENS_DOS_EPISODIOS: readonly { id: OrdemDosEpisodios; rotulo: string }[] = [
+  { id: 'numero', rotulo: 'Episódio 1 → último' },
+  { id: 'numero-desc', rotulo: 'Episódio último → 1' },
+  { id: 'recentes', rotulo: 'Cortados por último' },
+  { id: 'mais-marcados', rotulo: 'Mais marcados' },
+  { id: 'menos-marcados', rotulo: 'Menos marcados' },
+]
+
+const fracao = (e: EpisodioDoAcervo): number => (e.cenas ? e.marcadas / e.cenas : 0)
+
+export function ordenarEpisodios(lista: readonly EpisodioDoAcervo[], ordem: OrdemDosEpisodios): EpisodioDoAcervo[] {
+  const pelo = (a: EpisodioDoAcervo, b: EpisodioDoAcervo): number => PESO[a.tipo] - PESO[b.tipo] || a.episodio - b.episodio
+  const copia = [...lista]
+  switch (ordem) {
+    case 'numero-desc':
+      return copia.sort((a, b) => pelo(b, a))
+    case 'recentes':
+      return copia.sort((a, b) => b.cortadoEm.localeCompare(a.cortadoEm) || pelo(a, b))
+    case 'mais-marcados':
+      return copia.sort((a, b) => fracao(b) - fracao(a) || pelo(a, b))
+    case 'menos-marcados':
+      return copia.sort((a, b) => fracao(a) - fracao(b) || pelo(a, b))
+    default:
+      return copia.sort(pelo)
+  }
+}
+
+export function filtrarEpisodios(lista: readonly EpisodioDoAcervo[], filtro: FiltroDosEpisodios): EpisodioDoAcervo[] {
+  if (filtro === 'faltam') return []
+  if (filtro === 'so-cortados') return lista.filter((e) => e.marcadas === 0)
+  if (filtro === 'com-personagem') return lista.filter((e) => e.marcadas > 0)
+  return [...lista]
+}
+
+/**
+ * O "RECONHECER TUDO QUE FALTA" (25/11): os episodios do anime que so foram
+ * cortados -- ninguem marcado -- e ainda tem o video de origem no lugar. O
+ * B-roll fica de fora (trailer e gameplay nao tem elenco a batizar).
+ */
+export function soCortados(anime: AnimeDoAcervo): { prontos: EpisodioDoAcervo[]; semVideo: EpisodioDoAcervo[] } {
+  const todos = anime.temporadas.flatMap((t) => t.episodios).filter((e) => e.marcadas === 0)
+  return { prontos: todos.filter((e) => e.video && e.videoExiste), semVideo: todos.filter((e) => !e.video || !e.videoExiste) }
 }

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Acervo, EpisodioDoAcervo, PersonagemDoAcervo } from '@shared/acervo'
+import type { Acervo, EpisodioDoAcervo, FiltroDosEpisodios, OrdemDosEpisodios, PersonagemDoAcervo } from '@shared/acervo'
 import { useProject } from './project'
 
 /**
@@ -14,6 +14,18 @@ import { useProject } from './project'
  */
 
 export type AbaDoAcervo = 'animes' | 'personagens'
+
+/** Como ele deixou os episodios (ordem e filtro): fica para a proxima vez, nesta maquina. */
+const CHAVE_DA_VISTA = 'dangai.acervo.episodios'
+function vistaGuardada(): { ordem: OrdemDosEpisodios; filtro: FiltroDosEpisodios } {
+  const padrao = { ordem: 'numero' as OrdemDosEpisodios, filtro: 'todos' as FiltroDosEpisodios }
+  try {
+    const v = JSON.parse(localStorage.getItem(CHAVE_DA_VISTA) ?? 'null') as Partial<typeof padrao> | null
+    return { ordem: v?.ordem ?? padrao.ordem, filtro: v?.filtro === 'faltam' ? 'todos' : (v?.filtro ?? padrao.filtro) }
+  } catch {
+    return padrao
+  }
+}
 
 interface LojaDoAcervo {
   aberto: boolean
@@ -30,6 +42,10 @@ interface LojaDoAcervo {
   /** O personagem aberto, e de qual anime (a secao clicada). */
   personagem: { p: PersonagemDoAcervo; anime: string } | null
   aviso: { ok: boolean; texto: string } | null
+  /** A ordem e o filtro dos episodios na pagina do anime. */
+  ordemEps: OrdemDosEpisodios
+  filtroEps: FiltroDosEpisodios
+  setVistaEps: (v: { ordem?: OrdemDosEpisodios; filtro?: FiltroDosEpisodios }) => void
   abrir: (aba?: AbaDoAcervo) => void
   fechar: () => void
   setAba: (aba: AbaDoAcervo) => void
@@ -55,6 +71,16 @@ export const useAcervo = create<LojaDoAcervo>((set, get) => ({
   lendoPersonagens: false,
   personagem: null,
   aviso: null,
+  ordemEps: vistaGuardada().ordem,
+  filtroEps: vistaGuardada().filtro,
+  setVistaEps: (v) => {
+    set({ ...(v.ordem ? { ordemEps: v.ordem } : {}), ...(v.filtro ? { filtroEps: v.filtro } : {}) })
+    try {
+      localStorage.setItem(CHAVE_DA_VISTA, JSON.stringify({ ordem: get().ordemEps, filtro: get().filtroEps }))
+    } catch {
+      /* sem armazenamento: vale so nesta sessao */
+    }
+  },
 
   abrir: (aba) => {
     // A Biblioteca e o Acervo nao ficam abertos juntos (os menus e as janelas de organizar sao os mesmos).

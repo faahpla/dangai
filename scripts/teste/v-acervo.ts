@@ -16,10 +16,13 @@ import {
   filtrarAnimes,
   numeroDoArquivo,
   chaveDoVideo,
+  filtrarEpisodios,
+  ordenarEpisodios,
   paraCortarNaPasta,
   pastaDoAnime,
   prefixoDaSerie,
   rotuloDoEpisodioDoAcervo,
+  soCortados,
   tituloBase,
   type EpisodioDoAcervo,
 } from '../../shared/acervo.ts'
@@ -41,6 +44,7 @@ const ep = (p: Partial<EpisodioDoAcervo> & Pick<EpisodioDoAcervo, 'pasta' | 'tem
   titulo: '',
   origem: '',
   video: '',
+  videoExiste: false,
   ...p,
 })
 
@@ -127,6 +131,29 @@ const faltaWano = paraCortarNaPasta(doWano, so1057, todos)
 ok('cortado como OUTRO anime nao falta', faltaWano.length === 1 && faltaWano[0]!.episodio === 1071, faltaWano.map((f) => f.episodio).join())
 ok('sem a lista do acervo, aparecia (o defeito)', paraCortarNaPasta(doWano, so1057).length === 3)
 ok('a chave ignora barra e maiuscula', chaveDoVideo('D:/Episódios/A.MKV') === chaveDoVideo('d:\\episódios\\a.mkv'))
+
+console.log('a ordem e o filtro dos episodios (25/11)')
+const bc = [
+  ep({ pasta: 'D:\\Animes\\BC\\S01E02', temporada: 1, episodio: 2, cenas: 100, marcadas: 55, cortadoEm: '2026-11-03' }),
+  ep({ pasta: 'D:\\Animes\\BC\\S01E10', temporada: 1, episodio: 10, cenas: 100, marcadas: 0, cortadoEm: '2026-11-05', video: 'E:\\a.mkv', videoExiste: true }),
+  ep({ pasta: 'D:\\Animes\\BC\\S01E01', temporada: 1, episodio: 1, cenas: 100, marcadas: 41, cortadoEm: '2026-11-01' }),
+  ep({ pasta: 'D:\\Animes\\BC\\S01-OP1', temporada: 1, episodio: 1, tipo: 'OP', cenas: 50, marcadas: 0, video: 'E:\\op.mkv', videoExiste: false }),
+]
+const nums = (l: EpisodioDoAcervo[]): string => l.map((e) => `${e.tipo}${e.episodio}`).join(',')
+ok('1 -> ultimo (abertura depois)', nums(ordenarEpisodios(bc, 'numero')) === '1,2,10,OP1', nums(ordenarEpisodios(bc, 'numero')))
+ok('ultimo -> 1 e o contrario', nums(ordenarEpisodios(bc, 'numero-desc')) === 'OP1,10,2,1', nums(ordenarEpisodios(bc, 'numero-desc')))
+ok('cortados por ultimo', nums(ordenarEpisodios(bc, 'recentes')).startsWith('10,2'), nums(ordenarEpisodios(bc, 'recentes')))
+ok('mais marcados primeiro', nums(ordenarEpisodios(bc, 'mais-marcados')).startsWith('2,1'), nums(ordenarEpisodios(bc, 'mais-marcados')))
+ok('menos marcados: os so cortados primeiro', nums(ordenarEpisodios(bc, 'menos-marcados')).endsWith('1,2'), nums(ordenarEpisodios(bc, 'menos-marcados')))
+ok('ordenar nao mexe na lista original', nums(bc) === '2,10,1,OP1')
+ok('filtro so cortados', nums(filtrarEpisodios(bc, 'so-cortados')) === '10,OP1')
+ok('filtro com personagem', nums(filtrarEpisodios(bc, 'com-personagem')) === '2,1')
+ok('filtro "os que faltam" nao mostra cortado', filtrarEpisodios(bc, 'faltam').length === 0)
+const [animeBc] = agruparPorAnime([...bc, ep({ pasta: 'D:\\Animes\\BC\\B-roll 01', temporada: 1, episodio: 1, tipo: 'BROLL', marcadas: 0, video: 'E:\\t.mp4', videoExiste: true })])
+const sc = soCortados(animeBc!)
+ok('reconhecer os so cortados: so os com video no lugar', nums(sc.prontos) === '10', nums(sc.prontos))
+ok('o sem video fica separado (para avisar)', nums(sc.semVideo) === 'OP1', nums(sc.semVideo))
+ok('B-roll fica de fora', ![...sc.prontos, ...sc.semVideo].some((e) => e.tipo === 'BROLL'))
 
 console.log('rotulos e titulos')
 ok('S01E05', rotuloDoEpisodioDoAcervo({ tipo: '', temporada: 1, episodio: 5, titulo: '' }) === 'S01E05')

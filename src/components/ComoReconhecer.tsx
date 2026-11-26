@@ -9,11 +9,23 @@ import { Janela } from './RevisarCena'
  * Robin de "Ain". O que ele queria era o Modo Descoberta. Agora escolhe, com o
  * batizar primeiro: e o que respeita os nomes que ele ja deu.
  */
-export function ComoReconhecer({ aoEscolher, aoFechar }: { aoEscolher: (modo: Extract<ModoDoCorte, 'batizar' | 'reconhecer'>) => void; aoFechar: () => void }) {
+export function ComoReconhecer({
+  aoEscolher,
+  aoFechar,
+  titulo = 'Reconhecer de novo',
+  detalhe,
+}: {
+  aoEscolher: (modo: Extract<ModoDoCorte, 'batizar' | 'reconhecer'>) => void
+  aoFechar: () => void
+  titulo?: string
+  /** Uma linha antes das opcoes (o "reconhecer os N so cortados" diz o que vai para a fila). */
+  detalhe?: string
+}) {
   const opcao = 'flex w-full items-start gap-3 rounded-md border px-3 py-3 text-left transition-colors'
   return (
-    <Janela titulo="Reconhecer de novo" aoFechar={aoFechar} largura={480}>
+    <Janela titulo={titulo} aoFechar={aoFechar} largura={480}>
       <div className="flex flex-col gap-2 px-4 py-4" data-acervo="como-reconhecer">
+        {detalhe && <p className="pb-1 text-[12px] leading-relaxed text-ink-2">{detalhe}</p>}
         <button
           type="button"
           autoFocus

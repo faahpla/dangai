@@ -103,6 +103,13 @@ export async function acervo(): Promise<Acervo> {
   const r = await perguntar<Record<string, unknown>>(['recent'], 'recent', 180_000)
   if (!r) throw new Error(SEM_RESPOSTA)
   const videos = videosDeOrigem()
+  // Um existsSync por video (nao le pasta): o "reconhecer os so cortados" precisa saber quais ainda dao.
+  const existe = new Map<string, boolean>()
+  const noLugar = (v: string): boolean => {
+    if (!v) return false
+    if (!existe.has(v)) existe.set(v, existsSync(v))
+    return existe.get(v)!
+  }
   const episodios: EpisodioDoAcervo[] = lista(r['episodes']).flatMap((cru) => {
     if (!cru || typeof cru !== 'object') return []
     const e = cru as Record<string, unknown>
@@ -124,6 +131,7 @@ export async function acervo(): Promise<Acervo> {
         titulo: texto(e['titulo']),
         origem: texto(e['origem']),
         video: videos.get(id) ?? '',
+        videoExiste: noLugar(videos.get(id) ?? ''),
       },
     ]
   })
