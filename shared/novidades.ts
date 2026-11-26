@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.14.3',
+    itens: [
+      'Cortar episódios: soltar um episódio na janela agora só põe ele na fila — não aparece mais a pergunta do recap ("Usar como clipe / Gerar recap") por cima.',
+    ],
+  },
+  {
     versao: '2.14.2',
     itens: [
       'Acervo mais enxuto: capas menores (cabem mais animes na tela), e o topo do anime numa faixa só — os números, o que falta e os botões.',
