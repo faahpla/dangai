@@ -20,6 +20,15 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.15.0',
+    itens: [
+      'Fonte da legenda: em Estilo → Fonte aparecem todas as fontes instaladas no seu PC, com busca e cada nome escrito na própria fonte. Não precisa mais colar arquivo .ttf em pasta nenhuma.',
+      'Negrito, Itálico e “Forçar negrito”: o N usa o negrito de verdade da fonte, o I usa o itálico dela (ou inclina a letra, se ela não tiver), e o “Forçar negrito” engrossa mesmo a fonte que não tem negrito.',
+      'A fonte que você escolhe agora continua escolhida quando o Dangai abre de novo (antes só a cor e o tamanho voltavam).',
+      'Configurações organizadas: um menu do lado (Inteligência artificial, Sons, Pastas, Cortar episódios, Atalhos, Módulos), cada coisa numa caixa com o que ela faz, e tudo do Gerar recap numa página só dele.',
+    ],
+  },
+  {
     versao: '2.14.3',
     itens: [
       'Cortar episódios: soltar um episódio na janela agora só põe ele na fila — não aparece mais a pergunta do recap ("Usar como clipe / Gerar recap") por cima.',
