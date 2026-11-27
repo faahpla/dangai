@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.16.2',
+    itens: [
+      'Gerar recap, aba Cenas: episódios extras. Em "+ Episódios extras" você marca outros episódios que o Dangai já abriu (os do mesmo anime aparecem primeiro), e no seletor "Episódio" a grade passa a mostrar as cenas dele. Bom para vídeo de curiosidade e para frase que cita outro episódio ("depois de ser expulso da guilda"). O roteiro e a voz continuam do episódio principal; no "Abrir no editor" cada cena sai do episódio dela.',
+      'Gerar recap, aba Cenas: "Perto do minuto". Digite 12:30 e Enter: a faixa "Perto deste momento" mostra as cenas desse minuto do episódio escolhido.',
+      'Claude (MCP): o Claude também usa os episódios extras e escolhe as cenas do Gerar recap direto (episodios_extras, cenas_do_recap, escolher_cenas_do_recap).',
+    ],
+  },
+  {
     versao: '2.16.1',
     itens: [
       'Thumbnail, divisor "Brilho dentro": agora também tem brilho por fora. Na aba Divisor ficam dois controles, "Brilho dentro" (a borda acesa por dentro do rasgo) e "Brilho fora" (o halo na mesma cor em volta). Começa em 0, então as thumbs que você já fez não mudam.',
