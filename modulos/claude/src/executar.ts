@@ -160,6 +160,8 @@ export async function executar(n: Nucleo, p: PedidoDoClaude): Promise<unknown> {
     }
     case 'reconhecer':
       return reconhecer(p.args)
+    case 'recap':
+      return recap(p.args)
     default:
       throw new Error(`Acao desconhecida: ${String(p.acao)}`)
   }
@@ -174,6 +176,12 @@ export async function executar(n: Nucleo, p: PedidoDoClaude): Promise<unknown> {
  */
 interface PonteDoRecap {
   listarRascunhos(): Promise<unknown>
+  abrirRascunho(episodioId: string): Promise<unknown>
+  candidatosDaFrase(rascunhoId: string, fraseId: string, filtros: Record<string, unknown>): Promise<unknown>
+  salvarCenas(rascunhoId: string, escolhas: unknown[]): Promise<unknown>
+  episodiosConhecidos?(rascunhoId: string): Promise<unknown>
+  definirExtras?(rascunhoId: string, ids: string[]): Promise<unknown>
+  extrasDasCenas?(rascunhoId: string): Promise<unknown>
   iniciarDescoberta(pedido: { episodioId: string }): Promise<unknown>
   descobertaAtual(episodioId: string): Promise<unknown>
   confirmarDescoberta(jobId: string, decisao: unknown): Promise<unknown>
@@ -249,4 +257,152 @@ async function reconhecer(args: Record<string, unknown>): Promise<unknown> {
     await espera(3000)
   }
   throw new Error('O agrupamento ainda nao acabou: chame de novo com acao "ver".')
+}
+
+// --------------------------------------------- as cenas do Gerar recap (27/11)
+
+/**
+ * O passo Cenas do Gerar recap pela ponte DELE: ver as frases e as cenas de cada
+ * uma (do episodio principal ou de um EPISODIO EXTRA), escolher, e trocar a lista
+ * de extras. A cena de um extra vem com o id prefixado ('<10 hex>~0025'): mande
+ * de volta como veio. O que o Claude escolhe entra travado (o Sugerir nao troca).
+ */
+interface Candidato {
+  planoIds: string[]
+  episodioId: string
+  inSec: number
+  outSec: number
+  origem: string
+  porque: string[]
+}
+interface FraseCrua {
+  id: string
+  texto: string
+}
+interface EscolhaCrua {
+  fraseId: string
+  cenas: { candidato: Candidato; palavraInicio: number; baixo?: Candidato }[]
+  travada: boolean
+  [k: string]: unknown
+}
+interface RascunhoCru {
+  id: string
+  episodioId: string
+  titulo: string
+  atual: number | null
+  roteiros: { versao: number; secoes: { frases: FraseCrua[] }[] }[]
+  cenas: { escolhas: EscolhaCrua[] } | null
+}
+
+const arred = (x: number): number => Math.round(x * 100) / 100
+
+async function recap(args: Record<string, unknown>): Promise<unknown> {
+  const r = doRecap()
+  const op = String(args['op'] ?? '')
+  const episodio = String(args['episodio'] ?? '')
+  if (!/^ep_[0-9a-f]{40}$/.test(episodio)) throw new Error('Falta o episodio principal (ep_..., veja "listar_episodios").')
+  if (!r.extrasDasCenas || !r.definirExtras || !r.episodiosConhecidos) throw new Error('Este Dangai ainda nao tem episodios extras: atualize o Dangai.')
+  const aberto = desembrulhar<{ rascunho: RascunhoCru; indice: { planos: { id: string; arquivo: string }[] } }>(await r.abrirRascunho(episodio))
+  const rascunho = aberto.rascunho
+  const roteiro = rascunho.roteiros.find((x) => x.versao === rascunho.atual)
+  const frases = roteiro ? roteiro.secoes.flatMap((x) => x.frases) : []
+  const extras = desembrulhar<{ extras: { episodioId: string; titulo: string; ok: boolean; cenas: number }[]; planos: { id: string; arquivo: string }[] }>(
+    await r.extrasDasCenas(rascunho.id),
+  )
+  const arquivoDe = new Map<string, string>([...aberto.indice.planos, ...extras.planos].map((p) => [p.id, p.arquivo]))
+  const resumo = (c: Candidato) => ({
+    planoIds: c.planoIds,
+    episodio: c.episodioId,
+    inSec: arred(c.inSec),
+    outSec: arred(c.outSec),
+    duracao: arred(c.outSec - c.inSec),
+    arquivo: arquivoDe.get(c.planoIds[0] ?? '') ?? null,
+    ...(c.porque.length ? { porque: c.porque } : {}),
+  })
+
+  if (op === 'extras') {
+    if (Array.isArray(args['definir'])) {
+      desembrulhar(await r.definirExtras(rascunho.id, (args['definir'] as unknown[]).map(String)))
+      return recap({ episodio, op: 'extras' })
+    }
+    const conhecidos = desembrulhar<{ episodioId: string; titulo: string; cenas: number }[]>(await r.episodiosConhecidos(rascunho.id))
+    return {
+      principal: { episodio: rascunho.episodioId, titulo: rascunho.titulo },
+      extras: extras.extras.map((e) => ({ episodio: e.episodioId, titulo: e.titulo, cenas: e.cenas, abre: e.ok })),
+      podeAdicionar: conhecidos.map((c) => ({ episodio: c.episodioId, titulo: c.titulo, cenas: c.cenas })),
+    }
+  }
+
+  if (op === 'ver') {
+    const fraseId = typeof args['frase'] === 'string' ? args['frase'] : ''
+    if (!fraseId) {
+      const porFrase = new Map((rascunho.cenas?.escolhas ?? []).map((e) => [e.fraseId, e]))
+      return {
+        rascunho: rascunho.id,
+        titulo: rascunho.titulo,
+        extras: extras.extras.map((e) => ({ episodio: e.episodioId, titulo: e.titulo })),
+        frases: frases.map((f) => {
+          const e = porFrase.get(f.id)
+          return {
+            frase: f.id,
+            texto: f.texto,
+            travada: e?.travada ?? false,
+            cenas: (e?.cenas ?? []).map((c) => ({ palavra: c.palavraInicio, ...resumo(c.candidato), ...(c.baixo ? { baixo: resumo(c.baixo) } : {}) })),
+          }
+        }),
+      }
+    }
+    const perto = segundosDe(args['perto'])
+    const de = typeof args['de'] === 'string' && args['de'] ? args['de'] : null
+    const lista = desembrulhar<{ sugestoes: Candidato[]; vizinhas: Candidato[]; outras: Candidato[]; personagens: { nome: string; cenas: number }[]; momento: number | null }>(
+      await r.candidatosDaFrase(rascunho.id, fraseId, {
+        episodio: de,
+        perto,
+        personagem: typeof args['personagem'] === 'string' && args['personagem'] ? args['personagem'] : null,
+        busca: typeof args['busca'] === 'string' && args['busca'] ? args['busca'] : null,
+      }),
+    )
+    const limite = typeof args['limite'] === 'number' ? args['limite'] : 40
+    return {
+      frase: fraseId,
+      texto: frases.find((f) => f.id === fraseId)?.texto ?? null,
+      episodio: de ?? rascunho.episodioId,
+      momento: lista.momento,
+      personagens: lista.personagens.slice(0, 20).map((p) => p.nome),
+      sugestoes: lista.sugestoes.map(resumo),
+      perto: lista.vizinhas.map(resumo),
+      outras: lista.outras.slice(0, limite).map(resumo),
+      outrasNoTotal: lista.outras.length,
+    }
+  }
+
+  if (op === 'escolher') {
+    const fraseId = String(args['frase'] ?? '')
+    if (!frases.some((f) => f.id === fraseId)) throw new Error(`Frase fora do roteiro: ${fraseId} (veja cenas_do_recap sem frase).`)
+    const atual = rascunho.cenas?.escolhas.find((e) => e.fraseId === fraseId)
+    if (!atual) throw new Error('Essa frase ainda nao tem escolha: abra o passo Cenas (o Sugerir enche todas) e tente de novo.')
+    const pedidas = Array.isArray(args['cenas']) ? (args['cenas'] as Record<string, unknown>[]) : []
+    if (!pedidas.length) throw new Error('Mande as cenas: [{planoIds, episodio, inSec, outSec, palavra}].')
+    const cenas = pedidas.map((c, k) => {
+      const planoIds = Array.isArray(c['planoIds']) ? (c['planoIds'] as unknown[]).map(String) : []
+      const inSec = Number(c['inSec'])
+      const outSec = Number(c['outSec'])
+      if (!planoIds.length || !(outSec > inSec)) throw new Error(`Cena ${k + 1}: precisa de planoIds, inSec e outSec (como o cenas_do_recap devolveu).`)
+      const episodioId = typeof c['episodio'] === 'string' && c['episodio'] ? c['episodio'] : rascunho.episodioId
+      return {
+        candidato: { planoIds, episodioId, inSec, outSec, nota: 0, porque: [], origem: 'usuario', keyframe: null },
+        palavraInicio: k === 0 ? 0 : Number(c['palavra'] ?? 0),
+      }
+    })
+    const nova: Record<string, unknown> = { ...atual, cenas, travada: true }
+    delete nova['grid']
+    const g = desembrulhar<{ rascunho: RascunhoCru }>(await r.salvarCenas(rascunho.id, [nova]))
+    const gravada = g.rascunho.cenas?.escolhas.find((e) => e.fraseId === fraseId)
+    return {
+      frase: fraseId,
+      cenas: (gravada?.cenas ?? []).map((c) => ({ palavra: c.palavraInicio, ...resumo(c.candidato) })),
+      aviso: 'Gravado no rascunho. Se o passo Cenas estiver aberto, ele mostra quando reabrir o passo.',
+    }
+  }
+  throw new Error(`op desconhecida: ${op}`)
 }

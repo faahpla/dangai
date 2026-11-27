@@ -270,6 +270,58 @@ export const FERRAMENTAS: DefinicaoDeFerramenta[] = [
     },
   },
   {
+    name: 'episodios_extras',
+    description:
+      'Gerar recap: os EPISODIOS EXTRAS do recap (de onde a aba Cenas tambem tira cenas: video de curiosidade, flashback, "no ep 1 ele foi expulso"). ' +
+      'O roteiro e a voz continuam do principal. Sem definir: o principal, os extras e os episodios que da para adicionar (os que este Dangai ja abriu). ' +
+      'definir: [ids ep_...] troca a lista inteira ([] tira todos; frase com cena de um extra tirado volta para o Sugerir).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        episodio: str('O episodio PRINCIPAL do recap (ep_..., de listar_episodios).'),
+        definir: { type: 'array', items: { type: 'string' }, description: 'A lista nova de extras (ids ep_...).' },
+      },
+      required: ['episodio'],
+    },
+  },
+  {
+    name: 'cenas_do_recap',
+    description:
+      'Gerar recap, passo Cenas. Sem frase: as frases do roteiro (id, texto) e as cenas escolhidas de cada uma. ' +
+      'Com frase: as candidatas -- sugestoes (so do principal), perto (do momento da frase ou de "perto") e outras -- do principal ou de um extra (de). ' +
+      'Cada cena traz planoIds, episodio, inSec, outSec e o arquivo (mp4: mande ao ver_varios para olhar). ' +
+      'Cena de outro episodio: episodios_extras (adicionar) -> cenas_do_recap com de + perto (o minuto da cena naquele episodio) ou personagem/busca.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        episodio: str('O episodio PRINCIPAL do recap (ep_...).'),
+        frase: str('Id da frase (f01...). Sem: a lista das frases.'),
+        de: str('Id de um episodio EXTRA (ep_...). Sem: o principal.'),
+        perto: str('"12:30" ou segundos: as cenas perto deste minuto do episodio escolhido.'),
+        personagem: str('So cenas com este personagem.'),
+        busca: str('Texto: fala, falante, descricao.'),
+        limite: num('Quantas "outras" (padrao 40).'),
+      },
+      required: ['episodio'],
+    },
+  },
+  {
+    name: 'escolher_cenas_do_recap',
+    description:
+      'Gerar recap: troca as cenas de UMA frase (entra travada, o Sugerir nao mexe). cenas na ordem: ' +
+      '[{planoIds, episodio, inSec, outSec, palavra}] copiados do cenas_do_recap (cena de extra vai com o episodio dela e o id prefixado como veio); ' +
+      'palavra = em que palavra da frase a cena entra (a 1a e 0; as outras sobem). O "Abrir no editor" monta cada cena do episodio dela.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        episodio: str('O episodio PRINCIPAL do recap (ep_...).'),
+        frase: str('Id da frase (f01...).'),
+        cenas: { type: 'array', items: { type: 'object' }, description: '[{planoIds, episodio, inSec, outSec, palavra}]' },
+      },
+      required: ['episodio', 'frase', 'cenas'],
+    },
+  },
+  {
     name: 'abrir_projeto',
     description: 'Abre um projeto .dangai no Dangai.',
     inputSchema: { type: 'object', properties: { caminho: str('Caminho do .dangai.') }, required: ['caminho'] },

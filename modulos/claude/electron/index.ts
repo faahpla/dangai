@@ -319,6 +319,12 @@ async function chamar(nome: string, args: Record<string, unknown>): Promise<Cont
       return [json(await pedirAJanela('episodios'))]
     case 'reconhecer_personagens':
       return reconhecerPersonagens(args)
+    case 'episodios_extras':
+      return [json(await pedirAJanela('recap', { ...args, op: 'extras' }))]
+    case 'cenas_do_recap':
+      return [json(await pedirAJanela('recap', { ...args, op: 'ver' }))]
+    case 'escolher_cenas_do_recap':
+      return [json(await pedirAJanela('recap', { ...args, op: 'escolher' }))]
     case 'abrir_projeto': {
       const caminho = String(args['caminho'] ?? '')
       if (!/\.dangai$/i.test(caminho) || !existsSync(caminho)) throw new Error(`Nao achei o projeto: ${caminho}`)
