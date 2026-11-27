@@ -20,6 +20,14 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.16.0',
+    itens: [
+      'Efeitos para censurar: no painel do bloco, do insert (faixa V1/V2) e da camada de ajuste há um quadro “Efeitos” com Desfoque, Mosaico e Tarja — na tela toda ou só numa área que você arrasta. Dá para empilhar vários e desligar no olho para comparar.',
+      'No bloco, o efeito pega só a cena: o insert e a legenda por cima continuam nítidos. Na camada de ajuste, censura tudo o que está embaixo dela naquele trecho.',
+      'Bins ligadas a uma pasta agora mostram as subpastas (por exemplo Humor › Triste, Feliz), para entrar e voltar como no Explorer. O botão “Tudo junto” volta a lista corrida.',
+    ],
+  },
+  {
     versao: '2.15.0',
     itens: [
       'Fonte da legenda: em Estilo → Fonte aparecem todas as fontes instaladas no seu PC, com busca e cada nome escrito na própria fonte. Não precisa mais colar arquivo .ttf em pasta nenhuma.',
