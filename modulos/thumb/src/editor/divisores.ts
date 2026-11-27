@@ -86,9 +86,10 @@ function tintaDo(d: DivisorParaDesenhar): Tinta | null {
 
 function chaveDo(d: DivisorParaDesenhar): string {
   const brilho = d.modelo === 'rasgo-brilho' || d.modelo === 'rasgo-dentro' ? Math.round(d.brilho) : 0
+  const fora = d.modelo === 'rasgo-dentro' ? Math.round(d.brilhoFora ?? 0) : 0
   const tinta = tintaDo(d)
   const daTinta = tinta ? `${tinta.cor}:${tinta.paradas.map((p) => `${p.em}${p.cor}`).join(',')}` : ''
-  return `${d.modelo}|${d.modelo === 'linha' ? (tinta?.cor ?? '') : daTinta}|${d.modelo === 'linha' ? String(d.contorno) : ''}|${brilho}`
+  return `${d.modelo}|${d.modelo === 'linha' ? (tinta?.cor ?? '') : daTinta}|${d.modelo === 'linha' ? String(d.contorno) : ''}|${brilho}|${fora}`
 }
 
 /** A Linha: a cor principal da tinta (ou a branca de sempre). */
@@ -156,13 +157,13 @@ function comBrilho(base: HTMLCanvasElement, forma: PixelsRgba, cor: string | nul
 }
 
 /** Os pixels do divisor (o original, ou recolorido) num canvas do tamanho do arquivo. */
-async function montar(modelo: ModeloComPng, tinta: Tinta | null, brilho = 0): Promise<DivisorPronto> {
+async function montar(modelo: ModeloComPng, tinta: Tinta | null, brilho = 0, brilhoFora = 0): Promise<DivisorPronto> {
   const cor = tinta?.cor ?? null
   const png = await lerPixels(PNG_DO_DIVISOR[modelo])
   const forma = modelo === 'rasgo-brilho' && (tinta || brilho > 0) ? await lerPixels(PNG_DA_FORMA_DO_RASGO) : null
   // (17/11) O brilho por dentro e sempre desenhado (nao ha PNG pronto dele): a forma + a tinta.
   const dados =
-    modelo === 'rasgo-dentro' ? brilhoPorDentro(png, tinta, brilho) : tinta ? recolorirDivisor(modelo, tinta, png, forma) : new Uint8ClampedArray(png.dados)
+    modelo === 'rasgo-dentro' ? brilhoPorDentro(png, tinta, brilho, brilhoFora) : tinta ? recolorirDivisor(modelo, tinta, png, forma) : new Uint8ClampedArray(png.dados)
   const canvas = document.createElement('canvas')
   canvas.width = png.largura
   canvas.height = png.altura
@@ -183,7 +184,7 @@ export async function prepararDivisor(d: DivisorParaDesenhar | null): Promise<Di
   if (pronto) return pronto
   let p = preparando.get(chave)
   if (!p) {
-    p = montar(d.modelo, tintaDo(d), d.modelo === 'rasgo-brilho' || d.modelo === 'rasgo-dentro' ? d.brilho : 0)
+    p = montar(d.modelo, tintaDo(d), d.modelo === 'rasgo-brilho' || d.modelo === 'rasgo-dentro' ? d.brilho : 0, d.modelo === 'rasgo-dentro' ? (d.brilhoFora ?? 0) : 0)
       .then((m) => {
         prontos.set(chave, m)
         ultimoDoModelo.set(d.modelo, m)

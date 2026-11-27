@@ -2370,8 +2370,8 @@ function AbaDoDivisor() {
               />
             </Linha>
             {(d.modelo === 'rasgo-brilho' || d.modelo === 'rasgo-dentro') && (
-              <div data-thumb="brilho-do-divisor">
-                <Linha label="Brilho">
+              <div data-thumb="brilho-do-divisor" className="flex flex-col gap-2.5">
+                <Linha label={d.modelo === 'rasgo-dentro' ? 'Brilho dentro' : 'Brilho'}>
                   <Deslizante
                     valor={d.brilho}
                     min={0}
@@ -2387,6 +2387,20 @@ function AbaDoDivisor() {
                     onChange={(v) => mudar({ brilho: Math.round(v) })}
                   />
                 </Linha>
+                {d.modelo === 'rasgo-dentro' && (
+                  <Linha label="Brilho fora">
+                    <Deslizante
+                      valor={d.brilhoFora ?? 0}
+                      min={0}
+                      max={100}
+                      step={1}
+                      texto={(d.brilhoFora ?? 0) === 0 ? 'sem' : `${Math.round(d.brilhoFora ?? 0)}%`}
+                      padrao={0}
+                      dica="O brilho em volta do rasgo, na mesma cor viva: maior, o halo fica mais largo e mais forte. 0 = so o brilho de dentro."
+                      onChange={(v) => mudar({ brilhoFora: Math.round(v) })}
+                    />
+                  </Linha>
+                )}
               </div>
             )}
             {d.modelo === 'linha' && (

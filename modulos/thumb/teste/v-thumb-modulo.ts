@@ -433,7 +433,7 @@ async function testarDivisoresETamanho(T: typeof import('../shared/thumb'), D: t
   const { tamanho: _t, divisor: _d, ...antiga } = padrao
   const lida = T.thumbDoProjeto(JSON.parse(JSON.stringify(antiga)))
   confere(lida !== null && lida.tamanho === 1 && lida.divisor.ligado === false && lida.divisor.modelo === 'rasgo-brilho' && lida.divisor.cor === null, 'thumb salva antes (sem divisor e sem tamanho): abre com 100% e divisor desligado')
-  const ligado = { ...padrao, divisor: { ligado: true, modelo: 'slash' as const, cor: '#2fb4ff', contorno: true, inclinacao: -6, brilho: 40 }, tamanho: 1.3 }
+  const ligado = { ...padrao, divisor: { ligado: true, modelo: 'slash' as const, cor: '#2fb4ff', contorno: true, inclinacao: -6, brilho: 40, brilhoFora: 25 }, tamanho: 1.3 }
   const volta = T.thumbDoProjeto(JSON.parse(JSON.stringify(ligado)))
   confere(volta !== null && JSON.stringify(volta.divisor) === JSON.stringify(ligado.divisor) && volta.tamanho === 1.3, 'o estado (ligado, modelo, cor, brilho, tamanho) e salvo e lido de volta')
   confere(T.thumbDoProjeto({ ...ligado, divisor: { ...ligado.divisor, modelo: 'raio' } }) === null && T.thumbDoProjeto({ ...ligado, tamanho: 3 }) === null, 'modelo desconhecido ou tamanho fora da faixa: nao passa')
@@ -598,6 +598,14 @@ function testarKiumazEBrilhoDentro(T: typeof import('../shared/thumb')): void {
   confere(Math.max(...linha) - Math.min(...linha) <= 3, `liso ao longo da faixa, sem listras (${linha.join(',')})`)
   const forte = T.brilhoPorDentro({ largura: L, altura: A, dados }, null, 100)
   confere(lum(Array.from(forte.slice((100 * L + 540) * 4, (100 * L + 540) * 4 + 3))) > lum(px(540, 100)), 'brilho 100 entra mais fundo que o padrao')
+  // (27/11) O brilho de fora: halo azul em volta, o miolo igual, e mais largo com mais brilho.
+  const fora = T.brilhoPorDentro({ largura: L, altura: A, dados }, null, 0, 50)
+  const pf = (o: Uint8ClampedArray, x: number, y: number): number[] => Array.from(o.slice((y * L + x) * 4, (y * L + x) * 4 + 4))
+  confere(pf(fora, 540, 74)[3]! > 40 && pf(fora, 540, 74)[2]! > pf(fora, 540, 74)[0]!, `brilho fora: halo azul logo acima da forma (alpha ${pf(fora, 540, 74)[3]})`)
+  confere(pf(fora, 540, 100).join() === px(540, 100).join(), 'brilho fora nao muda o miolo do rasgo')
+  confere(pf(fora, 540, 10)[3] === 0, 'brilho fora 50 nao vaza longe')
+  const foraMax = T.brilhoPorDentro({ largura: L, altura: A, dados }, null, 0, 100)
+  confere(pf(foraMax, 540, 60)[3]! > pf(fora, 540, 60)[3]!, `brilho fora 100 mais largo que 50 (${pf(foraMax, 540, 60)[3]} > ${pf(fora, 540, 60)[3]})`)
 }
 
 function testarSeta(T: typeof import('../shared/thumb')): void {

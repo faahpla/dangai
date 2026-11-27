@@ -58,6 +58,13 @@ export const divisorSchema = z.object({
    */
   brilho: z.number().min(0).max(100).default(0),
   /**
+   * (27/11) So o Brilho dentro: o brilho de FORA, o halo na cor viva em volta do rasgo
+   * (Levi: "tem que ter um pouco de brilho externo tambem ... controlar brilho interno e
+   * externo"). 0 = sem halo (o de antes); ate 100 o halo fica mais largo e mais forte.
+   * Ausente (thumb e preset de antes) = 0.
+   */
+  brilhoFora: z.number().min(0).max(100).default(0),
+  /**
    * (16/11) O DEGRADE PROPRIO do divisor, como o de uma linha do texto: [em
    * cima, embaixo]. Ganha da `cor`. null/ausente = a `cor` com o degrade do
    * estilo do texto (tintaDoDivisor, em thumb.ts).
@@ -78,7 +85,7 @@ export interface Tinta {
 
 /** O padrao: desligado, o rasgo com brilho do Levi na cor original. */
 export function divisorPadrao(): DivisorDaThumb {
-  return { ligado: false, modelo: 'rasgo-brilho', cor: null, contorno: true, inclinacao: 0, brilho: 0 }
+  return { ligado: false, modelo: 'rasgo-brilho', cor: null, contorno: true, inclinacao: 0, brilho: 0, brilhoFora: 0 }
 }
 
 /** Os arquivos de cada modelo (em modulos/thumb/assets/divisores). O rasgo com brilho usa o MEIO2 como a forma. */
@@ -310,7 +317,7 @@ export const AZUL_DO_BRILHO = '#2f74e0'
  * o tom vivo dela (tomDoBrilho, ou o AZUL_DO_BRILHO). `brilho` 0-100 alarga o
  * aceso (raio de 7 a 24 px) e o deixa mais forte.
  */
-export function brilhoPorDentro(forma: PixelsRgba, tinta: Tinta | null, brilho = 0): Uint8ClampedArray {
+export function brilhoPorDentro(forma: PixelsRgba, tinta: Tinta | null, brilho = 0, brilhoFora = 0): Uint8ClampedArray {
   const { largura: L, altura: A, dados } = forma
   const saida = new Uint8ClampedArray(dados.length)
   saida.set(dados)
@@ -377,5 +384,74 @@ export function brilhoPorDentro(forma: PixelsRgba, tinta: Tinta | null, brilho =
   }
   tmp = new Float32Array(0)
   a = new Float32Array(0)
+  if (brilhoFora > 0) halo(dados, saida, L, A, aceso, brilhoFora)
   return saida
+}
+
+/**
+ * (27/11) O BRILHO DE FORA do Brilho dentro: o halo na cor viva (`aceso`) em volta da
+ * forma. A forma (alpha do MEIO2) borrada em 2D (caixa, 3 passadas) vira a luz que
+ * sai pelas bordas; o rasgo fica POR CIMA do halo (over), entao o miolo nao muda.
+ * `fora` 0-100: raio de 6 a 32 px e a forca de 0,9 a 2.
+ */
+function halo(forma: ArrayLike<number>, saida: Uint8ClampedArray, L: number, A: number, aceso: Rgb, fora: number): void {
+  const b = Math.min(100, Math.max(0, fora)) / 100
+  const raio = Math.round(6 + 26 * b)
+  const forca = (0.9 + 1.1 * b) * (0.45 + 0.55 * b)
+  let y0 = A
+  let y1 = -1
+  for (let y = 0; y < A; y++) {
+    for (let x = 0; x < L; x += 4) {
+      if (forma[(y * L + x) * 4 + 3]! > 0) {
+        if (y < y0) y0 = y
+        y1 = y
+        break
+      }
+    }
+  }
+  if (y1 < 0) return
+  const m = raio * 3
+  const top = Math.max(0, y0 - m)
+  const bot = Math.min(A - 1, y1 + m)
+  const H = bot - top + 1
+  const a = new Float32Array(L * H)
+  for (let y = 0; y < H; y++) for (let x = 0; x < L; x++) a[y * L + x] = forma[((y + top) * L + x) * 4 + 3]! / 255
+  const tmp = new Float32Array(L * H)
+  const caixa = (src: Float32Array, dst: Float32Array, horizontal: boolean): void => {
+    const n = horizontal ? L : H
+    const linhas = horizontal ? H : L
+    const w = 2 * raio + 1
+    for (let l = 0; l < linhas; l++) {
+      const at = (k: number): number => {
+        const kk = Math.max(0, Math.min(n - 1, k))
+        return horizontal ? src[l * L + kk]! : src[kk * L + l]!
+      }
+      let soma = 0
+      for (let k = -raio; k <= raio; k++) soma += at(k)
+      for (let k = 0; k < n; k++) {
+        if (horizontal) dst[l * L + k] = soma / w
+        else dst[k * L + l] = soma / w
+        soma += at(k + raio + 1) - at(k - raio)
+      }
+    }
+  }
+  for (let passada = 0; passada < 3; passada++) {
+    caixa(a, tmp, true)
+    caixa(tmp, a, false)
+  }
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < L; x++) {
+      const i = ((y + top) * L + x) * 4
+      const as = saida[i + 3]! / 255
+      if (as >= 1) continue
+      const ag = Math.min(1, a[y * L + x]! * forca)
+      if (ag <= 0) continue
+      // O rasgo por cima do halo.
+      const ao = as + ag * (1 - as)
+      saida[i] = (saida[i]! * as + aceso[0] * ag * (1 - as)) / ao
+      saida[i + 1] = (saida[i + 1]! * as + aceso[1] * ag * (1 - as)) / ao
+      saida[i + 2] = (saida[i + 2]! * as + aceso[2] * ag * (1 - as)) / ao
+      saida[i + 3] = ao * 255
+    }
+  }
 }
