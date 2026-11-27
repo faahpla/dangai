@@ -18,6 +18,7 @@ import { gravarRascunho, indiceDoRascunho, lerRascunhoDoDisco } from '../gerar/r
 import { nomeDoPersonagem } from '../../shared/apelidos'
 import { apelidosDoIndice } from '../cenas/casar'
 import { comMesclas } from '../cenas/mesclas'
+import { comOsExtras } from '../cenas/extras'
 import { quadrosDosPlanos } from '../cenas/quadros'
 import { aplicarGrids, marcaDoGrid, sinaisDoGrid, type SinaisDoGrid } from '../cenas/grid'
 import { saveProjectFile } from '../project'
@@ -158,7 +159,7 @@ async function sinaisDoGridDoRascunho(rascunhoId: string): Promise<SinaisDoGrid 
     const roteiro = roteiroAtual(r)
     if (!roteiro || !takeAtual(r)) return null
     const aberto = indiceDoRascunho(r)
-    return await sinaisDoGrid({ indice: comMesclas(aberto.indice), caminho: aberto.caminho }, roteiro, r.eventos, cenasDoRascunho(r).escolhas)
+    return await sinaisDoGrid({ indice: comOsExtras(r, comMesclas(aberto.indice)), caminho: aberto.caminho }, roteiro, r.eventos, cenasDoRascunho(r).escolhas)
   } catch {
     return null
   }
@@ -170,7 +171,8 @@ export async function encaixarNaVoz(rascunhoId: string): Promise<CenasGravadas> 
   const r = lerRascunhoDoDisco(rascunhoId)
   const roteiro = roteiroAtual(r)
   if (!roteiro) throw new Error('Nao ha roteiro.')
-  const indice = comMesclas(indiceDoRascunho(r).indice)
+  // (27/11) Com os planos dos episodios extras (prefixados): cada cena acha o seu.
+  const indice = comOsExtras(r, comMesclas(indiceDoRascunho(r).indice))
   const take = takeAtual(r)
   const atual = cenasDoRascunho(r)
   const encaixe = encaixarTudo(atual, roteiro, indice, take, minimoDaConfig(), entradas)
@@ -297,7 +299,8 @@ async function montarAqui(
   const take = takeAtual(r)
   if (!take) throw new Error('Aprove a voz antes de abrir no editor.')
   // [recap] Plano mesclado pelo Dangai depois do indice: o projeto aponta o mesclado.
-  const indice = comMesclas(indiceDoRascunho(r).indice)
+  // (27/11) Com os planos dos episodios extras (prefixados): cada cena acha o seu.
+  const indice = comOsExtras(r, comMesclas(indiceDoRascunho(r).indice))
   const atual = cenasDoRascunho(r)
   const { escolhas } = encaixarTudo(atual, roteiro, indice, take, minimoDaConfig(), entradas)
   const cenas: EstadoDasCenas = { ...atual, escolhas, takeId: take.id }

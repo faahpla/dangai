@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { statusDoCorte, temPlanos, type EpisodeIndex, type EstadoDoCorte } from '../../shared/episodio'
+import { statusDoCorte, temPlanos, type EpisodeIndex, type EstadoDoCorte, type Plano } from '../../shared/episodio'
+import type { EpisodioConhecido, ExtrasDasCenas } from '../../shared/canais'
 import { roteiroAtual, type Frase, type RascunhoDoRecap, type Roteiro } from '../../shared/roteiro'
 import { hashDoTexto, podeIrParaCenas, takeAtual, type AudioDoTake, type TakeDaVoz } from '../../shared/voz'
 import {
@@ -79,6 +80,10 @@ export interface FiltrosNaTela {
   vizinhasDe: string | null
   /** Duracao da cena (vizinhas e resto do episodio; a fita fica inteira). */
   duracao: FaixaDeDuracao
+  /** (27/11) Grade de um episodio extra (o id dele). null = o principal. */
+  episodio: string | null
+  /** (27/11) "Perto deste minuto" (segundos do .mkv do episodio da grade). null = o momento da frase. */
+  perto: number | null
 }
 
 /** A cena passa na faixa de duracao. `frase` = os segundos da frase (para "cobre a frase"). */
@@ -151,6 +156,14 @@ interface EstadoDasCenasNaTela {
   mesclas: { episodioId: string; mapa: Record<string, PlanoNoMesclado> } | null
   /** Le de novo as mesclas do episodio (ao entrar no passo 4 e quando a Biblioteca fecha). */
   carregarMesclas: () => Promise<void>
+  /** (27/11) Os episodios extras do rascunho e os planos deles (prefixados). null = ainda nao lidos. */
+  extras: (ExtrasDasCenas & { rascunhoId: string }) | null
+  carregarExtras: () => Promise<void>
+  /** (27/11) Os episodios que o Dangai ja abriu, para adicionar como extra. null = nao pedidos. */
+  conhecidos: EpisodioConhecido[] | null
+  carregarConhecidos: () => Promise<void>
+  /** (27/11) Troca a lista de extras (ids). A grade volta ao principal se o dela saiu. */
+  definirExtras: (episodioIds: readonly string[]) => Promise<void>
   /** Escolhas da tela que o disco ainda nao tem, por fraseId. */
   pendentes: Record<string, EscolhaDaFrase>
   salvando: boolean
@@ -266,7 +279,7 @@ const MINIATURAS_POR_PEDIDO = 200
 /** Espera curta para juntar os pedidos de miniatura de uma rolagem num pedido so. */
 const ESPERA_DAS_MINIATURAS_MS = 40
 
-const FILTROS_LIMPOS: FiltrosNaTela = { personagem: null, busca: '', vizinhasDe: null, duracao: 'qualquer' }
+const FILTROS_LIMPOS: FiltrosNaTela = { personagem: null, busca: '', vizinhasDe: null, duracao: 'qualquer', episodio: null, perto: null }
 
 const LIMPO = {
   fraseAtiva: null,
@@ -423,6 +436,28 @@ export function indiceDasCenas(): EpisodeIndex | null {
   return comMesclas(indice, useCenas.getState().mesclas)
 }
 
+/**
+ * (27/11) O indice das cenas com os planos dos episodios extras (prefixados) no
+ * fim: so para ACHAR plano por id (cartao, player, encaixe). A regua e o casar
+ * usam o principal.
+ */
+const comExtrasCache = new WeakMap<EpisodeIndex, { planos: readonly Plano[]; indice: EpisodeIndex }>()
+export function comOsExtrasDaTela(indice: EpisodeIndex | null, extras = useCenas.getState().extras): EpisodeIndex | null {
+  const rascunhoId = useRoteiro.getState().rascunho?.id
+  if (!indice || !extras || extras.rascunhoId !== rascunhoId || extras.planos.length === 0) return indice
+  const guardado = comExtrasCache.get(indice)
+  if (guardado && guardado.planos === extras.planos) return guardado.indice
+  const feito = { ...indice, planos: [...indice.planos, ...extras.planos] }
+  comExtrasCache.set(indice, { planos: extras.planos, indice: feito })
+  return feito
+}
+
+/** O hook do comOsExtrasDaTela (a Mesa do passo 4). */
+export function useComOsExtras(indice: EpisodeIndex): EpisodeIndex {
+  const extras = useCenas((s) => s.extras)
+  return useMemo(() => comOsExtrasDaTela(indice, extras) ?? indice, [indice, extras])
+}
+
 export function useIndiceDasCenas(): EpisodeIndex | null {
   const episodioId = useRoteiro((s) => s.rascunho?.episodioId ?? null)
   const doRascunho = useRoteiro((s) => s.indice)
@@ -477,7 +512,7 @@ interface ContextoDaFrase {
 function contextoDaFrase(fraseId: string): ContextoDaFrase | null {
   const rascunho = useRoteiro.getState().rascunho
   const roteiro = rascunho ? roteiroAtual(rascunho) : null
-  const indice = indiceDasCenas()
+  const indice = comOsExtrasDaTela(indiceDasCenas())
   if (!rascunho || !roteiro || !indice) return null
   const frase = frasesDoRoteiro(roteiro).find((f) => f.id === fraseId)
   if (!frase) return null
@@ -634,6 +669,43 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
     indiceDoCorte: null,
     mesclas: null,
 
+    extras: null,
+    conhecidos: null,
+
+    carregarExtras: async () => {
+      const id = useRoteiro.getState().rascunho?.id ?? null
+      if (!id) return
+      const r = await ponte.extrasDasCenas(id)
+      if (!r.ok || !ainda(id)) return
+      const antes = get().extras
+      if (antes && antes.rascunhoId === id && JSON.stringify(antes.extras) === JSON.stringify(r.value.extras) && antes.planos.length === r.value.planos.length) return
+      set({ extras: { ...r.value, rascunhoId: id } })
+    },
+
+    carregarConhecidos: async () => {
+      const id = useRoteiro.getState().rascunho?.id ?? null
+      if (!id) return
+      const r = await ponte.episodiosConhecidos(id)
+      if (r.ok && ainda(id)) set({ conhecidos: r.value })
+      else if (!r.ok) set({ erro: r.error })
+    },
+
+    definirExtras: async (episodioIds) => {
+      const id = useRoteiro.getState().rascunho?.id ?? null
+      if (!id) return
+      const r = await naFila(() => ponte.definirExtras(id, episodioIds))
+      if (!r.ok) {
+        set({ erro: r.error })
+        return
+      }
+      trocarRascunho(r.value)
+      const f = get().filtros
+      if (f.episodio && !r.value.episodiosExtras.some((e) => e.episodioId === f.episodio)) {
+        set({ filtros: { ...f, episodio: null, perto: null, vizinhasDe: null } })
+      }
+      await get().carregarExtras()
+    },
+
     carregarMesclas: async () => {
       const episodioId = useRoteiro.getState().rascunho?.episodioId ?? null
       if (!episodioId) return
@@ -719,7 +791,7 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
       const busca = filtros.busca.trim()
       // A sugestao gravada muda a fita (e o que esta "na fita" sai das vizinhas): pede de novo.
       const fita = escolhaDaFrase(cenasDoRascunho(rascunho), fraseAtiva)?.fita.map((c) => c.planoIds.join('+')).join(',') ?? ''
-      const chave = [rascunhoId, fraseAtiva, filtros.personagem ?? '', busca, filtros.vizinhasDe ?? '', fita].join('|')
+      const chave = [rascunhoId, fraseAtiva, filtros.personagem ?? '', busca, filtros.vizinhasDe ?? '', fita, filtros.episodio ?? '', filtros.perto ?? ''].join('|')
       const atual = get().grade
       if (atual?.chave === chave && (atual.valor || atual.carregando)) return
       const vista = gradesVistas.get(chave)
@@ -733,6 +805,8 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
         personagem: filtros.personagem,
         busca: busca || null,
         vizinhasDe: filtros.vizinhasDe,
+        episodio: filtros.episodio,
+        perto: filtros.perto,
       })
       if (r.ok) gradesVistas.set(chave, r.value)
       if (get().grade?.chave !== chave) return
@@ -804,7 +878,10 @@ export const useCenas = create<EstadoDasCenasNaTela>((set, get) => {
         const ultimo = cena.candidato.planoIds[cena.candidato.planoIds.length - 1]
         const i = planos.findIndex((p) => p.id === ultimo)
         const seguinte = i >= 0 ? planos[i + 1] : undefined
-        if (!seguinte || planoExcluido(seguinte, ctx.indice.exclusoes)) {
+        // (27/11) Episodio extra: o seguinte tem que ser do mesmo episodio (o prefixo igual).
+        const prefixo = (id: string): string => (id.includes('~') ? id.slice(0, id.indexOf('~')) : '')
+        const deFora = seguinte !== undefined && ultimo !== undefined && prefixo(seguinte.id) !== prefixo(ultimo)
+        if (!seguinte || deFora || (prefixo(seguinte.id) === '' && planoExcluido(seguinte, ctx.indice.exclusoes))) {
           set({ recado: 'Sem plano seguinte para completar esta cena.' })
           return null
         }

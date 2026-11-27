@@ -16,6 +16,7 @@ import type {
   PedidoDeCorte,
   ProgressoDaAnalise,
   SondaDoEpisodio,
+  Plano,
   StatusDoMotor,
 } from './episodio'
 import type {
@@ -46,6 +47,7 @@ import type { EstiloDoRecap, EstiloNaTela } from './estilo'
 import type { ModoDaRevisao, RevisaoFeita } from './revisao'
 import type { Escritor } from './escritor'
 import type { PlanoNoMesclado } from './mesclas'
+import type { EpisodioExtra } from './extras'
 import type {
   CandidatosDaFrase,
   CenasGravadas,
@@ -189,6 +191,10 @@ export const CANAIS = {
   /** (rodada 4) "Grid" / "Tela cheia" numa frase (cenas/grid.ts). */
   gridDaFrase: 'recap:cenas:grid',
   mesclasDoEpisodio: 'recap:cenas:mesclas',
+  /** (27/11) Episodios extras: os conhecidos, trocar a lista e os planos deles (shared/extras.ts). */
+  episodiosConhecidos: 'recap:cenas:extras-conhecidos',
+  definirExtras: 'recap:cenas:extras-definir',
+  extrasDasCenas: 'recap:cenas:extras',
   montarProjeto: 'recap:montar:projeto',
   /** O2: a montagem (Abrir no editor) que o app largou no meio. */
   montagemInterrompida: 'recap:montar:interrompida',
@@ -389,6 +395,12 @@ export interface PonteDoRecap {
   /** variar: o botao "Sugerir de novo" (a frase que voltaria igual sai sem os planos de antes). */
   sugerirCenas(rascunhoId: string, variar?: boolean): Promise<IpcResult<CenasGravadas>>
   candidatosDaFrase(rascunhoId: string, fraseId: string, filtros: FiltrosDeCandidatos): Promise<IpcResult<CandidatosDaFrase>>
+  /** (27/11) Os episodios que este Dangai ja abriu, menos o principal (o mesmo anime primeiro). */
+  episodiosConhecidos(rascunhoId: string): Promise<IpcResult<EpisodioConhecido[]>>
+  /** (27/11) Troca os episodios extras do rascunho. Devolve o rascunho inteiro. */
+  definirExtras(rascunhoId: string, episodioIds: readonly string[]): Promise<IpcResult<RascunhoDoRecap>>
+  /** (27/11) Os extras do rascunho e os planos deles (ids prefixados), para a tela achar a cena. */
+  extrasDasCenas(rascunhoId: string): Promise<IpcResult<ExtrasDasCenas>>
   salvarCenas(rascunhoId: string, escolhas: readonly EscolhaDaFrase[]): Promise<IpcResult<CenasGravadas>>
   encaixarNaVoz(rascunhoId: string): Promise<IpcResult<CenasGravadas>>
   /**
@@ -489,4 +501,23 @@ export interface PonteDoRecap {
   escolherPastaDoMotorRuntime(padrao?: boolean): Promise<IpcResult<EstadoDoMotorRuntime>>
   removerMotorRuntime(): Promise<IpcResult<EstadoDoMotorRuntime>>
   onMotorRuntime(listener: (estado: EstadoDoMotorRuntime) => void): () => void
+}
+
+/** (27/11) Um episodio que o Dangai ja abriu, para a lista dos extras. */
+export interface EpisodioConhecido {
+  episodioId: string
+  indicePath: string
+  anime: string
+  temporada: number
+  episodio: number
+  titulo: string
+  /** Planos cortados (0 = ainda sem cenas). */
+  cenas: number
+}
+
+/** (27/11) Os extras do rascunho como a tela precisa. */
+export interface ExtrasDasCenas {
+  extras: (EpisodioExtra & { ok: boolean; cenas: number })[]
+  /** Os planos de todos os extras que abriram, com o id prefixado. */
+  planos: Plano[]
 }

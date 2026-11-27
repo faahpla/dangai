@@ -2,7 +2,7 @@ import { dialog } from 'electron'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { ContextoDoModulo } from '../../../electron/modulos'
-import { CANAIS as C, type ProvedorDaIa } from '../shared/canais'
+import { CANAIS as C, type EpisodioConhecido, type ExtrasDasCenas, type ProvedorDaIa } from '../shared/canais'
 import type { ConferenciaDoEnvio, EnvioAutomatico, ResultadoDaVolta, ResultadoDoEnvio } from '../shared/ancut'
 import type { ConfigDoRecapNaTela } from '../shared/config'
 import {
@@ -116,6 +116,7 @@ import {
   type SfxDaEdicaoRapida,
 } from '../shared/edicao-rapida'
 import { candidatosDaFrase, salvarCenas, sugerirCenas } from './cenas'
+import { definirExtras, episodiosConhecidos, extrasDasCenas } from './cenas/extras'
 import { gridDaFrase } from './cenas/grid'
 import { mesclasDoEpisodio } from './cenas/mesclas'
 import type { PlanoNoMesclado } from '../shared/mesclas'
@@ -436,6 +437,13 @@ export function registrarCanais(ctx: ContextoDoModulo): void {
   ctx.handle<[string, string, FiltrosDeCandidatos], CandidatosDaFrase>(C.candidatosDaFrase, async (rascunhoId, fraseId, filtros) =>
     candidatosDaFrase(idDoRascunho(rascunhoId), idDaFrase(fraseId), filtrosDeCandidatosSchema.parse(filtros ?? {})),
   )
+
+  ctx.handle<[string], EpisodioConhecido[]>(C.episodiosConhecidos, async (rascunhoId) => episodiosConhecidos(idDoRascunho(rascunhoId)))
+  ctx.handle<[string, string[]], RascunhoDoRecap>(C.definirExtras, async (rascunhoId, ids) => {
+    const lista = z.array(z.string().regex(/^ep_[0-9a-f]{40}$/)).max(200).parse(ids ?? [])
+    return definirExtras(idDoRascunho(rascunhoId), lista)
+  })
+  ctx.handle<[string], ExtrasDasCenas>(C.extrasDasCenas, async (rascunhoId) => extrasDasCenas(idDoRascunho(rascunhoId)))
 
   ctx.handle<[string, EscolhaDaFrase[]], CenasGravadas>(C.salvarCenas, async (rascunhoId, escolhas) =>
     salvarCenas(idDoRascunho(rascunhoId), listaDeEscolhasSchema.parse(escolhas)),

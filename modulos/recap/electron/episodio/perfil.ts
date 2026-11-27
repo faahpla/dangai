@@ -80,6 +80,12 @@ export function lembrarIndice(id: string, caminho: string): void {
   }
 }
 
+/** (27/11) Todos os episodios lembrados: id -> o ultimo episodio.json (a lista dos extras). */
+export function indicesLembrados(): Record<string, string> {
+  const mapa = lerJson<MapaDeIndices>(caminhoDoMapa(), { versao: 1, ultimos: {} })
+  return { ...(mapa.ultimos ?? {}) }
+}
+
 export function indiceLembrado(id: string): string | null {
   const mapa = lerJson<MapaDeIndices>(caminhoDoMapa(), { versao: 1, ultimos: {} })
   const caminho = mapa.ultimos?.[id]

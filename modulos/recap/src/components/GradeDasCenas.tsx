@@ -9,6 +9,8 @@ import type { Frase } from '../../shared/roteiro'
 import type { CandidatoDeCena, EscolhaDaFrase } from '../../shared/cenas'
 import { mesmaCena, passaNaDuracao, useCenas, type FaixaDeDuracao } from '../store/gerar-cenas'
 import { formatarTempo } from './pecas'
+import { useRoteiro } from '../store/gerar-roteiro'
+import type { EpisodioExtra } from '../../shared/extras'
 
 /**
  * A GRADE DA TELA DE CENAS: a direita da coluna do roteiro, como a Biblioteca
@@ -313,6 +315,8 @@ export function GradeDasCenas({
         </span>
       </div>
 
+      <EpisodiosDaGrade />
+
       <AvisoDoGridNaMao fraseId={frase.id} escolha={escolha} />
 
       <Personagens nomes={personagens} ativo={filtros.personagem} onEscolher={(nome) => definirFiltros({ personagem: nome })} />
@@ -393,6 +397,135 @@ export function GradeDasCenas({
           desenhar={(c) => cartao(c, c.planoIds.join('+'))}
         />
       )}
+    </div>
+  )
+}
+
+/** "12:30", "12" (minutos) ou "1:02:03" -> segundos. null = vazio ou nao entendi. */
+export function segundosDoTexto(texto: string): number | null {
+  const t = texto.trim().replace(',', '.')
+  if (!t) return null
+  const partes = t.split(':').map((x) => Number(x))
+  if (partes.some((n) => !Number.isFinite(n) || n < 0) || partes.length > 3) return null
+  if (partes.length === 1) return Math.round(partes[0]! * 60)
+  return partes.reduce((s, n) => s * 60 + n, 0)
+}
+
+/**
+ * (27/11) OS EPISODIOS DA GRADE: de que episodio a grade mostra as cenas (o
+ * principal ou um extra), "perto do minuto" e a lista para adicionar extras
+ * (os episodios que o Dangai ja abriu). A cena de um extra entra na frase como
+ * qualquer outra; a montagem tira do episodio dela.
+ */
+const SEM_EXTRAS: readonly EpisodioExtra[] = []
+
+function EpisodiosDaGrade() {
+  const filtros = useCenas((s) => s.filtros)
+  const definirFiltros = useCenas((s) => s.definirFiltros)
+  const extras = useCenas((s) => s.extras)
+  const conhecidos = useCenas((s) => s.conhecidos)
+  const carregarConhecidos = useCenas((s) => s.carregarConhecidos)
+  const definirExtras = useCenas((s) => s.definirExtras)
+  const titulo = useRoteiro((s) => s.rascunho?.titulo ?? 'Principal')
+  const doRascunho = useRoteiro((s) => s.rascunho?.episodiosExtras ?? SEM_EXTRAS)
+  const [aberto, setAberto] = useState(false)
+  const [minuto, setMinuto] = useState(filtros.perto !== null ? formatarTempo(filtros.perto) : '')
+  useEffect(() => setMinuto(filtros.perto !== null ? formatarTempo(filtros.perto) : ''), [filtros.perto])
+  const lista = extras?.extras ?? doRascunho.map((e) => ({ ...e, ok: true, cenas: 0 }))
+  const ids = new Set(doRascunho.map((e) => e.episodioId))
+
+  const aplicarMinuto = (): void => {
+    const s = segundosDoTexto(minuto)
+    if (s !== filtros.perto) definirFiltros({ perto: s, vizinhasDe: null })
+  }
+  const alternar = (id: string): void => {
+    const novos = ids.has(id) ? [...ids].filter((x) => x !== id) : [...ids, id]
+    void definirExtras(novos)
+  }
+
+  return (
+    <div className="relative flex shrink-0 items-center gap-2 border-b border-line px-4 py-1.5 text-[11px] text-ink-2" data-episodios-da-grade>
+      <span className="shrink-0 text-ink-3">Episodio</span>
+      <select
+        value={filtros.episodio ?? ''}
+        onChange={(e) => definirFiltros({ episodio: e.target.value || null, vizinhasDe: null, perto: null })}
+        title="De que episodio a grade mostra as cenas"
+        className="min-w-0 max-w-[220px] rounded-sm border border-line bg-elevated px-2 py-1 text-[11px] text-ink focus:border-line-strong focus:outline-none"
+      >
+        <option value="">{titulo} (principal)</option>
+        {lista.map((e) => (
+          <option key={e.episodioId} value={e.episodioId} disabled={!e.ok}>
+            {e.titulo}
+            {e.ok ? '' : ' (nao abre)'}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          const abrir = !aberto
+          setAberto(abrir)
+          if (abrir) void carregarConhecidos()
+        }}
+        title="Usar cenas de outros episodios neste recap (curiosidade, flashback)"
+        className={`shrink-0 rounded-sm border px-2 py-0.5 transition-colors duration-150 ${aberto ? 'border-accent bg-accent-dim text-ink' : 'border-line hover:border-accent hover:text-ink'}`}
+      >
+        + Episodios extras{doRascunho.length > 0 ? ` (${doRascunho.length})` : ''}
+      </button>
+      <span className="ml-auto shrink-0 text-ink-3">Perto do minuto</span>
+      <input
+        value={minuto}
+        onChange={(e) => setMinuto(e.target.value)}
+        onBlur={aplicarMinuto}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') aplicarMinuto()
+          if (e.key === 'Escape' && minuto) {
+            e.preventDefault()
+            e.stopPropagation()
+            setMinuto('')
+            definirFiltros({ perto: null })
+          }
+        }}
+        placeholder="12:30"
+        spellCheck={false}
+        title="As cenas perto deste minuto do episodio escolhido (Enter). Vazio = o momento da frase."
+        className="w-[64px] select-text rounded-sm border border-line bg-elevated px-2 py-1 text-[11px] text-ink placeholder:text-ink-3 focus:border-line-strong focus:outline-none"
+      />
+      {aberto ? (
+        <div className="absolute left-4 top-full z-30 mt-1 max-h-[320px] w-[340px] overflow-y-auto rounded-sm border border-line-strong bg-elevated p-1 shadow-xl" data-lista-de-extras>
+          {conhecidos === null ? (
+            <p className="flex items-center gap-2 px-2 py-2 text-ink-3">
+              <Loader2 size={12} strokeWidth={1.5} className="animate-spin text-accent" /> Procurando os episodios...
+            </p>
+          ) : conhecidos.length === 0 ? (
+            <p className="px-2 py-2 text-ink-3">Nenhum outro episodio aberto neste Dangai. Abra o episodio no passo 1 (Novo recap) e volte.</p>
+          ) : (
+            conhecidos.map((c) => (
+              <label
+                key={c.episodioId}
+                className={`flex items-center gap-2 rounded-sm px-2 py-1.5 ${c.cenas > 0 || ids.has(c.episodioId) ? 'cursor-pointer hover:bg-surface' : 'opacity-50'}`}
+                title={c.cenas > 0 ? `${c.cenas} cenas` : 'Ainda sem cenas cortadas'}
+              >
+                <input
+                  type="checkbox"
+                  checked={ids.has(c.episodioId)}
+                  disabled={c.cenas === 0 && !ids.has(c.episodioId)}
+                  onChange={() => alternar(c.episodioId)}
+                />
+                <span className="min-w-0 flex-1 truncate text-ink">{c.titulo}</span>
+                <span className="tnum shrink-0 text-ink-3">{c.cenas > 0 ? `${c.cenas} cenas` : 'sem cenas'}</span>
+              </label>
+            ))
+          )}
+          <button
+            type="button"
+            onClick={() => setAberto(false)}
+            className="mt-1 w-full rounded-sm border border-line px-2 py-1 text-ink-2 hover:border-accent hover:text-ink"
+          >
+            Pronto
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

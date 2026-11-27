@@ -1,4 +1,5 @@
 import { captionStyleSchema, type CaptionStyle } from '@shared/contract'
+import { ehDeExtra } from '../../shared/extras'
 import {
   camadaDeCor,
   chaveDoPedidoDeRosto,
@@ -168,7 +169,8 @@ export function nomesDaMontagem(
   const planos = new Map(indice.planos.map((p) => [p.id, p]))
   const falante = (p: Pick<PedacoDaMontagem, 'planoId' | 'de' | 'ate'>): string | null => {
     const plano = planos.get(p.planoId)
-    if (!plano) return null
+    // (27/11) Plano de um episodio extra: as falas do indice sao do principal (outro .mkv).
+    if (!plano || ehDeExtra(p.planoId)) return null
     const base = plano.inicioNoArquivo ?? 0
     const de = plano.start + (p.de - base)
     const ate = plano.start + (p.ate - base)

@@ -25,6 +25,8 @@ import { legibilidadeDoQuadro, LEITURA_ALTURA, LEITURA_LARGURA, type CamadasDoCa
 import type { ConfigDasCenas } from '../../shared/config'
 import { corteDaFrase, idDoPedaco, minimoNaTela, type OpcoesDaDivisao } from '../../shared/divisao'
 import { comMesclas } from './mesclas'
+import { abrirIndicePorId } from '../episodio/abrir-indice'
+import { extrasForaDoRascunho, idCru, idNoExtra } from '../../shared/extras'
 import { casarFrases, fichasDe, fichasFortes, janelasDasFrases, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
 import { camadasDaConfig, garantirVisao, sinaisDasFrases, sinaisDoEpisodio } from './visao'
 import { largurasDosRostos, largurasPorInstante } from '../montar/rostos-motor'
@@ -274,6 +276,8 @@ export async function sugerirCenas(rascunhoId: string, variar = false): Promise<
     ...velhas.textoMudou.filter((id) => !escolhaDaFrase(atual, id)?.travada),
     // Corte refeito: a cena escolhida nao existe mais no indice (mesmo travada).
     ...escolhasForaDoIndice(atual, indice.planos),
+    // (27/11) Cena de um episodio que saiu dos extras.
+    ...extrasForaDoRascunho(atual, r.episodiosExtras),
     // Sugeridas pela estimativa antes da voz: com ela aprovada, no tempo real das falas.
     ...(podeIrParaCenas(r, roteiro) ? velhas.antesDaVoz : []),
   ])
@@ -453,6 +457,7 @@ export async function candidatosDaFrase(
   filtros: FiltrosDeCandidatos,
 ): Promise<CandidatosDaFrase> {
   const r = lerRascunhoDoDisco(rascunhoId)
+  if (filtros.episodio && filtros.episodio !== r.episodioId) return candidatosDoExtra(r, fraseId, filtros, filtros.episodio)
   const { indice, roteiro } = abrirParaCenas(r)
   const frases = frasesDoRoteiro(roteiro)
   const i = frases.findIndex((f) => f.id === fraseId)
@@ -497,7 +502,8 @@ export async function candidatosDaFrase(
 
   // "Perto deste momento": em volta do plano pedido, ou do instante da frase.
   let centro = filtros.vizinhasDe ? visiveis.findIndex((p) => p.plano.id === filtros.vizinhasDe) : -1
-  const t = janela.ancora
+  // (27/11) "Perto deste minuto" ganha do momento da frase.
+  const t = filtros.perto ?? janela.ancora
   if (centro < 0 && t !== null && visiveis.length > 0) {
     let melhor = 0
     let menor = Infinity
@@ -528,8 +534,52 @@ export async function candidatosDaFrase(
     outras,
     personagens: personagensDoEpisodio(indice, todos),
     // Frase sem evento: o contrato diz null (a janela dela e emprestada da vizinha).
-    momento: janela.herdada ? null : t,
+    momento: filtros.perto ?? (janela.herdada ? null : t),
   }
+}
+
+/**
+ * (27/11) A grade de uma frase num EPISODIO EXTRA (shared/extras.ts): sem fita
+ * (o casar e do principal), as vizinhas de `perto`/`vizinhasDe` e o resto que
+ * passa nos filtros, com os ids prefixados. So le.
+ */
+function candidatosDoExtra(r: RascunhoDoRecap, fraseId: string, filtros: FiltrosDeCandidatos, episodioId: string): CandidatosDaFrase {
+  const roteiro = roteiroAtual(r)
+  if (!roteiro || !r.aprovado) throw new Error('Aprove o roteiro antes das cenas.')
+  if (!frasesDoRoteiro(roteiro).some((f) => f.id === fraseId)) throw new Error('Essa frase nao esta mais no roteiro.')
+  const extra = r.episodiosExtras.find((e) => e.episodioId === episodioId)
+  if (!extra) throw new Error('Esse episodio nao esta mais nos extras do recap.')
+  const indice = comMesclas(abrirIndicePorId(extra.episodioId, extra.indicePath).indice)
+  if (!temPlanos(indice)) throw new Error(`As cenas de ${extra.titulo} ainda nao foram cortadas.`)
+  const todos = prepararPlanos(indice)
+  const visiveis = todos.filter((p) => p.util !== null)
+  const falaDaCue = new Map(indice.cues.map((c) => [c.id, c.texto]))
+  const prefixado = (c: CandidatoDeCena): CandidatoDeCena => ({ ...c, planoIds: c.planoIds.map((id) => idNoExtra(indice.id, id)) })
+  const deCru = filtros.vizinhasDe ? idCru(filtros.vizinhasDe) : null
+  let centro = deCru ? visiveis.findIndex((p) => p.plano.id === deCru) : -1
+  const t = filtros.perto ?? null
+  if (centro < 0 && t !== null && visiveis.length > 0) {
+    let menor = Infinity
+    for (const [k, p] of visiveis.entries()) {
+      const d = t < p.plano.start ? p.plano.start - t : t > p.plano.end ? t - p.plano.end : 0
+      if (d < menor) {
+        menor = d
+        centro = k
+      }
+    }
+  }
+  const vizinhas =
+    centro < 0
+      ? []
+      : visiveis
+          .slice(Math.max(0, centro - VIZINHAS_DE_CADA_LADO * 2), centro + VIZINHAS_DE_CADA_LADO * 2 + 1)
+          .filter((p) => passaNoFiltro(p, filtros, falaDaCue))
+          .map((p) => prefixado(candidatoDoPlano(p, indice.id, 'vizinha', ondeFica(p, t))))
+  const vistos = new Set(vizinhas.map((c) => c.planoIds[0]))
+  const outras = visiveis
+    .filter((p) => !vistos.has(idNoExtra(indice.id, p.plano.id)) && passaNoFiltro(p, filtros, falaDaCue))
+    .map((p) => prefixado(candidatoDoPlano(p, indice.id, 'busca', [extra.titulo.match(/S\d+E\d+/)?.[0] ?? 'extra'])))
+  return { fraseId, sugestoes: [], vizinhas, outras, personagens: personagensDoEpisodio(indice, todos), momento: t }
 }
 
 /** Grava as escolhas da tela (a do mesmo fraseId e trocada; ordem do roteiro). */

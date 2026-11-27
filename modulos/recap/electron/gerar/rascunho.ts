@@ -146,6 +146,7 @@ export async function abrirRascunho(episodioId: string, novo = false): Promise<R
       voz: null,
       cenas: null,
       revisoes: [],
+      episodiosExtras: [],
     }
     gravarRascunho(rascunho)
   } else {

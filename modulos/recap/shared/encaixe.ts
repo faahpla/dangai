@@ -284,9 +284,14 @@ function encaixarCandidato(
   const minimo = ctx.minimoSec === undefined ? MINIMO_NA_TELA_PADRAO_SEC : minimoNaTela(ctx.minimoSec)
   let a = Math.min(...posicoes)
   let b = Math.max(...posicoes)
+  // (27/11) Episodio extra (shared/extras.ts): emenda so dentro do mesmo episodio, e as
+  // exclusoes (OP/ED, em segundos) sao do principal.
+  const doEpisodio = (id: string): string => (id.includes('~') ? id.slice(0, id.indexOf('~')) : '')
+  const deQuem = doEpisodio(planos[a]?.id ?? '')
   const livre = (i: number): boolean => {
     const p = planos[i]
-    return p !== undefined && !planoExcluido(p, ctx.indice.exclusoes) && !(ctx.ocupados?.has(p.id) ?? false)
+    if (p === undefined || doEpisodio(p.id) !== deQuem) return false
+    return (deQuem !== '' || !planoExcluido(p, ctx.indice.exclusoes)) && !(ctx.ocupados?.has(p.id) ?? false)
   }
   // (20/10) Posto a mao: o plano dele fica, sem emenda sozinha (ver o topo).
   const mao = c.origem === 'usuario'

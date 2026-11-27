@@ -1,4 +1,6 @@
 import { existsSync, mkdirSync, renameSync, statSync } from 'node:fs'
+import { indicesLembrados } from '../episodio/perfil'
+import { doEpisodio, ehDeExtra, idCru } from '../../shared/extras'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import { converterRgbHdr } from '../cor-hdr'
@@ -34,6 +36,24 @@ export async function miniaturasDasCenas(
   episodioId: string,
   planoIds: readonly string[],
 ): Promise<Record<string, string | null>> {
+  // (27/11) Planos de OUTRO episodio (os extras, prefixados): pede ao episodio deles.
+  const deOutros = planoIds.filter((id) => ehDeExtra(id) && !doEpisodio(id, episodioId))
+  if (deOutros.length > 0) {
+    const saida = await miniaturasDasCenas(episodioId, planoIds.filter((id) => !deOutros.includes(id)))
+    const conhecidos = Object.keys(indicesLembrados())
+    const porPrefixo = new Map<string, string[]>()
+    for (const id of deOutros) porPrefixo.set(id.slice(0, id.indexOf('~')), [...(porPrefixo.get(id.slice(0, id.indexOf('~'))) ?? []), id])
+    for (const [prefixo, ids] of porPrefixo) {
+      const outro = conhecidos.find((k) => k.slice(3, 13) === prefixo)
+      try {
+        Object.assign(saida, outro ? await miniaturasDasCenas(outro, ids) : Object.fromEntries(ids.map((id) => [id, null])))
+      } catch {
+        for (const id of ids) saida[id] = null
+      }
+    }
+    return saida
+  }
+  if (planoIds.length === 0) return {}
   const { indice, caminho } = abrirIndicePorId(episodioId)
   await startMediaServer()
   // [lote 2, C7] O keyframe mais bonito e nitido do plano, quando o episodio ja foi medido.
@@ -49,7 +69,9 @@ export async function miniaturasDasCenas(
   const saida: Record<string, string | null> = {}
 
   for (const id of [...new Set(planoIds)].slice(0, MAXIMO_POR_PEDIDO)) {
-    const keyframe = melhores.get(id) ?? planos.get(id)?.keyframe ?? null
+    // (27/11) Plano de um episodio extra vem prefixado (shared/extras.ts): o arquivo e o do id cru.
+    const cru = ehDeExtra(id) && doEpisodio(id, episodioId) ? idCru(id) : id
+    const keyframe = melhores.get(cru) ?? planos.get(cru)?.keyframe ?? null
     let mtime = 0
     try {
       mtime = keyframe ? Math.round(statSync(keyframe).mtimeMs) : 0
@@ -62,7 +84,7 @@ export async function miniaturasDasCenas(
     }
     // O id do plano vem do nome do mp4 ('0025', '0164-0167'): so letra, numero, - e _.
     const k = /_(\d)\.jpe?g$/i.exec(keyframe)?.[1] ?? ''
-    const destino = join(pasta, `${id.replace(/[^0-9A-Za-z_-]/g, '_')}@${mtime}${k && k !== '1' ? `k${k}` : ''}${hdr ? '-hdr' : ''}.webp`)
+    const destino = join(pasta, `${cru.replace(/[^0-9A-Za-z_-]/g, '_')}@${mtime}${k && k !== '1' ? `k${k}` : ''}${hdr ? '-hdr' : ''}.webp`)
     try {
       if (!existsSync(destino)) {
         mkdirSync(pasta, { recursive: true })

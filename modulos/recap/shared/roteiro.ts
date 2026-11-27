@@ -7,6 +7,7 @@ import { estadoDaVozSchema, situacaoDaVoz } from './voz'
 import { estadoDasCenasSchema } from './cenas'
 // E para o revisor: revisao.ts importa daqui apenas TIPOS.
 import { revisaoSchema } from './revisao'
+import { episodioExtraSchema, MAXIMO_DE_EXTRAS } from './extras'
 import type { PerguntaDeCusto } from './escritor'
 
 /**
@@ -348,6 +349,11 @@ const rascunhoBase = z.object({
    * Rascunho de antes le como [].
    */
   revisoes: z.array(revisaoSchema).default([]),
+  /**
+   * (27/11) Outros episodios de onde a aba Cenas pode tirar cenas (shared/extras.ts).
+   * O roteiro e a voz continuam do `episodioId`. Rascunho de antes le como [].
+   */
+  episodiosExtras: z.array(episodioExtraSchema).max(MAXIMO_DE_EXTRAS).default([]),
 })
 
 export const rascunhoDoRecapSchema = rascunhoBase.superRefine((r, ctx) => {

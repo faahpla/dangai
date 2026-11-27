@@ -6,7 +6,7 @@ import { podeIrParaCenas, takeAtual } from '../../shared/voz'
 import { duracaoDaFrase, escolhaDaFrase, frasesDoRoteiro } from '../../shared/cenas'
 import { useGerar, type PassoDoAssistente } from '../store/gerar'
 import { roteiroAprovado, useRoteiro } from '../store/gerar-roteiro'
-import { avisosDasFrases, cenasNaTela, useCenas, useIndiceDasCenas } from '../store/gerar-cenas'
+import { avisosDasFrases, cenasNaTela, useCenas, useComOsExtras, useIndiceDasCenas } from '../store/gerar-cenas'
 import { nucleo } from '../nucleo'
 import { Barra } from './AndamentoDaAnalise'
 import { SecaoDoCorte } from './AndamentoDoCorte'
@@ -57,6 +57,11 @@ export function PassoDasCenas() {
   useEffect(() => {
     if (rascunhoId && !bibliotecaAberta) void useCenas.getState().carregarMesclas()
   }, [rascunhoId, bibliotecaAberta])
+  // (27/11) Os episodios extras do rascunho (e os planos deles).
+  const extrasDoRascunho = rascunho?.episodiosExtras.map((e) => e.episodioId).join('|') ?? ''
+  useEffect(() => {
+    if (rascunhoId) void useCenas.getState().carregarExtras()
+  }, [rascunhoId, extrasDoRascunho])
   useEffect(() => {
     const ler = (): void => void useCenas.getState().carregarMesclas()
     window.addEventListener('focus', ler)
@@ -178,7 +183,9 @@ function espacoDeOutro(alvo: EventTarget | null): boolean {
 }
 
 /** A mesa de trabalho: a coluna do roteiro, a grade e o player. */
-function Mesa({ rascunho, roteiro, indice }: { rascunho: RascunhoDoRecap; roteiro: Roteiro; indice: EpisodeIndex }) {
+function Mesa({ rascunho, roteiro, indice: principal }: { rascunho: RascunhoDoRecap; roteiro: Roteiro; indice: EpisodeIndex }) {
+  // (27/11) Com os planos dos episodios extras: o cartao e o player acham a cena de outro episodio.
+  const indice = useComOsExtras(principal)
   const pendentes = useCenas((s) => s.pendentes)
   const fraseAtiva = useCenas((s) => s.fraseAtiva)
   const previa = useCenas((s) => s.previa)

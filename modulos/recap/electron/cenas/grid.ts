@@ -28,6 +28,7 @@ import { pastaDoPerfil } from '../episodio/perfil'
 import { largurasDosRostos, rostosDosPlanos } from '../montar/rostos-motor'
 import { citadosNoTexto, elencoDoEpisodio, fichasDe, mesmoNome, prepararPlanos, type PlanoDoCasar } from './casar'
 import { comMesclas } from './mesclas'
+import { comOsExtras } from './extras'
 import { quadrosDosPlanos } from './quadros'
 import { rodarModoCenas, sinaisDoEpisodio } from './visao'
 
@@ -575,7 +576,7 @@ export async function gridDaFrase(rascunhoId: string, fraseId: string, ligar: bo
   const roteiroAntes = roteiroAtual(antes)
   if (!roteiroAntes) throw new Error('Nao ha roteiro.')
   const abertoAntes = indiceDoRascunho(antes)
-  const indiceAntes = comMesclas(abertoAntes.indice)
+  const indiceAntes = comOsExtras(antes, comMesclas(abertoAntes.indice))
   // Os sinais antes de ler de novo: ler -> aplicar -> gravar sem await no meio.
   const sinais = ligar
     ? await sinaisDoGrid({ indice: indiceAntes, caminho: abertoAntes.caminho }, roteiroAntes, antes.eventos, cenasDoRascunho(antes).escolhas).catch(
@@ -588,7 +589,7 @@ export async function gridDaFrase(rascunhoId: string, fraseId: string, ligar: bo
   if (!roteiro) throw new Error('Nao ha roteiro.')
   const frase = frasesDoRoteiro(roteiro).find((f) => f.id === fraseId)
   if (!frase) throw new Error('Essa frase nao esta mais no roteiro.')
-  const indice = comMesclas(indiceDoRascunho(r).indice)
+  const indice = comOsExtras(r, comMesclas(indiceDoRascunho(r).indice))
   const take = takeAtual(r)
   const atual = cenasDoRascunho(r)
   const escolha = atual.escolhas.find((x) => x.fraseId === fraseId)

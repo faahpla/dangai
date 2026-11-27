@@ -255,7 +255,14 @@ export const filtrosDeCandidatosSchema = z.object({
   /** Texto livre: fala, falante, descricao. null = sem busca. */
   busca: z.string().max(200).nullable().optional(),
   /** "Perto deste momento" a partir DESTE plano (Plano.id). null = do momento da frase. */
-  vizinhasDe: z.string().max(32).nullable().optional(),
+  vizinhasDe: z.string().max(48).nullable().optional(),
+  /**
+   * (27/11) De que episodio: um dos `episodiosExtras` do rascunho. null/ausente
+   * = o principal. As cenas de um extra voltam com o id prefixado (shared/extras.ts).
+   */
+  episodio: z.string().regex(/^ep_[0-9a-f]{40}$/).nullable().optional(),
+  /** (27/11) "Perto deste minuto": segundos do .mkv do episodio escolhido. Ganha do momento da frase. */
+  perto: z.number().nonnegative().max(36000).nullable().optional(),
 })
 export type FiltrosDeCandidatos = z.infer<typeof filtrosDeCandidatosSchema>
 
@@ -569,7 +576,8 @@ export function mesmoCandidato(
 export function escolhasForaDoIndice(cenas: Pick<EstadoDasCenas, 'escolhas'>, planos: readonly Pick<Plano, 'id'>[]): string[] {
   if (planos.length === 0) return []
   const ids = new Set(planos.map((p) => p.id))
-  const fora = (c: CenaDaFrase): boolean => [...c.candidato.planoIds, ...(c.baixo?.planoIds ?? [])].some((id) => !ids.has(id))
+  // (27/11) Plano de um episodio extra (id com prefixo) nao e deste indice: quem confere e o main (extrasForaDoLugar).
+  const fora = (c: CenaDaFrase): boolean => [...c.candidato.planoIds, ...(c.baixo?.planoIds ?? [])].some((id) => !id.includes('~') && !ids.has(id))
   return cenas.escolhas.filter((e) => e.cenas.some(fora)).map((e) => e.fraseId)
 }
 
