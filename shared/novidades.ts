@@ -20,6 +20,12 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.16.1',
+    itens: [
+      'Thumbnail, divisor "Brilho dentro": agora também tem brilho por fora. Na aba Divisor ficam dois controles, "Brilho dentro" (a borda acesa por dentro do rasgo) e "Brilho fora" (o halo na mesma cor em volta). Começa em 0, então as thumbs que você já fez não mudam.',
+    ],
+  },
+  {
     versao: '2.16.0',
     itens: [
       'Efeitos para censurar: no painel do bloco, do insert (faixa V1/V2) e da camada de ajuste há um quadro “Efeitos” com Desfoque, Mosaico e Tarja — na tela toda ou só numa área que você arrasta. Dá para empilhar vários e desligar no olho para comparar.',
