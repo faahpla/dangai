@@ -3,7 +3,10 @@ import {
   FileAudio,
   FileImage,
   FileVideo,
+  Folder,
   FolderOpen,
+  ChevronRight,
+  LayoutList,
   FolderX,
   Pause,
   Play,
@@ -54,8 +57,17 @@ export function Bins() {
   const [sobre, setSobre] = useState(false)
   const [tocando, setTocando] = useState<string | null>(null)
   const audio = useRef<HTMLAudioElement | null>(null)
+  /*
+   * POR SUBPASTAS (27/11): "quero organizar por humor/triste/feliz e nao
+   * consigo porque fica tudo junto". A bin ligada a uma pasta mostra as
+   * subpastas dela para entrar, como no Explorer; `sub` e onde ele esta
+   * ('' = a pasta da bin). "Tudo junto" volta a lista corrida de antes.
+   */
+  const [sub, setSub] = useState('')
+  const [tudoJunto, setTudoJunto] = useState(false)
 
   const bin = bins.find((b) => b.id === ativa) ?? bins[0] ?? null
+  useEffect(() => setSub(''), [bin?.id, bin?.pasta])
 
   // A pasta da bin e relida ao abrir a bin: largar um som la ja o traz.
   const lerPasta = async (pasta: string): Promise<void> => {
@@ -71,8 +83,9 @@ export function Bins() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bin?.pasta])
 
-  const itens = useMemo(() => {
-    if (!bin) return []
+  const porPastas = Boolean(bin?.pasta) && !tudoJunto
+  const { itens, subpastas } = useMemo((): { itens: ArquivoDaBin[]; subpastas: { nome: string; quantos: number }[] } => {
+    if (!bin) return { itens: [], subpastas: [] }
     const soltos: ArquivoDaBin[] = bin.arquivos.flatMap((path) => {
       const tipo = classifyFile(path)
       return tipo === 'audio' || tipo === 'video' || tipo === 'image'
@@ -80,12 +93,32 @@ export function Bins() {
         : []
     })
     const vistos = new Set(soltos.map((a) => a.path))
-    const todos = [...soltos, ...(bin.pasta ? (daPasta[bin.pasta] ?? []) : []).filter((a) => !vistos.has(a.path))]
+    const daPastaDela = (bin.pasta ? (daPasta[bin.pasta] ?? []) : []).filter((a) => !vistos.has(a.path))
     const termo = busca.trim().toLowerCase()
-    return todos.filter(
-      (a) => (filtro === 'tudo' || a.tipo === filtro) && (!termo || a.nome.toLowerCase().includes(termo)),
-    )
-  }, [bin, daPasta, filtro, busca])
+    const passa = (a: ArquivoDaBin): boolean =>
+      (filtro === 'tudo' || a.tipo === filtro) && (!termo || a.nome.toLowerCase().includes(termo))
+    if (!porPastas || !bin.pasta) return { itens: [...soltos, ...daPastaDela].filter(passa), subpastas: [] }
+
+    // Onde cada arquivo mora, relativo a pasta da bin ("Humor/Triste").
+    const dentro = daPastaDela.map((a) => ({ a, dir: subpastaDe(bin.pasta!, a.path) }))
+    const prefixo = sub ? `${sub}/` : ''
+    const abaixo = dentro.filter(({ dir }) => dir === sub || dir.startsWith(prefixo))
+    // Buscando, procura em tudo o que esta abaixo de onde ele esta.
+    if (termo) return { itens: [...(sub ? [] : soltos), ...abaixo.map(({ a }) => a)].filter(passa), subpastas: [] }
+    const contagem = new Map<string, number>()
+    for (const { a, dir } of abaixo) {
+      if (dir === sub || !passa(a)) continue
+      const proxima = dir.slice(prefixo.length).split('/')[0]!
+      contagem.set(proxima, (contagem.get(proxima) ?? 0) + 1)
+    }
+    return {
+      // Os soltos (adicionados a mao) ficam na raiz da bin.
+      itens: [...(sub ? [] : soltos), ...abaixo.filter(({ dir }) => dir === sub).map(({ a }) => a)].filter(passa),
+      subpastas: [...contagem.entries()]
+        .sort((x, y) => x[0].localeCompare(y[0], 'pt-BR', { numeric: true }))
+        .map(([nome, quantos]) => ({ nome, quantos })),
+    }
+  }, [bin, daPasta, filtro, busca, porPastas, sub])
 
   const ouvir = async (path: string): Promise<void> => {
     const el = audio.current
@@ -282,10 +315,63 @@ export function Bins() {
               />
             </div>
 
+            {bin.pasta && (
+              <div className="flex min-w-0 items-center gap-1 text-[11px]" data-bin="caminho">
+                {porPastas ? (
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
+                    {['', ...sub.split('/').filter(Boolean).map((_, i, l) => l.slice(0, i + 1).join('/'))].map((alvo, i, l) => (
+                      <span key={alvo || '.'} className="flex items-center gap-0.5">
+                        {i > 0 && <ChevronRight size={11} strokeWidth={1.5} className="text-ink-3" />}
+                        <button
+                          type="button"
+                          onClick={() => setSub(alvo)}
+                          disabled={i === l.length - 1}
+                          className={[
+                            'rounded-sm px-1 py-0.5',
+                            i === l.length - 1 ? 'font-medium text-ink' : 'text-ink-3 hover:bg-elevated hover:text-ink',
+                          ].join(' ')}
+                        >
+                          {alvo ? alvo.split('/').pop() : nomeDaPasta(bin.pasta!)}
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="flex-1 text-ink-3">Tudo junto, de todas as subpastas</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setTudoJunto((v) => !v)}
+                  title={porPastas ? 'Mostrar os arquivos de todas as subpastas numa lista só' : 'Navegar pelas subpastas'}
+                  className="flex shrink-0 items-center gap-1 rounded-sm border border-line px-2 py-0.5 text-[10px] text-ink-3 hover:text-ink-2"
+                >
+                  {porPastas ? <LayoutList size={11} strokeWidth={1.5} /> : <Folder size={11} strokeWidth={1.5} />}
+                  {porPastas ? 'Tudo junto' : 'Por pastas'}
+                </button>
+              </div>
+            )}
+
             {erro && <p className="text-[11px] text-danger">{erro}</p>}
 
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {itens.length === 0 ? (
+              {subpastas.length > 0 && (
+                <div className="mb-1 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-1" data-bin="subpastas">
+                  {subpastas.map((p) => (
+                    <button
+                      key={p.nome}
+                      type="button"
+                      onClick={() => setSub(sub ? `${sub}/${p.nome}` : p.nome)}
+                      title={`Abrir ${p.nome}`}
+                      className="flex items-center gap-1.5 rounded-sm border border-line bg-elevated px-2 py-1.5 text-left hover:border-line-strong"
+                    >
+                      <Folder size={13} strokeWidth={1.5} className="shrink-0 text-accent" />
+                      <span className="min-w-0 flex-1 truncate text-[11px] text-ink">{p.nome}</span>
+                      <span className="tnum shrink-0 text-[10px] text-ink-3">{p.quantos}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {itens.length === 0 && subpastas.length > 0 ? null : itens.length === 0 ? (
                 <p className="px-1 py-6 text-center text-[11px] text-ink-3">
                   {lendo ? 'Lendo a pasta...' : 'Vazia. Solte arquivos aqui, ou ligue a bin a uma pasta.'}
                 </p>
@@ -340,6 +426,18 @@ export function Bins() {
       </div>
     </div>
   )
+}
+
+/** A subpasta de um arquivo, relativa a pasta da bin, com "/" ('' = na propria pasta). */
+export function subpastaDe(pasta: string, arquivo: string): string {
+  const base = pasta.split(/[\\/]/).filter(Boolean)
+  const partes = arquivo.split(/[\\/]/).filter(Boolean).slice(0, -1)
+  const mesma = base.every((p, i) => (partes[i] ?? '').toLowerCase() === p.toLowerCase())
+  return mesma ? partes.slice(base.length).join('/') : ''
+}
+
+function nomeDaPasta(pasta: string): string {
+  return pasta.split(/[\\/]/).filter(Boolean).pop() ?? 'Pasta'
 }
 
 function Botao({
