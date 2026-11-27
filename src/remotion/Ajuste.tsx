@@ -3,6 +3,8 @@ import { AbsoluteFill, useCurrentFrame } from 'remotion'
 import { rampaDoFade, VIDEO_FPS, type AjusteDeCor, type MotionCurve } from '@shared/contract'
 import { transformNoTempo, type ChaveDeTransform, type CurvaLivre, type Transform2D } from '@shared/transform'
 import { ajusteNeutro, tabelasDoAjuste } from '@shared/cor'
+import type { EfeitoDoClipe } from '@shared/efeitos'
+import { ComEfeitos } from './Efeitos'
 
 /**
  * A CAMADA DE AJUSTE: tudo o que vem como `children` (as cenas e as faixas de
@@ -23,6 +25,7 @@ export function CamadaDeAjuste({
   chaves,
   curvaDasChaves = 'ease-in-out',
   pontosDasChaves = null,
+  efeitos,
   children,
 }: {
   from: number
@@ -36,6 +39,8 @@ export function CamadaDeAjuste({
   curvaDasChaves?: MotionCurve
   /** A curva desenhada das passagens (a de cada chave ganha dela). */
   pontosDasChaves?: CurvaLivre | null
+  /** Desfoque, mosaico e tarja em TUDO o que esta embaixo, dentro do trecho. */
+  efeitos?: readonly EfeitoDoClipe[]
   children: React.ReactNode
 }) {
   const frame = useCurrentFrame()
@@ -60,14 +65,17 @@ export function CamadaDeAjuste({
     <AbsoluteFill>
       {ativo && <FiltroDeCor id={id} cor={cor} />}
       <AbsoluteFill style={{ filter: ativo ? `url(#${id})` : undefined, backgroundColor: '#000' }}>
-        <AbsoluteFill
-          style={{
-            transform: mexe ? `translate(${v.x}%, ${v.y}%) rotate(${v.rotacao}deg) scale(${v.escala})` : undefined,
-            transformOrigin: 'center center',
-          }}
-        >
-          {children}
-        </AbsoluteFill>
+        {/* Os efeitos ficam PARADOS no quadro: a area censura o mesmo lugar da tela, mova a camada ou nao. */}
+        <ComEfeitos efeitos={efeitos} opaco ligado={dentro}>
+          <AbsoluteFill
+            style={{
+              transform: mexe ? `translate(${v.x}%, ${v.y}%) rotate(${v.rotacao}deg) scale(${v.escala})` : undefined,
+              transformOrigin: 'center center',
+            }}
+          >
+            {children}
+          </AbsoluteFill>
+        </ComEfeitos>
       </AbsoluteFill>
     </AbsoluteFill>
   )

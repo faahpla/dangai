@@ -16,6 +16,7 @@ import { rampaDoFade, resolverTransicao, SEM_SINTESE, VIDEO_FPS, type RenderProp
 import { transformNoTempo } from '@shared/transform'
 import { Scene, easingFor, motionFor } from './Scene'
 import { CamadaDeAjuste } from './Ajuste'
+import { ComEfeitos } from './Efeitos'
 import { Captions } from './Captions'
 import { Cards } from './Card'
 import { Transicionada, type Ponta } from './Transition'
@@ -160,7 +161,10 @@ export function Video({
               {...(premount > 0 ? { premountFor: premount } : {})}
             >
               <Transicionada entrada={entrada} saida={saida} duracao={scene.durationInFrames}>
-                <Scene {...scene} />
+                {/* Desfoque, mosaico e tarja do bloco, no quadro que sai (shared/efeitos.ts). */}
+                <ComEfeitos efeitos={scene.efeitos} opaco>
+                  <Scene {...scene} />
+                </ComEfeitos>
               </Transicionada>
             </Sequence>
           </Fragment>
@@ -290,6 +294,7 @@ function Pilha({ itens, children }: { itens: RenderProps['sobreposicoes']; child
           chaves={o.chaves}
           curvaDasChaves={o.curvaDasChaves}
           pontosDasChaves={o.pontosDasChaves}
+          efeitos={o.efeitos}
         >
           {pilha}
         </CamadaDeAjuste>
@@ -350,6 +355,8 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
         opacity: o.opacidade * fade,
       }}
     >
+      {/* Os efeitos andam com o clipe: a area e do quadro dele, antes de mover e escalar. */}
+      <ComEfeitos efeitos={o.efeitos} opaco={false}>
       <AbsoluteFill
         style={{ transform: `translate(${m.x}%, ${m.y}%) scale(${m.scale * cobrir})`, transformOrigin: 'center center' }}
       >
@@ -365,6 +372,7 @@ function Sobreposicao({ o }: { o: RenderProps['sobreposicoes'][number] }) {
           <Img src={o.url} style={cobre} />
         )}
       </AbsoluteFill>
+      </ComEfeitos>
     </AbsoluteFill>
   )
 }

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { efeitosSchema } from './efeitos'
 
 /**
  * Schemas do dominio. Fonte unica de verdade: os tipos saem de z.infer, entao
@@ -1027,6 +1028,8 @@ export const sceneSchema = z.object({
   escalaOrigemB: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional(),
   /** Espelhado na horizontal ("flip"). Opcional: plano antigo abre sem. */
   espelhar: z.boolean().optional(),
+  /** Desfoque, mosaico e tarja do bloco (shared/efeitos.ts). Opcional: plano antigo abre sem. */
+  efeitos: efeitosSchema.optional(),
   /** O mesmo, para a metade de baixo. */
   espelharB: z.boolean().optional(),
   /**
@@ -1613,6 +1616,11 @@ export const sobreposicaoSchema = z.object({
   /** Espelhado na horizontal. */
   espelhar: z.boolean().default(false),
   /**
+   * Desfoque, mosaico e tarja (shared/efeitos.ts); na camada de ajuste, em
+   * tudo o que esta embaixo. Opcional: os modulos montam clipes sem isto.
+   */
+  efeitos: efeitosSchema.optional(),
+  /**
    * PREENCHER A TELA: "opcao de dar fill numa imagem ou video pra se ajustar
    * na tela toda". Ligado, o arquivo cobre o quadro inteiro (corta o que
    * sobra, como as cenas); desligado, entra inteiro, com a sobra vazia --
@@ -1757,6 +1765,8 @@ export const renderPropsSchema = z.object({
       escala: z.number().min(1).max(4).default(1),
       /** Espelhado na horizontal. */
       espelhar: z.boolean().default(false),
+      /** Desfoque, mosaico e tarja do bloco, no quadro inteiro (as duas metades). */
+      efeitos: efeitosSchema.default([]),
       /** Para onde o zoom fixo aponta (0..1). */
       escalaOrigem: z.object({ x: z.number(), y: z.number() }).default({ x: 0.5, y: 0.5 }),
       /**
@@ -1879,6 +1889,7 @@ export const renderPropsSchema = z.object({
         cor: ajusteDeCorSchema.optional(),
         espelhar: z.boolean().default(false),
         preencher: z.boolean().default(false),
+        efeitos: efeitosSchema.default([]),
         /** Largura/altura do arquivo: o "preencher" aumenta ate cobrir o quadro. */
         aspecto: z.number().positive().default(16 / 9),
         /** A transicao de entrada e de saida do clipe, resolvidas. */

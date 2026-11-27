@@ -7,6 +7,7 @@ import { ControleDeRitmo, opcoesDeEfeito } from './SceneEdit'
 import { AjusteEdit } from './AjusteEdit'
 import { AjusteDaTransicaoCampos, PaletaDeTransicoes } from './EditorDeTransicao'
 import { TransformDoClipe } from './TransformDoClipe'
+import { EfeitosDoClipe } from './EfeitosDoClipe'
 
 /**
  * O INSPETOR do clipe escolhido na faixa de video -- seta, imagem, .mov.
@@ -177,6 +178,13 @@ export function SobreposicaoEdit({ id }: { id: string }) {
             )
           })()}
         </Grupo>
+      </Coluna>
+      <Coluna>
+        <EfeitosDoClipe
+          efeitos={o.efeitos}
+          onChange={(efeitos) => ajustarUm(id, { efeitos })}
+          dica="Desfoque, mosaico ou tarja neste clipe: na tela toda ou só numa área, que anda junto com ele. Para censurar o que está EMBAIXO do clipe, use os efeitos do bloco ou uma camada de ajuste."
+        />
       </Coluna>
     </Colunas>
   )

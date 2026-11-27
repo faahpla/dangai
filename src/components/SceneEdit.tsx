@@ -35,6 +35,7 @@ import {
 import { useProject } from '@/store/project'
 import { exportarPreset, importarPreset, nomeLivre } from '@/store/arquivo-de-preset'
 import { Botaozinho, Coluna, Colunas, Deslizante, Grupo, Linha, Segmentos, type Segmento } from './painel'
+import { EfeitosDoClipe } from './EfeitosDoClipe'
 import { Framing } from './Framing'
 import { Camera } from './Camera'
 import { GraficoDeCurva } from './GraficoDeCurva'
@@ -658,6 +659,13 @@ export function SceneEdit() {
         acima).
       */}
       {!cameraLigada && grupoDoRitmo && <Coluna>{grupoDoRitmo}</Coluna>}
+      <Coluna>
+        <EfeitosDoClipe
+          efeitos={scene.efeitos}
+          onChange={(efeitos) => updateScene(index, { efeitos })}
+          dica="Desfoque, mosaico ou tarja no bloco: na tela toda ou só numa área. O que estiver por cima (inserts, legenda) continua nítido."
+        />
+      </Coluna>
     </Colunas>
   )
 }

@@ -11,6 +11,7 @@ import { curvaInterpolada } from '@shared/cor'
 import { idsEscolhidos, useProject } from '@/store/project'
 import { usePresetsDeCor } from '@/store/presets-de-cor'
 import { Botaozinho, Coluna, Colunas, Deslizante, Grupo, Linha, Segmentos } from './painel'
+import { EfeitosDoClipe } from './EfeitosDoClipe'
 import { TransformDoClipe } from './TransformDoClipe'
 
 /**
@@ -344,6 +345,13 @@ export function AjusteEdit({ id }: { id: string }) {
         >
           <TransformDoClipe o={o} alvos={alvos} />
         </Grupo>
+      </Coluna>
+      <Coluna>
+        <EfeitosDoClipe
+          efeitos={o.efeitos}
+          onChange={(efeitos) => ajustar(id, { efeitos })}
+          dica="Desfoque, mosaico ou tarja em tudo o que está embaixo da camada, no trecho dela: na tela toda ou só numa área (que fica parada na tela)."
+        />
       </Coluna>
     </Colunas>
   )

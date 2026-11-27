@@ -576,6 +576,8 @@ export interface ProjectState {
         | 'transicao'
         | 'transitionOut'
         | 'transicaoSaida'
+        // Desfoque, mosaico e tarja do bloco (shared/efeitos.ts).
+        | 'efeitos'
       >
     >,
   ) => void
