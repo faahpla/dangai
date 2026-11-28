@@ -20,6 +20,13 @@ export interface Novidade {
 
 export const NOVIDADES: readonly Novidade[] = [
   {
+    versao: '2.17.0',
+    itens: [
+      'Marca d’água por canal: em Configurações → Marca d’água, cadastre o PNG de cada canal (do tamanho do vídeo, com a marca já no lugar), o modo (Overlay, Normal, Luz suave...) e a força.',
+      'No editor, o botão “Marca” (ao lado de Bins) escolhe a marca do vídeo. Ela vai por cima de tudo, legenda inclusive, e o próximo vídeo já começa com a última que você usou.',
+    ],
+  },
+  {
     versao: '2.16.2',
     itens: [
       'Gerar recap, aba Cenas: episódios extras. Em "+ Episódios extras" você marca outros episódios que o Dangai já abriu (os do mesmo anime aparecem primeiro), e no seletor "Episódio" a grade passa a mostrar as cenas dele. Bom para vídeo de curiosidade e para frase que cita outro episódio ("depois de ser expulso da guilda"). O roteiro e a voz continuam do episódio principal; no "Abrir no editor" cada cena sai do episódio dela.',
