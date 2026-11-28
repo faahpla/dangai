@@ -249,6 +249,11 @@ export const projectFileSchema = z.object({
    * se o arquivo nao estiver mais la, volta para a fonte embutida.
    */
   captionFont: z.string().default(''),
+  /**
+   * A marca d'agua do canal, pelo id (shared/marca-dagua.ts). '' = sem marca;
+   * projeto antigo abre sem.
+   */
+  marcaDagua: z.string().default(''),
   /** Negrito, italico e o negrito forcado da fonte (26/11). Projeto antigo: nenhum. */
   captionFontEstilo: estiloDaFonteSchema.default(ESTILO_DA_FONTE_PADRAO),
   /** Como a legenda entra. Default para projeto salvo antes disto abrir igual. */

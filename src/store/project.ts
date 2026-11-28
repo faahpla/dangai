@@ -3,6 +3,7 @@ import { episodiosQueFaltam, lerBroll, pareceBroll, resolverTemporadas, resumoDo
 import { buildScriptIndex } from '@shared/script-reader'
 import { classifyFile, type FamiliaDeFonteDoPc } from '@shared/channels'
 import { avisar } from './aviso'
+import { useMarcas } from './marca-dagua'
 import type {
   ScriptBlock,
   LibraryIndex,
@@ -277,6 +278,8 @@ export interface ProjectState {
   fontesDoPc: FamiliaDeFonteDoPc[] | null
   /** Negrito, italico e o negrito forcado da fonte da legenda. */
   captionFontEstilo: EstiloDaFonte
+  /** A marca d'agua do canal neste video, pelo id (store/marca-dagua.ts). '' = nenhuma. */
+  marcaDagua: string
   /** Como a legenda entra na tela. 'nenhuma' e o padrao. */
   captionAnimation: CaptionAnimation
   /** Quantos frames a entrada elastica leva. Menos = mais rapida. */
@@ -1080,6 +1083,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   fontes: [],
   fontesDoPc: null,
   captionFontEstilo: ESTILO_DA_FONTE_PADRAO,
+  marcaDagua: '',
   captionAnimation: CAPTION_ANIMATION_DEFAULT,
   captionAnimationFrames: CAPTION_ANIMATION_FRAMES_DEFAULT,
   captionAnimationCurve: CURVA_DA_ENTRADA_PADRAO,
@@ -1625,6 +1629,8 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   reset: () =>
     set({
+      // O video novo nasce com a marca do ultimo canal escolhido.
+      marcaDagua: useMarcas.getState().padrao,
       audio: null,
       images: [],
       subtitlePath: null,

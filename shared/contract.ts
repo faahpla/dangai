@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { efeitosSchema } from './efeitos'
+import { marcaNoVideoSchema } from './marca-dagua'
 
 /**
  * Schemas do dominio. Fonte unica de verdade: os tipos saem de z.infer, entao
@@ -1849,6 +1850,11 @@ export const renderPropsSchema = z.object({
    * italico). Ver fonteDaLegenda. Default para props antigas.
    */
   captionFontSintese: sinteseDaFonteSchema.default(SEM_SINTESE),
+  /**
+   * A marca d'agua do canal (shared/marca-dagua.ts): o PNG do tamanho do
+   * video, por cima de tudo, no modo de mistura dele. Ausente = sem marca.
+   */
+  marcaDagua: marcaNoVideoSchema.nullable().optional(),
   /**
    * Como cada bloco de legenda ENTRA na tela.
    *

@@ -5,6 +5,7 @@ import {
   Puzzle,
   Scissors,
   Sparkles,
+  Stamp,
   Volume2,
   X,
   type LucideIcon,
@@ -16,6 +17,7 @@ import { Atalhos } from "./Atalhos";
 import { ChaveDoGemini, LINK_DA_CHAVE_DO_GEMINI } from "./ChaveDoGemini";
 import { ModulosNasConfiguracoes, SecoesDoModulo, usePaginasDosModulos } from "@/modulos";
 import { ConfigDoCorte } from "./MotorDeCortes";
+import { MarcasDagua } from "./MarcasDagua";
 
 /**
  * AS CONFIGURACOES EM PAGINAS (26/11): "organiza essa merda, ta tudo jogado,
@@ -38,7 +40,7 @@ import { ConfigDoCorte } from "./MotorDeCortes";
  * a secao, abre nela e rola ate o cartao.
  */
 
-type IdDaPagina = "ia" | "sons" | "pastas" | "cortar" | "atalhos" | "modulos" | `modulo:${string}`;
+type IdDaPagina = "ia" | "sons" | "pastas" | "cortar" | "marca" | "atalhos" | "modulos" | `modulo:${string}`;
 
 interface Pagina {
   id: IdDaPagina;
@@ -78,6 +80,13 @@ const PAGINAS_DO_NUCLEO: Pagina[] = [
     icone: Scissors,
     sobre: "O motor que corta os episódios em cenas e reconhece os personagens.",
     secoes: ["cortar"],
+  },
+  {
+    id: "marca",
+    rotulo: "Marca d'água",
+    icone: Stamp,
+    sobre: "A marca de cada canal, por cima de tudo no vídeo. No editor, o botão “Marca” escolhe qual vai em cada vídeo.",
+    secoes: ["marca-dagua"],
   },
   { id: "atalhos", rotulo: "Atalhos de teclado", icone: Keyboard, secoes: ["atalhos"] },
 ];
@@ -552,6 +561,16 @@ export function Settings() {
               {atual.id === "cortar" && (
                 <Cartao titulo="Motor de cortes">
                   <ConfigDoCorte />
+                </Cartao>
+              )}
+
+              {atual.id === "marca" && (
+                <Cartao
+                  secao="marca-dagua"
+                  titulo="Canais"
+                  sobre="O PNG do tamanho do vídeo, com a marca já no lugar e o resto transparente. Overlay mistura a marca com a imagem (clareia e escurece) em vez de tampar."
+                >
+                  <MarcasDagua />
                 </Cartao>
               )}
 

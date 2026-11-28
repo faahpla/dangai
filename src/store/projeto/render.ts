@@ -1,4 +1,5 @@
 import { fonteDaLegenda, medidasDo } from '@shared/contract'
+import { marcaNoVideo, useMarcas } from '../marca-dagua'
 import { alvoDoRastreio, chavesDoCaminho, enquadrar, fonteDaCamera, janelaDaCamera } from '@shared/camera'
 import { toRenderProps, totalFrames } from '@shared/plan'
 import { trilhaParaMixar } from '@shared/ducking'
@@ -146,7 +147,8 @@ export const fatiaDoRender = (set: SetProjeto, get: GetProjeto): FatiaDoRender =
     }
 
     const result = await window.dangai.startRender({
-      props: toRenderProps(
+      // A marca d'agua do canal vai junto, por cima de tudo (store/marca-dagua.ts).
+      props: { ...toRenderProps(
         plan,
         imagens,
         captionsEnabled ? captions : [],
@@ -170,7 +172,7 @@ export const fatiaDoRender = (set: SetProjeto, get: GetProjeto): FatiaDoRender =
         },
         get().formato,
         get().sobreposicoes.filter((o) => !get().faixasMudas.video.includes(o.faixa)),
-      ),
+      ), marcaDagua: marcaNoVideo(get().marcaDagua, useMarcas.getState().lista) },
       audioPath: audio.path,
       durationInFrames: totalFrames(audio.durationSec),
       // Os cues sao montados aqui e nao guardados no plano: eles dependem dos

@@ -67,6 +67,7 @@ export function Video({
   captionY,
   captionFont,
   captionFontSintese,
+  marcaDagua,
   captionAnimation,
   captionAnimationFrames,
   captionAnimationCurve,
@@ -192,6 +193,16 @@ export function Video({
         />
       )}
       {fontsReady && cards.length > 0 && <Cards cards={cards} />}
+      {/*
+        A MARCA D'AGUA do canal: o PNG do tamanho do video, por cima de TUDO
+        (legenda inclusive), misturado pelo modo dele -- o Overlay que ele
+        pediu clareia e escurece o que esta embaixo em vez de tampar.
+      */}
+      {marcaDagua && (
+        <AbsoluteFill style={{ mixBlendMode: marcaDagua.modo, opacity: marcaDagua.opacidade, pointerEvents: 'none' }}>
+          <Img src={marcaDagua.url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </AbsoluteFill>
+      )}
     </AbsoluteFill>
   )
 }

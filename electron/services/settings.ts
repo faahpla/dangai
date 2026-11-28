@@ -146,6 +146,10 @@ export interface Settings {
   presetsDeCor: Record<string, unknown>[]
   /** Transicoes configuradas e guardadas com nome. Conferidas no renderer. */
   presetsDeTransicao: Record<string, unknown>[]
+  /** As marcas d'agua, uma por canal (shared/marca-dagua.ts). Conferidas no renderer. */
+  marcasDagua: Record<string, unknown>[]
+  /** A ultima marca escolhida: o proximo video nasce com ela. '' = nenhuma. */
+  marcaDaguaPadrao: string
   /**
    * As configuracoes de cada MODULO (o Gerar recap), por id do modulo.
    *
@@ -215,6 +219,8 @@ const DEFAULTS: Settings = {
   recentes: [],
   presetsDeCor: [],
   presetsDeTransicao: [],
+  marcasDagua: [],
+  marcaDaguaPadrao: '',
   modulos: {},
   modulosLigados: {},
 }
@@ -454,6 +460,8 @@ export function getSettingsForRenderer(): Omit<Settings, 'anthropicApiKey' | 'ge
     recentes: settings.recentes,
     presetsDeCor: settings.presetsDeCor,
     presetsDeTransicao: settings.presetsDeTransicao,
+    marcasDagua: settings.marcasDagua,
+    marcaDaguaPadrao: settings.marcaDaguaPadrao,
     hasApiKey: key.length > 0,
     apiKeyHint: dicaDaChave(key),
     hasGeminiKey: settings.geminiApiKey.length > 0,
@@ -541,6 +549,12 @@ function coerce(raw: unknown): Settings {
           .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
           .slice(0, 50)
       : [],
+    marcasDagua: Array.isArray(value['marcasDagua'])
+      ? (value['marcasDagua'] as unknown[])
+          .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)
+          .slice(0, 30)
+      : [],
+    marcaDaguaPadrao: typeof value['marcaDaguaPadrao'] === 'string' ? value['marcaDaguaPadrao'] : '',
     presetsDeTransicao: Array.isArray(value['presetsDeTransicao'])
       ? (value['presetsDeTransicao'] as unknown[])
           .filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null)

@@ -73,6 +73,7 @@ export const fatiaDoArquivo = (set: SetProjeto, get: GetProjeto): FatiaDoArquivo
       // So o nome: a URL e desta sessao e nao vale nada na proxima abertura.
       captionFont: state.captionFont?.nome ?? '',
       captionFontEstilo: state.captionFontEstilo,
+      marcaDagua: state.marcaDagua,
       captionAnimation: state.captionAnimation,
       captionAnimationFrames: state.captionAnimationFrames,
       captionAnimationCurve: state.captionAnimationCurve,
@@ -381,6 +382,7 @@ async function applyProjectFile(
        */
       captionFont: file.captionFont ? { nome: file.captionFont, url: '' } : null,
       captionFontEstilo: file.captionFontEstilo,
+      marcaDagua: file.marcaDagua,
       captionAnimation: file.captionAnimation,
       captionAnimationFrames: file.captionAnimationFrames,
       captionAnimationCurve: file.captionAnimationCurve,

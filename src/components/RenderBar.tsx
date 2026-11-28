@@ -25,6 +25,7 @@ import {
   salvarPreset,
 } from '@/store/estilo-legenda'
 import { EscolherFonte } from './EscolherFonte'
+import { BotaoDaMarca } from './BotaoDaMarca'
 import { CurvaDaEntradaEditor } from './CurvaDaEntrada'
 import { BarraDeEtapas } from './BarraDeEtapas'
 import { BotaoDeTransicao } from './BotaoDeTransicao'
@@ -269,6 +270,7 @@ export function RenderBar() {
             <FolderOpen size={14} strokeWidth={1.5} />
             <span className="group-data-[compacto]/barra:hidden">Bins</span>
           </button>
+          <BotaoDaMarca />
         </>
       )}
 

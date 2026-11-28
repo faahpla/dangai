@@ -27,6 +27,7 @@ export const CAMPOS = [
   'captionY',
   'captionFont',
   'captionFontEstilo',
+  'marcaDagua',
   'captionAnimation',
   'captionAnimationFrames',
   'captionMark',

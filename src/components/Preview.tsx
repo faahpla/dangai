@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
+import { marcaNoVideo, useMarcas } from '@/store/marca-dagua'
 import { duracaoDoTrecho, fonteDaLegenda, medidasDo, SEM_SINTESE, VIDEO_FPS } from '@shared/contract'
 import { toRenderProps } from '@shared/plan'
 import type { ImageAsset, ScenePlan } from '@shared/contract'
@@ -92,6 +93,8 @@ export function Preview() {
   const captionColor = useProject((s) => s.captionColor)
   const captionFont = useProject((s) => s.captionFont)
   const captionFontEstilo = useProject((s) => s.captionFontEstilo)
+  const marcaDagua = useProject((s) => s.marcaDagua)
+  const marcas = useMarcas((s) => s.lista)
   const captionAnimation = useProject((s) => s.captionAnimation)
   const captionAnimationFrames = useProject((s) => s.captionAnimationFrames)
   const captionAnimationCurve = useProject((s) => s.captionAnimationCurve)
@@ -137,8 +140,10 @@ export function Preview() {
   }, [plan, trechoAoVivo])
 
   const inputProps = useMemo(
-    () =>
-      planDoPreview && images.length > 0
+    () => ({
+      // A marca d'agua do canal, por cima de tudo (store/marca-dagua.ts).
+      marcaDagua: marcaNoVideo(marcaDagua, marcas),
+      ...(planDoPreview && images.length > 0
         ? toRenderProps(
             planDoPreview,
             images,
@@ -186,7 +191,8 @@ export function Preview() {
             captionStroke,
             captionScale,
             sobreposicoes: [],
-          },
+          }),
+    }),
     [
       planDoPreview,
       images,
@@ -206,6 +212,8 @@ export function Preview() {
        */
       captionFont,
       captionFontEstilo,
+      marcaDagua,
+      marcas,
       captionAnimation,
       captionAnimationFrames,
       captionAnimationCurve,

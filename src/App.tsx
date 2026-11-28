@@ -4,6 +4,7 @@ import { startAutosave } from '@/store/autosave'
 import { desfazer, refazer, startUndo } from '@/store/undo'
 import { aplicarEstiloGuardado, startEstiloLegenda } from '@/store/estilo-legenda'
 import { carregarBins } from '@/store/bins'
+import { carregarMarcas } from '@/store/marca-dagua'
 import { Bins } from '@/components/Bins'
 import { Divisor } from '@/components/Divisor'
 import { LAYOUT_PADRAO, useConsoleFx, useFerramenta, useIma, useLayout, useVisorCheio } from '@/store/layout'
@@ -169,6 +170,7 @@ export function App() {
   useEffect(() => startEstiloLegenda(), [])
   useEffect(() => void aplicarEstiloGuardado(), [])
   useEffect(() => void carregarBins(), [])
+  useEffect(() => void carregarMarcas(), [])
   useEffect(() => void checkAutosave(), [checkAutosave])
   // Depois de atualizar: o que mudou (shared/novidades.ts).
   useEffect(() => void verNovidadesAoAbrir(), [])

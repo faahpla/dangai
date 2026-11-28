@@ -749,6 +749,10 @@ export interface PublicSettings {
   presetsDeCor: Record<string, unknown>[]
   /** Transicoes configuradas e guardadas com nome. Conferidas no renderer. */
   presetsDeTransicao: Record<string, unknown>[]
+  /** As marcas d'agua, uma por canal (shared/marca-dagua.ts). */
+  marcasDagua: Record<string, unknown>[]
+  /** A ultima marca escolhida: o proximo video nasce com ela. '' = nenhuma. */
+  marcaDaguaPadrao: string
 }
 
 export interface SettingsPatch {
@@ -776,6 +780,8 @@ export interface SettingsPatch {
   recentes?: Record<string, unknown>[]
   presetsDeCor?: Record<string, unknown>[]
   presetsDeTransicao?: Record<string, unknown>[]
+  marcasDagua?: Record<string, unknown>[]
+  marcaDaguaPadrao?: string
 }
 
 /** O resultado do botao "Testar" da chave do Gemini. */
